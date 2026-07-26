@@ -99,7 +99,7 @@ func TestEngineUsesProtoBytesOpaqueHandlesAndOrderedEvents(t *testing.T) {
 func TestEngineOpenSessionReturnsReadyConnectionSnapshot(t *testing.T) {
 	session := newBindingSession()
 	session.connection = &clientruntime.ConnectionSnapshot{
-		RouteID: "cloud", RouteKind: endpoint.RouteManagedWebRTC, ObservedPath: string(endpoint.PathSingleRelay),
+		RouteID: "direct", RouteKind: endpoint.RouteDirectWebRTCTCP, ObservedPath: string(endpoint.PathDirect),
 		SampledAt: time.Unix(1_800_000_000, 0).UTC(), RoundTrip: 42 * time.Millisecond,
 		LocalCandidateType: "relay", RemoteCandidateType: "relay", LocalProtocol: "udp", RemoteProtocol: "udp", RelayTransport: "tcp", Connected: true,
 	}
@@ -114,7 +114,7 @@ func TestEngineOpenSessionReturnsReadyConnectionSnapshot(t *testing.T) {
 	}
 	event := nextBindingEvent(t, engine)
 	snapshot := event.GetOpenSession().GetConnection()
-	if snapshot.GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD || snapshot.GetObservedPath() != 2 ||
+	if snapshot.GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || snapshot.GetObservedPath() != bindingpb.ConnectionObservedPath_CONNECTION_OBSERVED_PATH_DIRECT ||
 		snapshot.GetRelayTransport() != bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_TCP || snapshot.GetRoundTripNanos() != int64(42*time.Millisecond) {
 		t.Fatalf("connection snapshot = %#v", snapshot)
 	}

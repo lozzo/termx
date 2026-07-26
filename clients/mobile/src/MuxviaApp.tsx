@@ -31,7 +31,7 @@ import type {
   RtcEvent,
   RtcSubscription,
   TerminalInventoryEvents,
-  WebControlMachine,
+  RemoteMachine,
   RemoteControlAppProps,
   ExternalPairingAdapter,
   ProtoClientSession,
@@ -45,7 +45,6 @@ import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 import { NativeForegroundBarrier, runAcrossNativePicker } from './NativeForegroundBarrier'
 
-const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || ''
 const qrScannerRootId = 'muxvia-camera-qr-scanner'
 const qrScannerReaderId = 'muxvia-camera-qr-reader'
 const nativeHttpConnectTimeoutMs = 8_000
@@ -122,8 +121,6 @@ export function MuxviaApp() {
   return (
     <section className="muxvia-app-page flex h-[100dvh] w-screen flex-col overflow-hidden antialiased">
       <RemoteControlApp
-        accountAccessEnabled={false}
-        defaultControlUrl={defaultControlUrl}
         exportDebugLogs={exportNativeDebugLogs}
         externalPairingAdapter={externalPairingAdapter}
         globalFileTransfer={globalFileTransfer}
@@ -616,7 +613,7 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
 }
 
 function createNativeMachineRuntime(
-  machine: WebControlMachine,
+  machine: RemoteMachine,
   storage: RemoteRuntimeStorage,
   endpointRegistry: NativeEndpointRegistryProjection,
   shared: {
@@ -658,7 +655,7 @@ function createNativeMachineRuntime(
       return {
         machine: statusMachine,
         localWeb: {
-          httpUrl: machine.controlUrl ?? storedMachine?.endpoints.webControl ?? '',
+          httpUrl: storedMachine?.endpoints.webControl ?? '',
           rtcOfferUrl: firstNonEmpty(machine.hubUrls) ?? storedMachine?.endpoints.hub ?? '',
         },
       }
@@ -784,7 +781,7 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
 }
 
 function createNativeConnector(
-  machine: WebControlMachine,
+  machine: RemoteMachine,
   endpointRegistry: NativeEndpointRegistryProjection,
 ): NativeSessionConnector {
   if (!endpointRegistry.has(machine.id)) {

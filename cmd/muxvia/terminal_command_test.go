@@ -21,7 +21,7 @@ func TestProductCommandTreeExposesTerminalAndRejectsV3(t *testing.T) {
 		t.Fatal(err)
 	}
 	help := output.String()
-	for _, expected := range []string{"terminal", "cloud", "daemon", "pair"} {
+	for _, expected := range []string{"terminal", "daemon", "pair"} {
 		if !strings.Contains(help, expected) {
 			t.Fatalf("root help missing %q:\n%s", expected, help)
 		}

@@ -63,7 +63,6 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 }
 
 func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
-	cloudDisabled := false
 	var runDaemon func(*cobra.Command, []string) error
 	command := &cobra.Command{
 		Use:   "daemon",
@@ -85,16 +84,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			return fmt.Errorf("load daemon identity and client access store: %w", err)
 		}
 		defer clientAccess.Close()
-		cloudEnabled := false
-		if !cloudDisabled {
-			cloudEnabled, err = v3CloudEnrollmentConfigured(clientAccess.Identity)
-			if err != nil {
-				// enrollment receipt 异常只关闭 managed Route；本地 terminal、Direct 和 SSH 继续可用。
-				logger.Warn("managed cloud enrollment unavailable", "error", err)
-				cloudEnabled = false
-			}
-		}
-		releaseRecord, err := acquireDaemonRuntimeRecord(socketPath, logPath, *configPath, cloudEnabled)
+		releaseRecord, err := acquireDaemonRuntimeRecord(socketPath, logPath, *configPath)
 		if err != nil {
 			return err
 		}
@@ -114,7 +104,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			return err
 		}
 		defer closePairing()
-		directCore, ok := srv.(v3ManagedDaemonCore)
+		directCore, ok := srv.(v3RemoteDaemonCore)
 		if !ok {
 			return fmt.Errorf("Direct WebRTC requires core-v2 scoped transport")
 		}
@@ -129,14 +119,6 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)
 		}
 		writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
-		if cloudEnabled {
-			managedCore, ok := srv.(v3ManagedDaemonCore)
-			if !ok {
-				logger.Warn("managed cloud presence unavailable", "error", "core-v2 scoped transport is not configured")
-			} else if err := startV3ManagedDaemon(ctx, managedCore, clientAccess, logger); err != nil {
-				logger.Warn("managed cloud presence unavailable", "error", err)
-			}
-		}
 		defer func() {
 			_ = srv.Shutdown(context.Background())
 		}()
@@ -152,8 +134,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 	}
 	command.RunE = runDaemon
 	command.Args = cobra.NoArgs
-	command.PersistentFlags().BoolVar(&cloudDisabled, "no-cloud", false, "disable managed cloud presence even when this daemon is enrolled")
-	addDaemonLifecycleCommands(command, socket, logFile, configPath, &cloudDisabled, runDaemon)
+	addDaemonLifecycleCommands(command, socket, logFile, configPath, runDaemon)
 	return command
 }
 

@@ -4,7 +4,6 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.google.protobuf.ByteString
-import com.muxvia.app.managed.ManagedEndpointFailure
 import muxvia.client.binding.v1.ClientBinding
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -37,7 +36,7 @@ class AndroidSSHCredentialStore {
             publicKey = generator.generateKeyPair().public
         }
         val encoded = publicKey?.encoded
-            ?: throw ManagedEndpointFailure("unauthenticated", "SSH credential is missing")
+            ?: throw ClientPlatformFailure("unauthenticated", "SSH credential is missing")
         ClientBinding.SSHCredentialRecord.newBuilder()
             .setCredentialRef(ref)
             .setPublicKeyPkix(ByteString.copyFrom(encoded))
@@ -48,11 +47,11 @@ class AndroidSSHCredentialStore {
     /** sign 对 Go SSH 已计算的 SHA-256 digest 执行 ECDSA 签名，私钥 handle 不离开 Keystore。 */
     fun sign(credentialRef: String, digest: ByteArray, hash: String): ByteArray = synchronized(lock) {
         if (hash != "SHA-256" || digest.size != 32) {
-            throw ManagedEndpointFailure("protocol", "SSH signer only accepts SHA-256 digests")
+            throw ClientPlatformFailure("protocol", "SSH signer only accepts SHA-256 digests")
         }
         val ref = validateRef(credentialRef)
         val privateKey = keyStore().getKey(alias(ref), null)
-            ?: throw ManagedEndpointFailure("unauthenticated", "SSH credential is missing")
+            ?: throw ClientPlatformFailure("unauthenticated", "SSH credential is missing")
         Signature.getInstance("NONEwithECDSA").run {
             initSign(privateKey as java.security.PrivateKey)
             update(digest)
@@ -77,7 +76,7 @@ class AndroidSSHCredentialStore {
     private fun validateRef(value: String): String {
         val normalized = value.trim()
         if (!normalized.startsWith(REF_PREFIX) || !REF_PATTERN.matches(normalized)) {
-            throw ManagedEndpointFailure("protocol", "SSH credential ref is invalid")
+            throw ClientPlatformFailure("protocol", "SSH credential ref is invalid")
         }
         return normalized
     }

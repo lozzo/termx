@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/internal/protocol/directsignal"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	ice "github.com/pion/ice/v4"
@@ -161,8 +160,8 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 	}
 	answer, err := (Answerer{
 		Handler: server.handler, PeerConnections: server.peerConnections, CloseOnDisconnected: true, OnPeerClosed: releasePeer,
-	}).Answer(ctx, &cloudpb.SignalingOffer{
-		SignalingSessionId: request.GetRequestId(), Sdp: request.GetOfferSdp(),
+	}).Answer(ctx, &SignalingOffer{
+		SessionID: request.GetRequestId(), SDP: request.GetOfferSdp(),
 	}, nil)
 	if err != nil {
 		releasePeer()
@@ -175,14 +174,11 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		Identity: &remoteauthpb.EndpointDaemonIdentity{
 			DeviceId: server.identity.DeviceID, DevicePublicKey: append([]byte(nil), server.identity.PublicKey...), DeviceFingerprint: server.identity.Fingerprint,
 		},
-		AnswerSdp: answer.GetSdp(), IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
+		AnswerSdp: answer.SDP, IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
 	}
-	for _, candidate := range answer.GetCandidates() {
-		if candidate == nil {
-			continue
-		}
+	for _, candidate := range answer.Candidates {
 		wireAnswer.Candidates = append(wireAnswer.Candidates, &remoteauthpb.DirectIceCandidate{
-			Candidate: candidate.GetCandidate(), SdpMid: candidate.GetSdpMid(), SdpMlineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment(),
+			Candidate: candidate.Candidate, SdpMid: candidate.SDPMid, SdpMlineIndex: candidate.SDPMLineIndex, UsernameFragment: candidate.UsernameFragment,
 		})
 	}
 	if err := remoteauth.SignDirectSignalingAnswer(server.identity, wireAnswer); err != nil {

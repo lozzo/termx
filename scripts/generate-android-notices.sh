@@ -39,6 +39,12 @@ classify() {
     org.slf4j:slf4j-api:2.0.6)
       printf '%s' "MIT"
       ;;
+    org.bouncycastle:bcprov-jdk18on:1.79)
+      printf '%s' "MIT"
+      ;;
+    com.google.protobuf:protobuf-java:3.25.5)
+      printf '%s' "Apache-2.0"
+      ;;
     androidx.*|org.jetbrains.kotlin:*|org.jetbrains.kotlinx:*|org.jetbrains:annotations:*|org.apache.cordova:*|com.google.code.gson:*|com.google.guava:*|org.jspecify:*)
       printf '%s' "Apache-2.0"
       ;;
@@ -66,8 +72,10 @@ output="$tmp_dir/ANDROID_NOTICES.txt"
   cat "$repo_root/docs/legal/third-party/android/Java-WebSocket-1.5.6-LICENSE.txt"
   printf '\n%s\n\n' "SLF4J MIT LICENSE"
   cat "$repo_root/docs/legal/third-party/android/slf4j-api-2.0.6-LICENSE.txt"
+  printf '\n%s\n\n' "BOUNCY CASTLE MIT LICENSE"
+  cat "$repo_root/docs/legal/third-party/android/bcprov-jdk18on-1.79-LICENSE.txt"
   printf '\n%s\n\n' "APACHE LICENSE 2.0"
-  cat "$repo_root/docs/legal/public-snapshot/LICENSE"
+  cat "$repo_root/LICENSE"
 } >"$output"
 
 target="$repo_root/clients/mobile/public/third-party/ANDROID_NOTICES.txt"

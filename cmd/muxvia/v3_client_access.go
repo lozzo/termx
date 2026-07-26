@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -21,7 +20,7 @@ import (
 )
 
 // v3ClientAccessRuntime 是当前 daemon 进程唯一装配的 DeviceIdentity、AccessStore 与 local pairing socket。
-// local protocol、Direct/SSH/managed WebRTC 都必须引用这里的同一 Identity/Store，不能各自加载第二份授权真值。
+// local protocol、Direct/SSH 都必须引用这里的同一 Identity/Store，不能各自加载第二份授权真值。
 type v3ClientAccessRuntime struct {
 	Identity      remoteauth.Identity
 	Store         *remoteauth.AccessStore
@@ -29,29 +28,12 @@ type v3ClientAccessRuntime struct {
 }
 
 // Close 释放 daemon-local AccessStore 的唯一进程 owner lock。
-// 调用方必须先停止 pairing listener、managed ingress 和 core session，再结束该 runtime。
+// 调用方必须先停止 pairing listener、Direct ingress 和 core session，再结束该 runtime。
 func (runtime v3ClientAccessRuntime) Close() error {
 	if runtime.Store == nil {
 		return nil
 	}
 	return runtime.Store.Close()
-}
-
-// v3CloudEnrollmentConfigured 只读取 daemon-owned control enrollment receipt。
-// enrollment 是默认启用 Cloud Presence 的持久真值；短期网络状态和 Companion 可达性不能改写它。
-func v3CloudEnrollmentConfigured(identity remoteauth.Identity) (bool, error) {
-	receipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), identity)
-	if err != nil {
-		return false, err
-	}
-	defer receipts.Close()
-	if _, err := receipts.Enrollment(); err != nil {
-		if errors.Is(err, remotev2daemon.ErrControlEnrollmentMissing) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 func loadV3ClientAccessRuntime(socketPath string) (v3ClientAccessRuntime, error) {
@@ -174,9 +156,8 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, request cor
 			continue
 		}
 		route := proto.Clone(value).(*remoteauthpb.EndpointRouteConfigV1)
-		if managed := route.GetManagedWebrtc(); managed != nil {
-			// managed target 属于 daemon DeviceIdentity 真值，CLI 只能请求包含该 Route，不能自行填写另一个设备。
-			managed.TargetDeviceId = service.identity.DeviceID
+		if route.GetManagedWebrtc() != nil {
+			return corev2.ClientAccessTicket{}, fmt.Errorf("Cloud Route is unavailable while Muxvia Cloud is being rebuilt")
 		}
 		routes = append(routes, route)
 	}

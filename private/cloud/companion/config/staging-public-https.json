@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "profile": "staging-public-https",
-  "control_plane_url": "https://muxvia.com",
-  "account_label": "Muxvia Cloud Staging",
-  "started_at": "2026-07-24T00:00:00Z"
-}

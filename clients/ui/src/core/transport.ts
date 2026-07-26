@@ -4,9 +4,9 @@ export type ConnectionPath = 'local' | 'hub'
 
 export const CONNECTION_PATHS = ['local', 'hub'] as const satisfies readonly ConnectionPath[]
 
-export type ObservedPath = 'direct' | 'single_relay' | 'relay_mesh'
+export type ObservedPath = 'direct' | 'single_relay'
 
-export const OBSERVED_PATHS = ['direct', 'single_relay', 'relay_mesh'] as const satisfies readonly ObservedPath[]
+export const OBSERVED_PATHS = ['direct', 'single_relay'] as const satisfies readonly ObservedPath[]
 
 export const ROUTE_SELECTION_REASONS = [
   'initial_best',
@@ -47,14 +47,10 @@ export interface RtcConnectOptions {
   onConnectionState?: ((snapshot: RtcConnectionStateSnapshot) => void) | undefined
 }
 
-export type ConnectionRoutePreference = 'auto' | 'direct' | 'ssh' | 'cloud'
-export type CloudConnectionPreference = 'auto' | 'p2p' | 'relay'
-export type RelayTransportPreference = 'auto' | 'udp' | 'tcp'
+export type ConnectionRoutePreference = 'auto' | 'direct' | 'ssh'
 
 export interface ConnectionPolicy {
   route: ConnectionRoutePreference
-  cloud: CloudConnectionPreference
-  relayTransport: RelayTransportPreference
 }
 
 export interface ConnectionPolicyState {
@@ -63,7 +59,7 @@ export interface ConnectionPolicyState {
   unavailableReasons: Partial<Record<Exclude<ConnectionRoutePreference, 'auto'>, ConnectionPolicyUnavailableReason>>
 }
 
-export type ConnectionPolicyUnavailableReason = 'route_not_configured' | 'route_disabled' | 'platform_unsupported' | 'credential_unavailable' | 'cloud_unavailable'
+export type ConnectionPolicyUnavailableReason = 'route_not_configured' | 'route_disabled' | 'platform_unsupported' | 'credential_unavailable'
 
 export interface RtcSubscription {
   close(): void

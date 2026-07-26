@@ -14,7 +14,6 @@ import (
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/bindingpb"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
@@ -27,9 +26,7 @@ const (
 	MaxPayloadBytes      = 4 << 20
 	defaultEventCapacity = 256
 	maxLiveHandles       = 4096
-	// defaultOpenTimeout 覆盖 Cloud resolve、双端 Relay lease、signaling/answer、
-	// ICE/DataChannel、端到端鉴权和 Hello。公网控制链路可能先消耗约 15 秒，
-	// 总预算必须继续给 managed peer 的 15 秒 ready deadline 留出完整窗口。
+	// defaultOpenTimeout 覆盖 signaling/answer、ICE/DataChannel、端到端鉴权和 Hello。
 	defaultOpenTimeout = 40 * time.Second
 )
 
@@ -592,7 +589,7 @@ func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindi
 func connectionSnapshotToProto(snapshot clientruntime.ConnectionSnapshot) *bindingpb.ConnectionSnapshot {
 	return &bindingpb.ConnectionSnapshot{
 		RouteId: string(snapshot.RouteID), RouteKind: bindingRouteKind(snapshot.RouteKind),
-		ObservedPath: cloudObservedPath(snapshot.ObservedPath), SelectionReason: snapshot.SelectionReason,
+		ObservedPath: bindingObservedPath(snapshot.ObservedPath), SelectionReason: snapshot.SelectionReason,
 		SampledAtUnixNano: snapshot.SampledAt.UTC().UnixNano(), RoundTripNanos: int64(snapshot.RoundTrip),
 		LocalCandidateType: bindingCandidateType(snapshot.LocalCandidateType), RemoteCandidateType: bindingCandidateType(snapshot.RemoteCandidateType),
 		LocalProtocol: bindingConnectionTransport(snapshot.LocalProtocol), RemoteProtocol: bindingConnectionTransport(snapshot.RemoteProtocol),
@@ -610,21 +607,19 @@ func bindingRouteKind(kind endpoint.RouteKind) bindingpb.ConnectionRouteKind {
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT
 	case endpoint.RouteSSHWebRTCTCP:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH
-	case endpoint.RouteManagedWebRTC:
-		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD
 	default:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
 	}
 }
 
-func cloudObservedPath(path string) cloudpb.ObservedPath {
+func bindingObservedPath(path string) bindingpb.ConnectionObservedPath {
 	switch endpoint.Path(path) {
 	case endpoint.PathDirect:
-		return cloudpb.ObservedPath_OBSERVED_PATH_DIRECT
+		return bindingpb.ConnectionObservedPath_CONNECTION_OBSERVED_PATH_DIRECT
 	case endpoint.PathSingleRelay:
-		return cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY
+		return bindingpb.ConnectionObservedPath_CONNECTION_OBSERVED_PATH_SINGLE_RELAY
 	default:
-		return cloudpb.ObservedPath_OBSERVED_PATH_UNSPECIFIED
+		return bindingpb.ConnectionObservedPath_CONNECTION_OBSERVED_PATH_UNSPECIFIED
 	}
 }
 

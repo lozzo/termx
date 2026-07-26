@@ -29,12 +29,10 @@ describe('legacy transport cleanup', () => {
     expect(indexSource).not.toMatch(/browserRtcSession|BrowserRtc/)
   })
 
-  it('exports the Proto binding runtime without old Hub or browser session adapters', () => {
-    expect(indexSource).toMatch(/createWebControlApi/)
-    expect(indexSource).toMatch(/WebControlApi/)
+  it('exports the Proto binding client without old Hub or browser session adapters', () => {
     expect(indexSource).not.toMatch(/createHubApi|HubApi/)
     expect(indexSource).not.toMatch(/createBrowserRtcSession|BrowserRtcSession/)
-    expect(indexSource).toMatch(/BrowserBindingRuntime/)
+    expect(indexSource).not.toMatch(/BrowserBindingRuntime/)
     expect(indexSource).toMatch(/ProtoBindingClient/)
   })
 

@@ -1,5 +1,3 @@
-//go:build !muxvia_android_spike
-
 package main
 
 import "fmt"

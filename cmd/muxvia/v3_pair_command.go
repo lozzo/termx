@@ -240,7 +240,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
 	command.Flags().DurationVar(&grantLifetime, "grant-ttl", 90*24*time.Hour, "bound capability lifetime")
-	command.Flags().StringArrayVar(&routeSpecs, "route", nil, "pairing Route: direct, cloud, ssh, or a strict Route URI (repeatable)")
+	command.Flags().StringArrayVar(&routeSpecs, "route", nil, "pairing Route: direct, ssh, or a strict Route URI (repeatable)")
 	command.Flags().StringVar(&directID, "direct-id", "", "stable ID suffix for the parameterized Direct Route")
 	command.Flags().StringVar(&directName, "direct-name", "", "display name for the parameterized Direct Route")
 	command.Flags().StringArrayVar(&signalingAddresses, "signaling-address", nil, "published Direct signaling HOST:PORT (repeatable; requires --ice-tcp-address)")
@@ -253,15 +253,6 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().StringVar(&sshUser, "ssh-user", "", "SSH user for the parameterized SSH Route")
 	command.Flags().StringArrayVar(&sshHostKeys, "ssh-host-key", nil, "pinned SSH SHA256 host-key fingerprint (repeatable)")
 	return command
-}
-
-func v3ManagedPairingRoute() *remoteauthpb.EndpointRouteConfigV1 {
-	return &remoteauthpb.EndpointRouteConfigV1{
-		SchemaVersion: endpointdomain.RouteConfigVersion, RouteId: "cloud", Enabled: true,
-		Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
-			AccountProfileRef: "default", RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO,
-		}},
-	}
 }
 
 func clientAccessScopeToProto(scope remoteauth.Scope) *remoteauthpb.ClientAccessScope {

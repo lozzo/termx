@@ -1,14 +1,3 @@
 go 1.26.0
 
-use (
-	.
-	./private/cloud/companion
-	./private/cloud/control-plane
-	./private/cloud/controller
-	./private/cloud/devcloud
-	./private/cloud/edge
-	./private/cloud/hub
-	./private/cloud/relay
-	./private/cloud/route-planner
-	./private/cloud/web-controller
-)
+use .

@@ -1,5 +1,4 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import browserSource from '../binding/browserWasmPlatform.ts?raw'
 import terminalSource from './Terminal.tsx?raw'
 import hookSource from './useTerminalSession.tsx?raw'
 import type { TerminalProps } from './Terminal'
@@ -12,9 +11,5 @@ describe('terminal runtime boundary', () => {
     expect(terminalSource).not.toMatch(/TerminalProtocolSession|RTCPeerConnection|RTCDataChannel/)
     expect(hookSource).toMatch(/createProtoTerminalProtocolSession/)
     expect(hookSource).not.toMatch(/RTCPeerConnection|RTCDataChannel/)
-  })
-
-  it('keeps the browser primitive adapter from implementing terminal protocol client responsibilities', () => {
-    expect(browserSource).not.toMatch(/TerminalProtocolSession|createTerminalProtocolClient|subscribeTerminal|closeTerminalChannel/)
   })
 })

@@ -20,14 +20,6 @@ var expectedCSymbols = []string{
 	"muxvia_engine_close", "muxvia_buffer_free",
 }
 
-var expectedWASMExports = []string{
-	"muxviaClientAbiVersion", "muxviaEngineCreate", "muxviaEngineOpenSession", "muxviaEngineExecute",
-	"muxviaEngineOpenResourceStream", "muxviaEngineSendResourceStreamFrame", "muxviaEngineCloseResourceStream",
-	"muxviaEngineCommand", "muxviaEngineNextEvent",
-	"muxviaPlatformNextRequest", "muxviaPlatformComplete", "muxviaPlatformEvent", "muxviaEngineCancel", "muxviaEngineCloseSession", "muxviaEngineRelease",
-	"muxviaEngineClose", "muxviaBufferFree",
-}
-
 func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 	header, err := os.ReadFile("cabi/muxvia_client.h")
 	if err != nil {
@@ -44,25 +36,8 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 	if !slices.Equal(symbols, expectedCSymbols) {
 		t.Fatalf("C symbols = %v, want %v", symbols, expectedCSymbols)
 	}
-	wasm, err := os.ReadFile("wasm_exports.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	wasmSymbols := strings.Fields(string(wasm))
-	if !slices.Equal(wasmSymbols, expectedWASMExports) {
-		t.Fatalf("WASM exports = %v, want %v", wasmSymbols, expectedWASMExports)
-	}
-	wasmWrapper, err := os.ReadFile("wasmlib/main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, symbol := range expectedWASMExports {
-		if !strings.Contains(string(wasmWrapper), `"`+symbol+`"`) {
-			t.Fatalf("WASM wrapper does not register %s", symbol)
-		}
-	}
 	for _, forbidden := range []string{"terminal", "history", "file", "storage", "json", "base64"} {
-		if strings.Contains(strings.ToLower(string(header)), forbidden) || strings.Contains(strings.ToLower(string(wasm)), forbidden) {
+		if strings.Contains(strings.ToLower(string(header)), forbidden) {
 			t.Fatalf("binding ABI contains business/encoding term %q", forbidden)
 		}
 	}
@@ -80,7 +55,7 @@ func TestBindingCoreDoesNotImportPlatformOrDomainOwners(t *testing.T) {
 			return err
 		}
 		if entry.IsDir() {
-			if path != "." && (entry.Name() == "cabi" || entry.Name() == "wasmlib" || entry.Name() == "enginehost") {
+			if path != "." && (entry.Name() == "cabi" || entry.Name() == "enginehost") {
 				return filepath.SkipDir
 			}
 			return nil

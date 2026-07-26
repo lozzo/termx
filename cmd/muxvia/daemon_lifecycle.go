@@ -28,31 +28,29 @@ type daemonRuntimeRecord struct {
 	SocketPath    string    `json:"socket_path"`
 	LogPath       string    `json:"log_path"`
 	ConfigPath    string    `json:"config_path,omitempty"`
-	CloudEnabled  bool      `json:"cloud_enabled"`
 	StartedAt     time.Time `json:"started_at"`
 }
 
 type daemonStatusView struct {
-	State        string `json:"state"`
-	PID          int    `json:"pid,omitempty"`
-	SocketPath   string `json:"socket_path"`
-	LogPath      string `json:"log_path"`
-	ConfigPath   string `json:"config_path,omitempty"`
-	CloudEnabled bool   `json:"cloud_enabled"`
-	StartedAt    string `json:"started_at,omitempty"`
+	State      string `json:"state"`
+	PID        int    `json:"pid,omitempty"`
+	SocketPath string `json:"socket_path"`
+	LogPath    string `json:"log_path"`
+	ConfigPath string `json:"config_path,omitempty"`
+	StartedAt  string `json:"started_at,omitempty"`
 }
 
-func addDaemonLifecycleCommands(command *cobra.Command, socket, logFile, configPath *string, cloudDisabled *bool, run func(*cobra.Command, []string) error) {
+func addDaemonLifecycleCommands(command *cobra.Command, socket, logFile, configPath *string, run func(*cobra.Command, []string) error) {
 	command.AddCommand(&cobra.Command{Use: "run", Short: "Run the current-user daemon in the foreground", Args: cobra.NoArgs, RunE: run})
-	command.AddCommand(newDaemonStartCommand(socket, logFile, configPath, cloudDisabled))
+	command.AddCommand(newDaemonStartCommand(socket, logFile, configPath))
 	command.AddCommand(newDaemonStopCommand(socket))
-	command.AddCommand(newDaemonRestartCommand(socket, logFile, configPath, cloudDisabled))
+	command.AddCommand(newDaemonRestartCommand(socket, logFile, configPath))
 	command.AddCommand(newDaemonStatusCommand(socket, logFile, configPath))
 	command.AddCommand(newDaemonLogsCommand(logFile))
 	command.AddCommand(newDaemonDoctorCommand(socket, logFile, configPath))
 }
 
-func acquireDaemonRuntimeRecord(socketPath, logPath, configPath string, cloudEnabled bool) (func(), error) {
+func acquireDaemonRuntimeRecord(socketPath, logPath, configPath string) (func(), error) {
 	// record 由 daemon 进程自己原子占有，是 stop/restart 的唯一 PID truth；CLI 不扫描进程名。
 	if !daemonLifecycleSupported() {
 		return func() {}, nil
@@ -77,7 +75,7 @@ func acquireDaemonRuntimeRecord(socketPath, logPath, configPath string, cloudEna
 		SchemaVersion: daemonRecordSchemaVersion, PID: os.Getpid(), ProcessID: processID,
 		InstanceToken: hex.EncodeToString(tokenBytes), Executable: executable,
 		SocketPath: socketPath, LogPath: logPath, ConfigPath: strings.TrimSpace(configPath),
-		CloudEnabled: cloudEnabled, StartedAt: time.Now().UTC(),
+		StartedAt: time.Now().UTC(),
 	}
 	path := daemonRecordPath(socketPath)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -179,12 +177,11 @@ func daemonStatus(socketPath, fallbackLog, fallbackConfig string) (daemonStatusV
 	view.PID = record.PID
 	view.LogPath = record.LogPath
 	view.ConfigPath = record.ConfigPath
-	view.CloudEnabled = record.CloudEnabled
 	view.StartedAt = record.StartedAt.Format(time.RFC3339Nano)
 	return view, record, nil
 }
 
-func newDaemonStartCommand(socket, logFile, configPath *string, cloudDisabled *bool) *cobra.Command {
+func newDaemonStartCommand(socket, logFile, configPath *string) *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
 		Use: "start", Short: "Start the current-user daemon service", Args: cobra.NoArgs,
@@ -203,7 +200,7 @@ func newDaemonStartCommand(socket, logFile, configPath *string, cloudDisabled *b
 			if status.State == "stale" {
 				_ = os.Remove(daemonRecordPath(socketPath))
 			}
-			if err := startDetachedDaemon(socketPath, resolveV3LogFilePath(*logFile), strings.TrimSpace(*configPath), *cloudDisabled); err != nil {
+			if err := startDetachedDaemon(socketPath, resolveV3LogFilePath(*logFile), strings.TrimSpace(*configPath)); err != nil {
 				return classifyCLIError(err)
 			}
 			deadline := time.Now().Add(5 * time.Second)
@@ -261,7 +258,7 @@ func newDaemonStopCommand(socket *string) *cobra.Command {
 	return command
 }
 
-func newDaemonRestartCommand(socket, logFile, configPath *string, cloudDisabled *bool) *cobra.Command {
+func newDaemonRestartCommand(socket, logFile, configPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use: "restart", Short: "Restart the current-user daemon service", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -282,7 +279,7 @@ func newDaemonRestartCommand(socket, logFile, configPath *string, cloudDisabled 
 				}
 				_ = os.Remove(daemonRecordPath(record.SocketPath))
 			}
-			if err := startDetachedDaemon(resolveV3Socket(*socket), resolveV3LogFilePath(*logFile), strings.TrimSpace(*configPath), *cloudDisabled); err != nil {
+			if err := startDetachedDaemon(resolveV3Socket(*socket), resolveV3LogFilePath(*logFile), strings.TrimSpace(*configPath)); err != nil {
 				return classifyCLIError(err)
 			}
 			deadline := time.Now().Add(5 * time.Second)

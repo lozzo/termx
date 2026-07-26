@@ -8,7 +8,6 @@ package bindingpb
 
 import (
 	apipb "github.com/muxvia/muxvia/proto/apipb"
-	cloudpb "github.com/muxvia/muxvia/proto/cloudpb"
 	remoteauthpb "github.com/muxvia/muxvia/proto/remoteauthpb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -141,11 +140,10 @@ func (ResourceStreamFrameType) EnumDescriptor() ([]byte, []int) {
 type ConnectionRouteKind int32
 
 const (
-	ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED   ConnectionRouteKind = 0
-	ConnectionRouteKind_CONNECTION_ROUTE_KIND_LOCAL         ConnectionRouteKind = 1
-	ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT        ConnectionRouteKind = 2
-	ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH           ConnectionRouteKind = 3
-	ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD ConnectionRouteKind = 4
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED ConnectionRouteKind = 0
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_LOCAL       ConnectionRouteKind = 1
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT      ConnectionRouteKind = 2
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH         ConnectionRouteKind = 3
 )
 
 // Enum value maps for ConnectionRouteKind.
@@ -155,14 +153,12 @@ var (
 		1: "CONNECTION_ROUTE_KIND_LOCAL",
 		2: "CONNECTION_ROUTE_KIND_DIRECT",
 		3: "CONNECTION_ROUTE_KIND_SSH",
-		4: "CONNECTION_ROUTE_KIND_MANAGED_CLOUD",
 	}
 	ConnectionRouteKind_value = map[string]int32{
-		"CONNECTION_ROUTE_KIND_UNSPECIFIED":   0,
-		"CONNECTION_ROUTE_KIND_LOCAL":         1,
-		"CONNECTION_ROUTE_KIND_DIRECT":        2,
-		"CONNECTION_ROUTE_KIND_SSH":           3,
-		"CONNECTION_ROUTE_KIND_MANAGED_CLOUD": 4,
+		"CONNECTION_ROUTE_KIND_UNSPECIFIED": 0,
+		"CONNECTION_ROUTE_KIND_LOCAL":       1,
+		"CONNECTION_ROUTE_KIND_DIRECT":      2,
+		"CONNECTION_ROUTE_KIND_SSH":         3,
 	}
 )
 
@@ -191,6 +187,56 @@ func (x ConnectionRouteKind) Number() protoreflect.EnumNumber {
 // Deprecated: Use ConnectionRouteKind.Descriptor instead.
 func (ConnectionRouteKind) EnumDescriptor() ([]byte, []int) {
 	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+}
+
+// ConnectionObservedPath 是已建立 WebRTC candidate pair 的中性路径投影。
+type ConnectionObservedPath int32
+
+const (
+	ConnectionObservedPath_CONNECTION_OBSERVED_PATH_UNSPECIFIED  ConnectionObservedPath = 0
+	ConnectionObservedPath_CONNECTION_OBSERVED_PATH_DIRECT       ConnectionObservedPath = 1
+	ConnectionObservedPath_CONNECTION_OBSERVED_PATH_SINGLE_RELAY ConnectionObservedPath = 2
+)
+
+// Enum value maps for ConnectionObservedPath.
+var (
+	ConnectionObservedPath_name = map[int32]string{
+		0: "CONNECTION_OBSERVED_PATH_UNSPECIFIED",
+		1: "CONNECTION_OBSERVED_PATH_DIRECT",
+		2: "CONNECTION_OBSERVED_PATH_SINGLE_RELAY",
+	}
+	ConnectionObservedPath_value = map[string]int32{
+		"CONNECTION_OBSERVED_PATH_UNSPECIFIED":  0,
+		"CONNECTION_OBSERVED_PATH_DIRECT":       1,
+		"CONNECTION_OBSERVED_PATH_SINGLE_RELAY": 2,
+	}
+)
+
+func (x ConnectionObservedPath) Enum() *ConnectionObservedPath {
+	p := new(ConnectionObservedPath)
+	*p = x
+	return p
+}
+
+func (x ConnectionObservedPath) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionObservedPath) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[3].Descriptor()
+}
+
+func (ConnectionObservedPath) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[3]
+}
+
+func (x ConnectionObservedPath) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionObservedPath.Descriptor instead.
+func (ConnectionObservedPath) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
 }
 
 // ConnectionCandidateType 是 selected ICE candidate pair 的脱敏候选类型。
@@ -233,11 +279,11 @@ func (x ConnectionCandidateType) String() string {
 }
 
 func (ConnectionCandidateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_bindingpb_client_binding_proto_enumTypes[3].Descriptor()
+	return file_bindingpb_client_binding_proto_enumTypes[4].Descriptor()
 }
 
 func (ConnectionCandidateType) Type() protoreflect.EnumType {
-	return &file_bindingpb_client_binding_proto_enumTypes[3]
+	return &file_bindingpb_client_binding_proto_enumTypes[4]
 }
 
 func (x ConnectionCandidateType) Number() protoreflect.EnumNumber {
@@ -246,7 +292,7 @@ func (x ConnectionCandidateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConnectionCandidateType.Descriptor instead.
 func (ConnectionCandidateType) EnumDescriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
 }
 
 // ConnectionTransport 是 selected candidate 或 TURN allocation 可证明的传输协议。
@@ -283,11 +329,11 @@ func (x ConnectionTransport) String() string {
 }
 
 func (ConnectionTransport) Descriptor() protoreflect.EnumDescriptor {
-	return file_bindingpb_client_binding_proto_enumTypes[4].Descriptor()
+	return file_bindingpb_client_binding_proto_enumTypes[5].Descriptor()
 }
 
 func (ConnectionTransport) Type() protoreflect.EnumType {
-	return &file_bindingpb_client_binding_proto_enumTypes[4]
+	return &file_bindingpb_client_binding_proto_enumTypes[5]
 }
 
 func (x ConnectionTransport) Number() protoreflect.EnumNumber {
@@ -296,7 +342,7 @@ func (x ConnectionTransport) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConnectionTransport.Descriptor instead.
 func (ConnectionTransport) EnumDescriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
 }
 
 // ConnectionPolicyAvailabilityReason 是 Go planner 对指定 Route kind 不可选原因的稳定投影。
@@ -346,11 +392,11 @@ func (x ConnectionPolicyAvailabilityReason) String() string {
 }
 
 func (ConnectionPolicyAvailabilityReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_bindingpb_client_binding_proto_enumTypes[5].Descriptor()
+	return file_bindingpb_client_binding_proto_enumTypes[6].Descriptor()
 }
 
 func (ConnectionPolicyAvailabilityReason) Type() protoreflect.EnumType {
-	return &file_bindingpb_client_binding_proto_enumTypes[5]
+	return &file_bindingpb_client_binding_proto_enumTypes[6]
 }
 
 func (x ConnectionPolicyAvailabilityReason) Number() protoreflect.EnumNumber {
@@ -359,7 +405,7 @@ func (x ConnectionPolicyAvailabilityReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConnectionPolicyAvailabilityReason.Descriptor instead.
 func (ConnectionPolicyAvailabilityReason) EnumDescriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{6}
 }
 
 // ConnectionSnapshot 是同一个 Go-owned ReadySession 的只读诊断投影。
@@ -368,7 +414,7 @@ type ConnectionSnapshot struct {
 	state               protoimpl.MessageState  `protogen:"open.v1"`
 	RouteId             string                  `protobuf:"bytes,1,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
 	RouteKind           ConnectionRouteKind     `protobuf:"varint,2,opt,name=route_kind,json=routeKind,proto3,enum=muxvia.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
-	ObservedPath        cloudpb.ObservedPath    `protobuf:"varint,3,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
+	ObservedPath        ConnectionObservedPath  `protobuf:"varint,3,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.client.binding.v1.ConnectionObservedPath" json:"observed_path,omitempty"`
 	SelectionReason     string                  `protobuf:"bytes,4,opt,name=selection_reason,json=selectionReason,proto3" json:"selection_reason,omitempty"`
 	SampledAtUnixNano   int64                   `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
 	RoundTripNanos      int64                   `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
@@ -431,11 +477,11 @@ func (x *ConnectionSnapshot) GetRouteKind() ConnectionRouteKind {
 	return ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
 }
 
-func (x *ConnectionSnapshot) GetObservedPath() cloudpb.ObservedPath {
+func (x *ConnectionSnapshot) GetObservedPath() ConnectionObservedPath {
 	if x != nil {
 		return x.ObservedPath
 	}
-	return cloudpb.ObservedPath(0)
+	return ConnectionObservedPath_CONNECTION_OBSERVED_PATH_UNSPECIFIED
 }
 
 func (x *ConnectionSnapshot) GetSelectionReason() string {
@@ -539,10 +585,8 @@ func (x *ConnectionSnapshot) GetConnected() bool {
 // ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。
 // 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
 type ConnectionPolicy struct {
-	state           protoimpl.MessageState                   `protogen:"open.v1"`
-	RoutePreference remoteauthpb.EndpointRoutePreference     `protobuf:"varint,1,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
-	CloudRelayMode  remoteauthpb.ManagedWebRTCRelayMode      `protobuf:"varint,2,opt,name=cloud_relay_mode,json=cloudRelayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"cloud_relay_mode,omitempty"`
-	RelayTransport  remoteauthpb.ManagedWebRTCRelayTransport `protobuf:"varint,3,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayTransport" json:"relay_transport,omitempty"`
+	state           protoimpl.MessageState               `protogen:"open.v1"`
+	RoutePreference remoteauthpb.EndpointRoutePreference `protobuf:"varint,1,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -582,20 +626,6 @@ func (x *ConnectionPolicy) GetRoutePreference() remoteauthpb.EndpointRoutePrefer
 		return x.RoutePreference
 	}
 	return remoteauthpb.EndpointRoutePreference(0)
-}
-
-func (x *ConnectionPolicy) GetCloudRelayMode() remoteauthpb.ManagedWebRTCRelayMode {
-	if x != nil {
-		return x.CloudRelayMode
-	}
-	return remoteauthpb.ManagedWebRTCRelayMode(0)
-}
-
-func (x *ConnectionPolicy) GetRelayTransport() remoteauthpb.ManagedWebRTCRelayTransport {
-	if x != nil {
-		return x.RelayTransport
-	}
-	return remoteauthpb.ManagedWebRTCRelayTransport(0)
 }
 
 type ConnectionPolicyRouteAvailability struct {
@@ -4181,1051 +4211,17 @@ func (x *EndpointRegistryLoaded) GetRegistryProto() []byte {
 	return nil
 }
 
-type SignalingEvents struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Events        []*cloudpb.SignalingEvent `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SignalingEvents) Reset() {
-	*x = SignalingEvents{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SignalingEvents) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SignalingEvents) ProtoMessage() {}
-
-func (x *SignalingEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SignalingEvents.ProtoReflect.Descriptor instead.
-func (*SignalingEvents) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{53}
-}
-
-func (x *SignalingEvents) GetEvents() []*cloudpb.SignalingEvent {
-	if x != nil {
-		return x.Events
-	}
-	return nil
-}
-
-// CloudRouteEligibilityRequest 只查询当前平台账号 session 是否允许 Go planner 尝试 managed Route。
-// Relay 的最终订阅和配额准入仍由 Control Plane 在签发 RelayLease 时判断。
-type CloudRouteEligibilityRequest struct {
-	state             protoimpl.MessageState              `protogen:"open.v1"`
-	AccountProfileRef string                              `protobuf:"bytes,1,opt,name=account_profile_ref,json=accountProfileRef,proto3" json:"account_profile_ref,omitempty"`
-	RelayMode         remoteauthpb.ManagedWebRTCRelayMode `protobuf:"varint,2,opt,name=relay_mode,json=relayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *CloudRouteEligibilityRequest) Reset() {
-	*x = CloudRouteEligibilityRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CloudRouteEligibilityRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CloudRouteEligibilityRequest) ProtoMessage() {}
-
-func (x *CloudRouteEligibilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CloudRouteEligibilityRequest.ProtoReflect.Descriptor instead.
-func (*CloudRouteEligibilityRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{54}
-}
-
-func (x *CloudRouteEligibilityRequest) GetAccountProfileRef() string {
-	if x != nil {
-		return x.AccountProfileRef
-	}
-	return ""
-}
-
-func (x *CloudRouteEligibilityRequest) GetRelayMode() remoteauthpb.ManagedWebRTCRelayMode {
-	if x != nil {
-		return x.RelayMode
-	}
-	return remoteauthpb.ManagedWebRTCRelayMode(0)
-}
-
-type CloudRouteEligibility struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	AccountSessionAvailable bool                   `protobuf:"varint,1,opt,name=account_session_available,json=accountSessionAvailable,proto3" json:"account_session_available,omitempty"`
-	ManagedDirectAvailable  bool                   `protobuf:"varint,2,opt,name=managed_direct_available,json=managedDirectAvailable,proto3" json:"managed_direct_available,omitempty"`
-	RelayAvailable          bool                   `protobuf:"varint,3,opt,name=relay_available,json=relayAvailable,proto3" json:"relay_available,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
-}
-
-func (x *CloudRouteEligibility) Reset() {
-	*x = CloudRouteEligibility{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CloudRouteEligibility) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CloudRouteEligibility) ProtoMessage() {}
-
-func (x *CloudRouteEligibility) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CloudRouteEligibility.ProtoReflect.Descriptor instead.
-func (*CloudRouteEligibility) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{55}
-}
-
-func (x *CloudRouteEligibility) GetAccountSessionAvailable() bool {
-	if x != nil {
-		return x.AccountSessionAvailable
-	}
-	return false
-}
-
-func (x *CloudRouteEligibility) GetManagedDirectAvailable() bool {
-	if x != nil {
-		return x.ManagedDirectAvailable
-	}
-	return false
-}
-
-func (x *CloudRouteEligibility) GetRelayAvailable() bool {
-	if x != nil {
-		return x.RelayAvailable
-	}
-	return false
-}
-
-// WebRTCOpenPeerRequest 只描述浏览器创建 RTCPeerConnection 所需的平台 primitive。
-// route/auth/session 真值仍由 Go managed engine 持有。
-type WebRTCOpenPeerRequest struct {
-	state           protoimpl.MessageState  `protogen:"open.v1"`
-	IceServers      []*cloudpb.IceServer    `protobuf:"bytes,1,rep,name=ice_servers,json=iceServers,proto3" json:"ice_servers,omitempty"`
-	RoutePreference cloudpb.RoutePreference `protobuf:"varint,2,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
-	RelayOnly       bool                    `protobuf:"varint,3,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *WebRTCOpenPeerRequest) Reset() {
-	*x = WebRTCOpenPeerRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[56]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCOpenPeerRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCOpenPeerRequest) ProtoMessage() {}
-
-func (x *WebRTCOpenPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[56]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCOpenPeerRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCOpenPeerRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{56}
-}
-
-func (x *WebRTCOpenPeerRequest) GetIceServers() []*cloudpb.IceServer {
-	if x != nil {
-		return x.IceServers
-	}
-	return nil
-}
-
-func (x *WebRTCOpenPeerRequest) GetRoutePreference() cloudpb.RoutePreference {
-	if x != nil {
-		return x.RoutePreference
-	}
-	return cloudpb.RoutePreference(0)
-}
-
-func (x *WebRTCOpenPeerRequest) GetRelayOnly() bool {
-	if x != nil {
-		return x.RelayOnly
-	}
-	return false
-}
-
-type WebRTCPeerOpened struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PeerHandle    uint64                 `protobuf:"varint,1,opt,name=peer_handle,json=peerHandle,proto3" json:"peer_handle,omitempty"`
-	ChannelHandle uint64                 `protobuf:"varint,2,opt,name=channel_handle,json=channelHandle,proto3" json:"channel_handle,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCPeerOpened) Reset() {
-	*x = WebRTCPeerOpened{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[57]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCPeerOpened) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCPeerOpened) ProtoMessage() {}
-
-func (x *WebRTCPeerOpened) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[57]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCPeerOpened.ProtoReflect.Descriptor instead.
-func (*WebRTCPeerOpened) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{57}
-}
-
-func (x *WebRTCPeerOpened) GetPeerHandle() uint64 {
-	if x != nil {
-		return x.PeerHandle
-	}
-	return 0
-}
-
-func (x *WebRTCPeerOpened) GetChannelHandle() uint64 {
-	if x != nil {
-		return x.ChannelHandle
-	}
-	return 0
-}
-
-type WebRTCPeerRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PeerHandle    uint64                 `protobuf:"varint,1,opt,name=peer_handle,json=peerHandle,proto3" json:"peer_handle,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCPeerRequest) Reset() {
-	*x = WebRTCPeerRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCPeerRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCPeerRequest) ProtoMessage() {}
-
-func (x *WebRTCPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCPeerRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCPeerRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{58}
-}
-
-func (x *WebRTCPeerRequest) GetPeerHandle() uint64 {
-	if x != nil {
-		return x.PeerHandle
-	}
-	return 0
-}
-
-type WebRTCCreateOfferResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OfferSdp      string                 `protobuf:"bytes,1,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCCreateOfferResult) Reset() {
-	*x = WebRTCCreateOfferResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCCreateOfferResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCCreateOfferResult) ProtoMessage() {}
-
-func (x *WebRTCCreateOfferResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCCreateOfferResult.ProtoReflect.Descriptor instead.
-func (*WebRTCCreateOfferResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{59}
-}
-
-func (x *WebRTCCreateOfferResult) GetOfferSdp() string {
-	if x != nil {
-		return x.OfferSdp
-	}
-	return ""
-}
-
-type WebRTCApplyAnswerRequest struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	PeerHandle    uint64                  `protobuf:"varint,1,opt,name=peer_handle,json=peerHandle,proto3" json:"peer_handle,omitempty"`
-	AnswerSdp     string                  `protobuf:"bytes,2,opt,name=answer_sdp,json=answerSdp,proto3" json:"answer_sdp,omitempty"`
-	Candidates    []*cloudpb.IceCandidate `protobuf:"bytes,3,rep,name=candidates,proto3" json:"candidates,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCApplyAnswerRequest) Reset() {
-	*x = WebRTCApplyAnswerRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[60]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCApplyAnswerRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCApplyAnswerRequest) ProtoMessage() {}
-
-func (x *WebRTCApplyAnswerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[60]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCApplyAnswerRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCApplyAnswerRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{60}
-}
-
-func (x *WebRTCApplyAnswerRequest) GetPeerHandle() uint64 {
-	if x != nil {
-		return x.PeerHandle
-	}
-	return 0
-}
-
-func (x *WebRTCApplyAnswerRequest) GetAnswerSdp() string {
-	if x != nil {
-		return x.AnswerSdp
-	}
-	return ""
-}
-
-func (x *WebRTCApplyAnswerRequest) GetCandidates() []*cloudpb.IceCandidate {
-	if x != nil {
-		return x.Candidates
-	}
-	return nil
-}
-
-type WebRTCPeerReady struct {
-	state                        protoimpl.MessageState `protogen:"open.v1"`
-	RemoteCertificateFingerprint string                 `protobuf:"bytes,1,opt,name=remote_certificate_fingerprint,json=remoteCertificateFingerprint,proto3" json:"remote_certificate_fingerprint,omitempty"`
-	ObservedPath                 cloudpb.ObservedPath   `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
-	unknownFields                protoimpl.UnknownFields
-	sizeCache                    protoimpl.SizeCache
-}
-
-func (x *WebRTCPeerReady) Reset() {
-	*x = WebRTCPeerReady{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[61]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCPeerReady) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCPeerReady) ProtoMessage() {}
-
-func (x *WebRTCPeerReady) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[61]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCPeerReady.ProtoReflect.Descriptor instead.
-func (*WebRTCPeerReady) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{61}
-}
-
-func (x *WebRTCPeerReady) GetRemoteCertificateFingerprint() string {
-	if x != nil {
-		return x.RemoteCertificateFingerprint
-	}
-	return ""
-}
-
-func (x *WebRTCPeerReady) GetObservedPath() cloudpb.ObservedPath {
-	if x != nil {
-		return x.ObservedPath
-	}
-	return cloudpb.ObservedPath(0)
-}
-
-type WebRTCChannelSendRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelHandle uint64                 `protobuf:"varint,1,opt,name=channel_handle,json=channelHandle,proto3" json:"channel_handle,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCChannelSendRequest) Reset() {
-	*x = WebRTCChannelSendRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[62]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCChannelSendRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCChannelSendRequest) ProtoMessage() {}
-
-func (x *WebRTCChannelSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[62]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCChannelSendRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCChannelSendRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{62}
-}
-
-func (x *WebRTCChannelSendRequest) GetChannelHandle() uint64 {
-	if x != nil {
-		return x.ChannelHandle
-	}
-	return 0
-}
-
-func (x *WebRTCChannelSendRequest) GetPayload() []byte {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
-type WebRTCChannelSendResult struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	BufferedAmount uint64                 `protobuf:"varint,1,opt,name=buffered_amount,json=bufferedAmount,proto3" json:"buffered_amount,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *WebRTCChannelSendResult) Reset() {
-	*x = WebRTCChannelSendResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[63]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCChannelSendResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCChannelSendResult) ProtoMessage() {}
-
-func (x *WebRTCChannelSendResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[63]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCChannelSendResult.ProtoReflect.Descriptor instead.
-func (*WebRTCChannelSendResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{63}
-}
-
-func (x *WebRTCChannelSendResult) GetBufferedAmount() uint64 {
-	if x != nil {
-		return x.BufferedAmount
-	}
-	return 0
-}
-
-type WebRTCChannelThresholdRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelHandle uint64                 `protobuf:"varint,1,opt,name=channel_handle,json=channelHandle,proto3" json:"channel_handle,omitempty"`
-	LowThreshold  uint64                 `protobuf:"varint,2,opt,name=low_threshold,json=lowThreshold,proto3" json:"low_threshold,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCChannelThresholdRequest) Reset() {
-	*x = WebRTCChannelThresholdRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[64]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCChannelThresholdRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCChannelThresholdRequest) ProtoMessage() {}
-
-func (x *WebRTCChannelThresholdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[64]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCChannelThresholdRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCChannelThresholdRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{64}
-}
-
-func (x *WebRTCChannelThresholdRequest) GetChannelHandle() uint64 {
-	if x != nil {
-		return x.ChannelHandle
-	}
-	return 0
-}
-
-func (x *WebRTCChannelThresholdRequest) GetLowThreshold() uint64 {
-	if x != nil {
-		return x.LowThreshold
-	}
-	return 0
-}
-
-type WebRTCPeerSnapshotRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	PeerHandle        uint64                 `protobuf:"varint,1,opt,name=peer_handle,json=peerHandle,proto3" json:"peer_handle,omitempty"`
-	SampledAtUnixNano int64                  `protobuf:"varint,2,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *WebRTCPeerSnapshotRequest) Reset() {
-	*x = WebRTCPeerSnapshotRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[65]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCPeerSnapshotRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCPeerSnapshotRequest) ProtoMessage() {}
-
-func (x *WebRTCPeerSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[65]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCPeerSnapshotRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCPeerSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{65}
-}
-
-func (x *WebRTCPeerSnapshotRequest) GetPeerHandle() uint64 {
-	if x != nil {
-		return x.PeerHandle
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshotRequest) GetSampledAtUnixNano() int64 {
-	if x != nil {
-		return x.SampledAtUnixNano
-	}
-	return 0
-}
-
-type WebRTCPeerSnapshot struct {
-	state               protoimpl.MessageState  `protogen:"open.v1"`
-	Valid               bool                    `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
-	PairId              string                  `protobuf:"bytes,2,opt,name=pair_id,json=pairId,proto3" json:"pair_id,omitempty"`
-	Path                cloudpb.ObservedPath    `protobuf:"varint,3,opt,name=path,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"path,omitempty"`
-	NetworkClass        string                  `protobuf:"bytes,4,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
-	SampledAtUnixNano   int64                   `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
-	RoundTripNanos      int64                   `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
-	BytesSent           uint64                  `protobuf:"varint,7,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
-	BytesReceived       uint64                  `protobuf:"varint,8,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
-	PacketsSent         uint64                  `protobuf:"varint,9,opt,name=packets_sent,json=packetsSent,proto3" json:"packets_sent,omitempty"`
-	LossEvents          uint64                  `protobuf:"varint,10,opt,name=loss_events,json=lossEvents,proto3" json:"loss_events,omitempty"`
-	Connected           bool                    `protobuf:"varint,11,opt,name=connected,proto3" json:"connected,omitempty"`
-	LocalCandidateType  ConnectionCandidateType `protobuf:"varint,12,opt,name=local_candidate_type,json=localCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"local_candidate_type,omitempty"`
-	RemoteCandidateType ConnectionCandidateType `protobuf:"varint,13,opt,name=remote_candidate_type,json=remoteCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"remote_candidate_type,omitempty"`
-	LocalProtocol       ConnectionTransport     `protobuf:"varint,14,opt,name=local_protocol,json=localProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"local_protocol,omitempty"`
-	RemoteProtocol      ConnectionTransport     `protobuf:"varint,15,opt,name=remote_protocol,json=remoteProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"remote_protocol,omitempty"`
-	RelayTransport      ConnectionTransport     `protobuf:"varint,16,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"relay_transport,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
-}
-
-func (x *WebRTCPeerSnapshot) Reset() {
-	*x = WebRTCPeerSnapshot{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[66]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCPeerSnapshot) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCPeerSnapshot) ProtoMessage() {}
-
-func (x *WebRTCPeerSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[66]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCPeerSnapshot.ProtoReflect.Descriptor instead.
-func (*WebRTCPeerSnapshot) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{66}
-}
-
-func (x *WebRTCPeerSnapshot) GetValid() bool {
-	if x != nil {
-		return x.Valid
-	}
-	return false
-}
-
-func (x *WebRTCPeerSnapshot) GetPairId() string {
-	if x != nil {
-		return x.PairId
-	}
-	return ""
-}
-
-func (x *WebRTCPeerSnapshot) GetPath() cloudpb.ObservedPath {
-	if x != nil {
-		return x.Path
-	}
-	return cloudpb.ObservedPath(0)
-}
-
-func (x *WebRTCPeerSnapshot) GetNetworkClass() string {
-	if x != nil {
-		return x.NetworkClass
-	}
-	return ""
-}
-
-func (x *WebRTCPeerSnapshot) GetSampledAtUnixNano() int64 {
-	if x != nil {
-		return x.SampledAtUnixNano
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshot) GetRoundTripNanos() int64 {
-	if x != nil {
-		return x.RoundTripNanos
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshot) GetBytesSent() uint64 {
-	if x != nil {
-		return x.BytesSent
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshot) GetBytesReceived() uint64 {
-	if x != nil {
-		return x.BytesReceived
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshot) GetPacketsSent() uint64 {
-	if x != nil {
-		return x.PacketsSent
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshot) GetLossEvents() uint64 {
-	if x != nil {
-		return x.LossEvents
-	}
-	return 0
-}
-
-func (x *WebRTCPeerSnapshot) GetConnected() bool {
-	if x != nil {
-		return x.Connected
-	}
-	return false
-}
-
-func (x *WebRTCPeerSnapshot) GetLocalCandidateType() ConnectionCandidateType {
-	if x != nil {
-		return x.LocalCandidateType
-	}
-	return ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
-}
-
-func (x *WebRTCPeerSnapshot) GetRemoteCandidateType() ConnectionCandidateType {
-	if x != nil {
-		return x.RemoteCandidateType
-	}
-	return ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
-}
-
-func (x *WebRTCPeerSnapshot) GetLocalProtocol() ConnectionTransport {
-	if x != nil {
-		return x.LocalProtocol
-	}
-	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
-}
-
-func (x *WebRTCPeerSnapshot) GetRemoteProtocol() ConnectionTransport {
-	if x != nil {
-		return x.RemoteProtocol
-	}
-	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
-}
-
-func (x *WebRTCPeerSnapshot) GetRelayTransport() ConnectionTransport {
-	if x != nil {
-		return x.RelayTransport
-	}
-	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
-}
-
-type WebRTCCloseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Handle        uint64                 `protobuf:"varint,1,opt,name=handle,proto3" json:"handle,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCCloseRequest) Reset() {
-	*x = WebRTCCloseRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[67]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCCloseRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCCloseRequest) ProtoMessage() {}
-
-func (x *WebRTCCloseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[67]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCCloseRequest.ProtoReflect.Descriptor instead.
-func (*WebRTCCloseRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{67}
-}
-
-func (x *WebRTCCloseRequest) GetHandle() uint64 {
-	if x != nil {
-		return x.Handle
-	}
-	return 0
-}
-
-type WebRTCChannelMessageEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelHandle uint64                 `protobuf:"varint,1,opt,name=channel_handle,json=channelHandle,proto3" json:"channel_handle,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCChannelMessageEvent) Reset() {
-	*x = WebRTCChannelMessageEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[68]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCChannelMessageEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCChannelMessageEvent) ProtoMessage() {}
-
-func (x *WebRTCChannelMessageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[68]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCChannelMessageEvent.ProtoReflect.Descriptor instead.
-func (*WebRTCChannelMessageEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{68}
-}
-
-func (x *WebRTCChannelMessageEvent) GetChannelHandle() uint64 {
-	if x != nil {
-		return x.ChannelHandle
-	}
-	return 0
-}
-
-func (x *WebRTCChannelMessageEvent) GetPayload() []byte {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
-type WebRTCChannelClosedEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelHandle uint64                 `protobuf:"varint,1,opt,name=channel_handle,json=channelHandle,proto3" json:"channel_handle,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebRTCChannelClosedEvent) Reset() {
-	*x = WebRTCChannelClosedEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[69]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCChannelClosedEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCChannelClosedEvent) ProtoMessage() {}
-
-func (x *WebRTCChannelClosedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[69]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCChannelClosedEvent.ProtoReflect.Descriptor instead.
-func (*WebRTCChannelClosedEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{69}
-}
-
-func (x *WebRTCChannelClosedEvent) GetChannelHandle() uint64 {
-	if x != nil {
-		return x.ChannelHandle
-	}
-	return 0
-}
-
-type WebRTCBufferedAmountLowEvent struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ChannelHandle  uint64                 `protobuf:"varint,1,opt,name=channel_handle,json=channelHandle,proto3" json:"channel_handle,omitempty"`
-	BufferedAmount uint64                 `protobuf:"varint,2,opt,name=buffered_amount,json=bufferedAmount,proto3" json:"buffered_amount,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *WebRTCBufferedAmountLowEvent) Reset() {
-	*x = WebRTCBufferedAmountLowEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[70]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebRTCBufferedAmountLowEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebRTCBufferedAmountLowEvent) ProtoMessage() {}
-
-func (x *WebRTCBufferedAmountLowEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[70]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebRTCBufferedAmountLowEvent.ProtoReflect.Descriptor instead.
-func (*WebRTCBufferedAmountLowEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{70}
-}
-
-func (x *WebRTCBufferedAmountLowEvent) GetChannelHandle() uint64 {
-	if x != nil {
-		return x.ChannelHandle
-	}
-	return 0
-}
-
-func (x *WebRTCBufferedAmountLowEvent) GetBufferedAmount() uint64 {
-	if x != nil {
-		return x.BufferedAmount
-	}
-	return 0
-}
-
-// PlatformEvent 是浏览器异步 primitive 回到 Go engine 的唯一入口。
-// engine handle 在 WASM export 层完成 generation fence，事件本身不携带业务 session。
+// PlatformEvent 保留窄 binding 的异步平台入口。
+// 旧 Cloud/WebRTC 浏览器 primitive 已删除，后续能力必须由新 Proto 重新分配字段。
 type PlatformEvent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Event:
-	//
-	//	*PlatformEvent_WebrtcChannelMessage
-	//	*PlatformEvent_WebrtcChannelClosed
-	//	*PlatformEvent_WebrtcBufferedAmountLow
-	Event         isPlatformEvent_Event `protobuf_oneof:"event"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PlatformEvent) Reset() {
 	*x = PlatformEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[71]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5237,7 +4233,7 @@ func (x *PlatformEvent) String() string {
 func (*PlatformEvent) ProtoMessage() {}
 
 func (x *PlatformEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[71]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5250,64 +4246,8 @@ func (x *PlatformEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformEvent.ProtoReflect.Descriptor instead.
 func (*PlatformEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{71}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{53}
 }
-
-func (x *PlatformEvent) GetEvent() isPlatformEvent_Event {
-	if x != nil {
-		return x.Event
-	}
-	return nil
-}
-
-func (x *PlatformEvent) GetWebrtcChannelMessage() *WebRTCChannelMessageEvent {
-	if x != nil {
-		if x, ok := x.Event.(*PlatformEvent_WebrtcChannelMessage); ok {
-			return x.WebrtcChannelMessage
-		}
-	}
-	return nil
-}
-
-func (x *PlatformEvent) GetWebrtcChannelClosed() *WebRTCChannelClosedEvent {
-	if x != nil {
-		if x, ok := x.Event.(*PlatformEvent_WebrtcChannelClosed); ok {
-			return x.WebrtcChannelClosed
-		}
-	}
-	return nil
-}
-
-func (x *PlatformEvent) GetWebrtcBufferedAmountLow() *WebRTCBufferedAmountLowEvent {
-	if x != nil {
-		if x, ok := x.Event.(*PlatformEvent_WebrtcBufferedAmountLow); ok {
-			return x.WebrtcBufferedAmountLow
-		}
-	}
-	return nil
-}
-
-type isPlatformEvent_Event interface {
-	isPlatformEvent_Event()
-}
-
-type PlatformEvent_WebrtcChannelMessage struct {
-	WebrtcChannelMessage *WebRTCChannelMessageEvent `protobuf:"bytes,10,opt,name=webrtc_channel_message,json=webrtcChannelMessage,proto3,oneof"`
-}
-
-type PlatformEvent_WebrtcChannelClosed struct {
-	WebrtcChannelClosed *WebRTCChannelClosedEvent `protobuf:"bytes,11,opt,name=webrtc_channel_closed,json=webrtcChannelClosed,proto3,oneof"`
-}
-
-type PlatformEvent_WebrtcBufferedAmountLow struct {
-	WebrtcBufferedAmountLow *WebRTCBufferedAmountLowEvent `protobuf:"bytes,12,opt,name=webrtc_buffered_amount_low,json=webrtcBufferedAmountLow,proto3,oneof"`
-}
-
-func (*PlatformEvent_WebrtcChannelMessage) isPlatformEvent_Event() {}
-
-func (*PlatformEvent_WebrtcChannelClosed) isPlatformEvent_Event() {}
-
-func (*PlatformEvent_WebrtcBufferedAmountLow) isPlatformEvent_Event() {}
 
 type PlatformRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
@@ -5324,22 +4264,6 @@ type PlatformRequest struct {
 	//	*PlatformRequest_SshCredentialLookup
 	//	*PlatformRequest_SshCredentialSign
 	//	*PlatformRequest_SshCredentialDelete
-	//	*PlatformRequest_CloudResolveEndpoint
-	//	*PlatformRequest_CloudCreateSignaling
-	//	*PlatformRequest_CloudAcquireRelay
-	//	*PlatformRequest_CloudPlanRoute
-	//	*PlatformRequest_CloudReportQuality
-	//	*PlatformRequest_CloudReportOutcome
-	//	*PlatformRequest_CloudRouteEligibility
-	//	*PlatformRequest_WebrtcOpenPeer
-	//	*PlatformRequest_WebrtcCreateOffer
-	//	*PlatformRequest_WebrtcApplyAnswer
-	//	*PlatformRequest_WebrtcWaitReady
-	//	*PlatformRequest_WebrtcChannelSend
-	//	*PlatformRequest_WebrtcChannelThreshold
-	//	*PlatformRequest_WebrtcPeerSnapshot
-	//	*PlatformRequest_WebrtcClosePeer
-	//	*PlatformRequest_WebrtcCloseChannel
 	Request       isPlatformRequest_Request `protobuf_oneof:"request"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5347,7 +4271,7 @@ type PlatformRequest struct {
 
 func (x *PlatformRequest) Reset() {
 	*x = PlatformRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[72]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5359,7 +4283,7 @@ func (x *PlatformRequest) String() string {
 func (*PlatformRequest) ProtoMessage() {}
 
 func (x *PlatformRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[72]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5372,7 +4296,7 @@ func (x *PlatformRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformRequest.ProtoReflect.Descriptor instead.
 func (*PlatformRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{72}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *PlatformRequest) GetRequestId() uint64 {
@@ -5479,150 +4403,6 @@ func (x *PlatformRequest) GetSshCredentialDelete() *SSHCredentialDeleteRequest {
 	return nil
 }
 
-func (x *PlatformRequest) GetCloudResolveEndpoint() *cloudpb.ResolveEndpointRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudResolveEndpoint); ok {
-			return x.CloudResolveEndpoint
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetCloudCreateSignaling() *cloudpb.CreateSignalingSessionRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudCreateSignaling); ok {
-			return x.CloudCreateSignaling
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetCloudAcquireRelay() *cloudpb.AcquireRelayLeaseRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudAcquireRelay); ok {
-			return x.CloudAcquireRelay
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetCloudPlanRoute() *cloudpb.PlanManagedRouteRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudPlanRoute); ok {
-			return x.CloudPlanRoute
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetCloudReportQuality() *cloudpb.ReportPathQualityRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudReportQuality); ok {
-			return x.CloudReportQuality
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetCloudReportOutcome() *cloudpb.ReportConnectionOutcomeRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudReportOutcome); ok {
-			return x.CloudReportOutcome
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetCloudRouteEligibility() *CloudRouteEligibilityRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_CloudRouteEligibility); ok {
-			return x.CloudRouteEligibility
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcOpenPeer() *WebRTCOpenPeerRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcOpenPeer); ok {
-			return x.WebrtcOpenPeer
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcCreateOffer() *WebRTCPeerRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcCreateOffer); ok {
-			return x.WebrtcCreateOffer
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcApplyAnswer() *WebRTCApplyAnswerRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcApplyAnswer); ok {
-			return x.WebrtcApplyAnswer
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcWaitReady() *WebRTCPeerRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcWaitReady); ok {
-			return x.WebrtcWaitReady
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcChannelSend() *WebRTCChannelSendRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcChannelSend); ok {
-			return x.WebrtcChannelSend
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcChannelThreshold() *WebRTCChannelThresholdRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcChannelThreshold); ok {
-			return x.WebrtcChannelThreshold
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcPeerSnapshot() *WebRTCPeerSnapshotRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcPeerSnapshot); ok {
-			return x.WebrtcPeerSnapshot
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcClosePeer() *WebRTCCloseRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcClosePeer); ok {
-			return x.WebrtcClosePeer
-		}
-	}
-	return nil
-}
-
-func (x *PlatformRequest) GetWebrtcCloseChannel() *WebRTCCloseRequest {
-	if x != nil {
-		if x, ok := x.Request.(*PlatformRequest_WebrtcCloseChannel); ok {
-			return x.WebrtcCloseChannel
-		}
-	}
-	return nil
-}
-
 type isPlatformRequest_Request interface {
 	isPlatformRequest_Request()
 }
@@ -5667,70 +4447,6 @@ type PlatformRequest_SshCredentialDelete struct {
 	SshCredentialDelete *SSHCredentialDeleteRequest `protobuf:"bytes,19,opt,name=ssh_credential_delete,json=sshCredentialDelete,proto3,oneof"`
 }
 
-type PlatformRequest_CloudResolveEndpoint struct {
-	CloudResolveEndpoint *cloudpb.ResolveEndpointRequest `protobuf:"bytes,20,opt,name=cloud_resolve_endpoint,json=cloudResolveEndpoint,proto3,oneof"`
-}
-
-type PlatformRequest_CloudCreateSignaling struct {
-	CloudCreateSignaling *cloudpb.CreateSignalingSessionRequest `protobuf:"bytes,21,opt,name=cloud_create_signaling,json=cloudCreateSignaling,proto3,oneof"`
-}
-
-type PlatformRequest_CloudAcquireRelay struct {
-	CloudAcquireRelay *cloudpb.AcquireRelayLeaseRequest `protobuf:"bytes,22,opt,name=cloud_acquire_relay,json=cloudAcquireRelay,proto3,oneof"`
-}
-
-type PlatformRequest_CloudPlanRoute struct {
-	CloudPlanRoute *cloudpb.PlanManagedRouteRequest `protobuf:"bytes,23,opt,name=cloud_plan_route,json=cloudPlanRoute,proto3,oneof"`
-}
-
-type PlatformRequest_CloudReportQuality struct {
-	CloudReportQuality *cloudpb.ReportPathQualityRequest `protobuf:"bytes,24,opt,name=cloud_report_quality,json=cloudReportQuality,proto3,oneof"`
-}
-
-type PlatformRequest_CloudReportOutcome struct {
-	CloudReportOutcome *cloudpb.ReportConnectionOutcomeRequest `protobuf:"bytes,25,opt,name=cloud_report_outcome,json=cloudReportOutcome,proto3,oneof"`
-}
-
-type PlatformRequest_CloudRouteEligibility struct {
-	CloudRouteEligibility *CloudRouteEligibilityRequest `protobuf:"bytes,26,opt,name=cloud_route_eligibility,json=cloudRouteEligibility,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcOpenPeer struct {
-	WebrtcOpenPeer *WebRTCOpenPeerRequest `protobuf:"bytes,30,opt,name=webrtc_open_peer,json=webrtcOpenPeer,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcCreateOffer struct {
-	WebrtcCreateOffer *WebRTCPeerRequest `protobuf:"bytes,31,opt,name=webrtc_create_offer,json=webrtcCreateOffer,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcApplyAnswer struct {
-	WebrtcApplyAnswer *WebRTCApplyAnswerRequest `protobuf:"bytes,32,opt,name=webrtc_apply_answer,json=webrtcApplyAnswer,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcWaitReady struct {
-	WebrtcWaitReady *WebRTCPeerRequest `protobuf:"bytes,33,opt,name=webrtc_wait_ready,json=webrtcWaitReady,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcChannelSend struct {
-	WebrtcChannelSend *WebRTCChannelSendRequest `protobuf:"bytes,34,opt,name=webrtc_channel_send,json=webrtcChannelSend,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcChannelThreshold struct {
-	WebrtcChannelThreshold *WebRTCChannelThresholdRequest `protobuf:"bytes,35,opt,name=webrtc_channel_threshold,json=webrtcChannelThreshold,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcPeerSnapshot struct {
-	WebrtcPeerSnapshot *WebRTCPeerSnapshotRequest `protobuf:"bytes,36,opt,name=webrtc_peer_snapshot,json=webrtcPeerSnapshot,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcClosePeer struct {
-	WebrtcClosePeer *WebRTCCloseRequest `protobuf:"bytes,37,opt,name=webrtc_close_peer,json=webrtcClosePeer,proto3,oneof"`
-}
-
-type PlatformRequest_WebrtcCloseChannel struct {
-	WebrtcCloseChannel *WebRTCCloseRequest `protobuf:"bytes,38,opt,name=webrtc_close_channel,json=webrtcCloseChannel,proto3,oneof"`
-}
-
 func (*PlatformRequest_CredentialResolve) isPlatformRequest_Request() {}
 
 func (*PlatformRequest_CredentialPrepare) isPlatformRequest_Request() {}
@@ -5751,38 +4467,6 @@ func (*PlatformRequest_SshCredentialSign) isPlatformRequest_Request() {}
 
 func (*PlatformRequest_SshCredentialDelete) isPlatformRequest_Request() {}
 
-func (*PlatformRequest_CloudResolveEndpoint) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_CloudCreateSignaling) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_CloudAcquireRelay) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_CloudPlanRoute) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_CloudReportQuality) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_CloudReportOutcome) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_CloudRouteEligibility) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcOpenPeer) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcCreateOffer) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcApplyAnswer) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcWaitReady) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcChannelSend) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcChannelThreshold) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcPeerSnapshot) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcClosePeer) isPlatformRequest_Request() {}
-
-func (*PlatformRequest_WebrtcCloseChannel) isPlatformRequest_Request() {}
-
 type PlatformResponse struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -5794,18 +4478,6 @@ type PlatformResponse struct {
 	//	*PlatformResponse_EndpointRegistry
 	//	*PlatformResponse_SshCredential
 	//	*PlatformResponse_SshCredentialSign
-	//	*PlatformResponse_CloudResolvedEndpoint
-	//	*PlatformResponse_CloudSignaling
-	//	*PlatformResponse_CloudRelayLease
-	//	*PlatformResponse_CloudRoutePlan
-	//	*PlatformResponse_CloudQualityReported
-	//	*PlatformResponse_CloudOutcomeReported
-	//	*PlatformResponse_CloudRouteEligibility
-	//	*PlatformResponse_WebrtcPeerOpened
-	//	*PlatformResponse_WebrtcOffer
-	//	*PlatformResponse_WebrtcPeerReady
-	//	*PlatformResponse_WebrtcChannelSent
-	//	*PlatformResponse_WebrtcPeerSnapshot
 	Response      isPlatformResponse_Response `protobuf_oneof:"response"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5813,7 +4485,7 @@ type PlatformResponse struct {
 
 func (x *PlatformResponse) Reset() {
 	*x = PlatformResponse{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[73]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5825,7 +4497,7 @@ func (x *PlatformResponse) String() string {
 func (*PlatformResponse) ProtoMessage() {}
 
 func (x *PlatformResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[73]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5838,7 +4510,7 @@ func (x *PlatformResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformResponse.ProtoReflect.Descriptor instead.
 func (*PlatformResponse) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{73}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *PlatformResponse) GetRequestId() uint64 {
@@ -5907,114 +4579,6 @@ func (x *PlatformResponse) GetSshCredentialSign() *SSHCredentialSignResponse {
 	return nil
 }
 
-func (x *PlatformResponse) GetCloudResolvedEndpoint() *cloudpb.ResolvedEndpoint {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudResolvedEndpoint); ok {
-			return x.CloudResolvedEndpoint
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetCloudSignaling() *SignalingEvents {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudSignaling); ok {
-			return x.CloudSignaling
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetCloudRelayLease() *cloudpb.RelayLease {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudRelayLease); ok {
-			return x.CloudRelayLease
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetCloudRoutePlan() *cloudpb.ManagedRoutePlan {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudRoutePlan); ok {
-			return x.CloudRoutePlan
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetCloudQualityReported() *cloudpb.ReportPathQualityResponse {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudQualityReported); ok {
-			return x.CloudQualityReported
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetCloudOutcomeReported() *cloudpb.ReportConnectionOutcomeResponse {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudOutcomeReported); ok {
-			return x.CloudOutcomeReported
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetCloudRouteEligibility() *CloudRouteEligibility {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_CloudRouteEligibility); ok {
-			return x.CloudRouteEligibility
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetWebrtcPeerOpened() *WebRTCPeerOpened {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_WebrtcPeerOpened); ok {
-			return x.WebrtcPeerOpened
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetWebrtcOffer() *WebRTCCreateOfferResult {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_WebrtcOffer); ok {
-			return x.WebrtcOffer
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetWebrtcPeerReady() *WebRTCPeerReady {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_WebrtcPeerReady); ok {
-			return x.WebrtcPeerReady
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetWebrtcChannelSent() *WebRTCChannelSendResult {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_WebrtcChannelSent); ok {
-			return x.WebrtcChannelSent
-		}
-	}
-	return nil
-}
-
-func (x *PlatformResponse) GetWebrtcPeerSnapshot() *WebRTCPeerSnapshot {
-	if x != nil {
-		if x, ok := x.Response.(*PlatformResponse_WebrtcPeerSnapshot); ok {
-			return x.WebrtcPeerSnapshot
-		}
-	}
-	return nil
-}
-
 type isPlatformResponse_Response interface {
 	isPlatformResponse_Response()
 }
@@ -6039,54 +4603,6 @@ type PlatformResponse_SshCredentialSign struct {
 	SshCredentialSign *SSHCredentialSignResponse `protobuf:"bytes,14,opt,name=ssh_credential_sign,json=sshCredentialSign,proto3,oneof"`
 }
 
-type PlatformResponse_CloudResolvedEndpoint struct {
-	CloudResolvedEndpoint *cloudpb.ResolvedEndpoint `protobuf:"bytes,20,opt,name=cloud_resolved_endpoint,json=cloudResolvedEndpoint,proto3,oneof"`
-}
-
-type PlatformResponse_CloudSignaling struct {
-	CloudSignaling *SignalingEvents `protobuf:"bytes,21,opt,name=cloud_signaling,json=cloudSignaling,proto3,oneof"`
-}
-
-type PlatformResponse_CloudRelayLease struct {
-	CloudRelayLease *cloudpb.RelayLease `protobuf:"bytes,22,opt,name=cloud_relay_lease,json=cloudRelayLease,proto3,oneof"`
-}
-
-type PlatformResponse_CloudRoutePlan struct {
-	CloudRoutePlan *cloudpb.ManagedRoutePlan `protobuf:"bytes,23,opt,name=cloud_route_plan,json=cloudRoutePlan,proto3,oneof"`
-}
-
-type PlatformResponse_CloudQualityReported struct {
-	CloudQualityReported *cloudpb.ReportPathQualityResponse `protobuf:"bytes,24,opt,name=cloud_quality_reported,json=cloudQualityReported,proto3,oneof"`
-}
-
-type PlatformResponse_CloudOutcomeReported struct {
-	CloudOutcomeReported *cloudpb.ReportConnectionOutcomeResponse `protobuf:"bytes,25,opt,name=cloud_outcome_reported,json=cloudOutcomeReported,proto3,oneof"`
-}
-
-type PlatformResponse_CloudRouteEligibility struct {
-	CloudRouteEligibility *CloudRouteEligibility `protobuf:"bytes,26,opt,name=cloud_route_eligibility,json=cloudRouteEligibility,proto3,oneof"`
-}
-
-type PlatformResponse_WebrtcPeerOpened struct {
-	WebrtcPeerOpened *WebRTCPeerOpened `protobuf:"bytes,30,opt,name=webrtc_peer_opened,json=webrtcPeerOpened,proto3,oneof"`
-}
-
-type PlatformResponse_WebrtcOffer struct {
-	WebrtcOffer *WebRTCCreateOfferResult `protobuf:"bytes,31,opt,name=webrtc_offer,json=webrtcOffer,proto3,oneof"`
-}
-
-type PlatformResponse_WebrtcPeerReady struct {
-	WebrtcPeerReady *WebRTCPeerReady `protobuf:"bytes,32,opt,name=webrtc_peer_ready,json=webrtcPeerReady,proto3,oneof"`
-}
-
-type PlatformResponse_WebrtcChannelSent struct {
-	WebrtcChannelSent *WebRTCChannelSendResult `protobuf:"bytes,33,opt,name=webrtc_channel_sent,json=webrtcChannelSent,proto3,oneof"`
-}
-
-type PlatformResponse_WebrtcPeerSnapshot struct {
-	WebrtcPeerSnapshot *WebRTCPeerSnapshot `protobuf:"bytes,34,opt,name=webrtc_peer_snapshot,json=webrtcPeerSnapshot,proto3,oneof"`
-}
-
 func (*PlatformResponse_Credential) isPlatformResponse_Response() {}
 
 func (*PlatformResponse_CredentialSign) isPlatformResponse_Response() {}
@@ -6097,40 +4613,16 @@ func (*PlatformResponse_SshCredential) isPlatformResponse_Response() {}
 
 func (*PlatformResponse_SshCredentialSign) isPlatformResponse_Response() {}
 
-func (*PlatformResponse_CloudResolvedEndpoint) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_CloudSignaling) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_CloudRelayLease) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_CloudRoutePlan) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_CloudQualityReported) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_CloudOutcomeReported) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_CloudRouteEligibility) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_WebrtcPeerOpened) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_WebrtcOffer) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_WebrtcPeerReady) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_WebrtcChannelSent) isPlatformResponse_Response() {}
-
-func (*PlatformResponse_WebrtcPeerSnapshot) isPlatformResponse_Response() {}
-
 var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x18muxvia.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xe6\a\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x18muxvia.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xf9\a\n" +
 	"\x12ConnectionSnapshot\x12\x19\n" +
 	"\broute_id\x18\x01 \x01(\tR\arouteId\x12L\n" +
 	"\n" +
-	"route_kind\x18\x02 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12B\n" +
-	"\robserved_path\x18\x03 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fobservedPath\x12)\n" +
+	"route_kind\x18\x02 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12U\n" +
+	"\robserved_path\x18\x03 \x01(\x0e20.muxvia.client.binding.v1.ConnectionObservedPathR\fobservedPath\x12)\n" +
 	"\x10selection_reason\x18\x04 \x01(\tR\x0fselectionReason\x12/\n" +
 	"\x14sampled_at_unix_nano\x18\x05 \x01(\x03R\x11sampledAtUnixNano\x12(\n" +
 	"\x10round_trip_nanos\x18\x06 \x01(\x03R\x0eroundTripNanos\x12c\n" +
@@ -6147,11 +4639,9 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\fpackets_sent\x18\x0f \x01(\x04R\vpacketsSent\x12\x1f\n" +
 	"\vloss_events\x18\x10 \x01(\x04R\n" +
 	"lossEvents\x12\x1c\n" +
-	"\tconnected\x18\x11 \x01(\bR\tconnected\"\xa3\x02\n" +
+	"\tconnected\x18\x11 \x01(\bR\tconnected\"y\n" +
 	"\x10ConnectionPolicy\x12Y\n" +
-	"\x10route_preference\x18\x01 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\x12W\n" +
-	"\x10cloud_relay_mode\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\x0ecloudRelayMode\x12[\n" +
-	"\x0frelay_transport\x18\x03 \x01(\x0e22.muxvia.remote.auth.v1.ManagedWebRTCRelayTransportR\x0erelayTransport\"\xe5\x01\n" +
+	"\x10route_preference\x18\x01 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreferenceJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"\xe5\x01\n" +
 	"!ConnectionPolicyRouteAvailability\x12L\n" +
 	"\n" +
 	"route_kind\x18\x01 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12\x1c\n" +
@@ -6435,91 +4925,9 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0eregistry_proto\x18\x01 \x01(\fR\rregistryProto\x124\n" +
 	"\x16delete_credential_refs\x18\x02 \x03(\tR\x14deleteCredentialRefs\"?\n" +
 	"\x16EndpointRegistryLoaded\x12%\n" +
-	"\x0eregistry_proto\x18\x01 \x01(\fR\rregistryProto\"J\n" +
-	"\x0fSignalingEvents\x127\n" +
-	"\x06events\x18\x01 \x03(\v2\x1f.muxvia.cloud.v1.SignalingEventR\x06events\"\x9c\x01\n" +
-	"\x1cCloudRouteEligibilityRequest\x12.\n" +
-	"\x13account_profile_ref\x18\x01 \x01(\tR\x11accountProfileRef\x12L\n" +
-	"\n" +
-	"relay_mode\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\"\xb6\x01\n" +
-	"\x15CloudRouteEligibility\x12:\n" +
-	"\x19account_session_available\x18\x01 \x01(\bR\x17accountSessionAvailable\x128\n" +
-	"\x18managed_direct_available\x18\x02 \x01(\bR\x16managedDirectAvailable\x12'\n" +
-	"\x0frelay_available\x18\x03 \x01(\bR\x0erelayAvailable\"\xc0\x01\n" +
-	"\x15WebRTCOpenPeerRequest\x12;\n" +
-	"\vice_servers\x18\x01 \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
-	"iceServers\x12K\n" +
-	"\x10route_preference\x18\x02 \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
-	"\n" +
-	"relay_only\x18\x03 \x01(\bR\trelayOnly\"Z\n" +
-	"\x10WebRTCPeerOpened\x12\x1f\n" +
-	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
-	"peerHandle\x12%\n" +
-	"\x0echannel_handle\x18\x02 \x01(\x04R\rchannelHandle\"4\n" +
-	"\x11WebRTCPeerRequest\x12\x1f\n" +
-	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
-	"peerHandle\"6\n" +
-	"\x17WebRTCCreateOfferResult\x12\x1b\n" +
-	"\toffer_sdp\x18\x01 \x01(\tR\bofferSdp\"\x99\x01\n" +
-	"\x18WebRTCApplyAnswerRequest\x12\x1f\n" +
-	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
-	"peerHandle\x12\x1d\n" +
-	"\n" +
-	"answer_sdp\x18\x02 \x01(\tR\tanswerSdp\x12=\n" +
-	"\n" +
-	"candidates\x18\x03 \x03(\v2\x1d.muxvia.cloud.v1.IceCandidateR\n" +
-	"candidates\"\x9b\x01\n" +
-	"\x0fWebRTCPeerReady\x12D\n" +
-	"\x1eremote_certificate_fingerprint\x18\x01 \x01(\tR\x1cremoteCertificateFingerprint\x12B\n" +
-	"\robserved_path\x18\x02 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fobservedPath\"[\n" +
-	"\x18WebRTCChannelSendRequest\x12%\n" +
-	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"B\n" +
-	"\x17WebRTCChannelSendResult\x12'\n" +
-	"\x0fbuffered_amount\x18\x01 \x01(\x04R\x0ebufferedAmount\"k\n" +
-	"\x1dWebRTCChannelThresholdRequest\x12%\n" +
-	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\x12#\n" +
-	"\rlow_threshold\x18\x02 \x01(\x04R\flowThreshold\"m\n" +
-	"\x19WebRTCPeerSnapshotRequest\x12\x1f\n" +
-	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
-	"peerHandle\x12/\n" +
-	"\x14sampled_at_unix_nano\x18\x02 \x01(\x03R\x11sampledAtUnixNano\"\xf0\x06\n" +
-	"\x12WebRTCPeerSnapshot\x12\x14\n" +
-	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x17\n" +
-	"\apair_id\x18\x02 \x01(\tR\x06pairId\x121\n" +
-	"\x04path\x18\x03 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\x04path\x12#\n" +
-	"\rnetwork_class\x18\x04 \x01(\tR\fnetworkClass\x12/\n" +
-	"\x14sampled_at_unix_nano\x18\x05 \x01(\x03R\x11sampledAtUnixNano\x12(\n" +
-	"\x10round_trip_nanos\x18\x06 \x01(\x03R\x0eroundTripNanos\x12\x1d\n" +
-	"\n" +
-	"bytes_sent\x18\a \x01(\x04R\tbytesSent\x12%\n" +
-	"\x0ebytes_received\x18\b \x01(\x04R\rbytesReceived\x12!\n" +
-	"\fpackets_sent\x18\t \x01(\x04R\vpacketsSent\x12\x1f\n" +
-	"\vloss_events\x18\n" +
-	" \x01(\x04R\n" +
-	"lossEvents\x12\x1c\n" +
-	"\tconnected\x18\v \x01(\bR\tconnected\x12c\n" +
-	"\x14local_candidate_type\x18\f \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x12localCandidateType\x12e\n" +
-	"\x15remote_candidate_type\x18\r \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x13remoteCandidateType\x12T\n" +
-	"\x0elocal_protocol\x18\x0e \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\rlocalProtocol\x12V\n" +
-	"\x0fremote_protocol\x18\x0f \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0eremoteProtocol\x12V\n" +
-	"\x0frelay_transport\x18\x10 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0erelayTransport\",\n" +
-	"\x12WebRTCCloseRequest\x12\x16\n" +
-	"\x06handle\x18\x01 \x01(\x04R\x06handle\"\\\n" +
-	"\x19WebRTCChannelMessageEvent\x12%\n" +
-	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"A\n" +
-	"\x18WebRTCChannelClosedEvent\x12%\n" +
-	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\"n\n" +
-	"\x1cWebRTCBufferedAmountLowEvent\x12%\n" +
-	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\x12'\n" +
-	"\x0fbuffered_amount\x18\x02 \x01(\x04R\x0ebufferedAmount\"\xe6\x02\n" +
-	"\rPlatformEvent\x12k\n" +
-	"\x16webrtc_channel_message\x18\n" +
-	" \x01(\v23.muxvia.client.binding.v1.WebRTCChannelMessageEventH\x00R\x14webrtcChannelMessage\x12h\n" +
-	"\x15webrtc_channel_closed\x18\v \x01(\v22.muxvia.client.binding.v1.WebRTCChannelClosedEventH\x00R\x13webrtcChannelClosed\x12u\n" +
-	"\x1awebrtc_buffered_amount_low\x18\f \x01(\v26.muxvia.client.binding.v1.WebRTCBufferedAmountLowEventH\x00R\x17webrtcBufferedAmountLowB\a\n" +
-	"\x05event\"\xef\x14\n" +
+	"\x0eregistry_proto\x18\x01 \x01(\fR\rregistryProto\"\x15\n" +
+	"\rPlatformEventJ\x04\b\n" +
+	"\x10\r\"\xca\b\n" +
 	"\x0fPlatformRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12c\n" +
@@ -6533,24 +4941,8 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x17endpoint_registry_store\x18\x10 \x01(\v26.muxvia.client.binding.v1.EndpointRegistryStoreRequestH\x00R\x15endpointRegistryStore\x12j\n" +
 	"\x15ssh_credential_lookup\x18\x11 \x01(\v24.muxvia.client.binding.v1.SSHCredentialLookupRequestH\x00R\x13sshCredentialLookup\x12d\n" +
 	"\x13ssh_credential_sign\x18\x12 \x01(\v22.muxvia.client.binding.v1.SSHCredentialSignRequestH\x00R\x11sshCredentialSign\x12j\n" +
-	"\x15ssh_credential_delete\x18\x13 \x01(\v24.muxvia.client.binding.v1.SSHCredentialDeleteRequestH\x00R\x13sshCredentialDelete\x12_\n" +
-	"\x16cloud_resolve_endpoint\x18\x14 \x01(\v2'.muxvia.cloud.v1.ResolveEndpointRequestH\x00R\x14cloudResolveEndpoint\x12f\n" +
-	"\x16cloud_create_signaling\x18\x15 \x01(\v2..muxvia.cloud.v1.CreateSignalingSessionRequestH\x00R\x14cloudCreateSignaling\x12[\n" +
-	"\x13cloud_acquire_relay\x18\x16 \x01(\v2).muxvia.cloud.v1.AcquireRelayLeaseRequestH\x00R\x11cloudAcquireRelay\x12T\n" +
-	"\x10cloud_plan_route\x18\x17 \x01(\v2(.muxvia.cloud.v1.PlanManagedRouteRequestH\x00R\x0ecloudPlanRoute\x12]\n" +
-	"\x14cloud_report_quality\x18\x18 \x01(\v2).muxvia.cloud.v1.ReportPathQualityRequestH\x00R\x12cloudReportQuality\x12c\n" +
-	"\x14cloud_report_outcome\x18\x19 \x01(\v2/.muxvia.cloud.v1.ReportConnectionOutcomeRequestH\x00R\x12cloudReportOutcome\x12p\n" +
-	"\x17cloud_route_eligibility\x18\x1a \x01(\v26.muxvia.client.binding.v1.CloudRouteEligibilityRequestH\x00R\x15cloudRouteEligibility\x12[\n" +
-	"\x10webrtc_open_peer\x18\x1e \x01(\v2/.muxvia.client.binding.v1.WebRTCOpenPeerRequestH\x00R\x0ewebrtcOpenPeer\x12]\n" +
-	"\x13webrtc_create_offer\x18\x1f \x01(\v2+.muxvia.client.binding.v1.WebRTCPeerRequestH\x00R\x11webrtcCreateOffer\x12d\n" +
-	"\x13webrtc_apply_answer\x18  \x01(\v22.muxvia.client.binding.v1.WebRTCApplyAnswerRequestH\x00R\x11webrtcApplyAnswer\x12Y\n" +
-	"\x11webrtc_wait_ready\x18! \x01(\v2+.muxvia.client.binding.v1.WebRTCPeerRequestH\x00R\x0fwebrtcWaitReady\x12d\n" +
-	"\x13webrtc_channel_send\x18\" \x01(\v22.muxvia.client.binding.v1.WebRTCChannelSendRequestH\x00R\x11webrtcChannelSend\x12s\n" +
-	"\x18webrtc_channel_threshold\x18# \x01(\v27.muxvia.client.binding.v1.WebRTCChannelThresholdRequestH\x00R\x16webrtcChannelThreshold\x12g\n" +
-	"\x14webrtc_peer_snapshot\x18$ \x01(\v23.muxvia.client.binding.v1.WebRTCPeerSnapshotRequestH\x00R\x12webrtcPeerSnapshot\x12Z\n" +
-	"\x11webrtc_close_peer\x18% \x01(\v2,.muxvia.client.binding.v1.WebRTCCloseRequestH\x00R\x0fwebrtcClosePeer\x12`\n" +
-	"\x14webrtc_close_channel\x18& \x01(\v2,.muxvia.client.binding.v1.WebRTCCloseRequestH\x00R\x12webrtcCloseChannelB\t\n" +
-	"\arequest\"\x91\r\n" +
+	"\x15ssh_credential_delete\x18\x13 \x01(\v24.muxvia.client.binding.v1.SSHCredentialDeleteRequestH\x00R\x13sshCredentialDeleteB\t\n" +
+	"\arequestJ\x04\b\x14\x10\x1bJ\x04\b\x1e\x10'\"\xc3\x04\n" +
 	"\x10PlatformResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12-\n" +
@@ -6562,21 +4954,9 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0fcredential_sign\x18\v \x01(\v20.muxvia.client.binding.v1.CredentialSignResponseH\x00R\x0ecredentialSign\x12_\n" +
 	"\x11endpoint_registry\x18\f \x01(\v20.muxvia.client.binding.v1.EndpointRegistryLoadedH\x00R\x10endpointRegistry\x12V\n" +
 	"\x0essh_credential\x18\r \x01(\v2-.muxvia.client.binding.v1.SSHCredentialRecordH\x00R\rsshCredential\x12e\n" +
-	"\x13ssh_credential_sign\x18\x0e \x01(\v23.muxvia.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSign\x12[\n" +
-	"\x17cloud_resolved_endpoint\x18\x14 \x01(\v2!.muxvia.cloud.v1.ResolvedEndpointH\x00R\x15cloudResolvedEndpoint\x12T\n" +
-	"\x0fcloud_signaling\x18\x15 \x01(\v2).muxvia.client.binding.v1.SignalingEventsH\x00R\x0ecloudSignaling\x12I\n" +
-	"\x11cloud_relay_lease\x18\x16 \x01(\v2\x1b.muxvia.cloud.v1.RelayLeaseH\x00R\x0fcloudRelayLease\x12M\n" +
-	"\x10cloud_route_plan\x18\x17 \x01(\v2!.muxvia.cloud.v1.ManagedRoutePlanH\x00R\x0ecloudRoutePlan\x12b\n" +
-	"\x16cloud_quality_reported\x18\x18 \x01(\v2*.muxvia.cloud.v1.ReportPathQualityResponseH\x00R\x14cloudQualityReported\x12h\n" +
-	"\x16cloud_outcome_reported\x18\x19 \x01(\v20.muxvia.cloud.v1.ReportConnectionOutcomeResponseH\x00R\x14cloudOutcomeReported\x12i\n" +
-	"\x17cloud_route_eligibility\x18\x1a \x01(\v2/.muxvia.client.binding.v1.CloudRouteEligibilityH\x00R\x15cloudRouteEligibility\x12Z\n" +
-	"\x12webrtc_peer_opened\x18\x1e \x01(\v2*.muxvia.client.binding.v1.WebRTCPeerOpenedH\x00R\x10webrtcPeerOpened\x12V\n" +
-	"\fwebrtc_offer\x18\x1f \x01(\v21.muxvia.client.binding.v1.WebRTCCreateOfferResultH\x00R\vwebrtcOffer\x12W\n" +
-	"\x11webrtc_peer_ready\x18  \x01(\v2).muxvia.client.binding.v1.WebRTCPeerReadyH\x00R\x0fwebrtcPeerReady\x12c\n" +
-	"\x13webrtc_channel_sent\x18! \x01(\v21.muxvia.client.binding.v1.WebRTCChannelSendResultH\x00R\x11webrtcChannelSent\x12`\n" +
-	"\x14webrtc_peer_snapshot\x18\" \x01(\v2,.muxvia.client.binding.v1.WebRTCPeerSnapshotH\x00R\x12webrtcPeerSnapshotB\n" +
+	"\x13ssh_credential_sign\x18\x0e \x01(\v23.muxvia.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSignB\n" +
 	"\n" +
-	"\bresponse*\x88\x01\n" +
+	"\bresponseJ\x04\b\x14\x10\x1bJ\x04\b\x1e\x10#*\x88\x01\n" +
 	"\rConnectIntent\x12\x1e\n" +
 	"\x1aCONNECT_INTENT_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aCONNECT_INTENT_INTERACTIVE\x10\x01\x12\x1d\n" +
@@ -6589,13 +4969,16 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH\x10\x03\x12*\n" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT\x10\x04\x12$\n" +
 	" RESOURCE_STREAM_FRAME_TYPE_ERROR\x10\x05\x12/\n" +
-	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06*\xc7\x01\n" +
+	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06*\xc9\x01\n" +
 	"\x13ConnectionRouteKind\x12%\n" +
 	"!CONNECTION_ROUTE_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCONNECTION_ROUTE_KIND_LOCAL\x10\x01\x12 \n" +
 	"\x1cCONNECTION_ROUTE_KIND_DIRECT\x10\x02\x12\x1d\n" +
-	"\x19CONNECTION_ROUTE_KIND_SSH\x10\x03\x12'\n" +
-	"#CONNECTION_ROUTE_KIND_MANAGED_CLOUD\x10\x04*\xeb\x01\n" +
+	"\x19CONNECTION_ROUTE_KIND_SSH\x10\x03\"\x04\b\x04\x10\x04*#CONNECTION_ROUTE_KIND_MANAGED_CLOUD*\x92\x01\n" +
+	"\x16ConnectionObservedPath\x12(\n" +
+	"$CONNECTION_OBSERVED_PATH_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fCONNECTION_OBSERVED_PATH_DIRECT\x10\x01\x12)\n" +
+	"%CONNECTION_OBSERVED_PATH_SINGLE_RELAY\x10\x02*\xeb\x01\n" +
 	"\x17ConnectionCandidateType\x12)\n" +
 	"%CONNECTION_CANDIDATE_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eCONNECTION_CANDIDATE_TYPE_HOST\x10\x01\x12.\n" +
@@ -6627,267 +5010,187 @@ func file_bindingpb_client_binding_proto_rawDescGZIP() []byte {
 	return file_bindingpb_client_binding_proto_rawDescData
 }
 
-var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 74)
+var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_bindingpb_client_binding_proto_goTypes = []any{
 	(ConnectIntent)(0),                                // 0: muxvia.client.binding.v1.ConnectIntent
 	(ResourceStreamFrameType)(0),                      // 1: muxvia.client.binding.v1.ResourceStreamFrameType
 	(ConnectionRouteKind)(0),                          // 2: muxvia.client.binding.v1.ConnectionRouteKind
-	(ConnectionCandidateType)(0),                      // 3: muxvia.client.binding.v1.ConnectionCandidateType
-	(ConnectionTransport)(0),                          // 4: muxvia.client.binding.v1.ConnectionTransport
-	(ConnectionPolicyAvailabilityReason)(0),           // 5: muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
-	(*ConnectionSnapshot)(nil),                        // 6: muxvia.client.binding.v1.ConnectionSnapshot
-	(*ConnectionPolicy)(nil),                          // 7: muxvia.client.binding.v1.ConnectionPolicy
-	(*ConnectionPolicyRouteAvailability)(nil),         // 8: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
-	(*ConnectionPolicyState)(nil),                     // 9: muxvia.client.binding.v1.ConnectionPolicyState
-	(*ConnectionPolicyGetRequest)(nil),                // 10: muxvia.client.binding.v1.ConnectionPolicyGetRequest
-	(*ConnectionPolicyGetResult)(nil),                 // 11: muxvia.client.binding.v1.ConnectionPolicyGetResult
-	(*ConnectionPolicyApplyRequest)(nil),              // 12: muxvia.client.binding.v1.ConnectionPolicyApplyRequest
-	(*ConnectionPolicyApplyResult)(nil),               // 13: muxvia.client.binding.v1.ConnectionPolicyApplyResult
-	(*ConnectionSnapshotGetRequest)(nil),              // 14: muxvia.client.binding.v1.ConnectionSnapshotGetRequest
-	(*ConnectionSnapshotGetResult)(nil),               // 15: muxvia.client.binding.v1.ConnectionSnapshotGetResult
-	(*OpenSessionRequest)(nil),                        // 16: muxvia.client.binding.v1.OpenSessionRequest
-	(*ImportPairingRequest)(nil),                      // 17: muxvia.client.binding.v1.ImportPairingRequest
-	(*ImportPairingResult)(nil),                       // 18: muxvia.client.binding.v1.ImportPairingResult
-	(*DeleteCredentialRequest)(nil),                   // 19: muxvia.client.binding.v1.DeleteCredentialRequest
-	(*DeleteCredentialResult)(nil),                    // 20: muxvia.client.binding.v1.DeleteCredentialResult
-	(*EndpointRegistryGetRequest)(nil),                // 21: muxvia.client.binding.v1.EndpointRegistryGetRequest
-	(*EndpointRegistryGetResult)(nil),                 // 22: muxvia.client.binding.v1.EndpointRegistryGetResult
-	(*EndpointUpsertRequest)(nil),                     // 23: muxvia.client.binding.v1.EndpointUpsertRequest
-	(*EndpointUpsertResult)(nil),                      // 24: muxvia.client.binding.v1.EndpointUpsertResult
-	(*EndpointDeleteRequest)(nil),                     // 25: muxvia.client.binding.v1.EndpointDeleteRequest
-	(*EndpointDeleteResult)(nil),                      // 26: muxvia.client.binding.v1.EndpointDeleteResult
-	(*EndpointShareReceiveRequest)(nil),               // 27: muxvia.client.binding.v1.EndpointShareReceiveRequest
-	(*EndpointShareRouteDiff)(nil),                    // 28: muxvia.client.binding.v1.EndpointShareRouteDiff
-	(*EndpointSharePreview)(nil),                      // 29: muxvia.client.binding.v1.EndpointSharePreview
-	(*EndpointShareReceiveResult)(nil),                // 30: muxvia.client.binding.v1.EndpointShareReceiveResult
-	(*EndpointShareCommitRequest)(nil),                // 31: muxvia.client.binding.v1.EndpointShareCommitRequest
-	(*EndpointShareCommitResult)(nil),                 // 32: muxvia.client.binding.v1.EndpointShareCommitResult
-	(*SSHCredentialProvisionRequest)(nil),             // 33: muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	(*SSHCredentialProvisionResult)(nil),              // 34: muxvia.client.binding.v1.SSHCredentialProvisionResult
-	(*EngineCommand)(nil),                             // 35: muxvia.client.binding.v1.EngineCommand
-	(*OpenSessionResult)(nil),                         // 36: muxvia.client.binding.v1.OpenSessionResult
-	(*ExecuteResult)(nil),                             // 37: muxvia.client.binding.v1.ExecuteResult
-	(*ApplicationEvent)(nil),                          // 38: muxvia.client.binding.v1.ApplicationEvent
-	(*OpenResourceStreamRequest)(nil),                 // 39: muxvia.client.binding.v1.OpenResourceStreamRequest
-	(*ResourceStreamFrame)(nil),                       // 40: muxvia.client.binding.v1.ResourceStreamFrame
-	(*ResourceStreamClosedEvent)(nil),                 // 41: muxvia.client.binding.v1.ResourceStreamClosedEvent
-	(*SessionClosedEvent)(nil),                        // 42: muxvia.client.binding.v1.SessionClosedEvent
-	(*EventEnvelope)(nil),                             // 43: muxvia.client.binding.v1.EventEnvelope
-	(*CredentialResolveRequest)(nil),                  // 44: muxvia.client.binding.v1.CredentialResolveRequest
-	(*CredentialPrepareRequest)(nil),                  // 45: muxvia.client.binding.v1.CredentialPrepareRequest
-	(*CredentialDeleteRequest)(nil),                   // 46: muxvia.client.binding.v1.CredentialDeleteRequest
-	(*CredentialBindRequest)(nil),                     // 47: muxvia.client.binding.v1.CredentialBindRequest
-	(*CredentialRecord)(nil),                          // 48: muxvia.client.binding.v1.CredentialRecord
-	(*CredentialSignRequest)(nil),                     // 49: muxvia.client.binding.v1.CredentialSignRequest
-	(*CredentialSignResponse)(nil),                    // 50: muxvia.client.binding.v1.CredentialSignResponse
-	(*SSHCredentialLookupRequest)(nil),                // 51: muxvia.client.binding.v1.SSHCredentialLookupRequest
-	(*SSHCredentialDeleteRequest)(nil),                // 52: muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	(*SSHCredentialRecord)(nil),                       // 53: muxvia.client.binding.v1.SSHCredentialRecord
-	(*SSHCredentialSignRequest)(nil),                  // 54: muxvia.client.binding.v1.SSHCredentialSignRequest
-	(*SSHCredentialSignResponse)(nil),                 // 55: muxvia.client.binding.v1.SSHCredentialSignResponse
-	(*EndpointRegistryLoadRequest)(nil),               // 56: muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	(*EndpointRegistryStoreRequest)(nil),              // 57: muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	(*EndpointRegistryLoaded)(nil),                    // 58: muxvia.client.binding.v1.EndpointRegistryLoaded
-	(*SignalingEvents)(nil),                           // 59: muxvia.client.binding.v1.SignalingEvents
-	(*CloudRouteEligibilityRequest)(nil),              // 60: muxvia.client.binding.v1.CloudRouteEligibilityRequest
-	(*CloudRouteEligibility)(nil),                     // 61: muxvia.client.binding.v1.CloudRouteEligibility
-	(*WebRTCOpenPeerRequest)(nil),                     // 62: muxvia.client.binding.v1.WebRTCOpenPeerRequest
-	(*WebRTCPeerOpened)(nil),                          // 63: muxvia.client.binding.v1.WebRTCPeerOpened
-	(*WebRTCPeerRequest)(nil),                         // 64: muxvia.client.binding.v1.WebRTCPeerRequest
-	(*WebRTCCreateOfferResult)(nil),                   // 65: muxvia.client.binding.v1.WebRTCCreateOfferResult
-	(*WebRTCApplyAnswerRequest)(nil),                  // 66: muxvia.client.binding.v1.WebRTCApplyAnswerRequest
-	(*WebRTCPeerReady)(nil),                           // 67: muxvia.client.binding.v1.WebRTCPeerReady
-	(*WebRTCChannelSendRequest)(nil),                  // 68: muxvia.client.binding.v1.WebRTCChannelSendRequest
-	(*WebRTCChannelSendResult)(nil),                   // 69: muxvia.client.binding.v1.WebRTCChannelSendResult
-	(*WebRTCChannelThresholdRequest)(nil),             // 70: muxvia.client.binding.v1.WebRTCChannelThresholdRequest
-	(*WebRTCPeerSnapshotRequest)(nil),                 // 71: muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
-	(*WebRTCPeerSnapshot)(nil),                        // 72: muxvia.client.binding.v1.WebRTCPeerSnapshot
-	(*WebRTCCloseRequest)(nil),                        // 73: muxvia.client.binding.v1.WebRTCCloseRequest
-	(*WebRTCChannelMessageEvent)(nil),                 // 74: muxvia.client.binding.v1.WebRTCChannelMessageEvent
-	(*WebRTCChannelClosedEvent)(nil),                  // 75: muxvia.client.binding.v1.WebRTCChannelClosedEvent
-	(*WebRTCBufferedAmountLowEvent)(nil),              // 76: muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
-	(*PlatformEvent)(nil),                             // 77: muxvia.client.binding.v1.PlatformEvent
-	(*PlatformRequest)(nil),                           // 78: muxvia.client.binding.v1.PlatformRequest
-	(*PlatformResponse)(nil),                          // 79: muxvia.client.binding.v1.PlatformResponse
-	(cloudpb.ObservedPath)(0),                         // 80: muxvia.cloud.v1.ObservedPath
-	(remoteauthpb.EndpointRoutePreference)(0),         // 81: muxvia.remote.auth.v1.EndpointRoutePreference
-	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 82: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 83: muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
-	(*apipb.ApiError)(nil),                            // 84: muxvia.api.v1.ApiError
-	(*remoteauthpb.EndpointConfigV1)(nil),             // 85: muxvia.remote.auth.v1.EndpointConfigV1
-	(*remoteauthpb.EndpointRegistryV1)(nil),           // 86: muxvia.remote.auth.v1.EndpointRegistryV1
-	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 87: muxvia.remote.auth.v1.EndpointDaemonIdentity
-	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 88: muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	(*apipb.EndpointSessionStamp)(nil),                // 89: muxvia.api.v1.EndpointSessionStamp
-	(*apipb.ResultEnvelope)(nil),                      // 90: muxvia.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),                       // 91: muxvia.api.v1.EventEnvelope
-	(*apipb.ResourceHandle)(nil),                      // 92: muxvia.api.v1.ResourceHandle
-	(*cloudpb.SignalingEvent)(nil),                    // 93: muxvia.cloud.v1.SignalingEvent
-	(*cloudpb.IceServer)(nil),                         // 94: muxvia.cloud.v1.IceServer
-	(cloudpb.RoutePreference)(0),                      // 95: muxvia.cloud.v1.RoutePreference
-	(*cloudpb.IceCandidate)(nil),                      // 96: muxvia.cloud.v1.IceCandidate
-	(*cloudpb.ResolveEndpointRequest)(nil),            // 97: muxvia.cloud.v1.ResolveEndpointRequest
-	(*cloudpb.CreateSignalingSessionRequest)(nil),     // 98: muxvia.cloud.v1.CreateSignalingSessionRequest
-	(*cloudpb.AcquireRelayLeaseRequest)(nil),          // 99: muxvia.cloud.v1.AcquireRelayLeaseRequest
-	(*cloudpb.PlanManagedRouteRequest)(nil),           // 100: muxvia.cloud.v1.PlanManagedRouteRequest
-	(*cloudpb.ReportPathQualityRequest)(nil),          // 101: muxvia.cloud.v1.ReportPathQualityRequest
-	(*cloudpb.ReportConnectionOutcomeRequest)(nil),    // 102: muxvia.cloud.v1.ReportConnectionOutcomeRequest
-	(*cloudpb.ResolvedEndpoint)(nil),                  // 103: muxvia.cloud.v1.ResolvedEndpoint
-	(*cloudpb.RelayLease)(nil),                        // 104: muxvia.cloud.v1.RelayLease
-	(*cloudpb.ManagedRoutePlan)(nil),                  // 105: muxvia.cloud.v1.ManagedRoutePlan
-	(*cloudpb.ReportPathQualityResponse)(nil),         // 106: muxvia.cloud.v1.ReportPathQualityResponse
-	(*cloudpb.ReportConnectionOutcomeResponse)(nil),   // 107: muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	(ConnectionObservedPath)(0),                       // 3: muxvia.client.binding.v1.ConnectionObservedPath
+	(ConnectionCandidateType)(0),                      // 4: muxvia.client.binding.v1.ConnectionCandidateType
+	(ConnectionTransport)(0),                          // 5: muxvia.client.binding.v1.ConnectionTransport
+	(ConnectionPolicyAvailabilityReason)(0),           // 6: muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
+	(*ConnectionSnapshot)(nil),                        // 7: muxvia.client.binding.v1.ConnectionSnapshot
+	(*ConnectionPolicy)(nil),                          // 8: muxvia.client.binding.v1.ConnectionPolicy
+	(*ConnectionPolicyRouteAvailability)(nil),         // 9: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
+	(*ConnectionPolicyState)(nil),                     // 10: muxvia.client.binding.v1.ConnectionPolicyState
+	(*ConnectionPolicyGetRequest)(nil),                // 11: muxvia.client.binding.v1.ConnectionPolicyGetRequest
+	(*ConnectionPolicyGetResult)(nil),                 // 12: muxvia.client.binding.v1.ConnectionPolicyGetResult
+	(*ConnectionPolicyApplyRequest)(nil),              // 13: muxvia.client.binding.v1.ConnectionPolicyApplyRequest
+	(*ConnectionPolicyApplyResult)(nil),               // 14: muxvia.client.binding.v1.ConnectionPolicyApplyResult
+	(*ConnectionSnapshotGetRequest)(nil),              // 15: muxvia.client.binding.v1.ConnectionSnapshotGetRequest
+	(*ConnectionSnapshotGetResult)(nil),               // 16: muxvia.client.binding.v1.ConnectionSnapshotGetResult
+	(*OpenSessionRequest)(nil),                        // 17: muxvia.client.binding.v1.OpenSessionRequest
+	(*ImportPairingRequest)(nil),                      // 18: muxvia.client.binding.v1.ImportPairingRequest
+	(*ImportPairingResult)(nil),                       // 19: muxvia.client.binding.v1.ImportPairingResult
+	(*DeleteCredentialRequest)(nil),                   // 20: muxvia.client.binding.v1.DeleteCredentialRequest
+	(*DeleteCredentialResult)(nil),                    // 21: muxvia.client.binding.v1.DeleteCredentialResult
+	(*EndpointRegistryGetRequest)(nil),                // 22: muxvia.client.binding.v1.EndpointRegistryGetRequest
+	(*EndpointRegistryGetResult)(nil),                 // 23: muxvia.client.binding.v1.EndpointRegistryGetResult
+	(*EndpointUpsertRequest)(nil),                     // 24: muxvia.client.binding.v1.EndpointUpsertRequest
+	(*EndpointUpsertResult)(nil),                      // 25: muxvia.client.binding.v1.EndpointUpsertResult
+	(*EndpointDeleteRequest)(nil),                     // 26: muxvia.client.binding.v1.EndpointDeleteRequest
+	(*EndpointDeleteResult)(nil),                      // 27: muxvia.client.binding.v1.EndpointDeleteResult
+	(*EndpointShareReceiveRequest)(nil),               // 28: muxvia.client.binding.v1.EndpointShareReceiveRequest
+	(*EndpointShareRouteDiff)(nil),                    // 29: muxvia.client.binding.v1.EndpointShareRouteDiff
+	(*EndpointSharePreview)(nil),                      // 30: muxvia.client.binding.v1.EndpointSharePreview
+	(*EndpointShareReceiveResult)(nil),                // 31: muxvia.client.binding.v1.EndpointShareReceiveResult
+	(*EndpointShareCommitRequest)(nil),                // 32: muxvia.client.binding.v1.EndpointShareCommitRequest
+	(*EndpointShareCommitResult)(nil),                 // 33: muxvia.client.binding.v1.EndpointShareCommitResult
+	(*SSHCredentialProvisionRequest)(nil),             // 34: muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	(*SSHCredentialProvisionResult)(nil),              // 35: muxvia.client.binding.v1.SSHCredentialProvisionResult
+	(*EngineCommand)(nil),                             // 36: muxvia.client.binding.v1.EngineCommand
+	(*OpenSessionResult)(nil),                         // 37: muxvia.client.binding.v1.OpenSessionResult
+	(*ExecuteResult)(nil),                             // 38: muxvia.client.binding.v1.ExecuteResult
+	(*ApplicationEvent)(nil),                          // 39: muxvia.client.binding.v1.ApplicationEvent
+	(*OpenResourceStreamRequest)(nil),                 // 40: muxvia.client.binding.v1.OpenResourceStreamRequest
+	(*ResourceStreamFrame)(nil),                       // 41: muxvia.client.binding.v1.ResourceStreamFrame
+	(*ResourceStreamClosedEvent)(nil),                 // 42: muxvia.client.binding.v1.ResourceStreamClosedEvent
+	(*SessionClosedEvent)(nil),                        // 43: muxvia.client.binding.v1.SessionClosedEvent
+	(*EventEnvelope)(nil),                             // 44: muxvia.client.binding.v1.EventEnvelope
+	(*CredentialResolveRequest)(nil),                  // 45: muxvia.client.binding.v1.CredentialResolveRequest
+	(*CredentialPrepareRequest)(nil),                  // 46: muxvia.client.binding.v1.CredentialPrepareRequest
+	(*CredentialDeleteRequest)(nil),                   // 47: muxvia.client.binding.v1.CredentialDeleteRequest
+	(*CredentialBindRequest)(nil),                     // 48: muxvia.client.binding.v1.CredentialBindRequest
+	(*CredentialRecord)(nil),                          // 49: muxvia.client.binding.v1.CredentialRecord
+	(*CredentialSignRequest)(nil),                     // 50: muxvia.client.binding.v1.CredentialSignRequest
+	(*CredentialSignResponse)(nil),                    // 51: muxvia.client.binding.v1.CredentialSignResponse
+	(*SSHCredentialLookupRequest)(nil),                // 52: muxvia.client.binding.v1.SSHCredentialLookupRequest
+	(*SSHCredentialDeleteRequest)(nil),                // 53: muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	(*SSHCredentialRecord)(nil),                       // 54: muxvia.client.binding.v1.SSHCredentialRecord
+	(*SSHCredentialSignRequest)(nil),                  // 55: muxvia.client.binding.v1.SSHCredentialSignRequest
+	(*SSHCredentialSignResponse)(nil),                 // 56: muxvia.client.binding.v1.SSHCredentialSignResponse
+	(*EndpointRegistryLoadRequest)(nil),               // 57: muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	(*EndpointRegistryStoreRequest)(nil),              // 58: muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	(*EndpointRegistryLoaded)(nil),                    // 59: muxvia.client.binding.v1.EndpointRegistryLoaded
+	(*PlatformEvent)(nil),                             // 60: muxvia.client.binding.v1.PlatformEvent
+	(*PlatformRequest)(nil),                           // 61: muxvia.client.binding.v1.PlatformRequest
+	(*PlatformResponse)(nil),                          // 62: muxvia.client.binding.v1.PlatformResponse
+	(remoteauthpb.EndpointRoutePreference)(0),         // 63: muxvia.remote.auth.v1.EndpointRoutePreference
+	(*apipb.ApiError)(nil),                            // 64: muxvia.api.v1.ApiError
+	(*remoteauthpb.EndpointConfigV1)(nil),             // 65: muxvia.remote.auth.v1.EndpointConfigV1
+	(*remoteauthpb.EndpointRegistryV1)(nil),           // 66: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 67: muxvia.remote.auth.v1.EndpointDaemonIdentity
+	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 68: muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	(*apipb.EndpointSessionStamp)(nil),                // 69: muxvia.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                      // 70: muxvia.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                       // 71: muxvia.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                      // 72: muxvia.api.v1.ResourceHandle
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
-	2,   // 0: muxvia.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
-	80,  // 1: muxvia.client.binding.v1.ConnectionSnapshot.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
-	3,   // 2: muxvia.client.binding.v1.ConnectionSnapshot.local_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
-	3,   // 3: muxvia.client.binding.v1.ConnectionSnapshot.remote_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
-	4,   // 4: muxvia.client.binding.v1.ConnectionSnapshot.local_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	4,   // 5: muxvia.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	4,   // 6: muxvia.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	81,  // 7: muxvia.client.binding.v1.ConnectionPolicy.route_preference:type_name -> muxvia.remote.auth.v1.EndpointRoutePreference
-	82,  // 8: muxvia.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	83,  // 9: muxvia.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
-	2,   // 10: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
-	5,   // 11: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
-	7,   // 12: muxvia.client.binding.v1.ConnectionPolicyState.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
-	8,   // 13: muxvia.client.binding.v1.ConnectionPolicyState.routes:type_name -> muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
-	9,   // 14: muxvia.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
-	84,  // 15: muxvia.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> muxvia.api.v1.ApiError
-	7,   // 16: muxvia.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
-	9,   // 17: muxvia.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
-	84,  // 18: muxvia.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> muxvia.api.v1.ApiError
-	6,   // 19: muxvia.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
-	84,  // 20: muxvia.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> muxvia.api.v1.ApiError
-	0,   // 21: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
-	85,  // 22: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	84,  // 23: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
-	86,  // 24: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	84,  // 25: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
-	86,  // 26: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	84,  // 27: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
-	85,  // 28: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	85,  // 29: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	86,  // 30: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	84,  // 31: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
-	86,  // 32: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	84,  // 33: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
-	87,  // 34: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	28,  // 35: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
-	88,  // 36: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	29,  // 37: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
-	84,  // 38: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
-	85,  // 39: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	86,  // 40: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	84,  // 41: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
-	85,  // 42: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	86,  // 43: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	84,  // 44: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
-	17,  // 45: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
-	19,  // 46: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
-	21,  // 47: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
-	23,  // 48: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
-	25,  // 49: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
-	27,  // 50: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
-	31,  // 51: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
-	33,  // 52: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	10,  // 53: muxvia.client.binding.v1.EngineCommand.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetRequest
-	12,  // 54: muxvia.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyRequest
-	14,  // 55: muxvia.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetRequest
-	89,  // 56: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	84,  // 57: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
-	6,   // 58: muxvia.client.binding.v1.OpenSessionResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
-	90,  // 59: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
-	84,  // 60: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
-	91,  // 61: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
-	92,  // 62: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
-	1,   // 63: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
-	84,  // 64: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	89,  // 65: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	84,  // 66: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	36,  // 67: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
-	37,  // 68: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
-	38,  // 69: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
-	42,  // 70: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
-	18,  // 71: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
-	20,  // 72: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
-	40,  // 73: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
-	41,  // 74: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
-	22,  // 75: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
-	24,  // 76: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
-	26,  // 77: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
-	30,  // 78: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
-	32,  // 79: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
-	34,  // 80: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
-	11,  // 81: muxvia.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetResult
-	13,  // 82: muxvia.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyResult
-	15,  // 83: muxvia.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetResult
-	93,  // 84: muxvia.client.binding.v1.SignalingEvents.events:type_name -> muxvia.cloud.v1.SignalingEvent
-	82,  // 85: muxvia.client.binding.v1.CloudRouteEligibilityRequest.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	94,  // 86: muxvia.client.binding.v1.WebRTCOpenPeerRequest.ice_servers:type_name -> muxvia.cloud.v1.IceServer
-	95,  // 87: muxvia.client.binding.v1.WebRTCOpenPeerRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
-	96,  // 88: muxvia.client.binding.v1.WebRTCApplyAnswerRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
-	80,  // 89: muxvia.client.binding.v1.WebRTCPeerReady.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
-	80,  // 90: muxvia.client.binding.v1.WebRTCPeerSnapshot.path:type_name -> muxvia.cloud.v1.ObservedPath
-	3,   // 91: muxvia.client.binding.v1.WebRTCPeerSnapshot.local_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
-	3,   // 92: muxvia.client.binding.v1.WebRTCPeerSnapshot.remote_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
-	4,   // 93: muxvia.client.binding.v1.WebRTCPeerSnapshot.local_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	4,   // 94: muxvia.client.binding.v1.WebRTCPeerSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	4,   // 95: muxvia.client.binding.v1.WebRTCPeerSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	74,  // 96: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_message:type_name -> muxvia.client.binding.v1.WebRTCChannelMessageEvent
-	75,  // 97: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_closed:type_name -> muxvia.client.binding.v1.WebRTCChannelClosedEvent
-	76,  // 98: muxvia.client.binding.v1.PlatformEvent.webrtc_buffered_amount_low:type_name -> muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
-	44,  // 99: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
-	45,  // 100: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
-	46,  // 101: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
-	49,  // 102: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
-	47,  // 103: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
-	56,  // 104: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	57,  // 105: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	51,  // 106: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
-	54,  // 107: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
-	52,  // 108: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	97,  // 109: muxvia.client.binding.v1.PlatformRequest.cloud_resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
-	98,  // 110: muxvia.client.binding.v1.PlatformRequest.cloud_create_signaling:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
-	99,  // 111: muxvia.client.binding.v1.PlatformRequest.cloud_acquire_relay:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
-	100, // 112: muxvia.client.binding.v1.PlatformRequest.cloud_plan_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
-	101, // 113: muxvia.client.binding.v1.PlatformRequest.cloud_report_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
-	102, // 114: muxvia.client.binding.v1.PlatformRequest.cloud_report_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
-	60,  // 115: muxvia.client.binding.v1.PlatformRequest.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibilityRequest
-	62,  // 116: muxvia.client.binding.v1.PlatformRequest.webrtc_open_peer:type_name -> muxvia.client.binding.v1.WebRTCOpenPeerRequest
-	64,  // 117: muxvia.client.binding.v1.PlatformRequest.webrtc_create_offer:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
-	66,  // 118: muxvia.client.binding.v1.PlatformRequest.webrtc_apply_answer:type_name -> muxvia.client.binding.v1.WebRTCApplyAnswerRequest
-	64,  // 119: muxvia.client.binding.v1.PlatformRequest.webrtc_wait_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
-	68,  // 120: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_send:type_name -> muxvia.client.binding.v1.WebRTCChannelSendRequest
-	70,  // 121: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_threshold:type_name -> muxvia.client.binding.v1.WebRTCChannelThresholdRequest
-	71,  // 122: muxvia.client.binding.v1.PlatformRequest.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
-	73,  // 123: muxvia.client.binding.v1.PlatformRequest.webrtc_close_peer:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
-	73,  // 124: muxvia.client.binding.v1.PlatformRequest.webrtc_close_channel:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
-	84,  // 125: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
-	48,  // 126: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
-	50,  // 127: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
-	58,  // 128: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
-	53,  // 129: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
-	55,  // 130: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
-	103, // 131: muxvia.client.binding.v1.PlatformResponse.cloud_resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
-	59,  // 132: muxvia.client.binding.v1.PlatformResponse.cloud_signaling:type_name -> muxvia.client.binding.v1.SignalingEvents
-	104, // 133: muxvia.client.binding.v1.PlatformResponse.cloud_relay_lease:type_name -> muxvia.cloud.v1.RelayLease
-	105, // 134: muxvia.client.binding.v1.PlatformResponse.cloud_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
-	106, // 135: muxvia.client.binding.v1.PlatformResponse.cloud_quality_reported:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
-	107, // 136: muxvia.client.binding.v1.PlatformResponse.cloud_outcome_reported:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
-	61,  // 137: muxvia.client.binding.v1.PlatformResponse.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibility
-	63,  // 138: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_opened:type_name -> muxvia.client.binding.v1.WebRTCPeerOpened
-	65,  // 139: muxvia.client.binding.v1.PlatformResponse.webrtc_offer:type_name -> muxvia.client.binding.v1.WebRTCCreateOfferResult
-	67,  // 140: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerReady
-	69,  // 141: muxvia.client.binding.v1.PlatformResponse.webrtc_channel_sent:type_name -> muxvia.client.binding.v1.WebRTCChannelSendResult
-	72,  // 142: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshot
-	143, // [143:143] is the sub-list for method output_type
-	143, // [143:143] is the sub-list for method input_type
-	143, // [143:143] is the sub-list for extension type_name
-	143, // [143:143] is the sub-list for extension extendee
-	0,   // [0:143] is the sub-list for field type_name
+	2,  // 0: muxvia.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
+	3,  // 1: muxvia.client.binding.v1.ConnectionSnapshot.observed_path:type_name -> muxvia.client.binding.v1.ConnectionObservedPath
+	4,  // 2: muxvia.client.binding.v1.ConnectionSnapshot.local_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
+	4,  // 3: muxvia.client.binding.v1.ConnectionSnapshot.remote_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
+	5,  // 4: muxvia.client.binding.v1.ConnectionSnapshot.local_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	5,  // 5: muxvia.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	5,  // 6: muxvia.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	63, // 7: muxvia.client.binding.v1.ConnectionPolicy.route_preference:type_name -> muxvia.remote.auth.v1.EndpointRoutePreference
+	2,  // 8: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
+	6,  // 9: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
+	8,  // 10: muxvia.client.binding.v1.ConnectionPolicyState.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
+	9,  // 11: muxvia.client.binding.v1.ConnectionPolicyState.routes:type_name -> muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
+	10, // 12: muxvia.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
+	64, // 13: muxvia.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> muxvia.api.v1.ApiError
+	8,  // 14: muxvia.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
+	10, // 15: muxvia.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
+	64, // 16: muxvia.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> muxvia.api.v1.ApiError
+	7,  // 17: muxvia.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
+	64, // 18: muxvia.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> muxvia.api.v1.ApiError
+	0,  // 19: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
+	65, // 20: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	64, // 21: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
+	66, // 22: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	64, // 23: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
+	66, // 24: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	64, // 25: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
+	65, // 26: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	65, // 27: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	66, // 28: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	64, // 29: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
+	66, // 30: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	64, // 31: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
+	67, // 32: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	29, // 33: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
+	68, // 34: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	30, // 35: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
+	64, // 36: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
+	65, // 37: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	66, // 38: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	64, // 39: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
+	65, // 40: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	66, // 41: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	64, // 42: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
+	18, // 43: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
+	20, // 44: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
+	22, // 45: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
+	24, // 46: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
+	26, // 47: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
+	28, // 48: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
+	32, // 49: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
+	34, // 50: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	11, // 51: muxvia.client.binding.v1.EngineCommand.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetRequest
+	13, // 52: muxvia.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyRequest
+	15, // 53: muxvia.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetRequest
+	69, // 54: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	64, // 55: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
+	7,  // 56: muxvia.client.binding.v1.OpenSessionResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
+	70, // 57: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
+	64, // 58: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
+	71, // 59: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
+	72, // 60: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
+	1,  // 61: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
+	64, // 62: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	69, // 63: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	64, // 64: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	37, // 65: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
+	38, // 66: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
+	39, // 67: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
+	43, // 68: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
+	19, // 69: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
+	21, // 70: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
+	41, // 71: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
+	42, // 72: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
+	23, // 73: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
+	25, // 74: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
+	27, // 75: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
+	31, // 76: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
+	33, // 77: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
+	35, // 78: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
+	12, // 79: muxvia.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetResult
+	14, // 80: muxvia.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyResult
+	16, // 81: muxvia.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetResult
+	45, // 82: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
+	46, // 83: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
+	47, // 84: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
+	50, // 85: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
+	48, // 86: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
+	57, // 87: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	58, // 88: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	52, // 89: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
+	55, // 90: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
+	53, // 91: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	64, // 92: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
+	49, // 93: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
+	51, // 94: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
+	59, // 95: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
+	54, // 96: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
+	56, // 97: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
+	98, // [98:98] is the sub-list for method output_type
+	98, // [98:98] is the sub-list for method input_type
+	98, // [98:98] is the sub-list for extension type_name
+	98, // [98:98] is the sub-list for extension extendee
+	0,  // [0:98] is the sub-list for field type_name
 }
 
 func init() { file_bindingpb_client_binding_proto_init() }
@@ -6927,12 +5230,7 @@ func file_bindingpb_client_binding_proto_init() {
 		(*EventEnvelope_ConnectionPolicyApply)(nil),
 		(*EventEnvelope_ConnectionSnapshotGet)(nil),
 	}
-	file_bindingpb_client_binding_proto_msgTypes[71].OneofWrappers = []any{
-		(*PlatformEvent_WebrtcChannelMessage)(nil),
-		(*PlatformEvent_WebrtcChannelClosed)(nil),
-		(*PlatformEvent_WebrtcBufferedAmountLow)(nil),
-	}
-	file_bindingpb_client_binding_proto_msgTypes[72].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[54].OneofWrappers = []any{
 		(*PlatformRequest_CredentialResolve)(nil),
 		(*PlatformRequest_CredentialPrepare)(nil),
 		(*PlatformRequest_CredentialDelete)(nil),
@@ -6943,49 +5241,21 @@ func file_bindingpb_client_binding_proto_init() {
 		(*PlatformRequest_SshCredentialLookup)(nil),
 		(*PlatformRequest_SshCredentialSign)(nil),
 		(*PlatformRequest_SshCredentialDelete)(nil),
-		(*PlatformRequest_CloudResolveEndpoint)(nil),
-		(*PlatformRequest_CloudCreateSignaling)(nil),
-		(*PlatformRequest_CloudAcquireRelay)(nil),
-		(*PlatformRequest_CloudPlanRoute)(nil),
-		(*PlatformRequest_CloudReportQuality)(nil),
-		(*PlatformRequest_CloudReportOutcome)(nil),
-		(*PlatformRequest_CloudRouteEligibility)(nil),
-		(*PlatformRequest_WebrtcOpenPeer)(nil),
-		(*PlatformRequest_WebrtcCreateOffer)(nil),
-		(*PlatformRequest_WebrtcApplyAnswer)(nil),
-		(*PlatformRequest_WebrtcWaitReady)(nil),
-		(*PlatformRequest_WebrtcChannelSend)(nil),
-		(*PlatformRequest_WebrtcChannelThreshold)(nil),
-		(*PlatformRequest_WebrtcPeerSnapshot)(nil),
-		(*PlatformRequest_WebrtcClosePeer)(nil),
-		(*PlatformRequest_WebrtcCloseChannel)(nil),
 	}
-	file_bindingpb_client_binding_proto_msgTypes[73].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[55].OneofWrappers = []any{
 		(*PlatformResponse_Credential)(nil),
 		(*PlatformResponse_CredentialSign)(nil),
 		(*PlatformResponse_EndpointRegistry)(nil),
 		(*PlatformResponse_SshCredential)(nil),
 		(*PlatformResponse_SshCredentialSign)(nil),
-		(*PlatformResponse_CloudResolvedEndpoint)(nil),
-		(*PlatformResponse_CloudSignaling)(nil),
-		(*PlatformResponse_CloudRelayLease)(nil),
-		(*PlatformResponse_CloudRoutePlan)(nil),
-		(*PlatformResponse_CloudQualityReported)(nil),
-		(*PlatformResponse_CloudOutcomeReported)(nil),
-		(*PlatformResponse_CloudRouteEligibility)(nil),
-		(*PlatformResponse_WebrtcPeerOpened)(nil),
-		(*PlatformResponse_WebrtcOffer)(nil),
-		(*PlatformResponse_WebrtcPeerReady)(nil),
-		(*PlatformResponse_WebrtcChannelSent)(nil),
-		(*PlatformResponse_WebrtcPeerSnapshot)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bindingpb_client_binding_proto_rawDesc), len(file_bindingpb_client_binding_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   74,
+			NumEnums:      7,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

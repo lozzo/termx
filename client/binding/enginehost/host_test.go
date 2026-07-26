@@ -3,40 +3,14 @@ package enginehost
 import (
 	"bytes"
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/muxvia/muxvia/client/adapter/direct"
 	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/bindingpb"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/cloudcompanion"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 )
-
-func TestPlatformCloudResponsePreservesRetryableQuotaConflict(t *testing.T) {
-	err := platformCloudResponseError(&bindingpb.PlatformResponse{Error: &apipb.ApiError{
-		Code: apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT, Message: "managed P2P concurrency is exhausted", Retryable: true, Attempted: true,
-	}})
-	var cloudErr *cloudcompanion.Error
-	if !errors.As(err, &cloudErr) || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED || !cloudErr.Retryable {
-		t.Fatalf("platform cloud error = %#v", err)
-	}
-}
-
-func TestPlatformCloudResponsePreservesEntitlementDenied(t *testing.T) {
-	err := platformCloudResponseError(&bindingpb.PlatformResponse{Error: &apipb.ApiError{
-		Code: apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, Message: "managed Cloud capability is not enabled", Attempted: true,
-	}})
-	var cloudErr *cloudcompanion.Error
-	if !errors.As(err, &cloudErr) || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED || cloudErr.Retryable {
-		t.Fatalf("platform cloud entitlement error = %#v", err)
-	}
-}
 
 func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
 	payload := []byte{0x01, 0x02, 0x03, 0x04}
@@ -46,27 +20,20 @@ func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
 	}
 }
 
-func TestPairingClaimCandidatesProduceValidDirectAndCloudAttempts(t *testing.T) {
+func TestPairingClaimCandidateProducesValidDirectAttempt(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x21}, 32)
-	for name, route := range map[string]*remoteauthpb.PairingRouteSeed{
-		"direct": {Route: &remoteauthpb.PairingRouteSeed_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.PairingDirectRouteSeed{SignalingAddress: "127.0.0.1:41001", IceTcpAddress: "127.0.0.1:41002"}}},
-		"cloud":  {Route: &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{TargetDeviceId: "device-1"}}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			route.RouteId = name
-			candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOfferV1{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Routes: []*remoteauthpb.PairingRouteSeed{route}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			selected, err := pairingClaimRoutes(candidate, Options{DirectPeers: fakeDirectPeerFactory{}, ManagedPeers: fakeManagedPeerFactory{}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			target := pairingTarget("device-1", candidate.Identity, selected, "credential:device-1")
-			if _, err := clientruntime.NewAttemptRequest(target, selected[0].ID, 1, clientruntime.ConnectIntentInteractive); err != nil {
-				t.Fatalf("claim attempt is invalid: %#v err=%v", target, err)
-			}
-		})
+	route := &remoteauthpb.PairingRouteSeed{RouteId: "direct", Route: &remoteauthpb.PairingRouteSeed_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.PairingDirectRouteSeed{SignalingAddress: "127.0.0.1:41001", IceTcpAddress: "127.0.0.1:41002"}}}
+	candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOfferV1{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Routes: []*remoteauthpb.PairingRouteSeed{route}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := pairingClaimRoutes(candidate, Options{DirectPeers: fakeDirectPeerFactory{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := pairingTarget("device-1", candidate.Identity, selected, "credential:device-1")
+	if _, err := clientruntime.NewAttemptRequest(target, selected[0].ID, 1, clientruntime.ConnectIntentInteractive); err != nil {
+		t.Fatalf("claim attempt is invalid: %#v err=%v", target, err)
 	}
 }
 
@@ -74,12 +41,6 @@ type credentialAvailability map[string]bool
 
 func (values credentialAvailability) Available(_ context.Context, _, reference string) bool {
 	return values[reference]
-}
-
-type cloudEligibility map[endpoint.RouteID]bool
-
-func (values cloudEligibility) Available(_ context.Context, route endpoint.AccessRoute) bool {
-	return values[route.ID]
 }
 
 func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
@@ -104,12 +65,12 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 	}
 }
 
-func TestPairingClaimRoutesKeepAllSupportedAdvertisedRoutes(t *testing.T) {
+func TestPairingClaimRoutesExcludeUnavailableCloudRoute(t *testing.T) {
 	direct := endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true}
 	cloud := endpoint.AccessRoute{ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true}
 	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{direct, cloud}}
-	routes, err := pairingClaimRoutes(target, Options{DirectPeers: fakeDirectPeerFactory{}, ManagedPeers: fakeManagedPeerFactory{}})
-	if err != nil || len(routes) != 2 || routes[0].ID != direct.ID || routes[1].ID != cloud.ID {
+	routes, err := pairingClaimRoutes(target, Options{DirectPeers: fakeDirectPeerFactory{}})
+	if err != nil || len(routes) != 1 || routes[0].ID != direct.ID {
 		t.Fatalf("pairing routes = %#v err=%v", routes, err)
 	}
 	if _, err := pairingClaimRoutes(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{{ID: direct.ID, Kind: direct.Kind}}}, Options{DirectPeers: fakeDirectPeerFactory{}}); err == nil {
@@ -117,7 +78,7 @@ func TestPairingClaimRoutesKeepAllSupportedAdvertisedRoutes(t *testing.T) {
 	}
 }
 
-func TestRoutePlanEnvironmentFiltersOnlyUnavailableManagedRoute(t *testing.T) {
+func TestRoutePlanEnvironmentDisablesCloudWithoutAConnector(t *testing.T) {
 	directPriority, cloudPriority := 10, 20
 	target := endpoint.Endpoint{
 		ID: "studio", Label: "Studio", LabelSource: endpoint.SourceUser, Enabled: true, ConnectMode: endpoint.ConnectOnDemand,
@@ -127,7 +88,7 @@ func TestRoutePlanEnvironmentFiltersOnlyUnavailableManagedRoute(t *testing.T) {
 			"cloud":  {ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Priority: &cloudPriority, CredentialRef: "grant:studio", Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser, TargetDeviceID: "daemon-1", RelayMode: endpoint.RelayAuto},
 		},
 	}
-	planning, environment, err := routePlanEnvironment(context.Background(), target, Options{DirectPeers: fakeDirectPeerFactory{}, ManagedPeers: fakeManagedPeerFactory{}}, credentialAvailability{"grant:studio": true}, cloudEligibility{"cloud": false})
+	planning, environment, err := routePlanEnvironment(context.Background(), target, Options{DirectPeers: fakeDirectPeerFactory{}}, credentialAvailability{"grant:studio": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,4 +114,3 @@ func TestRoutePlanEnvironmentFiltersOnlyUnavailableManagedRoute(t *testing.T) {
 }
 
 type fakeDirectPeerFactory struct{ direct.PeerFactory }
-type fakeManagedPeerFactory struct{ port.ManagedPeerFactory }

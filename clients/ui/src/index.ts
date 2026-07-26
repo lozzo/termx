@@ -91,7 +91,7 @@ export { MachineBrowserShell } from './app/MachineBrowserShell'
 export type { MachineBrowserShellProps } from './app/MachineBrowserShell'
 export { RemoteControlApp } from './app/RemoteControlApp'
 export type { MachineRuntime, MachineRuntimeFactory, RemoteControlAppProps } from './app/RemoteControlApp'
-export type { CloudAccountAdapter, ExternalPairingAdapter, ExternalPairingImportResult } from './app/RemoteControlApp'
+export type { ExternalPairingAdapter, ExternalPairingImportResult } from './app/RemoteControlApp'
 export { mountRemoteControlApp } from './entries/mountRemoteControlApp'
 export type { RemoteControlEntryOptions } from './entries/mountRemoteControlApp'
 export type {
@@ -215,16 +215,7 @@ export {
 } from './terminal/terminalInventory'
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminal/terminalInventory'
 export * from './core/transport'
-export { createWebControlApi } from './api/webControlApi'
-export type {
-  WebControlApi,
-  WebControlApiOptions,
-  WebControlFetch,
-  WebControlAuthResult,
-  WebControlLoginInput,
-  WebControlMachine,
-  WebControlUser,
-} from './api/webControlApi'
+export type { RemoteMachine } from './core/remoteMachine'
 export { useFileManager } from './files/useFileManager'
 export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './files/useFileManager'
 export * from './terminal/useTerminalSession'
@@ -244,17 +235,6 @@ export type {
   ProtoClientSubscription,
   ProtoResourceStream,
 } from './core/protoClientSession'
-export { BrowserWasmLifecycle } from './binding/browserWasmLifecycle'
-export type { BrowserWasmGeneration, BrowserWasmGenerationFactory, BrowserWasmGenerationListener } from './binding/browserWasmLifecycle'
-export { BrowserWasmPlatform, verifyRemoteDTLSCertificate } from './binding/browserWasmPlatform'
-export type { BrowserCloudPlatform, BrowserPlatformDiagnostic, BrowserPlatformEventSink } from './binding/browserWasmPlatform'
-export { MuxviaWasmRuntime, loadMuxviaWasmExports } from './binding/wasmRuntime'
-export type { LoadMuxviaWasmOptions, MuxviaWasmResult, WasmPlatformDispatcher } from './binding/wasmRuntime'
 export { BindingOperation, ProtoBindingClient, ProtoBindingConnector } from './binding/protoBindingClient'
 export type { BindingOperationCode, EndpointInput, ProtoBindingBackend } from './binding/protoBindingClient'
-export { WasmBindingBackend } from './binding/wasmBindingBackend'
-export { BrowserBindingRuntime } from './binding/browserBindingRuntime'
-export { BrowserCloudHttpPlatform } from './binding/browserCloudHttpPlatform'
-export type { BrowserCloudEndpoint } from './binding/browserCloudHttpPlatform'
-export * as MuxviaCloud from './generated/cloudpb/cloud_companion_pb'
 export * as MuxviaRemoteAuth from './generated/remoteauthpb/remote_auth_pb'

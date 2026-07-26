@@ -24,9 +24,6 @@ required_sources=(
   goclient/AndroidClientPlatform.kt
   goclient/GoClientBridgeServer.kt
   goclient/GoClientNative.kt
-  managed/AndroidGrantCredentialStore.kt
-  managed/ManagedCloudAdapter.kt
-  managed/ManagedCloudAssembly.kt
   util/HttpHelper.java
   util/StorageHelper.java
 )
@@ -87,7 +84,7 @@ required_gradle_fragments=(
   "apply plugin: 'kotlin-android'"
   '// muxvia NativeConnection dependencies'
   'shrinkResources true'
-  "test.resources.srcDir '../../../../shared/cloudcompanion/testdata'"
+  "main.proto.srcDir '../../../../proto'"
 )
 for fragment in "${required_gradle_fragments[@]}"; do
   if ! rg -Fq "$fragment" "$build_gradle"; then

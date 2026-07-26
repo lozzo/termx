@@ -37,9 +37,11 @@ type v3DirectPairingRouteOptions struct {
 	ServerName         string
 }
 
+type v3RemoteDaemonCore = remotev2daemon.ScopedTransportServer
+
 // startV3DirectDaemon 启动当前 daemon 唯一的 embedded signaling 与共享 ICE-TCP mux。
 // listener 使用同一 DeviceIdentity/AccessStore/Core；Direct 失败必须阻止 daemon 发布不可兑换的 Route hint。
-func startV3DirectDaemon(ctx context.Context, core v3ManagedDaemonCore, clientAccess v3ClientAccessRuntime, logger *slog.Logger) (func(), error) {
+func startV3DirectDaemon(ctx context.Context, core v3RemoteDaemonCore, clientAccess v3ClientAccessRuntime, logger *slog.Logger) (func(), error) {
 	if core == nil || clientAccess.Store == nil {
 		return nil, fmt.Errorf("Direct daemon requires core-v2 and client access store")
 	}

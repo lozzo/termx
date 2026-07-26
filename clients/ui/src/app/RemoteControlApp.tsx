@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Monitor, MoreHorizontal, Plus, QrCode, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -10,8 +10,8 @@ import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../pl
 import { addNativeBackHandler } from '../platform/nativeBack'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
 import type { MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcConnectOptions, TerminalInventoryEvents } from '../core/transport'
-import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
+import type { RemoteMachine } from '../core/remoteMachine'
 import {
   TERMINAL_FONT_OPTIONS,
   TERMINAL_THEME_OPTIONS,
@@ -27,11 +27,6 @@ import type { TerminalRenderer } from '../terminal/Terminal'
 import type { MachineAccessClass } from '../state/appMachine'
 import { muxviaIntlLocale, muxviaLanguages, normalizeMuxviaLanguage } from '../i18n'
 
-const storageKeys = {
-  accessToken: 'muxvia.remote.accessToken',
-} as const
-
-const defaultWebControlUrl = ''
 const appName = 'Muxvia Remote App'
 
 function noopSubscribe(_listener: () => void): () => void { return () => {} }
@@ -68,16 +63,11 @@ function isCameraUnavailableError(error: unknown): boolean {
   return /NotAllowedError|Permission denied|PermissionDenied|NotFoundError|DevicesNotFoundError/i.test(detail)
 }
 
-function isCancelledAppError(error: unknown): boolean {
-  const code = appErrorCode(error)
-  return code === 'cancelled' || code === 'canceled'
-}
-
 type AppView = 'home' | 'settings' | 'machine'
 type PairIntent = 'add-local' | 'authorize-machine'
 type ScanFlowState = 'idle' | 'scanning' | 'pairing'
 type MachineAuthorizationState = 'ready' | 'expired' | 'unauthorized'
-type DisplayMachine = WebControlMachine & {
+type DisplayMachine = RemoteMachine & {
   reachability?: MachineReachabilityView | undefined
   accessClass: MachineAccessClass
   terminalCount?: number | undefined
@@ -150,29 +140,8 @@ export interface ExternalPairingAdapter {
   forget(machineId: string): void | Promise<void>
 }
 
-export interface CloudAccountSummary {
-  accountId: string
-  accountLabel: string
-  planId: string
-  planName: string
-  subscriptionStatus: string
-  subscriptionRevision: number
-}
-
-/** CloudAccountAdapter 让 Official App 通过 native 私有模块登录；共享 UI 不接收 edge token。 */
-export interface CloudAccountAdapter {
-  current(): Promise<CloudAccountSummary | null>
-  refresh?(): Promise<CloudAccountSummary | null>
-  beginActivation(): Promise<{ userCode: string; expiresAtUnix: number }>
-  claimActivation(payload: string): Promise<{ userCode: string; expiresAtUnix: number }>
-  awaitActivation(): Promise<CloudAccountSummary>
-  cancelActivation(): Promise<void>
-  /** listMachines 只返回同账号 daemon 发现投影；授权状态由 ExternalPairingAdapter 决定。 */
-  listMachines(): Promise<WebControlMachine[]>
-  logout(): Promise<void>
-}
 export type MachineRuntimeFactory = (input: {
-  machine: WebControlMachine
+  machine: RemoteMachine
   storage: RemoteRuntimeStorage
 }) => MachineRuntime
 
@@ -190,7 +159,6 @@ export interface MachineRuntime {
 }
 
 export interface RemoteControlAppProps {
-  defaultControlUrl?: string | undefined
   storage?: RemoteRuntimeStorage | undefined
   networkRuntime?: RemoteNetworkRuntime | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
@@ -198,13 +166,9 @@ export interface RemoteControlAppProps {
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
   externalPairingAdapter?: ExternalPairingAdapter | undefined
   exportDebugLogs?: (() => Promise<void>) | undefined
-  cloudAccountAdapter?: CloudAccountAdapter | undefined
-  /** accountAccessEnabled 只控制账号登录产品面；Endpoint、配对和 terminal 权限仍由 Go Client Engine 与 daemon 持有。 */
-  accountAccessEnabled?: boolean | undefined
 }
 
 export function RemoteControlApp({
-  defaultControlUrl,
   storage: storageProp,
   networkRuntime: networkRuntimeProp,
   machineRuntimeFactory = createUnavailableMachineRuntime,
@@ -212,25 +176,15 @@ export function RemoteControlApp({
   scanPairingCode,
   externalPairingAdapter,
   exportDebugLogs,
-  cloudAccountAdapter,
-  accountAccessEnabled = true,
 }: RemoteControlAppProps) {
   const { t } = useTranslation()
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
   const [view, setView] = useState<AppView>('home')
-  const controlUrl = useMemo(() => initialControlUrl(defaultControlUrl, networkRuntime), [defaultControlUrl, networkRuntime])
-  const [login, setLogin] = useState('')
-  const [password, setPassword] = useState('')
-  const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
-  const [cloudAccount, setCloudAccount] = useState<CloudAccountSummary | null>(null)
-  const [cloudActivation, setCloudActivation] = useState<{ userCode: string; expiresAtUnix: number } | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings(storage))
-  const [user, setUser] = useState<WebControlUser | null>(null)
   const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>(() => {
     return storage ? createMachineStore({ storage }).listMachines() : []
   })
-  const [machines, setMachines] = useState<WebControlMachine[]>([])
   const [localHubReachability, setLocalHubReachability] = useState<Map<string, LocalHubReachabilitySnapshot>>(() => new Map())
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
@@ -241,38 +195,23 @@ export function RemoteControlApp({
   const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage, externalPairingAdapter))
   const [pairVersion, setPairVersion] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
   const [sharePreview, setSharePreview] = useState<EndpointSharePreviewView | null>(null)
   const [sshCredentialNotice, setSSHCredentialNotice] = useState<NonNullable<ExternalPairingImportResult['sshCredentials']> | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
-  const signedIn = accountAccessEnabled && (cloudAccountAdapter ? cloudAccount !== null : accessToken.trim() !== '')
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const cameraScanInFlightRef = useRef(false)
   const runtimeCacheRef = useRef<{
-    api: WebControlApi
     networkRuntime: RemoteNetworkRuntime
     runtimeFactory: MachineRuntimeFactory
     storage: RemoteRuntimeStorage
     runtimes: Map<string, MachineRuntime>
   } | null>(null)
 
-  const api = useMemo(() => {
-    if (controlUrl.trim() === '') {
-      return createUnavailableWebControlApi('Web Control URL is required')
-    }
-    return createWebControlApi({
-      baseUrl: controlUrl,
-      ...(accessToken ? { accessToken } : {}),
-      fetch: networkRuntime.fetch,
-    })
-  }, [accessToken, controlUrl, networkRuntime])
-
   if (storage) {
     const cache = runtimeCacheRef.current
     const cacheMatches = cache &&
-      cache.api === api &&
       cache.networkRuntime === networkRuntime &&
       cache.runtimeFactory === machineRuntimeFactory &&
       cache.storage === storage
@@ -281,7 +220,6 @@ export function RemoteControlApp({
         for (const runtime of cache.runtimes.values()) void runtime.dispose?.()
       }
       runtimeCacheRef.current = {
-        api,
         networkRuntime,
         runtimeFactory: machineRuntimeFactory,
         storage,
@@ -330,8 +268,8 @@ export function RemoteControlApp({
   }, [storage, pairVersion])
 
   const localHubReachabilityTargets = useMemo(() => {
-    return buildLocalHubReachabilityTargets(localMachines, machines, signedIn)
-  }, [localMachines, machines, signedIn])
+    return buildLocalHubReachabilityTargets(localMachines)
+  }, [localMachines])
 
   useEffect(() => {
     setLocalHubReachability((current) => pruneLocalHubReachability(current, localHubReachabilityTargets))
@@ -354,7 +292,6 @@ export function RemoteControlApp({
 
   const displayMachines = useMemo(() => {
     const map = new Map<string, DisplayMachine>()
-    const localById = new Map(localMachines.map((machine) => [machine.machineId, machine]))
     for (const local of localMachines) {
       const reachability = localHubReachability.get(local.machineId)
       const localOnline = localMachineOnline(local, reachability)
@@ -363,7 +300,7 @@ export function RemoteControlApp({
         name: userFacingMachineName(local.machineId, local.name, local.hostname, t),
         hostname: local.hostname,
         online: localOnline,
-        source: local.source === 'hub' ? 'hub' : 'local',
+        source: 'local',
         hubUrls: hubUrlsFromStoredMachine(local),
         localHubUrls: localHubUrlsFromStoredMachine(local),
         localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local),
@@ -376,33 +313,8 @@ export function RemoteControlApp({
         terminalCount: local.terminalCount,
       })
     }
-    for (const hub of machines) {
-      const local = localById.get(hub.id)
-      const reachability = local ? localHubReachability.get(local.machineId) : undefined
-      const localOnline = local ? localMachineOnline(local, reachability) : false
-      map.set(hub.id, {
-        ...hub,
-        name: userFacingMachineName(hub.id, hub.name, hub.hostname, t),
-        online: hub.online || localOnline,
-        ...(local ? {
-          localHubUrls: localHubUrlsFromStoredMachine(local),
-          localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local, hub.hubUrls),
-        } : {}),
-        reachability: machineReachabilityView({
-          hubOnline: hub.online,
-          localOnline,
-          snapshot: reachability,
-        }),
-        accessClass: local?.accessClass === 'cloud'
-          ? 'cloud'
-          : local
-            ? 'local_cloud'
-            : 'cloud',
-        terminalCount: local?.terminalCount,
-      })
-    }
     return Array.from(map.values())
-  }, [localHubReachability, localMachines, machines, t])
+  }, [localHubReachability, localMachines, t])
 
   const selectedMachine = displayMachines.find((machine) => machine.id === selectedMachineId) ?? null
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
@@ -411,81 +323,13 @@ export function RemoteControlApp({
     globalFileTransfer?.getSnapshot ?? (() => emptyTransferSnapshot),
   )
 
-  const refreshMachines = useCallback(async (refreshCloudAccount = false) => {
-    if (cloudAccountAdapter) {
-      const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
-      let resolvedAccountId: string | undefined
-      setLocalMachines(localMachineList)
-      setLoading(true)
-      try {
-        // Cloud 账号是可选能力。账号摘要是目录查询的准入真值，未登录时不得用一次
-        // 必然失败的目录请求制造全局 login_required，也不得影响本地 Endpoint。
-        const account = refreshCloudAccount && cloudAccountAdapter.refresh
-          ? await cloudAccountAdapter.refresh()
-          : await cloudAccountAdapter.current()
-        if (!account) {
-          setCloudAccount(null)
-          setUser(null)
-          setMachines([])
-          setError(null)
-          setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
-          setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-          return
-        }
-        resolvedAccountId = account.accountId
-        setCloudAccount(account)
-        setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
-        setMachines(await cloudAccountAdapter.listMachines())
-        setError(null)
-      } catch (err) {
-        setError(localizedAppError(err, t))
-        const account = await cloudAccountAdapter.current().catch(() => null)
-        if (!account) {
-          setCloudAccount(null)
-          setUser(null)
-          setMachines([])
-        }
-      } finally {
-        setLoading(false)
-      }
-      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, resolvedAccountId, externalPairingAdapter))
-      setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-      return
-    }
-    if (!accessToken) return
-    setLoading(true)
-    try {
-      let localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
-      const [profile, hubMachines] = await Promise.all([
-        api.me(),
-        api.listMachines(),
-      ])
-      setUser(profile)
-      setMachines(hubMachines)
-      if (storage) {
-        syncSignedInHubMachines(storage, hubMachines)
-        localMachineList = createMachineStore({ storage }).listMachines()
-      }
-      setLocalMachines(localMachineList)
-      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, profile.id, externalPairingAdapter))
-      setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-      setSelectedMachineId((current) => {
-        if (
-          current &&
-          (hubMachines.some((machine) => machine.id === current) ||
-            localMachineList.some((machine) => machine.machineId === current))
-        ) {
-          return current
-        }
-        return null
-      })
-      setError(null)
-    } catch (err) {
-      setError(localizedAppError(err, t))
-    } finally {
-      setLoading(false)
-    }
-  }, [accessToken, api, cloudAccountAdapter, externalPairingAdapter, storage, t])
+  const refreshMachines = useCallback(() => {
+    const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
+    setLocalMachines(localMachineList)
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
+    setSelectedMachineId((current) => current && localMachineList.some((machine) => machine.machineId === current) ? current : null)
+  }, [externalPairingAdapter, storage])
 
   const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
     if (!globalFileTransfer || !transferId) return
@@ -518,89 +362,13 @@ export function RemoteControlApp({
   }, [displayMachines, getMachineRuntime, globalFileTransfer])
 
   useEffect(() => {
-    void refreshMachines()
+    refreshMachines()
   }, [refreshMachines])
 
   useEffect(() => {
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
-    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-  }, [externalPairingAdapter, pairVersion, storage, user?.id])
-
-  const completeCloudActivation = useCallback(async (expectedUserCode: string) => {
-    if (!cloudAccountAdapter) return
-    try {
-      const account = await cloudAccountAdapter.awaitActivation()
-      setCloudAccount(account)
-      setCloudActivation((current) => current?.userCode === expectedUserCode ? null : current)
-      setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
-      setView('home')
-    } catch (err) {
-      if (!isCancelledAppError(err)) setError(localizedAppError(err, t))
-      setCloudActivation((current) => current?.userCode === expectedUserCode ? null : current)
-    }
-  }, [cloudAccountAdapter, t])
-
-  const scanCloudActivation = useCallback(async () => {
-    if (!cloudAccountAdapter || !scanPairingCode) return
-    if (cloudAccount) {
-      setError(t('errors.alreadySignedIn', { account: cloudAccount.accountLabel }))
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const payload = await scanPairingCode()
-      if (!payload) return
-      const activation = await cloudAccountAdapter.claimActivation(payload)
-      setCloudActivation(activation)
-      void completeCloudActivation(activation.userCode)
-    } catch (err) {
-      setError(localizedAppError(err, t))
-    } finally {
-      setLoading(false)
-    }
-  }, [cloudAccount, cloudAccountAdapter, completeCloudActivation, scanPairingCode, t])
-
-  const cancelCloudActivation = useCallback(async () => {
-    if (!cloudAccountAdapter) return
-    await cloudAccountAdapter.cancelActivation()
-    setCloudActivation(null)
-    setError(null)
-  }, [cloudAccountAdapter])
-
-  const submitLogin = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const auth = await api.login({ login, password })
-      storage?.setItem(storageKeys.accessToken, auth.accessToken)
-      setAccessToken(auth.accessToken)
-      setUser(auth.user)
-      setPassword('')
-      setView('home')
-    } catch (err) {
-      setError(localizedAppError(err, t))
-    } finally {
-      setLoading(false)
-    }
-  }, [api, login, password, storage, t])
-
-  const signOut = useCallback(async () => {
-    if (cloudAccountAdapter) await cloudAccountAdapter.logout()
-    storage?.removeItem(storageKeys.accessToken)
-    const signedOutMachines = pruneMachinesForSignOut(storage)
-    setAccessToken('')
-    setCloudAccount(null)
-    setUser(null)
-    setMachines([])
-    setLocalMachines(signedOutMachines)
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-    setPairVersion((current) => current + 1)
-    setSelectedMachineId(null)
-    setError(null)
-    setView('settings')
-  }, [cloudAccountAdapter, externalPairingAdapter, storage])
+  }, [externalPairingAdapter, pairVersion, storage])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
     setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }, storage))
@@ -649,21 +417,17 @@ export function RemoteControlApp({
     const store = createMachineStore({ storage })
     const timestamp = new Date().toISOString()
     const existing = store.getMachine(external.machine.id)
-    const directoryMachine = machines.find((machine) => machine.id === external.machine.id)
-    const directoryHubUrl = directoryMachine?.currentHubUrl ?? directoryMachine?.hubUrls[0]
     store.saveMachine({
       machineId: external.machine.id,
       name: selectedMachine?.name ?? external.machine.name,
       ...((selectedMachine?.hostname ?? external.machine.hostname) ? { hostname: selectedMachine?.hostname ?? external.machine.hostname } : {}),
       state: external.authorizationRequired ? 'offline' : 'online',
       terminalCount: existing?.terminalCount ?? 0,
-      source: directoryMachine ? 'hub' : existing?.source ?? 'manual',
+      source: existing?.source ?? 'manual',
       accessClass: external.machine.accessClass ?? 'local',
       addresses: existing?.addresses ?? { local: [], lan: [], public: [] },
       endpoints: {
         ...(existing?.endpoints ?? {}),
-        ...(directoryMachine?.controlUrl ? { webControl: directoryMachine.controlUrl } : {}),
-        ...(directoryHubUrl ? { hub: directoryHubUrl } : {}),
       },
       addedAt: existing?.addedAt ?? timestamp,
       updatedAt: timestamp,
@@ -671,7 +435,7 @@ export function RemoteControlApp({
     dropMachineRuntime(external.machine.id)
     setLocalMachines(store.listMachines())
     setSelectedMachineId(external.machine.id)
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
     setManualScanValue('')
@@ -681,43 +445,9 @@ export function RemoteControlApp({
     setScanOpen(sshCredentials.length > 0)
     setView(external.authorizationRequired ? 'home' : 'machine')
     hapticSuccess()
-  }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, selectedMachine, storage])
 
   const pairScannedValue = useCallback(async (rawValue: string) => {
-    const trimmedValue = rawValue.trim()
-    const isCloudActivation = trimmedValue.startsWith('muxvia-cloud-activate:v1:') || /^MXA(?:-[0-9A-HJKMNP-TV-Z]{4}){5}-[0-9A-HJKMNP-TV-Z]{6}$/i.test(trimmedValue)
-    if (isCloudActivation && cloudAccountAdapter) {
-      // 账号 Session 是独立持久真值；已登录时禁止把新的 MXA 事务与旧 Session 混在一起。
-      // 用户必须先显式退出，避免误以为未批准的新 flow 已经完成登录。
-      if (cloudAccount) {
-        hapticError()
-        setError(t('errors.alreadySignedIn', { account: cloudAccount.accountLabel }))
-        setScanOpen(false)
-        setView('settings')
-        return
-      }
-      setPairing(true)
-      setScanFlowState('pairing')
-      setError(null)
-      try {
-        const activation = await cloudAccountAdapter.claimActivation(rawValue.trim())
-        setCloudActivation(activation)
-        setManualScanValue('')
-        setScanOpen(false)
-        setView('settings')
-        hapticSuccess()
-        void completeCloudActivation(activation.userCode)
-      } catch (err) {
-        hapticError()
-        setError(localizedAppError(err, t))
-        setScanOpen(false)
-        setView('settings')
-      } finally {
-        setPairing(false)
-        setScanFlowState('idle')
-      }
-      return
-    }
     if (!storage) {
       setError(t('errors.storageRequired'))
       return
@@ -747,7 +477,7 @@ export function RemoteControlApp({
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [cloudAccount, cloudAccountAdapter, completeCloudActivation, externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine, t])
+  }, [externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine, t])
 
   const commitEndpointShare = useCallback(async () => {
 	if (!sharePreview || !externalPairingAdapter?.commitShare) return
@@ -797,7 +527,7 @@ export function RemoteControlApp({
     if (!storage) return
     void externalPairingAdapter?.forget(machineId)
     dropMachineRuntime(machineId)
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
     setSelectedMachineId(machineId)
@@ -805,25 +535,22 @@ export function RemoteControlApp({
     setManualScanValue('')
     setError(t('errors.pairAgain'))
     setScanOpen(true)
-  }, [dropMachineRuntime, externalPairingAdapter, storage, t, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, storage, t])
 
-  const forgetMachineAuthorization = useCallback((machine: WebControlMachine) => {
+  const forgetMachineAuthorization = useCallback((machine: RemoteMachine) => {
     if (!storage) return
     const store = createMachineStore({ storage })
     void externalPairingAdapter?.forget(machine.id)
     dropMachineRuntime(machine.id)
-    const stillVisibleFromHub = machines.some((hubMachine) => hubMachine.id === machine.id)
-    if (!stillVisibleFromHub) {
-      store.forgetMachine(machine.id)
-    }
+    store.forgetMachine(machine.id)
     setLocalMachines(store.listMachines())
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
     setSelectedMachineId((current) => current === machine.id ? null : current)
     setView((current) => current === 'machine' && selectedMachineId === machine.id ? 'home' : current)
     setError(null)
-  }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachineId, storage, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, selectedMachineId, storage])
 
   useEffect(() => addNativeBackHandler(() => {
     if (scanOpen) {
@@ -851,28 +578,9 @@ export function RemoteControlApp({
     >
       {view === 'settings' ? (
         <SettingsView
-          accountAccessEnabled={accountAccessEnabled}
           error={error}
-          controlUrl={controlUrl}
-          loading={loading}
-          cloudActivation={cloudActivation}
-          login={login}
-          password={password}
-          signedIn={signedIn}
-          cloudAccount={cloudAccount}
           terminalSettings={terminalSettings}
-          user={user}
           onBack={() => { hapticSelection(); setView('home') }}
-          onLoginChange={setLogin}
-          onPasswordChange={setPassword}
-          onRefresh={() => { hapticImpact(); void refreshMachines(true) }}
-          onSignIn={() => { hapticImpact(); void submitLogin() }}
-          onScanCloudActivation={() => { hapticImpact(); void scanCloudActivation() }}
-          onSubmitCloudActivationCode={(code) => { hapticImpact(); void pairScannedValue(code) }}
-          onCancelCloudActivation={() => { hapticSelection(); void cancelCloudActivation() }}
-          onSignOut={() => { hapticImpact(); void signOut() }}
-          nativeCloudLogin={Boolean(cloudAccountAdapter)}
-          canScanCloudActivation={Boolean(cloudAccountAdapter && scanPairingCode)}
           onTerminalSettingsChange={updateTerminalSettings}
           onExportDebugLogs={exportDebugLogs}
         />
@@ -892,23 +600,17 @@ export function RemoteControlApp({
         />
       ) : (
         <HomeView
-          accountAccessEnabled={accountAccessEnabled}
           fileTransfer={globalFileTransfer}
           transferState={globalTransferState as { transfers: TransferInfo[]; hasActiveTransfers: boolean }}
-          loading={loading}
           machines={displayMachines}
           getConnectionStateSource={(machine) => authorizedMachineIds.has(machine.id) ? getExistingMachineRuntime(machine)?.listConnectionState : undefined}
           authorizedMachineIds={authorizedMachineIds}
           authorizationExpiries={authorizationExpiries}
-          signedIn={signedIn}
-          user={user}
           onAddLocalDevice={openAddLocalSheet}
           onOpenSettings={() => { hapticSelection(); setView('settings') }}
           onOpenTransferCenter={() => { hapticSelection(); setTransferCenterOpen(true) }}
           onForgetMachineAuthorization={forgetMachineAuthorization}
-          onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSelectMachine={selectMachine}
-          onSignIn={() => { hapticSelection(); setView('settings') }}
         />
       )}
 
@@ -1072,41 +774,29 @@ function MachineRuntimeErrorShell({
 }
 
 function HomeView({
-  accountAccessEnabled,
   fileTransfer,
   transferState,
-  loading,
   machines,
   getConnectionStateSource,
   authorizedMachineIds,
   authorizationExpiries,
-  signedIn,
-  user,
   onAddLocalDevice,
   onForgetMachineAuthorization,
   onOpenSettings,
   onOpenTransferCenter,
-  onRefresh,
   onSelectMachine,
-  onSignIn,
 }: {
-  accountAccessEnabled: boolean
   fileTransfer?: FileTransferContext | undefined
   transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
-  loading: boolean
   machines: DisplayMachine[]
   getConnectionStateSource: (machine: DisplayMachine) => MachineRuntime['listConnectionState']
   authorizedMachineIds: Set<string>
   authorizationExpiries: Map<string, string>
-  signedIn: boolean
-  user: WebControlUser | null
   onAddLocalDevice: () => void
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
-  onRefresh: () => void
   onSelectMachine: (machine: DisplayMachine) => void
-  onSignIn: () => void
 }) {
   const { t } = useTranslation()
   const [detailMachine, setDetailMachine] = useState<DisplayMachine | null>(null)
@@ -1120,23 +810,11 @@ function HomeView({
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
             <h1 className="text-lg font-semibold leading-6 lg:text-sm">{t('machines.title')}</h1>
             <p className="truncate text-xs font-medium text-zinc-500 lg:border-l lg:border-zinc-200 lg:pl-3">
-            {signedIn ? (user?.email ? t('machines.availableFor', { count: machines.length, account: user.email }) : t('machines.availableCount', { count: machines.length })) : accountAccessEnabled ? t('machines.signInToSync') : t('machines.savedCount', { count: machines.length })}
+            {t('machines.savedCount', { count: machines.length })}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {signedIn ? (
-            <button
-              aria-label={t('machines.refresh')}
-              className="muxvia-app-icon-button gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
-              type="button"
-              onClick={onRefresh}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden text-xs font-semibold xl:inline">{t('common.refresh')}</span>
-            </button>
-          ) : null}
           <button
             aria-label={t('machines.add')}
             className="muxvia-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] lg:px-3"
@@ -1170,10 +848,7 @@ function HomeView({
 
       {machines.length === 0 ? (
         <FirstUseState
-          accountAccessEnabled={accountAccessEnabled}
-          signedIn={signedIn}
           onAddLocalDevice={onAddLocalDevice}
-          onSignIn={onSignIn}
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-4 lg:px-8 lg:py-7">
@@ -1209,15 +884,9 @@ function HomeView({
 }
 
 function FirstUseState({
-  accountAccessEnabled,
-  signedIn,
   onAddLocalDevice,
-  onSignIn,
 }: {
-  accountAccessEnabled: boolean
-  signedIn: boolean
   onAddLocalDevice: () => void
-  onSignIn: () => void
 }) {
   const { t } = useTranslation()
   return (
@@ -1227,17 +896,11 @@ function FirstUseState({
           <Server className="h-6 w-6" />
         </div>
         <h2 className="mt-5 text-lg font-semibold text-zinc-950">{t('machines.emptyTitle')}</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-600">{t(accountAccessEnabled ? (signedIn ? 'machines.emptySignedInCopy' : 'machines.emptyCopy') : 'machines.emptyServiceCopy')}</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">{t('machines.emptyServiceCopy')}</p>
         <div className="mt-6 grid gap-3">
-          {accountAccessEnabled && !signedIn ? (
-            <button className="muxvia-app-primary-button h-12 gap-2 px-4 text-sm font-semibold" type="button" onClick={onSignIn}>
-              <LogIn className="h-4 w-4" />
-              {t('machines.signInCloud')}
-            </button>
-          ) : null}
-          <button className={`${signedIn || !accountAccessEnabled ? 'muxvia-app-primary-button' : 'muxvia-app-secondary-button'} h-12 gap-2 px-4 text-sm font-semibold`} type="button" onClick={onAddLocalDevice}>
+          <button className="muxvia-app-primary-button h-12 gap-2 px-4 text-sm font-semibold" type="button" onClick={onAddLocalDevice}>
             <QrCode className="h-4 w-4" />
-            {t(accountAccessEnabled ? 'machines.addLocal' : 'machines.scanService')}
+            {t('machines.scanService')}
           </button>
         </div>
       </section>
@@ -1246,55 +909,17 @@ function FirstUseState({
 }
 
 function SettingsView({
-  accountAccessEnabled,
-  canScanCloudActivation,
-  cloudActivation,
-  controlUrl,
   error,
-  loading,
-  login,
-  password,
-  signedIn,
-  cloudAccount,
   terminalSettings,
-  user,
   onBack,
-  onCancelCloudActivation,
-  onLoginChange,
-  onPasswordChange,
-  onRefresh,
-  onScanCloudActivation,
-  onSubmitCloudActivationCode,
-  onSignIn,
-  onSignOut,
   onTerminalSettingsChange,
   onExportDebugLogs,
-  nativeCloudLogin,
 }: {
-  accountAccessEnabled: boolean
-  canScanCloudActivation: boolean
-  cloudActivation: { userCode: string; expiresAtUnix: number } | null
-  controlUrl: string
   error: string | null
-  loading: boolean
-  login: string
-  password: string
-  signedIn: boolean
-  cloudAccount: CloudAccountSummary | null
   terminalSettings: TerminalSettings
-  user: WebControlUser | null
   onBack: () => void
-  onCancelCloudActivation: () => void
-  onLoginChange: (value: string) => void
-  onPasswordChange: (value: string) => void
-  onRefresh: () => void
-  onScanCloudActivation: () => void
-  onSubmitCloudActivationCode: (code: string) => void
-  onSignIn: () => void
-  onSignOut: () => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
   onExportDebugLogs?: (() => Promise<void>) | undefined
-  nativeCloudLogin: boolean
 }) {
   const { t, i18n } = useTranslation()
   const handleNumberSetting = (key: 'fontSize' | 'scrollback' | 'scrollbackPrefetchThresholdRows', min: number, max: number) =>
@@ -1321,19 +946,8 @@ function SettingsView({
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold leading-6 text-zinc-900">{t('common.settings')}</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">{accountAccessEnabled ? (signedIn ? user?.email ?? t('common.signedIn') : nativeCloudLogin ? t('settings.cloudSignIn') : t('settings.webSignIn')) : t('settings.deviceAccess')}</p>
+          <p className="truncate text-xs font-medium text-zinc-500">{t('settings.deviceAccess')}</p>
         </div>
-        {accountAccessEnabled && signedIn ? (
-          <button
-            aria-label={t('common.signOut')}
-            className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
-            title={t('common.signOut')}
-            type="button"
-            onClick={onSignOut}
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
-        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
@@ -1342,87 +956,9 @@ function SettingsView({
             <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
-          {accountAccessEnabled ? <SettingsSection title={t('common.account')}>
-            {signedIn ? (
-              <>
-                <SettingsRow label={t('common.signedIn')} value={user?.email ?? t('common.account')} />
-                {cloudAccount ? (
-                  <>
-                    <SettingsRow label={t('settings.plan')} value={cloudAccount.planName} />
-                    <SettingsRow label={t('settings.subscriptionStatus')} value={subscriptionStatusLabel(cloudAccount.subscriptionStatus, t)} />
-                  </>
-                ) : null}
-                <div className="px-4 py-3">
-                  <button
-                    className="muxvia-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                    type="button"
-                    onClick={onRefresh}
-                    disabled={loading}
-                  >
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    {t('common.refresh')}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                {!nativeCloudLogin && <div className="px-4 py-3">
-                  <label className="block text-sm font-medium text-zinc-500">
-                    {t('settings.emailOrUsername')}
-                    <input
-                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-                      value={login}
-                      onChange={(event) => onLoginChange(event.target.value)}
-                      autoComplete="username"
-                    />
-                  </label>
-                </div>}
-                {!nativeCloudLogin && <div className="border-t border-zinc-200 px-4 py-3">
-                  <label className="block text-sm font-medium text-zinc-500">
-                    {t('settings.password')}
-                    <input
-                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-                      value={password}
-                      onChange={(event) => onPasswordChange(event.target.value)}
-                      type="password"
-                      autoComplete="current-password"
-                    />
-                  </label>
-                </div>}
-                {nativeCloudLogin ? (
-                  <CloudActivationPanel
-                    activation={cloudActivation}
-                    canScan={canScanCloudActivation}
-                    loading={loading}
-                    onCancel={onCancelCloudActivation}
-                    onScan={onScanCloudActivation}
-                    onSubmitCode={onSubmitCloudActivationCode}
-                  />
-                ) : (
-                  <div className="border-t border-zinc-200 px-4 py-3">
-                    <button
-                      className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                      type="button"
-                      onClick={onSignIn}
-                      disabled={loading}
-                    >
-                      <LogIn className="h-4 w-4" />
-                      {t('common.signIn')}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </SettingsSection> : null}
-
-          {accountAccessEnabled && !nativeCloudLogin ? (
-            <SettingsSection title={t('settings.connection')}>
-              <SettingsRow
-                label={t('settings.webControl')}
-                value={controlUrl || t('settings.builtInEndpoint')}
-              />
-            </SettingsSection>
-          ) : null}
+          <SettingsSection title={t('workspace.connection.routeCloud')}>
+            <SettingsRow label={t('workspace.connection.routeCloud')} value={t('workspace.connection.unavailableReason.cloud_unavailable')} />
+          </SettingsSection>
 
           <SettingsSection title={t('common.language')}>
             <SettingsRow label={t('settings.languageHint')}>
@@ -1559,105 +1095,6 @@ function SettingsView({
         </div>
       </div>
     </section>
-  )
-}
-
-function subscriptionStatusLabel(status: string, t: TFunction): string {
-  switch (status.trim().toUpperCase()) {
-    case 'SUBSCRIPTION_STATUS_ACTIVE': return t('settings.subscriptionActive')
-    case 'SUBSCRIPTION_STATUS_TRIALING': return t('settings.subscriptionTrial')
-    case 'SUBSCRIPTION_STATUS_PAST_DUE': return t('settings.subscriptionPastDue')
-    case 'SUBSCRIPTION_STATUS_CANCEL_AT_PERIOD_END': return t('settings.subscriptionCanceling')
-    case 'SUBSCRIPTION_STATUS_CANCELED': return t('settings.subscriptionCanceled')
-    case 'SUBSCRIPTION_STATUS_SUSPENDED': return t('settings.subscriptionSuspended')
-    case 'SUBSCRIPTION_STATUS_EXPIRED': return t('settings.subscriptionExpired')
-    case 'SUBSCRIPTION_STATUS_GRACE': return t('settings.subscriptionGrace')
-    default: return t('settings.subscriptionPending')
-  }
-}
-
-function CloudActivationPanel({
-  activation,
-  canScan,
-  loading,
-  onCancel,
-  onScan,
-  onSubmitCode,
-}: {
-  activation: { userCode: string; expiresAtUnix: number } | null
-  canScan: boolean
-  loading: boolean
-  onCancel: () => void
-  onScan: () => void
-  onSubmitCode: (code: string) => void
-}) {
-  const { t } = useTranslation()
-  const [now, setNow] = useState(() => Date.now())
-  const [code, setCode] = useState('')
-  useEffect(() => {
-    if (!activation) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [activation])
-  const remainingSeconds = activation ? Math.max(0, Math.ceil(activation.expiresAtUnix - now / 1000)) : 0
-  const remaining = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
-
-  if (activation) {
-    return (
-      <div className="border-t border-zinc-200 px-4 py-4">
-        <div aria-live="polite" className="border border-[var(--muxvia-app-line)] bg-white px-4 py-5 text-center">
-          <p className="text-sm font-medium text-zinc-500">{t('activation.enterOnComputer')}</p>
-          <strong className="mt-3 block font-mono text-2xl font-medium text-zinc-950">{activation.userCode}</strong>
-          <p className="mt-3 font-mono text-sm text-zinc-500">{t('activation.waiting', { remaining })}</p>
-        </div>
-        <button
-          className="muxvia-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold"
-          type="button"
-          onClick={onCancel}
-        >
-          <X className="h-4 w-4" />
-          {t('activation.cancel')}
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="border-t border-zinc-200 px-4 py-4">
-      <p className="mb-4 text-sm leading-6 text-zinc-500">{t('activation.intro')}</p>
-      {canScan ? (
-        <button
-          className="muxvia-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-          type="button"
-          onClick={onScan}
-          disabled={loading}
-        >
-          <QrCode className="h-4 w-4" />
-          {t('activation.scanWeb')}
-        </button>
-      ) : <p className="text-sm text-zinc-500">{t('activation.scanUnavailable')}</p>}
-      <label className="mt-4 block text-xs font-semibold text-zinc-500">
-        {t('activation.loginCode')}
-        <input
-          className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 font-mono text-sm uppercase text-zinc-950 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-          value={code}
-          onChange={(event) => setCode(event.target.value.toUpperCase())}
-          placeholder="MXA-XXXX-XXXX-XXXX-XXXX-XXXX-XXXXXX"
-          autoCapitalize="characters"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-      </label>
-      <button
-        className="muxvia-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:opacity-50"
-        type="button"
-        onClick={() => onSubmitCode(code.trim())}
-        disabled={loading || code.trim() === ''}
-      >
-        <Keyboard className="h-4 w-4" />
-        {t('activation.useCode')}
-      </button>
-    </div>
   )
 }
 
@@ -1965,7 +1402,7 @@ function PairSheet({
   pairing: boolean
   sharePreview: EndpointSharePreviewView | null
   sshCredentialNotice: NonNullable<ExternalPairingImportResult['sshCredentials']> | null
-  selectedMachine: WebControlMachine | null
+  selectedMachine: RemoteMachine | null
   onClose: () => void
   onCommitShare: () => void
   onImport: () => void
@@ -2419,65 +1856,6 @@ function isExpiredAuthorization(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now()
 }
 
-function EmptyState({
-  actionLabel,
-  icon,
-  message,
-  onAction,
-  title,
-}: {
-  actionLabel: string
-  icon: 'login' | 'scan'
-  message: string
-  onAction: () => void
-  title: string
-}) {
-  return (
-    <div className="flex flex-1 items-start justify-center pt-16 lg:items-center lg:py-8 lg:pt-8">
-      <div className="muxvia-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x" data-testid="muxvia-machine-empty-state">
-        <div className="flex h-12 w-12 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-[var(--muxvia-app-accent)]">
-          {icon === 'login' ? <Server className="h-6 w-6" /> : <QrCode className="h-6 w-6" />}
-        </div>
-        <div className="space-y-1.5">
-          <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
-          <p className="text-sm leading-5 text-zinc-500">{message}</p>
-        </div>
-        <button
-          className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
-          type="button"
-          onClick={() => { hapticImpact(); onAction() }}
-        >
-          {icon === 'login' ? <LogIn className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
-          {actionLabel}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function initialControlUrl(fallback: string | undefined, networkRuntime: RemoteNetworkRuntime): string {
-  const fromQuery = networkRuntime.queryParam('control')
-  const queryValue = cleanControlUrl(fromQuery)
-  if (queryValue) return queryValue
-  return cleanControlUrl(fallback) || defaultWebControlUrl
-}
-
-function cleanControlUrl(value: string | null | undefined): string {
-  return value?.trim() ?? ''
-}
-
-function createUnavailableWebControlApi(message: string): WebControlApi {
-  const fail = async (): Promise<never> => {
-    throw new Error(message)
-  }
-  return {
-    login: fail,
-    me: fail,
-    listMachines: fail,
-  }
-}
-
-
 function readAuthorizedMachineIds(
   storage: RemoteRuntimeStorage | undefined,
   userId: string | undefined,
@@ -2517,8 +1895,6 @@ function readAuthorizationExpiries(
 
 function buildLocalHubReachabilityTargets(
   localMachines: StoredMachineRecord[],
-  hubMachines: WebControlMachine[],
-  signedIn: boolean,
 ): LocalHubReachabilityTarget[] {
   const targets = new Map<string, string[]>()
   for (const machine of localMachines) {
@@ -2527,16 +1903,6 @@ function buildLocalHubReachabilityTargets(
       ...localFallbackHubUrlsFromStoredMachine(machine),
     ])
     if (urls.length > 0) targets.set(machine.machineId, urls)
-  }
-  if (signedIn) {
-    for (const machine of hubMachines) {
-      const urls = compactHubUrls([
-        ...(machine.localHubUrls ?? []),
-        ...(machine.localFallbackHubUrls ?? []),
-        ...(targets.get(machine.id) ?? []),
-      ])
-      if (urls.length > 0) targets.set(machine.id, urls)
-    }
   }
   return Array.from(targets.entries())
     .sort(([left], [right]) => left.localeCompare(right))
@@ -2642,66 +2008,6 @@ function machineReachabilityView(input: {
   }
 }
 
-function pruneMachinesForSignOut(storage: RemoteRuntimeStorage | undefined): StoredMachineRecord[] {
-  if (!storage) return []
-  const store = createMachineStore({ storage })
-  for (const machine of store.listMachines()) {
-    if (machine.source !== 'hub') continue
-    if (hasLocalAddresses(machine)) {
-      store.saveMachine(downgradeHubMachineToLocal(machine))
-    } else {
-      store.forgetMachine(machine.machineId)
-    }
-  }
-  return store.listMachines()
-}
-
-function syncSignedInHubMachines(storage: RemoteRuntimeStorage, hubMachines: WebControlMachine[]): void {
-  const store = createMachineStore({ storage })
-  for (const hub of hubMachines) {
-    const stored = store.getMachine(hub.id)
-    if (stored) {
-      store.saveMachine(mergeHubMachine(stored, hub))
-      continue
-    }
-    const timestamp = new Date().toISOString()
-    store.saveMachine(mergeHubMachine({
-      machineId: hub.id,
-      name: hub.name,
-      ...(hub.hostname ? { hostname: hub.hostname } : {}),
-      state: hub.online ? 'online' : 'offline',
-      terminalCount: 0,
-      source: 'hub',
-      addresses: { local: [], lan: [], public: [] },
-      endpoints: {},
-      addedAt: timestamp,
-      updatedAt: timestamp,
-    }, hub))
-  }
-}
-
-function hasLocalAddresses(machine: StoredMachineRecord): boolean {
-  return machine.addresses.local.length > 0 || machine.addresses.lan.length > 0 || machine.addresses.public.length > 0
-}
-
-function downgradeHubMachineToLocal(machine: StoredMachineRecord): StoredMachineRecord {
-  return {
-    ...machine,
-    accessClass: 'local',
-    state: machine.state === 'online' ? 'unknown' : machine.state,
-    source: 'local',
-    preferredPath: 'local',
-    addresses: {
-      local: machine.addresses.local,
-      lan: machine.addresses.lan,
-      public: machine.addresses.public,
-    },
-    endpoints: {},
-    updatedAt: new Date().toISOString(),
-  }
-}
-
-
 function createUnavailableMachineRuntime(): MachineRuntime {
   const unavailable = async () => { throw new Error('a Proto binding machine runtime is required') }
   return { api: { getStatus: unavailable, listTerminals: unavailable }, connector: { connect: unavailable } }
@@ -2714,33 +2020,6 @@ const unavailableNetworkRuntime: RemoteNetworkRuntime = {
   queryParam() {
     return null
   },
-}
-
-function mergeHubMachine(saved: StoredMachineRecord, machine: WebControlMachine): StoredMachineRecord {
-  const [summaryHubUrl] = nonEmptyHubUrls(machine)
-  return {
-    machineId: saved.machineId,
-    name: machine.name || saved.name,
-    ...(machine.hostname || saved.hostname ? { hostname: machine.hostname ?? saved.hostname } : {}),
-    state: machine.online ? 'online' : 'offline',
-    terminalCount: saved.terminalCount,
-    ...(machine.lastSeen || saved.lastSeenAt ? { lastSeenAt: machine.lastSeen ?? saved.lastSeenAt } : {}),
-    ...(saved.lastConnectionPath ? { lastConnectionPath: saved.lastConnectionPath } : {}),
-    preferredPath: 'hub',
-    ...(saved.relayInUse !== undefined ? { relayInUse: saved.relayInUse } : {}),
-    source: 'hub',
-    accessClass: saved.accessClass === 'local' || saved.accessClass === 'local_cloud' || hasLocalAddresses(saved)
-      ? 'local_cloud'
-      : 'cloud',
-    addresses: saved.addresses,
-    endpoints: {
-      ...saved.endpoints,
-      ...(machine.controlUrl ? { webControl: machine.controlUrl } : {}),
-      ...(summaryHubUrl ? { hub: summaryHubUrl } : {}),
-    },
-    addedAt: saved.addedAt,
-    updatedAt: saved.updatedAt,
-  }
 }
 
 function hubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
@@ -2759,10 +2038,6 @@ function localFallbackHubUrlsFromStoredMachine(
   if (machine.source !== 'hub') return publicHubUrls
   const hub = new Set(compactHubUrls([machine.endpoints.hub, ...hubUrls]))
   return publicHubUrls.filter((hubUrl) => !hub.has(hubUrl))
-}
-
-function nonEmptyHubUrls(machine: WebControlMachine): string[] {
-  return compactHubUrls(machine.hubUrls)
 }
 
 function compactHubUrls(values: readonly (string | undefined)[]): string[] {

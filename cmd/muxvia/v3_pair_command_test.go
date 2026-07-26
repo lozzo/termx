@@ -16,7 +16,6 @@ import (
 
 	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/shared/filelock"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
@@ -244,10 +243,10 @@ func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing
 	}
 }
 
-func TestPairCreateDefaultsToDirectAndCloudAndAllowsExplicitDirectOnly(t *testing.T) {
+func TestPairCreateDefaultsToDirectOnly(t *testing.T) {
 	runtimeDir, _, _ := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
-	releaseRecord, err := acquireDaemonRuntimeRecord(socket, filepath.Join(runtimeDir, "daemon.log"), "", true)
+	releaseRecord, err := acquireDaemonRuntimeRecord(socket, filepath.Join(runtimeDir, "daemon.log"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,19 +256,12 @@ func TestPairCreateDefaultsToDirectAndCloudAndAllowsExplicitDirectOnly(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bundle.GetRoutes()) != 2 {
+	if len(bundle.GetRoutes()) != 1 || bundle.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
 		t.Fatalf("pairing routes = %#v", bundle.GetRoutes())
 	}
-	managed := bundle.GetRoutes()[0].GetManagedWebrtc()
-	if managed == nil {
-		managed = bundle.GetRoutes()[1].GetManagedWebrtc()
-	}
-	if managed == nil || managed.GetTargetDeviceId() != bundle.GetIdentity().GetDeviceId() || managed.GetRelayMode() != remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO {
-		t.Fatalf("managed pairing route = %#v identity=%#v", managed, bundle.GetIdentity())
-	}
 	inspect := executePairCommand(t, created, "pair", "inspect", "--json", "-")
-	if !strings.Contains(string(inspect), `"kind":"managed-webrtc"`) || !strings.Contains(string(inspect), `"target_device_id":"`+bundle.GetIdentity().GetDeviceId()+`"`) {
-		t.Fatalf("managed pair inspect = %s", inspect)
+	if !strings.Contains(string(inspect), `"kind":"direct-webrtc-tcp"`) || strings.Contains(string(inspect), `managed-webrtc`) {
+		t.Fatalf("Direct pair inspect = %s", inspect)
 	}
 	directOnly := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--route", "direct")
 	directBundle, _, err := remoteauth.ParsePairingBundle(directOnly, time.Now().UTC())
@@ -277,7 +269,7 @@ func TestPairCreateDefaultsToDirectAndCloudAndAllowsExplicitDirectOnly(t *testin
 		t.Fatal(err)
 	}
 	if len(directBundle.GetRoutes()) != 1 || directBundle.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
-		t.Fatalf("explicit Direct-only pairing routes = %#v", directBundle.GetRoutes())
+		t.Fatalf("explicit Direct pairing routes = %#v", directBundle.GetRoutes())
 	}
 }
 

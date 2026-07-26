@@ -18,8 +18,8 @@ import (
 	"time"
 
 	apilayer "github.com/muxvia/muxvia/api_layer"
-	pionadapter "github.com/muxvia/muxvia/client/adapter/managed/pion"
 	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"

@@ -30,8 +30,7 @@ import type { ProtoClientSession } from '../core/protoClientSession'
 import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import type { ConnectionInfo, ConnectionPolicy, ConnectionPolicyState, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
-import { ConnectionCandidateType, ConnectionRouteKind, ConnectionTransport } from '../generated/bindingpb/client_binding_pb'
-import { ObservedPath as CloudObservedPath } from '../generated/cloudpb/cloud_topology_pb'
+import { ConnectionCandidateType, ConnectionObservedPath, ConnectionRouteKind, ConnectionTransport } from '../generated/bindingpb/client_binding_pb'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -128,7 +127,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [connectionPolicyApplying, setConnectionPolicyApplying] = useState(false)
   const connectionPolicyReconnectPendingRef = useRef(false)
   const connectionPolicyFailureRef = useRef<{ stage: 'refresh' | 'apply' | 'reconnect'; policy?: ConnectionPolicy } | null>(null)
-  const [p2pFallbackPromptOpen, setP2PFallbackPromptOpen] = useState(false)
   const [manualReconnectNonce, setManualReconnectNonce] = useState(0)
   const [terminalResizeControl, setTerminalResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
   const [unlockingResize, setUnlockingResize] = useState(false)
@@ -219,7 +217,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const sessionConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const latestActiveTerminalIdRef = useRef<string | null>(null)
   const latestSplitTerminalIdRef = useRef<string | null>(null)
-  const p2pProbeRef = useRef(false)
   const handledManualReconnectNonceRef = useRef(0)
   const resizeLockedHintShownRef = useRef(false)
   const hasLoadedTerminalsRef = useRef(hasLoadedTerminals)
@@ -337,8 +334,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   useEffect(() => {
     // Endpoint 切换后不提供一次性 override；下一代 session 必须直接消费 Go registry 中的持久策略。
     setForceRelayConnection(undefined)
-    p2pProbeRef.current = false
-    setP2PFallbackPromptOpen(false)
   }, [machine?.machineId])
 
   useEffect(() => {
@@ -415,10 +410,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
     if (snapshot.phase === 'failed') {
       const message = connectionErrorDisplayMessage(snapshot.failReason || snapshot.statusText || 'Connection failed', t)
-      if (p2pProbeRef.current && isP2PRouteUnavailable(snapshot.failReason || snapshot.statusText)) {
-        p2pProbeRef.current = false
-        setP2PFallbackPromptOpen(true)
-      }
       if (isAuthConnectionError(snapshot.failReason || snapshot.statusText)) handleConnectionAuthFailure(snapshot.machineId)
       setError(message)
     if (connectionPolicyReconnectPendingRef.current) {
@@ -864,10 +855,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         const message = connectionErrorDisplayMessage(err, t)
         const authFailure = isAuthConnectionError(err)
         if (authFailure) handleConnectionAuthFailure(machineId)
-        if (p2pProbeRef.current && isP2PRouteUnavailable(err)) {
-          p2pProbeRef.current = false
-          setP2PFallbackPromptOpen(true)
-        }
         setConnectedSession(null)
         setConnectedTerminalId(null)
         setConnectingTerminalId(null)
@@ -896,11 +883,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       },
     }).then((session) => {
       if (cancelled) return
-      // 只有本次 manual reconnect 真正完成，才能消费 one-shot P2P probe；旧 Relay 的迟到快照无权清理该意图。
-      if (p2pProbeRef.current && !forceRelayConnection) {
-        p2pProbeRef.current = false
-        setP2PFallbackPromptOpen(false)
-      }
       setError(null)
       setConnectedSession(session)
       if (page === 'terminal' && activeTerminalId) {
@@ -916,10 +898,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (cancelled) return
       const message = connectionErrorDisplayMessage(err, t)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machineId)
-      if (p2pProbeRef.current && isP2PRouteUnavailable(err)) {
-        p2pProbeRef.current = false
-        setP2PFallbackPromptOpen(true)
-      }
       setConnectedSession(null)
       setConnectedTerminalId(null)
       setConnectingTerminalId(null)
@@ -1093,10 +1071,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     void refreshTerminals()
   }, [refreshTerminals])
 
-  const retryConnection = useCallback(async (options: { forceRelay?: boolean; closeDialog?: boolean; p2pProbe?: boolean; preservePolicy?: boolean } = {}) => {
-  const targetForceRelay = options.preservePolicy ? undefined : (options.forceRelay ?? forceRelayConnection)
-    p2pProbeRef.current = options.p2pProbe === true
-    setP2PFallbackPromptOpen(false)
+  const retryConnection = useCallback(async (options: { closeDialog?: boolean; preservePolicy?: boolean } = {}) => {
+  const targetForceRelay = options.preservePolicy ? undefined : forceRelayConnection
     setForceRelayConnection(targetForceRelay)
     if (options.closeDialog !== false) setConnectionInfoOpen(false)
     setConnectionInfo(null)
@@ -2698,15 +2674,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onRefresh={openConnectionInfo}
       onRetry={retryConnectionPolicyFailure}
       onApply={applyConnectionPolicy}
-          onRestoreAuto={() => applyConnectionPolicy({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })}
+          onRestoreAuto={() => applyConnectionPolicy({ route: 'auto' })}
           routeManagement={connector.routeManagement}
           endpointId={machine.machineId}
-        />
-      ) : null}
-      {p2pFallbackPromptOpen ? (
-        <P2PFallbackDialog
-          onCancel={() => setP2PFallbackPromptOpen(false)}
-          onUseRelay={() => retryConnection({ forceRelay: true })}
         />
       ) : null}
       {showMachineNetworkOverlay ? (
@@ -2804,7 +2774,7 @@ export function ConnectionInfoDialog({
   const { t } = useTranslation()
   const overlayRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const [draft, setDraft] = useState<ConnectionPolicy>({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })
+  const [draft, setDraft] = useState<ConnectionPolicy>({ route: 'auto' })
   useEffect(() => {
     if (policyState) setDraft(policyState.policy)
   }, [policyState])
@@ -2833,14 +2803,11 @@ export function ConnectionInfoDialog({
     }
   }, [])
   const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
-  const policyChanged = Boolean(policyState) && (
-    draft.route !== policyState?.policy.route || draft.cloud !== policyState?.policy.cloud || draft.relayTransport !== policyState?.policy.relayTransport
-  )
+  const policyChanged = Boolean(policyState) && draft.route !== policyState?.policy.route
   const routeOptions: Array<{ value: ConnectionPolicy['route']; label: string; available: boolean; reason: string | undefined }> = [
     { value: 'auto', label: t('workspace.connection.routeAuto'), available: true, reason: undefined },
     { value: 'direct', label: t('workspace.connection.routeDirect'), available: policyState?.available.direct ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.direct, t) },
     { value: 'ssh', label: t('workspace.connection.routeSSH'), available: policyState?.available.ssh ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.ssh, t) },
-    { value: 'cloud', label: t('workspace.connection.routeCloud'), available: policyState?.available.cloud ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.cloud, t) },
   ]
   return (
     <div ref={overlayRef} className="absolute inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-4" onClick={() => { hapticSelection(); onClose() }} onKeyDown={(event) => trapConnectionDialogFocus(event, overlayRef.current, onClose)}>
@@ -2888,18 +2855,6 @@ export function ConnectionInfoDialog({
             </div>
           </fieldset>
 
-          <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3" open={draft.route === 'cloud'}>
-            <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.cloudAdvanced')}</summary>
-            <div className="space-y-5 pb-2">
-              <ConnectionRadioGroup label={t('workspace.connection.cloudPath')} name="cloud-path" value={draft.cloud} options={[
-                ['auto', t('workspace.connection.cloudAuto')], ['p2p', t('workspace.connection.cloudP2P')], ['relay', t('workspace.connection.cloudRelay')],
-              ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud')} onChange={(cloud) => setDraft((current) => ({ ...current, cloud }))} />
-              <ConnectionRadioGroup label={t('workspace.connection.relayTransport')} name="relay-transport" value={draft.relayTransport} options={[
-                ['auto', t('workspace.connection.transportAuto')], ['udp', t('workspace.connection.transportUDP')], ['tcp', t('workspace.connection.transportTCP')],
-              ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud') || draft.cloud === 'p2p'} onChange={(relayTransport) => setDraft((current) => ({ ...current, relayTransport }))} />
-            </div>
-          </details>
-
           {routeManagement ? (
             <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3">
               <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.routeManager.title')}</summary>
@@ -2940,31 +2895,8 @@ export function ConnectionInfoDialog({
   )
 }
 
-function ConnectionRadioGroup<T extends string>({ label, name, value, options, disabled, onChange }: {
-  label: string
-  name: string
-  value: T
-  options: Array<readonly [T, string]>
-  disabled: boolean
-  onChange: (value: T) => void
-}) {
-  return (
-    <fieldset disabled={disabled}>
-      <legend className="text-[12px] font-semibold text-zinc-600">{label}</legend>
-      <div className="mt-1 grid grid-cols-3 gap-1 border border-[var(--muxvia-app-line)] p-1">
-        {options.map(([option, text]) => (
-          <label key={option} className={`flex min-h-12 items-center justify-center px-2 text-center text-[12px] font-semibold ${value === option ? 'bg-zinc-900 text-white' : 'bg-zinc-50 text-zinc-700'} disabled:text-zinc-400`}>
-            <input className="sr-only" type="radio" name={name} value={option} checked={value === option} onChange={() => onChange(option)} />
-            <span>{text}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  )
-}
-
 /** loadConnectionPanelState 独立读取 ReadySession 诊断和 Go-owned 持久策略。
- * Session 失败时仍返回可编辑策略，让用户能够从失败页切换 Route 或 Relay transport。
+ * Session 失败时仍返回可编辑策略，让用户能够从失败页切换 Direct/SSH Route。
  */
 export async function loadConnectionPanelState(
   infoPromise: Promise<ConnectionInfo>,
@@ -2983,29 +2915,6 @@ function ConnectionInfoRow({ label, value, strong = false }: { label: string; va
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
       <dt className="text-[12px] font-semibold text-zinc-500">{label}</dt>
       <dd className={`min-w-0 break-words text-[12px] ${strong ? 'font-semibold text-zinc-950' : 'font-medium text-zinc-700'}`}>{value}</dd>
-    </div>
-  )
-}
-
-/** P2PFallbackDialog 只处理一次 direct probe 的失败决策，不修改 managed endpoint 的持久 auto 策略。 */
-function P2PFallbackDialog({ onCancel, onUseRelay }: { onCancel: () => void; onUseRelay: () => void }) {
-  const { t } = useTranslation()
-  return (
-    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="muxvia-p2p-fallback-title">
-      <section className="muxvia-app-panel w-full max-w-sm overflow-hidden">
-        <div className="border-b border-[var(--muxvia-app-line)] px-4 py-4">
-          <h2 id="muxvia-p2p-fallback-title" className="text-[16px] font-semibold text-zinc-950">{t('workspace.p2pUnavailable')}</h2>
-          <p className="mt-2 text-[13px] leading-5 text-zinc-600">{t('workspace.p2pUnavailableCopy')}</p>
-        </div>
-        <div className="flex items-center justify-end gap-2 px-4 py-3">
-          <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticSelection(); onCancel() }}>
-            {t('workspace.notNow')}
-          </button>
-          <button type="button" className="muxvia-app-primary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onUseRelay() }}>
-            {t('workspace.connection.useRelay')}
-          </button>
-        </div>
-      </section>
     </div>
   )
 }
@@ -3031,7 +2940,6 @@ function connectionRouteLabel(kind: ConnectionInfo['routeKind'], t: ReturnType<t
     case 'local': return t('workspace.connection.routeLocal')
     case 'direct': return t('workspace.connection.routeDirect')
     case 'ssh': return t('workspace.connection.routeSSH')
-    case 'cloud': return t('workspace.connection.routeCloud')
     default: return t('workspace.connection.notProvided')
   }
 }
@@ -3040,7 +2948,6 @@ function observedPathLabel(path: ConnectionInfo['observedPath'], t: ReturnType<t
   switch (path) {
     case 'direct': return t('workspace.connection.pathDirect')
     case 'single_relay': return t('workspace.connection.pathRelay')
-    case 'relay_mesh': return t('workspace.connection.pathRelayMesh')
     default: return t('workspace.connection.notProvided')
   }
 }
@@ -3062,7 +2969,7 @@ async function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSes
   const observedPath = observedPathFromProto(snapshot?.observedPath)
   const relayInUse = observedPath === 'single_relay' || snapshot?.localCandidateType === ConnectionCandidateType.RELAY || snapshot?.remoteCandidateType === ConnectionCandidateType.RELAY
   return {
-  path: routeKind === 'cloud' ? 'hub' : 'local',
+  path: 'local',
   routeId: snapshot?.routeId || session.stamp.routeId,
   routeKind,
   observedPath,
@@ -3118,16 +3025,14 @@ function connectionRouteKindFromProto(value: ConnectionRouteKind | undefined): C
     case ConnectionRouteKind.LOCAL: return 'local'
     case ConnectionRouteKind.DIRECT: return 'direct'
     case ConnectionRouteKind.SSH: return 'ssh'
-    case ConnectionRouteKind.MANAGED_CLOUD: return 'cloud'
     default: return undefined
   }
 }
 
-function observedPathFromProto(value: CloudObservedPath | undefined): ConnectionInfo['observedPath'] {
+function observedPathFromProto(value: ConnectionObservedPath | undefined): ConnectionInfo['observedPath'] {
   switch (value) {
-    case CloudObservedPath.DIRECT: return 'direct'
-    case CloudObservedPath.SINGLE_RELAY: return 'single_relay'
-    case CloudObservedPath.RELAY_MESH: return 'relay_mesh'
+    case ConnectionObservedPath.DIRECT: return 'direct'
+    case ConnectionObservedPath.SINGLE_RELAY: return 'single_relay'
     default: return undefined
   }
 }

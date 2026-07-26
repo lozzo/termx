@@ -53,8 +53,8 @@ describe('MachineWorkspace connection policy ownership', () => {
 describe('ConnectionInfoDialog', () => {
   it('keeps the Go-owned policy editable when the current session is unavailable', async () => {
     const policyState = {
-      policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' } as const,
-      available: { direct: false, ssh: false, cloud: true },
+      policy: { route: 'auto' } as const,
+      available: { direct: false, ssh: false },
       unavailableReasons: { direct: 'route_not_configured', ssh: 'credential_unavailable' },
     }
 
@@ -68,14 +68,14 @@ describe('ConnectionInfoDialog', () => {
     expect(result.error).toMatchObject({ message: 'client session is unavailable' })
   })
 
-  it('applies an explicit Cloud relay TCP policy and keeps unavailable routes disabled', async () => {
+  it('applies a Direct route policy and keeps unavailable SSH disabled', async () => {
     const user = userEvent.setup()
     const onApply = vi.fn()
     render(<ConnectionInfoDialog
-      info={{ path: 'hub', routeKind: 'cloud', observedPath: 'single_relay', relayTransport: 'TCP', connectionId: 'studio:7', machineId: 'studio', relayInUse: true, type: 'relay', generation: 7n }}
+      info={{ path: 'local', routeKind: 'direct', observedPath: 'direct', connectionId: 'studio:7', machineId: 'studio', relayInUse: false, type: 'p2p', generation: 7n }}
       loading={false}
       error={null}
-      policyState={{ policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' }, available: { direct: true, ssh: false, cloud: true }, unavailableReasons: { ssh: 'credential_unavailable' } }}
+      policyState={{ policy: { route: 'auto' }, available: { direct: true, ssh: false }, unavailableReasons: { ssh: 'credential_unavailable' } }}
       applying={false}
       onClose={vi.fn()}
       onRefresh={vi.fn()}
@@ -86,14 +86,11 @@ describe('ConnectionInfoDialog', () => {
 
     expect((screen.getByRole('radio', { name: 'SSH tunnel' }) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText('Credential unavailable')).toBeTruthy()
-    await user.click(screen.getByRole('radio', { name: 'Muxvia Cloud' }))
-    await user.click(screen.getByRole('radio', { name: 'Relay only' }))
-    await user.click(screen.getByRole('radio', { name: 'TCP only' }))
+    await user.click(screen.getByRole('radio', { name: 'Direct' }))
     await user.click(screen.getByRole('button', { name: 'Apply & reconnect' }))
 
-    expect(onApply).toHaveBeenCalledWith({ route: 'cloud', cloud: 'relay', relayTransport: 'tcp' })
-    expect(screen.getAllByText('Single relay').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('TCP').length).toBeGreaterThan(0)
+    expect(onApply).toHaveBeenCalledWith({ route: 'direct' })
+    expect(screen.queryByRole('radio', { name: 'Muxvia Cloud' })).toBeNull()
   })
 
   it('offers retry and Restore Auto for a policy or reconnect failure', async () => {
@@ -102,8 +99,8 @@ describe('ConnectionInfoDialog', () => {
     render(<ConnectionInfoDialog
       info={null}
       loading={false}
-      error="TCP relay is unavailable"
-      policyState={{ policy: { route: 'cloud', cloud: 'relay', relayTransport: 'tcp' }, available: { direct: true, ssh: true, cloud: true }, unavailableReasons: {} }}
+      error="Direct route is unavailable"
+      policyState={{ policy: { route: 'direct' }, available: { direct: true, ssh: true }, unavailableReasons: {} }}
       applying={false}
       onClose={vi.fn()}
       onRefresh={vi.fn()}
@@ -112,7 +109,7 @@ describe('ConnectionInfoDialog', () => {
       onRestoreAuto={onRestoreAuto}
     />)
 
-    expect(screen.getByRole('alert').textContent).toContain('TCP relay is unavailable')
+    expect(screen.getByRole('alert').textContent).toContain('Direct route is unavailable')
     await user.click(screen.getByRole('button', { name: 'Restore Auto' }))
     expect(onRestoreAuto).toHaveBeenCalledOnce()
   })
@@ -130,7 +127,7 @@ describe('ConnectionInfoDialog', () => {
         info={null}
         loading={false}
         error={null}
-        policyState={{ policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' }, available: { direct: true, ssh: true, cloud: true }, unavailableReasons: {} }}
+        policyState={{ policy: { route: 'auto' }, available: { direct: true, ssh: true }, unavailableReasons: {} }}
         applying={false}
         onClose={onClose}
         onRefresh={vi.fn()}

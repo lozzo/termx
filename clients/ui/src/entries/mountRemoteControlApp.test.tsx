@@ -1,44 +1,19 @@
-import { cleanup, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('../app/RemoteControlApp', () => ({
-  RemoteControlApp: ({ defaultControlUrl }: { defaultControlUrl?: string | undefined }) => (
-    <output data-testid="control-url">{defaultControlUrl ?? ''}</output>
-  ),
-}))
-
-vi.mock('../connection/browserNetworkRuntime', () => ({
-  createBrowserRemoteNetworkRuntime: () => ({
-    fetch: vi.fn(),
-    storage: { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() },
-    queryParam: vi.fn(() => null),
-  }),
-}))
-
-vi.mock('../binding/browserBindingRuntime', () => ({
-  BrowserBindingRuntime: class {
-    externalPairingAdapter = {}
-    machineRuntimeFactory = vi.fn()
-    dispose = vi.fn()
-  },
-}))
+import { cleanup, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { mountRemoteControlApp } from './mountRemoteControlApp'
 
 describe('mountRemoteControlApp', () => {
   afterEach(() => {
     cleanup()
     document.body.innerHTML = ''
-    vi.resetModules()
-    vi.unstubAllEnvs()
   })
 
-  it('passes VITE_CONTROL_URL to the Web Control app default URL', async () => {
-    vi.stubEnv('VITE_CONTROL_URL', 'http://control.example.test:3000')
-    const { mountRemoteControlApp } = await import('./mountRemoteControlApp')
-
+  it('shows the explicit Cloud rebuild state without starting a retired runtime', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = mountRemoteControlApp()
 
-    await waitFor(() => expect(screen.getByTestId('control-url').textContent).toBe('http://control.example.test:3000'))
+    expect((await screen.findByTestId('muxvia-cloud-unavailable')).textContent).toContain('Muxvia Cloud 暂不可用')
+    expect(screen.getByText('云端服务正在重构。Direct 和 SSH 客户端不受影响。')).toBeTruthy()
     root.unmount()
   })
 })

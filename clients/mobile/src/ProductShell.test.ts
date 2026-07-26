@@ -5,7 +5,7 @@ import nativeConnectionSource from '../android/app/src/main/java/com/muxvia/app/
 
 describe('mobile product shell', () => {
   it('keeps the terminal client accountless and scoped to saved services', () => {
-    expect(mobileAppSource).toContain('accountAccessEnabled={false}')
+    expect(remoteControlSource).not.toContain('CloudAccountAdapter')
     expect(mobileAppSource).not.toContain('cloudAccountAdapter=')
     expect(mobileAppSource).not.toContain('NativeConnection.getCloudAccount')
     expect(mobileAppSource).not.toContain('NativeConnection.cloudListDevices')
@@ -14,14 +14,13 @@ describe('mobile product shell', () => {
 
   it('does not expose staging IP addresses in the official App shell', () => {
     expect(mobileAppSource).not.toContain('114.66.58.243')
-    expect(mobileAppSource).toContain("import.meta.env.VITE_CONTROL_URL || ''")
-    expect(mobileAppSource).toContain('role="status"')
-    expect(remoteControlSource).toMatch(/!nativeCloudLogin[\s\S]*settings\.connection/)
+    expect(mobileAppSource).not.toContain('VITE_CONTROL_URL')
+    expect(remoteControlSource).toContain('workspace.connection.unavailableReason.cloud_unavailable')
   })
 
-  it('keeps Hub directory synchronization from owning the Cloud account session', () => {
-    const listDevices = nativeConnectionSource.match(/fun cloudListDevices[\s\S]*?fun cloudLogout/)?.[0] ?? ''
-    expect(listDevices).not.toContain('cloudAdapter.logout()')
-    expect(listDevices).toContain('"temporary"')
+  it('removes the retired Cloud account bridge from the native plugin', () => {
+    expect(nativeConnectionSource).not.toMatch(/fun cloud(?:Begin|Claim|Await|Cancel|List|Logout)/)
+    expect(nativeConnectionSource).not.toContain('getCloudAccount')
+    expect(nativeConnectionSource).not.toContain('ManagedCloudAssembly')
   })
 })

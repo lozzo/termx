@@ -94,6 +94,12 @@ verify_derived "$tmp_dir/bufbuild-protobuf-BSD-3-Clause.txt" "182a1bc8985a586e8e
 publish "$tmp_dir/bufbuild-protobuf-BSD-3-Clause.txt" "docs/legal/third-party/npm/bufbuild-protobuf-2.12.0-BSD-3-Clause.txt"
 
 fetch_checked \
+  "https://raw.githubusercontent.com/HenrikJoreteg/html-parse-stringify/a2659e6eac3603ba8b46958e0bd35b337108261f/LICENSE" \
+  "f51aa7a410f3d3ff9352a5422b76c072588ac76b63861f59447502caeacacc16" \
+  "$tmp_dir/html-parse-stringify-LICENSE.txt"
+publish "$tmp_dir/html-parse-stringify-LICENSE.txt" "docs/legal/third-party/npm/html-parse-stringify-3.0.1-LICENSE.txt"
+
+fetch_checked \
   "https://raw.githubusercontent.com/TooTallNate/Java-WebSocket/v1.5.6/LICENSE" \
   "15101a7cbdaa7f1c161424b760e907e7832e4a1e7f05d03373ca91fbffdb95ee" \
   "$tmp_dir/Java-WebSocket-LICENSE.txt"
@@ -104,6 +110,15 @@ fetch_checked \
   "6fbe2eaf44b193b8a40eed9208f52848572224ad8d7672dd09418aa174847e73" \
   "$tmp_dir/slf4j-LICENSE.txt"
 publish "$tmp_dir/slf4j-LICENSE.txt" "docs/legal/third-party/android/slf4j-api-2.0.6-LICENSE.txt"
+
+fetch_checked \
+  "https://raw.githubusercontent.com/bcgit/bc-java/r1rv79/LICENSE.html" \
+  "edbbb10380b1271998b867a2e36b1cbee226e03d438726e1a91f80c5dde11849" \
+  "$tmp_dir/bcprov-LICENSE.html"
+perl -0pe 's/<[^>]+>/\n/g; s/^\s+//; s/[ \t]+$//mg; s/\n{3,}/\n\n/g' \
+  "$tmp_dir/bcprov-LICENSE.html" >"$tmp_dir/bcprov-LICENSE.txt"
+verify_derived "$tmp_dir/bcprov-LICENSE.txt" "bd869ea52ef724653dc546bf39828e0af2b57bcdf0268ba915599c9e9ea95839"
+publish "$tmp_dir/bcprov-LICENSE.txt" "docs/legal/third-party/android/bcprov-jdk18on-1.79-LICENSE.txt"
 
 fetch_checked \
   "https://raw.githubusercontent.com/webrtc-sdk/android/878c5b093f8bbbd4955d1037316484aabe962d18/LICENSE" \
@@ -119,6 +134,6 @@ publish "$tmp_dir/WEBRTC.txt" "clients/mobile/public/third-party/WEBRTC.txt"
 
 verify_derived "$repo_root/clients/ui/src/assets/fonts/LICENSE" "4ff4cfa7c2b208356fe1d7a658c2d751d25f9409d4895d11c203022106939908"
 publish "$repo_root/clients/ui/src/assets/fonts/LICENSE" "clients/mobile/public/third-party/FONTS.txt"
-publish "$repo_root/docs/legal/public-snapshot/LICENSE" "clients/mobile/public/APACHE-2.0.txt"
+publish "$repo_root/LICENSE" "clients/mobile/public/APACHE-2.0.txt"
 
 echo "pinned third-party notices are $mode"

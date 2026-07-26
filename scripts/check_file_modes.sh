@@ -4,14 +4,13 @@ set -eu
 bad=$(
 	# 只检查当前维护范围内的普通文件；真正脚本允许保留可执行位。
 	git ls-files -s \
-		.gitignore AGENTS.md Makefile README.md go.work go.work.sum package.json package-lock.json workflow.md \
+		.gitignore ARCHITECTURE.md Makefile go.work go.work.sum package.json package-lock.json \
 		clients \
 		cmd/muxvia \
 		core \
 		docs \
 		fixtures \
 		internal \
-		private/cloud \
 		proto \
 		remote \
 		scripts \
@@ -26,7 +25,7 @@ bad=$(
 			    path ~ /(^|\/)(AGENTS|README|Makefile|LICENSE|NOTICE|DCO)$/ ||
 			    path ~ /(^|\/)\.gitignore$/ ||
 			    path ~ /(^|\/)go\.work(\.sum)?$/ ||
-			    path ~ /(^|\/)workflow\.md$/) {
+			    path ~ /(^|\/)ARCHITECTURE\.md$/) {
 				print path
 			}
 		}

@@ -23,7 +23,6 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 		assertImportsExclude(t, root, []string{
 			"github.com/muxvia/muxvia/internal/protocol",
 			"github.com/muxvia/muxvia/shared/transport",
-			"github.com/muxvia/muxvia/shared/cloudcompanion",
 			"github.com/muxvia/muxvia/shared/remoteauth",
 			"github.com/muxvia/muxvia/remote/client",
 			"github.com/muxvia/muxvia/remote/webrtc",

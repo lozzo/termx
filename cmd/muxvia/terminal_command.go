@@ -103,7 +103,7 @@ func newTerminalCommand(runtime terminalCommandRuntime) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "terminal",
 		Short: "Manage terminals owned by a daemon endpoint",
-		Long:  "Manage terminal lifecycle through its owning local, SSH, or managed Cloud daemon endpoint.",
+		Long:  "Manage terminal lifecycle through its owning local, Direct, or SSH daemon endpoint.",
 	}
 	command.PersistentFlags().StringVar(runtime.endpointID, "endpoint", "", "owning endpoint ID (default: registry default)")
 	command.AddCommand(

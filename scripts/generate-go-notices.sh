@@ -162,12 +162,4 @@ generate_artifact \
   "./cmd/muxvia" \
   "cmd/muxvia/THIRD_PARTY_NOTICES.txt"
 
-if [[ "$public_only" == false ]]; then
-  generate_artifact \
-    "Cloud Companion" \
-    "$repo_root/private/cloud/companion" \
-    "./cmd/muxvia-cloud" \
-    "private/cloud/companion/cmd/muxvia-cloud/THIRD_PARTY_NOTICES.txt"
-fi
-
 echo "Go notices are $mode"

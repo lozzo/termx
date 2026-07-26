@@ -2,8 +2,8 @@ import type { ConnectionPolicy, ConnectionPolicyState, ProtoClientSession, Proto
 import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
 import type { EndpointSessionStamp, ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
 
-// Android 总窗口覆盖 Cloud resolve、双端 Relay 租约、signaling/answer、ICE、鉴权和 Hello；
-// Go peer 仍用独立 15 秒 deadline 约束 answer 之后的 ICE/DataChannel，不能由 UI 提前截断。
+// Android 总窗口覆盖 route planning、signaling/answer、ICE、鉴权和 Hello；
+// Go peer 仍用独立 deadline 约束 answer 之后的 ICE/DataChannel，不能由 UI 提前截断。
 const NATIVE_SESSION_READY_TIMEOUT_MS = 45_000
 
 /** NativeSessionConnector 是 Android UI 到 Go binding session 的窄连接入口，不拥有 route 或 generation 真值。 */

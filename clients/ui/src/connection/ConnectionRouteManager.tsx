@@ -10,9 +10,6 @@ import {
   EndpointConfigV1Schema,
   EndpointRouteConfigV1Schema,
   EndpointSource,
-  ManagedWebRTCRelayMode,
-  ManagedWebRTCRelayTransport,
-  ManagedWebRTCRouteConfigSchema,
   SSHWebRTCTCPRouteConfigSchema,
   type EndpointConfigV1,
   type EndpointRouteConfigV1,
@@ -26,10 +23,10 @@ export interface ConnectionRouteManagementAdapter {
   provisionSSH(routeId: string, signal?: AbortSignal): Promise<SSHCredentialProvisionResult>
 }
 
-type RouteKind = 'direct' | 'ssh' | 'cloud'
+type RouteKind = 'direct' | 'ssh'
 type RouteOperation = { kind: 'idle' | 'testing' | 'saving' | 'ready' | 'failed'; message?: string }
 
-export function routeKind(route: EndpointRouteConfigV1): RouteKind | 'local' | 'unknown' {
+export function routeKind(route: EndpointRouteConfigV1): RouteKind | 'cloud' | 'local' | 'unknown' {
   switch (route.route.case) {
     case 'directWebrtcTcp': return 'direct'
     case 'sshWebrtcTcp': return 'ssh'
@@ -109,7 +106,7 @@ export function ConnectionRouteManager({ adapter, endpointId }: { adapter: Conne
     return () => controller.abort()
   }, [adapter, endpointId, t])
 
-  const routes = useMemo(() => endpoint ? orderedRoutes(endpoint) : [], [endpoint])
+  const routes = useMemo(() => endpoint ? orderedRoutes(endpoint).filter((route) => routeKind(route) !== 'cloud') : [], [endpoint])
   const persist = async (next: EndpointConfigV1, routeId: string) => {
     setOperations((current) => ({ ...current, [routeId]: { kind: 'saving' } }))
     try {
@@ -153,13 +150,17 @@ export function ConnectionRouteManager({ adapter, endpointId }: { adapter: Conne
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] leading-5 text-zinc-600">{t('workspace.routeManager.description')}</p>
         <div className="flex flex-wrap gap-2">
-          {(['direct', 'ssh', 'cloud'] as RouteKind[]).map((kind) => (
+          {(['direct', 'ssh'] as RouteKind[]).map((kind) => (
             <button key={kind} type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { hapticSelection(); setEditing(null); setAddingKind(kind) }}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />{t(`workspace.routeManager.add.${kind}`)}
             </button>
           ))}
         </div>
       </div>
+
+      <p className="border-l-2 border-amber-500 pl-3 text-[12px] leading-5 text-zinc-600" role="status">
+        {t('workspace.connection.unavailableReason.cloud_unavailable')}
+      </p>
 
       {addingKind ? (
         <RouteEditForm
@@ -294,10 +295,7 @@ function newRouteDraft(endpoint: EndpointConfigV1, kind: RouteKind): EndpointRou
     port: 22, remoteSignalingAddress: '127.0.0.1:41120', remoteIceTcpAddress: '127.0.0.1:41121',
     credentialDescriptor: create(EndpointCredentialDescriptorSchema, { descriptorId: `${common.routeId}-key`, kind: EndpointCredentialKind.SSH_PRIVATE_KEY }),
   }) } })
-  return create(EndpointRouteConfigV1Schema, { ...common, route: { case: 'managedWebrtc', value: create(ManagedWebRTCRouteConfigSchema, {
-    targetDeviceId: endpoint.identity?.deviceId ?? '', relayMode: ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO,
-    relayTransport: ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO,
-  }) } })
+  throw new Error(`unsupported route kind: ${kind satisfies never}`)
 }
 
 function uniqueRouteId(endpoint: EndpointConfigV1, kind: RouteKind): string {
@@ -316,7 +314,6 @@ function validateRouteDraft(endpoint: EndpointConfigV1, route: EndpointRouteConf
     const value = route.route.value
     if (!value.host.trim() || !value.user.trim() || value.port < 1 || value.port > 65535 || value.hostKeyFingerprints.length === 0) return t('workspace.routeManager.validation.ssh')
   }
-  if (route.route.case === 'managedWebrtc' && !route.route.value.targetDeviceId.trim()) return t('workspace.routeManager.validation.cloud')
   return null
 }
 

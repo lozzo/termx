@@ -3,17 +3,12 @@ package daemon
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	core "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	"github.com/muxvia/muxvia/shared/transport"
 )
@@ -25,25 +20,18 @@ type ScopedTransportServer interface {
 	ServeScopedTransport(context.Context, transport.Transport, core.TransportScope) error
 }
 
-type observedScopedTransportServer interface {
-	ScopedTransportServer
-	ServeScopedTransportObserved(context.Context, transport.Transport, core.TransportScope, core.TransportLifecycleObserver) error
-}
-
 type outboundDrainer interface {
 	Drain(context.Context) error
 }
 
 // SessionAcceptor 是远程 DataChannel 进入 core-v2 的唯一授权入口。
-// Identity、grant expiry/revoke 和 scope mapping 都属于 daemon；Cloud Companion、Hub admission 或 signaling 结果不能预授权 session。
+// Identity、grant expiry/revoke 和 scope mapping 都属于 daemon；信令结果不能预授权 session。
 type SessionAcceptor struct {
 	Core        ScopedTransportServer
 	Identity    remoteauth.Identity
 	AccessStore *remoteauth.AccessStore
 	Random      io.Reader
 	Now         func() time.Time
-	// ManagedRuntime 只用于 Cloud managed offer；Direct/SSH 调用 ServeDataChannel 时不进入 registry。
-	ManagedRuntime *ManagedRuntime
 }
 
 // ServeDataChannel 在同一 transport 上完成 DeviceHello/CapabilityOpen，成功后才调用 core-v2。
@@ -59,26 +47,9 @@ func (acceptor SessionAcceptor) ServeDataChannel(ctx context.Context, connection
 	return acceptor.ServeBoundTransport(ctx, connection, binding)
 }
 
-// ServeManagedDataChannel 使用 Hub 已验证 SessionContext 服务 Cloud managed DataChannel。
-// Hub metadata 只用于 registry correlation；CapabilityGrant 仍必须在当前 DataChannel 内重新验证。
-func (acceptor SessionAcceptor) ServeManagedDataChannel(ctx context.Context, connection transport.Transport, daemonDTLSFingerprint string, sessionContext remotewebrtc.ManagedSessionContext, owner remotewebrtc.ManagedSessionOwner) error {
-	binding, err := remoteauth.DTLSChannelBinding(daemonDTLSFingerprint)
-	if err != nil {
-		if connection != nil {
-			_ = connection.Close()
-		}
-		return fmt.Errorf("bind managed remote data channel: %w", err)
-	}
-	return acceptor.serveBoundTransport(ctx, connection, binding, &sessionContext, owner)
-}
-
 // ServeBoundTransport 在任意已提供可信 TLS/DTLS channel binding 的 transport 上执行同一 v2 auth 状态机。
 // PairingExchange 成功后只关闭 transport；只有 client-bound capability 成功才把 scope 交给 core-v2，二者不能复用同一 channel。
 func (acceptor SessionAcceptor) ServeBoundTransport(ctx context.Context, connection transport.Transport, binding remoteauth.ChannelBinding) error {
-	return acceptor.serveBoundTransport(ctx, connection, binding, nil, nil)
-}
-
-func (acceptor SessionAcceptor) serveBoundTransport(ctx context.Context, connection transport.Transport, binding remoteauth.ChannelBinding, managed *remotewebrtc.ManagedSessionContext, owner remotewebrtc.ManagedSessionOwner) error {
 	if acceptor.Core == nil {
 		return fmt.Errorf("remote daemon core transport server is not configured")
 	}
@@ -124,96 +95,7 @@ func (acceptor SessionAcceptor) serveBoundTransport(ctx context.Context, connect
 		FileMutate:         claims.Scope.FileMutate,
 		ManageClientAccess: claims.Scope.ManageClientAccess,
 	}
-	if managed == nil {
-		return acceptor.Core.ServeScopedTransport(ctx, connection, scope)
-	}
-	if acceptor.ManagedRuntime == nil || owner == nil || owner.Done() == nil {
-		return fmt.Errorf("remote daemon managed session runtime is not configured")
-	}
-	observedCore, ok := acceptor.Core.(observedScopedTransportServer)
-	if !ok {
-		return fmt.Errorf("remote daemon core transport lifecycle observer is not configured")
-	}
-	registry := acceptor.ManagedRuntime.Registry()
-	if registry == nil || managed.ManagedSessionID == "" || managed.SessionIncarnation == 0 || managed.ClientDeviceID == "" || managed.PresenceSessionID == "" || managed.AssignmentEpoch == 0 || managed.ObservedPath == 0 {
-		return fmt.Errorf("remote daemon managed session context is not bound")
-	}
-	now := time.Now().UTC()
-	if acceptor.Now != nil {
-		now = acceptor.Now().UTC()
-	}
-	closer := newManagedRegistryCloser(owner)
-	projection := &cloudpb.ManagedPeerSessionProjection{
-		Target:         &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: acceptor.Identity.DeviceID, ManagedSessionId: managed.ManagedSessionID, SessionIncarnation: managed.SessionIncarnation, AssignmentEpoch: managed.AssignmentEpoch, ControlPresenceSessionId: managed.PresenceSessionID, DaemonRuntimeGeneration: acceptor.ManagedRuntime.RuntimeGeneration()},
-		ClientDeviceId: managed.ClientDeviceID, EstablishedPresenceSessionId: managed.PresenceSessionID,
-		AuthenticatedClientFingerprint: claims.SubjectKeyFingerprint, OpaqueAccessReference: OpaqueAccessReference(acceptor.Identity.DeviceID, claims.GrantID),
-		ControlOwnerHubId: registry.controlOwnerHubID, ObservedDataPath: managed.ObservedPath,
-		State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_AUTHENTICATED, Freshness: cloudpb.Freshness_FRESHNESS_FRESH,
-		ConnectedAtUnixMillis: now.UnixMilli(), ObservedAtUnixMillis: now.UnixMilli(), FreshUntilUnixMillis: now.Add(5 * time.Minute).UnixMilli(),
-	}
-	handle, _, err := registry.Begin(projection, closer, now)
-	if err != nil {
-		owner.RequestClose()
-		return err
-	}
-	observer := &managedHelloObserver{handle: handle, closer: closer, now: acceptor.Now}
-	serveErr := observedCore.ServeScopedTransportObserved(ctx, connection, scope, observer)
-	_ = connection.Close()
-	owner.RequestClose()
-	<-owner.Done()
-	closedAt := time.Now().UTC()
-	if acceptor.Now != nil {
-		closedAt = acceptor.Now().UTC()
-	}
-	reason := "peer_closed"
-	if serveErr != nil {
-		reason = "protocol_closed"
-	}
-	_, closeErr := handle.MarkClosed(reason, closedAt)
-	closer.markClosed()
-	if serveErr != nil {
-		return serveErr
-	}
-	return closeErr
-}
-
-type managedRegistryCloser struct {
-	owner remotewebrtc.ManagedSessionOwner
-	done  chan struct{}
-	once  sync.Once
-}
-
-func newManagedRegistryCloser(owner remotewebrtc.ManagedSessionOwner) *managedRegistryCloser {
-	return &managedRegistryCloser{owner: owner, done: make(chan struct{})}
-}
-
-func (closer *managedRegistryCloser) RequestClose()         { closer.owner.RequestClose() }
-func (closer *managedRegistryCloser) Done() <-chan struct{} { return closer.done }
-func (closer *managedRegistryCloser) markClosed() {
-	closer.once.Do(func() { close(closer.done) })
-}
-
-type managedHelloObserver struct {
-	handle *ManagedSessionHandle
-	closer *managedRegistryCloser
-	now    func() time.Time
-}
-
-func (observer *managedHelloObserver) HelloAccepted() {
-	observedAt := time.Now().UTC()
-	if observer.now != nil {
-		observedAt = observer.now().UTC()
-	}
-	if _, err := observer.handle.MarkReady(observedAt); err != nil {
-		observer.closer.RequestClose()
-	}
-}
-
-// OpaqueAccessReference 返回 Cloud 管理投影使用的不可逆 grant reference。
-// 它不包含 grant body、terminal ID、scope 或 client public key。
-func OpaqueAccessReference(daemonDeviceID, grantID string) string {
-	digest := sha256.Sum256([]byte("muxvia-access-ref-v1\x00" + daemonDeviceID + "\x00" + grantID))
-	return base64.RawURLEncoding.EncodeToString(digest[:])
+	return acceptor.Core.ServeScopedTransport(ctx, connection, scope)
 }
 
 // PairingAcceptor 是 owner-only local Unix pairing socket 的受限 daemon 入口。

@@ -6,20 +6,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
+	directadapter "github.com/muxvia/muxvia/client/adapter/direct"
 	localadapter "github.com/muxvia/muxvia/client/adapter/local"
-	managedadapter "github.com/muxvia/muxvia/client/adapter/managed"
-	pionadapter "github.com/muxvia/muxvia/client/adapter/managed/pion"
 	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
 	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
 	sshadapter "github.com/muxvia/muxvia/client/adapter/ssh"
 	systemadapter "github.com/muxvia/muxvia/client/adapter/system"
+	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
 	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
@@ -120,23 +118,14 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	localDialer := localadapter.NewDialer(localOptions)
 	dialers, err := clientruntime.NewPeerConnectorMap(map[clientendpoint.RouteKind]clientruntime.PeerConnector{
 		clientendpoint.RouteLocalUnix: localDialer,
+		clientendpoint.RouteDirectWebRTCTCP: &directadapter.Dialer{
+			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
+			ClientName: "muxvia-cli", Now: time.Now,
+		},
 		clientendpoint.RouteSSHWebRTCTCP: sshadapter.NewDialer(sshadapter.Options{
 			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
 			Credentials: sshCredentials, ClientName: "muxvia-cli",
 		}),
-		clientendpoint.RouteManagedWebRTC: managedadapter.LazyDialer{
-			OpenCloud: func(ctx context.Context) (managedadapter.CloudClient, io.Closer, error) {
-				cloud, err := openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_TUI,
-					cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
-					cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
-					cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
-					cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
-				)
-				return cloud, cloud, err
-			},
-			Peers: pionadapter.Factory{}, ClientName: "muxvia-cli",
-			Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials}, Now: time.Now,
-		},
 	})
 	if err != nil {
 		return nil, err
@@ -160,21 +149,21 @@ type cliCapabilityAvailability interface {
 
 func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint, credentials cliCapabilityAvailability, sshCredentials cliSSHCredentialAvailability) clientruntime.RoutePlanEnvironment {
 	environment := clientruntime.RoutePlanEnvironment{SupportedRouteKinds: []clientendpoint.RouteKind{
-		clientendpoint.RouteLocalUnix, clientendpoint.RouteSSHWebRTCTCP, clientendpoint.RouteManagedWebRTC,
+		clientendpoint.RouteLocalUnix, clientendpoint.RouteDirectWebRTCTCP, clientendpoint.RouteSSHWebRTCTCP,
 	}}
 	for _, route := range target.RouteList() {
 		reference := strings.TrimSpace(route.CredentialRef)
 		switch route.Kind {
+		case clientendpoint.RouteDirectWebRTCTCP:
+			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
+				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
+			}
 		case clientendpoint.RouteSSHWebRTCTCP:
 			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
 				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
 				if sshCredentials != nil && sshCredentials.Available(route.SSHCredentialRef) {
 					environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, route.SSHCredentialRef)
 				}
-			}
-		case clientendpoint.RouteManagedWebRTC:
-			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
-				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
 			}
 		}
 	}

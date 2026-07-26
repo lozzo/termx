@@ -9,7 +9,6 @@ import {
   EndpointConfigV1Schema,
   EndpointRouteConfigV1Schema,
   EndpointSource,
-  ManagedWebRTCRouteConfigSchema,
   SSHWebRTCTCPRouteConfigSchema,
 } from '../generated/remoteauthpb/remote_auth_pb'
 import { ConnectionRouteManager, moveRoute, orderedRoutes, removeRoute } from './ConnectionRouteManager'
@@ -20,16 +19,16 @@ describe('ConnectionRouteManager', () => {
   it('reorders routes with stable priorities and keeps at least one route', () => {
     const endpoint = testEndpoint()
 
-    const moved = moveRoute(endpoint, 'cloud', -1)
+    const moved = moveRoute(endpoint, 'ssh', -1)
     expect(orderedRoutes(moved).map((route) => [route.routeId, route.priority])).toEqual([
-      ['cloud', 10],
+      ['ssh', 10],
       ['direct', 20],
     ])
     expect(orderedRoutes(moved).every((route) => route.policySource === EndpointSource.USER)).toBe(true)
 
     const one = removeRoute(moved, 'direct')
-    expect(one.routes.map((route) => route.routeId)).toEqual(['cloud'])
-    expect(removeRoute(one, 'cloud').routes.map((route) => route.routeId)).toEqual(['cloud'])
+    expect(one.routes.map((route) => route.routeId)).toEqual(['ssh'])
+    expect(removeRoute(one, 'ssh').routes.map((route) => route.routeId)).toEqual(['ssh'])
   })
 
   it('tests the selected route through the supplied Go-owned connector', async () => {
@@ -54,27 +53,19 @@ describe('ConnectionRouteManager', () => {
     expect(await screen.findByText('Connection test passed')).toBeTruthy()
   })
 
-  it('maps a stable entitlement failure to actionable route copy', async () => {
-    const user = userEvent.setup()
-    const failure = Object.assign(new Error('internal provider text'), { code: 'cloud_entitlement_required' })
-    const test = vi.fn(async () => { throw failure })
-
+  it('shows Cloud as unavailable without exposing an old route action', async () => {
     render(<ConnectionRouteManager
       endpointId="studio"
       adapter={{
         load: vi.fn(async () => testEndpoint()),
         save: vi.fn(async (value) => value),
-        test,
+        test: vi.fn(async () => {}),
         provisionSSH: vi.fn(async () => { throw new Error('not used') }),
       }}
     />)
 
-    await screen.findByText('Muxvia Cloud')
-    await user.click(screen.getAllByRole('button', { name: 'Test route' })[1]!)
-
-    await waitFor(() => expect(test).toHaveBeenCalledWith('cloud'))
-    expect((await screen.findByRole('alert')).textContent).toBe('Your current plan does not include this Cloud connection path.')
-    expect(screen.queryByText('internal provider text')).toBeNull()
+    expect(await screen.findByText('Cloud unavailable')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Add Cloud' })).toBeNull()
   })
 
   it('localizes a stable unavailable error instead of exposing transport text', async () => {
@@ -124,7 +115,7 @@ describe('ConnectionRouteManager', () => {
     endpoint.routes.push(create(EndpointRouteConfigV1Schema, {
       schemaVersion: 1,
       routeId: 'ssh-office',
-      displayName: 'Office SSH',
+      displayName: 'Backup SSH',
       priority: 30,
       enabled: true,
       route: {
@@ -153,8 +144,8 @@ describe('ConnectionRouteManager', () => {
       }}
     />)
 
-    await screen.findByText('Office SSH')
-    await user.click(screen.getByRole('button', { name: 'Prepare SSH key' }))
+    await screen.findByText('Backup SSH')
+    await user.click(screen.getAllByRole('button', { name: 'Prepare SSH key' })[1]!)
 
     await waitFor(() => expect(provisionSSH).toHaveBeenCalledWith('ssh-office'))
     expect((await screen.findByLabelText('SSH public key') as HTMLTextAreaElement).value).toBe('ssh-ed25519 AAAATEST muxvia')
@@ -184,13 +175,18 @@ function testEndpoint() {
       }),
       create(EndpointRouteConfigV1Schema, {
         schemaVersion: 1,
-        routeId: 'cloud',
-        displayName: 'Muxvia Cloud',
+        routeId: 'ssh',
+        displayName: 'Office SSH',
         priority: 20,
         enabled: true,
         route: {
-          case: 'managedWebrtc',
-          value: create(ManagedWebRTCRouteConfigSchema, { targetDeviceId: 'daemon-studio' }),
+          case: 'sshWebrtcTcp',
+          value: create(SSHWebRTCTCPRouteConfigSchema, {
+            host: 'ssh.example.test',
+            port: 22,
+            user: 'muxvia',
+            hostKeyFingerprints: ['SHA256:host'],
+          }),
         },
       }),
     ],

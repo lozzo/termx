@@ -42,6 +42,10 @@ const overrides = new Map([
       join(repoRoot, 'docs/legal/third-party/npm/bufbuild-protobuf-2.12.0-BSD-3-Clause.txt'),
     ],
   ],
+  [
+    'html-parse-stringify@3.0.1',
+    [join(repoRoot, 'docs/legal/third-party/npm/html-parse-stringify-3.0.1-LICENSE.txt')],
+  ],
 ])
 
 function packageName(packagePath) {

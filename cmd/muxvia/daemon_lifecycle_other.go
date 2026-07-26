@@ -13,6 +13,6 @@ func daemonProcessIdentity(int) (string, error) {
 }
 func daemonRecordOwnedByCurrentUser(os.FileInfo) bool { return false }
 func stopDaemonProcess(int) error                     { return fmt.Errorf("daemon lifecycle is unsupported") }
-func startDetachedDaemon(string, string, string, bool) error {
+func startDetachedDaemon(string, string, string) error {
 	return fmt.Errorf("daemon lifecycle is unsupported")
 }

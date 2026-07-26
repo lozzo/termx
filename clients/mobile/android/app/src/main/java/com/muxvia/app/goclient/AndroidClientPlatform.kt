@@ -2,11 +2,6 @@ package com.muxvia.app.goclient
 
 import android.content.Context
 import com.google.protobuf.ByteString
-import com.muxvia.app.managed.AndroidClientAccessCredentialStore
-import com.muxvia.app.managed.ManagedCloudAdapter
-import com.muxvia.app.managed.ManagedCloudAssembly
-import com.muxvia.app.managed.ManagedEndpointFailure
-import kotlinx.coroutines.runBlocking
 import muxvia.api.v1.Common
 import muxvia.client.binding.v1.ClientBinding
 import java.util.concurrent.Executors
@@ -20,7 +15,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AndroidClientPlatform(
     context: Context,
     private val engineHandle: Long,
-    private val cloud: ManagedCloudAdapter = ManagedCloudAssembly.create(context.applicationContext),
     private val credentials: AndroidClientAccessCredentialStore = AndroidClientAccessCredentialStore(context.applicationContext),
     private val sshCredentials: AndroidSSHCredentialStore = AndroidSSHCredentialStore(),
     private val endpointRegistry: AndroidEndpointRegistryStore = AndroidEndpointRegistryStore(context.applicationContext),
@@ -112,37 +106,12 @@ class AndroidClientPlatform(
                         ))))
                 ClientBinding.PlatformRequest.RequestCase.SSH_CREDENTIAL_DELETE ->
                     sshCredentials.delete(request.sshCredentialDelete.credentialRef)
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_RESOLVE_ENDPOINT ->
-                    response.setCloudResolvedEndpoint(runBlocking { cloud.resolveProto(request.cloudResolveEndpoint) })
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_CREATE_SIGNALING ->
-                    response.setCloudSignaling(ClientBinding.SignalingEvents.newBuilder()
-                        .addAllEvents(runBlocking { cloud.createSignalingProto(request.cloudCreateSignaling) }))
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_ACQUIRE_RELAY ->
-                    response.setCloudRelayLease(runBlocking { cloud.acquireRelayProto(request.cloudAcquireRelay) })
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_PLAN_ROUTE ->
-                    response.setCloudRoutePlan(runBlocking { cloud.planRouteProto(request.cloudPlanRoute) })
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_REPORT_QUALITY ->
-                    response.setCloudQualityReported(runBlocking { cloud.reportQualityProto(request.cloudReportQuality) })
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_REPORT_OUTCOME ->
-                    response.setCloudOutcomeReported(runBlocking { cloud.reportOutcomeProto(request.cloudReportOutcome) })
-                ClientBinding.PlatformRequest.RequestCase.CLOUD_ROUTE_ELIGIBILITY ->
-                    response.setCloudRouteEligibility(runBlocking { cloud.routeEligibilityProto(request.cloudRouteEligibility) })
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_OPEN_PEER,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CREATE_OFFER,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_APPLY_ANSWER,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_WAIT_READY,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CHANNEL_SEND,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CHANNEL_THRESHOLD,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_PEER_SNAPSHOT,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CLOSE_PEER,
-                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CLOSE_CHANNEL ->
-                    throw ManagedEndpointFailure("protocol", "browser WebRTC primitive reached Android platform")
                 ClientBinding.PlatformRequest.RequestCase.REQUEST_NOT_SET ->
-                    throw ManagedEndpointFailure("protocol", "platform request payload is missing")
-                null -> throw ManagedEndpointFailure("protocol", "platform request case is invalid")
+                    throw ClientPlatformFailure("protocol", "platform request payload is missing")
+                null -> throw ClientPlatformFailure("protocol", "platform request case is invalid")
             }
             response.build()
-        } catch (failure: ManagedEndpointFailure) {
+        } catch (failure: ClientPlatformFailure) {
             response.setError(platformError(failure.code, failure.message ?: failure.code)).build()
         } catch (_: Throwable) {
             response.setError(platformError("temporary", "Android platform request failed")).build()

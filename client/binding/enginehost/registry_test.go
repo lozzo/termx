@@ -53,15 +53,13 @@ func TestConnectionPolicyUsesGoRegistryTransactionAndAvailability(t *testing.T) 
 		t.Fatalf("initial policy = %#v", initial.GetState())
 	}
 	availability := initial.GetState().GetRoutes()
-	if len(availability) != 3 || availability[0].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || availability[0].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED {
+	if len(availability) != 2 || availability[0].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || availability[0].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED {
 		t.Fatalf("route availability = %#v", availability)
 	}
 	applied, err := host.ApplyConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyApplyRequest{
 		EndpointId: "studio",
 		Policy: &bindingpb.ConnectionPolicy{
 			RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT,
-			CloudRelayMode:  remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
-			RelayTransport:  remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP,
 		},
 	})
 	if err != nil {

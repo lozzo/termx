@@ -37,7 +37,7 @@ func (host *Host) GetEndpointRegistry(ctx context.Context, _ *bindingpb.Endpoint
 }
 
 // GetConnectionPolicy 返回 Endpoint 持久策略和 Go planner 当前可证明的 Route kind 可用性。
-// secure credential 与 Cloud eligibility 在每次查询时重新读取，不能由 UI 缓存或按字段存在性推断。
+// secure credential 在每次查询时重新读取，不能由 UI 缓存或按字段存在性推断。
 func (host *Host) GetConnectionPolicy(ctx context.Context, request *bindingpb.ConnectionPolicyGetRequest) (*bindingpb.ConnectionPolicyGetResult, error) {
 	target, err := host.registryEndpoint(ctx, endpoint.EndpointID(strings.TrimSpace(request.GetEndpointId())))
 	if err != nil {
@@ -50,10 +50,10 @@ func (host *Host) GetConnectionPolicy(ctx context.Context, request *bindingpb.Co
 	return &bindingpb.ConnectionPolicyGetResult{State: state}, nil
 }
 
-// ApplyConnectionPolicy 在 Go-owned registry 事务内更新 route preference 和 managed Relay 约束。
+// ApplyConnectionPolicy 在 Go-owned registry 事务内更新 Direct/SSH route preference。
 // 该操作只影响下一代 session；当前 ReadySession 的关闭和重连仍由调用方显式编排。
 func (host *Host) ApplyConnectionPolicy(ctx context.Context, request *bindingpb.ConnectionPolicyApplyRequest) (*bindingpb.ConnectionPolicyApplyResult, error) {
-	preference, relayMode, relayTransport, err := connectionPolicyFromProto(request.GetPolicy())
+	preference, err := connectionPolicyFromProto(request.GetPolicy())
 	if err != nil {
 		return nil, err
 	}
@@ -76,13 +76,6 @@ func (host *Host) ApplyConnectionPolicy(ctx context.Context, request *bindingpb.
 	}
 	target = next.Endpoints[id]
 	target.SelectionPolicy.RoutePreference = preference
-	for routeID, route := range target.Routes {
-		if route.Kind == endpoint.RouteManagedWebRTC {
-			route.RelayMode = relayMode
-			route.RelayTransport = relayTransport
-			target.Routes[routeID] = route
-		}
-	}
 	next.Endpoints[id] = target
 	next, err = next.Normalize()
 	if err == nil {
@@ -105,13 +98,12 @@ func (host *Host) connectionPolicyState(ctx context.Context, target endpoint.End
 		target,
 		host.options,
 		platformCredentials{broker: host.options.Broker},
-		platformManagedEligibility{broker: host.options.Broker},
 	)
 	if err != nil {
 		return nil, err
 	}
 	state := &bindingpb.ConnectionPolicyState{Policy: connectionPolicyToProto(target)}
-	for _, kind := range []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP, endpoint.RouteManagedWebRTC} {
+	for _, kind := range []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP} {
 		available, reason, err := connectionRouteAvailability(target, planningTarget, environment, kind)
 		if err != nil {
 			return nil, err
@@ -184,9 +176,9 @@ func bindingAvailabilityReason(reason endpoint.RouteAvailabilityReason) bindingp
 	}
 }
 
-func connectionPolicyFromProto(policy *bindingpb.ConnectionPolicy) (endpoint.RoutePreference, endpoint.RelayMode, endpoint.RelayTransport, error) {
+func connectionPolicyFromProto(policy *bindingpb.ConnectionPolicy) (endpoint.RoutePreference, error) {
 	if policy == nil {
-		return "", "", "", fmt.Errorf("connection policy is required")
+		return "", fmt.Errorf("connection policy is required")
 	}
 	var preference endpoint.RoutePreference
 	switch policy.GetRoutePreference() {
@@ -196,71 +188,21 @@ func connectionPolicyFromProto(policy *bindingpb.ConnectionPolicy) (endpoint.Rou
 		preference = endpoint.RoutePreferenceDirect
 	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH:
 		preference = endpoint.RoutePreferenceSSH
-	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD:
-		preference = endpoint.RoutePreferenceManagedCloud
 	default:
-		return "", "", "", fmt.Errorf("connection route preference is unsupported")
+		return "", fmt.Errorf("connection route preference is unsupported")
 	}
-	var relayMode endpoint.RelayMode
-	switch policy.GetCloudRelayMode() {
-	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO:
-		relayMode = endpoint.RelayAuto
-	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT:
-		relayMode = endpoint.RelayDirect
-	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY:
-		relayMode = endpoint.RelayOnly
-	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE:
-		relayMode = endpoint.RelaySmart
-	default:
-		return "", "", "", fmt.Errorf("connection Cloud relay mode is unsupported")
-	}
-	var relayTransport endpoint.RelayTransport
-	switch policy.GetRelayTransport() {
-	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO:
-		relayTransport = endpoint.RelayTransportAuto
-	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP:
-		relayTransport = endpoint.RelayTransportUDP
-	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP:
-		relayTransport = endpoint.RelayTransportTCP
-	default:
-		return "", "", "", fmt.Errorf("connection Relay transport is unsupported")
-	}
-	return preference, relayMode, relayTransport, nil
+	return preference, nil
 }
 
 func connectionPolicyToProto(target endpoint.Endpoint) *bindingpb.ConnectionPolicy {
 	policy := &bindingpb.ConnectionPolicy{
 		RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO,
-		CloudRelayMode:  remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO,
-		RelayTransport:  remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO,
 	}
 	switch target.SelectionPolicy.RoutePreference {
 	case endpoint.RoutePreferenceDirect:
 		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT
 	case endpoint.RoutePreferenceSSH:
 		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH
-	case endpoint.RoutePreferenceManagedCloud:
-		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD
-	}
-	for _, route := range target.RouteList() {
-		if route.Kind != endpoint.RouteManagedWebRTC {
-			continue
-		}
-		switch route.RelayMode {
-		case endpoint.RelayDirect:
-			policy.CloudRelayMode = remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT
-		case endpoint.RelayOnly:
-			policy.CloudRelayMode = remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
-		case endpoint.RelaySmart:
-			policy.CloudRelayMode = remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE
-		}
-		switch route.RelayTransport {
-		case endpoint.RelayTransportUDP:
-			policy.RelayTransport = remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
-		case endpoint.RelayTransportTCP:
-			policy.RelayTransport = remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
-		}
-		break
 	}
 	return policy
 }
@@ -271,8 +213,6 @@ func bindingPolicyRouteKind(kind endpoint.RouteKind) bindingpb.ConnectionRouteKi
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT
 	case endpoint.RouteSSHWebRTCTCP:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH
-	case endpoint.RouteManagedWebRTC:
-		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD
 	default:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
 	}

@@ -4,11 +4,10 @@
   "private": true,
   "workspaces": [
     "clients/ui",
-    "clients/mobile",
-    "private/cloud/web-controller/web"
+    "clients/mobile"
   ],
   "devDependencies": {
-    "esbuild": "0.27.7",
+    "esbuild": "0.28.1",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -18,14 +17,15 @@
     "@types/three": {
       "fflate": "0.8.2"
     },
-    "brace-expansion@^5": "5.0.6",
+    "brace-expansion@^5": "5.0.8",
     "fs-extra@^11": "11.3.5",
     "lru-cache@^11": "11.3.6",
     "semver@^7": "7.7.4",
+    "tar": "7.5.22",
     "undici-types": "7.19.2"
   },
   "scripts": {
-    "proto": "npm run proto --workspace @muxvia/ui && npm run proto --workspace @muxvia/web-controller",
+    "proto": "npm run proto --workspace @muxvia/ui",
     "test": "npm test --workspace @muxvia/ui && npm test --workspace @muxvia/mobile",
     "test:i18n": "node scripts/check-i18n.mjs",
     "typecheck": "npm run typecheck --workspace @muxvia/ui",

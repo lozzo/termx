@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,7 +27,6 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	assertClientImportsExclude(t, "runtime", append(commonForbidden,
 		"github.com/muxvia/muxvia/client/adapter",
 		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/shared/cloudcompanion",
 		"github.com/muxvia/muxvia/remote/client",
 		"github.com/muxvia/muxvia/remote/webrtc",
 		"os",
@@ -42,7 +42,6 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 		"github.com/muxvia/muxvia/client/adapter",
 		"github.com/muxvia/muxvia/internal/protocol",
 		"github.com/muxvia/muxvia/shared/transport",
-		"github.com/muxvia/muxvia/shared/cloudcompanion",
 		"github.com/muxvia/muxvia/shared/remoteauth",
 		"github.com/muxvia/muxvia/remote/client",
 		"github.com/muxvia/muxvia/remote/webrtc",
@@ -51,6 +50,19 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	// 它仍不能反向依赖 TUI、CLI 或 private owner。
 	assertClientImportsExclude(t, "binding", commonForbidden)
 	assertClientImportsExclude(t, "adapter", commonForbidden)
+}
+
+// TestLegacyCloudPackagesStayDeleted 防止新 Cloud 实现重新依赖已经作废的目录与契约。
+func TestLegacyCloudPackagesStayDeleted(t *testing.T) {
+	for _, path := range []string{
+		"adapter/managed",
+		"../proto/cloudpb",
+		"../shared/cloudcompanion",
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("legacy Cloud package must stay deleted: %s (stat error=%v)", path, err)
+		}
+	}
 }
 
 func assertClientImportsLimitedToFiles(t *testing.T, root string, prefixes []string, allowed map[string]bool) {

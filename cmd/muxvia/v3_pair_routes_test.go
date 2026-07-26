@@ -2,15 +2,15 @@ package main
 
 import "testing"
 
-func TestV3PairingRoutesAcceptOrdinaryDirectAndCloudParameters(t *testing.T) {
+func TestV3PairingRoutesAcceptOrdinaryDirectParameters(t *testing.T) {
 	routes, err := v3PairingRoutes(v3PairRouteFlags{
-		Routes: []string{"direct", "cloud"}, DirectID: "frp", DirectName: "FRP Public",
+		Routes: []string{"direct"}, DirectID: "frp", DirectName: "FRP Public",
 		SignalingAddresses: []string{"frp.example.com:443"}, ICETCPAddresses: []string{"frp.example.com:444"}, ServerName: "mac.example.com",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(routes) != 2 || routes[0].GetRouteId() != "direct-frp" || routes[0].GetDisplayName() != "FRP Public" || routes[0].GetDirectWebrtcTcp().GetServerName() != "mac.example.com" || routes[1].GetManagedWebrtc() == nil {
+	if len(routes) != 1 || routes[0].GetRouteId() != "direct-frp" || routes[0].GetDisplayName() != "FRP Public" || routes[0].GetDirectWebrtcTcp().GetServerName() != "mac.example.com" {
 		t.Fatalf("routes = %#v", routes)
 	}
 }
@@ -35,8 +35,8 @@ func TestV3PairingRoutesRejectFieldsWithoutExplicitRoute(t *testing.T) {
 	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"direct://lan?unknown=value"}}); err == nil {
 		t.Fatal("unknown URI query was accepted")
 	}
-	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"cloud"}, DirectName: "ignored"}); err == nil {
-		t.Fatal("out-of-scope Direct fields were silently ignored")
+	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"cloud"}}); err == nil {
+		t.Fatal("unavailable Cloud Route was accepted")
 	}
 	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"direct"}, SSHHost: "ignored"}); err == nil {
 		t.Fatal("out-of-scope SSH fields were silently ignored")

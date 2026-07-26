@@ -2,8 +2,6 @@ package com.muxvia.app.goclient
 
 import android.content.Context
 import android.util.Base64
-import com.muxvia.app.managed.AndroidClientAccessCredentialStore
-import com.muxvia.app.managed.ManagedEndpointFailure
 
 /**
  * AndroidEndpointRegistryStore 只保存 Go Client Engine 生成的 opaque EndpointRegistryV1 bytes。
@@ -19,7 +17,7 @@ class AndroidEndpointRegistryStore(context: Context) {
         try {
             Base64.decode(encoded, Base64.NO_WRAP)
         } catch (_: IllegalArgumentException) {
-            throw ManagedEndpointFailure("protocol", "endpoint registry payload is malformed")
+            throw ClientPlatformFailure("protocol", "endpoint registry payload is malformed")
         }
     }
 
@@ -34,12 +32,12 @@ class AndroidEndpointRegistryStore(context: Context) {
         sshCredentials: AndroidSSHCredentialStore,
     ) = synchronized(lock) {
         if (registryProto.isEmpty() || registryProto.size > MAX_REGISTRY_BYTES) {
-            throw ManagedEndpointFailure("protocol", "endpoint registry payload size is invalid")
+            throw ClientPlatformFailure("protocol", "endpoint registry payload size is invalid")
         }
         val previous = preferences.getString(REGISTRY_KEY, null)
         val encoded = Base64.encodeToString(registryProto, Base64.NO_WRAP)
         if (!preferences.edit().putString(REGISTRY_KEY, encoded).commit()) {
-            throw ManagedEndpointFailure("temporary", "failed to persist endpoint registry")
+            throw ClientPlatformFailure("temporary", "failed to persist endpoint registry")
         }
         try {
             credentials.deleteMany(deleteCredentialRefs.filterNot { it.startsWith(AndroidSSHCredentialStore.REF_PREFIX) })
@@ -48,7 +46,7 @@ class AndroidEndpointRegistryStore(context: Context) {
             val rollback = preferences.edit()
             if (previous == null) rollback.remove(REGISTRY_KEY) else rollback.putString(REGISTRY_KEY, previous)
             if (!rollback.commit()) {
-                throw ManagedEndpointFailure("temporary", "failed to roll back endpoint registry")
+                throw ClientPlatformFailure("temporary", "failed to roll back endpoint registry")
             }
             throw failure
         }

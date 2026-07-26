@@ -27,14 +27,14 @@ type v3PairRouteFlags struct {
 }
 
 // v3PairingRoutes 把普通 flags 与严格 URI 收敛成唯一 generated Route contract。
-// 未指定 Route 表示 Auto，并同时签入 Direct 与 Cloud；这里不探测瞬时网络，实际可达性由 Go pairing race 判断。
+// 未指定 Route 时只签入 Direct；Cloud 在新契约完成前不可选。
 func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfigV1, error) {
 	specs := append([]string(nil), flags.Routes...)
 	if len(specs) == 0 {
 		if hasParameterizedDirectRoute(flags) || hasParameterizedSSHRoute(flags) {
 			return nil, fmt.Errorf("Route fields require an explicit --route direct or --route ssh")
 		}
-		specs = []string{"direct", "cloud"}
+		specs = []string{"direct"}
 	} else {
 		plainDirect, plainSSH := false, false
 		for _, spec := range specs {
@@ -62,7 +62,7 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 			plainDirect = true
 			route, err = v3ParameterizedDirectRoute(flags)
 		case "cloud":
-			route = v3ManagedPairingRoute()
+			return nil, fmt.Errorf("Cloud Route is unavailable while Muxvia Cloud is being rebuilt")
 		case "ssh":
 			if plainSSH {
 				return nil, fmt.Errorf("parameterized --route ssh may only appear once; use ssh:// URI for multiple SSH Routes")
@@ -124,7 +124,7 @@ func v3ParameterizedSSHRoute(flags v3PairRouteFlags) (*remoteauthpb.EndpointRout
 func v3PairingRouteURI(raw string) (*remoteauthpb.EndpointRouteConfigV1, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme == "" {
-		return nil, fmt.Errorf("invalid --route %q; use direct, cloud, ssh, or a supported Route URI", raw)
+		return nil, fmt.Errorf("invalid --route %q; use direct, ssh, or a supported Route URI", raw)
 	}
 	switch parsed.Scheme {
 	case "direct":

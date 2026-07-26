@@ -1,6 +1,5 @@
 package com.muxvia.app
 
-import android.os.Build
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -14,15 +13,8 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import com.muxvia.app.managed.ManagedCloudAssembly
-import com.muxvia.app.managed.ManagedCloudAccount
-import com.muxvia.app.managed.ManagedCloudClientMetadata
-import com.muxvia.app.managed.ManagedCloudLoginFlow
-import com.muxvia.app.managed.ManagedEndpointFailure
 import com.muxvia.app.goclient.AndroidGoClientEngine
 import com.muxvia.app.goclient.GoClientBridgeServer
-import org.json.JSONArray
-import org.json.JSONObject
 import java.security.SecureRandom
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -47,10 +39,7 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     private var bridgeToken: String = ""
     private var goClientEngine: AndroidGoClientEngine? = null
     private var goBridgeServer: GoClientBridgeServer? = null
-    private val cloudAdapter by lazy { ManagedCloudAssembly.create(context) }
-    private val cloudScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val cloudLoginLock = Any()
-    private var activeCloudLoginFlow: ManagedCloudLoginFlow? = null
+    private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var lifecycleReady = false
     private val connectivityManager by lazy { context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
     @Volatile private var activeNetwork: Network? = null
@@ -70,7 +59,7 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
             if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
             val epoch = networkChangeEpoch + 1
             networkChangeEpoch = epoch
-            cloudScope.launch {
+            runtimeScope.launch {
                 // Wi-Fi -> cellular -> Wi-Fi 会连续发布多个 onAvailable。只允许最终 active network
                 // 创建 generation，避免后一个 bridge 在 JS 正读取前一个 registry 时将其关闭。
                 delay(300)
@@ -123,166 +112,6 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     }
 
     // ─── Connection Management ────────────────────────────────────────────────
-
-    /** cloudBeginActivation 创建 App 可展示的短码；高熵 flow ID 只保存在原生内存。 */
-    @PluginMethod
-    fun cloudBeginActivation(call: PluginCall) {
-        cloudScope.launch {
-            try {
-                val flow = cloudAdapter.beginLogin(cloudClientMetadata())
-                synchronized(cloudLoginLock) { activeCloudLoginFlow = flow }
-                call.resolve(flowToJSObject(flow))
-            } catch (failure: ManagedEndpointFailure) {
-                call.reject(failure.message ?: failure.code, failure.code)
-            } catch (_: Exception) {
-                call.reject("cloud activation could not start", "temporary")
-            }
-        }
-    }
-
-	/** cloudClaimActivation 让二维码 payload 与手工登录码认领同一个 Web activation flow。 */
-    @PluginMethod
-    fun cloudClaimActivation(call: PluginCall) {
-        val rawPayload = call.getString("payload")?.trim().orEmpty()
-        val userCode = rawPayload.removePrefix("muxvia-cloud-activate:v1:").trim().uppercase()
-		if (userCode.isBlank() || !userCode.matches(Regex("MXA(?:-[0-9A-HJKMNP-TV-Z]{4}){5}-[0-9A-HJKMNP-TV-Z]{6}"))) {
-            call.reject("This is not a Muxvia Cloud activation code", "protocol")
-            return
-        }
-        cloudScope.launch {
-            try {
-                val flow = cloudAdapter.claimLogin(userCode, cloudClientMetadata())
-                synchronized(cloudLoginLock) { activeCloudLoginFlow = flow }
-                call.resolve(flowToJSObject(flow))
-            } catch (failure: ManagedEndpointFailure) {
-                call.reject(failure.message ?: failure.code, failure.code)
-            } catch (failure: Exception) {
-                Log.e(TAG, "Cloud activation claim failed unexpectedly", failure)
-                MuxviaDebugLog.e(TAG, "Cloud activation claim failed unexpectedly", failure)
-                call.reject("Muxvia Cloud activation failed unexpectedly. Export debug logs and try again.", "temporary")
-            }
-        }
-    }
-
-    /** cloudAwaitActivation 轮询当前原生 Flow，批准后把 edge session 直接写入 Keystore。 */
-    @PluginMethod
-    fun cloudAwaitActivation(call: PluginCall) {
-        val flow = synchronized(cloudLoginLock) { activeCloudLoginFlow }
-        if (flow == null) {
-            call.reject("No cloud activation is active", "login_required")
-            return
-        }
-        cloudScope.launch {
-            while (System.currentTimeMillis() / 1000 < flow.expiresAtUnix) {
-                if (synchronized(cloudLoginLock) { activeCloudLoginFlow?.flowId } != flow.flowId) {
-                    call.reject("cloud activation was cancelled", "cancelled")
-                    return@launch
-                }
-                try {
-                    val account = cloudAdapter.completeLogin(flow.flowId)
-                    synchronized(cloudLoginLock) {
-                        if (activeCloudLoginFlow?.flowId == flow.flowId) activeCloudLoginFlow = null
-                    }
-                    call.resolve(accountToJSObject(account))
-                    return@launch
-                } catch (failure: ManagedEndpointFailure) {
-                    if (failure.code != "temporary") {
-                        synchronized(cloudLoginLock) {
-                            if (activeCloudLoginFlow?.flowId == flow.flowId) activeCloudLoginFlow = null
-                        }
-                        call.reject(failure.message ?: failure.code, failure.code)
-                        return@launch
-                    }
-                } catch (_: Exception) {
-                    call.reject("cloud activation failed", "temporary")
-                    return@launch
-                }
-                delay(flow.pollIntervalMillis.coerceIn(250, 60_000))
-            }
-            synchronized(cloudLoginLock) {
-                if (activeCloudLoginFlow?.flowId == flow.flowId) activeCloudLoginFlow = null
-            }
-            call.reject("cloud activation expired", "login_required")
-        }
-    }
-
-    /** cloudCancelActivation 只丢弃当前短期 Flow，不影响既有账号 Session。 */
-    @PluginMethod
-    fun cloudCancelActivation(call: PluginCall) {
-        synchronized(cloudLoginLock) { activeCloudLoginFlow = null }
-        call.resolve()
-    }
-
-    /** getCloudAccount 返回 Keystore 中仍有效的账号摘要，不因 Controller 抖动阻断本地设备。 */
-    @PluginMethod
-    fun getCloudAccount(call: PluginCall) {
-        cloudScope.launch {
-            try {
-                val account = cloudAdapter.currentAccount()
-                call.resolve(account?.let(::accountToJSObject) ?: JSObject())
-            } catch (failure: Exception) {
-                call.reject(failure.message ?: "cloud account is unavailable")
-            }
-        }
-    }
-
-    /** refreshCloudAccount 由用户刷新动作触发，读取 Controller 最新持久 Subscription。 */
-    @PluginMethod
-    fun refreshCloudAccount(call: PluginCall) {
-        cloudScope.launch {
-            try {
-                val account = cloudAdapter.refreshAccount()
-                call.resolve(account?.let(::accountToJSObject) ?: JSObject())
-            } catch (failure: Exception) {
-                call.reject(failure.message ?: "cloud account is unavailable")
-            }
-        }
-    }
-
-    /** cloudListDevices 返回账号目录 metadata；是否已配对仍由独立 native grant store 决定。 */
-    @PluginMethod
-    fun cloudListDevices(call: PluginCall) {
-        cloudScope.launch {
-            try {
-                val devices = JSONArray()
-                cloudAdapter.listDevices().forEach { device ->
-                    devices.put(JSONObject()
-                        .put("deviceId", device.deviceId)
-                        .put("deviceFingerprint", device.deviceFingerprint)
-                        .put("displayName", device.displayName)
-                        .put("platform", device.platform)
-                        .put("kind", device.kind)
-                        .put("online", device.online)
-                        .put("revoked", device.revoked))
-                }
-                call.resolve(JSObject().put("devices", devices))
-            } catch (failure: ManagedEndpointFailure) {
-                // Hub 设备目录不拥有账号 Session 真值。即使 edge token 被 Hub 拒绝，也必须由
-                // Controller refresh 判断账号 Session 是否失效，目录调用不得直接清空 Keystore。
-                if (failure.code == "unauthenticated") {
-                    call.reject("Muxvia Cloud device sync is not ready yet", "temporary")
-                } else {
-                    call.reject(failure.message ?: failure.code, failure.code)
-                }
-            } catch (failure: Exception) {
-                MuxviaDebugLog.e(TAG, "Cloud device directory failed", failure)
-                call.reject("Muxvia Cloud device directory is unavailable", "temporary")
-            }
-        }
-    }
-
-    /** cloudLogout 只清理账号 edge session，保留独立 pairing grant。 */
-    @PluginMethod
-    fun cloudLogout(call: PluginCall) {
-        cloudScope.launch {
-            try {
-                cloudAdapter.logout()
-                call.resolve()
-            } catch (failure: Exception) {
-                call.reject(failure.message ?: "cloud logout failed")
-            }
-        }
-    }
 
     @PluginMethod
     fun handleForegroundResume(call: PluginCall) {
@@ -372,28 +201,6 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         goBridgeServer?.close()
         goBridgeServer = null
         goClientEngine = null
-    }
-
-    private fun accountToJSObject(account: ManagedCloudAccount): JSObject = JSObject().apply {
-        put("accountId", account.accountId)
-        put("accountLabel", account.accountLabel)
-        put("expiresAtUnix", account.expiresAtUnix)
-        put("planId", account.planId)
-        put("planName", account.planName)
-        put("subscriptionStatus", account.subscriptionStatus)
-        put("subscriptionRevision", account.subscriptionRevision)
-    }
-
-    private fun flowToJSObject(flow: ManagedCloudLoginFlow): JSObject = JSObject().apply {
-        put("userCode", flow.userCode)
-        put("expiresAtUnix", flow.expiresAtUnix)
-    }
-
-    private fun cloudClientMetadata(): ManagedCloudClientMetadata {
-        val manufacturer = Build.MANUFACTURER.trim()
-        val model = Build.MODEL.trim()
-        val displayName = listOf(manufacturer, model).filter(String::isNotBlank).joinToString(" ").ifBlank { "Android device" }
-        return ManagedCloudClientMetadata(displayName, "android", BuildConfig.VERSION_NAME)
     }
 
     private fun generateBridgeToken(): String {

@@ -554,7 +554,6 @@ export class ProtoBindingConnector {
     options?.onStatus?.('Connecting...')
     options?.onConnectionState?.({ machineId: input.machineId, phase: 'connecting', statusText: 'Connecting...', relayInUse: options.forceRelay === true })
     try {
-    await this.applyManagedRelayPolicy(options?.forceRelay, options?.signal)
       const session = await this.client().openSession(create(MuxviaClientBinding.OpenSessionRequestSchema, {
     requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
     intent: MuxviaClientBinding.ConnectIntent.INTERACTIVE,
@@ -580,17 +579,7 @@ export class ProtoBindingConnector {
   async applyConnectionPolicy(policy: ConnectionPolicy, signal?: AbortSignal): Promise<void> {
     await this.client().applyConnectionPolicy(this.input.endpointId, create(MuxviaClientBinding.ConnectionPolicySchema, {
       routePreference: routePreferenceToProto(policy.route),
-      cloudRelayMode: cloudPreferenceToProto(policy.cloud),
-      relayTransport: relayTransportToProto(policy.relayTransport),
     }), signal)
-  }
-
-  private async applyManagedRelayPolicy(forceRelay: boolean | undefined, signal?: AbortSignal): Promise<void> {
-    if (forceRelay === undefined) return
-    const current = await this.getConnectionPolicy(signal)
-    const cloud = forceRelay ? 'relay' : 'auto'
-    if (current.policy.cloud === cloud) return
-    await this.applyConnectionPolicy({ ...current.policy, cloud }, signal)
   }
 }
 
@@ -700,7 +689,6 @@ function routePreferenceFromProto(value: MuxviaRemoteAuth.EndpointRoutePreferenc
   switch (value) {
     case MuxviaRemoteAuth.EndpointRoutePreference.DIRECT: return 'direct'
     case MuxviaRemoteAuth.EndpointRoutePreference.SSH: return 'ssh'
-    case MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD: return 'cloud'
     default: return 'auto'
   }
 }
@@ -709,40 +697,7 @@ function routePreferenceToProto(value: ConnectionPolicy['route']): MuxviaRemoteA
   switch (value) {
     case 'direct': return MuxviaRemoteAuth.EndpointRoutePreference.DIRECT
     case 'ssh': return MuxviaRemoteAuth.EndpointRoutePreference.SSH
-    case 'cloud': return MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD
     default: return MuxviaRemoteAuth.EndpointRoutePreference.AUTO
-  }
-}
-
-function cloudPreferenceFromProto(value: MuxviaRemoteAuth.ManagedWebRTCRelayMode): ConnectionPolicy['cloud'] {
-  switch (value) {
-    case MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT: return 'p2p'
-    case MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY: return 'relay'
-    default: return 'auto'
-  }
-}
-
-function cloudPreferenceToProto(value: ConnectionPolicy['cloud']): MuxviaRemoteAuth.ManagedWebRTCRelayMode {
-  switch (value) {
-    case 'p2p': return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT
-    case 'relay': return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
-    default: return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
-  }
-}
-
-function relayTransportFromProto(value: MuxviaRemoteAuth.ManagedWebRTCRelayTransport): ConnectionPolicy['relayTransport'] {
-  switch (value) {
-    case MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP: return 'udp'
-    case MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP: return 'tcp'
-    default: return 'auto'
-  }
-}
-
-function relayTransportToProto(value: ConnectionPolicy['relayTransport']): MuxviaRemoteAuth.ManagedWebRTCRelayTransport {
-  switch (value) {
-    case 'udp': return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
-    case 'tcp': return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
-    default: return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO
   }
 }
 
@@ -751,10 +706,8 @@ function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPol
   const result: ConnectionPolicyState = {
     policy: {
       route: routePreferenceFromProto(policy?.routePreference),
-      cloud: cloudPreferenceFromProto(policy?.cloudRelayMode ?? MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO),
-      relayTransport: relayTransportFromProto(policy?.relayTransport ?? MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO),
     },
-    available: { direct: false, ssh: false, cloud: false },
+    available: { direct: false, ssh: false },
     unavailableReasons: {},
   }
   for (const route of state.routes) {
@@ -762,7 +715,7 @@ function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPol
       ? 'direct'
       : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.SSH
         ? 'ssh'
-        : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.MANAGED_CLOUD ? 'cloud' : undefined
+        : undefined
     if (!key) continue
     result.available[key] = route.available
     if (!route.available) result.unavailableReasons[key] = connectionPolicyReasonFromProto(route.reason)
@@ -775,7 +728,6 @@ function connectionPolicyReasonFromProto(reason: MuxviaClientBinding.ConnectionP
     case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.ROUTE_DISABLED: return 'route_disabled'
     case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.PLATFORM_UNSUPPORTED: return 'platform_unsupported'
     case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CREDENTIAL_UNAVAILABLE: return 'credential_unavailable'
-    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CLOUD_UNAVAILABLE: return 'cloud_unavailable'
     default: return 'route_not_configured'
   }
 }

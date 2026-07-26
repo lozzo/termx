@@ -1,8 +1,7 @@
 Muxvia App License And Third-Party Notice Index
 
 APACHE-2.0.txt
-  License text for public Muxvia Community components. Its presence does not
-  license a proprietary Official App module or other private Muxvia material.
+  Apache License 2.0 text used by applicable Muxvia and third-party components.
 
 third-party/NPM_NOTICES.txt
   Production npm lockfile dependency versions, attributions, and full texts.
@@ -19,7 +18,5 @@ third-party/WEBRTC.txt
 third-party/FONTS.txt
   Embedded Nerd Font Mono attribution and license terms.
 
-Official App builds can include a separately licensed proprietary cloud module.
-Public and third-party component licenses remain effective in that combined
-distribution. See the applicable Official App terms for the private module and
-managed services.
+Muxvia source and product components use the repository license. Third-party
+components remain governed by the individual notices listed above.

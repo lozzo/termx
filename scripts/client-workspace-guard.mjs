@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const expectedWorkspaces = ['clients/mobile', 'clients/ui', 'private/cloud/web-controller/web']
+const expectedWorkspaces = ['clients/mobile', 'clients/ui']
 
 function readJSON(relativePath) {
   return JSON.parse(readFileSync(join(repoRoot, relativePath), 'utf8'))

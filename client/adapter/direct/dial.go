@@ -24,7 +24,6 @@ import (
 	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
 	"github.com/muxvia/muxvia/internal/protocol/directsignal"
 	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/proto/wire"
 	"github.com/muxvia/muxvia/shared/remoteauth"
@@ -39,7 +38,7 @@ const defaultClientName = "muxvia-go-direct"
 // factory 不解析 Endpoint、不访问 credential，也不执行 signaling 或 remote auth。
 type PeerFactory interface {
 	// OpenDirectPeer 为当前 attempt 创建一个可靠有序 protocol DataChannel。
-	OpenDirectPeer(context.Context) (port.ManagedPeer, error)
+	OpenDirectPeer(context.Context) (port.WebRTCPeer, error)
 }
 
 // SignalingClient 是 Direct connector 对 daemon embedded signaling 的单次 exchange 边界。
@@ -161,7 +160,7 @@ type directPeerOptions struct {
 }
 
 type openedDirectPeer struct {
-	peer       port.ManagedPeer
+	peer       port.WebRTCPeer
 	connection *datachannel.Transport
 	closeOnce  sync.Once
 	closeErr   error
@@ -247,13 +246,13 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 			return nil, fmt.Errorf("project verified WebRTC answer: empty result")
 		}
 	}
-	candidates := make([]*cloudpb.IceCandidate, 0, len(answer.GetCandidates()))
+	candidates := make([]port.ICECandidate, 0, len(answer.GetCandidates()))
 	for _, candidate := range answer.GetCandidates() {
 		if candidate == nil {
 			continue
 		}
-		candidates = append(candidates, &cloudpb.IceCandidate{
-			Candidate: candidate.GetCandidate(), SdpMid: candidate.GetSdpMid(), SdpMlineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment(),
+		candidates = append(candidates, port.ICECandidate{
+			Candidate: candidate.GetCandidate(), SDPMid: candidate.GetSdpMid(), SDPMLineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment(),
 		})
 	}
 	if err := peer.ApplyAnswer(ctx, answer.GetAnswerSdp(), candidates); err != nil {
@@ -532,12 +531,12 @@ func (failure *SignalingError) Error() string {
 // ApplicationClient 拥有 Proto command/event/resource；本类型只补齐 peer 生命周期，不能创建新 generation。
 type Session struct {
 	*protocoladapter.ApplicationClient
-	peer      port.ManagedPeer
+	peer      port.WebRTCPeer
 	closeOnce sync.Once
 	closeErr  error
 }
 
-func newSession(application *protocoladapter.ApplicationClient, peer port.ManagedPeer) *Session {
+func newSession(application *protocoladapter.ApplicationClient, peer port.WebRTCPeer) *Session {
 	session := &Session{ApplicationClient: application, peer: peer}
 	go func() {
 		<-application.Done()

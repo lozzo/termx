@@ -8,13 +8,6 @@ const localeGroups = [
       'zh-CN': 'clients/ui/src/locales/zh-CN.json',
     },
   },
-  {
-    name: 'Web Controller',
-    files: {
-      en: 'private/cloud/web-controller/web/src/locales/en.json',
-      'zh-CN': 'private/cloud/web-controller/web/src/locales/zh-CN.json',
-    },
-  },
 ]
 
 for (const group of localeGroups) {

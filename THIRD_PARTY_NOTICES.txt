@@ -5,7 +5,6 @@ Muxvia Third-Party Notices
 Artifact Notice Bundles
 
 - muxvia CLI/daemon: cmd/muxvia/THIRD_PARTY_NOTICES.txt; 用户入口为 muxvia licenses。
-- 当前 Cloud Companion: private/cloud/companion/cmd/muxvia-cloud/THIRD_PARTY_NOTICES.txt; 该旧产物将在 Cloud 重构删除阶段退出。
 - Android App: clients/mobile/public/THIRD_PARTY_NOTICES.txt 和 clients/mobile/public/third-party/; 随 App web assets 与 APK assets/public/ 分发。
 
 这些 bundle 按实际 Go build graph、npm lockfile、Gradle runtime graph 和内嵌资产分别生成。单独列出 SPDX 名称或本索引不能替代 artifact 内的完整版权、许可和 NOTICE 文本。
@@ -19,4 +18,4 @@ Vendored And Embedded Material
 
 Reproducible Audit
 
-旧 license audit 与 public snapshot 文档门禁将在 Cloud 代码删除阶段移除。选择并落地开源许可证后，必须建立与单一开源仓库匹配的新 audit，并在发布时同时生成 SBOM、签名和 provenance。
+旧 license audit 与 public snapshot 文档门禁已随 Cloud 旧代码删除。选择并落地开源许可证后，必须建立与单一开源仓库匹配的新 audit，并在发布时同时生成 SBOM、签名和 provenance。

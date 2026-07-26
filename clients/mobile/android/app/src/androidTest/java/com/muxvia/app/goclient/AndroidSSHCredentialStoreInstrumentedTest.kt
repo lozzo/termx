@@ -4,7 +4,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import android.util.Base64
 import android.util.Log
-import com.muxvia.app.managed.ManagedEndpointFailure
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -51,6 +50,6 @@ class AndroidSSHCredentialStoreInstrumentedTest {
         })
 
         store.delete(ref)
-        assertThrows(ManagedEndpointFailure::class.java) { store.lookup(ref, false) }
+        assertThrows(ClientPlatformFailure::class.java) { store.lookup(ref, false) }
     }
 }

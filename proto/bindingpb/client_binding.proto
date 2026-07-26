@@ -4,8 +4,6 @@ package muxvia.client.binding.v1;
 
 import "apipb/application.proto";
 import "apipb/common.proto";
-import "cloudpb/cloud_companion.proto";
-import "cloudpb/cloud_topology.proto";
 import "remoteauthpb/remote_auth.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/bindingpb";
@@ -33,7 +31,15 @@ enum ConnectionRouteKind {
   CONNECTION_ROUTE_KIND_LOCAL = 1;
   CONNECTION_ROUTE_KIND_DIRECT = 2;
   CONNECTION_ROUTE_KIND_SSH = 3;
-  CONNECTION_ROUTE_KIND_MANAGED_CLOUD = 4;
+	reserved 4;
+	reserved "CONNECTION_ROUTE_KIND_MANAGED_CLOUD";
+}
+
+// ConnectionObservedPath 是已建立 WebRTC candidate pair 的中性路径投影。
+enum ConnectionObservedPath {
+	CONNECTION_OBSERVED_PATH_UNSPECIFIED = 0;
+	CONNECTION_OBSERVED_PATH_DIRECT = 1;
+	CONNECTION_OBSERVED_PATH_SINGLE_RELAY = 2;
 }
 
 // ConnectionCandidateType 是 selected ICE candidate pair 的脱敏候选类型。
@@ -69,7 +75,7 @@ enum ConnectionPolicyAvailabilityReason {
 message ConnectionSnapshot {
   string route_id = 1;
   ConnectionRouteKind route_kind = 2;
-  muxvia.cloud.v1.ObservedPath observed_path = 3;
+  ConnectionObservedPath observed_path = 3;
   string selection_reason = 4;
   int64 sampled_at_unix_nano = 5;
   int64 round_trip_nanos = 6;
@@ -90,8 +96,7 @@ message ConnectionSnapshot {
 // 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
 message ConnectionPolicy {
   muxvia.remote.auth.v1.EndpointRoutePreference route_preference = 1;
-  muxvia.remote.auth.v1.ManagedWebRTCRelayMode cloud_relay_mode = 2;
-  muxvia.remote.auth.v1.ManagedWebRTCRelayTransport relay_transport = 3;
+  reserved 2, 3;
 }
 
 message ConnectionPolicyRouteAvailability {
@@ -437,107 +442,10 @@ message EndpointRegistryStoreRequest {
 }
 message EndpointRegistryLoaded { bytes registry_proto = 1; }
 
-message SignalingEvents { repeated muxvia.cloud.v1.SignalingEvent events = 1; }
-
-// CloudRouteEligibilityRequest 只查询当前平台账号 session 是否允许 Go planner 尝试 managed Route。
-// Relay 的最终订阅和配额准入仍由 Control Plane 在签发 RelayLease 时判断。
-message CloudRouteEligibilityRequest {
-  string account_profile_ref = 1;
-  muxvia.remote.auth.v1.ManagedWebRTCRelayMode relay_mode = 2;
-}
-
-message CloudRouteEligibility {
-  bool account_session_available = 1;
-  bool managed_direct_available = 2;
-  bool relay_available = 3;
-}
-
-// WebRTCOpenPeerRequest 只描述浏览器创建 RTCPeerConnection 所需的平台 primitive。
-// route/auth/session 真值仍由 Go managed engine 持有。
-message WebRTCOpenPeerRequest {
-  repeated muxvia.cloud.v1.IceServer ice_servers = 1;
-  muxvia.cloud.v1.RoutePreference route_preference = 2;
-  bool relay_only = 3;
-}
-
-message WebRTCPeerOpened {
-  uint64 peer_handle = 1;
-  uint64 channel_handle = 2;
-}
-
-message WebRTCPeerRequest { uint64 peer_handle = 1; }
-
-message WebRTCCreateOfferResult { string offer_sdp = 1; }
-
-message WebRTCApplyAnswerRequest {
-  uint64 peer_handle = 1;
-  string answer_sdp = 2;
-  repeated muxvia.cloud.v1.IceCandidate candidates = 3;
-}
-
-message WebRTCPeerReady {
-  string remote_certificate_fingerprint = 1;
-  muxvia.cloud.v1.ObservedPath observed_path = 2;
-}
-
-message WebRTCChannelSendRequest {
-  uint64 channel_handle = 1;
-  bytes payload = 2;
-}
-
-message WebRTCChannelSendResult { uint64 buffered_amount = 1; }
-
-message WebRTCChannelThresholdRequest {
-  uint64 channel_handle = 1;
-  uint64 low_threshold = 2;
-}
-
-message WebRTCPeerSnapshotRequest {
-  uint64 peer_handle = 1;
-  int64 sampled_at_unix_nano = 2;
-}
-
-message WebRTCPeerSnapshot {
-  bool valid = 1;
-  string pair_id = 2;
-  muxvia.cloud.v1.ObservedPath path = 3;
-  string network_class = 4;
-  int64 sampled_at_unix_nano = 5;
-  int64 round_trip_nanos = 6;
-  uint64 bytes_sent = 7;
-  uint64 bytes_received = 8;
-  uint64 packets_sent = 9;
-  uint64 loss_events = 10;
-  bool connected = 11;
-  ConnectionCandidateType local_candidate_type = 12;
-  ConnectionCandidateType remote_candidate_type = 13;
-  ConnectionTransport local_protocol = 14;
-  ConnectionTransport remote_protocol = 15;
-  ConnectionTransport relay_transport = 16;
-}
-
-message WebRTCCloseRequest { uint64 handle = 1; }
-
-message WebRTCChannelMessageEvent {
-  uint64 channel_handle = 1;
-  bytes payload = 2;
-}
-
-message WebRTCChannelClosedEvent { uint64 channel_handle = 1; }
-
-message WebRTCBufferedAmountLowEvent {
-  uint64 channel_handle = 1;
-  uint64 buffered_amount = 2;
-}
-
-// PlatformEvent 是浏览器异步 primitive 回到 Go engine 的唯一入口。
-// engine handle 在 WASM export 层完成 generation fence，事件本身不携带业务 session。
+// PlatformEvent 保留窄 binding 的异步平台入口。
+// 旧 Cloud/WebRTC 浏览器 primitive 已删除，后续能力必须由新 Proto 重新分配字段。
 message PlatformEvent {
-  oneof event {
-    WebRTCChannelMessageEvent webrtc_channel_message = 10;
-    WebRTCChannelClosedEvent webrtc_channel_closed = 11;
-    WebRTCBufferedAmountLowEvent webrtc_buffered_amount_low = 12;
-  }
+	reserved 10 to 12;
 }
 
 message PlatformRequest {
@@ -553,23 +461,8 @@ message PlatformRequest {
     SSHCredentialLookupRequest ssh_credential_lookup = 17;
     SSHCredentialSignRequest ssh_credential_sign = 18;
     SSHCredentialDeleteRequest ssh_credential_delete = 19;
-    muxvia.cloud.v1.ResolveEndpointRequest cloud_resolve_endpoint = 20;
-    muxvia.cloud.v1.CreateSignalingSessionRequest cloud_create_signaling = 21;
-    muxvia.cloud.v1.AcquireRelayLeaseRequest cloud_acquire_relay = 22;
-    muxvia.cloud.v1.PlanManagedRouteRequest cloud_plan_route = 23;
-    muxvia.cloud.v1.ReportPathQualityRequest cloud_report_quality = 24;
-    muxvia.cloud.v1.ReportConnectionOutcomeRequest cloud_report_outcome = 25;
-    CloudRouteEligibilityRequest cloud_route_eligibility = 26;
-    WebRTCOpenPeerRequest webrtc_open_peer = 30;
-    WebRTCPeerRequest webrtc_create_offer = 31;
-    WebRTCApplyAnswerRequest webrtc_apply_answer = 32;
-    WebRTCPeerRequest webrtc_wait_ready = 33;
-    WebRTCChannelSendRequest webrtc_channel_send = 34;
-    WebRTCChannelThresholdRequest webrtc_channel_threshold = 35;
-    WebRTCPeerSnapshotRequest webrtc_peer_snapshot = 36;
-    WebRTCCloseRequest webrtc_close_peer = 37;
-    WebRTCCloseRequest webrtc_close_channel = 38;
   }
+	reserved 20 to 26, 30 to 38;
 }
 
 message PlatformResponse {
@@ -581,17 +474,6 @@ message PlatformResponse {
     EndpointRegistryLoaded endpoint_registry = 12;
     SSHCredentialRecord ssh_credential = 13;
     SSHCredentialSignResponse ssh_credential_sign = 14;
-    muxvia.cloud.v1.ResolvedEndpoint cloud_resolved_endpoint = 20;
-    SignalingEvents cloud_signaling = 21;
-    muxvia.cloud.v1.RelayLease cloud_relay_lease = 22;
-    muxvia.cloud.v1.ManagedRoutePlan cloud_route_plan = 23;
-    muxvia.cloud.v1.ReportPathQualityResponse cloud_quality_reported = 24;
-    muxvia.cloud.v1.ReportConnectionOutcomeResponse cloud_outcome_reported = 25;
-    CloudRouteEligibility cloud_route_eligibility = 26;
-    WebRTCPeerOpened webrtc_peer_opened = 30;
-    WebRTCCreateOfferResult webrtc_offer = 31;
-    WebRTCPeerReady webrtc_peer_ready = 32;
-    WebRTCChannelSendResult webrtc_channel_sent = 33;
-    WebRTCPeerSnapshot webrtc_peer_snapshot = 34;
   }
+	reserved 20 to 26, 30 to 34;
 }

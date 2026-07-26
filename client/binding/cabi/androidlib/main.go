@@ -1,5 +1,5 @@
 // Package main 生成 Android 使用的 muxvia Client Engine c-shared library。
-// 稳定 C ABI 只传递 serialized Proto 与 opaque handle；Android spike 的 in-process daemon 仅用于证明真实 Pion/auth/Hello/API 链路。
+// 稳定 C ABI 只传递 serialized Proto 与 opaque handle；网络与授权状态机由 Go Client Engine 持有。
 package main
 
 /*

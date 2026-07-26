@@ -1,5 +1,5 @@
 // Package enginehost 提供 Android JNI 与浏览器 WASM 共用的 Go Client Engine composition root。
-// 平台只能注入 credential/Cloud primitive；Endpoint Route、remote-auth、Hello、Proto API 与 generation 真值留在 Go。
+// 平台只能注入 credential primitive；Endpoint Route、remote-auth、Hello、Proto API 与 generation 真值留在 Go。
 package enginehost
 
 import (
@@ -9,13 +9,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/muxvia/muxvia/client/adapter/direct"
-	"github.com/muxvia/muxvia/client/adapter/managed"
 	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
 	shareadapter "github.com/muxvia/muxvia/client/adapter/share"
 	sshadapter "github.com/muxvia/muxvia/client/adapter/ssh"
@@ -26,9 +24,7 @@ import (
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/bindingpb"
-	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/cloudcompanion"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
@@ -40,7 +36,6 @@ const bootstrapPrefix = "muxvia://bootstrap?payload="
 type Options struct {
 	Broker           *binding.PlatformBroker
 	DirectPeers      direct.PeerFactory
-	ManagedPeers     port.ManagedPeerFactory
 	SSHCredentials   port.SSHCredentialSource
 	ClientName       string
 	CredentialPrefix string
@@ -62,16 +57,16 @@ type Host struct {
 
 // New 校验平台依赖并创建共享 managed host。
 func New(options Options) (*Host, error) {
-	if options.Broker == nil || options.DirectPeers == nil && options.ManagedPeers == nil {
-		return nil, fmt.Errorf("binding engine host requires broker and at least one peer factory")
+	if options.Broker == nil || options.DirectPeers == nil {
+		return nil, fmt.Errorf("binding engine host requires broker and Direct peer factory")
 	}
 	options.ClientName = strings.TrimSpace(options.ClientName)
 	if options.ClientName == "" {
-		return nil, fmt.Errorf("managed binding client name is required")
+		return nil, fmt.Errorf("binding client name is required")
 	}
 	options.CredentialPrefix = strings.TrimSpace(options.CredentialPrefix)
 	if options.CredentialPrefix == "" {
-		return nil, fmt.Errorf("managed binding credential prefix is required")
+		return nil, fmt.Errorf("binding credential prefix is required")
 	}
 	if options.Now == nil {
 		options.Now = time.Now
@@ -106,7 +101,7 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
 	credentials := platformCredentials{broker: host.options.Broker}
 	authorizer := peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}
-	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials, platformManagedEligibility{broker: host.options.Broker})
+	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -133,12 +128,6 @@ func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) m
 				Peers: host.options.DirectPeers, Authorization: authorizer, Credentials: host.options.SSHCredentials,
 				ClientName: host.options.ClientName,
 			})
-		}
-	}
-	if host.options.ManagedPeers != nil {
-		connectors[endpoint.RouteManagedWebRTC] = &managed.Dialer{
-			Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, ClientName: host.options.ClientName,
-			Authorization: authorizer, Now: host.options.Now,
 		}
 	}
 	return connectors
@@ -252,10 +241,6 @@ func pairingClaimRoutes(candidate endpoint.EndpointCandidate, options Options) (
 			if options.DirectPeers != nil {
 				routes = append(routes, route)
 			}
-		case endpoint.RouteManagedWebRTC:
-			if options.ManagedPeers != nil {
-				routes = append(routes, route)
-			}
 		case endpoint.RouteSSHWebRTCTCP:
 			if options.DirectPeers != nil && options.SSHCredentials != nil {
 				routes = append(routes, route)
@@ -286,8 +271,6 @@ func (host *Host) redeemPairingRace(ctx context.Context, attempts []clientruntim
 			switch attempt.Route().Kind {
 			case endpoint.RouteDirectWebRTCTCP:
 				paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(raceContext, attempt, request)
-			case endpoint.RouteManagedWebRTC:
-				paired, err = (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, Now: host.options.Now}).Redeem(raceContext, attempt, request)
 			case endpoint.RouteSSHWebRTCTCP:
 				paired, err = (&sshadapter.PairingConnector{Peers: host.options.DirectPeers, Credentials: host.options.SSHCredentials, Now: host.options.Now}).Redeem(raceContext, attempt, request)
 			default:
@@ -332,9 +315,6 @@ func (host *Host) Close() error {
 		if closer, ok := host.options.DirectPeers.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
-		if closer, ok := host.options.ManagedPeers.(interface{ Close() error }); ok {
-			_ = closer.Close()
-		}
 		_ = host.options.Broker.Close()
 	})
 	return nil
@@ -352,10 +332,6 @@ type clientCredentialAvailability interface {
 	Available(context.Context, string, string) bool
 }
 
-type managedRouteEligibility interface {
-	Available(context.Context, endpoint.AccessRoute) bool
-}
-
 type sshCredentialAvailability interface {
 	Available(string) bool
 }
@@ -364,9 +340,9 @@ type contextSSHCredentialAvailability interface {
 	AvailableContext(context.Context, string) bool
 }
 
-// routePlanEnvironment 生成当前调用的能力快照，并在副本中禁用当前账号不可用的 managed Route。
-// Cloud 查询或登出只改变 managed eligibility，不能删除持久 Endpoint，也不能阻断 Direct/SSH。
-func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability, cloud managedRouteEligibility) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
+// routePlanEnvironment 生成当前调用的能力快照，并在副本中禁用尚未重建的 Cloud Route。
+// 禁用只影响本次规划，不能删除持久 Endpoint，也不能阻断 Direct/SSH。
+func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
 	wireTarget, err := endpoint.EndpointToProto(target)
 	if err != nil {
 		return endpoint.Endpoint{}, clientruntime.RoutePlanEnvironment{}, err
@@ -385,7 +361,6 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 	if sshSupported {
 		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteSSHWebRTCTCP)
 	}
-	managedSupported := false
 	available := make(map[string]struct{})
 	credentialChecked := make(map[string]bool)
 	for _, route := range planningTarget.RouteList() {
@@ -405,16 +380,10 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 				available[route.SSHCredentialRef] = struct{}{}
 			}
 		case endpoint.RouteManagedWebRTC:
-			if options.ManagedPeers != nil && cloud != nil && cloud.Available(ctx, route) {
-				managedSupported = true
-				continue
-			}
+			// D2 删除旧 Cloud 后没有可用 connector；新 Cloud 必须从新的 Proto 契约重新接入。
 			route.Enabled = false
 			planningTarget.Routes[route.ID] = route
 		}
-	}
-	if managedSupported {
-		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteManagedWebRTC)
 	}
 	for _, route := range planningTarget.RouteList() {
 		for _, reference := range []string{route.CredentialRef, route.SSHCredentialRef} {
@@ -449,9 +418,6 @@ func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, routes [
 	targetRoutes := make(map[endpoint.RouteID]endpoint.AccessRoute, len(routes))
 	for _, route := range routes {
 		route.CredentialRef = credentialRef
-		if route.Kind == endpoint.RouteManagedWebRTC && route.TargetDeviceID == "" {
-			route.TargetDeviceID = identity.DeviceID
-		}
 		targetRoutes[route.ID] = route
 	}
 	return endpoint.Endpoint{
@@ -515,134 +481,6 @@ func (signer platformSigner) Sign(ctx context.Context, payload []byte) ([]byte, 
 	return signature, nil
 }
 
-type platformCloud struct{ broker *binding.PlatformBroker }
-
-type platformManagedEligibility struct{ broker *binding.PlatformBroker }
-
-func (eligibility platformManagedEligibility) Available(ctx context.Context, route endpoint.AccessRoute) bool {
-	response, err := eligibility.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudRouteEligibility{
-		CloudRouteEligibility: &bindingpb.CloudRouteEligibilityRequest{
-			AccountProfileRef: route.AccountProfileRef,
-			RelayMode:         managedRelayMode(route.RelayMode),
-		},
-	}})
-	if err != nil || platformResponseError(response) != nil {
-		return false
-	}
-	value := response.GetCloudRouteEligibility()
-	if value == nil || !value.GetAccountSessionAvailable() {
-		return false
-	}
-	switch route.RelayMode {
-	case endpoint.RelayDirect:
-		return value.GetManagedDirectAvailable()
-	case endpoint.RelayOnly:
-		return value.GetRelayAvailable()
-	default:
-		return value.GetManagedDirectAvailable() || value.GetRelayAvailable()
-	}
-}
-
-func managedRelayMode(mode endpoint.RelayMode) remoteauthpb.ManagedWebRTCRelayMode {
-	switch mode {
-	case endpoint.RelayDirect:
-		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT
-	case endpoint.RelayOnly:
-		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
-	case endpoint.RelaySmart:
-		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE
-	default:
-		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO
-	}
-}
-
-func (cloud platformCloud) ResolveEndpoint(ctx context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
-	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudResolveEndpoint{CloudResolveEndpoint: proto.Clone(request).(*cloudpb.ResolveEndpointRequest)}})
-	if err != nil {
-		return nil, err
-	}
-	return proto.Clone(response.GetCloudResolvedEndpoint()).(*cloudpb.ResolvedEndpoint), nil
-}
-
-func (cloud platformCloud) CreateSignalingSession(ctx context.Context, request *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
-	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudCreateSignaling{CloudCreateSignaling: proto.Clone(request).(*cloudpb.CreateSignalingSessionRequest)}})
-	if err != nil {
-		return nil, err
-	}
-	return &signalingStream{events: cloneSignalingEvents(response.GetCloudSignaling().GetEvents())}, nil
-}
-
-func (cloud platformCloud) AcquireRelayLease(ctx context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
-	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudAcquireRelay{CloudAcquireRelay: proto.Clone(request).(*cloudpb.AcquireRelayLeaseRequest)}})
-	if err != nil {
-		return nil, err
-	}
-	return proto.Clone(response.GetCloudRelayLease()).(*cloudpb.RelayLease), nil
-}
-
-func (cloud platformCloud) PlanManagedRoute(ctx context.Context, request *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
-	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudPlanRoute{CloudPlanRoute: proto.Clone(request).(*cloudpb.PlanManagedRouteRequest)}})
-	if err != nil {
-		return nil, err
-	}
-	return proto.Clone(response.GetCloudRoutePlan()).(*cloudpb.ManagedRoutePlan), nil
-}
-
-func (cloud platformCloud) ReportPathQuality(ctx context.Context, request *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
-	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudReportQuality{CloudReportQuality: proto.Clone(request).(*cloudpb.ReportPathQualityRequest)}})
-	if err != nil {
-		return nil, err
-	}
-	return proto.Clone(response.GetCloudQualityReported()).(*cloudpb.ReportPathQualityResponse), nil
-}
-
-func (cloud platformCloud) ReportConnectionOutcome(ctx context.Context, request *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error) {
-	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudReportOutcome{CloudReportOutcome: proto.Clone(request).(*cloudpb.ReportConnectionOutcomeRequest)}})
-	if err != nil {
-		return nil, err
-	}
-	return proto.Clone(response.GetCloudOutcomeReported()).(*cloudpb.ReportConnectionOutcomeResponse), nil
-}
-
-func (cloud platformCloud) exchange(ctx context.Context, request *bindingpb.PlatformRequest) (*bindingpb.PlatformResponse, error) {
-	response, err := cloud.broker.Exchange(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	if err := platformCloudResponseError(response); err != nil {
-		return nil, err
-	}
-	if response.GetResponse() == nil {
-		return nil, fmt.Errorf("platform Cloud response is empty")
-	}
-	return response, nil
-}
-
-type signalingStream struct {
-	mu     sync.Mutex
-	events []*cloudpb.SignalingEvent
-	closed bool
-}
-
-func (stream *signalingStream) Receive() (*cloudpb.SignalingEvent, error) {
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-	if stream.closed || len(stream.events) == 0 {
-		return nil, io.EOF
-	}
-	event := stream.events[0]
-	stream.events = stream.events[1:]
-	return proto.Clone(event).(*cloudpb.SignalingEvent), nil
-}
-
-func (stream *signalingStream) Close() error {
-	stream.mu.Lock()
-	stream.closed = true
-	stream.events = nil
-	stream.mu.Unlock()
-	return nil
-}
-
 func platformCredential(response *bindingpb.PlatformResponse) (*bindingpb.CredentialRecord, error) {
 	if err := platformResponseError(response); err != nil {
 		return nil, err
@@ -675,35 +513,6 @@ func (err *platformAPIError) Error() string {
 		return "platform request failed"
 	}
 	return fmt.Sprintf("platform request failed: %s", err.value.GetMessage())
-}
-
-func platformCloudResponseError(response *bindingpb.PlatformResponse) error {
-	err := platformResponseError(response)
-	if err == nil {
-		return nil
-	}
-	var apiErr *platformAPIError
-	if !errors.As(err, &apiErr) || apiErr.value == nil {
-		return err
-	}
-	value := apiErr.value
-	switch value.GetCode() {
-	case apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT:
-		if value.GetRetryable() {
-			return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, Message: value.GetMessage(), Retryable: true}
-		}
-	case apipb.ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED:
-		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, Message: value.GetMessage()}
-	case apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED:
-		return context.Canceled
-	case apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE:
-		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Message: value.GetMessage(), Retryable: value.GetRetryable()}
-	case apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST:
-		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: value.GetMessage()}
-	case apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED:
-		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, Message: value.GetMessage()}
-	}
-	return err
 }
 
 func connectIntent(value bindingpb.ConnectIntent) (clientruntime.ConnectIntent, error) {
@@ -739,16 +548,6 @@ func credentialRef(prefix, deviceID, fingerprint string) string {
 	return prefix + base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
-func cloneSignalingEvents(values []*cloudpb.SignalingEvent) []*cloudpb.SignalingEvent {
-	result := make([]*cloudpb.SignalingEvent, 0, len(values))
-	for _, value := range values {
-		if value != nil {
-			result = append(result, proto.Clone(value).(*cloudpb.SignalingEvent))
-		}
-	}
-	return result
-}
-
 var _ binding.Host = (*Host)(nil)
 var _ binding.PairingHost = (*Host)(nil)
 var _ binding.CredentialHost = (*Host)(nil)
@@ -758,5 +557,3 @@ var _ binding.EndpointShareHost = (*Host)(nil)
 var _ peeradapter.CredentialSource = platformCredentials{}
 var _ peeradapter.SignerSource = platformCredentials{}
 var _ remoteauth.ClientAccessSigner = platformSigner{}
-var _ managed.CloudClient = platformCloud{}
-var _ cloudcompanion.SignalingStream = (*signalingStream)(nil)

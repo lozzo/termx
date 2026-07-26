@@ -1,9 +1,6 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { createBrowserRemoteNetworkRuntime } from '../connection/browserNetworkRuntime'
 import { terminalThemeCssVariables } from '../terminal/terminalSettings'
-import { RemoteControlApp } from '../app/RemoteControlApp'
-import { BrowserBindingRuntime } from '../binding/browserBindingRuntime'
 
 export interface RemoteControlEntryOptions {
   root?: HTMLElement | null | undefined
@@ -15,31 +12,25 @@ export function mountRemoteControlApp(options: RemoteControlEntryOptions = {}): 
     throw new Error('remote app root element is required')
   }
   const root = createRoot(rootElement)
-  const networkRuntime = createBrowserRemoteNetworkRuntime()
-  if (!networkRuntime.storage) throw new Error('browser storage is required for the managed client')
-  const bindingRuntime = new BrowserBindingRuntime(networkRuntime, networkRuntime.storage)
   root.render(
     <StrictMode>
-      <BrowserRemoteApp bindingRuntime={bindingRuntime} networkRuntime={networkRuntime} />
+      <CloudUnavailableApp />
     </StrictMode>,
   )
   return root
 }
 
-function BrowserRemoteApp({ bindingRuntime, networkRuntime }: { bindingRuntime: BrowserBindingRuntime; networkRuntime: ReturnType<typeof createBrowserRemoteNetworkRuntime> }) {
-  useEffect(() => () => { void bindingRuntime.dispose() }, [bindingRuntime])
+function CloudUnavailableApp() {
   return (
     <section
-      className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--muxvia-bg)] text-[var(--muxvia-text)] antialiased"
-      data-testid="muxvia-remote-app-entry"
+      className="flex h-[100dvh] w-screen items-center justify-center bg-[var(--muxvia-bg)] px-6 text-[var(--muxvia-text)] antialiased"
+      data-testid="muxvia-cloud-unavailable"
       style={terminalThemeCssVariables(undefined)}
     >
-      <RemoteControlApp
-        defaultControlUrl={import.meta.env.VITE_CONTROL_URL || undefined}
-        externalPairingAdapter={bindingRuntime.externalPairingAdapter}
-        machineRuntimeFactory={bindingRuntime.machineRuntimeFactory}
-        networkRuntime={networkRuntime}
-      />
+      <div className="w-full max-w-sm border-l-2 border-emerald-600 pl-5">
+        <h1 className="text-lg font-semibold text-zinc-950">Muxvia Cloud 暂不可用</h1>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">云端服务正在重构。Direct 和 SSH 客户端不受影响。</p>
+      </div>
     </section>
   )
 }
