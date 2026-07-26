@@ -38,6 +38,7 @@ type Runtime struct {
 	grpcListener   net.Listener
 	healthListener net.Listener
 	health         *processhealth.State
+	drainer        interface{ BeginShutdown() }
 	errors         chan error
 	shutdownOnce   sync.Once
 }
@@ -90,6 +91,9 @@ func Start(config Config, service cloudv1.EdgeControlServer) (*Runtime, error) {
 		grpcListener: grpcListener, healthListener: healthListener, health: healthState,
 		errors: make(chan error, 2),
 	}
+	if drainer, ok := service.(interface{ BeginShutdown() }); ok {
+		runtime.drainer = drainer
+	}
 	go runtime.serveGRPC()
 	go runtime.serveHealth()
 	return runtime, nil
@@ -116,6 +120,9 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	runtime.shutdownOnce.Do(func() {
 		runtime.health.SetReady(false)
 		runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		if runtime.drainer != nil {
+			runtime.drainer.BeginShutdown()
+		}
 		grpcDone := make(chan struct{})
 		go func() {
 			runtime.grpcServer.GracefulStop()

@@ -165,6 +165,47 @@ func TestEdgeStaysAliveButNotReadyWhileControllerIsUnavailable(t *testing.T) {
 	assertHTTPStatus(t, httpClient, "https://"+edgeRuntime.PublicAddress()+"/readyz", http.StatusServiceUnavailable)
 }
 
+func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
+	certificates := newCertificateFiles(t, testEdgeID)
+	controllerRuntime := startController(t, certificates)
+	tlsConfig, err := securetransport.NewClientTLSConfig(securetransport.ClientOptions{
+		CertificateFile: certificates.edgeIdentityCert,
+		PrivateKeyFile:  certificates.edgeIdentityKey,
+		RootCAFile:      certificates.rootCA,
+		ServerName:      testControllerServer,
+	})
+	if err != nil {
+		t.Fatalf("load Edge identity TLS: %v", err)
+	}
+	session, err := controllerlink.Open(context.Background(), controllerlink.Config{
+		ControllerAddress: controllerRuntime.GRPCAddress(),
+		TLSConfig:         tlsConfig,
+		EdgeID:            testEdgeID,
+		BootID:            testEdgeBootID,
+		SoftwareVersion:   testEdgeSoftwareVersion,
+	})
+	if err != nil {
+		t.Fatalf("open active EdgeControl stream: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelShutdown()
+	if err := controllerRuntime.Shutdown(shutdownContext); err != nil {
+		t.Fatalf("gracefully shutdown Controller with active stream: %v", err)
+	}
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- session.Wait() }()
+	select {
+	case err := <-waitResult:
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("drained Edge stream code = %s, want Unavailable; error: %v", status.Code(err), err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("drained Edge stream did not close")
+	}
+}
+
 func startController(t *testing.T, certificates certificateFiles) *controllerruntime.Runtime {
 	t.Helper()
 	service, err := control.NewService(control.Config{

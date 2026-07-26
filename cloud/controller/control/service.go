@@ -2,11 +2,14 @@
 package control
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,7 +40,10 @@ type Config struct {
 // Service 拥有 EdgeControl 流的 admission 语义，但不持有 R2 Directory 状态。
 type Service struct {
 	cloudv1.UnimplementedEdgeControlServer
-	config Config
+	config    Config
+	draining  atomic.Bool
+	drain     chan struct{}
+	drainOnce sync.Once
 }
 
 // NewService 校验 Controller 身份与心跳策略，失败时不创建部分可用 service。
@@ -51,22 +57,35 @@ func NewService(config Config) (*Service, error) {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
 	}
 	config.TicketVerificationKeys = cloneKeys(config.TicketVerificationKeys)
-	return &Service{config: config}, nil
+	return &Service{config: config, drain: make(chan struct{})}, nil
+}
+
+// BeginShutdown 拒绝新控制流并通知现有 Connect handler 主动结束。
+// Runtime 必须先调用它再执行 gRPC GracefulStop，避免长连接把进程关闭拖到超时。
+func (service *Service) BeginShutdown() {
+	service.draining.Store(true)
+	service.drainOnce.Do(func() { close(service.drain) })
 }
 
 // Connect 验证 mTLS EdgeIdentity、第一个 envelope 和 EdgeHello，然后发送唯一 EdgeWelcome。
 // R1 不接受快照或增量 payload；收到额外事件会明确拒绝，不做旧协议 fallback。
 func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error {
+	if service.draining.Load() {
+		return status.Error(codes.Unavailable, "Controller is draining")
+	}
 	certificateEdgeID, err := authenticatedEdgeID(stream)
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
-	event, err := stream.Recv()
+	event, err := service.receive(stream)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "receive EdgeHello: %v", err)
 	}
 	if _, err := validateHello(event, certificateEdgeID); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	if service.draining.Load() {
+		return status.Error(codes.Unavailable, "Controller is draining")
 	}
 	command := &cloudv1.ControllerCommand{
 		ProtocolVersion: ProtocolVersion,
@@ -89,12 +108,33 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		return status.Errorf(codes.Unavailable, "send EdgeWelcome: %v", err)
 	}
 	for {
-		if _, err := stream.Recv(); errors.Is(err, io.EOF) {
+		if _, err := service.receive(stream); errors.Is(err, io.EOF) {
 			return nil
 		} else if err != nil {
 			return err
 		}
 		return status.Error(codes.Unimplemented, "R1 EdgeControl accepts only the initial EdgeHello")
+	}
+}
+
+type receiveResult struct {
+	event *cloudv1.EdgeEvent
+	err   error
+}
+
+func (service *Service) receive(stream cloudv1.EdgeControl_ConnectServer) (*cloudv1.EdgeEvent, error) {
+	result := make(chan receiveResult, 1)
+	go func() {
+		event, err := stream.Recv()
+		result <- receiveResult{event: event, err: err}
+	}()
+	select {
+	case <-service.drain:
+		return nil, status.Error(codes.Unavailable, "Controller is draining")
+	case <-stream.Context().Done():
+		return nil, context.Cause(stream.Context())
+	case received := <-result:
+		return received.event, received.err
 	}
 }
 

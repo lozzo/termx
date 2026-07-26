@@ -8,9 +8,9 @@ artifact_dir="${MUXVIA_CLOUD_ARTIFACT_DIR:-$repo_root/.artifacts/cloud-linux-amd
 install -d -m 0755 "$artifact_dir"
 (
   cd "$repo_root"
-  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off go build -trimpath \
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off go build -buildvcs=false -trimpath \
     -o "$artifact_dir/muxvia-cloud-controller" ./cmd/muxvia-cloud-controller
-  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off go build -trimpath \
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off go build -buildvcs=false -trimpath \
     -o "$artifact_dir/muxvia-cloud-edge" ./cmd/muxvia-cloud-edge
 )
 
