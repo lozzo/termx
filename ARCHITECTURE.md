@@ -47,6 +47,7 @@ Edge 对外表现为一个节点：只有一个 `edge_id`、一个节点身份�
 - Windows terminal 的唯一 PTY owner 是 ConPTY；进程树由 Job Object 管理，退出、强制停止、resize 和输出 drain 不得退回到 pipe 模拟、Unix shell 或 WSL。
 - Windows 私有状态使用当前用户、SYSTEM、Administrators 的受保护 DACL，不能用 `os.FileMode` 的 `0600/0700` 映射假装完成权限隔离。Unix 继续使用 owner UID 与 mode 真值。
 - Windows 当前用户 daemon 使用同一二进制的 `daemon start/status/stop/restart` 生命周期；安装包写入 `%LOCALAPPDATA%\\Programs\\Muxvia`，用户 PATH 与登录自启动都属于 HKCU，不要求管理员权限。升级必须先按 runtime record 精确停止旧进程，再原子替换二进制并重新启动。
+- TUI 图标字形由外部 terminal host 渲染，应用不能通过 ANSI 强制切换字体。Windows 安装包必须携带固定版本且校验摘要的 `JetBrainsMono Nerd Font Mono`，按当前用户注册字体，并通过 `%LOCALAPPDATA%\\Microsoft\\Windows Terminal\\Fragments\\Muxvia` 提供独立的 Muxvia profile；不得重写用户现有 `settings.json` 或全局默认 profile。卸载只删除 Muxvia 自有字体注册、字体副本和 fragment。
 - Windows 开发门禁使用仓库 PowerShell 脚本，覆盖 Go 全量测试、Proto 生成、UI/mobile 测试、typecheck、生产构建、三个 Go 二进制构建和安装包 smoke。Android 的 Go/JNI 产物允许在安装了固定 NDK 的 Windows 主机生成。
 - `muxvia-cloud-controller` 与 `muxvia-cloud-edge` 必须在 Windows 编译并通过平台无关单测，但 Cloud 生产服务器、一键 Edge 安装、systemd unit、在线升级与运维证据仍固定为 Linux/amd64。该服务器部署约束不允许污染 Windows 客户端或本地 daemon 的运行路径，也不得把 Windows 二进制展示成可部署的生产 Edge artifact。
 
