@@ -8,7 +8,7 @@ Type=simple
 User=muxvia
 Group=muxvia
 EnvironmentFile=/etc/muxvia/cloud/controller.env
-ExecStart=/opt/muxvia/bin/muxvia-cloud-controller --controller-id=${MUXVIA_CLOUD_CONTROLLER_ID} --grpc-listen=${MUXVIA_CLOUD_CONTROLLER_LISTEN} --health-listen=${MUXVIA_CLOUD_CONTROLLER_HEALTH_LISTEN} --tls-cert=/etc/muxvia/cloud/tls/controller-fullchain.pem --tls-key=/etc/muxvia/cloud/tls/controller-key.pem --edge-ca=/etc/muxvia/cloud/tls/edge-ca.pem
+ExecStart=/opt/muxvia/bin/muxvia-cloud-controller --controller-id=${MUXVIA_CLOUD_CONTROLLER_ID} --grpc-listen=${MUXVIA_CLOUD_CONTROLLER_LISTEN} --http-listen=${MUXVIA_CLOUD_CONTROLLER_HTTP_LISTEN} --health-listen=${MUXVIA_CLOUD_CONTROLLER_HEALTH_LISTEN} --tls-cert=/etc/muxvia/cloud/tls/controller-fullchain.pem --tls-key=/etc/muxvia/cloud/tls/controller-key.pem --controller-ca=/etc/muxvia/cloud/tls/controller-fullchain.pem --edge-ca=/etc/muxvia/cloud/tls/edge-ca.pem --edge-ca-key=/etc/muxvia/cloud/pki/edge-ca-key.pem --public-origin=${MUXVIA_CLOUD_PUBLIC_ORIGIN} --controller-address=${MUXVIA_CLOUD_CONTROLLER_PUBLIC_ADDRESS} --controller-server-name=${MUXVIA_CLOUD_CONTROLLER_SERVER_NAME} --operator-username=${MUXVIA_CLOUD_OPERATOR_USERNAME} --operator-password-file=/etc/muxvia/cloud/secrets/operator-password --config-signing-key=/etc/muxvia/cloud/pki/config-signing-key.pem --config-signing-key-id=${MUXVIA_CLOUD_CONFIG_KEY_ID} --edge-artifact=/opt/muxvia/artifacts/muxvia-cloud-edge --edge-artifact-version=${MUXVIA_CLOUD_EDGE_ARTIFACT_VERSION} --artifact-signing-key=/etc/muxvia/cloud/pki/artifact-signing-key.pem
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20

@@ -3,6 +3,7 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
+import "cloud/v1/edge_config.proto";
 import "cloud/v1/runtime.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -71,6 +72,13 @@ message ResyncRequired {
   string reason = 2;
 }
 
+// ConfigApplied 是 Edge 验签、校验并原子缓存 desired config 后的结果。
+message ConfigApplied {
+  uint64 version = 1;
+  bool applied = 2;
+  string error_code = 3;
+}
+
 // EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
 // hello 之后只允许快照、严格连续增量和可合并心跳。
 message EdgeEvent {
@@ -88,6 +96,7 @@ message EdgeEvent {
     SnapshotEnd snapshot_end = 23;
     RuntimeDelta runtime_delta = 24;
     EdgeHeartbeat heartbeat = 25;
+    ConfigApplied config_applied = 26;
   }
 }
 
@@ -105,6 +114,7 @@ message ControllerCommand {
     EdgeWelcome welcome = 20;
     SnapshotAccepted snapshot_accepted = 21;
     ResyncRequired resync_required = 22;
+    SignedEdgeDesiredConfig desired_config = 23;
   }
 }
 

@@ -1348,11 +1348,13 @@ Edge 最少暴露：
 
 R2 建立了 `cloud/edge/runtime.State` 与 `cloud/controller/directory.Directory` 两个有界单写者 actor；EdgeControl 现在通过唯一 writer queue 发送确定性分块快照、严格连续增量和心跳，Controller 校验完整摘要后才原子发布并返回 `SnapshotAccepted`。本地准入覆盖半快照隔离、revision gap 重同步、generation fence、断线整体清理、Controller 空目录重启重建、并发 race 和 10 万 daemon 快照/查询基准；R2 不包含真实 AgentGateway 或客户端连接。
 
-### 32.6 R3：Edge 配置与安装（当前最早未完成切片）
+### 32.6 R3：Edge 配置与安装（进行中：代码完成，待在线安装验收）
 
 - 实现 Edge desired config、claim、EdgeIdentity CSR/mTLS 和 curl installer。
 - 实现运营 Edge 列表最小页面，能看到真实在线 Edge 和基础信息。
 - 在一台干净 Linux VM 上完成真实安装、重启和重连证据。
+
+R3 代码已经建立 PostgreSQL Edge deployment/config version 与两阶段一次性 claim 事务、Ed25519 desired config 签名、Edge 本机双私钥/CSR、Controller CA 签发、固定 artifact SHA-256 + 发布签名校验、原生 HTTPS Proto JSON API 和简体中文 Edge 管理页。真实 PostgreSQL 纵向 harness 已证明创建、列表、编辑、install claim 单次消费、bootstrap claim 单次消费、CSR 绑定、私钥 `0600`、注册后凭据删除和 signed config 在 `SnapshotAccepted` 前应用；完成状态仍取决于本节要求的在线 Linux 安装、重启与重连证据。
 
 ### 32.7 R4：daemon enrollment 与 AgentGateway
 

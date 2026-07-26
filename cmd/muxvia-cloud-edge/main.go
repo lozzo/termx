@@ -15,12 +15,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/muxvia/muxvia/cloud/edge/bootstrap"
 	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
 )
 
 const defaultSoftwareVersion = "development"
 
 type options struct {
+	configFile          string
 	listenAddress       string
 	controllerAddress   string
 	controllerServer    string
@@ -32,6 +34,9 @@ type options struct {
 	controllerCA        string
 	softwareVersion     string
 	shutdownTimeout     time.Duration
+	configSigningKeyID  string
+	configSigningPublic string
+	desiredConfigCache  string
 }
 
 func main() {
@@ -52,6 +57,24 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(config.configFile) != "" {
+		resolved, err := bootstrap.Resolve(ctx, config.configFile, nil)
+		if err != nil {
+			return fmt.Errorf("bootstrap Edge: %w", err)
+		}
+		config.listenAddress = resolved.ListenAddress
+		config.controllerAddress = resolved.ControllerAddress
+		config.controllerServer = resolved.ControllerServerName
+		config.edgeID = resolved.EdgeID
+		config.publicCertificate = resolved.PublicCertificateFile
+		config.publicPrivateKey = resolved.PublicPrivateKeyFile
+		config.identityCertificate = resolved.IdentityCertificateFile
+		config.identityPrivateKey = resolved.IdentityPrivateKeyFile
+		config.controllerCA = resolved.ControllerCAFile
+		config.configSigningKeyID = resolved.ConfigSigningKeyID
+		config.configSigningPublic = resolved.ConfigSigningPublicKeyFile
+		config.desiredConfigCache = resolved.DesiredConfigCacheFile
+	}
 	if strings.TrimSpace(config.edgeID) == "" {
 		return errors.New("--edge-id is required")
 	}
@@ -59,17 +82,20 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		return errors.New("shutdown timeout must be positive")
 	}
 	runtime, err := edgeruntime.Start(ctx, edgeruntime.Config{
-		ListenAddress:           config.listenAddress,
-		PublicCertificateFile:   config.publicCertificate,
-		PublicPrivateKeyFile:    config.publicPrivateKey,
-		ControllerAddress:       config.controllerAddress,
-		ControllerServerName:    config.controllerServer,
-		ControllerCAFile:        config.controllerCA,
-		IdentityCertificateFile: config.identityCertificate,
-		IdentityPrivateKeyFile:  config.identityPrivateKey,
-		EdgeID:                  config.edgeID,
-		BootID:                  uuid.NewString(),
-		SoftwareVersion:         config.softwareVersion,
+		ListenAddress:              config.listenAddress,
+		PublicCertificateFile:      config.publicCertificate,
+		PublicPrivateKeyFile:       config.publicPrivateKey,
+		ControllerAddress:          config.controllerAddress,
+		ControllerServerName:       config.controllerServer,
+		ControllerCAFile:           config.controllerCA,
+		IdentityCertificateFile:    config.identityCertificate,
+		IdentityPrivateKeyFile:     config.identityPrivateKey,
+		EdgeID:                     config.edgeID,
+		BootID:                     uuid.NewString(),
+		SoftwareVersion:            config.softwareVersion,
+		ConfigSigningKeyID:         config.configSigningKeyID,
+		ConfigSigningPublicKeyFile: config.configSigningPublic,
+		DesiredConfigCacheFile:     config.desiredConfigCache,
 	})
 	if err != nil {
 		return err
@@ -97,6 +123,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	var config options
 	flags := flag.NewFlagSet("muxvia-cloud-edge", flag.ContinueOnError)
 	flags.SetOutput(output)
+	flags.StringVar(&config.configFile, "config", "", "Edge bootstrap YAML configuration file")
 	flags.StringVar(&config.listenAddress, "listen", "0.0.0.0:8443", "public HTTPS/gRPC listen address")
 	flags.StringVar(&config.controllerAddress, "controller", "", "Controller mTLS gRPC address")
 	flags.StringVar(&config.controllerServer, "controller-server-name", "", "Controller TLS server name")

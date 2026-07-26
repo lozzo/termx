@@ -6,6 +6,8 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { HeartbeatPolicy, VerificationKey } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
+import type { SignedEdgeDesiredConfig } from "./edge_config_pb";
+import { file_cloud_v1_edge_config } from "./edge_config_pb";
 import type { AgentPresence, ClientSessionSummary, RuntimeDelta } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -16,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/edge_control.proto.
  */
 export const file_cloud_v1_edge_control: GenFile = /*@__PURE__*/
-  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD211eHZpYS5jbG91ZC52MSKqAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5tdXh2aWEuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEIqkBCgtFZGdlV2VsY29tZRIhChlhY2NlcHRlZF9wcm90b2NvbF92ZXJzaW9uGAEgASgNEjMKCWhlYXJ0YmVhdBgCIAEoCzIgLm11eHZpYS5jbG91ZC52MS5IZWFydGJlYXRQb2xpY3kSQgoYdGlja2V0X3ZlcmlmaWNhdGlvbl9rZXlzGAMgAygLMiAubXV4dmlhLmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSI2Cg1TbmFwc2hvdEJlZ2luEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIqIBCg1TbmFwc2hvdENodW5rEhMKC3NuYXBzaG90X2lkGAEgASgJEhMKC2NodW5rX2luZGV4GAIgASgNEi4KBmFnZW50cxgDIAMoCzIeLm11eHZpYS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAQgAygLMiUubXV4dmlhLmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5IlkKC1NuYXBzaG90RW5kEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEEhMKC2NodW5rX2NvdW50GAMgASgNEg4KBmRpZ2VzdBgEIAEoDCIpCg1FZGdlSGVhcnRiZWF0EhgKEHJ1bnRpbWVfcmV2aXNpb24YASABKAQiOQoQU25hcHNob3RBY2NlcHRlZBITCgtzbmFwc2hvdF9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoBCI7Cg5SZXN5bmNSZXF1aXJlZBIZChFleHBlY3RlZF9yZXZpc2lvbhgBIAEoBBIOCgZyZWFzb24YAiABKAkihAQKCUVkZ2VFdmVudBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKBWhlbGxvGBQgASgLMhoubXV4dmlhLmNsb3VkLnYxLkVkZ2VIZWxsb0gAEjgKDnNuYXBzaG90X2JlZ2luGBUgASgLMh4ubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90QmVnaW5IABI4Cg5zbmFwc2hvdF9jaHVuaxgWIAEoCzIeLm11eHZpYS5jbG91ZC52MS5TbmFwc2hvdENodW5rSAASNAoMc25hcHNob3RfZW5kGBcgASgLMhwubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90RW5kSAASNgoNcnVudGltZV9kZWx0YRgYIAEoCzIdLm11eHZpYS5jbG91ZC52MS5SdW50aW1lRGVsdGFIABIzCgloZWFydGJlYXQYGSABKAsyHi5tdXh2aWEuY2xvdWQudjEuRWRnZUhlYXJ0YmVhdEgAQgkKB3BheWxvYWQi9QIKEUNvbnRyb2xsZXJDb21tYW5kEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoHd2VsY29tZRgUIAEoCzIcLm11eHZpYS5jbG91ZC52MS5FZGdlV2VsY29tZUgAEj4KEXNuYXBzaG90X2FjY2VwdGVkGBUgASgLMiEubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90QWNjZXB0ZWRIABI6Cg9yZXN5bmNfcmVxdWlyZWQYFiABKAsyHy5tdXh2aWEuY2xvdWQudjEuUmVzeW5jUmVxdWlyZWRIAEIJCgdwYXlsb2FkKlUKDkVkZ2VDYXBhYmlsaXR5Eh8KG0VER0VfQ0FQQUJJTElUWV9VTlNQRUNJRklFRBAAEiIKHkVER0VfQ0FQQUJJTElUWV9DT05UUk9MX1NUUkVBTRABMlwKC0VkZ2VDb250cm9sEk0KB0Nvbm5lY3QSGi5tdXh2aWEuY2xvdWQudjEuRWRnZUV2ZW50GiIubXV4dmlhLmNsb3VkLnYxLkNvbnRyb2xsZXJDb21tYW5kKAEwAUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_cloud_v1_runtime, file_google_protobuf_timestamp]);
+  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD211eHZpYS5jbG91ZC52MSKqAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5tdXh2aWEuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEIqkBCgtFZGdlV2VsY29tZRIhChlhY2NlcHRlZF9wcm90b2NvbF92ZXJzaW9uGAEgASgNEjMKCWhlYXJ0YmVhdBgCIAEoCzIgLm11eHZpYS5jbG91ZC52MS5IZWFydGJlYXRQb2xpY3kSQgoYdGlja2V0X3ZlcmlmaWNhdGlvbl9rZXlzGAMgAygLMiAubXV4dmlhLmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSI2Cg1TbmFwc2hvdEJlZ2luEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIqIBCg1TbmFwc2hvdENodW5rEhMKC3NuYXBzaG90X2lkGAEgASgJEhMKC2NodW5rX2luZGV4GAIgASgNEi4KBmFnZW50cxgDIAMoCzIeLm11eHZpYS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAQgAygLMiUubXV4dmlhLmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5IlkKC1NuYXBzaG90RW5kEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEEhMKC2NodW5rX2NvdW50GAMgASgNEg4KBmRpZ2VzdBgEIAEoDCIpCg1FZGdlSGVhcnRiZWF0EhgKEHJ1bnRpbWVfcmV2aXNpb24YASABKAQiOQoQU25hcHNob3RBY2NlcHRlZBITCgtzbmFwc2hvdF9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoBCI7Cg5SZXN5bmNSZXF1aXJlZBIZChFleHBlY3RlZF9yZXZpc2lvbhgBIAEoBBIOCgZyZWFzb24YAiABKAkiRQoNQ29uZmlnQXBwbGllZBIPCgd2ZXJzaW9uGAEgASgEEg8KB2FwcGxpZWQYAiABKAgSEgoKZXJyb3JfY29kZRgDIAEoCSK+BAoJRWRnZUV2ZW50EhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoFaGVsbG8YFCABKAsyGi5tdXh2aWEuY2xvdWQudjEuRWRnZUhlbGxvSAASOAoOc25hcHNob3RfYmVnaW4YFSABKAsyHi5tdXh2aWEuY2xvdWQudjEuU25hcHNob3RCZWdpbkgAEjgKDnNuYXBzaG90X2NodW5rGBYgASgLMh4ubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90Q2h1bmtIABI0CgxzbmFwc2hvdF9lbmQYFyABKAsyHC5tdXh2aWEuY2xvdWQudjEuU25hcHNob3RFbmRIABI2Cg1ydW50aW1lX2RlbHRhGBggASgLMh0ubXV4dmlhLmNsb3VkLnYxLlJ1bnRpbWVEZWx0YUgAEjMKCWhlYXJ0YmVhdBgZIAEoCzIeLm11eHZpYS5jbG91ZC52MS5FZGdlSGVhcnRiZWF0SAASOAoOY29uZmlnX2FwcGxpZWQYGiABKAsyHi5tdXh2aWEuY2xvdWQudjEuQ29uZmlnQXBwbGllZEgAQgkKB3BheWxvYWQiuQMKEUNvbnRyb2xsZXJDb21tYW5kEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoHd2VsY29tZRgUIAEoCzIcLm11eHZpYS5jbG91ZC52MS5FZGdlV2VsY29tZUgAEj4KEXNuYXBzaG90X2FjY2VwdGVkGBUgASgLMiEubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90QWNjZXB0ZWRIABI6Cg9yZXN5bmNfcmVxdWlyZWQYFiABKAsyHy5tdXh2aWEuY2xvdWQudjEuUmVzeW5jUmVxdWlyZWRIABJCCg5kZXNpcmVkX2NvbmZpZxgXIAEoCzIoLm11eHZpYS5jbG91ZC52MS5TaWduZWRFZGdlRGVzaXJlZENvbmZpZ0gAQgkKB3BheWxvYWQqVQoORWRnZUNhcGFiaWxpdHkSHwobRURHRV9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASIgoeRURHRV9DQVBBQklMSVRZX0NPTlRST0xfU1RSRUFNEAEyXAoLRWRnZUNvbnRyb2wSTQoHQ29ubmVjdBIaLm11eHZpYS5jbG91ZC52MS5FZGdlRXZlbnQaIi5tdXh2aWEuY2xvdWQudjEuQ29udHJvbGxlckNvbW1hbmQoATABQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_cloud_v1_edge_config, file_cloud_v1_runtime, file_google_protobuf_timestamp]);
 
 /**
  * EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -248,6 +250,35 @@ export const ResyncRequiredSchema: GenMessage<ResyncRequired> = /*@__PURE__*/
   messageDesc(file_cloud_v1_edge_control, 7);
 
 /**
+ * ConfigApplied 是 Edge 验签、校验并原子缓存 desired config 后的结果。
+ *
+ * @generated from message muxvia.cloud.v1.ConfigApplied
+ */
+export type ConfigApplied = Message<"muxvia.cloud.v1.ConfigApplied"> & {
+  /**
+   * @generated from field: uint64 version = 1;
+   */
+  version: bigint;
+
+  /**
+   * @generated from field: bool applied = 2;
+   */
+  applied: boolean;
+
+  /**
+   * @generated from field: string error_code = 3;
+   */
+  errorCode: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ConfigApplied.
+ * Use `create(ConfigAppliedSchema)` to create a new message.
+ */
+export const ConfigAppliedSchema: GenMessage<ConfigApplied> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 8);
+
+/**
  * EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
  * hello 之后只允许快照、严格连续增量和可合并心跳。
  *
@@ -328,6 +359,12 @@ export type EdgeEvent = Message<"muxvia.cloud.v1.EdgeEvent"> & {
      */
     value: EdgeHeartbeat;
     case: "heartbeat";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.ConfigApplied config_applied = 26;
+     */
+    value: ConfigApplied;
+    case: "configApplied";
   } | { case: undefined; value?: undefined };
 };
 
@@ -336,7 +373,7 @@ export type EdgeEvent = Message<"muxvia.cloud.v1.EdgeEvent"> & {
  * Use `create(EdgeEventSchema)` to create a new message.
  */
 export const EdgeEventSchema: GenMessage<EdgeEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 8);
+  messageDesc(file_cloud_v1_edge_control, 9);
 
 /**
  * ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
@@ -401,6 +438,12 @@ export type ControllerCommand = Message<"muxvia.cloud.v1.ControllerCommand"> & {
      */
     value: ResyncRequired;
     case: "resyncRequired";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.SignedEdgeDesiredConfig desired_config = 23;
+     */
+    value: SignedEdgeDesiredConfig;
+    case: "desiredConfig";
   } | { case: undefined; value?: undefined };
 };
 
@@ -409,7 +452,7 @@ export type ControllerCommand = Message<"muxvia.cloud.v1.ControllerCommand"> & {
  * Use `create(ControllerCommandSchema)` to create a new message.
  */
 export const ControllerCommandSchema: GenMessage<ControllerCommand> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 9);
+  messageDesc(file_cloud_v1_edge_control, 10);
 
 /**
  * EdgeCapability 是 Edge 进程已实现并愿意承诺的版本化能力。

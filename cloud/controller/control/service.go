@@ -36,6 +36,7 @@ type Config struct {
 	HeartbeatTimeout       time.Duration
 	TicketVerificationKeys []*cloudv1.VerificationKey
 	Directory              *directory.Directory
+	DesiredConfig          func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
 }
 
 // Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
@@ -126,6 +127,16 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	}})); err != nil {
 		return status.Errorf(codes.Unavailable, "send EdgeWelcome: %v", err)
 	}
+	if service.config.DesiredConfig != nil {
+		desired, err := service.config.DesiredConfig(stream.Context(), certificateEdgeID)
+		if err != nil {
+			return status.Errorf(codes.FailedPrecondition, "load Edge desired config: %v", err)
+		}
+		commandSeq++
+		if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_DesiredConfig{DesiredConfig: desired})); err != nil {
+			return status.Errorf(codes.Unavailable, "send Edge desired config: %v", err)
+		}
+	}
 	expectedEventSeq := uint64(2)
 	for {
 		event, err = service.receive(stream, writerErrors)
@@ -183,6 +194,11 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 		return nil, service.config.Directory.ApplyDelta(ctx, event.GetConnectionId(), payload.RuntimeDelta)
 	case *cloudv1.EdgeEvent_Heartbeat:
 		return nil, service.config.Directory.Heartbeat(ctx, event.GetConnectionId(), payload.Heartbeat)
+	case *cloudv1.EdgeEvent_ConfigApplied:
+		if payload.ConfigApplied == nil || payload.ConfigApplied.GetVersion() == 0 {
+			return nil, errors.New("ConfigApplied version is required")
+		}
+		return nil, nil
 	default:
 		return nil, errors.New("EdgeHello is only valid as the first EdgeControl payload")
 	}
@@ -196,6 +212,8 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_SnapshotAccepted:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_ResyncRequired:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_DesiredConfig:
 		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")

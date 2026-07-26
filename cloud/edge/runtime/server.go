@@ -3,15 +3,19 @@ package runtime
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/muxvia/muxvia/cloud/configsignature"
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
 	"github.com/muxvia/muxvia/cloud/processhealth"
 	"github.com/muxvia/muxvia/cloud/securetransport"
@@ -19,41 +23,46 @@ import (
 	"google.golang.org/grpc"
 	grpc_health "google.golang.org/grpc/health"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // Config 是 Edge 进程启动所需的本机 bootstrap 配置。
 // 区域、容量、域名和策略不在该结构中，后续由签名 DesiredConfig 拥有。
 type Config struct {
-	ListenAddress           string
-	PublicCertificateFile   string
-	PublicPrivateKeyFile    string
-	ControllerAddress       string
-	ControllerServerName    string
-	ControllerCAFile        string
-	IdentityCertificateFile string
-	IdentityPrivateKeyFile  string
-	EdgeID                  string
-	BootID                  string
-	SoftwareVersion         string
+	ListenAddress              string
+	PublicCertificateFile      string
+	PublicPrivateKeyFile       string
+	ControllerAddress          string
+	ControllerServerName       string
+	ControllerCAFile           string
+	IdentityCertificateFile    string
+	IdentityPrivateKeyFile     string
+	EdgeID                     string
+	BootID                     string
+	SoftwareVersion            string
+	ConfigSigningKeyID         string
+	ConfigSigningPublicKeyFile string
+	DesiredConfigCacheFile     string
 }
 
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
-	config        Config
-	publicTLS     *tls.Config
-	controllerTLS *tls.Config
-	listener      net.Listener
-	httpServer    *http.Server
-	grpcServer    *grpc.Server
-	grpcHealth    *grpc_health.Server
-	health        *processhealth.State
-	errors        chan error
-	readyChanges  chan struct{}
-	ctx           context.Context
-	cancel        context.CancelFunc
-	waitGroup     sync.WaitGroup
-	shutdownOnce  sync.Once
-	state         *State
+	config          Config
+	publicTLS       *tls.Config
+	controllerTLS   *tls.Config
+	listener        net.Listener
+	httpServer      *http.Server
+	grpcServer      *grpc.Server
+	grpcHealth      *grpc_health.Server
+	health          *processhealth.State
+	errors          chan error
+	readyChanges    chan struct{}
+	ctx             context.Context
+	cancel          context.CancelFunc
+	waitGroup       sync.WaitGroup
+	shutdownOnce    sync.Once
+	state           *State
+	configPublicKey ed25519.PublicKey
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -79,6 +88,17 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load Edge identity TLS: %w", err)
 	}
+	var configPublicKey ed25519.PublicKey
+	if config.ConfigSigningKeyID != "" || config.ConfigSigningPublicKeyFile != "" || config.DesiredConfigCacheFile != "" {
+		payload, readErr := os.ReadFile(config.ConfigSigningPublicKeyFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("read Edge config signing public key: %w", readErr)
+		}
+		if len(payload) != ed25519.PublicKeySize || config.ConfigSigningKeyID == "" || config.DesiredConfigCacheFile == "" {
+			return nil, errors.New("Edge config signing key ID, raw Ed25519 public key, and cache file must be configured together")
+		}
+		configPublicKey = ed25519.PublicKey(append([]byte(nil), payload...))
+	}
 	state, err := NewState(StateConfig{MailboxSize: 1024, DeltaBuffer: 4096})
 	if err != nil {
 		return nil, err
@@ -99,7 +119,8 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		config: config, publicTLS: publicTLS, controllerTLS: controllerTLS,
 		listener: listener, grpcServer: grpcServer, grpcHealth: grpcHealth, health: healthState,
 		errors: make(chan error, 1), readyChanges: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
-		state: state,
+		state:           state,
+		configPublicKey: configPublicKey,
 	}
 	runtime.httpServer = &http.Server{Handler: runtime, ReadHeaderTimeout: 5 * time.Second, TLSConfig: publicTLS}
 	runtime.waitGroup.Add(2)
@@ -198,6 +219,10 @@ func (runtime *Runtime) runControllerLink() {
 	defer runtime.waitGroup.Done()
 	delay := 100 * time.Millisecond
 	for runtime.ctx.Err() == nil {
+		var applyDesiredConfig func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
+		if len(runtime.configPublicKey) != 0 {
+			applyDesiredConfig = runtime.applyDesiredConfig
+		}
 		session, err := controllerlink.Open(runtime.ctx, controllerlink.Config{
 			ControllerAddress: runtime.config.ControllerAddress,
 			TLSConfig:         runtime.controllerTLS,
@@ -211,6 +236,7 @@ func (runtime *Runtime) runControllerLink() {
 				}
 				return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 			},
+			ApplyDesiredConfig: applyDesiredConfig,
 		})
 		if err == nil {
 			if runtime.ctx.Err() != nil {
@@ -266,7 +292,39 @@ func normalizeConfig(config Config) Config {
 	config.EdgeID = strings.TrimSpace(config.EdgeID)
 	config.BootID = strings.TrimSpace(config.BootID)
 	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
+	config.ConfigSigningKeyID = strings.TrimSpace(config.ConfigSigningKeyID)
+	config.ConfigSigningPublicKeyFile = strings.TrimSpace(config.ConfigSigningPublicKeyFile)
+	config.DesiredConfigCacheFile = strings.TrimSpace(config.DesiredConfigCacheFile)
 	return config
+}
+
+func (runtime *Runtime) applyDesiredConfig(_ context.Context, signed *cloudv1.SignedEdgeDesiredConfig) (uint64, error) {
+	if len(runtime.configPublicKey) == 0 {
+		return 0, errors.New("Edge desired config verifier is not configured")
+	}
+	config, err := configsignature.Verify(signed, runtime.config.ConfigSigningKeyID, runtime.configPublicKey)
+	if err != nil {
+		return 0, err
+	}
+	if config.GetEdgeId() != runtime.config.EdgeID || config.GetVersion() == 0 || strings.TrimSpace(config.GetPublicEndpoint()) == "" || config.GetCapacity() == 0 || strings.TrimSpace(config.GetRegion()) == "" {
+		return config.GetVersion(), errors.New("desired config identity, version, endpoint, region, or capacity is invalid")
+	}
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(signed)
+	if err != nil {
+		return config.GetVersion(), err
+	}
+	if err := os.MkdirAll(filepath.Dir(runtime.config.DesiredConfigCacheFile), 0o700); err != nil {
+		return config.GetVersion(), err
+	}
+	temporary := runtime.config.DesiredConfigCacheFile + ".tmp"
+	if err := os.WriteFile(temporary, payload, 0o600); err != nil {
+		return config.GetVersion(), err
+	}
+	if err := os.Rename(temporary, runtime.config.DesiredConfigCacheFile); err != nil {
+		_ = os.Remove(temporary)
+		return config.GetVersion(), err
+	}
+	return config.GetVersion(), nil
 }
 
 func validateConfig(config Config) error {

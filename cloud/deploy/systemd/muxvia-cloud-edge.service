@@ -5,10 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=muxvia
-Group=muxvia
-EnvironmentFile=/etc/muxvia/cloud/edge.env
-ExecStart=/opt/muxvia/bin/muxvia-cloud-edge --listen=${MUXVIA_CLOUD_EDGE_LISTEN} --controller=${MUXVIA_CLOUD_CONTROLLER_ADDRESS} --controller-server-name=${MUXVIA_CLOUD_CONTROLLER_SERVER_NAME} --edge-id=${MUXVIA_CLOUD_EDGE_ID} --public-tls-cert=/etc/muxvia/cloud/tls/edge-public-fullchain.pem --public-tls-key=/etc/muxvia/cloud/tls/edge-public-key.pem --identity-cert=/etc/muxvia/cloud/tls/edge-identity.pem --identity-key=/etc/muxvia/cloud/tls/edge-identity-key.pem --controller-ca=/etc/muxvia/cloud/tls/controller-ca.pem
+User=muxvia-edge
+Group=muxvia-edge
+ExecStart=/opt/muxvia-cloud-edge/current/muxvia-cloud-edge --config=/etc/muxvia-cloud-edge/config.yaml
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
@@ -19,6 +18,7 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths=/var/lib/muxvia-cloud-edge /etc/muxvia-cloud-edge
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

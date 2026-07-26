@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/muxvia/muxvia/cloud/configsignature"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
@@ -32,6 +34,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -126,6 +129,45 @@ func TestEdgeControllerHelloWelcomeOverMutualTLS(t *testing.T) {
 	}
 	if response.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
 		t.Fatalf("Edge public gRPC health = %s, want SERVING", response.GetStatus())
+	}
+}
+
+func TestEdgeAppliesSignedDesiredConfigBeforeReady(t *testing.T) {
+	certificates := newCertificateFiles(t, testEdgeID)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := configsignature.Sign(&cloudv1.EdgeDesiredConfig{EdgeId: testEdgeID, Version: 1, Name: "R3 Edge", Region: "cn-east", Capacity: 1000, PublicEndpoint: "edge.test:41102", Enabled: true}, "config-key-r3", privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerRuntime := startControllerWithDesired(t, certificates, func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error) { return signed, nil })
+	publicKeyFile := writeTestFile(t, t.TempDir(), "config-public.key", publicKey)
+	cacheFile := filepath.Join(t.TempDir(), "desired-config.pb")
+	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
+		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
+		ControllerAddress: controllerRuntime.GRPCAddress(), ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
+		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
+		EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: testEdgeSoftwareVersion,
+		ConfigSigningKeyID: "config-key-r3", ConfigSigningPublicKeyFile: publicKeyFile, DesiredConfigCacheFile: cacheFile,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { shutdownEdge(t, edgeRuntime) })
+	readyContext, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelReady()
+	if err := edgeRuntime.WaitReady(readyContext); err != nil {
+		t.Fatalf("wait signed desired config: %v", err)
+	}
+	payload, err := os.ReadFile(cacheFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := &cloudv1.SignedEdgeDesiredConfig{}
+	if err := proto.Unmarshal(payload, cached); err != nil || !proto.Equal(cached, signed) {
+		t.Fatalf("cached desired config=%v err=%v", cached, err)
 	}
 }
 
@@ -234,6 +276,10 @@ type controllerHarness struct {
 }
 
 func startController(t *testing.T, certificates certificateFiles) *controllerHarness {
+	return startControllerWithDesired(t, certificates, nil)
+}
+
+func startControllerWithDesired(t *testing.T, certificates certificateFiles, desired func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)) *controllerHarness {
 	t.Helper()
 	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
 	if err != nil {
@@ -245,6 +291,7 @@ func startController(t *testing.T, certificates certificateFiles) *controllerHar
 		HeartbeatInterval: time.Second,
 		HeartbeatTimeout:  3 * time.Second,
 		Directory:         directoryState,
+		DesiredConfig:     desired,
 	})
 	if err != nil {
 		t.Fatalf("create EdgeControl service: %v", err)

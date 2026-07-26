@@ -42,6 +42,7 @@ type Config struct {
 	CertificateVersion   uint64
 	WriterQueueSize      int
 	OpenRuntimeFeed      func(context.Context) (*RuntimeFeed, error)
+	ApplyDesiredConfig   func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
 }
 
 // Session 拥有一个 EdgeControl generation、唯一 reader、唯一 writer 与同步 coordinator。
@@ -143,7 +144,6 @@ func (session *Session) Close() error {
 	var err error
 	session.closeOnce.Do(func() {
 		session.cancel()
-		_ = session.stream.CloseSend()
 		err = session.connection.Close()
 	})
 	return err
@@ -179,6 +179,13 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 		return
 	}
 	latestRevision := feed.Snapshot.GetRevision()
+	snapshotAccepted := false
+	desiredApplied := config.ApplyDesiredConfig == nil
+	markReady := func() {
+		if snapshotAccepted && desiredApplied {
+			session.readyOnce.Do(func() { close(session.ready) })
+		}
+	}
 	heartbeat := time.NewTicker(session.welcome.GetHeartbeat().GetInterval().AsDuration())
 	defer heartbeat.Stop()
 	for {
@@ -196,7 +203,8 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 			switch payload := command.GetPayload().(type) {
 			case *cloudv1.ControllerCommand_SnapshotAccepted:
 				if feed != nil && payload.SnapshotAccepted.GetRevision() == feed.Snapshot.GetRevision() {
-					session.readyOnce.Do(func() { close(session.ready) })
+					snapshotAccepted = true
+					markReady()
 				}
 			case *cloudv1.ControllerCommand_ResyncRequired:
 				if err := startSnapshot(); err != nil {
@@ -204,6 +212,27 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 					return
 				}
 				latestRevision = feed.Snapshot.GetRevision()
+				snapshotAccepted = false
+			case *cloudv1.ControllerCommand_DesiredConfig:
+				if config.ApplyDesiredConfig == nil {
+					session.finish(errors.New("Controller sent desired config to an Edge without a config verifier"))
+					return
+				}
+				version, applyErr := config.ApplyDesiredConfig(ctx, payload.DesiredConfig)
+				result := &cloudv1.ConfigApplied{Version: version, Applied: applyErr == nil}
+				if applyErr != nil {
+					result.ErrorCode = "CONFIG_INVALID"
+				}
+				if err := queueEvent(ctx, events, &cloudv1.EdgeEvent_ConfigApplied{ConfigApplied: result}); err != nil {
+					session.finish(err)
+					return
+				}
+				if applyErr != nil {
+					session.finish(applyErr)
+					return
+				}
+				desiredApplied = true
+				markReady()
 			default:
 				session.finish(fmt.Errorf("unsupported Controller command payload %T", command.GetPayload()))
 				return
@@ -338,6 +367,8 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_RuntimeDelta:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_Heartbeat:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_ConfigApplied:
 		event.Payload = typed
 	default:
 		panic("unsupported EdgeEvent payload")

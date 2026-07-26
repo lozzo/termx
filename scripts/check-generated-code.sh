@@ -52,6 +52,7 @@ portable_ts_proto=(
 )
 cloud_proto=(
   proto/cloud/v1/common.proto
+  proto/cloud/v1/edge_config.proto
   proto/cloud/v1/runtime.proto
   proto/cloud/v1/edge_control.proto
 )

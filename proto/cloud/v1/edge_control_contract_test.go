@@ -22,6 +22,7 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 	}
 	current := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
 		protodesc.ToFileDescriptorProto(File_cloud_v1_common_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
 	}}
@@ -41,10 +42,10 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23,
 	})
 }
 
