@@ -2674,7 +2674,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onRefresh={openConnectionInfo}
       onRetry={retryConnectionPolicyFailure}
       onApply={applyConnectionPolicy}
-          onRestoreAuto={() => applyConnectionPolicy({ route: 'auto' })}
+          onRestoreAuto={() => applyConnectionPolicy({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })}
           routeManagement={connector.routeManagement}
           endpointId={machine.machineId}
         />
@@ -2774,7 +2774,7 @@ export function ConnectionInfoDialog({
   const { t } = useTranslation()
   const overlayRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const [draft, setDraft] = useState<ConnectionPolicy>({ route: 'auto' })
+  const [draft, setDraft] = useState<ConnectionPolicy>({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })
   useEffect(() => {
     if (policyState) setDraft(policyState.policy)
   }, [policyState])
@@ -2803,7 +2803,9 @@ export function ConnectionInfoDialog({
     }
   }, [])
   const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
-  const policyChanged = Boolean(policyState) && draft.route !== policyState?.policy.route
+  const policyChanged = Boolean(policyState) && (
+    draft.route !== policyState?.policy.route || draft.cloud !== policyState?.policy.cloud || draft.relayTransport !== policyState?.policy.relayTransport
+  )
   const routeOptions: Array<{ value: ConnectionPolicy['route']; label: string; available: boolean; reason: string | undefined }> = [
     { value: 'auto', label: t('workspace.connection.routeAuto'), available: true, reason: undefined },
     { value: 'direct', label: t('workspace.connection.routeDirect'), available: policyState?.available.direct ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.direct, t) },
@@ -2855,6 +2857,18 @@ export function ConnectionInfoDialog({
               ))}
             </div>
           </fieldset>
+
+          <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3" open={draft.route === 'cloud'}>
+            <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.cloudAdvanced')}</summary>
+            <div className="space-y-5 pb-2">
+              <ConnectionRadioGroup label={t('workspace.connection.cloudPath')} name="cloud-path" value={draft.cloud} options={[
+                ['auto', t('workspace.connection.cloudAuto')], ['p2p', t('workspace.connection.cloudP2P')], ['relay', t('workspace.connection.cloudRelay')],
+              ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud')} onChange={(cloud) => setDraft((current) => ({ ...current, cloud }))} />
+              <ConnectionRadioGroup label={t('workspace.connection.relayTransport')} name="relay-transport" value={draft.relayTransport} options={[
+                ['auto', t('workspace.connection.transportAuto')], ['udp', t('workspace.connection.transportUDP')], ['tcp', t('workspace.connection.transportTCP')],
+              ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud') || draft.cloud === 'p2p'} onChange={(relayTransport) => setDraft((current) => ({ ...current, relayTransport }))} />
+            </div>
+          </details>
 
           {routeManagement ? (
             <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3">
@@ -2909,6 +2923,29 @@ export async function loadConnectionPanelState(
     policy: policy.status === 'fulfilled' ? policy.value : null,
     error: info.status === 'rejected' ? info.reason : policy.status === 'rejected' ? policy.reason : null,
   }
+}
+
+function ConnectionRadioGroup<T extends string>({ label, name, value, options, disabled, onChange }: {
+  label: string
+  name: string
+  value: T
+  options: Array<readonly [T, string]>
+  disabled: boolean
+  onChange: (value: T) => void
+}) {
+  return (
+    <fieldset disabled={disabled}>
+      <legend className="text-[12px] font-semibold text-zinc-600">{label}</legend>
+      <div className="mt-1 grid grid-cols-3 gap-1 border border-[var(--muxvia-app-line)] p-1">
+        {options.map(([option, text]) => (
+          <label key={option} className={`flex min-h-12 items-center justify-center px-2 text-center text-[12px] font-semibold ${value === option ? 'bg-zinc-900 text-white' : 'bg-zinc-50 text-zinc-700'}`}>
+            <input className="sr-only" type="radio" name={name} value={option} checked={value === option} onChange={() => onChange(option)} />
+            <span>{text}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
 }
 
 function ConnectionInfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean | undefined }) {

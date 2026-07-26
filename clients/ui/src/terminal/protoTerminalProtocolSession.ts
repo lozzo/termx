@@ -53,6 +53,7 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
   private readonly terminalSizes = new Map<string, TerminalInputSize>()
   private readonly liveRevisions = new Map<string, bigint>()
+  private readonly inputTails = new Map<string, Promise<void>>()
   private readonly eventSubscriptionReady
 
   constructor(private readonly session: ProtoClientSession) {
@@ -164,17 +165,30 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   }
 
   sendInput(terminalId: string, data: string, size?: TerminalInputSize): void {
-    const resource = this.attachments.get(terminalId)?.handle.resource
-    if (!resource) throw new Error('terminal attachment is unavailable')
+    const attachment = this.attachments.get(terminalId)
+    const resource = attachment?.handle.resource
+    if (!attachment || !resource) throw new Error('terminal attachment is unavailable')
+    // PTY input 的真值顺序是用户事件顺序；同一 terminal 必须串行等待 ACK，不能按并发 RPC 完成顺序写入。
     const send = async () => {
+      if (this.attachments.get(terminalId) !== attachment) return
       if (size) await this.resize(terminalId, size, ResizePolicy.OWNER)
+      if (this.attachments.get(terminalId) !== attachment) return
       const result = await this.session.execute(command('terminalInput', create(TerminalInputCommandSchema, {
         attachment: resource,
         data: new TextEncoder().encode(data),
       })))
       if (result.result.case !== 'acknowledge') throw new Error('terminal input was not acknowledged')
     }
-    void send().catch((error) => this.publish(terminalId, { type: 'closed', reason: errorMessage(error) }))
+    const previous = this.inputTails.get(terminalId) ?? Promise.resolve()
+    const next = previous.then(send).catch((error) => {
+      if (this.attachments.get(terminalId) === attachment) {
+        this.publish(terminalId, { type: 'closed', reason: errorMessage(error) })
+      }
+    })
+    this.inputTails.set(terminalId, next)
+    void next.finally(() => {
+      if (this.inputTails.get(terminalId) === next) this.inputTails.delete(terminalId)
+    })
   }
 
   sendResize(terminalId: string, cols: number, rows: number): void {

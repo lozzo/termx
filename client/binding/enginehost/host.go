@@ -157,7 +157,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	now := host.options.Now().UTC()
 	offer, err := remoteauth.ParsePairingClaimOffer(payload, now)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse pairing claim offer at %s: %w", now.Format(time.RFC3339Nano), err)
 	}
 	pairingCandidate, err := remoteauth.PairingClaimEndpointCandidate(offer)
 	if err != nil {
@@ -207,9 +207,12 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	bundle, claims, err := remoteauth.ParsePairingBundle(paired.Bundle, now)
+	// PairingAccepted 只会在 owning daemon 已原子兑换 ticket 后返回；这里重新校验 ticket
+	// 本地时钟会把合法的跨设备小幅 clock skew 误判为过期。签名、身份、ticket 对应关系与
+	// 带容差的 grant 已由 ClientPairingHandshake 验证，此处只解析已接受的持久 Endpoint 配置。
+	bundle, claims, err := remoteauth.ParsePairingBundleForExchange(paired.Bundle)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse accepted pairing bundle: %w", err)
 	}
 	candidate, err := endpoint.EndpointCandidateFromBootstrapBundle(bundle)
 	if err != nil {

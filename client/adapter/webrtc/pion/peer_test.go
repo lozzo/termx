@@ -3,12 +3,53 @@ package pion
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
+
+func TestDefaultRouteNetUsesSocketSelectedAddresses(t *testing.T) {
+	dials := make([]string, 0, 2)
+	network, err := newDefaultRouteNet(func(network, address string) (net.Conn, error) {
+		dials = append(dials, network+" "+address)
+		switch network {
+		case "udp4":
+			return &routeProbeConn{local: &net.UDPAddr{IP: net.ParseIP("10.0.2.16"), Port: 49152}}, nil
+		case "udp6":
+			return nil, errors.New("IPv6 is unavailable")
+		default:
+			return nil, errors.New("unexpected probe")
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dials) != 2 {
+		t.Fatalf("route probes = %v", dials)
+	}
+	interfaces, err := network.Interfaces()
+	if err != nil || len(interfaces) != 1 {
+		t.Fatalf("interfaces = %v, err = %v", interfaces, err)
+	}
+	addresses, err := interfaces[0].Addrs()
+	if err != nil || len(addresses) != 1 || addresses[0].String() != "10.0.2.16/32" {
+		t.Fatalf("interface addresses = %v, err = %v", addresses, err)
+	}
+	if _, err := network.InterfaceByName("default-route-v4"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefaultRouteNetRejectsMissingRoute(t *testing.T) {
+	if _, err := newDefaultRouteNet(func(string, string) (net.Conn, error) {
+		return nil, errors.New("route unavailable")
+	}); err == nil {
+		t.Fatal("missing default route unexpectedly created a Pion network")
+	}
+}
 
 func TestWaitReadyReturnsWhenChannelClosesBeforeOpen(t *testing.T) {
 	peer := &webRTCPeer{ready: make(chan struct{}), channelClosed: make(chan struct{}), readyTimeout: time.Second}
@@ -70,6 +111,17 @@ type lifecycleChannel struct {
 	closeCalls int
 	onClose    func()
 }
+
+type routeProbeConn struct{ local net.Addr }
+
+func (*routeProbeConn) Read([]byte) (int, error)          { return 0, errors.New("unused") }
+func (*routeProbeConn) Write(payload []byte) (int, error) { return len(payload), nil }
+func (*routeProbeConn) Close() error                      { return nil }
+func (connection *routeProbeConn) LocalAddr() net.Addr    { return connection.local }
+func (*routeProbeConn) RemoteAddr() net.Addr              { return &net.UDPAddr{} }
+func (*routeProbeConn) SetDeadline(time.Time) error       { return nil }
+func (*routeProbeConn) SetReadDeadline(time.Time) error   { return nil }
+func (*routeProbeConn) SetWriteDeadline(time.Time) error  { return nil }
 
 func (*lifecycleChannel) SetMessageHandler(func([]byte)) {}
 func (channel *lifecycleChannel) SetCloseHandler(handler func()) {

@@ -97,7 +97,10 @@ message ConnectionSnapshot {
 // 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
 message ConnectionPolicy {
   muxvia.remote.auth.v1.EndpointRoutePreference route_preference = 1;
-  reserved 2, 3;
+  // cloud_relay_mode 约束 managed Cloud Route 使用 P2P、Relay 或自动选择；持久真值在 Go Endpoint registry。
+  muxvia.remote.auth.v1.ManagedWebRTCRelayMode cloud_relay_mode = 2;
+  // relay_transport 只在 Cloud Relay 可用时收缩 TURN UDP/TCP；UI 不得把它保存成第二份连接状态。
+  muxvia.remote.auth.v1.ManagedWebRTCRelayTransport relay_transport = 3;
 }
 
 message ConnectionPolicyRouteAvailability {

@@ -49,8 +49,17 @@ export interface RtcConnectOptions {
 
 export type ConnectionRoutePreference = 'auto' | 'direct' | 'ssh' | 'cloud'
 
+/** CloudConnectionPreference 是 UI 提交给 Go Endpoint registry 的 managed Route 选路意图，不拥有当前连接真值。 */
+export type CloudConnectionPreference = 'auto' | 'p2p' | 'relay'
+
+/** RelayTransportPreference 只收缩 managed TURN 的 UDP/TCP 候选；实际 transport 仍来自 Go connection snapshot。 */
+export type RelayTransportPreference = 'auto' | 'udp' | 'tcp'
+
+/** ConnectionPolicy 是 Go-owned Endpoint 策略的 UI 投影，应用后由 Go 持久化并建立新的 session generation。 */
 export interface ConnectionPolicy {
   route: ConnectionRoutePreference
+  cloud: CloudConnectionPreference
+  relayTransport: RelayTransportPreference
 }
 
 export interface ConnectionPolicyState {

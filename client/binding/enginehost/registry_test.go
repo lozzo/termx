@@ -57,10 +57,15 @@ func TestConnectionPolicyUsesGoRegistryTransactionAndAvailability(t *testing.T) 
 		availability[2].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_CLOUD || availability[2].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED {
 		t.Fatalf("route availability = %#v", availability)
 	}
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: testManagedEndpointProto(t, "studio", "daemon-studio", "grant-studio")}); err != nil {
+		t.Fatal(err)
+	}
 	applied, err := host.ApplyConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyApplyRequest{
 		EndpointId: "studio",
 		Policy: &bindingpb.ConnectionPolicy{
 			RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT,
+			CloudRelayMode:  remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
+			RelayTransport:  remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP,
 		},
 	})
 	if err != nil {
@@ -76,10 +81,20 @@ func TestConnectionPolicyUsesGoRegistryTransactionAndAvailability(t *testing.T) 
 	if got := registry.GetRegistry().GetEndpoints()[0].GetSelectionPolicy().GetRoutePreference(); got != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT {
 		t.Fatalf("persisted route preference = %v", got)
 	}
+	model, err := endpoint.RegistryFromProto(registry.GetRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloudRoute := model.Endpoints["studio"].Routes["cloud"]
+	if cloudRoute.RelayMode != endpoint.RelayOnly || cloudRoute.RelayTransport != endpoint.RelayTransportTCP {
+		t.Fatalf("persisted Cloud policy = %#v", cloudRoute)
+	}
 	applied, err = host.ApplyConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyApplyRequest{
 		EndpointId: "studio",
 		Policy: &bindingpb.ConnectionPolicy{
 			RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD,
+			CloudRelayMode:  remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
+			RelayTransport:  remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP,
 		},
 	})
 	if err != nil {
@@ -405,6 +420,25 @@ func testEndpointProto(t *testing.T, id, deviceID, credentialRef string) *remote
 		},
 	}
 	wire, err := endpoint.EndpointToProto(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wire
+}
+
+func testManagedEndpointProto(t *testing.T, id, deviceID, credentialRef string) *remoteauthpb.EndpointConfigV1 {
+	t.Helper()
+	wire := testEndpointProto(t, id, deviceID, credentialRef)
+	model, err := endpoint.EndpointFromProto(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Routes["cloud"] = endpoint.AccessRoute{
+		ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true,
+		Source: endpoint.SourceCloud, PolicySource: endpoint.SourceBootstrap,
+		TargetDeviceID: deviceID, RelayMode: endpoint.RelayAuto, RelayTransport: endpoint.RelayTransportAuto,
+	}
+	wire, err = endpoint.EndpointToProto(model)
 	if err != nil {
 		t.Fatal(err)
 	}

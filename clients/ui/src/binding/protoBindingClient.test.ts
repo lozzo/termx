@@ -5,7 +5,7 @@ import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandl
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
 import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
 import { ConnectionPolicyApplyResultSchema, ConnectionPolicyAvailabilityReason, ConnectionPolicyGetResultSchema, ConnectionPolicyRouteAvailabilitySchema, ConnectionPolicySchema, ConnectionPolicyStateSchema, ConnectionRouteKind, ConnectionSnapshotGetResultSchema, ConnectionSnapshotSchema, EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
-import { EndpointConfigV1Schema, EndpointRegistryV1Schema, EndpointRouteConfigV1Schema, EndpointRoutePreference, ManagedWebRTCRouteConfigSchema } from '../generated/remoteauthpb/remote_auth_pb'
+import { EndpointConfigV1Schema, EndpointRegistryV1Schema, EndpointRouteConfigV1Schema, EndpointRoutePreference, ManagedWebRTCRelayMode, ManagedWebRTCRelayTransport, ManagedWebRTCRouteConfigSchema } from '../generated/remoteauthpb/remote_auth_pb'
 import { BindingOperation, ProtoBindingClient, ProtoBindingConnector, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
 class CancellationBackend implements ProtoBindingBackend {
@@ -191,6 +191,8 @@ describe('ProtoBindingConnector route policy', () => {
     const state = create(ConnectionPolicyStateSchema, {
       policy: create(ConnectionPolicySchema, {
         routePreference: EndpointRoutePreference.AUTO,
+        cloudRelayMode: ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO,
+        relayTransport: ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO,
       }),
       routes: [
         create(ConnectionPolicyRouteAvailabilitySchema, { routeKind: ConnectionRouteKind.DIRECT, available: true, reason: ConnectionPolicyAvailabilityReason.AVAILABLE }),
@@ -205,13 +207,15 @@ describe('ProtoBindingConnector route policy', () => {
     const connector = new ProtoBindingConnector(() => client, { endpointId: 'studio' })
 
     await expect(connector.getConnectionPolicy()).resolves.toEqual({
-      policy: { route: 'auto' },
+      policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' },
       available: { direct: true, ssh: false, cloud: true },
       unavailableReasons: { ssh: 'credential_unavailable' },
     })
-    await connector.applyConnectionPolicy({ route: 'cloud' })
+    await connector.applyConnectionPolicy({ route: 'cloud', cloud: 'relay', relayTransport: 'tcp' })
     expect(client.applyConnectionPolicy).toHaveBeenCalledWith('studio', expect.objectContaining({
       routePreference: EndpointRoutePreference.MANAGED_CLOUD,
+      cloudRelayMode: ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
+      relayTransport: ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP,
     }), undefined)
   })
 

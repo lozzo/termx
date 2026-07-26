@@ -590,8 +590,12 @@ func (x *ConnectionSnapshot) GetConnected() bool {
 type ConnectionPolicy struct {
 	state           protoimpl.MessageState               `protogen:"open.v1"`
 	RoutePreference remoteauthpb.EndpointRoutePreference `protobuf:"varint,1,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// cloud_relay_mode 约束 managed Cloud Route 使用 P2P、Relay 或自动选择；持久真值在 Go Endpoint registry。
+	CloudRelayMode remoteauthpb.ManagedWebRTCRelayMode `protobuf:"varint,2,opt,name=cloud_relay_mode,json=cloudRelayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"cloud_relay_mode,omitempty"`
+	// relay_transport 只在 Cloud Relay 可用时收缩 TURN UDP/TCP；UI 不得把它保存成第二份连接状态。
+	RelayTransport remoteauthpb.ManagedWebRTCRelayTransport `protobuf:"varint,3,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayTransport" json:"relay_transport,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ConnectionPolicy) Reset() {
@@ -629,6 +633,20 @@ func (x *ConnectionPolicy) GetRoutePreference() remoteauthpb.EndpointRoutePrefer
 		return x.RoutePreference
 	}
 	return remoteauthpb.EndpointRoutePreference(0)
+}
+
+func (x *ConnectionPolicy) GetCloudRelayMode() remoteauthpb.ManagedWebRTCRelayMode {
+	if x != nil {
+		return x.CloudRelayMode
+	}
+	return remoteauthpb.ManagedWebRTCRelayMode(0)
+}
+
+func (x *ConnectionPolicy) GetRelayTransport() remoteauthpb.ManagedWebRTCRelayTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return remoteauthpb.ManagedWebRTCRelayTransport(0)
 }
 
 type ConnectionPolicyRouteAvailability struct {
@@ -4804,9 +4822,11 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\fpackets_sent\x18\x0f \x01(\x04R\vpacketsSent\x12\x1f\n" +
 	"\vloss_events\x18\x10 \x01(\x04R\n" +
 	"lossEvents\x12\x1c\n" +
-	"\tconnected\x18\x11 \x01(\bR\tconnected\"y\n" +
+	"\tconnected\x18\x11 \x01(\bR\tconnected\"\xa3\x02\n" +
 	"\x10ConnectionPolicy\x12Y\n" +
-	"\x10route_preference\x18\x01 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreferenceJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"\xe5\x01\n" +
+	"\x10route_preference\x18\x01 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\x12W\n" +
+	"\x10cloud_relay_mode\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\x0ecloudRelayMode\x12[\n" +
+	"\x0frelay_transport\x18\x03 \x01(\x0e22.muxvia.remote.auth.v1.ManagedWebRTCRelayTransportR\x0erelayTransport\"\xe5\x01\n" +
 	"!ConnectionPolicyRouteAvailability\x12L\n" +
 	"\n" +
 	"route_kind\x18\x01 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12\x1c\n" +
@@ -5256,15 +5276,17 @@ var file_bindingpb_client_binding_proto_goTypes = []any{
 	(*PlatformRequest)(nil),                           // 63: muxvia.client.binding.v1.PlatformRequest
 	(*PlatformResponse)(nil),                          // 64: muxvia.client.binding.v1.PlatformResponse
 	(remoteauthpb.EndpointRoutePreference)(0),         // 65: muxvia.remote.auth.v1.EndpointRoutePreference
-	(*apipb.ApiError)(nil),                            // 66: muxvia.api.v1.ApiError
-	(*remoteauthpb.EndpointConfigV1)(nil),             // 67: muxvia.remote.auth.v1.EndpointConfigV1
-	(*remoteauthpb.EndpointRegistryV1)(nil),           // 68: muxvia.remote.auth.v1.EndpointRegistryV1
-	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 69: muxvia.remote.auth.v1.EndpointDaemonIdentity
-	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 70: muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	(*apipb.EndpointSessionStamp)(nil),                // 71: muxvia.api.v1.EndpointSessionStamp
-	(*apipb.ResultEnvelope)(nil),                      // 72: muxvia.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),                       // 73: muxvia.api.v1.EventEnvelope
-	(*apipb.ResourceHandle)(nil),                      // 74: muxvia.api.v1.ResourceHandle
+	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 66: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 67: muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
+	(*apipb.ApiError)(nil),                            // 68: muxvia.api.v1.ApiError
+	(*remoteauthpb.EndpointConfigV1)(nil),             // 69: muxvia.remote.auth.v1.EndpointConfigV1
+	(*remoteauthpb.EndpointRegistryV1)(nil),           // 70: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 71: muxvia.remote.auth.v1.EndpointDaemonIdentity
+	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 72: muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	(*apipb.EndpointSessionStamp)(nil),                // 73: muxvia.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                      // 74: muxvia.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                       // 75: muxvia.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                      // 76: muxvia.api.v1.ResourceHandle
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
 	2,   // 0: muxvia.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
@@ -5275,103 +5297,105 @@ var file_bindingpb_client_binding_proto_depIdxs = []int32{
 	5,   // 5: muxvia.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
 	5,   // 6: muxvia.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
 	65,  // 7: muxvia.client.binding.v1.ConnectionPolicy.route_preference:type_name -> muxvia.remote.auth.v1.EndpointRoutePreference
-	2,   // 8: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
-	6,   // 9: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
-	8,   // 10: muxvia.client.binding.v1.ConnectionPolicyState.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
-	9,   // 11: muxvia.client.binding.v1.ConnectionPolicyState.routes:type_name -> muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
-	10,  // 12: muxvia.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
-	66,  // 13: muxvia.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> muxvia.api.v1.ApiError
-	8,   // 14: muxvia.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
-	10,  // 15: muxvia.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
-	66,  // 16: muxvia.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> muxvia.api.v1.ApiError
-	7,   // 17: muxvia.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
-	66,  // 18: muxvia.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> muxvia.api.v1.ApiError
-	0,   // 19: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
-	67,  // 20: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	66,  // 21: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
-	68,  // 22: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	66,  // 23: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
-	68,  // 24: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	66,  // 25: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
-	67,  // 26: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	67,  // 27: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 28: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	66,  // 29: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
-	68,  // 30: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	66,  // 31: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
-	69,  // 32: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	29,  // 33: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
-	70,  // 34: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	30,  // 35: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
-	66,  // 36: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
-	67,  // 37: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 38: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	66,  // 39: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
-	67,  // 40: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 41: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	66,  // 42: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
-	18,  // 43: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
-	20,  // 44: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
-	22,  // 45: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
-	24,  // 46: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
-	26,  // 47: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
-	28,  // 48: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
-	32,  // 49: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
-	34,  // 50: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	11,  // 51: muxvia.client.binding.v1.EngineCommand.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetRequest
-	13,  // 52: muxvia.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyRequest
-	15,  // 53: muxvia.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetRequest
-	71,  // 54: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	66,  // 55: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
-	7,   // 56: muxvia.client.binding.v1.OpenSessionResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
-	72,  // 57: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
-	66,  // 58: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
-	73,  // 59: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
-	74,  // 60: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
-	1,   // 61: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
-	66,  // 62: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	71,  // 63: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	66,  // 64: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	37,  // 65: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
-	38,  // 66: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
-	39,  // 67: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
-	43,  // 68: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
-	19,  // 69: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
-	21,  // 70: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
-	41,  // 71: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
-	42,  // 72: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
-	23,  // 73: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
-	25,  // 74: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
-	27,  // 75: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
-	31,  // 76: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
-	33,  // 77: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
-	35,  // 78: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
-	12,  // 79: muxvia.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetResult
-	14,  // 80: muxvia.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyResult
-	16,  // 81: muxvia.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetResult
-	45,  // 82: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
-	46,  // 83: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
-	47,  // 84: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
-	50,  // 85: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
-	48,  // 86: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
-	59,  // 87: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	60,  // 88: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	54,  // 89: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
-	57,  // 90: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
-	55,  // 91: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	52,  // 92: muxvia.client.binding.v1.PlatformRequest.cloud_profile_resolve:type_name -> muxvia.client.binding.v1.CloudProfileResolveRequest
-	66,  // 93: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
-	49,  // 94: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
-	51,  // 95: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
-	61,  // 96: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
-	56,  // 97: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
-	58,  // 98: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
-	53,  // 99: muxvia.client.binding.v1.PlatformResponse.cloud_profile:type_name -> muxvia.client.binding.v1.CloudProfileRecord
-	100, // [100:100] is the sub-list for method output_type
-	100, // [100:100] is the sub-list for method input_type
-	100, // [100:100] is the sub-list for extension type_name
-	100, // [100:100] is the sub-list for extension extendee
-	0,   // [0:100] is the sub-list for field type_name
+	66,  // 8: muxvia.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	67,  // 9: muxvia.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
+	2,   // 10: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
+	6,   // 11: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
+	8,   // 12: muxvia.client.binding.v1.ConnectionPolicyState.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
+	9,   // 13: muxvia.client.binding.v1.ConnectionPolicyState.routes:type_name -> muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
+	10,  // 14: muxvia.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
+	68,  // 15: muxvia.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> muxvia.api.v1.ApiError
+	8,   // 16: muxvia.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
+	10,  // 17: muxvia.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
+	68,  // 18: muxvia.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> muxvia.api.v1.ApiError
+	7,   // 19: muxvia.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
+	68,  // 20: muxvia.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> muxvia.api.v1.ApiError
+	0,   // 21: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
+	69,  // 22: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	68,  // 23: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
+	70,  // 24: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	68,  // 25: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
+	70,  // 26: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	68,  // 27: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
+	69,  // 28: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	69,  // 29: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	70,  // 30: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	68,  // 31: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
+	70,  // 32: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	68,  // 33: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
+	71,  // 34: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	29,  // 35: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
+	72,  // 36: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	30,  // 37: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
+	68,  // 38: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
+	69,  // 39: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	70,  // 40: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	68,  // 41: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
+	69,  // 42: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	70,  // 43: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	68,  // 44: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
+	18,  // 45: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
+	20,  // 46: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
+	22,  // 47: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
+	24,  // 48: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
+	26,  // 49: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
+	28,  // 50: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
+	32,  // 51: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
+	34,  // 52: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	11,  // 53: muxvia.client.binding.v1.EngineCommand.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetRequest
+	13,  // 54: muxvia.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyRequest
+	15,  // 55: muxvia.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetRequest
+	73,  // 56: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	68,  // 57: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
+	7,   // 58: muxvia.client.binding.v1.OpenSessionResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
+	74,  // 59: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
+	68,  // 60: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
+	75,  // 61: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
+	76,  // 62: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
+	1,   // 63: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
+	68,  // 64: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	73,  // 65: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	68,  // 66: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	37,  // 67: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
+	38,  // 68: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
+	39,  // 69: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
+	43,  // 70: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
+	19,  // 71: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
+	21,  // 72: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
+	41,  // 73: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
+	42,  // 74: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
+	23,  // 75: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
+	25,  // 76: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
+	27,  // 77: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
+	31,  // 78: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
+	33,  // 79: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
+	35,  // 80: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
+	12,  // 81: muxvia.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetResult
+	14,  // 82: muxvia.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyResult
+	16,  // 83: muxvia.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetResult
+	45,  // 84: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
+	46,  // 85: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
+	47,  // 86: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
+	50,  // 87: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
+	48,  // 88: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
+	59,  // 89: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	60,  // 90: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	54,  // 91: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
+	57,  // 92: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
+	55,  // 93: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	52,  // 94: muxvia.client.binding.v1.PlatformRequest.cloud_profile_resolve:type_name -> muxvia.client.binding.v1.CloudProfileResolveRequest
+	68,  // 95: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
+	49,  // 96: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
+	51,  // 97: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
+	61,  // 98: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
+	56,  // 99: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
+	58,  // 100: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
+	53,  // 101: muxvia.client.binding.v1.PlatformResponse.cloud_profile:type_name -> muxvia.client.binding.v1.CloudProfileRecord
+	102, // [102:102] is the sub-list for method output_type
+	102, // [102:102] is the sub-list for method input_type
+	102, // [102:102] is the sub-list for extension type_name
+	102, // [102:102] is the sub-list for extension extendee
+	0,   // [0:102] is the sub-list for field type_name
 }
 
 func init() { file_bindingpb_client_binding_proto_init() }

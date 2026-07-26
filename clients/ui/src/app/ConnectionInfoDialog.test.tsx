@@ -53,7 +53,7 @@ describe('MachineWorkspace connection policy ownership', () => {
 describe('ConnectionInfoDialog', () => {
   it('keeps the Go-owned policy editable when the current session is unavailable', async () => {
     const policyState = {
-      policy: { route: 'auto' } as const,
+      policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' } as const,
       available: { direct: false, ssh: false, cloud: false },
       unavailableReasons: { direct: 'route_not_configured', ssh: 'credential_unavailable', cloud: 'cloud_unavailable' },
     }
@@ -75,7 +75,7 @@ describe('ConnectionInfoDialog', () => {
       info={{ path: 'local', routeKind: 'direct', observedPath: 'direct', connectionId: 'studio:7', machineId: 'studio', relayInUse: false, type: 'p2p', generation: 7n }}
       loading={false}
       error={null}
-      policyState={{ policy: { route: 'auto' }, available: { direct: true, ssh: false, cloud: true }, unavailableReasons: { ssh: 'credential_unavailable' } }}
+      policyState={{ policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' }, available: { direct: true, ssh: false, cloud: true }, unavailableReasons: { ssh: 'credential_unavailable' } }}
       applying={false}
       onClose={vi.fn()}
       onRefresh={vi.fn()}
@@ -87,9 +87,11 @@ describe('ConnectionInfoDialog', () => {
     expect((screen.getByRole('radio', { name: 'SSH tunnel' }) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText('Credential unavailable')).toBeTruthy()
     await user.click(screen.getByRole('radio', { name: 'Muxvia Cloud' }))
+    await user.click(screen.getByRole('radio', { name: 'Relay only' }))
+    await user.click(screen.getByRole('radio', { name: 'TCP only' }))
     await user.click(screen.getByRole('button', { name: 'Apply & reconnect' }))
 
-    expect(onApply).toHaveBeenCalledWith({ route: 'cloud' })
+    expect(onApply).toHaveBeenCalledWith({ route: 'cloud', cloud: 'relay', relayTransport: 'tcp' })
   })
 
   it('offers retry and Restore Auto for a policy or reconnect failure', async () => {
@@ -99,7 +101,7 @@ describe('ConnectionInfoDialog', () => {
       info={null}
       loading={false}
       error="Direct route is unavailable"
-      policyState={{ policy: { route: 'direct' }, available: { direct: true, ssh: true, cloud: true }, unavailableReasons: {} }}
+      policyState={{ policy: { route: 'direct', cloud: 'auto', relayTransport: 'auto' }, available: { direct: true, ssh: true, cloud: true }, unavailableReasons: {} }}
       applying={false}
       onClose={vi.fn()}
       onRefresh={vi.fn()}
@@ -126,7 +128,7 @@ describe('ConnectionInfoDialog', () => {
         info={null}
         loading={false}
         error={null}
-        policyState={{ policy: { route: 'auto' }, available: { direct: true, ssh: true, cloud: true }, unavailableReasons: {} }}
+        policyState={{ policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' }, available: { direct: true, ssh: true, cloud: true }, unavailableReasons: {} }}
         applying={false}
         onClose={onClose}
         onRefresh={vi.fn()}

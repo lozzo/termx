@@ -73,7 +73,10 @@ func muxvia_engine_create(out *C.muxvia_handle_t) C.muxvia_status_v1 {
 	if out == nil {
 		return C.MUXVIA_STATUS_INVALID_ARGUMENT
 	}
-	host := newAndroidProductionHost()
+	host, err := newAndroidProductionHost()
+	if err != nil {
+		return status(err)
+	}
 	return createAndroidEngine(host, host.broker, out)
 }
 

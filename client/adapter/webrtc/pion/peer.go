@@ -14,6 +14,8 @@ import (
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/client/port"
 	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
+	pionice "github.com/pion/ice/v4"
+	"github.com/pion/transport/v4"
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
@@ -27,6 +29,9 @@ const (
 type Factory struct {
 	// PeerConnections 只覆盖底层 Pion primitive 创建策略；nil 使用当前生产默认配置。
 	PeerConnections remotewebrtc.PeerConnectionFactory
+	// Network 是当前 platform generation 的网络接口快照；nil 使用 Pion 默认网络枚举。
+	// Android 必须注入不依赖受限 netlink 的实现，网络切换后由平台 lifecycle 重建整个 generation。
+	Network transport.Net
 }
 
 // OpenDirectPeer 创建只启用 ICE-TCP 的 native Pion peer，供 Direct 与后续 SSH tunnel connector 使用。
@@ -37,6 +42,12 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 		settings := pionwebrtc.SettingEngine{}
 		settings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4, pionwebrtc.NetworkTypeTCP6})
 		settings.SetIncludeLoopbackCandidate(true)
+		if factory.Network != nil {
+			settings.SetNet(factory.Network)
+			// Android sandbox 禁止 mDNS 内部绕过 transport.Net 再读取系统网卡。
+			// Direct 使用 daemon-signed locator，Cloud 使用显式 ICE server，二者均不依赖 mDNS candidate。
+			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
+		}
 		peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection
 	}
 	return openPeer(peerFactory, pionwebrtc.Configuration{})
@@ -47,7 +58,14 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig) (port.WebRTCPeer, error) {
 	peerFactory := factory.PeerConnections
 	if peerFactory == nil {
-		peerFactory = remotewebrtc.NewPeerConnection
+		if factory.Network == nil {
+			peerFactory = remotewebrtc.NewPeerConnection
+		} else {
+			settings := pionwebrtc.SettingEngine{}
+			settings.SetNet(factory.Network)
+			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
+			peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection
+		}
 	}
 	configuration := pionwebrtc.Configuration{ICEServers: make([]pionwebrtc.ICEServer, 0, len(config.Servers))}
 	for _, server := range config.Servers {

@@ -1394,13 +1394,19 @@ R5 通过 `0316f725` 建立了 Proto-first Directory/ClientGateway、Controller 
 
 最终 Android ARM64 debug APK SHA-256 为 `7aefcb71d21779ca9174e80e9c8e711d8061a1db10752f15e6b9eff469174fd7`。Playwright 1.62.0 通过 API 35 ARM64 模拟器中的真实 App UI 选择 Muxvia Cloud、打开远端终端并输入 `muxvia-r5-android-final`；daemon terminal capture 得到两次 cat 回显。连接投影显示 route ID `cloud`、实际路径 P2P direct、host/host candidate、UDP/UDP transport 和 51ms RTT；Android crash 扫描无异常。Cloud 相关 Go 全域测试通过，integration 连续运行 10 次通过。R5 只完成 P2P Cloud Route，P2P 失败后的 TURN Relay、配额和 usage 属于 R6。
 
-### 32.9 R6：Relay、配额与 usage（当前最早未完成切片）
+### 32.9 R6：Relay、配额与 usage（已完成）
 
 - 在同一 Edge 进程接 TURN、RelayLease、rate/concurrency/byte limit。
 - 实现 durable usage outbox、Controller 幂等结算和故障恢复。
 - 验证 P2P 失败后 Relay、Controller 故障租约语义和重复用量不计费。
 
-### 32.10 R7：账号、交易与完整后台
+R6 通过 `a150e684` 建立同一 Edge 进程内的 Pion TURN UDP/TCP、短期 RelayLease、共享 allocation 配额、速率/字节限制、bbolt usage outbox 和 Controller PostgreSQL 幂等结算；`61a35830` 删除迁移期旧 Relay 用量表，`01d3e379`、`90a761f6` 与 `acbc1a6f` 收口 systemd 网络权限、多网卡双端 allocation 和租约并发上限。Android/Go Client Engine 增加由 Go registry 持久化的 Cloud P2P/Relay 与 UDP/TCP 策略；Android Pion 只使用默认路由网络投影，不依赖 SELinux 禁止的 netlink 接口枚举。共享 UI 的 terminal Proto adapter 按同一 terminal 的用户输入顺序串行等待 ACK，避免并发 command completion 重排 PTY 字符。
+
+2026-07-26 的在线开发验收中，Controller `155.94.155.192` 的 `18443` 明确只承载 EdgeControl mTLS，公开 DirectoryService/HTTPS 使用 `18444`；Controller 二进制 SHA-256 为 `ebaeab1d64206dd77fb521598dde1416f01a1338b4a0b3e58ac1149ee72f446e`。Edge `muxvia-cn1.omscd.com:41102` 与内置 TURN `3478/udp,tcp` 的二进制 SHA-256 为 `c6ca49c78d6cd80627a54c143f5dff79150c2517d0993796b494307a19c55848`。两个 systemd unit 均为 active、`NRestarts=0`；旧 Controller、Hub、Relay、Edge unit 和运行文件没有恢复。
+
+最终 Android ARM64 debug APK SHA-256 为 `f9d203861a7e0b31412826a8cdb3cb0563309739c96c7739d9a76b5dbabe79ab`。Playwright 1.62.0 在 API 35 ARM64 模拟器的真实 App UI 中选择 Muxvia Cloud、强制 Relay only + UDP，连接投影显示 `Actual path=Relay`、`Relay transport=UDP`、RTT `102-105 ms`；随后打开远端 `/bin/cat` 并零延迟输入 `muxvia-r6-android-relay-ordered-20260726`，daemon authoritative live screen 得到两次完整回显，Android crash 扫描为空。关闭 App 后，线上 Controller 收到并结算 UDP usage，Edge outbox 副本为 `pending_usage_events=0`；当前 Edge 聚合为 `121` 个事件、ingress `767705`、egress `785859` 字节。UDP/TCP integration 证明 Controller 中断时租约内数据面继续、恢复后 durable usage 清空；隔离 PostgreSQL schema 证明重复 event ACK 不会重复增加 aggregate，测试 schema 已删除。
+
+### 32.10 R7：账号、交易与完整后台（当前最早未完成切片）
 
 - 完成套餐、订单、支付、订阅、Entitlement 和运营 mutation。
 - 完成第 12、29 节全部菜单、路由、表格、表单和实时操作。

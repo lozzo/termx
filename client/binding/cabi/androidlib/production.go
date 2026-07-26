@@ -3,10 +3,16 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"log"
+	"strings"
+
 	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
 	"github.com/muxvia/muxvia/client/binding"
 	"github.com/muxvia/muxvia/client/binding/enginehost"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/bindingpb"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 )
 
@@ -19,17 +25,45 @@ type androidProductionHost struct {
 	broker *binding.PlatformBroker
 }
 
-func newAndroidProductionHost() *androidProductionHost {
+func newAndroidProductionHost() (*androidProductionHost, error) {
+	configureAndroidLogging()
 	broker := binding.NewPlatformBroker()
-	peers := pionadapter.Factory{}
+	network, err := pionadapter.NewDefaultRouteNet()
+	if err != nil {
+		_ = broker.Close()
+		return nil, err
+	}
+	peers := pionadapter.Factory{Network: network}
 	host, err := enginehost.New(enginehost.Options{
 		Broker: broker, DirectPeers: peers, ClientName: "muxvia-android", CredentialPrefix: "android-access-",
 		SessionAuthority: androidSessionAuthority, CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
 	})
 	if err != nil {
-		panic(err)
+		_ = broker.Close()
+		return nil, err
 	}
-	return &androidProductionHost{Host: host, broker: broker}
+	return &androidProductionHost{Host: host, broker: broker}, nil
 }
 
 func (host *androidProductionHost) close() error { return host.Close() }
+
+// OpenSession 只为 Android 本地诊断记录稳定错误链；公开事件仍由 binding 映射为脱敏 ApiError。
+// adapter 错误禁止包含 grant、ticket、credential、SDP 或 bridge token。
+func (host *androidProductionHost) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
+	session, err := host.Host.OpenSession(ctx, request)
+	if err != nil {
+		log.Printf("muxvia binding open session failed: %s", androidErrorChain(err))
+	}
+	return session, err
+}
+
+func androidErrorChain(err error) string {
+	parts := make([]string, 0, 4)
+	for current := err; current != nil && len(parts) < 8; current = errors.Unwrap(current) {
+		message := strings.TrimSpace(current.Error())
+		if message != "" && (len(parts) == 0 || parts[len(parts)-1] != message) {
+			parts = append(parts, message)
+		}
+	}
+	return strings.Join(parts, ": ")
+}
