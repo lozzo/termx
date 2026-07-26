@@ -141,16 +141,17 @@ func (x *DaemonRecord) GetUpdatedAt() *timestamppb.Timestamp {
 
 // DaemonRuntimeProjection 来自 Controller Directory 内存，Controller 重启后必须由 Edge 重建。
 type DaemonRuntimeProjection struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Online        bool                   `protobuf:"varint,1,opt,name=online,proto3" json:"online,omitempty"`
-	EdgeId        string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	EdgeName      string                 `protobuf:"bytes,3,opt,name=edge_name,json=edgeName,proto3" json:"edge_name,omitempty"`
-	EdgeRegion    string                 `protobuf:"bytes,4,opt,name=edge_region,json=edgeRegion,proto3" json:"edge_region,omitempty"`
-	BootId        string                 `protobuf:"bytes,5,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	ConnectionId  string                 `protobuf:"bytes,6,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	Generation    uint64                 `protobuf:"varint,7,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Online             bool                   `protobuf:"varint,1,opt,name=online,proto3" json:"online,omitempty"`
+	EdgeId             string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	EdgeName           string                 `protobuf:"bytes,3,opt,name=edge_name,json=edgeName,proto3" json:"edge_name,omitempty"`
+	EdgeRegion         string                 `protobuf:"bytes,4,opt,name=edge_region,json=edgeRegion,proto3" json:"edge_region,omitempty"`
+	BootId             string                 `protobuf:"bytes,5,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
+	ConnectionId       string                 `protobuf:"bytes,6,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	Generation         uint64                 `protobuf:"varint,7,opt,name=generation,proto3" json:"generation,omitempty"`
+	EdgePublicEndpoint string                 `protobuf:"bytes,8,opt,name=edge_public_endpoint,json=edgePublicEndpoint,proto3" json:"edge_public_endpoint,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DaemonRuntimeProjection) Reset() {
@@ -230,6 +231,13 @@ func (x *DaemonRuntimeProjection) GetGeneration() uint64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *DaemonRuntimeProjection) GetEdgePublicEndpoint() string {
+	if x != nil {
+		return x.EdgePublicEndpoint
+	}
+	return ""
 }
 
 type ManagedDaemon struct {
@@ -1087,7 +1095,7 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe6\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x98\x02\n" +
 	"\x17DaemonRuntimeProjection\x12\x16\n" +
 	"\x06online\x18\x01 \x01(\bR\x06online\x12\x17\n" +
 	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12\x1b\n" +
@@ -1098,7 +1106,8 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\rconnection_id\x18\x06 \x01(\tR\fconnectionId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\a \x01(\x04R\n" +
-	"generation\"\x8a\x01\n" +
+	"generation\x120\n" +
+	"\x14edge_public_endpoint\x18\b \x01(\tR\x12edgePublicEndpoint\"\x8a\x01\n" +
 	"\rManagedDaemon\x125\n" +
 	"\x06daemon\x18\x01 \x01(\v2\x1d.muxvia.cloud.v1.DaemonRecordR\x06daemon\x12B\n" +
 	"\aruntime\x18\x02 \x01(\v2(.muxvia.cloud.v1.DaemonRuntimeProjectionR\aruntime\"\x82\x01\n" +

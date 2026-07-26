@@ -54,7 +54,7 @@ function renderDaemons() {
     const row = document.createElement('tr'); const daemon = item.daemon || {}; const runtime = item.runtime || {};
     row.append(identityCell(daemon.display_name, daemon.daemon_id), identityCell(daemon.account_name, daemon.account_id), identityCell(daemon.device_id, daemon.device_fingerprint));
     row.append(statusCell(runtime.online, runtime.online ? '在线' : (daemon.revoked ? '已撤销' : '离线')));
-    row.append(identityCell(runtime.online ? runtime.edge_name : '无', runtime.online ? `${runtime.edge_region} · ${runtime.edge_id}` : '未注册到 Edge'));
+    row.append(identityCell(runtime.online ? runtime.edge_name : '无', runtime.online ? `${runtime.edge_public_endpoint} · ${runtime.edge_region} · ${runtime.edge_id}` : '未注册到 Edge'));
     [runtime.online ? runtime.generation : '-', formatTime(daemon.created_at)].forEach((value) => { const cell = document.createElement('td'); cell.textContent = text(value); row.append(cell); });
     return row;
   }));

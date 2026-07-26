@@ -30,6 +30,7 @@ message DaemonRuntimeProjection {
   string boot_id = 5;
   string connection_id = 6;
   uint64 generation = 7;
+  string edge_public_endpoint = 8;
 }
 
 message ManagedDaemon {

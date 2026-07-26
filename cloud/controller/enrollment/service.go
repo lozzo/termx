@@ -156,7 +156,7 @@ func (service *Service) ListManagedDaemons(ctx context.Context) (*cloudv1.ListDa
 			return nil, locateErr
 		} else if found {
 			edge := edgeByID[location.EdgeID]
-			managed.Runtime = &cloudv1.DaemonRuntimeProjection{Online: true, EdgeId: location.EdgeID, EdgeName: edge.Name, EdgeRegion: edge.Region, BootId: location.BootID, ConnectionId: location.ConnectionID, Generation: location.Generation}
+			managed.Runtime = &cloudv1.DaemonRuntimeProjection{Online: true, EdgeId: location.EdgeID, EdgeName: edge.Name, EdgeRegion: edge.Region, EdgePublicEndpoint: edge.PublicEndpoint, BootId: location.BootID, ConnectionId: location.ConnectionID, Generation: location.Generation}
 		}
 		response.Daemons = append(response.Daemons, managed)
 	}
