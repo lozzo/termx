@@ -3,7 +3,6 @@ package runtimepath
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -18,7 +17,8 @@ func TestSocketPathUsesRuntimeDirectoryAndNativeSeparators(t *testing.T) {
 func TestSocketPathFallsBackToUserScopedTemporaryPath(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	got := SocketPath("muxvia.sock")
-	if filepath.Dir(got) != os.TempDir() || filepath.Base(got) == "muxvia.sock" || !strings.HasSuffix(got, ".sock") {
-		t.Fatalf("fallback socket path is not user scoped: %q", got)
+	want := filepath.Join(os.TempDir(), "muxvia-"+userDiscriminator(), "muxvia.sock")
+	if got != want {
+		t.Fatalf("fallback socket path = %q, want user-scoped path %q", got, want)
 	}
 }
