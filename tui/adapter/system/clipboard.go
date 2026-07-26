@@ -2,10 +2,8 @@
 package systemadapter
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"time"
 
 	"github.com/muxvia/muxvia/tui/port"
@@ -23,58 +21,29 @@ const clipboardCommandTimeout = 1500 * time.Millisecond
 func (service *ClipboardService) Read(ctx context.Context) (port.ClipboardReadResult, error) {
 	readCtx, cancel := context.WithTimeout(ctx, clipboardCommandTimeout)
 	defer cancel()
-	for _, spec := range clipboardReadCommands() {
-		cmd := exec.CommandContext(readCtx, spec.name, spec.args...)
-		out, err := cmd.Output()
-		if err == nil {
-			return port.ClipboardReadResult{Text: string(out)}, nil
-		}
+	text, err := readSystemClipboard(readCtx)
+	if err != nil {
+		return port.ClipboardReadResult{}, fmt.Errorf("read system clipboard: %w", err)
 	}
-	return port.ClipboardReadResult{}, fmt.Errorf("no system clipboard command available")
+	return port.ClipboardReadResult{Text: text}, nil
 }
 
 // Write 把文本写入当前宿主平台剪贴板；没有可用命令时明确失败。
 func (service *ClipboardService) Write(ctx context.Context, req port.ClipboardWriteRequest) error {
-	service.lastCopied = req.Text
 	if req.Text == "" {
+		service.lastCopied = ""
 		return nil
 	}
 	writeCtx, cancel := context.WithTimeout(ctx, clipboardCommandTimeout)
 	defer cancel()
-	for _, spec := range clipboardWriteCommands() {
-		cmd := exec.CommandContext(writeCtx, spec.name, spec.args...)
-		cmd.Stdin = bytes.NewBufferString(req.Text)
-		if err := cmd.Run(); err == nil {
-			return nil
-		}
+	if err := writeSystemClipboard(writeCtx, req.Text); err != nil {
+		return fmt.Errorf("write system clipboard: %w", err)
 	}
-	return fmt.Errorf("no system clipboard command available")
+	service.lastCopied = req.Text
+	return nil
 }
 
 // LastCopy 返回该 adapter 最近一次接收的写入文本，用于 TUI 内部粘贴投影。
 func (service *ClipboardService) LastCopy() string {
 	return service.lastCopied
-}
-
-type clipboardCommandSpec struct {
-	name string
-	args []string
-}
-
-func clipboardWriteCommands() []clipboardCommandSpec {
-	return []clipboardCommandSpec{
-		{name: "wl-copy"},
-		{name: "xclip", args: []string{"-selection", "clipboard", "-in"}},
-		{name: "xsel", args: []string{"--clipboard", "--input"}},
-		{name: "pbcopy"},
-	}
-}
-
-func clipboardReadCommands() []clipboardCommandSpec {
-	return []clipboardCommandSpec{
-		{name: "wl-paste"},
-		{name: "xclip", args: []string{"-selection", "clipboard", "-out"}},
-		{name: "xsel", args: []string{"--clipboard", "--output"}},
-		{name: "pbpaste"},
-	}
 }
