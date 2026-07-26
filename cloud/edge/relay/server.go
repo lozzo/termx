@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/edge/policy"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/pion/transport/v4/stdnet"
 	turn "github.com/pion/turn/v4"
 )
 
@@ -303,7 +304,11 @@ func newTrackedGenerator(publicIP net.IP, listenHost string) *trackedGenerator {
 	if listenHost == "" {
 		listenHost = "0.0.0.0"
 	}
-	return &trackedGenerator{base: &turn.RelayAddressGeneratorStatic{RelayAddress: publicIP, Address: listenHost}, conns: make(map[string]*trackedPacketConn)}
+	return &trackedGenerator{base: &turn.RelayAddressGeneratorStatic{
+		RelayAddress: publicIP, Address: listenHost,
+		// TURN allocation 只需要标准 UDP socket；跳过接口枚举，保持 Edge systemd 无需开放 AF_NETLINK。
+		Net: &stdnet.Net{},
+	}, conns: make(map[string]*trackedPacketConn)}
 }
 
 func (generator *trackedGenerator) Validate() error { return generator.base.Validate() }
