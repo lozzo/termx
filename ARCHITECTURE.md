@@ -1406,13 +1406,21 @@ R6 通过 `a150e684` 建立同一 Edge 进程内的 Pion TURN UDP/TCP、短期 R
 
 最终 Android ARM64 debug APK SHA-256 为 `f9d203861a7e0b31412826a8cdb3cb0563309739c96c7739d9a76b5dbabe79ab`。Playwright 1.62.0 在 API 35 ARM64 模拟器的真实 App UI 中选择 Muxvia Cloud、强制 Relay only + UDP，连接投影显示 `Actual path=Relay`、`Relay transport=UDP`、RTT `102-105 ms`；随后打开远端 `/bin/cat` 并零延迟输入 `muxvia-r6-android-relay-ordered-20260726`，daemon authoritative live screen 得到两次完整回显，Android crash 扫描为空。关闭 App 后，线上 Controller 收到并结算 UDP usage，Edge outbox 副本为 `pending_usage_events=0`；当前 Edge 聚合为 `121` 个事件、ingress `767705`、egress `785859` 字节。UDP/TCP integration 证明 Controller 中断时租约内数据面继续、恢复后 durable usage 清空；隔离 PostgreSQL schema 证明重复 event ACK 不会重复增加 aggregate，测试 schema 已删除。
 
-### 32.10 R7：账号、交易与完整后台（当前最早未完成切片）
+### 32.10 R7：账号、交易与完整后台（已完成）
 
 - 完成套餐、订单、支付、订阅、Entitlement 和运营 mutation。
 - 完成第 12、29 节全部菜单、路由、表格、表单和实时操作。
 - 中文默认、稳定侧栏、无全屏重复 loading 进入 Playwright 门禁。
 
-### 32.11 R8：证书、升级与生产化
+R7 通过 `f0c87300` 建立 Proto-first 账号、角色、会话、交易、Subscription、Entitlement、运营 mutation、审计和 PostgreSQL `0004`，通过 `95ba21b5` 收口管理员引导参数，通过 `2eaef74d` 增加可重复执行的线上 Playwright 门禁并修正手机抽屉关闭后仍拦截点击、窄屏查询按钮换行的问题。运营后台默认简体中文，登录后始终通过左侧导航或手机抽屉进入独立的总览、Edge、daemon、实时连接、用户与权限、套餐、订阅、订单与交易、证书、用量与结算、审计和系统模块；各模块拥有独立路由和内容，不再使用全屏单页堆叠或重复 boot loading。
+
+2026-07-26 按开发阶段策略完整重建了 `muxvia_staging` schema，并重新执行 `0001` 到 `0004`；最终数据库只包含重建后的系统管理员、当前 Cloud 配置和唯一 CN1 Edge，不保留旧 daemon、Hub/Relay 拓扑、连接、交易或迁移期表。重建前的 Controller 数据库 dump、二进制和 unit/env 备份位于 `/var/backups/muxvia/r7-20260726T141921Z`，Edge 旧运行态备份位于 `/var/backups/muxvia/r7-20260726T142120Z`；它们不进入活动服务或新数据库。
+
+最终在线开发环境的 Controller 位于 `155.94.155.192`，公开入口为 `https://muxvia-controller.omscd.com:18444`，二进制 SHA-256 为 `328d4b30353ae67e7560936dfd5f28f2e7d82107029d95e82c4779da6287ca3a`。唯一 Edge `acc6075f-a28e-4b08-a67c-a419b5709199` 的区域为 `CN1`，入口为 `muxvia-cn1.omscd.com:41102`，容量为 `1000`，二进制 SHA-256 为 `a7da7541af5a8f06ab283f39ecce1e5148f3a0c396fe72a6745a38a895779c5d`。Controller 与 Edge 均为 `active/ready`、`NRestarts=0`，活动 unit 中没有旧 Controller、Hub、Relay 或 Edge 服务。国内 Edge 不再把跨境下载速度当作安装门禁：最终安装先由本地转传同一 artifact，只替换生成脚本中的 artifact 下载步骤，固定 SHA-256、Ed25519 发布签名、CSR、一次性 bootstrap 和 systemd 装配仍由原脚本验证。R8 必须把区域 artifact 分发和 bootstrap 有效期顺序纳入正式升级设计。
+
+Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel 7 `390x844` 手机验收：桌面固定侧栏逐项进入 11 个管理模块并查看真实在线 CN1 Edge，手机连续打开抽屉进入 4 个模块，关闭后不再遮挡或拦截内容，用户表加载真实系统管理员且查询按钮保持单行。最终线上结果为 2 项通过、2 项按设备项目正常跳过；页面 error、console error、横向页面溢出和服务 crash 门禁均通过。
+
+### 32.11 R8：证书、升级与生产化（当前最早未完成切片）
 
 - 完成证书档案、CSR/ACME、灰度发布、原子热加载和回滚。
 - 完成 artifact 签名、Edge drain/upgrade/rollback。
