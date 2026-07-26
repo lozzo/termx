@@ -40,13 +40,26 @@ function Stop-InstalledDaemon {
     }
 }
 
+function Remove-InstallDirectory {
+    if (-not (Test-Path -LiteralPath $InstallDirectory)) { return }
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        try {
+            Remove-Item -LiteralPath $InstallDirectory -Recurse -Force -ErrorAction Stop
+            return
+        } catch {
+            $lastError = $_
+            Start-Sleep -Milliseconds 100
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "removing the install directory failed: $lastError"
+}
+
 if ($Uninstall) {
     Stop-InstalledDaemon
     Remove-ItemProperty -Path $runKey -Name $runName -ErrorAction SilentlyContinue
     Update-UserPath $InstallDirectory $false
-    if (Test-Path -LiteralPath $InstallDirectory) {
-        Remove-Item -LiteralPath $InstallDirectory -Recurse -Force
-    }
+    Remove-InstallDirectory
     Write-Host 'Muxvia was removed from the current user account'
     return
 }
