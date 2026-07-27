@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"os"
@@ -57,6 +58,16 @@ func TestManagerHotReloadAndFailureKeepsCurrentCertificate(t *testing.T) {
 	}
 	if serial := handshakeSerial(t, tlsConfig, pool); serial != 2 {
 		t.Fatalf("reloaded handshake serial=%d want=2", serial)
+	}
+	stale := &cloudv1.EdgeCertificateBundle{TargetEdgeId: "edge-1", CertificateProfileId: "profile-1", Revision: 1, PublicEndpoint: "edge.example.com:443", CertificateChainPem: oldCertificate, PrivateKeyPem: oldKey}
+	if err := manager.Apply(context.Background(), stale); !errors.Is(err, ErrStaleRevision) {
+		t.Fatalf("stale certificate revision error=%v want %v", err, ErrStaleRevision)
+	}
+	if profileID, revision := manager.Current(); profileID != "profile-1" || revision != 2 {
+		t.Fatalf("stale apply changed current=%s/%d", profileID, revision)
+	}
+	if serial := handshakeSerial(t, tlsConfig, pool); serial != 2 {
+		t.Fatalf("stale apply changed handshake serial=%d want=2", serial)
 	}
 	info, err := os.Stat(stateFile)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/muxvia/muxvia/cloud/controller/certificate"
+	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 )
 
@@ -140,30 +141,57 @@ func (database *Database) GetCertificateBinding(ctx context.Context, edgeID stri
 	return binding, err == nil, err
 }
 
-// BindCertificateProfile 创建或 CAS 更新单个 Edge 的证书选择。
-func (database *Database) BindCertificateProfile(ctx context.Context, edgeID string, profile certificate.Profile, expectedRevision uint64, actorID string, now time.Time) (certificate.Binding, error) {
+// BindCertificateProfile 锁定当前 Edge 与档案后创建或 CAS 更新证书选择。
+// 事务外读取的 revision 只作为 optimistic fence，不能覆盖事务内的域名或档案真值。
+func (database *Database) BindCertificateProfile(ctx context.Context, edge edgeconfig.Edge, profile certificate.Profile, expectedRevision uint64, actorID string, now time.Time) (certificate.Binding, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return certificate.Binding{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var currentEndpoint string
+	var currentEdgeRevision uint64
+	err = tx.QueryRow(ctx, `SELECT public_endpoint,revision FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, edge.ID).Scan(&currentEndpoint, &currentEdgeRevision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return certificate.Binding{}, certificate.ErrNotFound
+	}
+	if err != nil {
+		return certificate.Binding{}, err
+	}
+	if currentEdgeRevision != edge.Revision {
+		return certificate.Binding{}, certificate.ErrRevisionConflict
+	}
+	currentProfile := certificate.Profile{ID: profile.ID}
+	err = tx.QueryRow(ctx, `SELECT dns_names,revision FROM certificate_profiles WHERE certificate_profile_id=$1 FOR SHARE`, profile.ID).Scan(&currentProfile.DNSNames, &currentProfile.Revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return certificate.Binding{}, certificate.ErrNotFound
+	}
+	if err != nil {
+		return certificate.Binding{}, err
+	}
+	if currentProfile.Revision != profile.Revision {
+		return certificate.Binding{}, certificate.ErrRevisionConflict
+	}
+	if err := certificate.VerifyEndpoint(currentProfile, currentEndpoint); err != nil {
+		return certificate.Binding{}, err
+	}
 	var current uint64
-	err = tx.QueryRow(ctx, `SELECT binding_revision FROM edge_certificate_bindings WHERE edge_id=$1 FOR UPDATE`, edgeID).Scan(&current)
+	err = tx.QueryRow(ctx, `SELECT binding_revision FROM edge_certificate_bindings WHERE edge_id=$1 FOR UPDATE`, edge.ID).Scan(&current)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows) && expectedRevision == 0:
-		_, err = tx.Exec(ctx, `INSERT INTO edge_certificate_bindings(edge_id,certificate_profile_id,binding_revision,desired_revision,updated_at) VALUES($1,$2,1,$3,$4)`, edgeID, profile.ID, profile.Revision, now)
+		_, err = tx.Exec(ctx, `INSERT INTO edge_certificate_bindings(edge_id,certificate_profile_id,binding_revision,desired_revision,updated_at) VALUES($1,$2,1,$3,$4)`, edge.ID, profile.ID, profile.Revision, now)
 	case err == nil && current == expectedRevision && expectedRevision > 0:
-		_, err = tx.Exec(ctx, `UPDATE edge_certificate_bindings SET certificate_profile_id=$1,binding_revision=binding_revision+1,desired_revision=$2,last_error_code='',last_error_message='',updated_at=$3 WHERE edge_id=$4`, profile.ID, profile.Revision, now, edgeID)
+		_, err = tx.Exec(ctx, `UPDATE edge_certificate_bindings SET certificate_profile_id=$1,binding_revision=binding_revision+1,desired_revision=$2,last_error_code='',last_error_message='',updated_at=$3 WHERE edge_id=$4`, profile.ID, profile.Revision, now, edge.ID)
 	case err == nil || errors.Is(err, pgx.ErrNoRows):
 		return certificate.Binding{}, certificate.ErrRevisionConflict
 	}
 	if err != nil {
 		return certificate.Binding{}, err
 	}
-	if err := insertOperatorAudit(ctx, tx, actorID, "certificate.bind", "edge", edgeID, "绑定证书档案 "+profile.ID, "applied", now); err != nil {
+	if err := insertOperatorAudit(ctx, tx, actorID, "certificate.bind", "edge", edge.ID, "绑定证书档案 "+profile.ID, "applied", now); err != nil {
 		return certificate.Binding{}, err
 	}
-	binding, err := scanCertificateBinding(tx.QueryRow(ctx, certificateBindingSelect+` WHERE binding.edge_id=$1`, edgeID))
+	binding, err := scanCertificateBinding(tx.QueryRow(ctx, certificateBindingSelect+` WHERE binding.edge_id=$1`, edge.ID))
 	if err != nil {
 		return certificate.Binding{}, err
 	}
@@ -180,7 +208,15 @@ func (database *Database) UnbindCertificateProfile(ctx context.Context, edgeID s
 		return certificate.Binding{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	binding, err := scanCertificateBinding(tx.QueryRow(ctx, certificateBindingSelect+` WHERE binding.edge_id=$1 FOR UPDATE`, edgeID))
+	var edgeExists bool
+	err = tx.QueryRow(ctx, `SELECT true FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, edgeID).Scan(&edgeExists)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return certificate.Binding{}, certificate.ErrNotFound
+	}
+	if err != nil {
+		return certificate.Binding{}, err
+	}
+	binding, err := scanCertificateBinding(tx.QueryRow(ctx, certificateBindingSelect+` WHERE binding.edge_id=$1 FOR UPDATE OF binding`, edgeID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return certificate.Binding{}, certificate.ErrNotFound
 	}

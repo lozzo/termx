@@ -61,8 +61,9 @@ type Service struct {
 }
 
 type externalCommand struct {
-	payload any
-	result  chan error
+	payload            any
+	certificateRefresh bool
+	result             chan error
 }
 
 // NewService 校验 Controller 身份、心跳和 Directory，失败时不创建部分可用 service。
@@ -174,9 +175,11 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		}
 	}
 	if service.config.DesiredCertificate != nil {
-		desired, err := service.config.DesiredCertificate(stream.Context(), certificateEdgeID)
-		// Controller secret 暂时不可读不能中断 Edge 的现有 P2P/Relay；绑定保持 pending，重连后继续收敛。
-		if err == nil && desired != nil && (hello.GetCertificateProfileId() != desired.GetCertificateProfileId() || hello.GetCertificateVersion() != desired.GetRevision()) {
+		desired, err := service.reconcileDesiredCertificate(stream.Context(), certificateEdgeID, hello)
+		if err != nil {
+			return status.Errorf(codes.Unavailable, "reconcile Edge applied certificate: %v", err)
+		}
+		if desired != nil {
 			commandSeq++
 			if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_CertificateBundle{CertificateBundle: desired})); err != nil {
 				return status.Errorf(codes.Unavailable, "send Edge desired certificate: %v", err)
@@ -207,8 +210,17 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		case err = <-writerErrors:
 			return status.Errorf(codes.Unavailable, "send Controller command: %v", err)
 		case request := <-external:
+			payload, shouldSend, resolveErr := service.resolveExternalCommand(stream.Context(), certificateEdgeID, request)
+			if resolveErr != nil {
+				request.result <- resolveErr
+				continue
+			}
+			if !shouldSend {
+				request.result <- nil
+				continue
+			}
 			commandSeq++
-			sendErr := send(service.command(connectionID, commandSeq, request.payload))
+			sendErr := send(service.command(connectionID, commandSeq, payload))
 			request.result <- sendErr
 			continue
 		case received := <-inbound:
@@ -251,6 +263,27 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 			}
 		}
 	}
+}
+
+// reconcileDesiredCertificate 使用认证后的 EdgeHello 修复可能丢失的 applied 回执。
+// Hello 与 desired 不同才返回待下发证书；幂等落库失败会关闭当前流，由 Edge 重连重试。
+func (service *Service) reconcileDesiredCertificate(ctx context.Context, edgeID string, hello *cloudv1.EdgeHello) (*cloudv1.EdgeCertificateBundle, error) {
+	desired, err := service.config.DesiredCertificate(ctx, edgeID)
+	// Controller secret 暂时不可读不能中断 Edge 的现有 P2P/Relay；绑定保持 pending，重连后继续收敛。
+	if err != nil || desired == nil {
+		return nil, nil
+	}
+	if hello.GetCertificateProfileId() != desired.GetCertificateProfileId() || hello.GetCertificateVersion() != desired.GetRevision() {
+		return desired, nil
+	}
+	if service.config.CertificateApplied == nil {
+		return nil, nil
+	}
+	applied := &cloudv1.CertificateApplied{CertificateProfileId: desired.GetCertificateProfileId(), Revision: desired.GetRevision(), Applied: true}
+	if err := service.config.CertificateApplied(ctx, edgeID, applied); err != nil {
+		return nil, fmt.Errorf("persist Hello certificate reconciliation: %w", err)
+	}
+	return nil, nil
 }
 
 func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent) (any, error) {
@@ -366,13 +399,17 @@ func (service *Service) DisconnectSession(ctx context.Context, sessionID string,
 }
 
 func (service *Service) sendExternal(ctx context.Context, connectionID string, payload any) error {
+	return service.sendExternalRequest(ctx, connectionID, externalCommand{payload: payload})
+}
+
+func (service *Service) sendExternalRequest(ctx context.Context, connectionID string, request externalCommand) error {
 	service.connectionsMu.RLock()
 	outbound := service.connections[connectionID]
 	service.connectionsMu.RUnlock()
 	if outbound == nil {
 		return directory.ErrStaleConnection
 	}
-	request := externalCommand{payload: payload, result: make(chan error, 1)}
+	request.result = make(chan error, 1)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -386,12 +423,12 @@ func (service *Service) sendExternal(ctx context.Context, connectionID string, p
 	}
 }
 
-// PushCertificate 把证书包发送给当前在线的指定 Edge generation。
-// 私钥只进入该 Edge 已认证的 mTLS writer queue，离线时返回 stale 供持久 desired state 等待重连。
-func (service *Service) PushCertificate(ctx context.Context, edgeID string, bundle *cloudv1.EdgeCertificateBundle) error {
+// RefreshCertificate 通知当前在线的 Edge writer 在分配 command sequence 时读取最新持久 desired。
+// 通知本身不携带私钥或旧 bundle；离线时返回 stale，持久 desired 等待重连收敛。
+func (service *Service) RefreshCertificate(ctx context.Context, edgeID string) error {
 	edgeID = strings.TrimSpace(edgeID)
-	if bundle == nil || edgeID == "" || bundle.GetTargetEdgeId() != edgeID || bundle.GetCertificateProfileId() == "" || bundle.GetRevision() == 0 || len(bundle.GetCertificateChainPem()) == 0 || len(bundle.GetPrivateKeyPem()) == 0 {
-		return errors.New("targeted Edge certificate bundle is required")
+	if edgeID == "" || service.config.DesiredCertificate == nil {
+		return errors.New("Edge ID and desired certificate loader are required")
 	}
 	service.connectionsMu.RLock()
 	connectionID := service.edgeConnections[edgeID]
@@ -399,7 +436,24 @@ func (service *Service) PushCertificate(ctx context.Context, edgeID string, bund
 	if connectionID == "" {
 		return directory.ErrStaleConnection
 	}
-	return service.sendExternal(ctx, connectionID, &cloudv1.ControllerCommand_CertificateBundle{CertificateBundle: bundle})
+	return service.sendExternalRequest(ctx, connectionID, externalCommand{certificateRefresh: true})
+}
+
+func (service *Service) resolveExternalCommand(ctx context.Context, edgeID string, request externalCommand) (any, bool, error) {
+	if !request.certificateRefresh {
+		return request.payload, true, nil
+	}
+	desired, err := service.config.DesiredCertificate(ctx, edgeID)
+	if err != nil {
+		return nil, false, err
+	}
+	if desired == nil {
+		return nil, false, nil
+	}
+	if desired.GetTargetEdgeId() != edgeID || desired.GetCertificateProfileId() == "" || desired.GetRevision() == 0 || len(desired.GetCertificateChainPem()) == 0 || len(desired.GetPrivateKeyPem()) == 0 {
+		return nil, false, errors.New("current targeted Edge certificate bundle is invalid")
+	}
+	return &cloudv1.ControllerCommand_CertificateBundle{CertificateBundle: desired}, true, nil
 }
 
 func waitRuntimeCommand(ctx context.Context, waiter <-chan *cloudv1.EdgeCommandResult) cloudv1.RuntimeCommandResult {

@@ -17,6 +17,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var (
+	// ErrStaleRevision 表示同一档案的旧 revision 晚于新 revision 到达；本机证书真值不能降序。
+	ErrStaleRevision = errors.New("certificate profile revision is stale")
+)
+
 // Config 是 Edge 本地证书 owner 的身份和单文件持久化路径。
 type Config struct {
 	EdgeID    string
@@ -86,9 +91,14 @@ func (manager *Manager) Apply(ctx context.Context, bundle *cloudv1.EdgeCertifica
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
 	validated, err := manager.validate(bundle, true)
 	if err != nil {
 		return err
+	}
+	if manager.current != nil && manager.current.GetCertificateProfileId() == bundle.GetCertificateProfileId() && manager.current.GetRevision() > bundle.GetRevision() {
+		return ErrStaleRevision
 	}
 	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(bundle)
 	if err != nil {
@@ -97,10 +107,8 @@ func (manager *Manager) Apply(ctx context.Context, bundle *cloudv1.EdgeCertifica
 	if err := atomicWrite(manager.config.StateFile, payload); err != nil {
 		return fmt.Errorf("persist managed Edge certificate: %w", err)
 	}
-	manager.mu.Lock()
 	manager.loader.Replace(validated.Certificate)
 	manager.current = proto.Clone(bundle).(*cloudv1.EdgeCertificateBundle)
-	manager.mu.Unlock()
 	return nil
 }
 

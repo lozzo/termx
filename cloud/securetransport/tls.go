@@ -96,9 +96,15 @@ func ValidateServerPair(certificatePEM, privateKeyPEM []byte, publicEndpoint str
 	if len(pair.Certificate) == 0 {
 		return nil, errors.New("certificate chain contains no certificate")
 	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		return nil, fmt.Errorf("parse leaf certificate: %w", err)
+	var leaf *x509.Certificate
+	for index, der := range pair.Certificate {
+		certificate, parseErr := x509.ParseCertificate(der)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse certificate chain item %d: %w", index+1, parseErr)
+		}
+		if index == 0 {
+			leaf = certificate
+		}
 	}
 	if len(leaf.DNSNames) == 0 {
 		return nil, errors.New("certificate must contain at least one DNS SAN")

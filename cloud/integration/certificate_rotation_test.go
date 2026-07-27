@@ -11,10 +11,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,12 +78,16 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	}
 	defer directoryState.Close()
 	var certificateService *controllercertificate.Service
+	var dropNextCertificateApplied atomic.Bool
 	controlService, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: 100 * time.Millisecond, HeartbeatTimeout: time.Second, Directory: directoryState,
 		DesiredCertificate: func(ctx context.Context, edgeID string) (*cloudv1.EdgeCertificateBundle, error) {
 			return certificateService.BundleForEdge(ctx, edgeID)
 		},
 		CertificateApplied: func(ctx context.Context, edgeID string, applied *cloudv1.CertificateApplied) error {
+			if dropNextCertificateApplied.CompareAndSwap(true, false) {
+				return nil
+			}
 			return certificateService.RecordApplied(ctx, edgeID, applied)
 		},
 	})
@@ -166,9 +172,31 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	if profileID == "" || upload1.GetProfile().GetRevision() != 1 || upload1.GetProfile().GetSha256Fingerprint() != fingerprint1 {
 		t.Fatalf("unexpected uploaded profile: %+v", upload1.GetProfile())
 	}
+	staleProfile, err := database.GetCertificateProfile(ctx, profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleEdge := edge
+	dropNextCertificateApplied.Store(true)
 	if _, err := certificateService.BindProfile(ctx, &cloudv1.BindCertificateProfileRequest{EdgeId: edge.ID, CertificateProfileId: profileID}, actor.GetAccountId()); err != nil {
 		t.Fatal(err)
 	}
+	eventually(t, 5*time.Second, func() bool {
+		return !dropNextCertificateApplied.Load() && peerCertificateFingerprint(t, edgeRuntime.PublicAddress(), managedRoots) == fingerprint1
+	})
+	pending, err := certificateService.BindingForEdge(ctx, edge.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.GetSyncState() != cloudv1.CertificateSyncState_CERTIFICATE_SYNC_STATE_PENDING || pending.GetAppliedRevision() != 0 {
+		t.Fatalf("dropped applied receipt binding=%+v want pending revision 0", pending)
+	}
+	shutdownEdge(t, edgeRuntime)
+	eventually(t, 2*time.Second, func() bool {
+		_, found, lookupErr := directoryState.Edge(context.Background(), edge.ID)
+		return lookupErr == nil && !found
+	})
+	edgeRuntime = startEdge("r8-edge-boot-applied-reconcile")
 	waitCertificateApplied(t, certificateService, edge.ID, profileID, 1)
 	if got := peerCertificateFingerprint(t, edgeRuntime.PublicAddress(), managedRoots); got != fingerprint1 || got == initialFingerprint {
 		t.Fatalf("online TLS fingerprint=%s want new=%s initial=%s", got, fingerprint1, initialFingerprint)
@@ -223,6 +251,41 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	waitCertificateApplied(t, certificateService, edge.ID, profileID, 3)
 	if got := peerCertificateFingerprint(t, edgeRuntime.PublicAddress(), managedRoots); got != fingerprint3 {
 		t.Fatalf("reconnected TLS fingerprint=%s want=%s", got, fingerprint3)
+	}
+
+	if _, err := database.BindCertificateProfile(ctx, edge, staleProfile, 1, actor.GetAccountId(), time.Now().UTC()); !errors.Is(err, controllercertificate.ErrRevisionConflict) {
+		t.Fatalf("bind with stale certificate profile error=%v want revision conflict", err)
+	}
+	currentProfile, err := database.GetCertificateProfile(ctx, profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentEdge, err := edges.GetEdge(ctx, edge.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedEdge, err := edges.UpdateEdge(ctx, edgeconfig.UpdateInput{
+		EdgeID: currentEdge.ID, ExpectedRevision: currentEdge.Revision, Name: currentEdge.Name + " updated", Region: currentEdge.Region,
+		Capacity: currentEdge.Capacity, PublicEndpoint: currentEdge.PublicEndpoint, Enabled: currentEdge.Enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.BindCertificateProfile(ctx, staleEdge, currentProfile, 1, actor.GetAccountId(), time.Now().UTC()); !errors.Is(err, controllercertificate.ErrRevisionConflict) {
+		t.Fatalf("bind with stale Edge error=%v want revision conflict", err)
+	}
+	if _, err := edges.UpdateEdge(ctx, edgeconfig.UpdateInput{
+		EdgeID: updatedEdge.ID, ExpectedRevision: updatedEdge.Revision, Name: updatedEdge.Name, Region: updatedEdge.Region,
+		Capacity: updatedEdge.Capacity, PublicEndpoint: "uncovered.example.invalid:41102", Enabled: updatedEdge.Enabled,
+	}); err == nil {
+		t.Fatal("bound Edge accepted a public endpoint outside the current certificate DNS SAN")
+	}
+	persistedEdge, err := edges.GetEdge(ctx, edge.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persistedEdge.PublicEndpoint != updatedEdge.PublicEndpoint || persistedEdge.Revision != updatedEdge.Revision {
+		t.Fatalf("rejected endpoint update changed Edge: %+v", persistedEdge)
 	}
 
 	profiles, err := certificateService.ListProfiles(ctx)

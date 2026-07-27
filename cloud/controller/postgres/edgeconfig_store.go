@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/muxvia/muxvia/cloud/controller/certificate"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
@@ -54,13 +55,33 @@ func (database *Database) CreateEdge(ctx context.Context, edge edgeconfig.Edge, 
 	return tx.Commit(ctx)
 }
 
-// UpdateEdge 使用 revision CAS 并在同一事务插入不可变新 config version。
+// UpdateEdge 锁定 Edge 后使用 revision CAS，并在同一事务校验当前证书绑定和插入新 config version。
 func (database *Database) UpdateEdge(ctx context.Context, input edgeconfig.UpdateInput, updated edgeconfig.Edge) error {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var currentRevision uint64
+	err = tx.QueryRow(ctx, `SELECT revision FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, updated.ID).Scan(&currentRevision)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && currentRevision != input.ExpectedRevision) {
+		return edgeconfig.ErrRevisionConflict
+	}
+	if err != nil {
+		return err
+	}
+	var boundProfile certificate.Profile
+	err = tx.QueryRow(ctx, `SELECT certificate_profile_id::text FROM edge_certificate_bindings WHERE edge_id=$1`, updated.ID).Scan(&boundProfile.ID)
+	if err == nil {
+		if err := tx.QueryRow(ctx, `SELECT dns_names FROM certificate_profiles WHERE certificate_profile_id=$1 FOR SHARE`, boundProfile.ID).Scan(&boundProfile.DNSNames); err != nil {
+			return err
+		}
+		if err := certificate.VerifyEndpoint(boundProfile, updated.PublicEndpoint); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	result, err := tx.Exec(ctx, `UPDATE edge_deployments SET name=$1,region=$2,capacity=$3,public_endpoint=$4,enabled=$5,desired_config_version=$6,revision=$7,updated_at=$8 WHERE edge_id=$9 AND revision=$10`, updated.Name, updated.Region, updated.Capacity, updated.PublicEndpoint, updated.Enabled, updated.ConfigVersion, updated.Revision, updated.UpdatedAt, updated.ID, input.ExpectedRevision)
 	if err != nil {
 		return err

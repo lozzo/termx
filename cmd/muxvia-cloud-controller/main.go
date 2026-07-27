@@ -164,11 +164,11 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	var service *control.Service
 	certificateService, err := certificate.New(certificate.Config{
 		Store: database, Secrets: secretStore, Edges: edgeService,
-		Dispatcher: certificate.DispatcherFunc(func(ctx context.Context, edgeID string, bundle *cloudv1.EdgeCertificateBundle) error {
+		Dispatcher: certificate.DispatcherFunc(func(ctx context.Context, edgeID string) error {
 			if service == nil {
 				return errors.New("EdgeControl is not ready")
 			}
-			return service.PushCertificate(ctx, edgeID, bundle)
+			return service.RefreshCertificate(ctx, edgeID)
 		}),
 		Online: func(ctx context.Context, edgeID string) (bool, error) {
 			_, found, err := directoryState.Edge(ctx, edgeID)

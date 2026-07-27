@@ -68,7 +68,7 @@ type Store interface {
 	CreateCertificateProfile(context.Context, Profile, string) error
 	ReplaceCertificateProfile(context.Context, uint64, Profile, string) (string, []Binding, error)
 	GetCertificateBinding(context.Context, string) (Binding, bool, error)
-	BindCertificateProfile(context.Context, string, Profile, uint64, string, time.Time) (Binding, error)
+	BindCertificateProfile(context.Context, edgeconfig.Edge, Profile, uint64, string, time.Time) (Binding, error)
 	UnbindCertificateProfile(context.Context, string, uint64, string, time.Time) (Binding, error)
 	RecordCertificateApplied(context.Context, string, *cloudv1.CertificateApplied, time.Time) error
 }
@@ -80,17 +80,17 @@ type SecretStore interface {
 	Delete(string) error
 }
 
-// Dispatcher 把证书包发送给指定在线 Edge；离线错误不撤销持久 desired state。
+// Dispatcher 通知指定在线 Edge 重新读取当前持久 desired；通知不携带事务外旧证书包。
 type Dispatcher interface {
-	PushCertificate(context.Context, string, *cloudv1.EdgeCertificateBundle) error
+	RefreshCertificate(context.Context, string) error
 }
 
 // DispatcherFunc 把 composition root 的闭包适配为证书下发边界。
-type DispatcherFunc func(context.Context, string, *cloudv1.EdgeCertificateBundle) error
+type DispatcherFunc func(context.Context, string) error
 
-// PushCertificate 调用闭包发送证书包。
-func (function DispatcherFunc) PushCertificate(ctx context.Context, edgeID string, bundle *cloudv1.EdgeCertificateBundle) error {
-	return function(ctx, edgeID, bundle)
+// RefreshCertificate 调用闭包通知 Edge writer 读取最新 desired。
+func (function DispatcherFunc) RefreshCertificate(ctx context.Context, edgeID string) error {
+	return function(ctx, edgeID)
 }
 
 // Config 固定证书服务的持久、secret、Edge 配置和在线投影 owner。
@@ -186,7 +186,7 @@ func (service *Service) UploadProfile(ctx context.Context, request *cloudv1.Uplo
 		_ = service.config.Secrets.Delete(oldSecretRef)
 	}
 	for _, binding := range bindings {
-		service.push(ctx, binding, profile, request.GetCertificateChainPem(), request.GetPrivateKeyPem())
+		service.push(ctx, binding)
 	}
 	profile.Bindings = bindings
 	return &cloudv1.UploadCertificateProfileResponse{Profile: service.projectProfile(ctx, profile)}, nil
@@ -213,15 +213,11 @@ func (service *Service) BindProfile(ctx context.Context, request *cloudv1.BindCe
 	if err := VerifyEndpoint(profile, edge.PublicEndpoint); err != nil {
 		return nil, err
 	}
-	binding, err := service.config.Store.BindCertificateProfile(ctx, edge.ID, profile, request.GetExpectedBindingRevision(), actorID, now)
+	binding, err := service.config.Store.BindCertificateProfile(ctx, edge, profile, request.GetExpectedBindingRevision(), actorID, now)
 	if err != nil {
 		return nil, err
 	}
-	binding.EdgeName, binding.PublicEndpoint = edge.Name, edge.PublicEndpoint
-	certificatePEM, privateKeyPEM, err := service.config.Secrets.Read(profile.SecretRef)
-	if err == nil {
-		service.push(ctx, binding, profile, certificatePEM, privateKeyPEM)
-	}
+	service.push(ctx, binding)
 	return &cloudv1.BindCertificateProfileResponse{Binding: service.projectBinding(ctx, binding)}, nil
 }
 
@@ -272,8 +268,8 @@ func (service *Service) RecordApplied(ctx context.Context, edgeID string, applie
 	return service.config.Store.RecordCertificateApplied(ctx, strings.TrimSpace(edgeID), applied, service.config.Now().UTC())
 }
 
-func (service *Service) push(ctx context.Context, binding Binding, profile Profile, certificatePEM, privateKeyPEM []byte) {
-	_ = service.config.Dispatcher.PushCertificate(ctx, binding.EdgeID, bundle(binding, profile, certificatePEM, privateKeyPEM))
+func (service *Service) push(ctx context.Context, binding Binding) {
+	_ = service.config.Dispatcher.RefreshCertificate(ctx, binding.EdgeID)
 }
 
 func bundle(binding Binding, profile Profile, certificatePEM, privateKeyPEM []byte) *cloudv1.EdgeCertificateBundle {

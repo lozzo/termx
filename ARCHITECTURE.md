@@ -255,9 +255,9 @@ Controller 的 PostgreSQL 只保存重启后仍然成立、需要审计或需要
 
 证书以“证书配置档案”统一管理，可绑定一个或多个 Edge：
 
-- 首选模式是 Edge 本地生成私钥，Controller 或 ACME 流程只签发和保存证书链、版本、有效期与发布状态。私钥不离开 Edge。
-- 如果必须导入已有证书和私钥，私钥只能进入独立 secret manager/KMS 加密存储，不能以明文进入普通业务表、日志或前端响应。
-- 技术人员上传新版本或自动续期成功后，Controller 创建 staged release，通过现有 Edge 控制流通知目标节点。
+- 运营人员上传匹配的证书链和私钥；Controller 只保存一个当前 revision，并从证书解析 DNS SAN、指纹和有效期。
+- 私钥只能进入独立 secret 文件目录，不能以明文进入普通业务表、日志、审计详情或前端响应。
+- 技术人员替换档案当前内容后，Controller 通过现有 Edge 控制流通知绑定节点重新读取最新 desired；不创建 staged release、历史版本或回滚入口。
 - Edge 拉取、校验域名和证书链，写入临时文件并原子切换，成功热加载后上报 applied 版本。
 - 更新失败时继续使用仍然有效的旧证书并上报错误，不允许因半写入导致监听不可用。
 
@@ -775,7 +775,7 @@ service EdgeControl {
 - `CloseClientSession`、`CloseDaemonConnection`：有 deadline 的实时命令。
 - `RelayLeaseDecision`：grant/deny 和短期限制。
 - `UsageAck`：只确认已提交数据库的 event ID。
-- `CertificateRelease`、`ReleaseDrain`：证书或二进制发布控制。
+- `CertificateBundle`：只向目标 Edge 下发当前绑定档案的 desired revision；自动收敛不形成发布、drain 或程序升级协议。
 
 ### 22.3 AgentGateway
 
@@ -1302,7 +1302,7 @@ Edge 最少暴露：
 - 所有公开入口按 IP、账号、设备身份和 claim 类型实施有界 rate limit。
 - Proto decode 设置消息大小上限；snapshot 使用分块，不允许单个 100k 对象 message。
 - SDP、ICE、压缩数据和上传内容都必须有明确大小、数量和 deadline 上限。
-- release、DesiredConfig、ticket 和证书变更都有独立签名域和 key ID，不能复用一个无上下文签名。
+- `DesiredConfig` 与 ticket 使用彼此独立的签名域和 key ID；证书包只经目标 Edge 的认证 mTLS 控制流下发，并由 Edge 重新校验证书链、私钥、域名和有效期，不复用通用发布签名。
 
 ## 32. 实现与提交顺序
 
