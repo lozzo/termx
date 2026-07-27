@@ -3,7 +3,9 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "cloud/v1/account.proto";
+import "cloud/v1/certificate.proto";
 import "cloud/v1/commerce.proto";
+import "cloud/v1/release.proto";
 import "cloud/v1/runtime.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -175,4 +177,13 @@ service OperatorService {
   rpc SetAccountRole(SetAccountRoleRequest) returns (SetAccountRoleResponse);
   rpc DisconnectDaemon(DisconnectDaemonRequest) returns (DisconnectDaemonResponse);
   rpc DisconnectSession(DisconnectSessionRequest) returns (DisconnectSessionResponse);
+  rpc ListCertificateProfiles(ListCertificateProfilesRequest) returns (ListCertificateProfilesResponse);
+  rpc CreateCertificateProfile(CreateCertificateProfileRequest) returns (CreateCertificateProfileResponse);
+  rpc BindCertificateProfile(BindCertificateProfileRequest) returns (BindCertificateProfileResponse);
+  rpc IssueCertificateVersion(IssueCertificateVersionRequest) returns (IssueCertificateVersionResponse);
+  rpc PublishCertificateVersion(PublishCertificateVersionRequest) returns (PublishCertificateVersionResponse);
+  rpc RollbackCertificateVersion(RollbackCertificateVersionRequest) returns (RollbackCertificateVersionResponse);
+  rpc ListReleaseArtifacts(ListReleaseArtifactsRequest) returns (ListReleaseArtifactsResponse);
+  rpc StartEdgeRollout(StartEdgeRolloutRequest) returns (StartEdgeRolloutResponse);
+  rpc RollbackEdgeRelease(RollbackEdgeReleaseRequest) returns (RollbackEdgeReleaseResponse);
 }

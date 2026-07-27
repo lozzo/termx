@@ -24,7 +24,9 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloud_v1_common_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_account_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_commerce_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_certificate_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_release_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_usage_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
@@ -72,10 +74,32 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
 		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28, "command_result": 29,
+		"certificate_csr_result": 30, "certificate_applied": 31, "release_staged": 32, "release_drained": 33, "release_activation": 34, "release_result": 35,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
 		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27,
+		"certificate_csr_request": 28, "certificate_release": 29, "stage_release": 30, "drain_release": 31, "activate_release": 32,
 	})
+}
+
+// TestR8OperationsContracts 锁定证书私钥 owner 和二进制发布状态机都通过既有 EdgeControl。
+func TestR8OperationsContracts(t *testing.T) {
+	if (&CertificateVersion{}).ProtoReflect().Descriptor().Fields().ByName("private_key") != nil {
+		t.Fatal("CertificateVersion must never expose a private key")
+	}
+	if (&CertificateCSRRequest{}).ProtoReflect().Descriptor().Fields().ByName("domains") == nil {
+		t.Fatal("CertificateCSRRequest must bind the requested domains")
+	}
+	if (&SignedCertificateRelease{}).ProtoReflect().Descriptor().Fields().ByName("key_id") == nil || (&SignedEdgeReleaseManifest{}).ProtoReflect().Descriptor().Fields().ByName("key_id") == nil {
+		t.Fatal("certificate and artifact releases require independent key IDs")
+	}
+	rollout := (&EdgeReleaseRollout{}).ProtoReflect().Descriptor()
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"target_version": 4, "previous_version": 5, "state": 6, "revision": 8} {
+		field := rollout.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("EdgeReleaseRollout.%s field number=%v want=%d", name, field, number)
+		}
+	}
 }
 
 // TestR6RelayContracts 锁定 daemon 预检、短租约和幂等 usage 的跨进程边界。

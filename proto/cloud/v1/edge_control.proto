@@ -3,7 +3,9 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
+import "cloud/v1/certificate.proto";
 import "cloud/v1/edge_config.proto";
+import "cloud/v1/release.proto";
 import "cloud/v1/runtime.proto";
 import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
@@ -16,6 +18,8 @@ enum EdgeCapability {
   EDGE_CAPABILITY_CONTROL_STREAM = 1;
   EDGE_CAPABILITY_RELAY = 2;
   EDGE_CAPABILITY_USAGE_OUTBOX = 3;
+  EDGE_CAPABILITY_CERTIFICATE_ROTATION = 4;
+  EDGE_CAPABILITY_RELEASE_ROLLOUT = 5;
 }
 
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -137,6 +141,12 @@ message EdgeEvent {
     RelayLeaseRequest relay_lease_request = 27;
     UsageBatch usage_batch = 28;
     EdgeCommandResult command_result = 29;
+    CertificateCSRResult certificate_csr_result = 30;
+    CertificateApplied certificate_applied = 31;
+    EdgeReleaseStaged release_staged = 32;
+    EdgeReleaseDrained release_drained = 33;
+    EdgeReleaseActivation release_activation = 34;
+    EdgeReleaseResult release_result = 35;
   }
 }
 
@@ -159,6 +169,11 @@ message ControllerCommand {
     UsageAck usage_ack = 25;
     CloseDaemonConnection close_daemon = 26;
     CloseClientSession close_session = 27;
+    CertificateCSRRequest certificate_csr_request = 28;
+    SignedCertificateRelease certificate_release = 29;
+    StageEdgeRelease stage_release = 30;
+    DrainEdgeRelease drain_release = 31;
+    ActivateEdgeRelease activate_release = 32;
   }
 }
 

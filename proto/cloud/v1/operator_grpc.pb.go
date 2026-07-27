@@ -19,18 +19,27 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OperatorService_GetOverview_FullMethodName         = "/muxvia.cloud.v1.OperatorService/GetOverview"
-	OperatorService_ListAccounts_FullMethodName        = "/muxvia.cloud.v1.OperatorService/ListAccounts"
-	OperatorService_GetAccount_FullMethodName          = "/muxvia.cloud.v1.OperatorService/GetAccount"
-	OperatorService_ListRuntimeSessions_FullMethodName = "/muxvia.cloud.v1.OperatorService/ListRuntimeSessions"
-	OperatorService_ListOrders_FullMethodName          = "/muxvia.cloud.v1.OperatorService/ListOrders"
-	OperatorService_ListSubscriptions_FullMethodName   = "/muxvia.cloud.v1.OperatorService/ListSubscriptions"
-	OperatorService_ListUsage_FullMethodName           = "/muxvia.cloud.v1.OperatorService/ListUsage"
-	OperatorService_ListAudit_FullMethodName           = "/muxvia.cloud.v1.OperatorService/ListAudit"
-	OperatorService_SetAccountState_FullMethodName     = "/muxvia.cloud.v1.OperatorService/SetAccountState"
-	OperatorService_SetAccountRole_FullMethodName      = "/muxvia.cloud.v1.OperatorService/SetAccountRole"
-	OperatorService_DisconnectDaemon_FullMethodName    = "/muxvia.cloud.v1.OperatorService/DisconnectDaemon"
-	OperatorService_DisconnectSession_FullMethodName   = "/muxvia.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_GetOverview_FullMethodName                = "/muxvia.cloud.v1.OperatorService/GetOverview"
+	OperatorService_ListAccounts_FullMethodName               = "/muxvia.cloud.v1.OperatorService/ListAccounts"
+	OperatorService_GetAccount_FullMethodName                 = "/muxvia.cloud.v1.OperatorService/GetAccount"
+	OperatorService_ListRuntimeSessions_FullMethodName        = "/muxvia.cloud.v1.OperatorService/ListRuntimeSessions"
+	OperatorService_ListOrders_FullMethodName                 = "/muxvia.cloud.v1.OperatorService/ListOrders"
+	OperatorService_ListSubscriptions_FullMethodName          = "/muxvia.cloud.v1.OperatorService/ListSubscriptions"
+	OperatorService_ListUsage_FullMethodName                  = "/muxvia.cloud.v1.OperatorService/ListUsage"
+	OperatorService_ListAudit_FullMethodName                  = "/muxvia.cloud.v1.OperatorService/ListAudit"
+	OperatorService_SetAccountState_FullMethodName            = "/muxvia.cloud.v1.OperatorService/SetAccountState"
+	OperatorService_SetAccountRole_FullMethodName             = "/muxvia.cloud.v1.OperatorService/SetAccountRole"
+	OperatorService_DisconnectDaemon_FullMethodName           = "/muxvia.cloud.v1.OperatorService/DisconnectDaemon"
+	OperatorService_DisconnectSession_FullMethodName          = "/muxvia.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_ListCertificateProfiles_FullMethodName    = "/muxvia.cloud.v1.OperatorService/ListCertificateProfiles"
+	OperatorService_CreateCertificateProfile_FullMethodName   = "/muxvia.cloud.v1.OperatorService/CreateCertificateProfile"
+	OperatorService_BindCertificateProfile_FullMethodName     = "/muxvia.cloud.v1.OperatorService/BindCertificateProfile"
+	OperatorService_IssueCertificateVersion_FullMethodName    = "/muxvia.cloud.v1.OperatorService/IssueCertificateVersion"
+	OperatorService_PublishCertificateVersion_FullMethodName  = "/muxvia.cloud.v1.OperatorService/PublishCertificateVersion"
+	OperatorService_RollbackCertificateVersion_FullMethodName = "/muxvia.cloud.v1.OperatorService/RollbackCertificateVersion"
+	OperatorService_ListReleaseArtifacts_FullMethodName       = "/muxvia.cloud.v1.OperatorService/ListReleaseArtifacts"
+	OperatorService_StartEdgeRollout_FullMethodName           = "/muxvia.cloud.v1.OperatorService/StartEdgeRollout"
+	OperatorService_RollbackEdgeRelease_FullMethodName        = "/muxvia.cloud.v1.OperatorService/RollbackEdgeRelease"
 )
 
 // OperatorServiceClient is the client API for OperatorService service.
@@ -51,6 +60,15 @@ type OperatorServiceClient interface {
 	SetAccountRole(ctx context.Context, in *SetAccountRoleRequest, opts ...grpc.CallOption) (*SetAccountRoleResponse, error)
 	DisconnectDaemon(ctx context.Context, in *DisconnectDaemonRequest, opts ...grpc.CallOption) (*DisconnectDaemonResponse, error)
 	DisconnectSession(ctx context.Context, in *DisconnectSessionRequest, opts ...grpc.CallOption) (*DisconnectSessionResponse, error)
+	ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error)
+	CreateCertificateProfile(ctx context.Context, in *CreateCertificateProfileRequest, opts ...grpc.CallOption) (*CreateCertificateProfileResponse, error)
+	BindCertificateProfile(ctx context.Context, in *BindCertificateProfileRequest, opts ...grpc.CallOption) (*BindCertificateProfileResponse, error)
+	IssueCertificateVersion(ctx context.Context, in *IssueCertificateVersionRequest, opts ...grpc.CallOption) (*IssueCertificateVersionResponse, error)
+	PublishCertificateVersion(ctx context.Context, in *PublishCertificateVersionRequest, opts ...grpc.CallOption) (*PublishCertificateVersionResponse, error)
+	RollbackCertificateVersion(ctx context.Context, in *RollbackCertificateVersionRequest, opts ...grpc.CallOption) (*RollbackCertificateVersionResponse, error)
+	ListReleaseArtifacts(ctx context.Context, in *ListReleaseArtifactsRequest, opts ...grpc.CallOption) (*ListReleaseArtifactsResponse, error)
+	StartEdgeRollout(ctx context.Context, in *StartEdgeRolloutRequest, opts ...grpc.CallOption) (*StartEdgeRolloutResponse, error)
+	RollbackEdgeRelease(ctx context.Context, in *RollbackEdgeReleaseRequest, opts ...grpc.CallOption) (*RollbackEdgeReleaseResponse, error)
 }
 
 type operatorServiceClient struct {
@@ -181,6 +199,96 @@ func (c *operatorServiceClient) DisconnectSession(ctx context.Context, in *Disco
 	return out, nil
 }
 
+func (c *operatorServiceClient) ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCertificateProfilesResponse)
+	err := c.cc.Invoke(ctx, OperatorService_ListCertificateProfiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) CreateCertificateProfile(ctx context.Context, in *CreateCertificateProfileRequest, opts ...grpc.CallOption) (*CreateCertificateProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCertificateProfileResponse)
+	err := c.cc.Invoke(ctx, OperatorService_CreateCertificateProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) BindCertificateProfile(ctx context.Context, in *BindCertificateProfileRequest, opts ...grpc.CallOption) (*BindCertificateProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindCertificateProfileResponse)
+	err := c.cc.Invoke(ctx, OperatorService_BindCertificateProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) IssueCertificateVersion(ctx context.Context, in *IssueCertificateVersionRequest, opts ...grpc.CallOption) (*IssueCertificateVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssueCertificateVersionResponse)
+	err := c.cc.Invoke(ctx, OperatorService_IssueCertificateVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) PublishCertificateVersion(ctx context.Context, in *PublishCertificateVersionRequest, opts ...grpc.CallOption) (*PublishCertificateVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishCertificateVersionResponse)
+	err := c.cc.Invoke(ctx, OperatorService_PublishCertificateVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) RollbackCertificateVersion(ctx context.Context, in *RollbackCertificateVersionRequest, opts ...grpc.CallOption) (*RollbackCertificateVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RollbackCertificateVersionResponse)
+	err := c.cc.Invoke(ctx, OperatorService_RollbackCertificateVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) ListReleaseArtifacts(ctx context.Context, in *ListReleaseArtifactsRequest, opts ...grpc.CallOption) (*ListReleaseArtifactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReleaseArtifactsResponse)
+	err := c.cc.Invoke(ctx, OperatorService_ListReleaseArtifacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) StartEdgeRollout(ctx context.Context, in *StartEdgeRolloutRequest, opts ...grpc.CallOption) (*StartEdgeRolloutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartEdgeRolloutResponse)
+	err := c.cc.Invoke(ctx, OperatorService_StartEdgeRollout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) RollbackEdgeRelease(ctx context.Context, in *RollbackEdgeReleaseRequest, opts ...grpc.CallOption) (*RollbackEdgeReleaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RollbackEdgeReleaseResponse)
+	err := c.cc.Invoke(ctx, OperatorService_RollbackEdgeRelease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OperatorServiceServer is the server API for OperatorService service.
 // All implementations must embed UnimplementedOperatorServiceServer
 // for forward compatibility.
@@ -199,6 +307,15 @@ type OperatorServiceServer interface {
 	SetAccountRole(context.Context, *SetAccountRoleRequest) (*SetAccountRoleResponse, error)
 	DisconnectDaemon(context.Context, *DisconnectDaemonRequest) (*DisconnectDaemonResponse, error)
 	DisconnectSession(context.Context, *DisconnectSessionRequest) (*DisconnectSessionResponse, error)
+	ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error)
+	CreateCertificateProfile(context.Context, *CreateCertificateProfileRequest) (*CreateCertificateProfileResponse, error)
+	BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error)
+	IssueCertificateVersion(context.Context, *IssueCertificateVersionRequest) (*IssueCertificateVersionResponse, error)
+	PublishCertificateVersion(context.Context, *PublishCertificateVersionRequest) (*PublishCertificateVersionResponse, error)
+	RollbackCertificateVersion(context.Context, *RollbackCertificateVersionRequest) (*RollbackCertificateVersionResponse, error)
+	ListReleaseArtifacts(context.Context, *ListReleaseArtifactsRequest) (*ListReleaseArtifactsResponse, error)
+	StartEdgeRollout(context.Context, *StartEdgeRolloutRequest) (*StartEdgeRolloutResponse, error)
+	RollbackEdgeRelease(context.Context, *RollbackEdgeReleaseRequest) (*RollbackEdgeReleaseResponse, error)
 	mustEmbedUnimplementedOperatorServiceServer()
 }
 
@@ -244,6 +361,33 @@ func (UnimplementedOperatorServiceServer) DisconnectDaemon(context.Context, *Dis
 }
 func (UnimplementedOperatorServiceServer) DisconnectSession(context.Context, *DisconnectSessionRequest) (*DisconnectSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DisconnectSession not implemented")
+}
+func (UnimplementedOperatorServiceServer) ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCertificateProfiles not implemented")
+}
+func (UnimplementedOperatorServiceServer) CreateCertificateProfile(context.Context, *CreateCertificateProfileRequest) (*CreateCertificateProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateCertificateProfile not implemented")
+}
+func (UnimplementedOperatorServiceServer) BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindCertificateProfile not implemented")
+}
+func (UnimplementedOperatorServiceServer) IssueCertificateVersion(context.Context, *IssueCertificateVersionRequest) (*IssueCertificateVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method IssueCertificateVersion not implemented")
+}
+func (UnimplementedOperatorServiceServer) PublishCertificateVersion(context.Context, *PublishCertificateVersionRequest) (*PublishCertificateVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishCertificateVersion not implemented")
+}
+func (UnimplementedOperatorServiceServer) RollbackCertificateVersion(context.Context, *RollbackCertificateVersionRequest) (*RollbackCertificateVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RollbackCertificateVersion not implemented")
+}
+func (UnimplementedOperatorServiceServer) ListReleaseArtifacts(context.Context, *ListReleaseArtifactsRequest) (*ListReleaseArtifactsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListReleaseArtifacts not implemented")
+}
+func (UnimplementedOperatorServiceServer) StartEdgeRollout(context.Context, *StartEdgeRolloutRequest) (*StartEdgeRolloutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartEdgeRollout not implemented")
+}
+func (UnimplementedOperatorServiceServer) RollbackEdgeRelease(context.Context, *RollbackEdgeReleaseRequest) (*RollbackEdgeReleaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RollbackEdgeRelease not implemented")
 }
 func (UnimplementedOperatorServiceServer) mustEmbedUnimplementedOperatorServiceServer() {}
 func (UnimplementedOperatorServiceServer) testEmbeddedByValue()                         {}
@@ -482,6 +626,168 @@ func _OperatorService_DisconnectSession_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OperatorService_ListCertificateProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCertificateProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).ListCertificateProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_ListCertificateProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).ListCertificateProfiles(ctx, req.(*ListCertificateProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_CreateCertificateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCertificateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).CreateCertificateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_CreateCertificateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).CreateCertificateProfile(ctx, req.(*CreateCertificateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_BindCertificateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindCertificateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).BindCertificateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_BindCertificateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).BindCertificateProfile(ctx, req.(*BindCertificateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_IssueCertificateVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IssueCertificateVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).IssueCertificateVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_IssueCertificateVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).IssueCertificateVersion(ctx, req.(*IssueCertificateVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_PublishCertificateVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishCertificateVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).PublishCertificateVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_PublishCertificateVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).PublishCertificateVersion(ctx, req.(*PublishCertificateVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_RollbackCertificateVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackCertificateVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).RollbackCertificateVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_RollbackCertificateVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).RollbackCertificateVersion(ctx, req.(*RollbackCertificateVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_ListReleaseArtifacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReleaseArtifactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).ListReleaseArtifacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_ListReleaseArtifacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).ListReleaseArtifacts(ctx, req.(*ListReleaseArtifactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_StartEdgeRollout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartEdgeRolloutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).StartEdgeRollout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_StartEdgeRollout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).StartEdgeRollout(ctx, req.(*StartEdgeRolloutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_RollbackEdgeRelease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackEdgeReleaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).RollbackEdgeRelease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_RollbackEdgeRelease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).RollbackEdgeRelease(ctx, req.(*RollbackEdgeReleaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OperatorService_ServiceDesc is the grpc.ServiceDesc for OperatorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -536,6 +842,42 @@ var OperatorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DisconnectSession",
 			Handler:    _OperatorService_DisconnectSession_Handler,
+		},
+		{
+			MethodName: "ListCertificateProfiles",
+			Handler:    _OperatorService_ListCertificateProfiles_Handler,
+		},
+		{
+			MethodName: "CreateCertificateProfile",
+			Handler:    _OperatorService_CreateCertificateProfile_Handler,
+		},
+		{
+			MethodName: "BindCertificateProfile",
+			Handler:    _OperatorService_BindCertificateProfile_Handler,
+		},
+		{
+			MethodName: "IssueCertificateVersion",
+			Handler:    _OperatorService_IssueCertificateVersion_Handler,
+		},
+		{
+			MethodName: "PublishCertificateVersion",
+			Handler:    _OperatorService_PublishCertificateVersion_Handler,
+		},
+		{
+			MethodName: "RollbackCertificateVersion",
+			Handler:    _OperatorService_RollbackCertificateVersion_Handler,
+		},
+		{
+			MethodName: "ListReleaseArtifacts",
+			Handler:    _OperatorService_ListReleaseArtifacts_Handler,
+		},
+		{
+			MethodName: "StartEdgeRollout",
+			Handler:    _OperatorService_StartEdgeRollout_Handler,
+		},
+		{
+			MethodName: "RollbackEdgeRelease",
+			Handler:    _OperatorService_RollbackEdgeRelease_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

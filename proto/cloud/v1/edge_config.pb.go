@@ -24,16 +24,18 @@ const (
 
 // EdgeDesiredConfig 是 Controller 持久化并签名下发的节点部署意图。
 type EdgeDesiredConfig struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	EdgeId         string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	Version        uint64                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	Name           string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Region         string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
-	Capacity       uint64                 `protobuf:"varint,5,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	PublicEndpoint string                 `protobuf:"bytes,6,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
-	Enabled        bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId               string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	Version              uint64                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Name                 string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Region               string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	Capacity             uint64                 `protobuf:"varint,5,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	PublicEndpoint       string                 `protobuf:"bytes,6,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
+	Enabled              bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	CertificateProfileId string                 `protobuf:"bytes,8,opt,name=certificate_profile_id,json=certificateProfileId,proto3" json:"certificate_profile_id,omitempty"`
+	ReleaseChannel       string                 `protobuf:"bytes,9,opt,name=release_channel,json=releaseChannel,proto3" json:"release_channel,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *EdgeDesiredConfig) Reset() {
@@ -113,6 +115,20 @@ func (x *EdgeDesiredConfig) GetEnabled() bool {
 		return x.Enabled
 	}
 	return false
+}
+
+func (x *EdgeDesiredConfig) GetCertificateProfileId() string {
+	if x != nil {
+		return x.CertificateProfileId
+	}
+	return ""
+}
+
+func (x *EdgeDesiredConfig) GetReleaseChannel() string {
+	if x != nil {
+		return x.ReleaseChannel
+	}
+	return ""
 }
 
 // SignedEdgeDesiredConfig 使用独立签名域保护配置，Edge 只持有公开验签密钥。
@@ -435,13 +451,15 @@ func (x *ListEdgesResponse) GetEdges() []*ManagedEdge {
 }
 
 type CreateEdgeRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Region         string                 `protobuf:"bytes,2,opt,name=region,proto3" json:"region,omitempty"`
-	Capacity       uint64                 `protobuf:"varint,3,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	PublicEndpoint string                 `protobuf:"bytes,4,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Name                 string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Region               string                 `protobuf:"bytes,2,opt,name=region,proto3" json:"region,omitempty"`
+	Capacity             uint64                 `protobuf:"varint,3,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	PublicEndpoint       string                 `protobuf:"bytes,4,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
+	CertificateProfileId string                 `protobuf:"bytes,5,opt,name=certificate_profile_id,json=certificateProfileId,proto3" json:"certificate_profile_id,omitempty"`
+	ReleaseChannel       string                 `protobuf:"bytes,6,opt,name=release_channel,json=releaseChannel,proto3" json:"release_channel,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *CreateEdgeRequest) Reset() {
@@ -498,6 +516,20 @@ func (x *CreateEdgeRequest) GetCapacity() uint64 {
 func (x *CreateEdgeRequest) GetPublicEndpoint() string {
 	if x != nil {
 		return x.PublicEndpoint
+	}
+	return ""
+}
+
+func (x *CreateEdgeRequest) GetCertificateProfileId() string {
+	if x != nil {
+		return x.CertificateProfileId
+	}
+	return ""
+}
+
+func (x *CreateEdgeRequest) GetReleaseChannel() string {
+	if x != nil {
+		return x.ReleaseChannel
 	}
 	return ""
 }
@@ -563,16 +595,18 @@ func (x *CreateEdgeResponse) GetClaimExpiresAt() *timestamppb.Timestamp {
 }
 
 type UpdateEdgeRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	EdgeId           string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
-	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Region           string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
-	Capacity         uint64                 `protobuf:"varint,5,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	PublicEndpoint   string                 `protobuf:"bytes,6,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
-	Enabled          bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId               string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	ExpectedRevision     uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Name                 string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Region               string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	Capacity             uint64                 `protobuf:"varint,5,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	PublicEndpoint       string                 `protobuf:"bytes,6,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
+	Enabled              bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	CertificateProfileId string                 `protobuf:"bytes,8,opt,name=certificate_profile_id,json=certificateProfileId,proto3" json:"certificate_profile_id,omitempty"`
+	ReleaseChannel       string                 `protobuf:"bytes,9,opt,name=release_channel,json=releaseChannel,proto3" json:"release_channel,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UpdateEdgeRequest) Reset() {
@@ -652,6 +686,20 @@ func (x *UpdateEdgeRequest) GetEnabled() bool {
 		return x.Enabled
 	}
 	return false
+}
+
+func (x *UpdateEdgeRequest) GetCertificateProfileId() string {
+	if x != nil {
+		return x.CertificateProfileId
+	}
+	return ""
+}
+
+func (x *UpdateEdgeRequest) GetReleaseChannel() string {
+	if x != nil {
+		return x.ReleaseChannel
+	}
+	return ""
 }
 
 type UpdateEdgeResponse struct {
@@ -888,7 +936,7 @@ var File_cloud_v1_edge_config_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1acloud/v1/edge_config.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
+	"\x1acloud/v1/edge_config.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb0\x02\n" +
 	"\x11EdgeDesiredConfig\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\x12\x12\n" +
@@ -896,7 +944,9 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x06region\x18\x04 \x01(\tR\x06region\x12\x1a\n" +
 	"\bcapacity\x18\x05 \x01(\x04R\bcapacity\x12'\n" +
 	"\x0fpublic_endpoint\x18\x06 \x01(\tR\x0epublicEndpoint\x12\x18\n" +
-	"\aenabled\x18\a \x01(\bR\aenabled\"h\n" +
+	"\aenabled\x18\a \x01(\bR\aenabled\x124\n" +
+	"\x16certificate_profile_id\x18\b \x01(\tR\x14certificateProfileId\x12'\n" +
+	"\x0frelease_channel\x18\t \x01(\tR\x0ereleaseChannel\"h\n" +
 	"\x17SignedEdgeDesiredConfig\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1c\n" +
@@ -920,16 +970,18 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\aruntime\x18\x03 \x01(\v2&.muxvia.cloud.v1.EdgeRuntimeProjectionR\aruntime\"\x12\n" +
 	"\x10ListEdgesRequest\"G\n" +
 	"\x11ListEdgesResponse\x122\n" +
-	"\x05edges\x18\x01 \x03(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x05edges\"\x84\x01\n" +
+	"\x05edges\x18\x01 \x03(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x05edges\"\xe3\x01\n" +
 	"\x11CreateEdgeRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12\x1a\n" +
 	"\bcapacity\x18\x03 \x01(\x04R\bcapacity\x12'\n" +
-	"\x0fpublic_endpoint\x18\x04 \x01(\tR\x0epublicEndpoint\"\xb5\x01\n" +
+	"\x0fpublic_endpoint\x18\x04 \x01(\tR\x0epublicEndpoint\x124\n" +
+	"\x16certificate_profile_id\x18\x05 \x01(\tR\x14certificateProfileId\x12'\n" +
+	"\x0frelease_channel\x18\x06 \x01(\tR\x0ereleaseChannel\"\xb5\x01\n" +
 	"\x12CreateEdgeResponse\x120\n" +
 	"\x04edge\x18\x01 \x01(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x04edge\x12'\n" +
 	"\x0finstall_command\x18\x02 \x01(\tR\x0einstallCommand\x12D\n" +
-	"\x10claim_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eclaimExpiresAt\"\xe4\x01\n" +
+	"\x10claim_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eclaimExpiresAt\"\xc3\x02\n" +
 	"\x11UpdateEdgeRequest\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12+\n" +
 	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x12\n" +
@@ -937,7 +989,9 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x06region\x18\x04 \x01(\tR\x06region\x12\x1a\n" +
 	"\bcapacity\x18\x05 \x01(\x04R\bcapacity\x12'\n" +
 	"\x0fpublic_endpoint\x18\x06 \x01(\tR\x0epublicEndpoint\x12\x18\n" +
-	"\aenabled\x18\a \x01(\bR\aenabled\"F\n" +
+	"\aenabled\x18\a \x01(\bR\aenabled\x124\n" +
+	"\x16certificate_profile_id\x18\b \x01(\tR\x14certificateProfileId\x12'\n" +
+	"\x0frelease_channel\x18\t \x01(\tR\x0ereleaseChannel\"F\n" +
 	"\x12UpdateEdgeResponse\x120\n" +
 	"\x04edge\x18\x01 \x01(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x04edge\"\xa7\x01\n" +
 	"\x13RegisterEdgeRequest\x12\x17\n" +
