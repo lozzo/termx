@@ -1,10 +1,12 @@
 import { create } from '@bufbuild/protobuf'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Copy, Edit3, Plus, Server } from 'lucide-react'
+import { Copy, Edit3, KeyRound, Plus } from 'lucide-react'
 import { FormEvent, useMemo, useState } from 'react'
 import { Link, NavLink, useParams } from 'react-router'
 import { protoSend } from '../api'
+import { CertificateState } from './CertificatesPage'
 import { compactID, dateTime } from '../format'
+import { BindCertificateProfileRequestSchema, BindCertificateProfileResponseSchema, ListCertificateProfilesResponseSchema } from '../generated/cloud/v1/certificate_pb'
 import { CreateEdgeRequestSchema, CreateEdgeResponseSchema, ListEdgesResponseSchema, UpdateEdgeRequestSchema, UpdateEdgeResponseSchema, type ManagedEdge } from '../generated/cloud/v1/edge_config_pb'
 import { ListDaemonsResponseSchema } from '../generated/cloud/v1/enrollment_pb'
 import { ListRuntimeSessionsResponseSchema } from '../generated/cloud/v1/operator_pb'
@@ -41,10 +43,10 @@ export function EdgesPage() {
 }
 
 function EdgeTable({ edges }: { edges: ManagedEdge[] }) {
-  return <TableFrame><table><thead><tr><th>Edge</th><th>入口</th><th>区域</th><th>状态</th><th>负载</th><th>版本</th><th>最后上报</th><th /></tr></thead><tbody>{edges.map((edge) => <tr key={edge.config?.edgeId}>
+  return <TableFrame><table><thead><tr><th>Edge</th><th>入口</th><th>区域</th><th>状态</th><th>证书</th><th>负载</th><th>版本</th><th>最后上报</th><th /></tr></thead><tbody>{edges.map((edge) => <tr key={edge.config?.edgeId}>
     <td><strong>{edge.config?.name}</strong><small className="mono">{compactID(edge.config?.edgeId ?? '')}</small></td>
     <td className="mono">{edge.config?.publicEndpoint}</td><td>{edge.config?.region}</td>
-    <td><Status active={Boolean(edge.runtime?.online)}>{edge.runtime?.online ? '在线' : edge.config?.enabled ? '离线' : '已停用'}</Status></td>
+    <td><Status active={Boolean(edge.runtime?.online)}>{edge.runtime?.online ? '在线' : edge.config?.enabled ? '离线' : '已停用'}</Status></td><td><CertificateState state={edge.certificate?.syncState} online={edge.runtime?.online} /><small>{edge.certificate?.certificateProfileName || '-'}</small></td>
     <td>{edge.runtime?.agentCount.toString() ?? '0'} / {edge.config?.capacity.toString() ?? '0'}<small>{edge.runtime?.sessionCount.toString() ?? '0'} 个会话</small></td>
     <td>{edge.runtime?.softwareVersion || '-'}</td><td>{dateTime(edge.runtime?.lastHeartbeat)}</td>
     <td><Link className="table-link" to={`/app/admin/edges/${edge.config?.edgeId}/overview`}>查看</Link></td>
@@ -68,7 +70,7 @@ export function EdgeDetailPage() {
     {tab === 'overview' && <EdgeOverview edge={edge} />}
     {tab === 'daemons' && <EdgeDaemons edgeId={edgeId} />}
     {tab === 'connections' && <EdgeConnections edgeId={edgeId} />}
-    {tab === 'certificates' && <CertificatePlaceholder endpoint={edge.config?.publicEndpoint ?? ''} />}
+    {tab === 'certificates' && <EdgeCertificate edge={edge} />}
     {tab === 'settings' && <EdgeSettings edge={edge} />}
   </>
 }
@@ -95,8 +97,26 @@ function EdgeConnections({ edgeId }: { edgeId: string }) {
   return <TableFrame><table><thead><tr><th>Session</th><th>daemon</th><th>客户端</th><th>路径</th><th>连接时间</th></tr></thead><tbody>{values.map((value) => <tr key={value.sessionId}><td className="mono">{compactID(value.sessionId)}</td><td className="mono">{compactID(value.daemonId)}</td><td className="mono">{compactID(value.clientId)}</td><td><Status active>{value.relay ? 'Relay' : 'P2P'}</Status></td><td>{dateTime(value.connectedAt)}</td></tr>)}</tbody></table></TableFrame>
 }
 
-function CertificatePlaceholder({ endpoint }: { endpoint: string }) {
-  return <section className="plain-section empty-section"><Server size={22} /><h2>尚无证书档案</h2><p className="muted">当前入口 {endpoint || '-'} 使用部署证书；没有可发布或回滚的受管版本。</p></section>
+function EdgeCertificate({ edge }: { edge: ManagedEdge }) {
+  const profiles = useProtoQuery(['certificates'], '/api/operator/certificates', ListCertificateProfilesResponseSchema, 30_000)
+  const client = useQueryClient()
+  const [selected, setSelected] = useState(edge.certificate?.certificateProfileId ?? '')
+  const mutation = useMutation({ mutationFn: () => protoSend(
+    `/api/operator/edges/${edge.config?.edgeId}/certificate`,
+    BindCertificateProfileRequestSchema,
+    create(BindCertificateProfileRequestSchema, { edgeId: edge.config?.edgeId, certificateProfileId: selected, expectedBindingRevision: edge.certificate?.bindingRevision ?? 0n }),
+    BindCertificateProfileResponseSchema,
+  ), onSuccess: () => {
+    void client.invalidateQueries({ queryKey: ['edges'] })
+    void client.invalidateQueries({ queryKey: ['certificates'] })
+  } })
+  if (profiles.isPending) return <Skeleton rows={3} />
+  if (profiles.error) return <ErrorState error={profiles.error} />
+  return <section className="plain-section"><header><div><h2>公网证书</h2><p>{edge.config?.publicEndpoint}</p></div><KeyRound size={19} /></header><div className="certificate-detail">
+    <dl className="detail-list"><div><dt>当前档案</dt><dd>{edge.certificate?.certificateProfileName || '未绑定'}</dd></div><div><dt>同步状态</dt><dd><CertificateState state={edge.certificate?.syncState} online={edge.runtime?.online} /></dd></div><div><dt>Desired / Applied</dt><dd>{edge.certificate ? `r${edge.certificate.desiredRevision} / r${edge.certificate.appliedRevision}` : '-'}</dd></div><div><dt>最近结果</dt><dd>{edge.certificate?.lastErrorMessage || dateTime(edge.certificate?.appliedAt)}</dd></div></dl>
+    <div className="certificate-bind-control"><Field label="证书档案"><select className="input" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="" disabled>请选择证书档案</option>{profiles.data?.profiles.map((profile) => <option key={profile.certificateProfileId} value={profile.certificateProfileId}>{profile.name} · r{profile.revision.toString()}</option>)}</select></Field><Button tone="primary" disabled={mutation.isPending || !selected || selected === (edge.certificate?.certificateProfileId ?? '')} onClick={() => mutation.mutate()}>保存绑定</Button></div>
+    {mutation.error && <Notice tone="error">{mutation.error.message}</Notice>}
+  </div></section>
 }
 
 function EdgeSettings({ edge }: { edge: ManagedEdge }) {

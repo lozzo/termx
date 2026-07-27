@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { Buffer } from 'node:buffer'
 
 const now = '2026-07-27T12:00:00Z'
 const periodEnd = '2026-08-27T12:00:00Z'
@@ -8,6 +9,7 @@ const plans = [{ plan_id: 'starter', version: '1', name: '基础版', descriptio
 const commerce = { subscription: { subscription_id: '55555555-5555-4555-8555-555555555555', account_id: account.account_id, plan_id: 'starter', plan_version: '1', state: 'SUBSCRIPTION_STATE_ACTIVE', revision: '1', period_start: now, period_end: periodEnd }, entitlement: { account_id: account.account_id, state: 'ENTITLEMENT_STATE_ACTIVE', plan_id: 'starter', plan_version: '1', relay_remaining_bytes: '5368707584', capability: plans[0].capability }, orders: [], payment_attempts: [], usage: { account_id: account.account_id, period_start: now, period_end: periodEnd, relay_ingress_bytes: '512', relay_egress_bytes: '1024', relay_total_bytes: '1536', quota_bytes: '5368709120', remaining_bytes: '5368707584', revision: '1' } }
 const pendingOrder = { order_id: 'order-pending', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'development', idempotency_key: 'pending-checkout', requested_transition: 'SUBSCRIPTION_TRANSITION_UPGRADE', revision: '1', created_at: now }
 const pendingAttempt = { payment_attempt_id: 'attempt-pending', order_id: pendingOrder.order_id, account_id: account.account_id, provider: 'development', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now }
+const certificateProfile = { certificate_profile_id: '66666666-6666-4666-8666-666666666666', name: '中国区 Edge 证书', dns_names: ['muxvia-cn1.omscd.com'], sha256_fingerprint: '9D7A0FE21C994AE4B24383E54DB131A25776D2A285F45E733728E474072F7C2A', not_before: now, not_after: periodEnd, revision: '2', created_at: now, updated_at: now, bindings: [{ edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', public_endpoint: 'muxvia-cn1.omscd.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '2', sync_state: 'CERTIFICATE_SYNC_STATE_APPLIED', applied_at: now, online: true }] }
 
 function json(route: Route, value: unknown, status = 200) { return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) }) }
 
@@ -29,7 +31,11 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path === '/api/daemons/enroll') return json(route, { account_id: account.account_id, enrollment_code: 'mxe_test', expires_at: periodEnd, enroll_command: 'muxvia cloud enroll --controller https://cloud.muxvia.com mxe_test' })
     if (path === '/api/operator/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {"controller_instance_id":"controller-test"}\n\n' })
     if (path === '/api/operator/overview') return json(route, { overview: { edge_total: '1', edge_online: '1', daemon_total: '1', daemon_online: '1', client_session_online: '1', p2p_session_online: '1', relay_session_online: '0', relay_bytes_current_period: '1536', controller_instance_id: 'controller-test', generated_at: now } })
-    if (path === '/api/operator/edges') return json(route, { edges: [{ config: { edge_id: '22222222-2222-4222-8222-222222222222', version: '1', name: 'CN1 Edge', region: 'CN1', capacity: '1000', public_endpoint: 'muxvia-cn1.omscd.com:41102', enabled: true }, config_revision: '1', runtime: { online: true, software_version: 'dev-cloudp007', agent_count: '1', session_count: '1', relay_allocation_count: '0', last_heartbeat: now } }] })
+    if (path === '/api/operator/edges') return json(route, { edges: [{ config: { edge_id: '22222222-2222-4222-8222-222222222222', version: '1', name: 'CN1 Edge', region: 'CN1', capacity: '1000', public_endpoint: 'muxvia-cn1.omscd.com:41102', enabled: true }, config_revision: '1', runtime: { online: true, software_version: 'dev-cloudp007', agent_count: '1', session_count: '1', relay_allocation_count: '0', last_heartbeat: now }, certificate: certificateProfile.bindings[0] }] })
+    if (path === '/api/operator/certificates' && route.request().method() === 'GET') return json(route, { profiles: [certificateProfile] })
+    if (path === '/api/operator/certificates' && route.request().method() === 'POST') return json(route, { profile: certificateProfile })
+    if (path.startsWith('/api/operator/certificates/') && route.request().method() === 'PUT') return json(route, { profile: certificateProfile })
+    if (path.endsWith('/certificate') && route.request().method() === 'POST') return json(route, { binding: certificateProfile.bindings[0] })
     if (path === '/api/operator/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'muxvia-cn1.omscd.com:41102', generation: '1' } }] })
     if (path === '/api/operator/connections') return json(route, { sessions: [{ session_id: '44444444-4444-4444-8444-444444444444', account_id: account.account_id, daemon_id: daemon.daemon_id, edge_id: '22222222-2222-4222-8222-222222222222', client_id: 'android-client', product: 'CLIENT_PRODUCT_ANDROID', relay: false, generation: '1', connected_at: now }] })
     if (path === '/api/operator/accounts') return json(route, { accounts: [{ account, roles: ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'], daemon_count: '1', subscription: commerce.subscription, entitlement: commerce.entitlement, usage: commerce.usage }] })
@@ -138,6 +144,27 @@ test('管理员在同一 Shell 进入全部运营模块', async ({ page }, testI
     await expect(page.locator('.boot-shell')).toHaveCount(0)
   }
   await page.screenshot({ path: testInfo.outputPath('admin-shell.png'), fullPage: true })
+  expect(errors).toEqual([])
+})
+
+test('证书页在三种视口完成双文件选择并展示自动同步状态', async ({ page }, testInfo) => {
+  await mockAPI(page, true)
+  const errors = captureErrors(page)
+  await page.goto('/app/admin/certificates')
+  await expect(page.getByRole('heading', { name: '证书', exact: true }).last()).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: '中国区 Edge 证书' }).first()).toContainText('已应用')
+  await expect(page.getByRole('row').filter({ hasText: 'CN1 Edge' }).last()).toContainText('r2 / r2')
+  await page.getByRole('button', { name: '上传证书', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '上传证书' })
+  await dialog.getByLabel('档案名称').fill('海外 Edge 证书')
+  await dialog.getByLabel('证书链文件').setInputFiles({ name: 'fullchain.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n') })
+  await dialog.getByLabel('私钥文件').setInputFiles({ name: 'privkey.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n') })
+  await expect(dialog.getByLabel('证书链文件')).toHaveValue(/fullchain\.pem$/)
+  await expect(dialog.getByLabel('私钥文件')).toHaveValue(/privkey\.pem$/)
+  await dialog.getByRole('button', { name: '上传证书', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: testInfo.outputPath('certificates.png'), fullPage: testInfo.project.name === 'desktop-chromium' })
   expect(errors).toEqual([])
 })
 
