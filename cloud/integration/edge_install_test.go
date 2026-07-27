@@ -237,6 +237,57 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		t.Fatal("created Edge is absent from operator list")
 	}
 
+	t.Run("R8 certificate HTTP API keeps private material out of responses", func(t *testing.T) {
+		certificatePEM, privateKeyPEM := issueCertificate(t, caCertificate, caKey, certificateRequest{
+			commonName: "edge-r3.example.com", dnsNames: []string{"edge-r3.example.com"}, extendedUse: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		})
+		_, wrongPrivateKeyPEM := issueCertificate(t, caCertificate, caKey, certificateRequest{
+			commonName: "edge-r3.example.com", dnsNames: []string{"edge-r3.example.com"}, extendedUse: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		})
+		upload := &cloudv1.UploadCertificateProfileResponse{}
+		doProtoRequest(t, handler, http.MethodPost, "/api/operator/certificates", &cloudv1.UploadCertificateProfileRequest{
+			Name: "R8 HTTP Certificate", CertificateChainPem: certificatePEM, PrivateKeyPem: privateKeyPEM,
+		}, upload, true, http.StatusOK)
+		profileID := upload.GetProfile().GetCertificateProfileId()
+		if profileID == "" || upload.GetProfile().GetRevision() != 1 {
+			t.Fatalf("uploaded HTTP certificate profile=%+v", upload.GetProfile())
+		}
+		projection, err := protojson.Marshal(upload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertNoCertificateMaterial(t, "certificate upload HTTP response", projection, certificatePEM, privateKeyPEM)
+
+		binding := &cloudv1.BindCertificateProfileResponse{}
+		doProtoRequest(t, handler, http.MethodPost, "/api/operator/edges/"+edgeID+"/certificate", &cloudv1.BindCertificateProfileRequest{
+			EdgeId: edgeID, CertificateProfileId: profileID,
+		}, binding, true, http.StatusOK)
+		if binding.GetBinding().GetSyncState() != cloudv1.CertificateSyncState_CERTIFICATE_SYNC_STATE_PENDING || binding.GetBinding().GetOnline() {
+			t.Fatalf("offline HTTP binding=%+v want pending", binding.GetBinding())
+		}
+
+		doProtoRequest(t, handler, http.MethodPut, "/api/operator/certificates/"+profileID, &cloudv1.UploadCertificateProfileRequest{
+			CertificateProfileId: profileID, ExpectedRevision: 1, Name: "R8 HTTP Certificate", CertificateChainPem: certificatePEM, PrivateKeyPem: wrongPrivateKeyPEM,
+		}, nil, true, http.StatusConflict)
+		listed := &cloudv1.ListCertificateProfilesResponse{}
+		doProtoRequest(t, handler, http.MethodGet, "/api/operator/certificates", nil, listed, true, http.StatusOK)
+		var listedProfile *cloudv1.CertificateProfile
+		for _, candidate := range listed.GetProfiles() {
+			if candidate.GetCertificateProfileId() == profileID {
+				listedProfile = candidate
+				break
+			}
+		}
+		if listedProfile == nil || listedProfile.GetRevision() != 1 {
+			t.Fatalf("failed HTTP replacement changed profile: %+v", listed.GetProfiles())
+		}
+		projection, err = protojson.Marshal(listed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertNoCertificateMaterial(t, "certificate list HTTP response", projection, certificatePEM, privateKeyPEM)
+	})
+
 	bootstrapEdge, bootstrapInstallToken, _, err := edges.CreateEdge(ctx, edgeconfig.CreateInput{Name: "Bootstrap Edge", Region: "cn-east", Capacity: 500, PublicEndpoint: "edge-bootstrap.example.com:41103"})
 	if err != nil {
 		t.Fatal(err)

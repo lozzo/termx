@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/muxvia/muxvia/cloud/controller/account"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -40,6 +41,15 @@ func TestCommitRelayUsageIsIdempotentInPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	accountID := uuid.NewString()
+	if _, err := database.EnsureBootstrapOperator(ctx, account.Record{
+		Profile: &cloudv1.AccountProfile{
+			AccountId: accountID, Email: "r6-usage-" + accountID + "@example.com", DisplayName: "R6 usage account",
+			State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1, CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now),
+		},
+		PasswordHash: []byte("integration-test-hash"), Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	enrollmentDigest := sha256.Sum256([]byte(uuid.NewString()))
 	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "R6 usage account", "R6 usage daemon", enrollmentDigest[:], now.Add(time.Hour), now); err != nil {
 		t.Fatal(err)
