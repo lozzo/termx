@@ -54,6 +54,7 @@ cloud_proto=(
   proto/cloud/v1/common.proto
   proto/cloud/v1/account.proto
   proto/cloud/v1/commerce.proto
+  proto/cloud/v1/certificate.proto
   proto/cloud/v1/edge_config.proto
   proto/cloud/v1/runtime.proto
   proto/cloud/v1/usage.proto

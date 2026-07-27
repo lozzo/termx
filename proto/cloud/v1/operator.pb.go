@@ -1981,7 +1981,7 @@ var File_cloud_v1_operator_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_operator_proto_rawDesc = "" +
 	"\n" +
-	"\x17cloud/v1/operator.proto\x12\x0fmuxvia.cloud.v1\x1a\x16cloud/v1/account.proto\x1a\x17cloud/v1/commerce.proto\x1a\x16cloud/v1/runtime.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"l\n" +
+	"\x17cloud/v1/operator.proto\x12\x0fmuxvia.cloud.v1\x1a\x16cloud/v1/account.proto\x1a\x1acloud/v1/certificate.proto\x1a\x17cloud/v1/commerce.proto\x1a\x16cloud/v1/runtime.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"l\n" +
 	"\vPageRequest\x12\x1b\n" +
 	"\tpage_size\x18\x01 \x01(\rR\bpageSize\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
@@ -2141,8 +2141,7 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"$OPERATOR_EVENT_OPERATION_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fOPERATOR_EVENT_OPERATION_UPSERT\x10\x01\x12#\n" +
 	"\x1fOPERATOR_EVENT_OPERATION_DELETE\x10\x02\x12\"\n" +
-	"\x1eOPERATOR_EVENT_OPERATION_RESET\x10\x032\x8a\n" +
-	"\n" +
+	"\x1eOPERATOR_EVENT_OPERATION_RESET\x10\x032\x84\r\n" +
 	"\x0fOperatorService\x12h\n" +
 	"\vGetOverview\x12+.muxvia.cloud.v1.GetOperatorOverviewRequest\x1a,.muxvia.cloud.v1.GetOperatorOverviewResponse\x12k\n" +
 	"\fListAccounts\x12,.muxvia.cloud.v1.ListOperatorAccountsRequest\x1a-.muxvia.cloud.v1.ListOperatorAccountsResponse\x12e\n" +
@@ -2157,7 +2156,10 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"\x0fSetAccountState\x12'.muxvia.cloud.v1.SetAccountStateRequest\x1a(.muxvia.cloud.v1.SetAccountStateResponse\x12a\n" +
 	"\x0eSetAccountRole\x12&.muxvia.cloud.v1.SetAccountRoleRequest\x1a'.muxvia.cloud.v1.SetAccountRoleResponse\x12g\n" +
 	"\x10DisconnectDaemon\x12(.muxvia.cloud.v1.DisconnectDaemonRequest\x1a).muxvia.cloud.v1.DisconnectDaemonResponse\x12j\n" +
-	"\x11DisconnectSession\x12).muxvia.cloud.v1.DisconnectSessionRequest\x1a*.muxvia.cloud.v1.DisconnectSessionResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x11DisconnectSession\x12).muxvia.cloud.v1.DisconnectSessionRequest\x1a*.muxvia.cloud.v1.DisconnectSessionResponse\x12|\n" +
+	"\x17ListCertificateProfiles\x12/.muxvia.cloud.v1.ListCertificateProfilesRequest\x1a0.muxvia.cloud.v1.ListCertificateProfilesResponse\x12\x7f\n" +
+	"\x18UploadCertificateProfile\x120.muxvia.cloud.v1.UploadCertificateProfileRequest\x1a1.muxvia.cloud.v1.UploadCertificateProfileResponse\x12y\n" +
+	"\x16BindCertificateProfile\x12..muxvia.cloud.v1.BindCertificateProfileRequest\x1a/.muxvia.cloud.v1.BindCertificateProfileResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_operator_proto_rawDescOnce sync.Once
@@ -2216,6 +2218,12 @@ var file_cloud_v1_operator_proto_goTypes = []any{
 	(ClientProduct)(0),                        // 39: muxvia.cloud.v1.ClientProduct
 	(*OrderProjection)(nil),                   // 40: muxvia.cloud.v1.OrderProjection
 	(AccountState)(0),                         // 41: muxvia.cloud.v1.AccountState
+	(*ListCertificateProfilesRequest)(nil),    // 42: muxvia.cloud.v1.ListCertificateProfilesRequest
+	(*UploadCertificateProfileRequest)(nil),   // 43: muxvia.cloud.v1.UploadCertificateProfileRequest
+	(*BindCertificateProfileRequest)(nil),     // 44: muxvia.cloud.v1.BindCertificateProfileRequest
+	(*ListCertificateProfilesResponse)(nil),   // 45: muxvia.cloud.v1.ListCertificateProfilesResponse
+	(*UploadCertificateProfileResponse)(nil),  // 46: muxvia.cloud.v1.UploadCertificateProfileResponse
+	(*BindCertificateProfileResponse)(nil),    // 47: muxvia.cloud.v1.BindCertificateProfileResponse
 }
 var file_cloud_v1_operator_proto_depIdxs = []int32{
 	33, // 0: muxvia.cloud.v1.OperatorOverview.generated_at:type_name -> google.protobuf.Timestamp
@@ -2263,20 +2271,26 @@ var file_cloud_v1_operator_proto_depIdxs = []int32{
 	26, // 42: muxvia.cloud.v1.OperatorService.SetAccountRole:input_type -> muxvia.cloud.v1.SetAccountRoleRequest
 	28, // 43: muxvia.cloud.v1.OperatorService.DisconnectDaemon:input_type -> muxvia.cloud.v1.DisconnectDaemonRequest
 	30, // 44: muxvia.cloud.v1.OperatorService.DisconnectSession:input_type -> muxvia.cloud.v1.DisconnectSessionRequest
-	9,  // 45: muxvia.cloud.v1.OperatorService.GetOverview:output_type -> muxvia.cloud.v1.GetOperatorOverviewResponse
-	11, // 46: muxvia.cloud.v1.OperatorService.ListAccounts:output_type -> muxvia.cloud.v1.ListOperatorAccountsResponse
-	13, // 47: muxvia.cloud.v1.OperatorService.GetAccount:output_type -> muxvia.cloud.v1.GetOperatorAccountResponse
-	15, // 48: muxvia.cloud.v1.OperatorService.ListRuntimeSessions:output_type -> muxvia.cloud.v1.ListRuntimeSessionsResponse
-	17, // 49: muxvia.cloud.v1.OperatorService.ListOrders:output_type -> muxvia.cloud.v1.ListOperatorOrdersResponse
-	19, // 50: muxvia.cloud.v1.OperatorService.ListSubscriptions:output_type -> muxvia.cloud.v1.ListOperatorSubscriptionsResponse
-	21, // 51: muxvia.cloud.v1.OperatorService.ListUsage:output_type -> muxvia.cloud.v1.ListOperatorUsageResponse
-	23, // 52: muxvia.cloud.v1.OperatorService.ListAudit:output_type -> muxvia.cloud.v1.ListOperatorAuditResponse
-	25, // 53: muxvia.cloud.v1.OperatorService.SetAccountState:output_type -> muxvia.cloud.v1.SetAccountStateResponse
-	27, // 54: muxvia.cloud.v1.OperatorService.SetAccountRole:output_type -> muxvia.cloud.v1.SetAccountRoleResponse
-	29, // 55: muxvia.cloud.v1.OperatorService.DisconnectDaemon:output_type -> muxvia.cloud.v1.DisconnectDaemonResponse
-	31, // 56: muxvia.cloud.v1.OperatorService.DisconnectSession:output_type -> muxvia.cloud.v1.DisconnectSessionResponse
-	45, // [45:57] is the sub-list for method output_type
-	33, // [33:45] is the sub-list for method input_type
+	42, // 45: muxvia.cloud.v1.OperatorService.ListCertificateProfiles:input_type -> muxvia.cloud.v1.ListCertificateProfilesRequest
+	43, // 46: muxvia.cloud.v1.OperatorService.UploadCertificateProfile:input_type -> muxvia.cloud.v1.UploadCertificateProfileRequest
+	44, // 47: muxvia.cloud.v1.OperatorService.BindCertificateProfile:input_type -> muxvia.cloud.v1.BindCertificateProfileRequest
+	9,  // 48: muxvia.cloud.v1.OperatorService.GetOverview:output_type -> muxvia.cloud.v1.GetOperatorOverviewResponse
+	11, // 49: muxvia.cloud.v1.OperatorService.ListAccounts:output_type -> muxvia.cloud.v1.ListOperatorAccountsResponse
+	13, // 50: muxvia.cloud.v1.OperatorService.GetAccount:output_type -> muxvia.cloud.v1.GetOperatorAccountResponse
+	15, // 51: muxvia.cloud.v1.OperatorService.ListRuntimeSessions:output_type -> muxvia.cloud.v1.ListRuntimeSessionsResponse
+	17, // 52: muxvia.cloud.v1.OperatorService.ListOrders:output_type -> muxvia.cloud.v1.ListOperatorOrdersResponse
+	19, // 53: muxvia.cloud.v1.OperatorService.ListSubscriptions:output_type -> muxvia.cloud.v1.ListOperatorSubscriptionsResponse
+	21, // 54: muxvia.cloud.v1.OperatorService.ListUsage:output_type -> muxvia.cloud.v1.ListOperatorUsageResponse
+	23, // 55: muxvia.cloud.v1.OperatorService.ListAudit:output_type -> muxvia.cloud.v1.ListOperatorAuditResponse
+	25, // 56: muxvia.cloud.v1.OperatorService.SetAccountState:output_type -> muxvia.cloud.v1.SetAccountStateResponse
+	27, // 57: muxvia.cloud.v1.OperatorService.SetAccountRole:output_type -> muxvia.cloud.v1.SetAccountRoleResponse
+	29, // 58: muxvia.cloud.v1.OperatorService.DisconnectDaemon:output_type -> muxvia.cloud.v1.DisconnectDaemonResponse
+	31, // 59: muxvia.cloud.v1.OperatorService.DisconnectSession:output_type -> muxvia.cloud.v1.DisconnectSessionResponse
+	45, // 60: muxvia.cloud.v1.OperatorService.ListCertificateProfiles:output_type -> muxvia.cloud.v1.ListCertificateProfilesResponse
+	46, // 61: muxvia.cloud.v1.OperatorService.UploadCertificateProfile:output_type -> muxvia.cloud.v1.UploadCertificateProfileResponse
+	47, // 62: muxvia.cloud.v1.OperatorService.BindCertificateProfile:output_type -> muxvia.cloud.v1.BindCertificateProfileResponse
+	48, // [48:63] is the sub-list for method output_type
+	33, // [33:48] is the sub-list for method input_type
 	33, // [33:33] is the sub-list for extension type_name
 	33, // [33:33] is the sub-list for extension extendee
 	0,  // [0:33] is the sub-list for field type_name
@@ -2288,6 +2302,7 @@ func file_cloud_v1_operator_proto_init() {
 		return
 	}
 	file_cloud_v1_account_proto_init()
+	file_cloud_v1_certificate_proto_init()
 	file_cloud_v1_commerce_proto_init()
 	file_cloud_v1_runtime_proto_init()
 	type x struct{}

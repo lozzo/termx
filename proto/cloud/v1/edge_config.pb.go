@@ -299,6 +299,7 @@ type ManagedEdge struct {
 	Config         *EdgeDesiredConfig     `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
 	ConfigRevision uint64                 `protobuf:"varint,2,opt,name=config_revision,json=configRevision,proto3" json:"config_revision,omitempty"`
 	Runtime        *EdgeRuntimeProjection `protobuf:"bytes,3,opt,name=runtime,proto3" json:"runtime,omitempty"`
+	Certificate    *CertificateBinding    `protobuf:"bytes,4,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -350,6 +351,13 @@ func (x *ManagedEdge) GetConfigRevision() uint64 {
 func (x *ManagedEdge) GetRuntime() *EdgeRuntimeProjection {
 	if x != nil {
 		return x.Runtime
+	}
+	return nil
+}
+
+func (x *ManagedEdge) GetCertificate() *CertificateBinding {
+	if x != nil {
+		return x.Certificate
 	}
 	return nil
 }
@@ -888,7 +896,7 @@ var File_cloud_v1_edge_config_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1acloud/v1/edge_config.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
+	"\x1acloud/v1/edge_config.proto\x12\x0fmuxvia.cloud.v1\x1a\x1acloud/v1/certificate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
 	"\x11EdgeDesiredConfig\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\x12\x12\n" +
@@ -913,11 +921,12 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\fconnected_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vconnectedAt\x12A\n" +
 	"\x0elast_heartbeat\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastHeartbeat\x124\n" +
 	"\x16relay_allocation_count\x18\n" +
-	" \x01(\x04R\x14relayAllocationCount\"\xb4\x01\n" +
+	" \x01(\x04R\x14relayAllocationCount\"\xfb\x01\n" +
 	"\vManagedEdge\x12:\n" +
 	"\x06config\x18\x01 \x01(\v2\".muxvia.cloud.v1.EdgeDesiredConfigR\x06config\x12'\n" +
 	"\x0fconfig_revision\x18\x02 \x01(\x04R\x0econfigRevision\x12@\n" +
-	"\aruntime\x18\x03 \x01(\v2&.muxvia.cloud.v1.EdgeRuntimeProjectionR\aruntime\"\x12\n" +
+	"\aruntime\x18\x03 \x01(\v2&.muxvia.cloud.v1.EdgeRuntimeProjectionR\aruntime\x12E\n" +
+	"\vcertificate\x18\x04 \x01(\v2#.muxvia.cloud.v1.CertificateBindingR\vcertificate\"\x12\n" +
 	"\x10ListEdgesRequest\"G\n" +
 	"\x11ListEdgesResponse\x122\n" +
 	"\x05edges\x18\x01 \x03(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x05edges\"\x84\x01\n" +
@@ -985,22 +994,24 @@ var file_cloud_v1_edge_config_proto_goTypes = []any{
 	(*RegisterEdgeRequest)(nil),     // 10: muxvia.cloud.v1.RegisterEdgeRequest
 	(*RegisterEdgeResponse)(nil),    // 11: muxvia.cloud.v1.RegisterEdgeResponse
 	(*timestamppb.Timestamp)(nil),   // 12: google.protobuf.Timestamp
+	(*CertificateBinding)(nil),      // 13: muxvia.cloud.v1.CertificateBinding
 }
 var file_cloud_v1_edge_config_proto_depIdxs = []int32{
 	12, // 0: muxvia.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
 	12, // 1: muxvia.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
 	0,  // 2: muxvia.cloud.v1.ManagedEdge.config:type_name -> muxvia.cloud.v1.EdgeDesiredConfig
 	2,  // 3: muxvia.cloud.v1.ManagedEdge.runtime:type_name -> muxvia.cloud.v1.EdgeRuntimeProjection
-	3,  // 4: muxvia.cloud.v1.ListEdgesResponse.edges:type_name -> muxvia.cloud.v1.ManagedEdge
-	3,  // 5: muxvia.cloud.v1.CreateEdgeResponse.edge:type_name -> muxvia.cloud.v1.ManagedEdge
-	12, // 6: muxvia.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 7: muxvia.cloud.v1.UpdateEdgeResponse.edge:type_name -> muxvia.cloud.v1.ManagedEdge
-	1,  // 8: muxvia.cloud.v1.RegisterEdgeResponse.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	13, // 4: muxvia.cloud.v1.ManagedEdge.certificate:type_name -> muxvia.cloud.v1.CertificateBinding
+	3,  // 5: muxvia.cloud.v1.ListEdgesResponse.edges:type_name -> muxvia.cloud.v1.ManagedEdge
+	3,  // 6: muxvia.cloud.v1.CreateEdgeResponse.edge:type_name -> muxvia.cloud.v1.ManagedEdge
+	12, // 7: muxvia.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 8: muxvia.cloud.v1.UpdateEdgeResponse.edge:type_name -> muxvia.cloud.v1.ManagedEdge
+	1,  // 9: muxvia.cloud.v1.RegisterEdgeResponse.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_edge_config_proto_init() }
@@ -1008,6 +1019,7 @@ func file_cloud_v1_edge_config_proto_init() {
 	if File_cloud_v1_edge_config_proto != nil {
 		return
 	}
+	file_cloud_v1_certificate_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -3,6 +3,7 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
+import "cloud/v1/certificate.proto";
 import "cloud/v1/edge_config.proto";
 import "cloud/v1/runtime.proto";
 import "cloud/v1/usage.proto";
@@ -16,6 +17,7 @@ enum EdgeCapability {
   EDGE_CAPABILITY_CONTROL_STREAM = 1;
   EDGE_CAPABILITY_RELAY = 2;
   EDGE_CAPABILITY_USAGE_OUTBOX = 3;
+  EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
 }
 
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -26,6 +28,7 @@ message EdgeHello {
   repeated EdgeCapability capabilities = 3;
   uint64 desired_config_version = 4;
   uint64 certificate_version = 5;
+  string certificate_profile_id = 6;
 }
 
 // EdgeWelcome 表示 Controller 已接受当前 mTLS 连接和协议版本。
@@ -83,6 +86,16 @@ message ConfigApplied {
   string error_code = 3;
 }
 
+// CertificateApplied 是 Edge 对证书包完成校验、落盘和热切换后的结果。
+// applied=false 时 Edge 必须继续使用此前已加载的证书。
+message CertificateApplied {
+  string certificate_profile_id = 1;
+  uint64 revision = 2;
+  bool applied = 3;
+  string error_code = 4;
+  string error_message = 5;
+}
+
 message CloseDaemonConnection {
   string command_id = 1;
   string correlation_id = 2;
@@ -137,6 +150,7 @@ message EdgeEvent {
     RelayLeaseRequest relay_lease_request = 27;
     UsageBatch usage_batch = 28;
     EdgeCommandResult command_result = 29;
+    CertificateApplied certificate_applied = 30;
   }
 }
 
@@ -159,6 +173,7 @@ message ControllerCommand {
     UsageAck usage_ack = 25;
     CloseDaemonConnection close_daemon = 26;
     CloseClientSession close_session = 27;
+    EdgeCertificateBundle certificate_bundle = 28;
   }
 }
 

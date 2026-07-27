@@ -6,6 +6,8 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { HeartbeatPolicy, VerificationKey } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
+import type { EdgeCertificateBundle } from "./certificate_pb";
+import { file_cloud_v1_certificate } from "./certificate_pb";
 import type { SignedEdgeDesiredConfig } from "./edge_config_pb";
 import { file_cloud_v1_edge_config } from "./edge_config_pb";
 import type { AgentPresence, ClientSessionSummary, RelayAllocationSummary, RuntimeDelta } from "./runtime_pb";
@@ -20,7 +22,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/edge_control.proto.
  */
 export const file_cloud_v1_edge_control: GenFile = /*@__PURE__*/
-  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD211eHZpYS5jbG91ZC52MSKqAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5tdXh2aWEuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEIqkBCgtFZGdlV2VsY29tZRIhChlhY2NlcHRlZF9wcm90b2NvbF92ZXJzaW9uGAEgASgNEjMKCWhlYXJ0YmVhdBgCIAEoCzIgLm11eHZpYS5jbG91ZC52MS5IZWFydGJlYXRQb2xpY3kSQgoYdGlja2V0X3ZlcmlmaWNhdGlvbl9rZXlzGAMgAygLMiAubXV4dmlhLmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSI2Cg1TbmFwc2hvdEJlZ2luEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIuABCg1TbmFwc2hvdENodW5rEhMKC3NuYXBzaG90X2lkGAEgASgJEhMKC2NodW5rX2luZGV4GAIgASgNEi4KBmFnZW50cxgDIAMoCzIeLm11eHZpYS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAQgAygLMiUubXV4dmlhLmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5EjwKC2FsbG9jYXRpb25zGAUgAygLMicubXV4dmlhLmNsb3VkLnYxLlJlbGF5QWxsb2NhdGlvblN1bW1hcnkiWQoLU25hcHNob3RFbmQSEwoLc25hcHNob3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQSEwoLY2h1bmtfY291bnQYAyABKA0SDgoGZGlnZXN0GAQgASgMIikKDUVkZ2VIZWFydGJlYXQSGAoQcnVudGltZV9yZXZpc2lvbhgBIAEoBCI5ChBTbmFwc2hvdEFjY2VwdGVkEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIjsKDlJlc3luY1JlcXVpcmVkEhkKEWV4cGVjdGVkX3JldmlzaW9uGAEgASgEEg4KBnJlYXNvbhgCIAEoCSJFCg1Db25maWdBcHBsaWVkEg8KB3ZlcnNpb24YASABKAQSDwoHYXBwbGllZBgCIAEoCBISCgplcnJvcl9jb2RlGAMgASgJIqgBChVDbG9zZURhZW1vbkNvbm5lY3Rpb24SEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIsCghkZWFkbGluZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZGFlbW9uX2lkGAQgASgJEhIKCmdlbmVyYXRpb24YBSABKAQSDgoGcmVhc29uGAYgASgJIqYBChJDbG9zZUNsaWVudFNlc3Npb24SEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIsCghkZWFkbGluZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKc2Vzc2lvbl9pZBgEIAEoCRISCgpnZW5lcmF0aW9uGAUgASgEEg4KBnJlYXNvbhgGIAEoCSK0AQoRRWRnZUNvbW1hbmRSZXN1bHQSEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIwCgRjb2RlGAMgASgOMiIubXV4dmlhLmNsb3VkLnYxLkNvbW1hbmRSZXN1bHRDb2RlEg8KB21lc3NhZ2UYBCABKAkSMAoMY29tcGxldGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLzBQoJRWRnZUV2ZW50EhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoFaGVsbG8YFCABKAsyGi5tdXh2aWEuY2xvdWQudjEuRWRnZUhlbGxvSAASOAoOc25hcHNob3RfYmVnaW4YFSABKAsyHi5tdXh2aWEuY2xvdWQudjEuU25hcHNob3RCZWdpbkgAEjgKDnNuYXBzaG90X2NodW5rGBYgASgLMh4ubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90Q2h1bmtIABI0CgxzbmFwc2hvdF9lbmQYFyABKAsyHC5tdXh2aWEuY2xvdWQudjEuU25hcHNob3RFbmRIABI2Cg1ydW50aW1lX2RlbHRhGBggASgLMh0ubXV4dmlhLmNsb3VkLnYxLlJ1bnRpbWVEZWx0YUgAEjMKCWhlYXJ0YmVhdBgZIAEoCzIeLm11eHZpYS5jbG91ZC52MS5FZGdlSGVhcnRiZWF0SAASOAoOY29uZmlnX2FwcGxpZWQYGiABKAsyHi5tdXh2aWEuY2xvdWQudjEuQ29uZmlnQXBwbGllZEgAEkEKE3JlbGF5X2xlYXNlX3JlcXVlc3QYGyABKAsyIi5tdXh2aWEuY2xvdWQudjEuUmVsYXlMZWFzZVJlcXVlc3RIABIyCgt1c2FnZV9iYXRjaBgcIAEoCzIbLm11eHZpYS5jbG91ZC52MS5Vc2FnZUJhdGNoSAASPAoOY29tbWFuZF9yZXN1bHQYHSABKAsyIi5tdXh2aWEuY2xvdWQudjEuRWRnZUNvbW1hbmRSZXN1bHRIAEIJCgdwYXlsb2FkIqwFChFDb250cm9sbGVyQ29tbWFuZBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KB3dlbGNvbWUYFCABKAsyHC5tdXh2aWEuY2xvdWQudjEuRWRnZVdlbGNvbWVIABI+ChFzbmFwc2hvdF9hY2NlcHRlZBgVIAEoCzIhLm11eHZpYS5jbG91ZC52MS5TbmFwc2hvdEFjY2VwdGVkSAASOgoPcmVzeW5jX3JlcXVpcmVkGBYgASgLMh8ubXV4dmlhLmNsb3VkLnYxLlJlc3luY1JlcXVpcmVkSAASQgoOZGVzaXJlZF9jb25maWcYFyABKAsyKC5tdXh2aWEuY2xvdWQudjEuU2lnbmVkRWRnZURlc2lyZWRDb25maWdIABJDChRyZWxheV9sZWFzZV9kZWNpc2lvbhgYIAEoCzIjLm11eHZpYS5jbG91ZC52MS5SZWxheUxlYXNlRGVjaXNpb25IABIuCgl1c2FnZV9hY2sYGSABKAsyGS5tdXh2aWEuY2xvdWQudjEuVXNhZ2VBY2tIABI+CgxjbG9zZV9kYWVtb24YGiABKAsyJi5tdXh2aWEuY2xvdWQudjEuQ2xvc2VEYWVtb25Db25uZWN0aW9uSAASPAoNY2xvc2Vfc2Vzc2lvbhgbIAEoCzIjLm11eHZpYS5jbG91ZC52MS5DbG9zZUNsaWVudFNlc3Npb25IAEIJCgdwYXlsb2FkKpIBCg5FZGdlQ2FwYWJpbGl0eRIfChtFREdFX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIiCh5FREdFX0NBUEFCSUxJVFlfQ09OVFJPTF9TVFJFQU0QARIZChVFREdFX0NBUEFCSUxJVFlfUkVMQVkQAhIgChxFREdFX0NBUEFCSUxJVFlfVVNBR0VfT1VUQk9YEAMqmgEKEUNvbW1hbmRSZXN1bHRDb2RlEiMKH0NPTU1BTkRfUkVTVUxUX0NPREVfVU5TUEVDSUZJRUQQABIfChtDT01NQU5EX1JFU1VMVF9DT0RFX0FQUExJRUQQARIgChxDT01NQU5EX1JFU1VMVF9DT0RFX1JFSkVDVEVEEAISHQoZQ09NTUFORF9SRVNVTFRfQ09ERV9TVEFMRRADMlwKC0VkZ2VDb250cm9sEk0KB0Nvbm5lY3QSGi5tdXh2aWEuY2xvdWQudjEuRWRnZUV2ZW50GiIubXV4dmlhLmNsb3VkLnYxLkNvbnRyb2xsZXJDb21tYW5kKAEwAUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_cloud_v1_edge_config, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
+  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD211eHZpYS5jbG91ZC52MSLKAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5tdXh2aWEuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEEh4KFmNlcnRpZmljYXRlX3Byb2ZpbGVfaWQYBiABKAkiqQEKC0VkZ2VXZWxjb21lEiEKGWFjY2VwdGVkX3Byb3RvY29sX3ZlcnNpb24YASABKA0SMwoJaGVhcnRiZWF0GAIgASgLMiAubXV4dmlhLmNsb3VkLnYxLkhlYXJ0YmVhdFBvbGljeRJCChh0aWNrZXRfdmVyaWZpY2F0aW9uX2tleXMYAyADKAsyIC5tdXh2aWEuY2xvdWQudjEuVmVyaWZpY2F0aW9uS2V5IjYKDVNuYXBzaG90QmVnaW4SEwoLc25hcHNob3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQi4AEKDVNuYXBzaG90Q2h1bmsSEwoLc25hcHNob3RfaWQYASABKAkSEwoLY2h1bmtfaW5kZXgYAiABKA0SLgoGYWdlbnRzGAMgAygLMh4ubXV4dmlhLmNsb3VkLnYxLkFnZW50UHJlc2VuY2USNwoIc2Vzc2lvbnMYBCADKAsyJS5tdXh2aWEuY2xvdWQudjEuQ2xpZW50U2Vzc2lvblN1bW1hcnkSPAoLYWxsb2NhdGlvbnMYBSADKAsyJy5tdXh2aWEuY2xvdWQudjEuUmVsYXlBbGxvY2F0aW9uU3VtbWFyeSJZCgtTbmFwc2hvdEVuZBITCgtzbmFwc2hvdF9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoBBITCgtjaHVua19jb3VudBgDIAEoDRIOCgZkaWdlc3QYBCABKAwiKQoNRWRnZUhlYXJ0YmVhdBIYChBydW50aW1lX3JldmlzaW9uGAEgASgEIjkKEFNuYXBzaG90QWNjZXB0ZWQSEwoLc25hcHNob3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQiOwoOUmVzeW5jUmVxdWlyZWQSGQoRZXhwZWN0ZWRfcmV2aXNpb24YASABKAQSDgoGcmVhc29uGAIgASgJIkUKDUNvbmZpZ0FwcGxpZWQSDwoHdmVyc2lvbhgBIAEoBBIPCgdhcHBsaWVkGAIgASgIEhIKCmVycm9yX2NvZGUYAyABKAkiggEKEkNlcnRpZmljYXRlQXBwbGllZBIeChZjZXJ0aWZpY2F0ZV9wcm9maWxlX2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEEg8KB2FwcGxpZWQYAyABKAgSEgoKZXJyb3JfY29kZRgEIAEoCRIVCg1lcnJvcl9tZXNzYWdlGAUgASgJIqgBChVDbG9zZURhZW1vbkNvbm5lY3Rpb24SEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIsCghkZWFkbGluZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZGFlbW9uX2lkGAQgASgJEhIKCmdlbmVyYXRpb24YBSABKAQSDgoGcmVhc29uGAYgASgJIqYBChJDbG9zZUNsaWVudFNlc3Npb24SEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIsCghkZWFkbGluZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKc2Vzc2lvbl9pZBgEIAEoCRISCgpnZW5lcmF0aW9uGAUgASgEEg4KBnJlYXNvbhgGIAEoCSK0AQoRRWRnZUNvbW1hbmRSZXN1bHQSEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIwCgRjb2RlGAMgASgOMiIubXV4dmlhLmNsb3VkLnYxLkNvbW1hbmRSZXN1bHRDb2RlEg8KB21lc3NhZ2UYBCABKAkSMAoMY29tcGxldGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK3BgoJRWRnZUV2ZW50EhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoFaGVsbG8YFCABKAsyGi5tdXh2aWEuY2xvdWQudjEuRWRnZUhlbGxvSAASOAoOc25hcHNob3RfYmVnaW4YFSABKAsyHi5tdXh2aWEuY2xvdWQudjEuU25hcHNob3RCZWdpbkgAEjgKDnNuYXBzaG90X2NodW5rGBYgASgLMh4ubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90Q2h1bmtIABI0CgxzbmFwc2hvdF9lbmQYFyABKAsyHC5tdXh2aWEuY2xvdWQudjEuU25hcHNob3RFbmRIABI2Cg1ydW50aW1lX2RlbHRhGBggASgLMh0ubXV4dmlhLmNsb3VkLnYxLlJ1bnRpbWVEZWx0YUgAEjMKCWhlYXJ0YmVhdBgZIAEoCzIeLm11eHZpYS5jbG91ZC52MS5FZGdlSGVhcnRiZWF0SAASOAoOY29uZmlnX2FwcGxpZWQYGiABKAsyHi5tdXh2aWEuY2xvdWQudjEuQ29uZmlnQXBwbGllZEgAEkEKE3JlbGF5X2xlYXNlX3JlcXVlc3QYGyABKAsyIi5tdXh2aWEuY2xvdWQudjEuUmVsYXlMZWFzZVJlcXVlc3RIABIyCgt1c2FnZV9iYXRjaBgcIAEoCzIbLm11eHZpYS5jbG91ZC52MS5Vc2FnZUJhdGNoSAASPAoOY29tbWFuZF9yZXN1bHQYHSABKAsyIi5tdXh2aWEuY2xvdWQudjEuRWRnZUNvbW1hbmRSZXN1bHRIABJCChNjZXJ0aWZpY2F0ZV9hcHBsaWVkGB4gASgLMiMubXV4dmlhLmNsb3VkLnYxLkNlcnRpZmljYXRlQXBwbGllZEgAQgkKB3BheWxvYWQi8gUKEUNvbnRyb2xsZXJDb21tYW5kEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoHd2VsY29tZRgUIAEoCzIcLm11eHZpYS5jbG91ZC52MS5FZGdlV2VsY29tZUgAEj4KEXNuYXBzaG90X2FjY2VwdGVkGBUgASgLMiEubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90QWNjZXB0ZWRIABI6Cg9yZXN5bmNfcmVxdWlyZWQYFiABKAsyHy5tdXh2aWEuY2xvdWQudjEuUmVzeW5jUmVxdWlyZWRIABJCCg5kZXNpcmVkX2NvbmZpZxgXIAEoCzIoLm11eHZpYS5jbG91ZC52MS5TaWduZWRFZGdlRGVzaXJlZENvbmZpZ0gAEkMKFHJlbGF5X2xlYXNlX2RlY2lzaW9uGBggASgLMiMubXV4dmlhLmNsb3VkLnYxLlJlbGF5TGVhc2VEZWNpc2lvbkgAEi4KCXVzYWdlX2FjaxgZIAEoCzIZLm11eHZpYS5jbG91ZC52MS5Vc2FnZUFja0gAEj4KDGNsb3NlX2RhZW1vbhgaIAEoCzImLm11eHZpYS5jbG91ZC52MS5DbG9zZURhZW1vbkNvbm5lY3Rpb25IABI8Cg1jbG9zZV9zZXNzaW9uGBsgASgLMiMubXV4dmlhLmNsb3VkLnYxLkNsb3NlQ2xpZW50U2Vzc2lvbkgAEkQKEmNlcnRpZmljYXRlX2J1bmRsZRgcIAEoCzImLm11eHZpYS5jbG91ZC52MS5FZGdlQ2VydGlmaWNhdGVCdW5kbGVIAEIJCgdwYXlsb2FkKr4BCg5FZGdlQ2FwYWJpbGl0eRIfChtFREdFX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIiCh5FREdFX0NBUEFCSUxJVFlfQ09OVFJPTF9TVFJFQU0QARIZChVFREdFX0NBUEFCSUxJVFlfUkVMQVkQAhIgChxFREdFX0NBUEFCSUxJVFlfVVNBR0VfT1VUQk9YEAMSKgomRURHRV9DQVBBQklMSVRZX0NFUlRJRklDQVRFX0hPVF9SRUxPQUQQBCqaAQoRQ29tbWFuZFJlc3VsdENvZGUSIwofQ09NTUFORF9SRVNVTFRfQ09ERV9VTlNQRUNJRklFRBAAEh8KG0NPTU1BTkRfUkVTVUxUX0NPREVfQVBQTElFRBABEiAKHENPTU1BTkRfUkVTVUxUX0NPREVfUkVKRUNURUQQAhIdChlDT01NQU5EX1JFU1VMVF9DT0RFX1NUQUxFEAMyXAoLRWRnZUNvbnRyb2wSTQoHQ29ubmVjdBIaLm11eHZpYS5jbG91ZC52MS5FZGdlRXZlbnQaIi5tdXh2aWEuY2xvdWQudjEuQ29udHJvbGxlckNvbW1hbmQoATABQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_cloud_v1_certificate, file_cloud_v1_edge_config, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
 
 /**
  * EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -53,6 +55,11 @@ export type EdgeHello = Message<"muxvia.cloud.v1.EdgeHello"> & {
    * @generated from field: uint64 certificate_version = 5;
    */
   certificateVersion: bigint;
+
+  /**
+   * @generated from field: string certificate_profile_id = 6;
+   */
+  certificateProfileId: string;
 };
 
 /**
@@ -286,6 +293,46 @@ export const ConfigAppliedSchema: GenMessage<ConfigApplied> = /*@__PURE__*/
   messageDesc(file_cloud_v1_edge_control, 8);
 
 /**
+ * CertificateApplied 是 Edge 对证书包完成校验、落盘和热切换后的结果。
+ * applied=false 时 Edge 必须继续使用此前已加载的证书。
+ *
+ * @generated from message muxvia.cloud.v1.CertificateApplied
+ */
+export type CertificateApplied = Message<"muxvia.cloud.v1.CertificateApplied"> & {
+  /**
+   * @generated from field: string certificate_profile_id = 1;
+   */
+  certificateProfileId: string;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: bool applied = 3;
+   */
+  applied: boolean;
+
+  /**
+   * @generated from field: string error_code = 4;
+   */
+  errorCode: string;
+
+  /**
+   * @generated from field: string error_message = 5;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.CertificateApplied.
+ * Use `create(CertificateAppliedSchema)` to create a new message.
+ */
+export const CertificateAppliedSchema: GenMessage<CertificateApplied> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 9);
+
+/**
  * @generated from message muxvia.cloud.v1.CloseDaemonConnection
  */
 export type CloseDaemonConnection = Message<"muxvia.cloud.v1.CloseDaemonConnection"> & {
@@ -325,7 +372,7 @@ export type CloseDaemonConnection = Message<"muxvia.cloud.v1.CloseDaemonConnecti
  * Use `create(CloseDaemonConnectionSchema)` to create a new message.
  */
 export const CloseDaemonConnectionSchema: GenMessage<CloseDaemonConnection> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 9);
+  messageDesc(file_cloud_v1_edge_control, 10);
 
 /**
  * @generated from message muxvia.cloud.v1.CloseClientSession
@@ -367,7 +414,7 @@ export type CloseClientSession = Message<"muxvia.cloud.v1.CloseClientSession"> &
  * Use `create(CloseClientSessionSchema)` to create a new message.
  */
 export const CloseClientSessionSchema: GenMessage<CloseClientSession> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 10);
+  messageDesc(file_cloud_v1_edge_control, 11);
 
 /**
  * @generated from message muxvia.cloud.v1.EdgeCommandResult
@@ -404,7 +451,7 @@ export type EdgeCommandResult = Message<"muxvia.cloud.v1.EdgeCommandResult"> & {
  * Use `create(EdgeCommandResultSchema)` to create a new message.
  */
 export const EdgeCommandResultSchema: GenMessage<EdgeCommandResult> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 11);
+  messageDesc(file_cloud_v1_edge_control, 12);
 
 /**
  * EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
@@ -511,6 +558,12 @@ export type EdgeEvent = Message<"muxvia.cloud.v1.EdgeEvent"> & {
      */
     value: EdgeCommandResult;
     case: "commandResult";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.CertificateApplied certificate_applied = 30;
+     */
+    value: CertificateApplied;
+    case: "certificateApplied";
   } | { case: undefined; value?: undefined };
 };
 
@@ -519,7 +572,7 @@ export type EdgeEvent = Message<"muxvia.cloud.v1.EdgeEvent"> & {
  * Use `create(EdgeEventSchema)` to create a new message.
  */
 export const EdgeEventSchema: GenMessage<EdgeEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 12);
+  messageDesc(file_cloud_v1_edge_control, 13);
 
 /**
  * ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
@@ -614,6 +667,12 @@ export type ControllerCommand = Message<"muxvia.cloud.v1.ControllerCommand"> & {
      */
     value: CloseClientSession;
     case: "closeSession";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.EdgeCertificateBundle certificate_bundle = 28;
+     */
+    value: EdgeCertificateBundle;
+    case: "certificateBundle";
   } | { case: undefined; value?: undefined };
 };
 
@@ -622,7 +681,7 @@ export type ControllerCommand = Message<"muxvia.cloud.v1.ControllerCommand"> & {
  * Use `create(ControllerCommandSchema)` to create a new message.
  */
 export const ControllerCommandSchema: GenMessage<ControllerCommand> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 13);
+  messageDesc(file_cloud_v1_edge_control, 14);
 
 /**
  * EdgeCapability 是 Edge 进程已实现并愿意承诺的版本化能力。
@@ -649,6 +708,11 @@ export enum EdgeCapability {
    * @generated from enum value: EDGE_CAPABILITY_USAGE_OUTBOX = 3;
    */
   USAGE_OUTBOX = 3,
+
+  /**
+   * @generated from enum value: EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
+   */
+  CERTIFICATE_HOT_RELOAD = 4,
 }
 
 /**

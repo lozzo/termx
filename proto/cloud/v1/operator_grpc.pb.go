@@ -19,18 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OperatorService_GetOverview_FullMethodName         = "/muxvia.cloud.v1.OperatorService/GetOverview"
-	OperatorService_ListAccounts_FullMethodName        = "/muxvia.cloud.v1.OperatorService/ListAccounts"
-	OperatorService_GetAccount_FullMethodName          = "/muxvia.cloud.v1.OperatorService/GetAccount"
-	OperatorService_ListRuntimeSessions_FullMethodName = "/muxvia.cloud.v1.OperatorService/ListRuntimeSessions"
-	OperatorService_ListOrders_FullMethodName          = "/muxvia.cloud.v1.OperatorService/ListOrders"
-	OperatorService_ListSubscriptions_FullMethodName   = "/muxvia.cloud.v1.OperatorService/ListSubscriptions"
-	OperatorService_ListUsage_FullMethodName           = "/muxvia.cloud.v1.OperatorService/ListUsage"
-	OperatorService_ListAudit_FullMethodName           = "/muxvia.cloud.v1.OperatorService/ListAudit"
-	OperatorService_SetAccountState_FullMethodName     = "/muxvia.cloud.v1.OperatorService/SetAccountState"
-	OperatorService_SetAccountRole_FullMethodName      = "/muxvia.cloud.v1.OperatorService/SetAccountRole"
-	OperatorService_DisconnectDaemon_FullMethodName    = "/muxvia.cloud.v1.OperatorService/DisconnectDaemon"
-	OperatorService_DisconnectSession_FullMethodName   = "/muxvia.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_GetOverview_FullMethodName              = "/muxvia.cloud.v1.OperatorService/GetOverview"
+	OperatorService_ListAccounts_FullMethodName             = "/muxvia.cloud.v1.OperatorService/ListAccounts"
+	OperatorService_GetAccount_FullMethodName               = "/muxvia.cloud.v1.OperatorService/GetAccount"
+	OperatorService_ListRuntimeSessions_FullMethodName      = "/muxvia.cloud.v1.OperatorService/ListRuntimeSessions"
+	OperatorService_ListOrders_FullMethodName               = "/muxvia.cloud.v1.OperatorService/ListOrders"
+	OperatorService_ListSubscriptions_FullMethodName        = "/muxvia.cloud.v1.OperatorService/ListSubscriptions"
+	OperatorService_ListUsage_FullMethodName                = "/muxvia.cloud.v1.OperatorService/ListUsage"
+	OperatorService_ListAudit_FullMethodName                = "/muxvia.cloud.v1.OperatorService/ListAudit"
+	OperatorService_SetAccountState_FullMethodName          = "/muxvia.cloud.v1.OperatorService/SetAccountState"
+	OperatorService_SetAccountRole_FullMethodName           = "/muxvia.cloud.v1.OperatorService/SetAccountRole"
+	OperatorService_DisconnectDaemon_FullMethodName         = "/muxvia.cloud.v1.OperatorService/DisconnectDaemon"
+	OperatorService_DisconnectSession_FullMethodName        = "/muxvia.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_ListCertificateProfiles_FullMethodName  = "/muxvia.cloud.v1.OperatorService/ListCertificateProfiles"
+	OperatorService_UploadCertificateProfile_FullMethodName = "/muxvia.cloud.v1.OperatorService/UploadCertificateProfile"
+	OperatorService_BindCertificateProfile_FullMethodName   = "/muxvia.cloud.v1.OperatorService/BindCertificateProfile"
 )
 
 // OperatorServiceClient is the client API for OperatorService service.
@@ -51,6 +54,9 @@ type OperatorServiceClient interface {
 	SetAccountRole(ctx context.Context, in *SetAccountRoleRequest, opts ...grpc.CallOption) (*SetAccountRoleResponse, error)
 	DisconnectDaemon(ctx context.Context, in *DisconnectDaemonRequest, opts ...grpc.CallOption) (*DisconnectDaemonResponse, error)
 	DisconnectSession(ctx context.Context, in *DisconnectSessionRequest, opts ...grpc.CallOption) (*DisconnectSessionResponse, error)
+	ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error)
+	UploadCertificateProfile(ctx context.Context, in *UploadCertificateProfileRequest, opts ...grpc.CallOption) (*UploadCertificateProfileResponse, error)
+	BindCertificateProfile(ctx context.Context, in *BindCertificateProfileRequest, opts ...grpc.CallOption) (*BindCertificateProfileResponse, error)
 }
 
 type operatorServiceClient struct {
@@ -181,6 +187,36 @@ func (c *operatorServiceClient) DisconnectSession(ctx context.Context, in *Disco
 	return out, nil
 }
 
+func (c *operatorServiceClient) ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCertificateProfilesResponse)
+	err := c.cc.Invoke(ctx, OperatorService_ListCertificateProfiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) UploadCertificateProfile(ctx context.Context, in *UploadCertificateProfileRequest, opts ...grpc.CallOption) (*UploadCertificateProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadCertificateProfileResponse)
+	err := c.cc.Invoke(ctx, OperatorService_UploadCertificateProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) BindCertificateProfile(ctx context.Context, in *BindCertificateProfileRequest, opts ...grpc.CallOption) (*BindCertificateProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindCertificateProfileResponse)
+	err := c.cc.Invoke(ctx, OperatorService_BindCertificateProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OperatorServiceServer is the server API for OperatorService service.
 // All implementations must embed UnimplementedOperatorServiceServer
 // for forward compatibility.
@@ -199,6 +235,9 @@ type OperatorServiceServer interface {
 	SetAccountRole(context.Context, *SetAccountRoleRequest) (*SetAccountRoleResponse, error)
 	DisconnectDaemon(context.Context, *DisconnectDaemonRequest) (*DisconnectDaemonResponse, error)
 	DisconnectSession(context.Context, *DisconnectSessionRequest) (*DisconnectSessionResponse, error)
+	ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error)
+	UploadCertificateProfile(context.Context, *UploadCertificateProfileRequest) (*UploadCertificateProfileResponse, error)
+	BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error)
 	mustEmbedUnimplementedOperatorServiceServer()
 }
 
@@ -244,6 +283,15 @@ func (UnimplementedOperatorServiceServer) DisconnectDaemon(context.Context, *Dis
 }
 func (UnimplementedOperatorServiceServer) DisconnectSession(context.Context, *DisconnectSessionRequest) (*DisconnectSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DisconnectSession not implemented")
+}
+func (UnimplementedOperatorServiceServer) ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCertificateProfiles not implemented")
+}
+func (UnimplementedOperatorServiceServer) UploadCertificateProfile(context.Context, *UploadCertificateProfileRequest) (*UploadCertificateProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UploadCertificateProfile not implemented")
+}
+func (UnimplementedOperatorServiceServer) BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindCertificateProfile not implemented")
 }
 func (UnimplementedOperatorServiceServer) mustEmbedUnimplementedOperatorServiceServer() {}
 func (UnimplementedOperatorServiceServer) testEmbeddedByValue()                         {}
@@ -482,6 +530,60 @@ func _OperatorService_DisconnectSession_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OperatorService_ListCertificateProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCertificateProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).ListCertificateProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_ListCertificateProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).ListCertificateProfiles(ctx, req.(*ListCertificateProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_UploadCertificateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadCertificateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).UploadCertificateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_UploadCertificateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).UploadCertificateProfile(ctx, req.(*UploadCertificateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_BindCertificateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindCertificateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).BindCertificateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_BindCertificateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).BindCertificateProfile(ctx, req.(*BindCertificateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OperatorService_ServiceDesc is the grpc.ServiceDesc for OperatorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -536,6 +638,18 @@ var OperatorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DisconnectSession",
 			Handler:    _OperatorService_DisconnectSession_Handler,
+		},
+		{
+			MethodName: "ListCertificateProfiles",
+			Handler:    _OperatorService_ListCertificateProfiles_Handler,
+		},
+		{
+			MethodName: "UploadCertificateProfile",
+			Handler:    _OperatorService_UploadCertificateProfile_Handler,
+		},
+		{
+			MethodName: "BindCertificateProfile",
+			Handler:    _OperatorService_BindCertificateProfile_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

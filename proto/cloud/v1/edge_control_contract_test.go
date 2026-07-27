@@ -24,6 +24,7 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloud_v1_common_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_account_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_commerce_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_certificate_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_usage_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
@@ -71,11 +72,23 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28, "command_result": 29,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28, "command_result": 29, "certificate_applied": 30,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28,
 	})
+}
+
+// TestR8CertificateContracts 锁定简化后的证书双文件上传、单一 revision 和控制流回执。
+func TestR8CertificateContracts(t *testing.T) {
+	profile := (&CertificateProfile{}).ProtoReflect().Descriptor()
+	if profile.Fields().ByName("private_key_pem") != nil || profile.Fields().ByName("certificate_chain_pem") != nil {
+		t.Fatal("operator-visible CertificateProfile must not expose certificate secret bytes")
+	}
+	bundle := (&EdgeCertificateBundle{}).ProtoReflect().Descriptor()
+	if bundle.Fields().ByName("target_edge_id") == nil || bundle.Fields().ByName("private_key_pem") == nil {
+		t.Fatal("EdgeCertificateBundle must carry an explicit target and private key over mTLS")
+	}
 }
 
 // TestR6RelayContracts 锁定 daemon 预检、短租约和幂等 usage 的跨进程边界。
