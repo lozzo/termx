@@ -18,7 +18,7 @@ export interface RemoteClipboardApi {
   delete(id: string): Promise<void>
 }
 
-const clipboardStorageAppId = 'muxvia.clipboard'
+const clipboardStorageAppId = 'anytty.clipboard'
 const clipboardHistoryPrefix = 'history/'
 const clipboardRecordVersion = 1
 

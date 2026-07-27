@@ -129,7 +129,7 @@ type AgentTicketClaims struct {
 	EdgeId          string                 `protobuf:"bytes,4,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
 	DeviceId        string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	DevicePublicKey []byte                 `protobuf:"bytes,6,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
-	Capabilities    []AgentCapability      `protobuf:"varint,7,rep,packed,name=capabilities,proto3,enum=muxvia.cloud.v1.AgentCapability" json:"capabilities,omitempty"`
+	Capabilities    []AgentCapability      `protobuf:"varint,7,rep,packed,name=capabilities,proto3,enum=anytty.cloud.v1.AgentCapability" json:"capabilities,omitempty"`
 	IssuedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -305,7 +305,7 @@ type CloudRouteGrantClaims struct {
 	GrantId         string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
 	DaemonId        string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
 	ClientPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	Product         ClientProduct          `protobuf:"varint,4,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	Product         ClientProduct          `protobuf:"varint,4,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
 	IssuedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -618,11 +618,11 @@ type ClientTicketClaims struct {
 	DaemonId           string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
 	ClientId           string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	ClientPublicKey    []byte                 `protobuf:"bytes,6,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	Product            ClientProduct          `protobuf:"varint,7,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
-	RoutePolicy        CloudRoutePolicy       `protobuf:"varint,8,opt,name=route_policy,json=routePolicy,proto3,enum=muxvia.cloud.v1.CloudRoutePolicy" json:"route_policy,omitempty"`
+	Product            ClientProduct          `protobuf:"varint,7,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
+	RoutePolicy        CloudRoutePolicy       `protobuf:"varint,8,opt,name=route_policy,json=routePolicy,proto3,enum=anytty.cloud.v1.CloudRoutePolicy" json:"route_policy,omitempty"`
 	IssuedAt           *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	ExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	AccessMode         CloudClientAccessMode  `protobuf:"varint,11,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	AccessMode         CloudClientAccessMode  `protobuf:"varint,11,opt,name=access_mode,json=accessMode,proto3,enum=anytty.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
 	PairingClaimSha256 []byte                 `protobuf:"bytes,12,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -807,7 +807,7 @@ var File_cloud_v1_ticket_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\n" +
-	"\x15cloud/v1/ticket.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16cloud/v1/runtime.proto\"\x88\x03\n" +
+	"\x15cloud/v1/ticket.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16cloud/v1/runtime.proto\"\x88\x03\n" +
 	"\x11AgentTicketClaims\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x1b\n" +
 	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12\x1d\n" +
@@ -816,7 +816,7 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\aedge_id\x18\x04 \x01(\tR\x06edgeId\x12\x1b\n" +
 	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x06 \x01(\fR\x0fdevicePublicKey\x12D\n" +
-	"\fcapabilities\x18\a \x03(\x0e2 .muxvia.cloud.v1.AgentCapabilityR\fcapabilities\x127\n" +
+	"\fcapabilities\x18\a \x03(\x0e2 .anytty.cloud.v1.AgentCapabilityR\fcapabilities\x127\n" +
 	"\tissued_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa5\x01\n" +
@@ -829,7 +829,7 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12\x1b\n" +
 	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12*\n" +
 	"\x11client_public_key\x18\x03 \x01(\fR\x0fclientPublicKey\x128\n" +
-	"\aproduct\x18\x04 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x127\n" +
+	"\aproduct\x18\x04 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x127\n" +
 	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x94\x02\n" +
@@ -861,13 +861,13 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\tdaemon_id\x18\x04 \x01(\tR\bdaemonId\x12\x1b\n" +
 	"\tclient_id\x18\x05 \x01(\tR\bclientId\x12*\n" +
 	"\x11client_public_key\x18\x06 \x01(\fR\x0fclientPublicKey\x128\n" +
-	"\aproduct\x18\a \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12D\n" +
-	"\froute_policy\x18\b \x01(\x0e2!.muxvia.cloud.v1.CloudRoutePolicyR\vroutePolicy\x127\n" +
+	"\aproduct\x18\a \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12D\n" +
+	"\froute_policy\x18\b \x01(\x0e2!.anytty.cloud.v1.CloudRoutePolicyR\vroutePolicy\x127\n" +
 	"\tissued_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12G\n" +
-	"\vaccess_mode\x18\v \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"\vaccess_mode\x18\v \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
 	"accessMode\x120\n" +
 	"\x14pairing_claim_sha256\x18\f \x01(\fR\x12pairingClaimSha256\"\x99\x01\n" +
 	"\x15ClientHelloProofInput\x122\n" +
@@ -881,7 +881,7 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\x10CloudRoutePolicy\x12\"\n" +
 	"\x1eCLOUD_ROUTE_POLICY_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCLOUD_ROUTE_POLICY_P2P_ONLY\x10\x01\x12#\n" +
-	"\x1fCLOUD_ROUTE_POLICY_P2P_OR_RELAY\x10\x02B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x1fCLOUD_ROUTE_POLICY_P2P_OR_RELAY\x10\x02B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_ticket_proto_rawDescOnce sync.Once
@@ -898,34 +898,34 @@ func file_cloud_v1_ticket_proto_rawDescGZIP() []byte {
 var file_cloud_v1_ticket_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_ticket_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_cloud_v1_ticket_proto_goTypes = []any{
-	(AgentCapability)(0),            // 0: muxvia.cloud.v1.AgentCapability
-	(CloudRoutePolicy)(0),           // 1: muxvia.cloud.v1.CloudRoutePolicy
-	(*AgentTicketClaims)(nil),       // 2: muxvia.cloud.v1.AgentTicketClaims
-	(*AgentHelloProofInput)(nil),    // 3: muxvia.cloud.v1.AgentHelloProofInput
-	(*CloudRouteGrantClaims)(nil),   // 4: muxvia.cloud.v1.CloudRouteGrantClaims
-	(*PairingRouteGrantClaims)(nil), // 5: muxvia.cloud.v1.PairingRouteGrantClaims
-	(*ClientRouteProofInput)(nil),   // 6: muxvia.cloud.v1.ClientRouteProofInput
-	(*PairingRouteProofInput)(nil),  // 7: muxvia.cloud.v1.PairingRouteProofInput
-	(*ClientTicketClaims)(nil),      // 8: muxvia.cloud.v1.ClientTicketClaims
-	(*ClientHelloProofInput)(nil),   // 9: muxvia.cloud.v1.ClientHelloProofInput
+	(AgentCapability)(0),            // 0: anytty.cloud.v1.AgentCapability
+	(CloudRoutePolicy)(0),           // 1: anytty.cloud.v1.CloudRoutePolicy
+	(*AgentTicketClaims)(nil),       // 2: anytty.cloud.v1.AgentTicketClaims
+	(*AgentHelloProofInput)(nil),    // 3: anytty.cloud.v1.AgentHelloProofInput
+	(*CloudRouteGrantClaims)(nil),   // 4: anytty.cloud.v1.CloudRouteGrantClaims
+	(*PairingRouteGrantClaims)(nil), // 5: anytty.cloud.v1.PairingRouteGrantClaims
+	(*ClientRouteProofInput)(nil),   // 6: anytty.cloud.v1.ClientRouteProofInput
+	(*PairingRouteProofInput)(nil),  // 7: anytty.cloud.v1.PairingRouteProofInput
+	(*ClientTicketClaims)(nil),      // 8: anytty.cloud.v1.ClientTicketClaims
+	(*ClientHelloProofInput)(nil),   // 9: anytty.cloud.v1.ClientHelloProofInput
 	(*timestamppb.Timestamp)(nil),   // 10: google.protobuf.Timestamp
-	(ClientProduct)(0),              // 11: muxvia.cloud.v1.ClientProduct
-	(CloudClientAccessMode)(0),      // 12: muxvia.cloud.v1.CloudClientAccessMode
+	(ClientProduct)(0),              // 11: anytty.cloud.v1.ClientProduct
+	(CloudClientAccessMode)(0),      // 12: anytty.cloud.v1.CloudClientAccessMode
 }
 var file_cloud_v1_ticket_proto_depIdxs = []int32{
-	0,  // 0: muxvia.cloud.v1.AgentTicketClaims.capabilities:type_name -> muxvia.cloud.v1.AgentCapability
-	10, // 1: muxvia.cloud.v1.AgentTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 2: muxvia.cloud.v1.AgentTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
-	11, // 3: muxvia.cloud.v1.CloudRouteGrantClaims.product:type_name -> muxvia.cloud.v1.ClientProduct
-	10, // 4: muxvia.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 5: muxvia.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	10, // 6: muxvia.cloud.v1.PairingRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 7: muxvia.cloud.v1.PairingRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	11, // 8: muxvia.cloud.v1.ClientTicketClaims.product:type_name -> muxvia.cloud.v1.ClientProduct
-	1,  // 9: muxvia.cloud.v1.ClientTicketClaims.route_policy:type_name -> muxvia.cloud.v1.CloudRoutePolicy
-	10, // 10: muxvia.cloud.v1.ClientTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 11: muxvia.cloud.v1.ClientTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
-	12, // 12: muxvia.cloud.v1.ClientTicketClaims.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
+	0,  // 0: anytty.cloud.v1.AgentTicketClaims.capabilities:type_name -> anytty.cloud.v1.AgentCapability
+	10, // 1: anytty.cloud.v1.AgentTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 2: anytty.cloud.v1.AgentTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
+	11, // 3: anytty.cloud.v1.CloudRouteGrantClaims.product:type_name -> anytty.cloud.v1.ClientProduct
+	10, // 4: anytty.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 5: anytty.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 6: anytty.cloud.v1.PairingRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 7: anytty.cloud.v1.PairingRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
+	11, // 8: anytty.cloud.v1.ClientTicketClaims.product:type_name -> anytty.cloud.v1.ClientProduct
+	1,  // 9: anytty.cloud.v1.ClientTicketClaims.route_policy:type_name -> anytty.cloud.v1.CloudRoutePolicy
+	10, // 10: anytty.cloud.v1.ClientTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 11: anytty.cloud.v1.ClientTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
+	12, // 12: anytty.cloud.v1.ClientTicketClaims.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
 	13, // [13:13] is the sub-list for method output_type
 	13, // [13:13] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

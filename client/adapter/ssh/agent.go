@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
 	golangssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/muxvia/muxvia/tui/port"
+	"github.com/anytty/anytty/tui/port"
 )
 
 // ClipboardService 通过宿主系统命令实现剪贴板读写。

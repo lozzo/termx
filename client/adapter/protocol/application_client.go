@@ -9,11 +9,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	internalprotocol "github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/shared/remoteauth"
 )
 
 // ApplicationClient 组合单条 ready connection 的 Proto application session 与可选 runtime control plane。

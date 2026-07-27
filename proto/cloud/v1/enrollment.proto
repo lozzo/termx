@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package muxvia.cloud.v1;
+package anytty.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 // DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
 message DaemonRecord {

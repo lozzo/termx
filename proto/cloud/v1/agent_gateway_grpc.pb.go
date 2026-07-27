@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentGateway_Connect_FullMethodName = "/muxvia.cloud.v1.AgentGateway/Connect"
+	AgentGateway_Connect_FullMethodName = "/anytty.cloud.v1.AgentGateway/Connect"
 )
 
 // AgentGatewayClient is the client API for AgentGateway service.
@@ -104,7 +104,7 @@ type AgentGateway_ConnectServer = grpc.BidiStreamingServer[AgentEvent, EdgeComma
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var AgentGateway_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.AgentGateway",
+	ServiceName: "anytty.cloud.v1.AgentGateway",
 	HandlerType: (*AgentGatewayServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{

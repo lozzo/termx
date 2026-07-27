@@ -13,8 +13,8 @@ describe('MobileTerminalKeybar', () => {
     const keyboardButton = screen.getByRole('button', { name: /toggle system keyboard/i })
 
     expect(keyboardButton.getAttribute('aria-pressed')).toBe('true')
-    expect(keyboardButton.className).toContain('bg-[var(--muxvia-accent)]')
-    expect(keyboardButton.className).toContain('text-[var(--muxvia-accent-text)]')
+    expect(keyboardButton.className).toContain('bg-[var(--anytty-accent)]')
+    expect(keyboardButton.className).toContain('text-[var(--anytty-accent-text)]')
   })
 
   it('keeps the locked keyboard button style above the visible state', () => {
@@ -24,6 +24,6 @@ describe('MobileTerminalKeybar', () => {
 
     expect(keyboardButton.getAttribute('aria-pressed')).toBe('true')
     expect(keyboardButton.className).toContain('bg-red-600')
-    expect(keyboardButton.className).not.toContain('bg-[var(--muxvia-accent)]')
+    expect(keyboardButton.className).not.toContain('bg-[var(--anytty-accent)]')
   })
 })

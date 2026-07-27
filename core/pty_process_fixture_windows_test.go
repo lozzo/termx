@@ -12,7 +12,7 @@ func ptyInteractiveFixture() ([]string, []byte) {
 }
 
 func ptyEnvironmentFixture() []string {
-	return []string{windowsCommandInterpreter(), "/d", "/q", "/c", "echo cwd:%CD% env:%MUXVIA_REMOTE_TEST%"}
+	return []string{windowsCommandInterpreter(), "/d", "/q", "/c", "echo cwd:%CD% env:%ANYTTY_REMOTE_TEST%"}
 }
 
 func ptyLongRunningFixture() []string {

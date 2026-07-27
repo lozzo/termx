@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type Theme struct {

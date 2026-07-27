@@ -131,7 +131,7 @@ type AccountProfile struct {
 	AccountId     string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	State         AccountState           `protobuf:"varint,4,opt,name=state,proto3,enum=muxvia.cloud.v1.AccountState" json:"state,omitempty"`
+	State         AccountState           `protobuf:"varint,4,opt,name=state,proto3,enum=anytty.cloud.v1.AccountState" json:"state,omitempty"`
 	Revision      uint64                 `protobuf:"varint,5,opt,name=revision,proto3" json:"revision,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
@@ -470,7 +470,7 @@ func (x *LoginAccountRequest) GetPassword() string {
 type LoginAccountResponse struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Account       *AccountProfile           `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	Roles         []AccountRole             `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=muxvia.cloud.v1.AccountRole" json:"roles,omitempty"`
+	Roles         []AccountRole             `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=anytty.cloud.v1.AccountRole" json:"roles,omitempty"`
 	Session       *AccountSessionCredential `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -574,7 +574,7 @@ func (x *RefreshAccountSessionRequest) GetRefreshToken() []byte {
 type RefreshAccountSessionResponse struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Account       *AccountProfile           `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	Roles         []AccountRole             `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=muxvia.cloud.v1.AccountRole" json:"roles,omitempty"`
+	Roles         []AccountRole             `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=anytty.cloud.v1.AccountRole" json:"roles,omitempty"`
 	Session       *AccountSessionCredential `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -758,7 +758,7 @@ func (*GetCurrentAccountRequest) Descriptor() ([]byte, []int) {
 type GetCurrentAccountResponse struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Account             *AccountProfile        `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	Roles               []AccountRole          `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=muxvia.cloud.v1.AccountRole" json:"roles,omitempty"`
+	Roles               []AccountRole          `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=anytty.cloud.v1.AccountRole" json:"roles,omitempty"`
 	RecentAuthExpiresAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=recent_auth_expires_at,json=recentAuthExpiresAt,proto3" json:"recent_auth_expires_at,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -1256,13 +1256,13 @@ var File_cloud_v1_account_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_account_proto_rawDesc = "" +
 	"\n" +
-	"\x16cloud/v1/account.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x02\n" +
+	"\x16cloud/v1/account.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x02\n" +
 	"\x0eAccountProfile\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x123\n" +
-	"\x05state\x18\x04 \x01(\x0e2\x1d.muxvia.cloud.v1.AccountStateR\x05state\x12\x1a\n" +
+	"\x05state\x18\x04 \x01(\x0e2\x1d.anytty.cloud.v1.AccountStateR\x05state\x12\x1a\n" +
 	"\brevision\x18\x05 \x01(\x04R\brevision\x129\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
@@ -1282,21 +1282,21 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\"\x99\x01\n" +
 	"\x17RegisterAccountResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.AccountProfileR\aaccount\x12C\n" +
-	"\asession\x18\x02 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"G\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x12C\n" +
+	"\asession\x18\x02 \x01(\v2).anytty.cloud.v1.AccountSessionCredentialR\asession\"G\n" +
 	"\x13LoginAccountRequest\x12\x14\n" +
 	"\x05login\x18\x01 \x01(\tR\x05login\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xca\x01\n" +
 	"\x14LoginAccountResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.AccountProfileR\aaccount\x122\n" +
-	"\x05roles\x18\x02 \x03(\x0e2\x1c.muxvia.cloud.v1.AccountRoleR\x05roles\x12C\n" +
-	"\asession\x18\x03 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"C\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x122\n" +
+	"\x05roles\x18\x02 \x03(\x0e2\x1c.anytty.cloud.v1.AccountRoleR\x05roles\x12C\n" +
+	"\asession\x18\x03 \x01(\v2).anytty.cloud.v1.AccountSessionCredentialR\asession\"C\n" +
 	"\x1cRefreshAccountSessionRequest\x12#\n" +
 	"\rrefresh_token\x18\x01 \x01(\fR\frefreshToken\"\xd3\x01\n" +
 	"\x1dRefreshAccountSessionResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.AccountProfileR\aaccount\x122\n" +
-	"\x05roles\x18\x02 \x03(\x0e2\x1c.muxvia.cloud.v1.AccountRoleR\x05roles\x12C\n" +
-	"\asession\x18\x03 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"_\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x122\n" +
+	"\x05roles\x18\x02 \x03(\x0e2\x1c.anytty.cloud.v1.AccountRoleR\x05roles\x12C\n" +
+	"\asession\x18\x03 \x01(\v2).anytty.cloud.v1.AccountSessionCredentialR\asession\"_\n" +
 	"\x1bLogoutAccountSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
@@ -1304,8 +1304,8 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\x1cLogoutAccountSessionResponse\"\x1a\n" +
 	"\x18GetCurrentAccountRequest\"\xdb\x01\n" +
 	"\x19GetCurrentAccountResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.AccountProfileR\aaccount\x122\n" +
-	"\x05roles\x18\x02 \x03(\x0e2\x1c.muxvia.cloud.v1.AccountRoleR\x05roles\x12O\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x122\n" +
+	"\x05roles\x18\x02 \x03(\x0e2\x1c.anytty.cloud.v1.AccountRoleR\x05roles\x12O\n" +
 	"\x16recent_auth_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x13recentAuthExpiresAt\"?\n" +
 	"!VerifyRecentAuthenticationRequest\x12\x1a\n" +
 	"\bpassword\x18\x01 \x01(\tR\bpassword\"_\n" +
@@ -1324,12 +1324,12 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\brevision\x18\a \x01(\x04R\brevision\"\x1c\n" +
 	"\x1aListAccountSessionsRequest\"d\n" +
 	"\x1bListAccountSessionsResponse\x12E\n" +
-	"\bsessions\x18\x01 \x03(\v2).muxvia.cloud.v1.AccountSessionProjectionR\bsessions\"l\n" +
+	"\bsessions\x18\x01 \x03(\v2).anytty.cloud.v1.AccountSessionProjectionR\bsessions\"l\n" +
 	"\x1cChangeAccountPasswordRequest\x12)\n" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
 	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"Z\n" +
 	"\x1dChangeAccountPasswordResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.AccountProfileR\aaccount\"<\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\"<\n" +
 	"\x1bRevokeAccountSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x1e\n" +
@@ -1344,16 +1344,16 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\x15ACCOUNT_ROLE_OPERATOR\x10\x02\x12\x16\n" +
 	"\x12ACCOUNT_ROLE_ADMIN\x10\x032\xcd\a\n" +
 	"\x0eAccountService\x12]\n" +
-	"\bRegister\x12'.muxvia.cloud.v1.RegisterAccountRequest\x1a(.muxvia.cloud.v1.RegisterAccountResponse\x12T\n" +
-	"\x05Login\x12$.muxvia.cloud.v1.LoginAccountRequest\x1a%.muxvia.cloud.v1.LoginAccountResponse\x12h\n" +
-	"\aRefresh\x12-.muxvia.cloud.v1.RefreshAccountSessionRequest\x1a..muxvia.cloud.v1.RefreshAccountSessionResponse\x12e\n" +
-	"\x06Logout\x12,.muxvia.cloud.v1.LogoutAccountSessionRequest\x1a-.muxvia.cloud.v1.LogoutAccountSessionResponse\x12c\n" +
+	"\bRegister\x12'.anytty.cloud.v1.RegisterAccountRequest\x1a(.anytty.cloud.v1.RegisterAccountResponse\x12T\n" +
+	"\x05Login\x12$.anytty.cloud.v1.LoginAccountRequest\x1a%.anytty.cloud.v1.LoginAccountResponse\x12h\n" +
+	"\aRefresh\x12-.anytty.cloud.v1.RefreshAccountSessionRequest\x1a..anytty.cloud.v1.RefreshAccountSessionResponse\x12e\n" +
+	"\x06Logout\x12,.anytty.cloud.v1.LogoutAccountSessionRequest\x1a-.anytty.cloud.v1.LogoutAccountSessionResponse\x12c\n" +
 	"\n" +
-	"GetCurrent\x12).muxvia.cloud.v1.GetCurrentAccountRequest\x1a*.muxvia.cloud.v1.GetCurrentAccountResponse\x12\x85\x01\n" +
-	"\x1aVerifyRecentAuthentication\x122.muxvia.cloud.v1.VerifyRecentAuthenticationRequest\x1a3.muxvia.cloud.v1.VerifyRecentAuthenticationResponse\x12i\n" +
-	"\fListSessions\x12+.muxvia.cloud.v1.ListAccountSessionsRequest\x1a,.muxvia.cloud.v1.ListAccountSessionsResponse\x12o\n" +
-	"\x0eChangePassword\x12-.muxvia.cloud.v1.ChangeAccountPasswordRequest\x1a..muxvia.cloud.v1.ChangeAccountPasswordResponse\x12l\n" +
-	"\rRevokeSession\x12,.muxvia.cloud.v1.RevokeAccountSessionRequest\x1a-.muxvia.cloud.v1.RevokeAccountSessionResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"GetCurrent\x12).anytty.cloud.v1.GetCurrentAccountRequest\x1a*.anytty.cloud.v1.GetCurrentAccountResponse\x12\x85\x01\n" +
+	"\x1aVerifyRecentAuthentication\x122.anytty.cloud.v1.VerifyRecentAuthenticationRequest\x1a3.anytty.cloud.v1.VerifyRecentAuthenticationResponse\x12i\n" +
+	"\fListSessions\x12+.anytty.cloud.v1.ListAccountSessionsRequest\x1a,.anytty.cloud.v1.ListAccountSessionsResponse\x12o\n" +
+	"\x0eChangePassword\x12-.anytty.cloud.v1.ChangeAccountPasswordRequest\x1a..anytty.cloud.v1.ChangeAccountPasswordResponse\x12l\n" +
+	"\rRevokeSession\x12,.anytty.cloud.v1.RevokeAccountSessionRequest\x1a-.anytty.cloud.v1.RevokeAccountSessionResponseB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_account_proto_rawDescOnce sync.Once
@@ -1370,73 +1370,73 @@ func file_cloud_v1_account_proto_rawDescGZIP() []byte {
 var file_cloud_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_cloud_v1_account_proto_goTypes = []any{
-	(AccountState)(0),                          // 0: muxvia.cloud.v1.AccountState
-	(AccountRole)(0),                           // 1: muxvia.cloud.v1.AccountRole
-	(*AccountProfile)(nil),                     // 2: muxvia.cloud.v1.AccountProfile
-	(*AccountSessionCredential)(nil),           // 3: muxvia.cloud.v1.AccountSessionCredential
-	(*RegisterAccountRequest)(nil),             // 4: muxvia.cloud.v1.RegisterAccountRequest
-	(*RegisterAccountResponse)(nil),            // 5: muxvia.cloud.v1.RegisterAccountResponse
-	(*LoginAccountRequest)(nil),                // 6: muxvia.cloud.v1.LoginAccountRequest
-	(*LoginAccountResponse)(nil),               // 7: muxvia.cloud.v1.LoginAccountResponse
-	(*RefreshAccountSessionRequest)(nil),       // 8: muxvia.cloud.v1.RefreshAccountSessionRequest
-	(*RefreshAccountSessionResponse)(nil),      // 9: muxvia.cloud.v1.RefreshAccountSessionResponse
-	(*LogoutAccountSessionRequest)(nil),        // 10: muxvia.cloud.v1.LogoutAccountSessionRequest
-	(*LogoutAccountSessionResponse)(nil),       // 11: muxvia.cloud.v1.LogoutAccountSessionResponse
-	(*GetCurrentAccountRequest)(nil),           // 12: muxvia.cloud.v1.GetCurrentAccountRequest
-	(*GetCurrentAccountResponse)(nil),          // 13: muxvia.cloud.v1.GetCurrentAccountResponse
-	(*VerifyRecentAuthenticationRequest)(nil),  // 14: muxvia.cloud.v1.VerifyRecentAuthenticationRequest
-	(*VerifyRecentAuthenticationResponse)(nil), // 15: muxvia.cloud.v1.VerifyRecentAuthenticationResponse
-	(*AccountSessionProjection)(nil),           // 16: muxvia.cloud.v1.AccountSessionProjection
-	(*ListAccountSessionsRequest)(nil),         // 17: muxvia.cloud.v1.ListAccountSessionsRequest
-	(*ListAccountSessionsResponse)(nil),        // 18: muxvia.cloud.v1.ListAccountSessionsResponse
-	(*ChangeAccountPasswordRequest)(nil),       // 19: muxvia.cloud.v1.ChangeAccountPasswordRequest
-	(*ChangeAccountPasswordResponse)(nil),      // 20: muxvia.cloud.v1.ChangeAccountPasswordResponse
-	(*RevokeAccountSessionRequest)(nil),        // 21: muxvia.cloud.v1.RevokeAccountSessionRequest
-	(*RevokeAccountSessionResponse)(nil),       // 22: muxvia.cloud.v1.RevokeAccountSessionResponse
+	(AccountState)(0),                          // 0: anytty.cloud.v1.AccountState
+	(AccountRole)(0),                           // 1: anytty.cloud.v1.AccountRole
+	(*AccountProfile)(nil),                     // 2: anytty.cloud.v1.AccountProfile
+	(*AccountSessionCredential)(nil),           // 3: anytty.cloud.v1.AccountSessionCredential
+	(*RegisterAccountRequest)(nil),             // 4: anytty.cloud.v1.RegisterAccountRequest
+	(*RegisterAccountResponse)(nil),            // 5: anytty.cloud.v1.RegisterAccountResponse
+	(*LoginAccountRequest)(nil),                // 6: anytty.cloud.v1.LoginAccountRequest
+	(*LoginAccountResponse)(nil),               // 7: anytty.cloud.v1.LoginAccountResponse
+	(*RefreshAccountSessionRequest)(nil),       // 8: anytty.cloud.v1.RefreshAccountSessionRequest
+	(*RefreshAccountSessionResponse)(nil),      // 9: anytty.cloud.v1.RefreshAccountSessionResponse
+	(*LogoutAccountSessionRequest)(nil),        // 10: anytty.cloud.v1.LogoutAccountSessionRequest
+	(*LogoutAccountSessionResponse)(nil),       // 11: anytty.cloud.v1.LogoutAccountSessionResponse
+	(*GetCurrentAccountRequest)(nil),           // 12: anytty.cloud.v1.GetCurrentAccountRequest
+	(*GetCurrentAccountResponse)(nil),          // 13: anytty.cloud.v1.GetCurrentAccountResponse
+	(*VerifyRecentAuthenticationRequest)(nil),  // 14: anytty.cloud.v1.VerifyRecentAuthenticationRequest
+	(*VerifyRecentAuthenticationResponse)(nil), // 15: anytty.cloud.v1.VerifyRecentAuthenticationResponse
+	(*AccountSessionProjection)(nil),           // 16: anytty.cloud.v1.AccountSessionProjection
+	(*ListAccountSessionsRequest)(nil),         // 17: anytty.cloud.v1.ListAccountSessionsRequest
+	(*ListAccountSessionsResponse)(nil),        // 18: anytty.cloud.v1.ListAccountSessionsResponse
+	(*ChangeAccountPasswordRequest)(nil),       // 19: anytty.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),      // 20: anytty.cloud.v1.ChangeAccountPasswordResponse
+	(*RevokeAccountSessionRequest)(nil),        // 21: anytty.cloud.v1.RevokeAccountSessionRequest
+	(*RevokeAccountSessionResponse)(nil),       // 22: anytty.cloud.v1.RevokeAccountSessionResponse
 	(*timestamppb.Timestamp)(nil),              // 23: google.protobuf.Timestamp
 }
 var file_cloud_v1_account_proto_depIdxs = []int32{
-	0,  // 0: muxvia.cloud.v1.AccountProfile.state:type_name -> muxvia.cloud.v1.AccountState
-	23, // 1: muxvia.cloud.v1.AccountProfile.created_at:type_name -> google.protobuf.Timestamp
-	23, // 2: muxvia.cloud.v1.AccountProfile.updated_at:type_name -> google.protobuf.Timestamp
-	23, // 3: muxvia.cloud.v1.AccountSessionCredential.access_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 4: muxvia.cloud.v1.AccountSessionCredential.refresh_expires_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: muxvia.cloud.v1.RegisterAccountResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
-	3,  // 6: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	2,  // 7: muxvia.cloud.v1.LoginAccountResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
-	1,  // 8: muxvia.cloud.v1.LoginAccountResponse.roles:type_name -> muxvia.cloud.v1.AccountRole
-	3,  // 9: muxvia.cloud.v1.LoginAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	2,  // 10: muxvia.cloud.v1.RefreshAccountSessionResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
-	1,  // 11: muxvia.cloud.v1.RefreshAccountSessionResponse.roles:type_name -> muxvia.cloud.v1.AccountRole
-	3,  // 12: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	2,  // 13: muxvia.cloud.v1.GetCurrentAccountResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
-	1,  // 14: muxvia.cloud.v1.GetCurrentAccountResponse.roles:type_name -> muxvia.cloud.v1.AccountRole
-	23, // 15: muxvia.cloud.v1.GetCurrentAccountResponse.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 16: muxvia.cloud.v1.VerifyRecentAuthenticationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	23, // 17: muxvia.cloud.v1.AccountSessionProjection.created_at:type_name -> google.protobuf.Timestamp
-	23, // 18: muxvia.cloud.v1.AccountSessionProjection.access_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 19: muxvia.cloud.v1.AccountSessionProjection.refresh_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 20: muxvia.cloud.v1.AccountSessionProjection.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
-	16, // 21: muxvia.cloud.v1.ListAccountSessionsResponse.sessions:type_name -> muxvia.cloud.v1.AccountSessionProjection
-	2,  // 22: muxvia.cloud.v1.ChangeAccountPasswordResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
-	4,  // 23: muxvia.cloud.v1.AccountService.Register:input_type -> muxvia.cloud.v1.RegisterAccountRequest
-	6,  // 24: muxvia.cloud.v1.AccountService.Login:input_type -> muxvia.cloud.v1.LoginAccountRequest
-	8,  // 25: muxvia.cloud.v1.AccountService.Refresh:input_type -> muxvia.cloud.v1.RefreshAccountSessionRequest
-	10, // 26: muxvia.cloud.v1.AccountService.Logout:input_type -> muxvia.cloud.v1.LogoutAccountSessionRequest
-	12, // 27: muxvia.cloud.v1.AccountService.GetCurrent:input_type -> muxvia.cloud.v1.GetCurrentAccountRequest
-	14, // 28: muxvia.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> muxvia.cloud.v1.VerifyRecentAuthenticationRequest
-	17, // 29: muxvia.cloud.v1.AccountService.ListSessions:input_type -> muxvia.cloud.v1.ListAccountSessionsRequest
-	19, // 30: muxvia.cloud.v1.AccountService.ChangePassword:input_type -> muxvia.cloud.v1.ChangeAccountPasswordRequest
-	21, // 31: muxvia.cloud.v1.AccountService.RevokeSession:input_type -> muxvia.cloud.v1.RevokeAccountSessionRequest
-	5,  // 32: muxvia.cloud.v1.AccountService.Register:output_type -> muxvia.cloud.v1.RegisterAccountResponse
-	7,  // 33: muxvia.cloud.v1.AccountService.Login:output_type -> muxvia.cloud.v1.LoginAccountResponse
-	9,  // 34: muxvia.cloud.v1.AccountService.Refresh:output_type -> muxvia.cloud.v1.RefreshAccountSessionResponse
-	11, // 35: muxvia.cloud.v1.AccountService.Logout:output_type -> muxvia.cloud.v1.LogoutAccountSessionResponse
-	13, // 36: muxvia.cloud.v1.AccountService.GetCurrent:output_type -> muxvia.cloud.v1.GetCurrentAccountResponse
-	15, // 37: muxvia.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> muxvia.cloud.v1.VerifyRecentAuthenticationResponse
-	18, // 38: muxvia.cloud.v1.AccountService.ListSessions:output_type -> muxvia.cloud.v1.ListAccountSessionsResponse
-	20, // 39: muxvia.cloud.v1.AccountService.ChangePassword:output_type -> muxvia.cloud.v1.ChangeAccountPasswordResponse
-	22, // 40: muxvia.cloud.v1.AccountService.RevokeSession:output_type -> muxvia.cloud.v1.RevokeAccountSessionResponse
+	0,  // 0: anytty.cloud.v1.AccountProfile.state:type_name -> anytty.cloud.v1.AccountState
+	23, // 1: anytty.cloud.v1.AccountProfile.created_at:type_name -> google.protobuf.Timestamp
+	23, // 2: anytty.cloud.v1.AccountProfile.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 3: anytty.cloud.v1.AccountSessionCredential.access_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 4: anytty.cloud.v1.AccountSessionCredential.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: anytty.cloud.v1.RegisterAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	3,  // 6: anytty.cloud.v1.RegisterAccountResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
+	2,  // 7: anytty.cloud.v1.LoginAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	1,  // 8: anytty.cloud.v1.LoginAccountResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	3,  // 9: anytty.cloud.v1.LoginAccountResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
+	2,  // 10: anytty.cloud.v1.RefreshAccountSessionResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	1,  // 11: anytty.cloud.v1.RefreshAccountSessionResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	3,  // 12: anytty.cloud.v1.RefreshAccountSessionResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
+	2,  // 13: anytty.cloud.v1.GetCurrentAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	1,  // 14: anytty.cloud.v1.GetCurrentAccountResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	23, // 15: anytty.cloud.v1.GetCurrentAccountResponse.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 16: anytty.cloud.v1.VerifyRecentAuthenticationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	23, // 17: anytty.cloud.v1.AccountSessionProjection.created_at:type_name -> google.protobuf.Timestamp
+	23, // 18: anytty.cloud.v1.AccountSessionProjection.access_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 19: anytty.cloud.v1.AccountSessionProjection.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 20: anytty.cloud.v1.AccountSessionProjection.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
+	16, // 21: anytty.cloud.v1.ListAccountSessionsResponse.sessions:type_name -> anytty.cloud.v1.AccountSessionProjection
+	2,  // 22: anytty.cloud.v1.ChangeAccountPasswordResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	4,  // 23: anytty.cloud.v1.AccountService.Register:input_type -> anytty.cloud.v1.RegisterAccountRequest
+	6,  // 24: anytty.cloud.v1.AccountService.Login:input_type -> anytty.cloud.v1.LoginAccountRequest
+	8,  // 25: anytty.cloud.v1.AccountService.Refresh:input_type -> anytty.cloud.v1.RefreshAccountSessionRequest
+	10, // 26: anytty.cloud.v1.AccountService.Logout:input_type -> anytty.cloud.v1.LogoutAccountSessionRequest
+	12, // 27: anytty.cloud.v1.AccountService.GetCurrent:input_type -> anytty.cloud.v1.GetCurrentAccountRequest
+	14, // 28: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> anytty.cloud.v1.VerifyRecentAuthenticationRequest
+	17, // 29: anytty.cloud.v1.AccountService.ListSessions:input_type -> anytty.cloud.v1.ListAccountSessionsRequest
+	19, // 30: anytty.cloud.v1.AccountService.ChangePassword:input_type -> anytty.cloud.v1.ChangeAccountPasswordRequest
+	21, // 31: anytty.cloud.v1.AccountService.RevokeSession:input_type -> anytty.cloud.v1.RevokeAccountSessionRequest
+	5,  // 32: anytty.cloud.v1.AccountService.Register:output_type -> anytty.cloud.v1.RegisterAccountResponse
+	7,  // 33: anytty.cloud.v1.AccountService.Login:output_type -> anytty.cloud.v1.LoginAccountResponse
+	9,  // 34: anytty.cloud.v1.AccountService.Refresh:output_type -> anytty.cloud.v1.RefreshAccountSessionResponse
+	11, // 35: anytty.cloud.v1.AccountService.Logout:output_type -> anytty.cloud.v1.LogoutAccountSessionResponse
+	13, // 36: anytty.cloud.v1.AccountService.GetCurrent:output_type -> anytty.cloud.v1.GetCurrentAccountResponse
+	15, // 37: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> anytty.cloud.v1.VerifyRecentAuthenticationResponse
+	18, // 38: anytty.cloud.v1.AccountService.ListSessions:output_type -> anytty.cloud.v1.ListAccountSessionsResponse
+	20, // 39: anytty.cloud.v1.AccountService.ChangePassword:output_type -> anytty.cloud.v1.ChangeAccountPasswordResponse
+	22, // 40: anytty.cloud.v1.AccountService.RevokeSession:output_type -> anytty.cloud.v1.RevokeAccountSessionResponse
 	32, // [32:41] is the sub-list for method output_type
 	23, // [23:32] is the sub-list for method input_type
 	23, // [23:23] is the sub-list for extension type_name

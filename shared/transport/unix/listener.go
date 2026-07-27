@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 // Transport 是本机 unix socket 上的压缩 frame transport。
@@ -58,13 +58,13 @@ const (
 	zstdTransportDecoderMaxWindow  = 256 << 10
 )
 
-// Dial 连接本机 muxvia daemon unix socket，并返回 frame transport。
+// Dial 连接本机 anytty daemon unix socket，并返回 frame transport。
 // path 可以是用户可见长路径；实际 socket 路径由 resolveSocketPath 统一解析，避免调用方绕过别名规则。
 func Dial(path string) (*Transport, error) {
 	return DialContext(context.Background(), path)
 }
 
-// DialContext 连接本机 muxvia daemon unix socket，并让建连过程响应调用方取消或 deadline。
+// DialContext 连接本机 anytty daemon unix socket，并让建连过程响应调用方取消或 deadline。
 // context 只控制本次 transport 建立；成功后连接生命周期仍由返回的 Transport.Close 负责。
 func DialContext(ctx context.Context, path string) (*Transport, error) {
 	if ctx == nil {
@@ -271,7 +271,7 @@ func resolveSocketPath(path string) (string, string) {
 		return path, ""
 	}
 	sum := sha256.Sum256([]byte(path))
-	actual := filepath.Join(shortSocketBaseDir(), fmt.Sprintf("muxvia-%x.sock", sum[:8]))
+	actual := filepath.Join(shortSocketBaseDir(), fmt.Sprintf("anytty-%x.sock", sum[:8]))
 	if runtime.GOOS == "windows" {
 		// 中文说明：Windows AF_UNIX 支持短路径，但普通用户创建 symlink 需要额外特权；Dial/Listen 共享哈希路径即可保持同一 transport truth。
 		return actual, ""

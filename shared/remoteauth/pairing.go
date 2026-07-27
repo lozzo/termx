@@ -14,8 +14,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	endpointdomain "github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-package muxvia.cloud.v1;
+package anytty.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "cloud/v1/enrollment.proto";
 import "cloud/v1/runtime.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 // BeginClientRouteRequest 只提交 DeviceIdentity 签名的发现 grant；Controller 不接收 terminal capability。
 message BeginClientRouteRequest {

@@ -3,15 +3,15 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"io"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
-	"github.com/muxvia/muxvia/tui/terminalhost"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
+	"github.com/anytty/anytty/tui/terminalhost"
 )
 
 var copyHistoryPerfFrame render.Frame

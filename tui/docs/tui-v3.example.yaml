@@ -1,8 +1,8 @@
 # tui 标准配置模板
 #
 # 推荐保存位置：
-#   $XDG_CONFIG_HOME/muxvia/tui-v3.yaml
-#   或 ~/.config/muxvia/tui-v3.yaml
+#   $XDG_CONFIG_HOME/anytty/tui-v3.yaml
+#   或 ~/.config/anytty/tui-v3.yaml
 #
 # 说明：
 # - 这份文件是当前运行时可直接加载的完整模板。
@@ -40,7 +40,7 @@ tui:
     # 默认值：host。
     # 可选值：host、builtin。
     # host：先读取宿主 foreground/background/palette，再叠加用户显式颜色。
-    # builtin：完全使用 Muxvia 内置颜色，再叠加用户显式颜色。
+    # builtin：完全使用 AnyTTY 内置颜色，再叠加用户显式颜色。
     # 示例：palette: builtin
     palette: host
 
@@ -201,7 +201,7 @@ tui:
     # - {{if active}}▎{{else}}|{{end}} 做 active 条件分支。
     # - {{title | truncate 12}} 按 terminal cell 宽度裁切。
     # - {{fg "#ffffff"}} / {{bg "#332244"}} / {{style "header-active-title"}} 可从模板生成 span。
-    # Muxvia span 语法在模板执行后解析：
+    # AnyTTY span 语法在模板执行后解析：
     # - [fg:#ffffff;bg:#332244;font:bold] 切换后续片段的显式 SGR 颜色/字形。
     # - [style:header-active-title] 切换到内置 style token；[/style] 恢复当前 tab 默认样式。
     # - [action:tab.close]...[/action] 把片段绑定到 close action；未标注 action 的片段默认切换 tab。

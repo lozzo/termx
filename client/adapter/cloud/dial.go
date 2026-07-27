@@ -1,4 +1,4 @@
-// Package cloud 把 Muxvia Cloud 发现/信令组装成与 Direct/SSH 相同的 Go-owned ReadyPeerSession。
+// Package cloud 把 AnyTTY Cloud 发现/信令组装成与 Direct/SSH 相同的 Go-owned ReadyPeerSession。
 // Endpoint planning 和 generation 属于 client/runtime；Controller/Edge 结果不能替代最终 DataChannel remote auth。
 package cloud
 
@@ -10,19 +10,19 @@ import (
 	"sync"
 	"time"
 
-	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
-	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	cloudclient "github.com/muxvia/muxvia/cloud/client"
-	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/apipb"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/proto/wire"
+	peeradapter "github.com/anytty/anytty/client/adapter/peer"
+	protocoladapter "github.com/anytty/anytty/client/adapter/protocol"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	cloudclient "github.com/anytty/anytty/cloud/client"
+	internalprotocol "github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/apipb"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/proto/wire"
 )
 
-const defaultClientName = "muxvia-go-cloud"
+const defaultClientName = "anytty-go-cloud"
 
 // PeerFactory 根据本次 Controller/Edge 决策创建 direct 或 single-Relay WebRTC primitive。
 type PeerFactory interface {

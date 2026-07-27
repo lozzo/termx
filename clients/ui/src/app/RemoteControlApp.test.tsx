@@ -1,13 +1,13 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { muxviaI18n } from '../i18n'
+import { anyttyI18n } from '../i18n'
 import type { RemoteNetworkRuntime, RemoteRuntimeStorage } from '../core/transport'
 import { RemoteControlApp, type ExternalPairingAdapter } from './RemoteControlApp'
 
 describe('RemoteControlApp accountless product shell', () => {
   beforeEach(async () => {
-    await muxviaI18n.changeLanguage('en')
+    await anyttyI18n.changeLanguage('en')
   })
 
   afterEach(() => cleanup())
@@ -15,9 +15,9 @@ describe('RemoteControlApp accountless product shell', () => {
   it('starts with service pairing and no retired account action', async () => {
     renderApp()
 
-    expect(await screen.findByTestId('muxvia-first-use')).toBeTruthy()
+    expect(await screen.findByTestId('anytty-first-use')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Scan service QR' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Sign in to Muxvia Cloud' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Sign in to AnyTTY Cloud' })).toBeNull()
   })
 
   it('does not invent a static Cloud availability state in settings', async () => {
@@ -48,7 +48,7 @@ describe('RemoteControlApp accountless product shell', () => {
     renderApp({ pairingImport: async () => { throw failure } })
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
-    const sheet = screen.getByTestId('muxvia-pair-sheet')
+    const sheet = screen.getByTestId('anytty-pair-sheet')
     await userEvent.type(within(sheet).getByLabelText('Pairing code or share link'), 'MXP1-TEST')
     await userEvent.click(within(sheet).getByRole('button', { name: 'Add device' }))
 

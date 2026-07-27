@@ -3,15 +3,15 @@ import { Buffer } from 'node:buffer'
 
 const now = '2026-07-27T12:00:00Z'
 const periodEnd = '2026-08-27T12:00:00Z'
-const account = { account_id: '11111111-1111-4111-8111-111111111111', email: 'user@muxvia.com', display_name: '测试用户', state: 'ACCOUNT_STATE_ACTIVE', revision: '1', created_at: now, updated_at: now }
+const account = { account_id: '11111111-1111-4111-8111-111111111111', email: 'user@anytty.com', display_name: '测试用户', state: 'ACCOUNT_STATE_ACTIVE', revision: '1', created_at: now, updated_at: now }
 const daemon = { daemon_id: '33333333-3333-4333-8333-333333333333', account_id: account.account_id, account_name: account.display_name, display_name: '开发 Mac', device_id: 'device-1', device_fingerprint: 'fingerprint-1', revision: '1', created_at: now, updated_at: now }
 const plans = [{ plan_id: 'starter', version: '1', name: '基础版', description: '适合个人设备的完整 Cloud 连接能力。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '0' }, yearly_price: { currency: 'CNY', minor_units: '0' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 2, relay_enabled: true, relay_max_concurrency: 2, relay_max_bytes_per_period: '5368709120', cloud_daemon_limit: 3 }, revision: '1', created_at: now }, { plan_id: 'professional', version: '1', name: '专业版', description: '适合多设备与高频远程工作的更高配额。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '3900' }, yearly_price: { currency: 'CNY', minor_units: '39900' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 10, relay_enabled: true, relay_max_concurrency: 8, relay_max_bytes_per_period: '1099511627776', cloud_daemon_limit: 20 }, revision: '1', created_at: now }]
 const commerce = { subscription: { subscription_id: '55555555-5555-4555-8555-555555555555', account_id: account.account_id, plan_id: 'starter', plan_version: '1', state: 'SUBSCRIPTION_STATE_ACTIVE', revision: '1', period_start: now, period_end: periodEnd }, entitlement: { account_id: account.account_id, state: 'ENTITLEMENT_STATE_ACTIVE', plan_id: 'starter', plan_version: '1', relay_remaining_bytes: '5368707584', capability: plans[0].capability }, orders: [], payment_attempts: [], usage: { account_id: account.account_id, period_start: now, period_end: periodEnd, relay_ingress_bytes: '512', relay_egress_bytes: '1024', relay_total_bytes: '1536', quota_bytes: '5368709120', remaining_bytes: '5368707584', revision: '1' } }
 const pendingOrder = { order_id: 'order-pending', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'development', idempotency_key: 'pending-checkout', requested_transition: 'SUBSCRIPTION_TRANSITION_UPGRADE', revision: '1', created_at: now }
 const pendingAttempt = { payment_attempt_id: 'attempt-pending', order_id: pendingOrder.order_id, account_id: account.account_id, provider: 'development', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now }
-const onlineCertificateBinding = { edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', public_endpoint: 'muxvia-cn1.omscd.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '2', sync_state: 'CERTIFICATE_SYNC_STATE_APPLIED', applied_at: now, online: true }
-const offlineCertificateBinding = { edge_id: '77777777-7777-4777-8777-777777777777', edge_name: '备用 Edge', public_endpoint: 'muxvia-cn2.omscd.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '1', sync_state: 'CERTIFICATE_SYNC_STATE_PENDING', online: false }
-const certificateProfile = { certificate_profile_id: '66666666-6666-4666-8666-666666666666', name: '中国区 Edge 证书', dns_names: ['*.omscd.com'], sha256_fingerprint: '9D7A0FE21C994AE4B24383E54DB131A25776D2A285F45E733728E474072F7C2A', not_before: now, not_after: periodEnd, revision: '2', created_at: now, updated_at: now, bindings: [onlineCertificateBinding, offlineCertificateBinding] }
+const onlineCertificateBinding = { edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', public_endpoint: 'cn1.edge.anytty.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '2', sync_state: 'CERTIFICATE_SYNC_STATE_APPLIED', applied_at: now, online: true }
+const offlineCertificateBinding = { edge_id: '77777777-7777-4777-8777-777777777777', edge_name: '备用 Edge', public_endpoint: 'cn2.edge.anytty.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '1', sync_state: 'CERTIFICATE_SYNC_STATE_PENDING', online: false }
+const certificateProfile = { certificate_profile_id: '66666666-6666-4666-8666-666666666666', name: '中国区 Edge 证书', dns_names: ['*.edge.anytty.com'], sha256_fingerprint: '9D7A0FE21C994AE4B24383E54DB131A25776D2A285F45E733728E474072F7C2A', not_before: now, not_after: periodEnd, revision: '2', created_at: now, updated_at: now, bindings: [onlineCertificateBinding, offlineCertificateBinding] }
 
 function json(route: Route, value: unknown, status = 200) { return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) }) }
 
@@ -29,13 +29,13 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path === '/api/commerce/me') return json(route, withPendingOrder ? { ...commerce, orders: [pendingOrder], payment_attempts: [pendingAttempt] } : commerce)
     if (path === '/api/commerce/orders') return json(route, { order: { order_id: 'order-development', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'development', idempotency_key: 'checkout', requested_transition: 'SUBSCRIPTION_TRANSITION_UPGRADE', revision: '1', created_at: now }, payment_attempt: { payment_attempt_id: 'attempt-development', order_id: 'order-development', account_id: account.account_id, provider: 'development', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now } }, 201)
     if (path === '/api/commerce/payments/development') return json(route, { order: { order_id: 'order-development', status: 'ORDER_STATUS_PAID' }, subscription: { ...commerce.subscription, plan_id: 'professional', revision: '2' }, entitlement: { ...commerce.entitlement, plan_id: 'professional' } })
-    if (path === '/api/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'muxvia-cn1.omscd.com:41102', generation: '1' } }] })
-    if (path === '/api/daemons/enroll') return json(route, { account_id: account.account_id, enrollment_code: 'mxe_test', expires_at: periodEnd, enroll_command: 'muxvia cloud enroll --controller https://cloud.muxvia.com mxe_test' })
+    if (path === '/api/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'cn1.edge.anytty.com:41102', generation: '1' } }] })
+    if (path === '/api/daemons/enroll') return json(route, { account_id: account.account_id, enrollment_code: 'mxe_test', expires_at: periodEnd, enroll_command: 'anytty cloud enroll --controller https://cloud.anytty.com mxe_test' })
     if (path === '/api/operator/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {"controller_instance_id":"controller-test"}\n\n' })
     if (path === '/api/operator/overview') return json(route, { overview: { edge_total: '1', edge_online: '1', daemon_total: '1', daemon_online: '1', client_session_online: '1', p2p_session_online: '1', relay_session_online: '0', relay_bytes_current_period: '1536', controller_instance_id: 'controller-test', generated_at: now } })
     if (path === '/api/operator/edges') return json(route, { edges: [
-      { config: { edge_id: '22222222-2222-4222-8222-222222222222', version: '1', name: 'CN1 Edge', region: 'CN1', capacity: '1000', public_endpoint: 'muxvia-cn1.omscd.com:41102', enabled: true }, config_revision: '1', runtime: { online: true, software_version: 'dev-cloudp007', agent_count: '1', session_count: '1', relay_allocation_count: '0', last_heartbeat: now }, certificate: onlineCertificateBinding },
-      { config: { edge_id: '77777777-7777-4777-8777-777777777777', version: '1', name: '备用 Edge', region: 'CN2', capacity: '1000', public_endpoint: 'muxvia-cn2.omscd.com:41102', enabled: true }, config_revision: '1', runtime: { online: false, software_version: 'dev-cloudp007', agent_count: '0', session_count: '0', relay_allocation_count: '0', last_heartbeat: now }, certificate: offlineCertificateBinding },
+      { config: { edge_id: '22222222-2222-4222-8222-222222222222', version: '1', name: 'CN1 Edge', region: 'CN1', capacity: '1000', public_endpoint: 'cn1.edge.anytty.com:41102', enabled: true }, config_revision: '1', runtime: { online: true, software_version: 'dev-cloudp007', agent_count: '1', session_count: '1', relay_allocation_count: '0', last_heartbeat: now }, certificate: onlineCertificateBinding },
+      { config: { edge_id: '77777777-7777-4777-8777-777777777777', version: '1', name: '备用 Edge', region: 'CN2', capacity: '1000', public_endpoint: 'cn2.edge.anytty.com:41102', enabled: true }, config_revision: '1', runtime: { online: false, software_version: 'dev-cloudp007', agent_count: '0', session_count: '0', relay_allocation_count: '0', last_heartbeat: now }, certificate: offlineCertificateBinding },
     ] })
     if (path === '/api/operator/certificates' && route.request().method() === 'GET') return json(route, { profiles: [certificateProfile] })
     if (path === '/api/operator/certificates' && route.request().method() === 'POST') {
@@ -44,7 +44,7 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     }
     if (path.startsWith('/api/operator/certificates/') && route.request().method() === 'PUT') return json(route, { profile: certificateProfile })
     if (path.endsWith('/certificate') && route.request().method() === 'POST') return json(route, { binding: certificateProfile.bindings[0] })
-    if (path === '/api/operator/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'muxvia-cn1.omscd.com:41102', generation: '1' } }] })
+    if (path === '/api/operator/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'cn1.edge.anytty.com:41102', generation: '1' } }] })
     if (path === '/api/operator/connections') return json(route, { sessions: [{ session_id: '44444444-4444-4444-8444-444444444444', account_id: account.account_id, daemon_id: daemon.daemon_id, edge_id: '22222222-2222-4222-8222-222222222222', client_id: 'android-client', product: 'CLIENT_PRODUCT_ANDROID', relay: false, generation: '1', connected_at: now }] })
     if (path === '/api/operator/accounts') return json(route, { accounts: [{ account, roles: ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'], daemon_count: '1', subscription: commerce.subscription, entitlement: commerce.entitlement, usage: commerce.usage }] })
     if (path === '/api/operator/plans') return json(route, { plans })
@@ -60,10 +60,10 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
 test('公开落地页展示真实连接路径和套餐', async ({ page }, testInfo) => {
   await mockAPI(page)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Muxvia Cloud', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
   await expect(page.getByText('随时回到你的电脑。', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '把一台电脑放进你的设备列表。' })).toBeVisible()
-  await expect(page.getByLabel('Muxvia Cloud 产品连接画面')).toContainText('muxvia-cloud-ok')
+  await expect(page.getByLabel('AnyTTY Cloud 产品连接画面')).toContainText('anytty-cloud-ok')
   await expect(page.getByRole('heading', { name: '基础版' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: testInfo.outputPath('landing.png'), fullPage: true })
@@ -205,8 +205,8 @@ test('注册后直接进入普通用户概览', async ({ page }) => {
   await mockAPI(page)
   await page.goto('/register')
   await page.getByLabel('你的称呼').fill('测试用户')
-  await page.getByLabel('邮箱').fill('user@muxvia.com')
-  await page.getByLabel('密码', { exact: true }).fill('muxvia-test-password')
+  await page.getByLabel('邮箱').fill('user@anytty.com')
+  await page.getByLabel('密码', { exact: true }).fill('anytty-test-password')
   await page.getByRole('button', { name: '创建账号' }).click()
   await expect(page).toHaveURL(/\/app\/overview$/)
   await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
@@ -218,7 +218,7 @@ test('统一登录页提供字段约束和明确错误反馈', async ({ page }) 
   await page.goto('/login')
   const submit = page.getByRole('button', { name: '登录', exact: true })
   await expect(submit).toBeDisabled()
-  await page.getByLabel('邮箱或账号').fill('user@muxvia.com')
+  await page.getByLabel('邮箱或账号').fill('user@anytty.com')
   await page.getByLabel('密码', { exact: true }).fill('wrong-password')
   await submit.click()
   await expect(page.getByRole('alert')).toHaveText('账号或密码不正确。请检查后重新输入。')

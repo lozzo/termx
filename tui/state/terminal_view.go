@@ -3,7 +3,7 @@ package state
 import (
 	"strconv"
 
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/shared/transport"
 	pion "github.com/pion/webrtc/v4"
 )
 
@@ -58,7 +58,7 @@ func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	select {
 	case <-opened:
 	case <-time.After(10 * time.Second):
-		t.Fatal("muxvia protocol data channel did not open")
+		t.Fatal("anytty protocol data channel did not open")
 	}
 	select {
 	case <-sessionStarted:

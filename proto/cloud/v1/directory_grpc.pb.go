@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DirectoryService_BeginClientRoute_FullMethodName   = "/muxvia.cloud.v1.DirectoryService/BeginClientRoute"
-	DirectoryService_BeginPairingRoute_FullMethodName  = "/muxvia.cloud.v1.DirectoryService/BeginPairingRoute"
-	DirectoryService_ResolveClientRoute_FullMethodName = "/muxvia.cloud.v1.DirectoryService/ResolveClientRoute"
+	DirectoryService_BeginClientRoute_FullMethodName   = "/anytty.cloud.v1.DirectoryService/BeginClientRoute"
+	DirectoryService_BeginPairingRoute_FullMethodName  = "/anytty.cloud.v1.DirectoryService/BeginPairingRoute"
+	DirectoryService_ResolveClientRoute_FullMethodName = "/anytty.cloud.v1.DirectoryService/ResolveClientRoute"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -180,7 +180,7 @@ func _DirectoryService_ResolveClientRoute_Handler(srv interface{}, ctx context.C
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var DirectoryService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.DirectoryService",
+	ServiceName: "anytty.cloud.v1.DirectoryService",
 	HandlerType: (*DirectoryServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

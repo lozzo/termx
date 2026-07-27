@@ -12,7 +12,7 @@ describe('mountRemoteControlApp', () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = mountRemoteControlApp()
 
-    expect((await screen.findByTestId('muxvia-cloud-unavailable')).textContent).toContain('Muxvia Cloud 暂不可用')
+    expect((await screen.findByTestId('anytty-cloud-unavailable')).textContent).toContain('AnyTTY Cloud 暂不可用')
     expect(screen.getByText('云端服务正在重构。Direct 和 SSH 客户端不受影响。')).toBeTruthy()
     root.unmount()
   })

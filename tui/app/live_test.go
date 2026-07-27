@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
+	"github.com/anytty/anytty/tui/testkit"
 )
 
 type refreshingInputTerminalService struct {
@@ -1323,18 +1323,18 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 		Cols:         100,
 		Rows:         30,
 		ResizePolicy: state.TerminalResizeRoleOwner,
-		SurfaceID:    "cmd/muxvia-v3",
-		ViewID:       "cmd/muxvia-v3-main",
+		SurfaceID:    "cmd/anytty-v3",
+		ViewID:       "cmd/anytty-v3-main",
 		CanResize:    true,
 	}}, LiveDeps{})
 
 	if msg := firstWorkbenchPersistEffect(t, effects); msg.Reason != "terminal.attach" {
 		t.Fatalf("expected terminal attach persist request, got %#v", msg)
 	}
-	if !root.Session.Attached || root.Session.Channel != 7 || root.Session.ViewID != "cmd/muxvia-v3-main" {
+	if !root.Session.Attached || root.Session.Channel != 7 || root.Session.ViewID != "cmd/anytty-v3-main" {
 		t.Fatalf("prefilled CLI session should accept first attach result, session=%#v", root.Session)
 	}
-	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.ViewID != "cmd/muxvia-v3-main" {
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.ViewID != "cmd/anytty-v3-main" {
 		t.Fatalf("expected first attach result to create active pane binding, binding=%#v ok=%v", binding, ok)
 	}
 }
@@ -1352,7 +1352,7 @@ func TestLiveAttachResultDoesNotAutoRestartExitedTerminal(t *testing.T) {
 		Cols:         80,
 		Rows:         24,
 		ResizePolicy: state.TerminalResizeRoleOwner,
-		SurfaceID:    "cmd/muxvia-v3",
+		SurfaceID:    "cmd/anytty-v3",
 		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 		CanResize:    true,
 	}})
@@ -2090,7 +2090,7 @@ func TestTerminalSizeUnlockResizesOwnerWhenPanelSizeDiverged(t *testing.T) {
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
 			TerminalID: "term-1",
 			Title:      "main",
-			Tags:       map[string]string{"muxvia.size_lock": "lock"},
+			Tags:       map[string]string{"anytty.size_lock": "lock"},
 		}}},
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
@@ -2126,7 +2126,7 @@ func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) 
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
-	locked, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{"muxvia.size_lock": "lock"}}})
+	locked, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{"anytty.size_lock": "lock"}}})
 	if _, ok := liveResizeMsgFromEffects(effects); ok {
 		t.Fatalf("metadata lock must not resize PTY, effects=%#v", effects)
 	}
@@ -2135,7 +2135,7 @@ func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) 
 	if !owner.SizeLocked || owner.CanResize || !follower.SizeLocked || follower.CanResize {
 		t.Fatalf("metadata lock should broadcast to all terminal views, owner=%#v follower=%#v", owner, follower)
 	}
-	if locked.TerminalPool.Items[0].Tags["muxvia.size_lock"] != "lock" {
+	if locked.TerminalPool.Items[0].Tags["anytty.size_lock"] != "lock" {
 		t.Fatalf("metadata lock should update terminal pool tags, pool=%#v", locked.TerminalPool)
 	}
 
@@ -2165,7 +2165,7 @@ func TestTerminalSizeLockBlocksAttachResultResizeToSplitPane(t *testing.T) {
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
 			TerminalID: "term-1",
 			Title:      "main",
-			Tags:       map[string]string{"muxvia.size_lock": "lock"},
+			Tags:       map[string]string{"anytty.size_lock": "lock"},
 			Cols:       100,
 			Rows:       30,
 		}}},
@@ -2234,7 +2234,7 @@ func TestTerminalPoolAttachRequestToSameLockedTerminalDoesNotResize(t *testing.T
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
 			TerminalID: "term-1",
 			Title:      "main",
-			Tags:       map[string]string{"muxvia.size_lock": "lock"},
+			Tags:       map[string]string{"anytty.size_lock": "lock"},
 			Cols:       100,
 			Rows:       30,
 		}}},

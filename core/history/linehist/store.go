@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/shared/perftrace"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/shared/perftrace"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // ScreenRow 是查询时刻 emulator 当前屏的一条物理行快照。

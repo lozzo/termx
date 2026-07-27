@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 func TestLoadMissingDefaultPathReturnsLocalEndpoint(t *testing.T) {
@@ -206,7 +206,7 @@ func TestEndpointRuntimeChangeClassification(t *testing.T) {
 }
 
 func TestSaveRoundTripV2AndFileMode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia", "endpoints.yaml")
+	path := filepath.Join(t.TempDir(), "anytty", "endpoints.yaml")
 	priority := 10
 	endpoint := NewManagedEndpoint("studio", "Studio", DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}, "device-studio", "grant:studio", RelayDirect, ConnectOnDemand)
 	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: 1500 * time.Millisecond, HedgeDelayConfigured: true}
@@ -257,7 +257,7 @@ func TestRegistryWritePublishedClassification(t *testing.T) {
 func TestLoadReadsDefaultPathV2(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
-	path := filepath.Join(configHome, "muxvia", DefaultFileName)
+	path := filepath.Join(configHome, "anytty", DefaultFileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestLoadReadsDefaultPathV2(t *testing.T) {
 func TestLoadDefaultPathIgnoresLegacyConnectionsV1(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
-	dir := filepath.Join(configHome, "muxvia")
+	dir := filepath.Join(configHome, "anytty")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

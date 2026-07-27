@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 // R433 准入：linehist store 经 LineHistoryStoreFactory 接入真实 Terminal

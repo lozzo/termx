@@ -1,19 +1,19 @@
 export * from './connection/connectionMessageReducer'
-export { muxviaI18n, muxviaIntlLocale, muxviaLanguages, normalizeMuxviaLanguage } from './i18n'
-export type { MuxviaLanguage } from './i18n'
+export { anyttyI18n, anyttyIntlLocale, anyttyLanguages, normalizeAnyTTYLanguage } from './i18n'
+export type { AnyTTYLanguage } from './i18n'
 export * from './connection/eventQueue'
 export {
-  MUXVIA_NATIVE_BACK_EVENT,
+  ANYTTY_NATIVE_BACK_EVENT,
   addNativeBackHandler,
   dispatchNativeBack,
 } from './platform/nativeBack'
-export type { MuxviaNativeBackHandler } from './platform/nativeBack'
+export type { AnyTTYNativeBackHandler } from './platform/nativeBack'
 export {
-  MUXVIA_NATIVE_KEYBOARD_EVENT,
+  ANYTTY_NATIVE_KEYBOARD_EVENT,
   addNativeKeyboardListener,
   dispatchNativeKeyboardEvent,
 } from './platform/nativeKeyboard'
-export type { MuxviaNativeKeyboardEventDetail, MuxviaNativeKeyboardHandler } from './platform/nativeKeyboard'
+export type { AnyTTYNativeKeyboardEventDetail, AnyTTYNativeKeyboardHandler } from './platform/nativeKeyboard'
 export {
   assertRemoteModelShape,
   normalizeMachine,
@@ -182,7 +182,7 @@ export {
   TERMINAL_FONT_OPTIONS,
   TERMINAL_SETTINGS_STORAGE_KEY,
   TERMINAL_THEME_OPTIONS,
-  MUXVIA_DARK_TERMINAL_THEME,
+  ANYTTY_DARK_TERMINAL_THEME,
   normalizeTerminalSettings,
   readTerminalSettings,
   resolveTerminalThemeOption,
@@ -219,17 +219,17 @@ export type { RemoteMachine } from './core/remoteMachine'
 export { useFileManager } from './files/useFileManager'
 export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './files/useFileManager'
 export * from './terminal/useTerminalSession'
-export * as MuxviaApiAccessRemote from './generated/apipb/access_remote_pb'
-export * as MuxviaApiApplication from './generated/apipb/application_pb'
-export * as MuxviaApiCommon from './generated/apipb/common_pb'
-export * as MuxviaApiEvents from './generated/apipb/events_pb'
-export * as MuxviaApiFile from './generated/apipb/file_pb'
-export * as MuxviaApiHistory from './generated/apipb/history_pb'
-export * as MuxviaApiRuntime from './generated/apipb/runtime_pb'
-export * as MuxviaApiStorage from './generated/apipb/storage_pb'
-export * as MuxviaApiTerminal from './generated/apipb/terminal_pb'
-export * as MuxviaApiWorkbench from './generated/apipb/workbench_pb'
-export * as MuxviaClientBinding from './generated/bindingpb/client_binding_pb'
+export * as AnyTTYApiAccessRemote from './generated/apipb/access_remote_pb'
+export * as AnyTTYApiApplication from './generated/apipb/application_pb'
+export * as AnyTTYApiCommon from './generated/apipb/common_pb'
+export * as AnyTTYApiEvents from './generated/apipb/events_pb'
+export * as AnyTTYApiFile from './generated/apipb/file_pb'
+export * as AnyTTYApiHistory from './generated/apipb/history_pb'
+export * as AnyTTYApiRuntime from './generated/apipb/runtime_pb'
+export * as AnyTTYApiStorage from './generated/apipb/storage_pb'
+export * as AnyTTYApiTerminal from './generated/apipb/terminal_pb'
+export * as AnyTTYApiWorkbench from './generated/apipb/workbench_pb'
+export * as AnyTTYClientBinding from './generated/bindingpb/client_binding_pb'
 export type {
   ProtoClientSession,
   ProtoClientSubscription,
@@ -237,4 +237,4 @@ export type {
 } from './core/protoClientSession'
 export { BindingOperation, ProtoBindingClient, ProtoBindingConnector } from './binding/protoBindingClient'
 export type { BindingOperationCode, EndpointInput, ProtoBindingBackend } from './binding/protoBindingClient'
-export * as MuxviaRemoteAuth from './generated/remoteauthpb/remote_auth_pb'
+export * as AnyTTYRemoteAuth from './generated/remoteauthpb/remote_auth_pb'

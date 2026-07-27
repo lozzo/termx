@@ -1,12 +1,12 @@
 {
-  "name": "@muxvia/ui",
+  "name": "@anytty/ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/entries/appStyles.css",
-    "./preview-worker": "./public/muxvia-file-preview-sw.js"
+    "./preview-worker": "./public/anytty-file-preview-sw.js"
   },
   "scripts": {
     "dev": "vite",

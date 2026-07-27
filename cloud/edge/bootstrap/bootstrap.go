@@ -23,15 +23,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/configsignature"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/configsignature"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 )
 
-// FileConfig 是 `/etc/muxvia-cloud-edge/config.yaml` 的本机 bootstrap 配置。
+// FileConfig 是 `/etc/anytty-cloud-edge/config.yaml` 的本机 bootstrap 配置。
 // 区域、容量等运营 desired state 不在这里编辑。
 type FileConfig struct {
 	ControllerOrigin     string `yaml:"controller_origin"`

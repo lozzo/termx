@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 // CommitRelayUsage 在一个 PostgreSQL 事务内幂等插入事件并增加账号周期与 Edge 聚合。

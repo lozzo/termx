@@ -4,10 +4,10 @@ import (
 	"strconv"
 	"strings"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/shortcut"
-	"github.com/muxvia/muxvia/tui/state"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/shortcut"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // canonicalActionForProjection 把仍在生产的视觉投影关联到唯一 canonical action。

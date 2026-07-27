@@ -10,9 +10,9 @@ import (
 
 func TestPublicRemoteRuntimeDoesNotDependOnPrivateServices(t *testing.T) {
 	forbidden := []string{
-		"github.com/muxvia/muxvia/termx-hub",
-		"github.com/muxvia/muxvia/web-control",
-		"github.com/muxvia/muxvia/private/",
+		"github.com/anytty/anytty/termx-hub",
+		"github.com/anytty/anytty/web-control",
+		"github.com/anytty/anytty/private/",
 		"session_token",
 		"/api/v1/sessions",
 	}
@@ -53,7 +53,7 @@ func TestAndroidManagedRuntimeDoesNotRestoreLegacyHubProtocol(t *testing.T) {
 	if _, err := os.Stat(mirrorRoot); !os.IsNotExist(err) {
 		t.Fatalf("Android source mirror must stay deleted: %s", mirrorRoot)
 	}
-	root := filepath.Join("..", "clients", "mobile", "android", "app", "src", "main", "java", "com", "muxvia", "app")
+	root := filepath.Join("..", "clients", "mobile", "android", "app", "src", "main", "java", "com", "anytty", "app")
 	forbidden := []string{"sessionToken", "session_token", "/api/v1/sessions", "Authorization\" to \"Bearer", "connectHub("}
 	legacyFiles := []string{
 		filepath.Join(root, "connectors", "HubConnector.kt"),

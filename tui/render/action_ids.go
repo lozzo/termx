@@ -1,6 +1,6 @@
 package render
 
-import actiondomain "github.com/muxvia/muxvia/tui/action"
+import actiondomain "github.com/anytty/anytty/tui/action"
 
 // ProjectionID 是 render-local 的视觉投影编号。
 // 它只能定位 footer/chrome/content metadata，不能作为 canonical action identity 或 app handler key。

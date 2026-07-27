@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/ticket"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/cloud/ticket"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -81,6 +81,28 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	tampered.KeyId = "another-device-fingerprint"
 	if _, err := ticket.VerifyCloudRouteGrant(tampered, daemonIdentity.PublicKey, "daemon-r5", now); err == nil {
 		t.Fatal("CloudRouteGrant accepted a mismatched DeviceIdentity key ID")
+	}
+}
+
+func TestCloudRouteGrantAcceptsMuxviaSignatureDuringBrandMigration(t *testing.T) {
+	_, daemonPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	daemonIdentity, _ := remoteauth.NewIdentity("device-legacy", daemonPrivateKey)
+	clientPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	claims := &cloudv1.CloudRouteGrantClaims{
+		GrantId: "grant-legacy", DaemonId: "daemon-legacy", ClientPublicKey: clientPublicKey,
+		Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(7 * 24 * time.Hour)),
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacySigningBytes := append([]byte("muxvia.cloud.route-grant.v1\x00"), payload...)
+	grant := &cloudv1.SignedEnvelope{
+		KeyId: daemonIdentity.Fingerprint, Payload: payload, Signature: ed25519.Sign(daemonPrivateKey, legacySigningBytes),
+	}
+	if _, err := ticket.VerifyCloudRouteGrant(grant, daemonIdentity.PublicKey, "daemon-legacy", now); err != nil {
+		t.Fatalf("legacy muxvia CloudRouteGrant rejected during migration: %v", err)
 	}
 }
 

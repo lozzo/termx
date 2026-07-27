@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package muxvia.cloud.v1;
+package anytty.cloud.v1;
 
 import "google/protobuf/timestamp.proto";
 import "cloud/v1/usage.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 // ClientProduct 表示建立 Cloud 信令连接的官方客户端形态。
 enum ClientProduct {

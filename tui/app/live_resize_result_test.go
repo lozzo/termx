@@ -2,11 +2,11 @@ package app
 
 import (
 	"errors"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestDetachedViewResizeResultDoesNotOverrideCurrentSessionSize(t *testing.T) {

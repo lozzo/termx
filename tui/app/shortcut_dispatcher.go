@@ -3,9 +3,9 @@ package app
 import (
 	"strconv"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/shortcut"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/shortcut"
 )
 
 func shortcutIntentOwnedByCopy(intent input.Intent) bool {

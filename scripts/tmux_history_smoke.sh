@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/tmux_history_smoke.sh [options]
 
-Run the isolated Muxvia + tmux history smoke flow:
+Run the isolated AnyTTY + tmux history smoke flow:
   daemon -> create stress terminal -> attach -> wait_surface
   -> copy-mode repeated g -> capture
   -> resize -> capture
@@ -14,7 +14,7 @@ Run the isolated Muxvia + tmux history smoke flow:
 Options:
   --scenario NAME       scenario to run: baseline | standard | deep-live-tail | history-semantics | bg-footprint | bg-forensics | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
-  --bin PATH            existing muxvia binary to use; default builds into ROOT/muxvia
+  --bin PATH            existing anytty binary to use; default builds into ROOT/anytty
   --lines N             stress line count; default 1000
   --seed N              stress seed; default 100
   --width-hint N        stress width hint; default 120
@@ -68,7 +68,7 @@ Artifacts:
   floating-owner-resize:
     floating-base.txt
     floating-base.raw.txt
-    floating-base.muxvia-ls.txt
+    floating-base.anytty-ls.txt
     floating-manager.txt
     floating-manager.raw.txt
     floating-attached.txt
@@ -77,7 +77,7 @@ Artifacts:
     floating-owned.raw.txt
     floating-resized.txt
     floating-resized.raw.txt
-    floating-resized.muxvia-ls.txt
+    floating-resized.anytty-ls.txt
     floating-owner-resize.resize.summary.txt
   floating-owner-reattach-history:
     floating-reattach-live.txt
@@ -236,7 +236,7 @@ wait_for_terminal() {
     listing="$(
       XDG_CONFIG_HOME="$CFG" \
       XDG_STATE_HOME="$STATE" \
-      MUXVIA_REMOTE_ENABLE=false \
+      ANYTTY_REMOTE_ENABLE=false \
       "$BIN" --socket "$SOCK" --log-file "$LOG" ls 2>/dev/null || true
     )"
     if printf '%s\n' "$listing" | awk -F '\t' -v want="$terminal_id" '$1 == want { found=1 } END { exit(found ? 0 : 1) }'; then
@@ -263,7 +263,7 @@ sanitize_tmux_name() {
   value="${value#-}"
   value="${value%-}"
   if [[ -z "$value" ]]; then
-    value="muxvia-grid-smoke"
+    value="anytty-grid-smoke"
   fi
   printf '%s\n' "${value:0:48}"
 }
@@ -343,21 +343,21 @@ write_tmux_diagnostics() {
   fi
 }
 
-write_muxvia_log_excerpt() {
+write_anytty_log_excerpt() {
   local base="$1"
   if [[ -f "$LOG" ]]; then
-    tail -n 200 "$LOG" >"$ROOT/$base.muxvia-log.txt" 2>&1 || true
+    tail -n 200 "$LOG" >"$ROOT/$base.anytty-log.txt" 2>&1 || true
     return 0
   fi
-  printf 'missing muxvia log: %s\n' "$LOG" >"$ROOT/$base.muxvia-log.txt"
+  printf 'missing anytty log: %s\n' "$LOG" >"$ROOT/$base.anytty-log.txt"
 }
 
-write_muxvia_inventory_artifact() {
+write_anytty_inventory_artifact() {
   local base="$1"
   XDG_CONFIG_HOME="$CFG" \
   XDG_STATE_HOME="$STATE" \
-  MUXVIA_REMOTE_ENABLE=false \
-  "$BIN" --socket "$SOCK" --log-file "$LOG" ls >"$ROOT/$base.muxvia-ls.txt" 2>&1 || true
+  ANYTTY_REMOTE_ENABLE=false \
+  "$BIN" --socket "$SOCK" --log-file "$LOG" ls >"$ROOT/$base.anytty-ls.txt" 2>&1 || true
 }
 
 ensure_tmux_target() {
@@ -633,7 +633,7 @@ start_direct_attach_client() {
 
   command="$(attach_command "$terminal_id" "$base")"
   : >"$input_file"
-  # 中文说明：这个 direct PTY 模拟真实终端模拟器里的第一个 muxvia 客户端；
+  # 中文说明：这个 direct PTY 模拟真实终端模拟器里的第一个 anytty 客户端；
   # tmux 里的 attach 是第二个客户端，用来复现双 attachment 下的 live/history 差异。
   python3 - "$cols" "$rows" "$command" "$input_file" <<'PY' >"$ROOT/$base.direct-client.out" 2>&1 &
 import fcntl
@@ -790,8 +790,8 @@ record_attach_surface_artifact() {
     printf 'target=%s\n' "$target"
   } >"$ROOT/$base.summary.txt"
   write_tmux_diagnostics "$base" "$session" "$target"
-  write_muxvia_log_excerpt "$base"
-  write_muxvia_inventory_artifact "$base"
+  write_anytty_log_excerpt "$base"
+  write_anytty_inventory_artifact "$base"
 }
 
 cleanup() {
@@ -836,7 +836,7 @@ copy_resize_log_artifact() {
     : >"$ROOT/$dest_base.resize.summary.txt"
     return 0
   fi
-  if ! rg -n 'server attached terminal|method=ensure_resize|method=resize|muxvia transport resize frame|resize_owner' "$LOG" >"$ROOT/$dest_base.resize.summary.txt"; then
+  if ! rg -n 'server attached terminal|method=ensure_resize|method=resize|anytty transport resize frame|resize_owner' "$LOG" >"$ROOT/$dest_base.resize.summary.txt"; then
     : >"$ROOT/$dest_base.resize.summary.txt"
   fi
 }
@@ -1272,7 +1272,7 @@ PY
 }
 
 write_grid_viewport_dump_tool() {
-  GRID_DUMP_TOOL_DIR="$REPO_ROOT/cmd/muxvia/muxvia-smoke-grid-dump-$$"
+  GRID_DUMP_TOOL_DIR="$REPO_ROOT/cmd/anytty/anytty-smoke-grid-dump-$$"
   mkdir -p "$GRID_DUMP_TOOL_DIR"
   cat >"$GRID_DUMP_TOOL_DIR/main.go" <<'GO'
 package main
@@ -1285,13 +1285,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/wire"
-	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
+	"github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/wire"
+	unixtransport "github.com/anytty/anytty/shared/transport/unix"
 )
 
 func main() {
-	socket := flag.String("socket", "", "muxvia daemon socket")
+	socket := flag.String("socket", "", "anytty daemon socket")
 	terminalID := flag.String("terminal", "", "terminal id")
 	offset := flag.Int("offset", 0, "scrollback offset")
 	limit := flag.Int("limit", 1000, "scrollback limit")
@@ -1374,7 +1374,7 @@ dump_grid_viewport_artifact() {
   local limit="$2"
   local cols="$3"
   write_grid_viewport_dump_tool
-  (cd "$REPO_ROOT/cmd/muxvia" && go run "./$(basename "$GRID_DUMP_TOOL_DIR")" \
+  (cd "$REPO_ROOT/cmd/anytty" && go run "./$(basename "$GRID_DUMP_TOOL_DIR")" \
     --socket "$SOCK" \
     --terminal "$TERM_ID" \
     --offset 0 \
@@ -1417,7 +1417,7 @@ for row_no, text in rows:
     match = label_re.search(text)
     if match:
         events.append((row_no, "label", int(match.group(1)), text))
-    if "uri:" in text or "muxvia://pair" in text:
+    if "uri:" in text or "anytty://pair" in text:
         events.append((row_no, "uri", None, text))
     if "expires_at:" in text:
         events.append((row_no, "expires", None, text))
@@ -1895,15 +1895,15 @@ start_daemon() {
   if [[ "$SCENARIO" == "floating-owner-remote-pair-wheel-history" ]]; then
     XDG_CONFIG_HOME="$CFG" \
     XDG_STATE_HOME="$STATE" \
-    MUXVIA_REMOTE_ENABLE=true \
-    MUXVIA_REMOTE_MODE=local \
-    MUXVIA_REMOTE_LOCAL_WEB_ADDR=127.0.0.1:0 \
-    MUXVIA_REMOTE_LOCAL_ICE_TCP_ADDR=127.0.0.1:0 \
+    ANYTTY_REMOTE_ENABLE=true \
+    ANYTTY_REMOTE_MODE=local \
+    ANYTTY_REMOTE_LOCAL_WEB_ADDR=127.0.0.1:0 \
+    ANYTTY_REMOTE_LOCAL_ICE_TCP_ADDR=127.0.0.1:0 \
     "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$DAEMON_STDOUT" 2>&1 &
   else
     XDG_CONFIG_HOME="$CFG" \
     XDG_STATE_HOME="$STATE" \
-    MUXVIA_REMOTE_ENABLE=false \
+    ANYTTY_REMOTE_ENABLE=false \
     "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$DAEMON_STDOUT" 2>&1 &
   fi
   DAEMON_PID=$!
@@ -1912,8 +1912,8 @@ start_daemon() {
 
 build_bin_if_needed() {
   if [[ "$BUILD_BIN" == "1" ]]; then
-    log "building muxvia binary at $BIN"
-    go build -o "$BIN" ./cmd/muxvia
+    log "building anytty binary at $BIN"
+    go build -o "$BIN" ./cmd/anytty
   fi
 }
 
@@ -1928,7 +1928,7 @@ build_generator_command() {
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$(( LINES / 2 ))"
       ;;
     floating-owner-remote-pair-wheel-history)
-      printf 'python3 %q --lines 100 --seed %q --width-hint %q; MUXVIA_REMOTE_ENABLE=true %q --socket %q --log-file %q remote pair --ttl 2m; python3 %q --lines 100 --seed %q --width-hint %q; exec cat' \
+      printf 'python3 %q --lines 100 --seed %q --width-hint %q; ANYTTY_REMOTE_ENABLE=true %q --socket %q --log-file %q remote pair --ttl 2m; python3 %q --lines 100 --seed %q --width-hint %q; exec cat' \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$SEED" "$WIDTH_HINT" \
         "$BIN" "$SOCK" "$LOG" \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$(( SEED + 1 ))" "$WIDTH_HINT"
@@ -1961,18 +1961,18 @@ create_terminal() {
   output="$(
     XDG_CONFIG_HOME="$CFG" \
     XDG_STATE_HOME="$STATE" \
-    MUXVIA_REMOTE_ENABLE=false \
+    ANYTTY_REMOTE_ENABLE=false \
     run_in_pty "$ATTACH_COLS" "$ATTACH_ROWS" \
       env \
       XDG_CONFIG_HOME="$CFG" \
       XDG_STATE_HOME="$STATE" \
-      MUXVIA_REMOTE_ENABLE=false \
+      ANYTTY_REMOTE_ENABLE=false \
       "$BIN" --socket "$SOCK" --log-file "$LOG" \
       new --name grid-stress -- /bin/sh -lc "$generator_cmd"
   )"
   TERM_ID="$(printf '%s\n' "$output" | tr -d '\r' | awk 'NF {line=$0} END {print line}')"
   if [[ -z "$TERM_ID" ]]; then
-    echo "failed to parse terminal id from muxvia new output" >&2
+    echo "failed to parse terminal id from anytty new output" >&2
     printf '%s\n' "$output" >&2
     exit 1
   fi
@@ -2248,7 +2248,7 @@ run_floating_owner_resize_scenario() {
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-base" "grid-stress"
-  write_muxvia_inventory_artifact "floating-base"
+  write_anytty_inventory_artifact "floating-base"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-manager.global-mode" C-g
   sleep "$G_DELAY"
@@ -2264,7 +2264,7 @@ run_floating_owner_resize_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-mode.enter" C-o
   sleep "$G_DELAY"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-owner.take" a
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 2
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 2
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-owned"
 
@@ -2272,10 +2272,10 @@ run_floating_owner_resize_scenario() {
     send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-resize.$key" "$key"
     sleep "$G_DELAY"
   done
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 3
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 3
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-resized"
-  write_muxvia_inventory_artifact "floating-resized"
+  write_anytty_inventory_artifact "floating-resized"
   copy_resize_log_artifact "floating-owner-resize"
 
   assert_contains "$ROOT/floating-base.txt" "grid-stress"
@@ -2287,7 +2287,7 @@ run_floating_owner_resize_scenario() {
   assert_regex_count_at_least "$ROOT/floating-owner-resize.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-resize.resize.summary.txt" 'server attached terminal.*resize_owner=false' 1
   assert_regex_count_at_least "$ROOT/floating-owner-resize.resize.summary.txt" 'method=ensure_resize' 3
-  assert_terminal_size_shrunk "$ROOT/floating-base.muxvia-ls.txt" "$ROOT/floating-resized.muxvia-ls.txt" "$TERM_ID"
+  assert_terminal_size_shrunk "$ROOT/floating-base.anytty-ls.txt" "$ROOT/floating-resized.anytty-ls.txt" "$TERM_ID"
 
   log "PASS floating-base -> $ROOT/floating-base.txt"
   log "PASS floating-owned -> $ROOT/floating-owned.txt"
@@ -2304,7 +2304,7 @@ run_floating_owner_reattach_history_scenario() {
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-reattach-base" "grid-stress"
-  write_muxvia_inventory_artifact "floating-reattach-base"
+  write_anytty_inventory_artifact "floating-reattach-base"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-manager.global-mode" C-g
   sleep "$G_DELAY"
@@ -2320,7 +2320,7 @@ run_floating_owner_reattach_history_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-mode.enter" C-o
   sleep "$G_DELAY"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-owner.take" a
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 2
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 2
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-reattach-owned"
 
@@ -2328,10 +2328,10 @@ run_floating_owner_reattach_history_scenario() {
     send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-resize.$key" "$key"
     sleep "$G_DELAY"
   done
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 3
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 3
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-reattach-resized"
-  write_muxvia_inventory_artifact "floating-reattach-resized"
+  write_anytty_inventory_artifact "floating-reattach-resized"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-quit.global-mode" C-g
   sleep "$G_DELAY"
@@ -2345,7 +2345,7 @@ run_floating_owner_reattach_history_scenario() {
   pane_reattach="$ATTACH_SESSION_PANE"
   CLIENT_REATTACH_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_REATTACH" "$pane_reattach" "floating-reattach-live" "grid-stress"
-  write_muxvia_inventory_artifact "floating-reattach-live"
+  write_anytty_inventory_artifact "floating-reattach-live"
 
   if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_REATTACH" "$pane_reattach" "floating-reattach-copy-top" "000000" "$G_REPEATS"; then
     copy_gridtrace_artifact "$SESSION_REATTACH" "floating-reattach-copy-top"
@@ -2367,7 +2367,7 @@ run_floating_owner_reattach_history_scenario() {
   fi
   assert_regex_count_at_least "$ROOT/floating-owner-reattach-history.resize.summary.txt" 'server attached terminal' 3
   assert_regex_count_at_least "$ROOT/floating-owner-reattach-history.resize.summary.txt" 'method=ensure_resize' 3
-  assert_terminal_size_shrunk "$ROOT/floating-reattach-base.muxvia-ls.txt" "$ROOT/floating-reattach-resized.muxvia-ls.txt" "$TERM_ID"
+  assert_terminal_size_shrunk "$ROOT/floating-reattach-base.anytty-ls.txt" "$ROOT/floating-reattach-resized.anytty-ls.txt" "$TERM_ID"
 
   log "PASS floating-reattach-live -> $ROOT/floating-reattach-live.txt"
   log "PASS floating-reattach-copy-top -> $ROOT/floating-reattach-copy-top.txt"
@@ -2384,7 +2384,7 @@ run_floating_owner_wheel_history_scenario() {
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-wheel-base" "grid-stress"
-  write_muxvia_inventory_artifact "floating-wheel-base"
+  write_anytty_inventory_artifact "floating-wheel-base"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-wheel-manager.global-mode" C-g
   sleep "$G_DELAY"
@@ -2400,17 +2400,17 @@ run_floating_owner_wheel_history_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-wheel-mode.enter" C-o
   sleep "$G_DELAY"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-wheel-owner.take" a
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 2
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 2
   sleep 0.5
 
   for key in L L L L J J; do
     send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-wheel-resize.$key" "$key"
     sleep "$G_DELAY"
   done
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 3
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 3
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-wheel-resized"
-  write_muxvia_inventory_artifact "floating-wheel-resized"
+  write_anytty_inventory_artifact "floating-wheel-resized"
 
   x=$(( ATTACH_COLS / 2 ))
   y=$(( ATTACH_ROWS / 2 ))
@@ -2426,7 +2426,7 @@ run_floating_owner_wheel_history_scenario() {
   assert_stress_history_label_order_visible "$ROOT/floating-wheel-after-wheel.txt"
   assert_regex_count_at_least "$ROOT/floating-owner-wheel-history.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-wheel-history.resize.summary.txt" 'method=ensure_resize' 3
-  assert_terminal_size_shrunk "$ROOT/floating-wheel-base.muxvia-ls.txt" "$ROOT/floating-wheel-resized.muxvia-ls.txt" "$TERM_ID"
+  assert_terminal_size_shrunk "$ROOT/floating-wheel-base.anytty-ls.txt" "$ROOT/floating-wheel-resized.anytty-ls.txt" "$TERM_ID"
 
   log "PASS floating-wheel-after-wheel -> $ROOT/floating-wheel-after-wheel.txt"
   log "PASS floating-owner-wheel-history log -> $ROOT/floating-owner-wheel-history.resize.summary.txt"
@@ -2440,7 +2440,7 @@ run_floating_owner_marker_history_scenario() {
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-base" "grid-stress"
-  write_muxvia_inventory_artifact "floating-marker-base"
+  write_anytty_inventory_artifact "floating-marker-base"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-manager.global-mode" C-g
   sleep "$G_DELAY"
@@ -2455,17 +2455,17 @@ run_floating_owner_marker_history_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-mode.enter" C-o
   sleep "$G_DELAY"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-owner.take" a
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 2
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 2
   sleep 0.5
 
   for key in L L L L J J; do
     send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-resize.$key" "$key"
     sleep "$G_DELAY"
   done
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 3
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 3
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-marker-resized"
-  write_muxvia_inventory_artifact "floating-marker-resized"
+  write_anytty_inventory_artifact "floating-marker-resized"
 
   enter_copy_mode_and_scan_down_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-after-marker" "TERM_X_TEXT_QR_BEGIN" "$G_REPEATS"
   scan_down_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-after-marker" "████ ▄▄▄▄▄ ███▄" 8
@@ -2478,7 +2478,7 @@ run_floating_owner_marker_history_scenario() {
   assert_stress_history_label_order_visible "$ROOT/floating-marker-after-marker.txt"
   assert_regex_count_at_least "$ROOT/floating-owner-marker-history.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-marker-history.resize.summary.txt" 'method=ensure_resize' 3
-  assert_terminal_size_shrunk "$ROOT/floating-marker-base.muxvia-ls.txt" "$ROOT/floating-marker-resized.muxvia-ls.txt" "$TERM_ID"
+  assert_terminal_size_shrunk "$ROOT/floating-marker-base.anytty-ls.txt" "$ROOT/floating-marker-resized.anytty-ls.txt" "$TERM_ID"
 
   log "PASS floating-marker-after-marker -> $ROOT/floating-marker-after-marker.txt"
   log "PASS floating-owner-marker-history log -> $ROOT/floating-owner-marker-history.resize.summary.txt"
@@ -2494,7 +2494,7 @@ run_floating_owner_marker_wheel_history_scenario() {
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-base" "grid-stress"
-  write_muxvia_inventory_artifact "floating-marker-wheel-base"
+  write_anytty_inventory_artifact "floating-marker-wheel-base"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-manager.global-mode" C-g
   sleep "$G_DELAY"
@@ -2509,17 +2509,17 @@ run_floating_owner_marker_wheel_history_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-mode.enter" C-o
   sleep "$G_DELAY"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-owner.take" a
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 2
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 2
   sleep 0.5
 
   for key in L L L L J J; do
     send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-resize.$key" "$key"
     sleep "$G_DELAY"
   done
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 3
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 3
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-resized"
-  write_muxvia_inventory_artifact "floating-marker-wheel-resized"
+  write_anytty_inventory_artifact "floating-marker-wheel-resized"
 
   x=$(( ATTACH_COLS / 2 ))
   y=$(( ATTACH_ROWS / 2 ))
@@ -2541,7 +2541,7 @@ run_floating_owner_marker_wheel_history_scenario() {
   assert_stress_history_label_order_visible "$ROOT/floating-marker-wheel-after-marker.txt"
   assert_regex_count_at_least "$ROOT/floating-owner-marker-wheel-history.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-marker-wheel-history.resize.summary.txt" 'method=ensure_resize' 3
-  assert_terminal_size_shrunk "$ROOT/floating-marker-wheel-base.muxvia-ls.txt" "$ROOT/floating-marker-wheel-resized.muxvia-ls.txt" "$TERM_ID"
+  assert_terminal_size_shrunk "$ROOT/floating-marker-wheel-base.anytty-ls.txt" "$ROOT/floating-marker-wheel-resized.anytty-ls.txt" "$TERM_ID"
 
   log "PASS floating-marker-wheel-after-marker -> $ROOT/floating-marker-wheel-after-marker.txt"
   log "PASS floating-owner-marker-wheel-history log -> $ROOT/floating-owner-marker-wheel-history.resize.summary.txt"
@@ -2557,7 +2557,7 @@ run_floating_owner_remote_pair_wheel_history_scenario() {
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-base" "grid-stress"
-  write_muxvia_inventory_artifact "floating-remote-pair-wheel-base"
+  write_anytty_inventory_artifact "floating-remote-pair-wheel-base"
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-manager.global-mode" C-g
   sleep "$G_DELAY"
@@ -2572,17 +2572,17 @@ run_floating_owner_remote_pair_wheel_history_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-mode.enter" C-o
   sleep "$G_DELAY"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-owner.take" a
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 2
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 2
   sleep 0.5
 
   for key in L L L L J J; do
     send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-resize.$key" "$key"
     sleep "$G_DELAY"
   done
-  wait_log_regex_count_at_least 'msg="muxvia protocol request started".*method=ensure_resize' 3
+  wait_log_regex_count_at_least 'msg="anytty protocol request started".*method=ensure_resize' 3
   sleep 0.5
   capture_session "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-resized"
-  write_muxvia_inventory_artifact "floating-remote-pair-wheel-resized"
+  write_anytty_inventory_artifact "floating-remote-pair-wheel-resized"
 
   x=$(( ATTACH_COLS / 2 ))
   y=$(( ATTACH_ROWS / 2 ))
@@ -2606,12 +2606,12 @@ run_floating_owner_remote_pair_wheel_history_scenario() {
   assert_contains "$ROOT/floating-remote-pair-wheel-base.txt" "grid-stress"
   assert_contains "$ROOT/floating-remote-pair-wheel-resized.txt" "grid-stress"
   assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "uri:"
-  assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "muxvia://pair"
+  assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "anytty://pair"
   assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "expires_at:"
   assert_stress_history_label_order_visible "$ROOT/floating-remote-pair-wheel-at-top.txt"
   assert_regex_count_at_least "$ROOT/floating-owner-remote-pair-wheel-history.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-remote-pair-wheel-history.resize.summary.txt" 'method=ensure_resize' 3
-  assert_terminal_size_shrunk "$ROOT/floating-remote-pair-wheel-base.muxvia-ls.txt" "$ROOT/floating-remote-pair-wheel-resized.muxvia-ls.txt" "$TERM_ID"
+  assert_terminal_size_shrunk "$ROOT/floating-remote-pair-wheel-base.anytty-ls.txt" "$ROOT/floating-remote-pair-wheel-resized.anytty-ls.txt" "$TERM_ID"
 
   log "PASS floating-remote-pair-wheel-after-qr -> $ROOT/floating-remote-pair-wheel-after-qr.txt"
   log "PASS floating-remote-pair-wheel-after-expires -> $ROOT/floating-remote-pair-wheel-after-expires.txt"
@@ -2623,15 +2623,15 @@ attach_command() {
   local terminal_id="$1"
   local session_name="${2:-}"
   local trace_path=""
-  if [[ ( "$SCENARIO" == "deep-live-tail" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" || "$SCENARIO" == "floating-owner-marker-wheel-history" || "$SCENARIO" == "floating-owner-remote-pair-wheel-history" ) && -n "$session_name" && "${MUXVIA_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
+  if [[ ( "$SCENARIO" == "deep-live-tail" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" || "$SCENARIO" == "floating-owner-marker-wheel-history" || "$SCENARIO" == "floating-owner-remote-pair-wheel-history" ) && -n "$session_name" && "${ANYTTY_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
     trace_path="$ROOT/${session_name}.gridtrace.log"
   fi
   if [[ -n "$trace_path" ]]; then
-    printf 'env XDG_CONFIG_HOME=%q XDG_STATE_HOME=%q MUXVIA_REMOTE_ENABLE=false MUXVIA_GRID_HISTORY_TRACE=%q %q --socket %q --log-file %q attach %q' \
+    printf 'env XDG_CONFIG_HOME=%q XDG_STATE_HOME=%q ANYTTY_REMOTE_ENABLE=false ANYTTY_GRID_HISTORY_TRACE=%q %q --socket %q --log-file %q attach %q' \
       "$CFG" "$STATE" "$trace_path" "$BIN" "$SOCK" "$LOG" "$terminal_id"
     return
   fi
-  printf 'env XDG_CONFIG_HOME=%q XDG_STATE_HOME=%q MUXVIA_REMOTE_ENABLE=false %q --socket %q --log-file %q attach %q' \
+  printf 'env XDG_CONFIG_HOME=%q XDG_STATE_HOME=%q ANYTTY_REMOTE_ENABLE=false %q --socket %q --log-file %q attach %q' \
     "$CFG" "$STATE" "$BIN" "$SOCK" "$LOG" "$terminal_id"
 }
 
@@ -2743,17 +2743,17 @@ main() {
   done
 
   if [[ -z "$ROOT" ]]; then
-    ROOT="$(mktemp -d /tmp/muxvia-grid-smoke.XXXXXX)"
+    ROOT="$(mktemp -d /tmp/anytty-grid-smoke.XXXXXX)"
   else
     mkdir -p "$ROOT"
   fi
 
   if [[ -z "$BIN" ]]; then
-    BIN="$ROOT/muxvia"
+    BIN="$ROOT/anytty"
   fi
 
-  SOCK="$ROOT/muxvia.sock"
-  LOG="$ROOT/muxvia.log"
+  SOCK="$ROOT/anytty.sock"
+  LOG="$ROOT/anytty.log"
   CFG="$ROOT/config"
   STATE="$ROOT/state"
   DAEMON_STDOUT="$ROOT/daemon.out"

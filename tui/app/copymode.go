@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type CopyModeDeps struct {

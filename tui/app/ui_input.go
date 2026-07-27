@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/state"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type ShellSetInteractionModeMsg struct {
@@ -1291,7 +1291,7 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 }
 
 func actionCommandPrompt() state.PromptState {
-	return state.PromptState{Title: "Command Prompt", Context: "Run a canonical Muxvia action.", Purpose: "action.command", Placeholder: "command"}
+	return state.PromptState{Title: "Command Prompt", Context: "Run a canonical AnyTTY action.", Purpose: "action.command", Placeholder: "command"}
 }
 
 func floatingSummonIndex(value string) (int, bool) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestRenderVMBuilderDelegatesShellProjection(t *testing.T) {

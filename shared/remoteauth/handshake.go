@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 const (
@@ -45,7 +45,7 @@ type ClientPairingRequest struct {
 	ChannelBinding            ChannelBinding
 }
 
-// ClientHandshake 是公开客户端在 muxvia protocol 前执行的 DeviceHello/CapabilityOpen 状态机。
+// ClientHandshake 是公开客户端在 anytty protocol 前执行的 DeviceHello/CapabilityOpen 状态机。
 // Random 和 Now 仅用于 deterministic harness；零值使用 crypto/rand 与 UTC 当前时间，不能注入云侧授权结果。
 type ClientHandshake struct {
 	Random io.Reader
@@ -53,7 +53,7 @@ type ClientHandshake struct {
 }
 
 // Authenticate 完成 daemon pin、actual channel binding、grant issuer/subject、ClientAccessIdentity possession 和 accepted scope 验证。
-// 成功后 transport 才能切换到 muxvia protocol；失败时调用方必须关闭当前 transport，不能回退到 v1 bearer/HMAC。
+// 成功后 transport 才能切换到 anytty protocol；失败时调用方必须关闭当前 transport，不能回退到 v1 bearer/HMAC。
 func (handshake ClientHandshake) Authenticate(ctx context.Context, connection transport.Transport, request ClientHandshakeRequest) (Claims, error) {
 	if connection == nil {
 		return Claims{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "remote auth transport is nil", nil)
@@ -126,7 +126,7 @@ func (handshake ClientHandshake) Authenticate(ctx context.Context, connection tr
 }
 
 // ClientPairingHandshake 是客户端只允许 PairingOpen/PairingAccepted 的受限状态机。
-// 它不创建 muxvia protocol session；成功结果仍须先写入平台 secure credential store，之后普通连接重新执行 capability handshake。
+// 它不创建 anytty protocol session；成功结果仍须先写入平台 secure credential store，之后普通连接重新执行 capability handshake。
 type ClientPairingHandshake struct {
 	Random io.Reader
 	Now    func() time.Time
@@ -251,11 +251,11 @@ func validateClientSigner(identity ClientAccessIdentity, signer ClientAccessSign
 }
 
 // ServerHandshakeMode 区分成功握手后的唯一下一步。
-// capability 模式可以进入 muxvia protocol；pairing 模式已经返回 grant 后必须关闭 transport，不能复用为业务 session。
+// capability 模式可以进入 anytty protocol；pairing 模式已经返回 grant 后必须关闭 transport，不能复用为业务 session。
 type ServerHandshakeMode uint8
 
 const (
-	// ServerHandshakeModeCapability 表示 client-bound capability 已验证，可进入 scoped muxvia protocol。
+	// ServerHandshakeModeCapability 表示 client-bound capability 已验证，可进入 scoped anytty protocol。
 	ServerHandshakeModeCapability ServerHandshakeMode = iota + 1
 	// ServerHandshakeModePairing 表示 PairingExchange 已完成，当前 transport 必须在响应后关闭。
 	ServerHandshakeModePairing

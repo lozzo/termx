@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func refreshPromptCompletions(root state.Root, shell state.ShellStore) state.ShellStore {

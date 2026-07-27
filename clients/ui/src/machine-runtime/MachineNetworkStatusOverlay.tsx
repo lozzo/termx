@@ -20,18 +20,18 @@ export function MachineNetworkStatusOverlay({
   const label = phase ? connectionPhaseLabel(phase, t) : status?.trim() || connectionPhaseLabel(phase, t)
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center bg-[var(--muxvia-overlay)] px-5 backdrop-blur-[5px]"
-      data-testid="muxvia-machine-network-overlay"
+      className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center bg-[var(--anytty-overlay)] px-5 backdrop-blur-[5px]"
+      data-testid="anytty-machine-network-overlay"
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="w-full max-w-sm border border-[var(--muxvia-border)] bg-[var(--muxvia-surface)] px-4 py-3 text-[var(--muxvia-text)] backdrop-blur-xl">
+      <div className="w-full max-w-sm border border-[var(--anytty-border)] bg-[var(--anytty-surface)] px-4 py-3 text-[var(--anytty-text)] backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <span className="muxvia-square-spinner h-5 w-5 text-[var(--muxvia-accent)]" aria-hidden="true" />
+          <span className="anytty-square-spinner h-5 w-5 text-[var(--anytty-accent)]" aria-hidden="true" />
           <div className="min-w-0">
             <p className="text-[13px] font-semibold leading-5">{t('workspace.connection.progressTitle')}</p>
-            <p className="mt-0.5 break-words text-[12px] font-medium leading-5 text-[var(--muxvia-muted)]">{label}</p>
+            <p className="mt-0.5 break-words text-[12px] font-medium leading-5 text-[var(--anytty-muted)]">{label}</p>
           </div>
         </div>
       </div>

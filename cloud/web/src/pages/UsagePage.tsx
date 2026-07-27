@@ -11,7 +11,7 @@ export function UsagePage() {
   const exportCSV = () => {
     const rows = [['类型', '对象', '入口字节', '出口字节', '总量', '周期开始'], ...(query.data?.accounts.map((value) => ['账号', value.accountId, value.relayIngressBytes.toString(), value.relayEgressBytes.toString(), value.relayTotalBytes.toString(), dateTime(value.periodStart)]) ?? []), ...(query.data?.edges.map((value) => ['Edge', value.edgeId, value.ingressBytes.toString(), value.egressBytes.toString(), (value.ingressBytes + value.egressBytes).toString(), dateTime(value.periodStart)]) ?? [])]
     const blob = new Blob([rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'muxvia-cloud-usage.csv'; link.click(); URL.revokeObjectURL(link.href)
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'anytty-cloud-usage.csv'; link.click(); URL.revokeObjectURL(link.href)
   }
   return <>
     <PageHeader title="用量与结算" meta="只展示已由 Controller 幂等结算的持久累计值" actions={<Button onClick={exportCSV} disabled={!query.data}><Download size={16} />导出 CSV</Button>} />

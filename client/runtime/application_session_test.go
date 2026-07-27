@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
 

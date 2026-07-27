@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anytty/anytty/cloud/configsignature"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
-	"github.com/muxvia/muxvia/cloud/configsignature"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 )
 
 var (
@@ -213,10 +213,13 @@ func validateFields(name, region string, capacity uint64, endpoint string) error
 	if parsedHost, _, err := net.SplitHostPort(endpoint); err == nil {
 		host = parsedHost
 	} else if strings.Contains(endpoint, ":") {
-		return errors.New("public endpoint must be a domain or domain:port")
+		return errors.New("public endpoint must be a domain, IP address, or host:port")
 	}
-	if net.ParseIP(host) != nil || !strings.Contains(host, ".") || strings.ContainsAny(host, " /?#") {
-		return errors.New("public endpoint must use a DNS domain")
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	if !strings.Contains(host, ".") || strings.ContainsAny(host, " /?#") {
+		return errors.New("public endpoint must use a DNS domain or IP address")
 	}
 	return nil
 }

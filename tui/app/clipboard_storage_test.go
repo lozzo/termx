@@ -2,12 +2,12 @@ package app
 
 import (
 	"context"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestClipboardStorageReducerLoadsEntriesFromCoreStorage(t *testing.T) {

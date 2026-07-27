@@ -95,10 +95,10 @@ type ClientHello struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	ClientTicket      *SignedEnvelope        `protobuf:"bytes,1,opt,name=client_ticket,json=clientTicket,proto3" json:"client_ticket,omitempty"`
 	ClientProof       []byte                 `protobuf:"bytes,2,opt,name=client_proof,json=clientProof,proto3" json:"client_proof,omitempty"`
-	Product           ClientProduct          `protobuf:"varint,3,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	Product           ClientProduct          `protobuf:"varint,3,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
 	SoftwareVersion   string                 `protobuf:"bytes,4,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
 	AttemptGeneration uint64                 `protobuf:"varint,5,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
-	RelayPreference   RelayPreference        `protobuf:"varint,6,opt,name=relay_preference,json=relayPreference,proto3,enum=muxvia.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
+	RelayPreference   RelayPreference        `protobuf:"varint,6,opt,name=relay_preference,json=relayPreference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -711,32 +711,32 @@ var File_cloud_v1_client_gateway_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcloud/v1/client_gateway.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9f\x01\n" +
+	"\x1dcloud/v1/client_gateway.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9f\x01\n" +
 	"\x11CloudICECandidate\x12\x1c\n" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
 	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rR\rsdpMlineIndex\x12+\n" +
 	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xd7\x02\n" +
 	"\vClientHello\x12D\n" +
-	"\rclient_ticket\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\fclientTicket\x12!\n" +
+	"\rclient_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\fclientTicket\x12!\n" +
 	"\fclient_proof\x18\x02 \x01(\fR\vclientProof\x128\n" +
-	"\aproduct\x18\x03 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12)\n" +
+	"\aproduct\x18\x03 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12)\n" +
 	"\x10software_version\x18\x04 \x01(\tR\x0fsoftwareVersion\x12-\n" +
 	"\x12attempt_generation\x18\x05 \x01(\x04R\x11attemptGeneration\x12K\n" +
-	"\x10relay_preference\x18\x06 \x01(\x0e2 .muxvia.cloud.v1.RelayPreferenceR\x0frelayPreference\"\x83\x01\n" +
+	"\x10relay_preference\x18\x06 \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\x0frelayPreference\"\x83\x01\n" +
 	"\vClientReady\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
 	"generation\x125\n" +
-	"\x05relay\x18\x03 \x01(\v2\x1f.muxvia.cloud.v1.RelayICEConfigR\x05relay\"\x8d\x01\n" +
+	"\x05relay\x18\x03 \x01(\v2\x1f.anytty.cloud.v1.RelayICEConfigR\x05relay\"\x8d\x01\n" +
 	"\vClientOffer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\toffer_sdp\x18\x02 \x01(\tR\bofferSdp\x12B\n" +
 	"\n" +
-	"candidates\x18\x03 \x03(\v2\".muxvia.cloud.v1.CloudICECandidateR\n" +
+	"candidates\x18\x03 \x03(\v2\".anytty.cloud.v1.CloudICECandidateR\n" +
 	"candidates\"\x8e\x01\n" +
 	"\n" +
 	"EdgeAnswer\x12\x1d\n" +
@@ -745,7 +745,7 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\n" +
 	"answer_sdp\x18\x02 \x01(\tR\tanswerSdp\x12B\n" +
 	"\n" +
-	"candidates\x18\x03 \x03(\v2\".muxvia.cloud.v1.CloudICECandidateR\n" +
+	"candidates\x18\x03 \x03(\v2\".anytty.cloud.v1.CloudICECandidateR\n" +
 	"candidates\"]\n" +
 	"\x0eSignalRejected\x12\x1d\n" +
 	"\n" +
@@ -762,8 +762,8 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\n" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x124\n" +
-	"\x05hello\x18\x14 \x01(\v2\x1c.muxvia.cloud.v1.ClientHelloH\x00R\x05hello\x124\n" +
-	"\x05offer\x18\x15 \x01(\v2\x1c.muxvia.cloud.v1.ClientOfferH\x00R\x05offerB\t\n" +
+	"\x05hello\x18\x14 \x01(\v2\x1c.anytty.cloud.v1.ClientHelloH\x00R\x05hello\x124\n" +
+	"\x05offer\x18\x15 \x01(\v2\x1c.anytty.cloud.v1.ClientOfferH\x00R\x05offerB\t\n" +
 	"\apayload\"\xbc\x03\n" +
 	"\n" +
 	"EdgeSignal\x12)\n" +
@@ -776,12 +776,12 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\n" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x124\n" +
-	"\x05ready\x18\x14 \x01(\v2\x1c.muxvia.cloud.v1.ClientReadyH\x00R\x05ready\x125\n" +
-	"\x06answer\x18\x15 \x01(\v2\x1b.muxvia.cloud.v1.EdgeAnswerH\x00R\x06answer\x12=\n" +
-	"\brejected\x18\x16 \x01(\v2\x1f.muxvia.cloud.v1.SignalRejectedH\x00R\brejectedB\t\n" +
+	"\x05ready\x18\x14 \x01(\v2\x1c.anytty.cloud.v1.ClientReadyH\x00R\x05ready\x125\n" +
+	"\x06answer\x18\x15 \x01(\v2\x1b.anytty.cloud.v1.EdgeAnswerH\x00R\x06answer\x12=\n" +
+	"\brejected\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.SignalRejectedH\x00R\brejectedB\t\n" +
 	"\apayload2Z\n" +
 	"\rClientGateway\x12I\n" +
-	"\aConnect\x12\x1d.muxvia.cloud.v1.ClientSignal\x1a\x1b.muxvia.cloud.v1.EdgeSignal(\x010\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\aConnect\x12\x1d.anytty.cloud.v1.ClientSignal\x1a\x1b.anytty.cloud.v1.EdgeSignal(\x010\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_client_gateway_proto_rawDescOnce sync.Once
@@ -797,36 +797,36 @@ func file_cloud_v1_client_gateway_proto_rawDescGZIP() []byte {
 
 var file_cloud_v1_client_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_cloud_v1_client_gateway_proto_goTypes = []any{
-	(*CloudICECandidate)(nil),     // 0: muxvia.cloud.v1.CloudICECandidate
-	(*ClientHello)(nil),           // 1: muxvia.cloud.v1.ClientHello
-	(*ClientReady)(nil),           // 2: muxvia.cloud.v1.ClientReady
-	(*ClientOffer)(nil),           // 3: muxvia.cloud.v1.ClientOffer
-	(*EdgeAnswer)(nil),            // 4: muxvia.cloud.v1.EdgeAnswer
-	(*SignalRejected)(nil),        // 5: muxvia.cloud.v1.SignalRejected
-	(*ClientSignal)(nil),          // 6: muxvia.cloud.v1.ClientSignal
-	(*EdgeSignal)(nil),            // 7: muxvia.cloud.v1.EdgeSignal
-	(*SignedEnvelope)(nil),        // 8: muxvia.cloud.v1.SignedEnvelope
-	(ClientProduct)(0),            // 9: muxvia.cloud.v1.ClientProduct
-	(RelayPreference)(0),          // 10: muxvia.cloud.v1.RelayPreference
-	(*RelayICEConfig)(nil),        // 11: muxvia.cloud.v1.RelayICEConfig
+	(*CloudICECandidate)(nil),     // 0: anytty.cloud.v1.CloudICECandidate
+	(*ClientHello)(nil),           // 1: anytty.cloud.v1.ClientHello
+	(*ClientReady)(nil),           // 2: anytty.cloud.v1.ClientReady
+	(*ClientOffer)(nil),           // 3: anytty.cloud.v1.ClientOffer
+	(*EdgeAnswer)(nil),            // 4: anytty.cloud.v1.EdgeAnswer
+	(*SignalRejected)(nil),        // 5: anytty.cloud.v1.SignalRejected
+	(*ClientSignal)(nil),          // 6: anytty.cloud.v1.ClientSignal
+	(*EdgeSignal)(nil),            // 7: anytty.cloud.v1.EdgeSignal
+	(*SignedEnvelope)(nil),        // 8: anytty.cloud.v1.SignedEnvelope
+	(ClientProduct)(0),            // 9: anytty.cloud.v1.ClientProduct
+	(RelayPreference)(0),          // 10: anytty.cloud.v1.RelayPreference
+	(*RelayICEConfig)(nil),        // 11: anytty.cloud.v1.RelayICEConfig
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_cloud_v1_client_gateway_proto_depIdxs = []int32{
-	8,  // 0: muxvia.cloud.v1.ClientHello.client_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
-	9,  // 1: muxvia.cloud.v1.ClientHello.product:type_name -> muxvia.cloud.v1.ClientProduct
-	10, // 2: muxvia.cloud.v1.ClientHello.relay_preference:type_name -> muxvia.cloud.v1.RelayPreference
-	11, // 3: muxvia.cloud.v1.ClientReady.relay:type_name -> muxvia.cloud.v1.RelayICEConfig
-	0,  // 4: muxvia.cloud.v1.ClientOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	0,  // 5: muxvia.cloud.v1.EdgeAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	12, // 6: muxvia.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 7: muxvia.cloud.v1.ClientSignal.hello:type_name -> muxvia.cloud.v1.ClientHello
-	3,  // 8: muxvia.cloud.v1.ClientSignal.offer:type_name -> muxvia.cloud.v1.ClientOffer
-	12, // 9: muxvia.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 10: muxvia.cloud.v1.EdgeSignal.ready:type_name -> muxvia.cloud.v1.ClientReady
-	4,  // 11: muxvia.cloud.v1.EdgeSignal.answer:type_name -> muxvia.cloud.v1.EdgeAnswer
-	5,  // 12: muxvia.cloud.v1.EdgeSignal.rejected:type_name -> muxvia.cloud.v1.SignalRejected
-	6,  // 13: muxvia.cloud.v1.ClientGateway.Connect:input_type -> muxvia.cloud.v1.ClientSignal
-	7,  // 14: muxvia.cloud.v1.ClientGateway.Connect:output_type -> muxvia.cloud.v1.EdgeSignal
+	8,  // 0: anytty.cloud.v1.ClientHello.client_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
+	9,  // 1: anytty.cloud.v1.ClientHello.product:type_name -> anytty.cloud.v1.ClientProduct
+	10, // 2: anytty.cloud.v1.ClientHello.relay_preference:type_name -> anytty.cloud.v1.RelayPreference
+	11, // 3: anytty.cloud.v1.ClientReady.relay:type_name -> anytty.cloud.v1.RelayICEConfig
+	0,  // 4: anytty.cloud.v1.ClientOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	0,  // 5: anytty.cloud.v1.EdgeAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	12, // 6: anytty.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 7: anytty.cloud.v1.ClientSignal.hello:type_name -> anytty.cloud.v1.ClientHello
+	3,  // 8: anytty.cloud.v1.ClientSignal.offer:type_name -> anytty.cloud.v1.ClientOffer
+	12, // 9: anytty.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: anytty.cloud.v1.EdgeSignal.ready:type_name -> anytty.cloud.v1.ClientReady
+	4,  // 11: anytty.cloud.v1.EdgeSignal.answer:type_name -> anytty.cloud.v1.EdgeAnswer
+	5,  // 12: anytty.cloud.v1.EdgeSignal.rejected:type_name -> anytty.cloud.v1.SignalRejected
+	6,  // 13: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
+	7,  // 14: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
 	14, // [14:15] is the sub-list for method output_type
 	13, // [13:14] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

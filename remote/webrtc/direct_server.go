@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/internal/protocol/directsignal"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/internal/protocol/directsignal"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/shared/remoteauth"
 	ice "github.com/pion/ice/v4"
 	pion "github.com/pion/webrtc/v4"
 )

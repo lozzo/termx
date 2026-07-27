@@ -16,7 +16,7 @@ func TestSharedRuntimeLegacyRouteOwnersAreRemoved(t *testing.T) {
 		t.Fatalf("legacy single-route selector must be deleted, stat error=%v", err)
 	}
 	forbidden := []string{"adoptCLIProtocolClient", "connectV3LocalApplication", "NewOwnedApplicationClient"}
-	for _, root := range []string{"../cmd/muxvia", "adapter/local", "adapter/protocol", "runtime"} {
+	for _, root := range []string{"../cmd/anytty", "adapter/local", "adapter/protocol", "runtime"} {
 		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
@@ -40,14 +40,14 @@ func TestSharedRuntimeLegacyRouteOwnersAreRemoved(t *testing.T) {
 
 func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 	expectedImports := map[string]struct{}{
-		"file_command.go|github.com/muxvia/muxvia/internal/protocol":         {},
-		"terminal_command.go|github.com/muxvia/muxvia/internal/protocol":     {},
-		"v3_client_access.go|github.com/muxvia/muxvia/shared/remoteauth":     {},
-		"v3_client_access.go|github.com/muxvia/muxvia/shared/transport":      {},
-		"v3_client_access.go|github.com/muxvia/muxvia/shared/transport/unix": {},
-		"v3_direct_daemon.go|github.com/muxvia/muxvia/remote/webrtc":         {},
-		"v3_pair_command.go|github.com/muxvia/muxvia/shared/remoteauth":      {},
-		"v3_pair_command.go|github.com/muxvia/muxvia/shared/transport/unix":  {},
+		"file_command.go|github.com/anytty/anytty/internal/protocol":         {},
+		"terminal_command.go|github.com/anytty/anytty/internal/protocol":     {},
+		"v3_client_access.go|github.com/anytty/anytty/shared/remoteauth":     {},
+		"v3_client_access.go|github.com/anytty/anytty/shared/transport":      {},
+		"v3_client_access.go|github.com/anytty/anytty/shared/transport/unix": {},
+		"v3_direct_daemon.go|github.com/anytty/anytty/remote/webrtc":         {},
+		"v3_pair_command.go|github.com/anytty/anytty/shared/remoteauth":      {},
+		"v3_pair_command.go|github.com/anytty/anytty/shared/transport/unix":  {},
 	}
 	expectedHelpers := map[string]struct{}{
 		"v3_attach_runtime.go|openEndpointProtocolClient":   {},
@@ -70,20 +70,20 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 	seenImports := map[string]struct{}{}
 	seenHelpers := map[string]struct{}{}
 	allowedCompositionImports := map[string]struct{}{
-		"v3_client_runtime.go|github.com/muxvia/muxvia/shared/remoteauth": {},
+		"v3_client_runtime.go|github.com/anytty/anytty/shared/remoteauth": {},
 	}
 	concretePrefixes := []string{
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/shared/transport",
-		"github.com/muxvia/muxvia/shared/remoteauth",
-		"github.com/muxvia/muxvia/remote/client",
-		"github.com/muxvia/muxvia/remote/webrtc",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/shared/transport",
+		"github.com/anytty/anytty/shared/remoteauth",
+		"github.com/anytty/anytty/remote/client",
+		"github.com/anytty/anytty/remote/webrtc",
 	}
 	helperNames := map[string]struct{}{
 		"v3DialClient": {}, "probeEndpointProtocolClient": {}, "openEndpointProtocolClient": {},
 		"dialOrStartV3Client": {}, "dialOrStartV3ClientContext": {},
 	}
-	err := filepath.WalkDir("../cmd/muxvia", func(path string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir("../cmd/anytty", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}

@@ -3,9 +3,9 @@ package protocol
 import (
 	"fmt"
 
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/proto/wirepb"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
 

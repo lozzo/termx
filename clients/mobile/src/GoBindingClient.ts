@@ -4,7 +4,7 @@ import {
   type BindingOperationCode,
   type EndpointInput,
   type ProtoBindingBackend,
-} from '@muxvia/ui'
+} from '@anytty/ui'
 import { NativeConnection } from './plugins/nativeConnection'
 
 const OP_AUTH = 0x01

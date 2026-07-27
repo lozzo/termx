@@ -11,7 +11,7 @@ import {
 } from './fileApi'
 import type { ConnectionInfo } from '../core/transport'
 import type { ProtoClientSession } from '../core/protoClientSession'
-import { muxviaI18n } from '../i18n'
+import { anyttyI18n } from '../i18n'
 import { createPathBookmarkApi, type PathBookmark } from './pathBookmarks'
 
 export type FileSortField = 'name' | 'modified' | 'size' | 'type'
@@ -219,7 +219,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     if (paths.length === 0) return
     try {
       await writeTextToClipboard(paths.join('\n'))
-      showActionMessage(muxviaI18n.t('files.copiedPaths', { count: paths.length }))
+      showActionMessage(anyttyI18n.t('files.copiedPaths', { count: paths.length }))
     } catch (err) {
       setError({
         message: err instanceof Error ? err.message : String(err),
@@ -326,7 +326,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setPathBookmarkError(null)
     try {
       await bookmarkApi.update(id, input)
-      showActionMessage(muxviaI18n.t('files.bookmarks.updated'))
+      showActionMessage(anyttyI18n.t('files.bookmarks.updated'))
       await refreshPathBookmarks()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -339,7 +339,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setPathBookmarkError(null)
     try {
       await bookmarkApi.remove(id)
-      showActionMessage(muxviaI18n.t('files.bookmarks.removed'))
+      showActionMessage(anyttyI18n.t('files.bookmarks.removed'))
       await refreshPathBookmarks()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -616,7 +616,7 @@ async function writeTextToClipboard(text: string): Promise<void> {
     }
   }
   if (typeof document === 'undefined') {
-    throw clipboardErr instanceof Error ? clipboardErr : new Error(muxviaI18n.t('files.clipboardUnavailable'))
+    throw clipboardErr instanceof Error ? clipboardErr : new Error(anyttyI18n.t('files.clipboardUnavailable'))
   }
   const textarea = document.createElement('textarea')
   textarea.value = text
@@ -628,7 +628,7 @@ async function writeTextToClipboard(text: string): Promise<void> {
   textarea.select()
   try {
     if (!document.execCommand('copy')) {
-      throw new Error(muxviaI18n.t('files.clipboardCopyFailed'))
+      throw new Error(anyttyI18n.t('files.clipboardCopyFailed'))
     }
   } finally {
     document.body.removeChild(textarea)

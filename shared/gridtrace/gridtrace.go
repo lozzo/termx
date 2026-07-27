@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const EnvPath = "MUXVIA_GRID_HISTORY_TRACE"
+const EnvPath = "ANYTTY_GRID_HISTORY_TRACE"
 
 var (
 	mu          sync.Mutex
@@ -91,7 +91,7 @@ func tracePath() string {
 	}
 	switch strings.ToLower(v) {
 	case "1", "true", "on", "yes", "debug":
-		return filepath.Join(os.TempDir(), "muxvia-grid-history-trace.log")
+		return filepath.Join(os.TempDir(), "anytty-grid-history-trace.log")
 	default:
 		return v
 	}

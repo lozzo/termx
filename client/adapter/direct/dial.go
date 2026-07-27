@@ -1,4 +1,4 @@
-// Package direct 实现不依赖 Muxvia Cloud 的 daemon embedded signaling + ICE-TCP connector。
+// Package direct 实现不依赖 AnyTTY Cloud 的 daemon embedded signaling + ICE-TCP connector。
 // Endpoint/Route 选择与 generation 属于 client/runtime；本包只执行当前 Direct attempt 的 signaling、DTLS auth、Hello 和资源清理。
 package direct
 
@@ -16,23 +16,23 @@ import (
 	"sync"
 	"time"
 
-	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
-	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/internal/protocol/directsignal"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
-	"github.com/muxvia/muxvia/shared/transport/datachannel"
+	peeradapter "github.com/anytty/anytty/client/adapter/peer"
+	protocoladapter "github.com/anytty/anytty/client/adapter/protocol"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	internalprotocol "github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/internal/protocol/directsignal"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
+	"github.com/anytty/anytty/shared/transport/datachannel"
 	"google.golang.org/protobuf/proto"
 )
 
-const defaultClientName = "muxvia-go-direct"
+const defaultClientName = "anytty-go-direct"
 
 // PeerFactory 创建只启用 ICE-TCP 的 WebRTC peer primitive。
 // factory 不解析 Endpoint、不访问 credential，也不执行 signaling 或 remote auth。

@@ -19,21 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OperatorService_GetOverview_FullMethodName              = "/muxvia.cloud.v1.OperatorService/GetOverview"
-	OperatorService_ListAccounts_FullMethodName             = "/muxvia.cloud.v1.OperatorService/ListAccounts"
-	OperatorService_GetAccount_FullMethodName               = "/muxvia.cloud.v1.OperatorService/GetAccount"
-	OperatorService_ListRuntimeSessions_FullMethodName      = "/muxvia.cloud.v1.OperatorService/ListRuntimeSessions"
-	OperatorService_ListOrders_FullMethodName               = "/muxvia.cloud.v1.OperatorService/ListOrders"
-	OperatorService_ListSubscriptions_FullMethodName        = "/muxvia.cloud.v1.OperatorService/ListSubscriptions"
-	OperatorService_ListUsage_FullMethodName                = "/muxvia.cloud.v1.OperatorService/ListUsage"
-	OperatorService_ListAudit_FullMethodName                = "/muxvia.cloud.v1.OperatorService/ListAudit"
-	OperatorService_SetAccountState_FullMethodName          = "/muxvia.cloud.v1.OperatorService/SetAccountState"
-	OperatorService_SetAccountRole_FullMethodName           = "/muxvia.cloud.v1.OperatorService/SetAccountRole"
-	OperatorService_DisconnectDaemon_FullMethodName         = "/muxvia.cloud.v1.OperatorService/DisconnectDaemon"
-	OperatorService_DisconnectSession_FullMethodName        = "/muxvia.cloud.v1.OperatorService/DisconnectSession"
-	OperatorService_ListCertificateProfiles_FullMethodName  = "/muxvia.cloud.v1.OperatorService/ListCertificateProfiles"
-	OperatorService_UploadCertificateProfile_FullMethodName = "/muxvia.cloud.v1.OperatorService/UploadCertificateProfile"
-	OperatorService_BindCertificateProfile_FullMethodName   = "/muxvia.cloud.v1.OperatorService/BindCertificateProfile"
+	OperatorService_GetOverview_FullMethodName              = "/anytty.cloud.v1.OperatorService/GetOverview"
+	OperatorService_ListAccounts_FullMethodName             = "/anytty.cloud.v1.OperatorService/ListAccounts"
+	OperatorService_GetAccount_FullMethodName               = "/anytty.cloud.v1.OperatorService/GetAccount"
+	OperatorService_ListRuntimeSessions_FullMethodName      = "/anytty.cloud.v1.OperatorService/ListRuntimeSessions"
+	OperatorService_ListOrders_FullMethodName               = "/anytty.cloud.v1.OperatorService/ListOrders"
+	OperatorService_ListSubscriptions_FullMethodName        = "/anytty.cloud.v1.OperatorService/ListSubscriptions"
+	OperatorService_ListUsage_FullMethodName                = "/anytty.cloud.v1.OperatorService/ListUsage"
+	OperatorService_ListAudit_FullMethodName                = "/anytty.cloud.v1.OperatorService/ListAudit"
+	OperatorService_SetAccountState_FullMethodName          = "/anytty.cloud.v1.OperatorService/SetAccountState"
+	OperatorService_SetAccountRole_FullMethodName           = "/anytty.cloud.v1.OperatorService/SetAccountRole"
+	OperatorService_DisconnectDaemon_FullMethodName         = "/anytty.cloud.v1.OperatorService/DisconnectDaemon"
+	OperatorService_DisconnectSession_FullMethodName        = "/anytty.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_ListCertificateProfiles_FullMethodName  = "/anytty.cloud.v1.OperatorService/ListCertificateProfiles"
+	OperatorService_UploadCertificateProfile_FullMethodName = "/anytty.cloud.v1.OperatorService/UploadCertificateProfile"
+	OperatorService_BindCertificateProfile_FullMethodName   = "/anytty.cloud.v1.OperatorService/BindCertificateProfile"
 )
 
 // OperatorServiceClient is the client API for OperatorService service.
@@ -588,7 +588,7 @@ func _OperatorService_BindCertificateProfile_Handler(srv interface{}, ctx contex
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var OperatorService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.OperatorService",
+	ServiceName: "anytty.cloud.v1.OperatorService",
 	HandlerType: (*OperatorServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

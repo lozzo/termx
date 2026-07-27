@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // ParsePaneMiniCommand 是 CLI mini command / command palette 到 PaneCommand 的稳定 adapter。

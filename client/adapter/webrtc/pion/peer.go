@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	remotewebrtc "github.com/anytty/anytty/remote/webrtc"
 	pionice "github.com/pion/ice/v4"
 	"github.com/pion/transport/v4"
 	pionwebrtc "github.com/pion/webrtc/v4"

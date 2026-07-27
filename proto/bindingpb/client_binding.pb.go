@@ -7,8 +7,8 @@
 package bindingpb
 
 import (
-	apipb "github.com/muxvia/muxvia/proto/apipb"
-	remoteauthpb "github.com/muxvia/muxvia/proto/remoteauthpb"
+	apipb "github.com/anytty/anytty/proto/apipb"
+	remoteauthpb "github.com/anytty/anytty/proto/remoteauthpb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -416,16 +416,16 @@ func (ConnectionPolicyAvailabilityReason) EnumDescriptor() ([]byte, []int) {
 type ConnectionSnapshot struct {
 	state               protoimpl.MessageState  `protogen:"open.v1"`
 	RouteId             string                  `protobuf:"bytes,1,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
-	RouteKind           ConnectionRouteKind     `protobuf:"varint,2,opt,name=route_kind,json=routeKind,proto3,enum=muxvia.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
-	ObservedPath        ConnectionObservedPath  `protobuf:"varint,3,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.client.binding.v1.ConnectionObservedPath" json:"observed_path,omitempty"`
+	RouteKind           ConnectionRouteKind     `protobuf:"varint,2,opt,name=route_kind,json=routeKind,proto3,enum=anytty.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
+	ObservedPath        ConnectionObservedPath  `protobuf:"varint,3,opt,name=observed_path,json=observedPath,proto3,enum=anytty.client.binding.v1.ConnectionObservedPath" json:"observed_path,omitempty"`
 	SelectionReason     string                  `protobuf:"bytes,4,opt,name=selection_reason,json=selectionReason,proto3" json:"selection_reason,omitempty"`
 	SampledAtUnixNano   int64                   `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
 	RoundTripNanos      int64                   `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
-	LocalCandidateType  ConnectionCandidateType `protobuf:"varint,7,opt,name=local_candidate_type,json=localCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"local_candidate_type,omitempty"`
-	RemoteCandidateType ConnectionCandidateType `protobuf:"varint,8,opt,name=remote_candidate_type,json=remoteCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"remote_candidate_type,omitempty"`
-	LocalProtocol       ConnectionTransport     `protobuf:"varint,9,opt,name=local_protocol,json=localProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"local_protocol,omitempty"`
-	RemoteProtocol      ConnectionTransport     `protobuf:"varint,10,opt,name=remote_protocol,json=remoteProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"remote_protocol,omitempty"`
-	RelayTransport      ConnectionTransport     `protobuf:"varint,11,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"relay_transport,omitempty"`
+	LocalCandidateType  ConnectionCandidateType `protobuf:"varint,7,opt,name=local_candidate_type,json=localCandidateType,proto3,enum=anytty.client.binding.v1.ConnectionCandidateType" json:"local_candidate_type,omitempty"`
+	RemoteCandidateType ConnectionCandidateType `protobuf:"varint,8,opt,name=remote_candidate_type,json=remoteCandidateType,proto3,enum=anytty.client.binding.v1.ConnectionCandidateType" json:"remote_candidate_type,omitempty"`
+	LocalProtocol       ConnectionTransport     `protobuf:"varint,9,opt,name=local_protocol,json=localProtocol,proto3,enum=anytty.client.binding.v1.ConnectionTransport" json:"local_protocol,omitempty"`
+	RemoteProtocol      ConnectionTransport     `protobuf:"varint,10,opt,name=remote_protocol,json=remoteProtocol,proto3,enum=anytty.client.binding.v1.ConnectionTransport" json:"remote_protocol,omitempty"`
+	RelayTransport      ConnectionTransport     `protobuf:"varint,11,opt,name=relay_transport,json=relayTransport,proto3,enum=anytty.client.binding.v1.ConnectionTransport" json:"relay_transport,omitempty"`
 	NetworkClass        string                  `protobuf:"bytes,12,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
 	BytesSent           uint64                  `protobuf:"varint,13,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
 	BytesReceived       uint64                  `protobuf:"varint,14,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
@@ -589,11 +589,11 @@ func (x *ConnectionSnapshot) GetConnected() bool {
 // 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
 type ConnectionPolicy struct {
 	state           protoimpl.MessageState               `protogen:"open.v1"`
-	RoutePreference remoteauthpb.EndpointRoutePreference `protobuf:"varint,1,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
+	RoutePreference remoteauthpb.EndpointRoutePreference `protobuf:"varint,1,opt,name=route_preference,json=routePreference,proto3,enum=anytty.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
 	// cloud_relay_mode 约束 managed Cloud Route 使用 P2P、Relay 或自动选择；持久真值在 Go Endpoint registry。
-	CloudRelayMode remoteauthpb.ManagedWebRTCRelayMode `protobuf:"varint,2,opt,name=cloud_relay_mode,json=cloudRelayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"cloud_relay_mode,omitempty"`
+	CloudRelayMode remoteauthpb.ManagedWebRTCRelayMode `protobuf:"varint,2,opt,name=cloud_relay_mode,json=cloudRelayMode,proto3,enum=anytty.remote.auth.v1.ManagedWebRTCRelayMode" json:"cloud_relay_mode,omitempty"`
 	// relay_transport 只在 Cloud Relay 可用时收缩 TURN UDP/TCP；UI 不得把它保存成第二份连接状态。
-	RelayTransport remoteauthpb.ManagedWebRTCRelayTransport `protobuf:"varint,3,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayTransport" json:"relay_transport,omitempty"`
+	RelayTransport remoteauthpb.ManagedWebRTCRelayTransport `protobuf:"varint,3,opt,name=relay_transport,json=relayTransport,proto3,enum=anytty.remote.auth.v1.ManagedWebRTCRelayTransport" json:"relay_transport,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -651,9 +651,9 @@ func (x *ConnectionPolicy) GetRelayTransport() remoteauthpb.ManagedWebRTCRelayTr
 
 type ConnectionPolicyRouteAvailability struct {
 	state         protoimpl.MessageState             `protogen:"open.v1"`
-	RouteKind     ConnectionRouteKind                `protobuf:"varint,1,opt,name=route_kind,json=routeKind,proto3,enum=muxvia.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
+	RouteKind     ConnectionRouteKind                `protobuf:"varint,1,opt,name=route_kind,json=routeKind,proto3,enum=anytty.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
 	Available     bool                               `protobuf:"varint,2,opt,name=available,proto3" json:"available,omitempty"`
-	Reason        ConnectionPolicyAvailabilityReason `protobuf:"varint,3,opt,name=reason,proto3,enum=muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason" json:"reason,omitempty"`
+	Reason        ConnectionPolicyAvailabilityReason `protobuf:"varint,3,opt,name=reason,proto3,enum=anytty.client.binding.v1.ConnectionPolicyAvailabilityReason" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1144,7 +1144,7 @@ type OpenSessionRequest struct {
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	EndpointId    string                 `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
 	RouteOverride string                 `protobuf:"bytes,3,opt,name=route_override,json=routeOverride,proto3" json:"route_override,omitempty"`
-	Intent        ConnectIntent          `protobuf:"varint,4,opt,name=intent,proto3,enum=muxvia.client.binding.v1.ConnectIntent" json:"intent,omitempty"`
+	Intent        ConnectIntent          `protobuf:"varint,4,opt,name=intent,proto3,enum=anytty.client.binding.v1.ConnectIntent" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2939,7 +2939,7 @@ func (x *OpenResourceStreamRequest) GetInitialUploadOffset() int64 {
 type ResourceStreamFrame struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	StreamHandle  uint64                  `protobuf:"varint,1,opt,name=stream_handle,json=streamHandle,proto3" json:"stream_handle,omitempty"`
-	Type          ResourceStreamFrameType `protobuf:"varint,2,opt,name=type,proto3,enum=muxvia.client.binding.v1.ResourceStreamFrameType" json:"type,omitempty"`
+	Type          ResourceStreamFrameType `protobuf:"varint,2,opt,name=type,proto3,enum=anytty.client.binding.v1.ResourceStreamFrameType" json:"type,omitempty"`
 	Payload       []byte                  `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4800,21 +4800,21 @@ var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x18muxvia.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xf9\a\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x18anytty.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xf9\a\n" +
 	"\x12ConnectionSnapshot\x12\x19\n" +
 	"\broute_id\x18\x01 \x01(\tR\arouteId\x12L\n" +
 	"\n" +
-	"route_kind\x18\x02 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12U\n" +
-	"\robserved_path\x18\x03 \x01(\x0e20.muxvia.client.binding.v1.ConnectionObservedPathR\fobservedPath\x12)\n" +
+	"route_kind\x18\x02 \x01(\x0e2-.anytty.client.binding.v1.ConnectionRouteKindR\trouteKind\x12U\n" +
+	"\robserved_path\x18\x03 \x01(\x0e20.anytty.client.binding.v1.ConnectionObservedPathR\fobservedPath\x12)\n" +
 	"\x10selection_reason\x18\x04 \x01(\tR\x0fselectionReason\x12/\n" +
 	"\x14sampled_at_unix_nano\x18\x05 \x01(\x03R\x11sampledAtUnixNano\x12(\n" +
 	"\x10round_trip_nanos\x18\x06 \x01(\x03R\x0eroundTripNanos\x12c\n" +
-	"\x14local_candidate_type\x18\a \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x12localCandidateType\x12e\n" +
-	"\x15remote_candidate_type\x18\b \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x13remoteCandidateType\x12T\n" +
-	"\x0elocal_protocol\x18\t \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\rlocalProtocol\x12V\n" +
+	"\x14local_candidate_type\x18\a \x01(\x0e21.anytty.client.binding.v1.ConnectionCandidateTypeR\x12localCandidateType\x12e\n" +
+	"\x15remote_candidate_type\x18\b \x01(\x0e21.anytty.client.binding.v1.ConnectionCandidateTypeR\x13remoteCandidateType\x12T\n" +
+	"\x0elocal_protocol\x18\t \x01(\x0e2-.anytty.client.binding.v1.ConnectionTransportR\rlocalProtocol\x12V\n" +
 	"\x0fremote_protocol\x18\n" +
-	" \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0eremoteProtocol\x12V\n" +
-	"\x0frelay_transport\x18\v \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0erelayTransport\x12#\n" +
+	" \x01(\x0e2-.anytty.client.binding.v1.ConnectionTransportR\x0eremoteProtocol\x12V\n" +
+	"\x0frelay_transport\x18\v \x01(\x0e2-.anytty.client.binding.v1.ConnectionTransportR\x0erelayTransport\x12#\n" +
 	"\rnetwork_class\x18\f \x01(\tR\fnetworkClass\x12\x1d\n" +
 	"\n" +
 	"bytes_sent\x18\r \x01(\x04R\tbytesSent\x12%\n" +
@@ -4824,17 +4824,17 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"lossEvents\x12\x1c\n" +
 	"\tconnected\x18\x11 \x01(\bR\tconnected\"\xa3\x02\n" +
 	"\x10ConnectionPolicy\x12Y\n" +
-	"\x10route_preference\x18\x01 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\x12W\n" +
-	"\x10cloud_relay_mode\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\x0ecloudRelayMode\x12[\n" +
-	"\x0frelay_transport\x18\x03 \x01(\x0e22.muxvia.remote.auth.v1.ManagedWebRTCRelayTransportR\x0erelayTransport\"\xe5\x01\n" +
+	"\x10route_preference\x18\x01 \x01(\x0e2..anytty.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\x12W\n" +
+	"\x10cloud_relay_mode\x18\x02 \x01(\x0e2-.anytty.remote.auth.v1.ManagedWebRTCRelayModeR\x0ecloudRelayMode\x12[\n" +
+	"\x0frelay_transport\x18\x03 \x01(\x0e22.anytty.remote.auth.v1.ManagedWebRTCRelayTransportR\x0erelayTransport\"\xe5\x01\n" +
 	"!ConnectionPolicyRouteAvailability\x12L\n" +
 	"\n" +
-	"route_kind\x18\x01 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12\x1c\n" +
+	"route_kind\x18\x01 \x01(\x0e2-.anytty.client.binding.v1.ConnectionRouteKindR\trouteKind\x12\x1c\n" +
 	"\tavailable\x18\x02 \x01(\bR\tavailable\x12T\n" +
-	"\x06reason\x18\x03 \x01(\x0e2<.muxvia.client.binding.v1.ConnectionPolicyAvailabilityReasonR\x06reason\"\xb0\x01\n" +
+	"\x06reason\x18\x03 \x01(\x0e2<.anytty.client.binding.v1.ConnectionPolicyAvailabilityReasonR\x06reason\"\xb0\x01\n" +
 	"\x15ConnectionPolicyState\x12B\n" +
-	"\x06policy\x18\x01 \x01(\v2*.muxvia.client.binding.v1.ConnectionPolicyR\x06policy\x12S\n" +
-	"\x06routes\x18\x02 \x03(\v2;.muxvia.client.binding.v1.ConnectionPolicyRouteAvailabilityR\x06routes\"\\\n" +
+	"\x06policy\x18\x01 \x01(\v2*.anytty.client.binding.v1.ConnectionPolicyR\x06policy\x12S\n" +
+	"\x06routes\x18\x02 \x03(\v2;.anytty.client.binding.v1.ConnectionPolicyRouteAvailabilityR\x06routes\"\\\n" +
 	"\x1aConnectionPolicyGetRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -4844,20 +4844,20 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12E\n" +
-	"\x05state\x18\x03 \x01(\v2/.muxvia.client.binding.v1.ConnectionPolicyStateR\x05state\x12-\n" +
-	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xa2\x01\n" +
+	"\x05state\x18\x03 \x01(\v2/.anytty.client.binding.v1.ConnectionPolicyStateR\x05state\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"\xa2\x01\n" +
 	"\x1cConnectionPolicyApplyRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12B\n" +
-	"\x06policy\x18\x03 \x01(\v2*.muxvia.client.binding.v1.ConnectionPolicyR\x06policy\"\xdd\x01\n" +
+	"\x06policy\x18\x03 \x01(\v2*.anytty.client.binding.v1.ConnectionPolicyR\x06policy\"\xdd\x01\n" +
 	"\x1bConnectionPolicyApplyResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12E\n" +
-	"\x05state\x18\x03 \x01(\v2/.muxvia.client.binding.v1.ConnectionPolicyStateR\x05state\x12-\n" +
-	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"d\n" +
+	"\x05state\x18\x03 \x01(\v2/.anytty.client.binding.v1.ConnectionPolicyStateR\x05state\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"d\n" +
 	"\x1cConnectionSnapshotGetRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -4868,16 +4868,16 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12%\n" +
 	"\x0esession_handle\x18\x03 \x01(\x04R\rsessionHandle\x12L\n" +
 	"\n" +
-	"connection\x18\x04 \x01(\v2,.muxvia.client.binding.v1.ConnectionSnapshotR\n" +
+	"connection\x18\x04 \x01(\v2,.anytty.client.binding.v1.ConnectionSnapshotR\n" +
 	"connection\x12-\n" +
-	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xc2\x01\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"\xc2\x01\n" +
 	"\x12OpenSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12%\n" +
 	"\x0eroute_override\x18\x03 \x01(\tR\rrouteOverride\x12?\n" +
-	"\x06intent\x18\x04 \x01(\x0e2'.muxvia.client.binding.v1.ConnectIntentR\x06intentJ\x04\b\x05\x10\x06\"\x92\x01\n" +
+	"\x06intent\x18\x04 \x01(\x0e2'.anytty.client.binding.v1.ConnectIntentR\x06intentJ\x04\b\x05\x10\x06\"\x92\x01\n" +
 	"\x14ImportPairingRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
@@ -4887,13 +4887,13 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
-	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12\x1b\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.anytty.remote.auth.v1.EndpointConfigV1R\bendpoint\x12\x1b\n" +
 	"\tticket_id\x18\x04 \x01(\tR\bticketId\x124\n" +
 	"\x16client_key_fingerprint\x18\x05 \x01(\tR\x14clientKeyFingerprint\x12/\n" +
 	"\x14expires_at_unix_nano\x18\x06 \x01(\x03R\x11expiresAtUnixNano\x125\n" +
 	"\x16authorization_required\x18\a \x01(\bR\x15authorizationRequired\x12-\n" +
-	"\x05error\x18\b \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\x12E\n" +
-	"\bregistry\x18\t \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\"_\n" +
+	"\x05error\x18\b \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\x12E\n" +
+	"\bregistry\x18\t \x01(\v2).anytty.remote.auth.v1.EndpointRegistryV1R\bregistry\"_\n" +
 	"\x17DeleteCredentialRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -4902,7 +4902,7 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12-\n" +
-	"\x05error\x18\x03 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\";\n" +
+	"\x05error\x18\x03 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\";\n" +
 	"\x1aEndpointRegistryGetRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"\xdb\x01\n" +
@@ -4910,20 +4910,20 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12E\n" +
-	"\bregistry\x18\x03 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
-	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\x9e\x01\n" +
+	"\bregistry\x18\x03 \x01(\v2).anytty.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"\x9e\x01\n" +
 	"\x15EndpointUpsertRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12C\n" +
-	"\bendpoint\x18\x02 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12!\n" +
+	"\bendpoint\x18\x02 \x01(\v2'.anytty.remote.auth.v1.EndpointConfigV1R\bendpoint\x12!\n" +
 	"\fmake_default\x18\x03 \x01(\bR\vmakeDefault\"\x9b\x02\n" +
 	"\x14EndpointUpsertResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
-	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
-	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
-	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"W\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.anytty.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).anytty.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"W\n" +
 	"\x15EndpointDeleteRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -4935,8 +4935,8 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12\x1f\n" +
 	"\vendpoint_id\x18\x03 \x01(\tR\n" +
 	"endpointId\x12E\n" +
-	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
-	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"c\n" +
+	"\bregistry\x18\x04 \x01(\v2).anytty.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"c\n" +
 	"\x1bEndpointShareReceiveRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -4951,19 +4951,19 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12\x14\n" +
 	"\x05label\x18\x03 \x01(\tR\x05label\x12I\n" +
-	"\bidentity\x18\x04 \x01(\v2-.muxvia.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12Q\n" +
-	"\vroute_diffs\x18\x05 \x03(\v20.muxvia.client.binding.v1.EndpointShareRouteDiffR\n" +
+	"\bidentity\x18\x04 \x01(\v2-.anytty.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12Q\n" +
+	"\vroute_diffs\x18\x05 \x03(\v20.anytty.client.binding.v1.EndpointShareRouteDiffR\n" +
 	"routeDiffs\x120\n" +
 	"\x14connect_mode_changed\x18\x06 \x01(\bR\x12connectModeChanged\x128\n" +
 	"\x18selection_policy_changed\x18\a \x01(\bR\x16selectionPolicyChanged\x12j\n" +
-	"\x16credential_descriptors\x18\b \x03(\v23.muxvia.remote.auth.v1.EndpointCredentialDescriptorR\x15credentialDescriptors\x12/\n" +
+	"\x16credential_descriptors\x18\b \x03(\v23.anytty.remote.auth.v1.EndpointCredentialDescriptorR\x15credentialDescriptors\x12/\n" +
 	"\x14expires_at_unix_nano\x18\t \x01(\x03R\x11expiresAtUnixNano\"\xdf\x01\n" +
 	"\x1aEndpointShareReceiveResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12H\n" +
-	"\apreview\x18\x03 \x01(\v2..muxvia.client.binding.v1.EndpointSharePreviewR\apreview\x12-\n" +
-	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"^\n" +
+	"\apreview\x18\x03 \x01(\v2..anytty.client.binding.v1.EndpointSharePreviewR\apreview\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"^\n" +
 	"\x1aEndpointShareCommitRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
@@ -4972,10 +4972,10 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
-	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
-	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x125\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.anytty.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).anytty.remote.auth.v1.EndpointRegistryV1R\bregistry\x125\n" +
 	"\x16authorization_required\x18\x05 \x01(\bR\x15authorizationRequired\x12-\n" +
-	"\x05error\x18\x06 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"z\n" +
+	"\x05error\x18\x06 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"z\n" +
 	"\x1dSSHCredentialProvisionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -4986,80 +4986,80 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
-	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
-	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12%\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.anytty.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).anytty.remote.auth.v1.EndpointRegistryV1R\bregistry\x12%\n" +
 	"\x0ecredential_ref\x18\x05 \x01(\tR\rcredentialRef\x12%\n" +
 	"\x0eauthorized_key\x18\x06 \x01(\tR\rauthorizedKey\x12'\n" +
 	"\x0fkey_fingerprint\x18\a \x01(\tR\x0ekeyFingerprint\x12-\n" +
-	"\x05error\x18\b \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\x99\t\n" +
+	"\x05error\x18\b \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"\x99\t\n" +
 	"\rEngineCommand\x12W\n" +
-	"\x0eimport_pairing\x18\x01 \x01(\v2..muxvia.client.binding.v1.ImportPairingRequestH\x00R\rimportPairing\x12`\n" +
-	"\x11delete_credential\x18\x02 \x01(\v21.muxvia.client.binding.v1.DeleteCredentialRequestH\x00R\x10deleteCredential\x12j\n" +
-	"\x15endpoint_registry_get\x18\x03 \x01(\v24.muxvia.client.binding.v1.EndpointRegistryGetRequestH\x00R\x13endpointRegistryGet\x12Z\n" +
-	"\x0fendpoint_upsert\x18\x04 \x01(\v2/.muxvia.client.binding.v1.EndpointUpsertRequestH\x00R\x0eendpointUpsert\x12Z\n" +
-	"\x0fendpoint_delete\x18\x05 \x01(\v2/.muxvia.client.binding.v1.EndpointDeleteRequestH\x00R\x0eendpointDelete\x12m\n" +
-	"\x16endpoint_share_receive\x18\x06 \x01(\v25.muxvia.client.binding.v1.EndpointShareReceiveRequestH\x00R\x14endpointShareReceive\x12j\n" +
-	"\x15endpoint_share_commit\x18\a \x01(\v24.muxvia.client.binding.v1.EndpointShareCommitRequestH\x00R\x13endpointShareCommit\x12s\n" +
-	"\x18ssh_credential_provision\x18\b \x01(\v27.muxvia.client.binding.v1.SSHCredentialProvisionRequestH\x00R\x16sshCredentialProvision\x12j\n" +
-	"\x15connection_policy_get\x18\t \x01(\v24.muxvia.client.binding.v1.ConnectionPolicyGetRequestH\x00R\x13connectionPolicyGet\x12p\n" +
+	"\x0eimport_pairing\x18\x01 \x01(\v2..anytty.client.binding.v1.ImportPairingRequestH\x00R\rimportPairing\x12`\n" +
+	"\x11delete_credential\x18\x02 \x01(\v21.anytty.client.binding.v1.DeleteCredentialRequestH\x00R\x10deleteCredential\x12j\n" +
+	"\x15endpoint_registry_get\x18\x03 \x01(\v24.anytty.client.binding.v1.EndpointRegistryGetRequestH\x00R\x13endpointRegistryGet\x12Z\n" +
+	"\x0fendpoint_upsert\x18\x04 \x01(\v2/.anytty.client.binding.v1.EndpointUpsertRequestH\x00R\x0eendpointUpsert\x12Z\n" +
+	"\x0fendpoint_delete\x18\x05 \x01(\v2/.anytty.client.binding.v1.EndpointDeleteRequestH\x00R\x0eendpointDelete\x12m\n" +
+	"\x16endpoint_share_receive\x18\x06 \x01(\v25.anytty.client.binding.v1.EndpointShareReceiveRequestH\x00R\x14endpointShareReceive\x12j\n" +
+	"\x15endpoint_share_commit\x18\a \x01(\v24.anytty.client.binding.v1.EndpointShareCommitRequestH\x00R\x13endpointShareCommit\x12s\n" +
+	"\x18ssh_credential_provision\x18\b \x01(\v27.anytty.client.binding.v1.SSHCredentialProvisionRequestH\x00R\x16sshCredentialProvision\x12j\n" +
+	"\x15connection_policy_get\x18\t \x01(\v24.anytty.client.binding.v1.ConnectionPolicyGetRequestH\x00R\x13connectionPolicyGet\x12p\n" +
 	"\x17connection_policy_apply\x18\n" +
-	" \x01(\v26.muxvia.client.binding.v1.ConnectionPolicyApplyRequestH\x00R\x15connectionPolicyApply\x12p\n" +
-	"\x17connection_snapshot_get\x18\v \x01(\v26.muxvia.client.binding.v1.ConnectionSnapshotGetRequestH\x00R\x15connectionSnapshotGetB\t\n" +
+	" \x01(\v26.anytty.client.binding.v1.ConnectionPolicyApplyRequestH\x00R\x15connectionPolicyApply\x12p\n" +
+	"\x17connection_snapshot_get\x18\v \x01(\v26.anytty.client.binding.v1.ConnectionSnapshotGetRequestH\x00R\x15connectionSnapshotGetB\t\n" +
 	"\acommand\"\xc0\x02\n" +
 	"\x11OpenSessionResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12%\n" +
 	"\x0esession_handle\x18\x03 \x01(\x04R\rsessionHandle\x12=\n" +
-	"\asession\x18\x04 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
-	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\x12L\n" +
+	"\asession\x18\x04 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\asession\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\x12L\n" +
 	"\n" +
-	"connection\x18\x06 \x01(\v2,.muxvia.client.binding.v1.ConnectionSnapshotR\n" +
+	"connection\x18\x06 \x01(\v2,.anytty.client.binding.v1.ConnectionSnapshotR\n" +
 	"connection\"\xc7\x01\n" +
 	"\rExecuteResult\x12)\n" +
 	"\x10operation_handle\x18\x01 \x01(\x04R\x0foperationHandle\x12%\n" +
 	"\x0esession_handle\x18\x02 \x01(\x04R\rsessionHandle\x125\n" +
-	"\x06result\x18\x03 \x01(\v2\x1d.muxvia.api.v1.ResultEnvelopeR\x06result\x12-\n" +
-	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"m\n" +
+	"\x06result\x18\x03 \x01(\v2\x1d.anytty.api.v1.ResultEnvelopeR\x06result\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"m\n" +
 	"\x10ApplicationEvent\x12%\n" +
 	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x122\n" +
-	"\x05event\x18\x02 \x01(\v2\x1c.muxvia.api.v1.EventEnvelopeR\x05event\"\x8a\x01\n" +
+	"\x05event\x18\x02 \x01(\v2\x1c.anytty.api.v1.EventEnvelopeR\x05event\"\x8a\x01\n" +
 	"\x19OpenResourceStreamRequest\x129\n" +
-	"\bresource\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresource\x122\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\x122\n" +
 	"\x15initial_upload_offset\x18\x02 \x01(\x03R\x13initialUploadOffset\"\x9b\x01\n" +
 	"\x13ResourceStreamFrame\x12#\n" +
 	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12E\n" +
-	"\x04type\x18\x02 \x01(\x0e21.muxvia.client.binding.v1.ResourceStreamFrameTypeR\x04type\x12\x18\n" +
+	"\x04type\x18\x02 \x01(\x0e21.anytty.client.binding.v1.ResourceStreamFrameTypeR\x04type\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\fR\apayload\"o\n" +
 	"\x19ResourceStreamClosedEvent\x12#\n" +
 	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12-\n" +
-	"\x05error\x18\x02 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xa9\x01\n" +
+	"\x05error\x18\x02 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"\xa9\x01\n" +
 	"\x12SessionClosedEvent\x12%\n" +
 	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x12=\n" +
-	"\asession\x18\x02 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
-	"\x05error\x18\x03 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xd9\r\n" +
+	"\asession\x18\x02 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\asession\x12-\n" +
+	"\x05error\x18\x03 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\"\xd9\r\n" +
 	"\rEventEnvelope\x12\x1f\n" +
 	"\vabi_version\x18\x01 \x01(\rR\n" +
 	"abiVersion\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12P\n" +
 	"\fopen_session\x18\n" +
-	" \x01(\v2+.muxvia.client.binding.v1.OpenSessionResultH\x00R\vopenSession\x12C\n" +
-	"\aexecute\x18\v \x01(\v2'.muxvia.client.binding.v1.ExecuteResultH\x00R\aexecute\x12N\n" +
-	"\vapplication\x18\f \x01(\v2*.muxvia.client.binding.v1.ApplicationEventH\x00R\vapplication\x12U\n" +
-	"\x0esession_closed\x18\r \x01(\v2,.muxvia.client.binding.v1.SessionClosedEventH\x00R\rsessionClosed\x12V\n" +
-	"\x0eimport_pairing\x18\x0e \x01(\v2-.muxvia.client.binding.v1.ImportPairingResultH\x00R\rimportPairing\x12_\n" +
-	"\x11delete_credential\x18\x0f \x01(\v20.muxvia.client.binding.v1.DeleteCredentialResultH\x00R\x10deleteCredential\x12c\n" +
-	"\x15resource_stream_frame\x18\x10 \x01(\v2-.muxvia.client.binding.v1.ResourceStreamFrameH\x00R\x13resourceStreamFrame\x12k\n" +
-	"\x16resource_stream_closed\x18\x11 \x01(\v23.muxvia.client.binding.v1.ResourceStreamClosedEventH\x00R\x14resourceStreamClosed\x12i\n" +
-	"\x15endpoint_registry_get\x18\x12 \x01(\v23.muxvia.client.binding.v1.EndpointRegistryGetResultH\x00R\x13endpointRegistryGet\x12Y\n" +
-	"\x0fendpoint_upsert\x18\x13 \x01(\v2..muxvia.client.binding.v1.EndpointUpsertResultH\x00R\x0eendpointUpsert\x12Y\n" +
-	"\x0fendpoint_delete\x18\x14 \x01(\v2..muxvia.client.binding.v1.EndpointDeleteResultH\x00R\x0eendpointDelete\x12l\n" +
-	"\x16endpoint_share_receive\x18\x15 \x01(\v24.muxvia.client.binding.v1.EndpointShareReceiveResultH\x00R\x14endpointShareReceive\x12i\n" +
-	"\x15endpoint_share_commit\x18\x16 \x01(\v23.muxvia.client.binding.v1.EndpointShareCommitResultH\x00R\x13endpointShareCommit\x12r\n" +
-	"\x18ssh_credential_provision\x18\x17 \x01(\v26.muxvia.client.binding.v1.SSHCredentialProvisionResultH\x00R\x16sshCredentialProvision\x12i\n" +
-	"\x15connection_policy_get\x18\x18 \x01(\v23.muxvia.client.binding.v1.ConnectionPolicyGetResultH\x00R\x13connectionPolicyGet\x12o\n" +
-	"\x17connection_policy_apply\x18\x19 \x01(\v25.muxvia.client.binding.v1.ConnectionPolicyApplyResultH\x00R\x15connectionPolicyApply\x12o\n" +
-	"\x17connection_snapshot_get\x18\x1a \x01(\v25.muxvia.client.binding.v1.ConnectionSnapshotGetResultH\x00R\x15connectionSnapshotGetB\a\n" +
+	" \x01(\v2+.anytty.client.binding.v1.OpenSessionResultH\x00R\vopenSession\x12C\n" +
+	"\aexecute\x18\v \x01(\v2'.anytty.client.binding.v1.ExecuteResultH\x00R\aexecute\x12N\n" +
+	"\vapplication\x18\f \x01(\v2*.anytty.client.binding.v1.ApplicationEventH\x00R\vapplication\x12U\n" +
+	"\x0esession_closed\x18\r \x01(\v2,.anytty.client.binding.v1.SessionClosedEventH\x00R\rsessionClosed\x12V\n" +
+	"\x0eimport_pairing\x18\x0e \x01(\v2-.anytty.client.binding.v1.ImportPairingResultH\x00R\rimportPairing\x12_\n" +
+	"\x11delete_credential\x18\x0f \x01(\v20.anytty.client.binding.v1.DeleteCredentialResultH\x00R\x10deleteCredential\x12c\n" +
+	"\x15resource_stream_frame\x18\x10 \x01(\v2-.anytty.client.binding.v1.ResourceStreamFrameH\x00R\x13resourceStreamFrame\x12k\n" +
+	"\x16resource_stream_closed\x18\x11 \x01(\v23.anytty.client.binding.v1.ResourceStreamClosedEventH\x00R\x14resourceStreamClosed\x12i\n" +
+	"\x15endpoint_registry_get\x18\x12 \x01(\v23.anytty.client.binding.v1.EndpointRegistryGetResultH\x00R\x13endpointRegistryGet\x12Y\n" +
+	"\x0fendpoint_upsert\x18\x13 \x01(\v2..anytty.client.binding.v1.EndpointUpsertResultH\x00R\x0eendpointUpsert\x12Y\n" +
+	"\x0fendpoint_delete\x18\x14 \x01(\v2..anytty.client.binding.v1.EndpointDeleteResultH\x00R\x0eendpointDelete\x12l\n" +
+	"\x16endpoint_share_receive\x18\x15 \x01(\v24.anytty.client.binding.v1.EndpointShareReceiveResultH\x00R\x14endpointShareReceive\x12i\n" +
+	"\x15endpoint_share_commit\x18\x16 \x01(\v23.anytty.client.binding.v1.EndpointShareCommitResultH\x00R\x13endpointShareCommit\x12r\n" +
+	"\x18ssh_credential_provision\x18\x17 \x01(\v26.anytty.client.binding.v1.SSHCredentialProvisionResultH\x00R\x16sshCredentialProvision\x12i\n" +
+	"\x15connection_policy_get\x18\x18 \x01(\v23.anytty.client.binding.v1.ConnectionPolicyGetResultH\x00R\x13connectionPolicyGet\x12o\n" +
+	"\x17connection_policy_apply\x18\x19 \x01(\v25.anytty.client.binding.v1.ConnectionPolicyApplyResultH\x00R\x15connectionPolicyApply\x12o\n" +
+	"\x17connection_snapshot_get\x18\x1a \x01(\v25.anytty.client.binding.v1.ConnectionSnapshotGetResultH\x00R\x15connectionSnapshotGetB\a\n" +
 	"\x05event\"b\n" +
 	"\x18CredentialResolveRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
@@ -5126,31 +5126,31 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12c\n" +
 	"\x12credential_resolve\x18\n" +
-	" \x01(\v22.muxvia.client.binding.v1.CredentialResolveRequestH\x00R\x11credentialResolve\x12c\n" +
-	"\x12credential_prepare\x18\v \x01(\v22.muxvia.client.binding.v1.CredentialPrepareRequestH\x00R\x11credentialPrepare\x12`\n" +
-	"\x11credential_delete\x18\f \x01(\v21.muxvia.client.binding.v1.CredentialDeleteRequestH\x00R\x10credentialDelete\x12Z\n" +
-	"\x0fcredential_sign\x18\r \x01(\v2/.muxvia.client.binding.v1.CredentialSignRequestH\x00R\x0ecredentialSign\x12Z\n" +
-	"\x0fcredential_bind\x18\x0e \x01(\v2/.muxvia.client.binding.v1.CredentialBindRequestH\x00R\x0ecredentialBind\x12m\n" +
-	"\x16endpoint_registry_load\x18\x0f \x01(\v25.muxvia.client.binding.v1.EndpointRegistryLoadRequestH\x00R\x14endpointRegistryLoad\x12p\n" +
-	"\x17endpoint_registry_store\x18\x10 \x01(\v26.muxvia.client.binding.v1.EndpointRegistryStoreRequestH\x00R\x15endpointRegistryStore\x12j\n" +
-	"\x15ssh_credential_lookup\x18\x11 \x01(\v24.muxvia.client.binding.v1.SSHCredentialLookupRequestH\x00R\x13sshCredentialLookup\x12d\n" +
-	"\x13ssh_credential_sign\x18\x12 \x01(\v22.muxvia.client.binding.v1.SSHCredentialSignRequestH\x00R\x11sshCredentialSign\x12j\n" +
-	"\x15ssh_credential_delete\x18\x13 \x01(\v24.muxvia.client.binding.v1.SSHCredentialDeleteRequestH\x00R\x13sshCredentialDelete\x12j\n" +
-	"\x15cloud_profile_resolve\x18\x14 \x01(\v24.muxvia.client.binding.v1.CloudProfileResolveRequestH\x00R\x13cloudProfileResolveB\t\n" +
+	" \x01(\v22.anytty.client.binding.v1.CredentialResolveRequestH\x00R\x11credentialResolve\x12c\n" +
+	"\x12credential_prepare\x18\v \x01(\v22.anytty.client.binding.v1.CredentialPrepareRequestH\x00R\x11credentialPrepare\x12`\n" +
+	"\x11credential_delete\x18\f \x01(\v21.anytty.client.binding.v1.CredentialDeleteRequestH\x00R\x10credentialDelete\x12Z\n" +
+	"\x0fcredential_sign\x18\r \x01(\v2/.anytty.client.binding.v1.CredentialSignRequestH\x00R\x0ecredentialSign\x12Z\n" +
+	"\x0fcredential_bind\x18\x0e \x01(\v2/.anytty.client.binding.v1.CredentialBindRequestH\x00R\x0ecredentialBind\x12m\n" +
+	"\x16endpoint_registry_load\x18\x0f \x01(\v25.anytty.client.binding.v1.EndpointRegistryLoadRequestH\x00R\x14endpointRegistryLoad\x12p\n" +
+	"\x17endpoint_registry_store\x18\x10 \x01(\v26.anytty.client.binding.v1.EndpointRegistryStoreRequestH\x00R\x15endpointRegistryStore\x12j\n" +
+	"\x15ssh_credential_lookup\x18\x11 \x01(\v24.anytty.client.binding.v1.SSHCredentialLookupRequestH\x00R\x13sshCredentialLookup\x12d\n" +
+	"\x13ssh_credential_sign\x18\x12 \x01(\v22.anytty.client.binding.v1.SSHCredentialSignRequestH\x00R\x11sshCredentialSign\x12j\n" +
+	"\x15ssh_credential_delete\x18\x13 \x01(\v24.anytty.client.binding.v1.SSHCredentialDeleteRequestH\x00R\x13sshCredentialDelete\x12j\n" +
+	"\x15cloud_profile_resolve\x18\x14 \x01(\v24.anytty.client.binding.v1.CloudProfileResolveRequestH\x00R\x13cloudProfileResolveB\t\n" +
 	"\arequestJ\x04\b\x15\x10\x1bJ\x04\b\x1e\x10'\"\x98\x05\n" +
 	"\x10PlatformResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12-\n" +
-	"\x05error\x18\x02 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\x12L\n" +
+	"\x05error\x18\x02 \x01(\v2\x17.anytty.api.v1.ApiErrorR\x05error\x12L\n" +
 	"\n" +
 	"credential\x18\n" +
-	" \x01(\v2*.muxvia.client.binding.v1.CredentialRecordH\x00R\n" +
+	" \x01(\v2*.anytty.client.binding.v1.CredentialRecordH\x00R\n" +
 	"credential\x12[\n" +
-	"\x0fcredential_sign\x18\v \x01(\v20.muxvia.client.binding.v1.CredentialSignResponseH\x00R\x0ecredentialSign\x12_\n" +
-	"\x11endpoint_registry\x18\f \x01(\v20.muxvia.client.binding.v1.EndpointRegistryLoadedH\x00R\x10endpointRegistry\x12V\n" +
-	"\x0essh_credential\x18\r \x01(\v2-.muxvia.client.binding.v1.SSHCredentialRecordH\x00R\rsshCredential\x12e\n" +
-	"\x13ssh_credential_sign\x18\x0e \x01(\v23.muxvia.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSign\x12S\n" +
-	"\rcloud_profile\x18\x0f \x01(\v2,.muxvia.client.binding.v1.CloudProfileRecordH\x00R\fcloudProfileB\n" +
+	"\x0fcredential_sign\x18\v \x01(\v20.anytty.client.binding.v1.CredentialSignResponseH\x00R\x0ecredentialSign\x12_\n" +
+	"\x11endpoint_registry\x18\f \x01(\v20.anytty.client.binding.v1.EndpointRegistryLoadedH\x00R\x10endpointRegistry\x12V\n" +
+	"\x0essh_credential\x18\r \x01(\v2-.anytty.client.binding.v1.SSHCredentialRecordH\x00R\rsshCredential\x12e\n" +
+	"\x13ssh_credential_sign\x18\x0e \x01(\v23.anytty.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSign\x12S\n" +
+	"\rcloud_profile\x18\x0f \x01(\v2,.anytty.client.binding.v1.CloudProfileRecordH\x00R\fcloudProfileB\n" +
 	"\n" +
 	"\bresponseJ\x04\b\x14\x10\x1bJ\x04\b\x1e\x10#*\x88\x01\n" +
 	"\rConnectIntent\x12\x1e\n" +
@@ -5193,7 +5193,7 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"4CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED\x10\x03\x12>\n" +
 	":CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED\x10\x04\x12@\n" +
 	"<CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE\x10\x05\x12;\n" +
-	"7CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE\x10\x06B*Z(github.com/muxvia/muxvia/proto/bindingpbb\x06proto3"
+	"7CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE\x10\x06B*Z(github.com/anytty/anytty/proto/bindingpbb\x06proto3"
 
 var (
 	file_bindingpb_client_binding_proto_rawDescOnce sync.Once
@@ -5210,187 +5210,187 @@ func file_bindingpb_client_binding_proto_rawDescGZIP() []byte {
 var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_bindingpb_client_binding_proto_goTypes = []any{
-	(ConnectIntent)(0),                                // 0: muxvia.client.binding.v1.ConnectIntent
-	(ResourceStreamFrameType)(0),                      // 1: muxvia.client.binding.v1.ResourceStreamFrameType
-	(ConnectionRouteKind)(0),                          // 2: muxvia.client.binding.v1.ConnectionRouteKind
-	(ConnectionObservedPath)(0),                       // 3: muxvia.client.binding.v1.ConnectionObservedPath
-	(ConnectionCandidateType)(0),                      // 4: muxvia.client.binding.v1.ConnectionCandidateType
-	(ConnectionTransport)(0),                          // 5: muxvia.client.binding.v1.ConnectionTransport
-	(ConnectionPolicyAvailabilityReason)(0),           // 6: muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
-	(*ConnectionSnapshot)(nil),                        // 7: muxvia.client.binding.v1.ConnectionSnapshot
-	(*ConnectionPolicy)(nil),                          // 8: muxvia.client.binding.v1.ConnectionPolicy
-	(*ConnectionPolicyRouteAvailability)(nil),         // 9: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
-	(*ConnectionPolicyState)(nil),                     // 10: muxvia.client.binding.v1.ConnectionPolicyState
-	(*ConnectionPolicyGetRequest)(nil),                // 11: muxvia.client.binding.v1.ConnectionPolicyGetRequest
-	(*ConnectionPolicyGetResult)(nil),                 // 12: muxvia.client.binding.v1.ConnectionPolicyGetResult
-	(*ConnectionPolicyApplyRequest)(nil),              // 13: muxvia.client.binding.v1.ConnectionPolicyApplyRequest
-	(*ConnectionPolicyApplyResult)(nil),               // 14: muxvia.client.binding.v1.ConnectionPolicyApplyResult
-	(*ConnectionSnapshotGetRequest)(nil),              // 15: muxvia.client.binding.v1.ConnectionSnapshotGetRequest
-	(*ConnectionSnapshotGetResult)(nil),               // 16: muxvia.client.binding.v1.ConnectionSnapshotGetResult
-	(*OpenSessionRequest)(nil),                        // 17: muxvia.client.binding.v1.OpenSessionRequest
-	(*ImportPairingRequest)(nil),                      // 18: muxvia.client.binding.v1.ImportPairingRequest
-	(*ImportPairingResult)(nil),                       // 19: muxvia.client.binding.v1.ImportPairingResult
-	(*DeleteCredentialRequest)(nil),                   // 20: muxvia.client.binding.v1.DeleteCredentialRequest
-	(*DeleteCredentialResult)(nil),                    // 21: muxvia.client.binding.v1.DeleteCredentialResult
-	(*EndpointRegistryGetRequest)(nil),                // 22: muxvia.client.binding.v1.EndpointRegistryGetRequest
-	(*EndpointRegistryGetResult)(nil),                 // 23: muxvia.client.binding.v1.EndpointRegistryGetResult
-	(*EndpointUpsertRequest)(nil),                     // 24: muxvia.client.binding.v1.EndpointUpsertRequest
-	(*EndpointUpsertResult)(nil),                      // 25: muxvia.client.binding.v1.EndpointUpsertResult
-	(*EndpointDeleteRequest)(nil),                     // 26: muxvia.client.binding.v1.EndpointDeleteRequest
-	(*EndpointDeleteResult)(nil),                      // 27: muxvia.client.binding.v1.EndpointDeleteResult
-	(*EndpointShareReceiveRequest)(nil),               // 28: muxvia.client.binding.v1.EndpointShareReceiveRequest
-	(*EndpointShareRouteDiff)(nil),                    // 29: muxvia.client.binding.v1.EndpointShareRouteDiff
-	(*EndpointSharePreview)(nil),                      // 30: muxvia.client.binding.v1.EndpointSharePreview
-	(*EndpointShareReceiveResult)(nil),                // 31: muxvia.client.binding.v1.EndpointShareReceiveResult
-	(*EndpointShareCommitRequest)(nil),                // 32: muxvia.client.binding.v1.EndpointShareCommitRequest
-	(*EndpointShareCommitResult)(nil),                 // 33: muxvia.client.binding.v1.EndpointShareCommitResult
-	(*SSHCredentialProvisionRequest)(nil),             // 34: muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	(*SSHCredentialProvisionResult)(nil),              // 35: muxvia.client.binding.v1.SSHCredentialProvisionResult
-	(*EngineCommand)(nil),                             // 36: muxvia.client.binding.v1.EngineCommand
-	(*OpenSessionResult)(nil),                         // 37: muxvia.client.binding.v1.OpenSessionResult
-	(*ExecuteResult)(nil),                             // 38: muxvia.client.binding.v1.ExecuteResult
-	(*ApplicationEvent)(nil),                          // 39: muxvia.client.binding.v1.ApplicationEvent
-	(*OpenResourceStreamRequest)(nil),                 // 40: muxvia.client.binding.v1.OpenResourceStreamRequest
-	(*ResourceStreamFrame)(nil),                       // 41: muxvia.client.binding.v1.ResourceStreamFrame
-	(*ResourceStreamClosedEvent)(nil),                 // 42: muxvia.client.binding.v1.ResourceStreamClosedEvent
-	(*SessionClosedEvent)(nil),                        // 43: muxvia.client.binding.v1.SessionClosedEvent
-	(*EventEnvelope)(nil),                             // 44: muxvia.client.binding.v1.EventEnvelope
-	(*CredentialResolveRequest)(nil),                  // 45: muxvia.client.binding.v1.CredentialResolveRequest
-	(*CredentialPrepareRequest)(nil),                  // 46: muxvia.client.binding.v1.CredentialPrepareRequest
-	(*CredentialDeleteRequest)(nil),                   // 47: muxvia.client.binding.v1.CredentialDeleteRequest
-	(*CredentialBindRequest)(nil),                     // 48: muxvia.client.binding.v1.CredentialBindRequest
-	(*CredentialRecord)(nil),                          // 49: muxvia.client.binding.v1.CredentialRecord
-	(*CredentialSignRequest)(nil),                     // 50: muxvia.client.binding.v1.CredentialSignRequest
-	(*CredentialSignResponse)(nil),                    // 51: muxvia.client.binding.v1.CredentialSignResponse
-	(*CloudProfileResolveRequest)(nil),                // 52: muxvia.client.binding.v1.CloudProfileResolveRequest
-	(*CloudProfileRecord)(nil),                        // 53: muxvia.client.binding.v1.CloudProfileRecord
-	(*SSHCredentialLookupRequest)(nil),                // 54: muxvia.client.binding.v1.SSHCredentialLookupRequest
-	(*SSHCredentialDeleteRequest)(nil),                // 55: muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	(*SSHCredentialRecord)(nil),                       // 56: muxvia.client.binding.v1.SSHCredentialRecord
-	(*SSHCredentialSignRequest)(nil),                  // 57: muxvia.client.binding.v1.SSHCredentialSignRequest
-	(*SSHCredentialSignResponse)(nil),                 // 58: muxvia.client.binding.v1.SSHCredentialSignResponse
-	(*EndpointRegistryLoadRequest)(nil),               // 59: muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	(*EndpointRegistryStoreRequest)(nil),              // 60: muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	(*EndpointRegistryLoaded)(nil),                    // 61: muxvia.client.binding.v1.EndpointRegistryLoaded
-	(*PlatformEvent)(nil),                             // 62: muxvia.client.binding.v1.PlatformEvent
-	(*PlatformRequest)(nil),                           // 63: muxvia.client.binding.v1.PlatformRequest
-	(*PlatformResponse)(nil),                          // 64: muxvia.client.binding.v1.PlatformResponse
-	(remoteauthpb.EndpointRoutePreference)(0),         // 65: muxvia.remote.auth.v1.EndpointRoutePreference
-	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 66: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 67: muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
-	(*apipb.ApiError)(nil),                            // 68: muxvia.api.v1.ApiError
-	(*remoteauthpb.EndpointConfigV1)(nil),             // 69: muxvia.remote.auth.v1.EndpointConfigV1
-	(*remoteauthpb.EndpointRegistryV1)(nil),           // 70: muxvia.remote.auth.v1.EndpointRegistryV1
-	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 71: muxvia.remote.auth.v1.EndpointDaemonIdentity
-	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 72: muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	(*apipb.EndpointSessionStamp)(nil),                // 73: muxvia.api.v1.EndpointSessionStamp
-	(*apipb.ResultEnvelope)(nil),                      // 74: muxvia.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),                       // 75: muxvia.api.v1.EventEnvelope
-	(*apipb.ResourceHandle)(nil),                      // 76: muxvia.api.v1.ResourceHandle
+	(ConnectIntent)(0),                                // 0: anytty.client.binding.v1.ConnectIntent
+	(ResourceStreamFrameType)(0),                      // 1: anytty.client.binding.v1.ResourceStreamFrameType
+	(ConnectionRouteKind)(0),                          // 2: anytty.client.binding.v1.ConnectionRouteKind
+	(ConnectionObservedPath)(0),                       // 3: anytty.client.binding.v1.ConnectionObservedPath
+	(ConnectionCandidateType)(0),                      // 4: anytty.client.binding.v1.ConnectionCandidateType
+	(ConnectionTransport)(0),                          // 5: anytty.client.binding.v1.ConnectionTransport
+	(ConnectionPolicyAvailabilityReason)(0),           // 6: anytty.client.binding.v1.ConnectionPolicyAvailabilityReason
+	(*ConnectionSnapshot)(nil),                        // 7: anytty.client.binding.v1.ConnectionSnapshot
+	(*ConnectionPolicy)(nil),                          // 8: anytty.client.binding.v1.ConnectionPolicy
+	(*ConnectionPolicyRouteAvailability)(nil),         // 9: anytty.client.binding.v1.ConnectionPolicyRouteAvailability
+	(*ConnectionPolicyState)(nil),                     // 10: anytty.client.binding.v1.ConnectionPolicyState
+	(*ConnectionPolicyGetRequest)(nil),                // 11: anytty.client.binding.v1.ConnectionPolicyGetRequest
+	(*ConnectionPolicyGetResult)(nil),                 // 12: anytty.client.binding.v1.ConnectionPolicyGetResult
+	(*ConnectionPolicyApplyRequest)(nil),              // 13: anytty.client.binding.v1.ConnectionPolicyApplyRequest
+	(*ConnectionPolicyApplyResult)(nil),               // 14: anytty.client.binding.v1.ConnectionPolicyApplyResult
+	(*ConnectionSnapshotGetRequest)(nil),              // 15: anytty.client.binding.v1.ConnectionSnapshotGetRequest
+	(*ConnectionSnapshotGetResult)(nil),               // 16: anytty.client.binding.v1.ConnectionSnapshotGetResult
+	(*OpenSessionRequest)(nil),                        // 17: anytty.client.binding.v1.OpenSessionRequest
+	(*ImportPairingRequest)(nil),                      // 18: anytty.client.binding.v1.ImportPairingRequest
+	(*ImportPairingResult)(nil),                       // 19: anytty.client.binding.v1.ImportPairingResult
+	(*DeleteCredentialRequest)(nil),                   // 20: anytty.client.binding.v1.DeleteCredentialRequest
+	(*DeleteCredentialResult)(nil),                    // 21: anytty.client.binding.v1.DeleteCredentialResult
+	(*EndpointRegistryGetRequest)(nil),                // 22: anytty.client.binding.v1.EndpointRegistryGetRequest
+	(*EndpointRegistryGetResult)(nil),                 // 23: anytty.client.binding.v1.EndpointRegistryGetResult
+	(*EndpointUpsertRequest)(nil),                     // 24: anytty.client.binding.v1.EndpointUpsertRequest
+	(*EndpointUpsertResult)(nil),                      // 25: anytty.client.binding.v1.EndpointUpsertResult
+	(*EndpointDeleteRequest)(nil),                     // 26: anytty.client.binding.v1.EndpointDeleteRequest
+	(*EndpointDeleteResult)(nil),                      // 27: anytty.client.binding.v1.EndpointDeleteResult
+	(*EndpointShareReceiveRequest)(nil),               // 28: anytty.client.binding.v1.EndpointShareReceiveRequest
+	(*EndpointShareRouteDiff)(nil),                    // 29: anytty.client.binding.v1.EndpointShareRouteDiff
+	(*EndpointSharePreview)(nil),                      // 30: anytty.client.binding.v1.EndpointSharePreview
+	(*EndpointShareReceiveResult)(nil),                // 31: anytty.client.binding.v1.EndpointShareReceiveResult
+	(*EndpointShareCommitRequest)(nil),                // 32: anytty.client.binding.v1.EndpointShareCommitRequest
+	(*EndpointShareCommitResult)(nil),                 // 33: anytty.client.binding.v1.EndpointShareCommitResult
+	(*SSHCredentialProvisionRequest)(nil),             // 34: anytty.client.binding.v1.SSHCredentialProvisionRequest
+	(*SSHCredentialProvisionResult)(nil),              // 35: anytty.client.binding.v1.SSHCredentialProvisionResult
+	(*EngineCommand)(nil),                             // 36: anytty.client.binding.v1.EngineCommand
+	(*OpenSessionResult)(nil),                         // 37: anytty.client.binding.v1.OpenSessionResult
+	(*ExecuteResult)(nil),                             // 38: anytty.client.binding.v1.ExecuteResult
+	(*ApplicationEvent)(nil),                          // 39: anytty.client.binding.v1.ApplicationEvent
+	(*OpenResourceStreamRequest)(nil),                 // 40: anytty.client.binding.v1.OpenResourceStreamRequest
+	(*ResourceStreamFrame)(nil),                       // 41: anytty.client.binding.v1.ResourceStreamFrame
+	(*ResourceStreamClosedEvent)(nil),                 // 42: anytty.client.binding.v1.ResourceStreamClosedEvent
+	(*SessionClosedEvent)(nil),                        // 43: anytty.client.binding.v1.SessionClosedEvent
+	(*EventEnvelope)(nil),                             // 44: anytty.client.binding.v1.EventEnvelope
+	(*CredentialResolveRequest)(nil),                  // 45: anytty.client.binding.v1.CredentialResolveRequest
+	(*CredentialPrepareRequest)(nil),                  // 46: anytty.client.binding.v1.CredentialPrepareRequest
+	(*CredentialDeleteRequest)(nil),                   // 47: anytty.client.binding.v1.CredentialDeleteRequest
+	(*CredentialBindRequest)(nil),                     // 48: anytty.client.binding.v1.CredentialBindRequest
+	(*CredentialRecord)(nil),                          // 49: anytty.client.binding.v1.CredentialRecord
+	(*CredentialSignRequest)(nil),                     // 50: anytty.client.binding.v1.CredentialSignRequest
+	(*CredentialSignResponse)(nil),                    // 51: anytty.client.binding.v1.CredentialSignResponse
+	(*CloudProfileResolveRequest)(nil),                // 52: anytty.client.binding.v1.CloudProfileResolveRequest
+	(*CloudProfileRecord)(nil),                        // 53: anytty.client.binding.v1.CloudProfileRecord
+	(*SSHCredentialLookupRequest)(nil),                // 54: anytty.client.binding.v1.SSHCredentialLookupRequest
+	(*SSHCredentialDeleteRequest)(nil),                // 55: anytty.client.binding.v1.SSHCredentialDeleteRequest
+	(*SSHCredentialRecord)(nil),                       // 56: anytty.client.binding.v1.SSHCredentialRecord
+	(*SSHCredentialSignRequest)(nil),                  // 57: anytty.client.binding.v1.SSHCredentialSignRequest
+	(*SSHCredentialSignResponse)(nil),                 // 58: anytty.client.binding.v1.SSHCredentialSignResponse
+	(*EndpointRegistryLoadRequest)(nil),               // 59: anytty.client.binding.v1.EndpointRegistryLoadRequest
+	(*EndpointRegistryStoreRequest)(nil),              // 60: anytty.client.binding.v1.EndpointRegistryStoreRequest
+	(*EndpointRegistryLoaded)(nil),                    // 61: anytty.client.binding.v1.EndpointRegistryLoaded
+	(*PlatformEvent)(nil),                             // 62: anytty.client.binding.v1.PlatformEvent
+	(*PlatformRequest)(nil),                           // 63: anytty.client.binding.v1.PlatformRequest
+	(*PlatformResponse)(nil),                          // 64: anytty.client.binding.v1.PlatformResponse
+	(remoteauthpb.EndpointRoutePreference)(0),         // 65: anytty.remote.auth.v1.EndpointRoutePreference
+	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 66: anytty.remote.auth.v1.ManagedWebRTCRelayMode
+	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 67: anytty.remote.auth.v1.ManagedWebRTCRelayTransport
+	(*apipb.ApiError)(nil),                            // 68: anytty.api.v1.ApiError
+	(*remoteauthpb.EndpointConfigV1)(nil),             // 69: anytty.remote.auth.v1.EndpointConfigV1
+	(*remoteauthpb.EndpointRegistryV1)(nil),           // 70: anytty.remote.auth.v1.EndpointRegistryV1
+	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 71: anytty.remote.auth.v1.EndpointDaemonIdentity
+	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 72: anytty.remote.auth.v1.EndpointCredentialDescriptor
+	(*apipb.EndpointSessionStamp)(nil),                // 73: anytty.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                      // 74: anytty.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                       // 75: anytty.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                      // 76: anytty.api.v1.ResourceHandle
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
-	2,   // 0: muxvia.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
-	3,   // 1: muxvia.client.binding.v1.ConnectionSnapshot.observed_path:type_name -> muxvia.client.binding.v1.ConnectionObservedPath
-	4,   // 2: muxvia.client.binding.v1.ConnectionSnapshot.local_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
-	4,   // 3: muxvia.client.binding.v1.ConnectionSnapshot.remote_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
-	5,   // 4: muxvia.client.binding.v1.ConnectionSnapshot.local_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	5,   // 5: muxvia.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	5,   // 6: muxvia.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
-	65,  // 7: muxvia.client.binding.v1.ConnectionPolicy.route_preference:type_name -> muxvia.remote.auth.v1.EndpointRoutePreference
-	66,  // 8: muxvia.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	67,  // 9: muxvia.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
-	2,   // 10: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
-	6,   // 11: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
-	8,   // 12: muxvia.client.binding.v1.ConnectionPolicyState.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
-	9,   // 13: muxvia.client.binding.v1.ConnectionPolicyState.routes:type_name -> muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
-	10,  // 14: muxvia.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
-	68,  // 15: muxvia.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> muxvia.api.v1.ApiError
-	8,   // 16: muxvia.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
-	10,  // 17: muxvia.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
-	68,  // 18: muxvia.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> muxvia.api.v1.ApiError
-	7,   // 19: muxvia.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
-	68,  // 20: muxvia.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> muxvia.api.v1.ApiError
-	0,   // 21: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
-	69,  // 22: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 23: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
-	70,  // 24: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	68,  // 25: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
-	70,  // 26: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	68,  // 27: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
-	69,  // 28: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	69,  // 29: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	70,  // 30: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	68,  // 31: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
-	70,  // 32: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	68,  // 33: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
-	71,  // 34: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	29,  // 35: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
-	72,  // 36: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	30,  // 37: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
-	68,  // 38: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
-	69,  // 39: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	70,  // 40: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	68,  // 41: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
-	69,  // 42: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	70,  // 43: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	68,  // 44: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
-	18,  // 45: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
-	20,  // 46: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
-	22,  // 47: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
-	24,  // 48: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
-	26,  // 49: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
-	28,  // 50: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
-	32,  // 51: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
-	34,  // 52: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	11,  // 53: muxvia.client.binding.v1.EngineCommand.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetRequest
-	13,  // 54: muxvia.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyRequest
-	15,  // 55: muxvia.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetRequest
-	73,  // 56: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	68,  // 57: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
-	7,   // 58: muxvia.client.binding.v1.OpenSessionResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
-	74,  // 59: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
-	68,  // 60: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
-	75,  // 61: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
-	76,  // 62: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
-	1,   // 63: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
-	68,  // 64: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	73,  // 65: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	68,  // 66: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	37,  // 67: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
-	38,  // 68: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
-	39,  // 69: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
-	43,  // 70: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
-	19,  // 71: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
-	21,  // 72: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
-	41,  // 73: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
-	42,  // 74: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
-	23,  // 75: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
-	25,  // 76: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
-	27,  // 77: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
-	31,  // 78: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
-	33,  // 79: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
-	35,  // 80: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
-	12,  // 81: muxvia.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetResult
-	14,  // 82: muxvia.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyResult
-	16,  // 83: muxvia.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetResult
-	45,  // 84: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
-	46,  // 85: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
-	47,  // 86: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
-	50,  // 87: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
-	48,  // 88: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
-	59,  // 89: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	60,  // 90: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	54,  // 91: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
-	57,  // 92: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
-	55,  // 93: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	52,  // 94: muxvia.client.binding.v1.PlatformRequest.cloud_profile_resolve:type_name -> muxvia.client.binding.v1.CloudProfileResolveRequest
-	68,  // 95: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
-	49,  // 96: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
-	51,  // 97: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
-	61,  // 98: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
-	56,  // 99: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
-	58,  // 100: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
-	53,  // 101: muxvia.client.binding.v1.PlatformResponse.cloud_profile:type_name -> muxvia.client.binding.v1.CloudProfileRecord
+	2,   // 0: anytty.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> anytty.client.binding.v1.ConnectionRouteKind
+	3,   // 1: anytty.client.binding.v1.ConnectionSnapshot.observed_path:type_name -> anytty.client.binding.v1.ConnectionObservedPath
+	4,   // 2: anytty.client.binding.v1.ConnectionSnapshot.local_candidate_type:type_name -> anytty.client.binding.v1.ConnectionCandidateType
+	4,   // 3: anytty.client.binding.v1.ConnectionSnapshot.remote_candidate_type:type_name -> anytty.client.binding.v1.ConnectionCandidateType
+	5,   // 4: anytty.client.binding.v1.ConnectionSnapshot.local_protocol:type_name -> anytty.client.binding.v1.ConnectionTransport
+	5,   // 5: anytty.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> anytty.client.binding.v1.ConnectionTransport
+	5,   // 6: anytty.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> anytty.client.binding.v1.ConnectionTransport
+	65,  // 7: anytty.client.binding.v1.ConnectionPolicy.route_preference:type_name -> anytty.remote.auth.v1.EndpointRoutePreference
+	66,  // 8: anytty.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> anytty.remote.auth.v1.ManagedWebRTCRelayMode
+	67,  // 9: anytty.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> anytty.remote.auth.v1.ManagedWebRTCRelayTransport
+	2,   // 10: anytty.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> anytty.client.binding.v1.ConnectionRouteKind
+	6,   // 11: anytty.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> anytty.client.binding.v1.ConnectionPolicyAvailabilityReason
+	8,   // 12: anytty.client.binding.v1.ConnectionPolicyState.policy:type_name -> anytty.client.binding.v1.ConnectionPolicy
+	9,   // 13: anytty.client.binding.v1.ConnectionPolicyState.routes:type_name -> anytty.client.binding.v1.ConnectionPolicyRouteAvailability
+	10,  // 14: anytty.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> anytty.client.binding.v1.ConnectionPolicyState
+	68,  // 15: anytty.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> anytty.api.v1.ApiError
+	8,   // 16: anytty.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> anytty.client.binding.v1.ConnectionPolicy
+	10,  // 17: anytty.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> anytty.client.binding.v1.ConnectionPolicyState
+	68,  // 18: anytty.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> anytty.api.v1.ApiError
+	7,   // 19: anytty.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> anytty.client.binding.v1.ConnectionSnapshot
+	68,  // 20: anytty.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> anytty.api.v1.ApiError
+	0,   // 21: anytty.client.binding.v1.OpenSessionRequest.intent:type_name -> anytty.client.binding.v1.ConnectIntent
+	69,  // 22: anytty.client.binding.v1.ImportPairingResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	68,  // 23: anytty.client.binding.v1.ImportPairingResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 24: anytty.client.binding.v1.ImportPairingResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	68,  // 25: anytty.client.binding.v1.DeleteCredentialResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 26: anytty.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	68,  // 27: anytty.client.binding.v1.EndpointRegistryGetResult.error:type_name -> anytty.api.v1.ApiError
+	69,  // 28: anytty.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	69,  // 29: anytty.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	70,  // 30: anytty.client.binding.v1.EndpointUpsertResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	68,  // 31: anytty.client.binding.v1.EndpointUpsertResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 32: anytty.client.binding.v1.EndpointDeleteResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	68,  // 33: anytty.client.binding.v1.EndpointDeleteResult.error:type_name -> anytty.api.v1.ApiError
+	71,  // 34: anytty.client.binding.v1.EndpointSharePreview.identity:type_name -> anytty.remote.auth.v1.EndpointDaemonIdentity
+	29,  // 35: anytty.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> anytty.client.binding.v1.EndpointShareRouteDiff
+	72,  // 36: anytty.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> anytty.remote.auth.v1.EndpointCredentialDescriptor
+	30,  // 37: anytty.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> anytty.client.binding.v1.EndpointSharePreview
+	68,  // 38: anytty.client.binding.v1.EndpointShareReceiveResult.error:type_name -> anytty.api.v1.ApiError
+	69,  // 39: anytty.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	70,  // 40: anytty.client.binding.v1.EndpointShareCommitResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	68,  // 41: anytty.client.binding.v1.EndpointShareCommitResult.error:type_name -> anytty.api.v1.ApiError
+	69,  // 42: anytty.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	70,  // 43: anytty.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	68,  // 44: anytty.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> anytty.api.v1.ApiError
+	18,  // 45: anytty.client.binding.v1.EngineCommand.import_pairing:type_name -> anytty.client.binding.v1.ImportPairingRequest
+	20,  // 46: anytty.client.binding.v1.EngineCommand.delete_credential:type_name -> anytty.client.binding.v1.DeleteCredentialRequest
+	22,  // 47: anytty.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> anytty.client.binding.v1.EndpointRegistryGetRequest
+	24,  // 48: anytty.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> anytty.client.binding.v1.EndpointUpsertRequest
+	26,  // 49: anytty.client.binding.v1.EngineCommand.endpoint_delete:type_name -> anytty.client.binding.v1.EndpointDeleteRequest
+	28,  // 50: anytty.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> anytty.client.binding.v1.EndpointShareReceiveRequest
+	32,  // 51: anytty.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> anytty.client.binding.v1.EndpointShareCommitRequest
+	34,  // 52: anytty.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> anytty.client.binding.v1.SSHCredentialProvisionRequest
+	11,  // 53: anytty.client.binding.v1.EngineCommand.connection_policy_get:type_name -> anytty.client.binding.v1.ConnectionPolicyGetRequest
+	13,  // 54: anytty.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> anytty.client.binding.v1.ConnectionPolicyApplyRequest
+	15,  // 55: anytty.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> anytty.client.binding.v1.ConnectionSnapshotGetRequest
+	73,  // 56: anytty.client.binding.v1.OpenSessionResult.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	68,  // 57: anytty.client.binding.v1.OpenSessionResult.error:type_name -> anytty.api.v1.ApiError
+	7,   // 58: anytty.client.binding.v1.OpenSessionResult.connection:type_name -> anytty.client.binding.v1.ConnectionSnapshot
+	74,  // 59: anytty.client.binding.v1.ExecuteResult.result:type_name -> anytty.api.v1.ResultEnvelope
+	68,  // 60: anytty.client.binding.v1.ExecuteResult.error:type_name -> anytty.api.v1.ApiError
+	75,  // 61: anytty.client.binding.v1.ApplicationEvent.event:type_name -> anytty.api.v1.EventEnvelope
+	76,  // 62: anytty.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> anytty.api.v1.ResourceHandle
+	1,   // 63: anytty.client.binding.v1.ResourceStreamFrame.type:type_name -> anytty.client.binding.v1.ResourceStreamFrameType
+	68,  // 64: anytty.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> anytty.api.v1.ApiError
+	73,  // 65: anytty.client.binding.v1.SessionClosedEvent.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	68,  // 66: anytty.client.binding.v1.SessionClosedEvent.error:type_name -> anytty.api.v1.ApiError
+	37,  // 67: anytty.client.binding.v1.EventEnvelope.open_session:type_name -> anytty.client.binding.v1.OpenSessionResult
+	38,  // 68: anytty.client.binding.v1.EventEnvelope.execute:type_name -> anytty.client.binding.v1.ExecuteResult
+	39,  // 69: anytty.client.binding.v1.EventEnvelope.application:type_name -> anytty.client.binding.v1.ApplicationEvent
+	43,  // 70: anytty.client.binding.v1.EventEnvelope.session_closed:type_name -> anytty.client.binding.v1.SessionClosedEvent
+	19,  // 71: anytty.client.binding.v1.EventEnvelope.import_pairing:type_name -> anytty.client.binding.v1.ImportPairingResult
+	21,  // 72: anytty.client.binding.v1.EventEnvelope.delete_credential:type_name -> anytty.client.binding.v1.DeleteCredentialResult
+	41,  // 73: anytty.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> anytty.client.binding.v1.ResourceStreamFrame
+	42,  // 74: anytty.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> anytty.client.binding.v1.ResourceStreamClosedEvent
+	23,  // 75: anytty.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> anytty.client.binding.v1.EndpointRegistryGetResult
+	25,  // 76: anytty.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> anytty.client.binding.v1.EndpointUpsertResult
+	27,  // 77: anytty.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> anytty.client.binding.v1.EndpointDeleteResult
+	31,  // 78: anytty.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> anytty.client.binding.v1.EndpointShareReceiveResult
+	33,  // 79: anytty.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> anytty.client.binding.v1.EndpointShareCommitResult
+	35,  // 80: anytty.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> anytty.client.binding.v1.SSHCredentialProvisionResult
+	12,  // 81: anytty.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> anytty.client.binding.v1.ConnectionPolicyGetResult
+	14,  // 82: anytty.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> anytty.client.binding.v1.ConnectionPolicyApplyResult
+	16,  // 83: anytty.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> anytty.client.binding.v1.ConnectionSnapshotGetResult
+	45,  // 84: anytty.client.binding.v1.PlatformRequest.credential_resolve:type_name -> anytty.client.binding.v1.CredentialResolveRequest
+	46,  // 85: anytty.client.binding.v1.PlatformRequest.credential_prepare:type_name -> anytty.client.binding.v1.CredentialPrepareRequest
+	47,  // 86: anytty.client.binding.v1.PlatformRequest.credential_delete:type_name -> anytty.client.binding.v1.CredentialDeleteRequest
+	50,  // 87: anytty.client.binding.v1.PlatformRequest.credential_sign:type_name -> anytty.client.binding.v1.CredentialSignRequest
+	48,  // 88: anytty.client.binding.v1.PlatformRequest.credential_bind:type_name -> anytty.client.binding.v1.CredentialBindRequest
+	59,  // 89: anytty.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> anytty.client.binding.v1.EndpointRegistryLoadRequest
+	60,  // 90: anytty.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> anytty.client.binding.v1.EndpointRegistryStoreRequest
+	54,  // 91: anytty.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> anytty.client.binding.v1.SSHCredentialLookupRequest
+	57,  // 92: anytty.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> anytty.client.binding.v1.SSHCredentialSignRequest
+	55,  // 93: anytty.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> anytty.client.binding.v1.SSHCredentialDeleteRequest
+	52,  // 94: anytty.client.binding.v1.PlatformRequest.cloud_profile_resolve:type_name -> anytty.client.binding.v1.CloudProfileResolveRequest
+	68,  // 95: anytty.client.binding.v1.PlatformResponse.error:type_name -> anytty.api.v1.ApiError
+	49,  // 96: anytty.client.binding.v1.PlatformResponse.credential:type_name -> anytty.client.binding.v1.CredentialRecord
+	51,  // 97: anytty.client.binding.v1.PlatformResponse.credential_sign:type_name -> anytty.client.binding.v1.CredentialSignResponse
+	61,  // 98: anytty.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> anytty.client.binding.v1.EndpointRegistryLoaded
+	56,  // 99: anytty.client.binding.v1.PlatformResponse.ssh_credential:type_name -> anytty.client.binding.v1.SSHCredentialRecord
+	58,  // 100: anytty.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> anytty.client.binding.v1.SSHCredentialSignResponse
+	53,  // 101: anytty.client.binding.v1.PlatformResponse.cloud_profile:type_name -> anytty.client.binding.v1.CloudProfileRecord
 	102, // [102:102] is the sub-list for method output_type
 	102, // [102:102] is the sub-list for method input_type
 	102, // [102:102] is the sub-list for extension type_name

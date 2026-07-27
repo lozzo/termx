@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type endpointPlanSnapshotStub struct {

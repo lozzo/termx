@@ -5,11 +5,11 @@ import (
 	"sync"
 	"testing"
 
-	clientprotocol "github.com/muxvia/muxvia/client/adapter/protocol"
-	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/tui/port"
+	clientprotocol "github.com/anytty/anytty/client/adapter/protocol"
+	clientendpoint "github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/tui/port"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.muxvia.app',
-  appName: 'Muxvia',
+  appId: 'com.anytty.app',
+  appName: 'AnyTTY',
   webDir: 'dist',
   // Native bridge responses contain an ephemeral loopback bearer token. Capacitor framework logs
   // must never echo plugin payloads; product diagnostics use the explicitly redacted debug log.

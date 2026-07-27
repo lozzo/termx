@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
 )
 
 func TestSessionOwnerFullRaceReturnsFirstReadyBeforeIgnoredCancelLoserCleanup(t *testing.T) {

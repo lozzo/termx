@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/core/history/linehist"
-	"github.com/muxvia/muxvia/core/live"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/core/history/linehist"
+	"github.com/anytty/anytty/core/live"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 func TestTerminalLifecycleAndLiveSurface(t *testing.T) {

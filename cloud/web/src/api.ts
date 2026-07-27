@@ -14,13 +14,13 @@ function cookie(name: string): string {
 let refreshInFlight: Promise<boolean> | undefined
 
 async function refreshSession(): Promise<boolean> {
-  const csrf = cookie('muxvia_cloud_csrf')
+  const csrf = cookie('anytty_cloud_csrf')
   if (!csrf) return false
   if (!refreshInFlight) {
     refreshInFlight = fetch('/api/account/refresh', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'X-Muxvia-CSRF': csrf },
+      headers: { 'X-AnyTTY-CSRF': csrf },
     }).then((response) => response.ok).catch(() => false).finally(() => { refreshInFlight = undefined })
   }
   return refreshInFlight
@@ -57,8 +57,8 @@ export async function protoSend<RequestSchema extends DescMessage, ResponseSchem
   method = 'POST',
 ): Promise<MessageShape<ResponseSchema>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  const csrf = cookie('muxvia_cloud_csrf')
-  if (csrf) headers['X-Muxvia-CSRF'] = csrf
+  const csrf = cookie('anytty_cloud_csrf')
+  if (csrf) headers['X-AnyTTY-CSRF'] = csrf
   const response = await fetchWithSession(path, {
     method,
     credentials: 'same-origin',

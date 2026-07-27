@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 func TestR326TmuxAndCoreAuthoritativeHistoryAlignForScreenAppHistory(t *testing.T) {
@@ -77,7 +77,7 @@ func r326TmxCapture(t *testing.T, script string, cols int, rows int) string {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux binary not available for R326 harness")
 	}
-	session := fmt.Sprintf("muxvia-r326-%d", time.Now().UnixNano())
+	session := fmt.Sprintf("anytty-r326-%d", time.Now().UnixNano())
 	target := session + ":0.0"
 	command := "/bin/sh -c " + shellQuote(script+"; sleep 2")
 	if output, err := exec.Command("tmux", "new-session", "-d", "-s", session, "-x", fmt.Sprint(cols), "-y", fmt.Sprint(rows), command).CombinedOutput(); err != nil {

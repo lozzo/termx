@@ -3,7 +3,7 @@ package port
 import (
 	"context"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // EndpointRuntimeEvent 是共享 client runtime 发布给 TUI adapter 的连接生命周期事件。

@@ -12,19 +12,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 const (
-	tuiDiagnosticsEnv        = "MUXVIA_TUI_DIAG"
-	tuiInputTraceEnv         = "MUXVIA_TUI_INPUT_TRACE"
-	tuiDiagnosticsInterval   = "MUXVIA_TUI_DIAG_INTERVAL_MS"
-	tuiHeapProfileDirEnv     = "MUXVIA_TUI_HEAP_PROFILE_DIR"
-	tuiHeapProfileEveryEnv   = "MUXVIA_TUI_HEAP_PROFILE_EVERY_MB"
-	tuiMemstatsDirEnv        = "MUXVIA_TUI_MEMSTATS_DIR"
-	tuiMemstatsStageEnv      = "MUXVIA_DIAG_STAGE"
-	tuiMemstatsStageFileEnv  = "MUXVIA_DIAG_STAGE_FILE"
+	tuiDiagnosticsEnv        = "ANYTTY_TUI_DIAG"
+	tuiInputTraceEnv         = "ANYTTY_TUI_INPUT_TRACE"
+	tuiDiagnosticsInterval   = "ANYTTY_TUI_DIAG_INTERVAL_MS"
+	tuiHeapProfileDirEnv     = "ANYTTY_TUI_HEAP_PROFILE_DIR"
+	tuiHeapProfileEveryEnv   = "ANYTTY_TUI_HEAP_PROFILE_EVERY_MB"
+	tuiMemstatsDirEnv        = "ANYTTY_TUI_MEMSTATS_DIR"
+	tuiMemstatsStageEnv      = "ANYTTY_DIAG_STAGE"
+	tuiMemstatsStageFileEnv  = "ANYTTY_DIAG_STAGE_FILE"
 	tuiHeapProfileDefaultMB  = uint64(128)
 	tuiHeapProfileMinDeltaMB = uint64(8)
 )

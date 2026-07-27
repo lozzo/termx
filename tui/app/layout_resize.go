@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // NewTerminalLayoutResizeReducer 把最新 shell/layout state 投影成 active terminal content rect。

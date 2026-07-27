@@ -1,4 +1,4 @@
-//go:build cgo && !muxvia_android_spike
+//go:build cgo && !anytty_android_spike
 
 package main
 

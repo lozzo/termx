@@ -3,8 +3,8 @@ package app
 import (
 	"strings"
 
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func applyConfiguredShellChrome(shell state.ShellStore, cfg state.TUIConfigStore) state.ShellStore {

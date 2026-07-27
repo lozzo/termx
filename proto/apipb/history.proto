@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package muxvia.api.v1;
+package anytty.api.v1;
 
 import "apipb/terminal.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/apipb";
+option go_package = "github.com/anytty/anytty/proto/apipb";
 
 enum HistoryWindowMode {
   HISTORY_WINDOW_MODE_UNSPECIFIED = 0;

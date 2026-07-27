@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/transport"
-	"github.com/muxvia/muxvia/shared/transport/memory"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/shared/transport"
+	"github.com/anytty/anytty/shared/transport/memory"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
@@ -241,9 +241,9 @@ func TestCapturedCapabilityOpenFailsAgainstNewChallenge(t *testing.T) {
 	}
 }
 
-func TestAuthEnvelopeRejectsV1MuxviaFrameAndUnknownFields(t *testing.T) {
+func TestAuthEnvelopeRejectsV1AnyTTYFrameAndUnknownFields(t *testing.T) {
 	if _, err := UnmarshalAuthEnvelope([]byte{0, 0, 0, 0, 0, 0, 0}); HandshakeCodeOf(err) != remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL {
-		t.Fatalf("muxvia frame error = %v", err)
+		t.Fatalf("anytty frame error = %v", err)
 	}
 	envelope := &remoteauthpb.AuthEnvelope{
 		Protocol: AuthProtocol, Version: 1, AuthSessionId: "fixture-auth-session-01",

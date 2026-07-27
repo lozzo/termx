@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
@@ -1125,7 +1125,7 @@ func TestCopyModeEnteringSecondViewKeepsFirstUntilEsc(t *testing.T) {
 
 func TestCopyModeEnteringFloatingWithBoundViewIDKeepsPaneUntilEsc(t *testing.T) {
 	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
-	floatingView := "muxvia-floating-view-main"
+	floatingView := "anytty-floating-view-main"
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Surface: state.TerminalSurfaceStore{Surfaces: map[string]state.LiveSurfaceSnapshot{
@@ -1213,7 +1213,7 @@ func TestCopyModeEnteringFloatingWithBoundViewIDKeepsPaneUntilEsc(t *testing.T) 
 
 func TestCopyModeCtrlVEnteringSecondViewDoesNotOverwriteFirstSession(t *testing.T) {
 	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
-	floatingView := "muxvia-floating-view-main"
+	floatingView := "anytty-floating-view-main"
 	shell := state.DefaultShell()
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -6146,9 +6146,9 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 
 func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 	rows := []state.HistoryRow{
-		{Text: "lozzow@RedmiBook: ~/Documents/workdir/muxvia", LineID: 1},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/anytty", LineID: 1},
 		{Text: "ζ", LineID: 2},
-		{Text: "lozzow@RedmiBook: ~/Documents/workdir/muxvia", LineID: 3},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/anytty", LineID: 3},
 		{Text: "ζ codex --yolo", LineID: 4},
 		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 10, LiveTail: true},
 		{Text: "Run brew upgrade --cask codex to update.", LineID: 11, LiveTail: true},
@@ -6156,11 +6156,11 @@ func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 		{Text: "https://github.com/openai/codex/releases/latest", LineID: 13, LiveTail: true},
 		{Text: "OpenAI Codex (v0.141.0)", LineID: 14, LiveTail: true},
 		{Text: "model: gpt-5.5 xhigh", LineID: 15, LiveTail: true},
-		{Text: "directory: ~/Documents/workdir/muxvia", LineID: 16, LiveTail: true},
+		{Text: "directory: ~/Documents/workdir/anytty", LineID: 16, LiveTail: true},
 		{Text: "permissions: YOLO mode", LineID: 17, LiveTail: true},
 		{Text: "Tip: Visit the Codex community forum", LineID: 18, LiveTail: true},
 		{Text: "> Explain this codebase", LineID: 19, LiveTail: true},
-		{Text: "gpt-5.5 xhigh · ~/Documents/workdir/muxvia", LineID: 20, LiveTail: true},
+		{Text: "gpt-5.5 xhigh · ~/Documents/workdir/anytty", LineID: 20, LiveTail: true},
 	}
 	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: latest}}}

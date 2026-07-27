@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-package muxvia.client.binding.v1;
+package anytty.client.binding.v1;
 
 import "apipb/application.proto";
 import "apipb/common.proto";
 import "remoteauthpb/remote_auth.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/bindingpb";
+option go_package = "github.com/anytty/anytty/proto/bindingpb";
 
 enum ConnectIntent {
   CONNECT_INTENT_UNSPECIFIED = 0;
@@ -96,11 +96,11 @@ message ConnectionSnapshot {
 // ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。
 // 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
 message ConnectionPolicy {
-  muxvia.remote.auth.v1.EndpointRoutePreference route_preference = 1;
+  anytty.remote.auth.v1.EndpointRoutePreference route_preference = 1;
   // cloud_relay_mode 约束 managed Cloud Route 使用 P2P、Relay 或自动选择；持久真值在 Go Endpoint registry。
-  muxvia.remote.auth.v1.ManagedWebRTCRelayMode cloud_relay_mode = 2;
+  anytty.remote.auth.v1.ManagedWebRTCRelayMode cloud_relay_mode = 2;
   // relay_transport 只在 Cloud Relay 可用时收缩 TURN UDP/TCP；UI 不得把它保存成第二份连接状态。
-  muxvia.remote.auth.v1.ManagedWebRTCRelayTransport relay_transport = 3;
+  anytty.remote.auth.v1.ManagedWebRTCRelayTransport relay_transport = 3;
 }
 
 message ConnectionPolicyRouteAvailability {
@@ -123,7 +123,7 @@ message ConnectionPolicyGetResult {
   string request_id = 1;
   uint64 operation_handle = 2;
   ConnectionPolicyState state = 3;
-  muxvia.api.v1.ApiError error = 4;
+  anytty.api.v1.ApiError error = 4;
 }
 
 message ConnectionPolicyApplyRequest {
@@ -136,7 +136,7 @@ message ConnectionPolicyApplyResult {
   string request_id = 1;
   uint64 operation_handle = 2;
   ConnectionPolicyState state = 3;
-  muxvia.api.v1.ApiError error = 4;
+  anytty.api.v1.ApiError error = 4;
 }
 
 // ConnectionSnapshotGetRequest 重新采样当前 session handle 的实际 transport 状态。
@@ -151,7 +151,7 @@ message ConnectionSnapshotGetResult {
   uint64 operation_handle = 2;
   uint64 session_handle = 3;
   ConnectionSnapshot connection = 4;
-  muxvia.api.v1.ApiError error = 5;
+  anytty.api.v1.ApiError error = 5;
 }
 
 message OpenSessionRequest {
@@ -171,13 +171,13 @@ message ImportPairingRequest {
 message ImportPairingResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  muxvia.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  anytty.remote.auth.v1.EndpointConfigV1 endpoint = 3;
   string ticket_id = 4;
   string client_key_fingerprint = 5;
   int64 expires_at_unix_nano = 6;
   bool authorization_required = 7;
-  muxvia.api.v1.ApiError error = 8;
-  muxvia.remote.auth.v1.EndpointRegistryV1 registry = 9;
+  anytty.api.v1.ApiError error = 8;
+  anytty.remote.auth.v1.EndpointRegistryV1 registry = 9;
 }
 
 message DeleteCredentialRequest {
@@ -188,7 +188,7 @@ message DeleteCredentialRequest {
 message DeleteCredentialResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  muxvia.api.v1.ApiError error = 3;
+  anytty.api.v1.ApiError error = 3;
 }
 
 message EndpointRegistryGetRequest { string request_id = 1; }
@@ -196,22 +196,22 @@ message EndpointRegistryGetRequest { string request_id = 1; }
 message EndpointRegistryGetResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  muxvia.remote.auth.v1.EndpointRegistryV1 registry = 3;
-  muxvia.api.v1.ApiError error = 4;
+  anytty.remote.auth.v1.EndpointRegistryV1 registry = 3;
+  anytty.api.v1.ApiError error = 4;
 }
 
 message EndpointUpsertRequest {
   string request_id = 1;
-  muxvia.remote.auth.v1.EndpointConfigV1 endpoint = 2;
+  anytty.remote.auth.v1.EndpointConfigV1 endpoint = 2;
   bool make_default = 3;
 }
 
 message EndpointUpsertResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  muxvia.remote.auth.v1.EndpointConfigV1 endpoint = 3;
-  muxvia.remote.auth.v1.EndpointRegistryV1 registry = 4;
-  muxvia.api.v1.ApiError error = 5;
+  anytty.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  anytty.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  anytty.api.v1.ApiError error = 5;
 }
 
 message EndpointDeleteRequest {
@@ -223,8 +223,8 @@ message EndpointDeleteResult {
   string request_id = 1;
   uint64 operation_handle = 2;
   string endpoint_id = 3;
-  muxvia.remote.auth.v1.EndpointRegistryV1 registry = 4;
-  muxvia.api.v1.ApiError error = 5;
+  anytty.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  anytty.api.v1.ApiError error = 5;
 }
 
 // EndpointShareReceiveRequest 通过 Go Client Engine 接收一次性 TLS share bundle，只生成待确认预览。
@@ -244,11 +244,11 @@ message EndpointSharePreview {
   string import_token = 1;
   string endpoint_id = 2;
   string label = 3;
-  muxvia.remote.auth.v1.EndpointDaemonIdentity identity = 4;
+  anytty.remote.auth.v1.EndpointDaemonIdentity identity = 4;
   repeated EndpointShareRouteDiff route_diffs = 5;
   bool connect_mode_changed = 6;
   bool selection_policy_changed = 7;
-  repeated muxvia.remote.auth.v1.EndpointCredentialDescriptor credential_descriptors = 8;
+  repeated anytty.remote.auth.v1.EndpointCredentialDescriptor credential_descriptors = 8;
   int64 expires_at_unix_nano = 9;
 }
 
@@ -256,7 +256,7 @@ message EndpointShareReceiveResult {
   string request_id = 1;
   uint64 operation_handle = 2;
   EndpointSharePreview preview = 3;
-  muxvia.api.v1.ApiError error = 4;
+  anytty.api.v1.ApiError error = 4;
 }
 
 // EndpointShareCommitRequest 仅提交当前 generation 内尚未过期的 preview token。
@@ -268,10 +268,10 @@ message EndpointShareCommitRequest {
 message EndpointShareCommitResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  muxvia.remote.auth.v1.EndpointConfigV1 endpoint = 3;
-  muxvia.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  anytty.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  anytty.remote.auth.v1.EndpointRegistryV1 registry = 4;
   bool authorization_required = 5;
-  muxvia.api.v1.ApiError error = 6;
+  anytty.api.v1.ApiError error = 6;
 }
 
 // SSHCredentialProvisionRequest 让 Go Client Engine 为已存在的 SSH Route 准备目标平台 signer。
@@ -287,12 +287,12 @@ message SSHCredentialProvisionRequest {
 message SSHCredentialProvisionResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  muxvia.remote.auth.v1.EndpointConfigV1 endpoint = 3;
-  muxvia.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  anytty.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  anytty.remote.auth.v1.EndpointRegistryV1 registry = 4;
   string credential_ref = 5;
   string authorized_key = 6;
   string key_fingerprint = 7;
-  muxvia.api.v1.ApiError error = 8;
+  anytty.api.v1.ApiError error = 8;
 }
 
 message EngineCommand {
@@ -315,25 +315,25 @@ message OpenSessionResult {
   string request_id = 1;
   uint64 operation_handle = 2;
   uint64 session_handle = 3;
-  muxvia.api.v1.EndpointSessionStamp session = 4;
-  muxvia.api.v1.ApiError error = 5;
+  anytty.api.v1.EndpointSessionStamp session = 4;
+  anytty.api.v1.ApiError error = 5;
   ConnectionSnapshot connection = 6;
 }
 
 message ExecuteResult {
   uint64 operation_handle = 1;
   uint64 session_handle = 2;
-  muxvia.api.v1.ResultEnvelope result = 3;
-  muxvia.api.v1.ApiError error = 4;
+  anytty.api.v1.ResultEnvelope result = 3;
+  anytty.api.v1.ApiError error = 4;
 }
 
 message ApplicationEvent {
   uint64 session_handle = 1;
-  muxvia.api.v1.EventEnvelope event = 2;
+  anytty.api.v1.EventEnvelope event = 2;
 }
 
 message OpenResourceStreamRequest {
-  muxvia.api.v1.ResourceHandle resource = 1;
+  anytty.api.v1.ResourceHandle resource = 1;
   int64 initial_upload_offset = 2;
 }
 
@@ -345,13 +345,13 @@ message ResourceStreamFrame {
 
 message ResourceStreamClosedEvent {
   uint64 stream_handle = 1;
-  muxvia.api.v1.ApiError error = 2;
+  anytty.api.v1.ApiError error = 2;
 }
 
 message SessionClosedEvent {
   uint64 session_handle = 1;
-  muxvia.api.v1.EndpointSessionStamp session = 2;
-  muxvia.api.v1.ApiError error = 3;
+  anytty.api.v1.EndpointSessionStamp session = 2;
+  anytty.api.v1.ApiError error = 3;
 }
 
 message EventEnvelope {
@@ -485,7 +485,7 @@ message PlatformRequest {
 
 message PlatformResponse {
   uint64 request_id = 1;
-  muxvia.api.v1.ApiError error = 2;
+  anytty.api.v1.ApiError error = 2;
   oneof response {
     CredentialRecord credential = 10;
     CredentialSignResponse credential_sign = 11;

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 // RelayLimits 是 Controller 商业策略在签发时冻结到 RelayLease 的执行值。

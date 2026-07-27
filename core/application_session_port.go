@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/proto/wire"
 )
 
 type protocolAdmissionLease struct{}

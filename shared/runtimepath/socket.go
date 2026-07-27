@@ -15,5 +15,5 @@ func SocketPath(name string) string {
 	if runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); runtimeDir != "" {
 		return filepath.Join(runtimeDir, name)
 	}
-	return filepath.Join(os.TempDir(), "muxvia-"+userDiscriminator(), name)
+	return filepath.Join(os.TempDir(), "anytty-"+userDiscriminator(), name)
 }

@@ -3,7 +3,9 @@ package remoteauth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,6 +36,25 @@ func TestGrantV2RoundTripBindsDaemonSubjectAndManageCapability(t *testing.T) {
 	}
 }
 
+func TestGrantV2AcceptsMuxviaEnvelopeDuringBrandMigration(t *testing.T) {
+	daemonPublic, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	client, _ := GenerateClientAccessIdentity("endpoint-legacy", rand.Reader)
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	grant, err := Issue(daemonPrivate, Claims{
+		GrantID: "grant-legacy", IssuerDeviceID: "device-legacy", SubjectKeyFingerprint: client.Fingerprint,
+		Scope: FullDaemonScope(), IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(grant, ".")
+	parts[0] = "muxvia-grant-v2"
+	parts[3] = base64.RawURLEncoding.EncodeToString(ed25519.Sign(daemonPrivate, []byte(strings.Join(parts[:3], "."))))
+	if _, err := Verify(strings.Join(parts, "."), Fingerprint(daemonPublic), now.Add(time.Minute), nil); err != nil {
+		t.Fatalf("legacy muxvia grant rejected during migration: %v", err)
+	}
+}
+
 func TestGrantV2RejectsMissingSubjectV1ExpiryAndRevocation(t *testing.T) {
 	daemonPublic, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	client, _ := GenerateClientAccessIdentity("endpoint-1", rand.Reader)
@@ -51,7 +72,7 @@ func TestGrantV2RejectsMissingSubjectV1ExpiryAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Verify("muxvia-grant-v1.legacy.key.signature", Fingerprint(daemonPublic), now, nil); !errors.Is(err, ErrGrantMalformed) {
+	if _, err := Verify("anytty-grant-v1.legacy.key.signature", Fingerprint(daemonPublic), now, nil); !errors.Is(err, ErrGrantMalformed) {
 		t.Fatalf("v1 grant error = %v", err)
 	}
 	if _, err := Verify(grant, Fingerprint(daemonPublic), now.Add(2*time.Minute), nil); !errors.Is(err, ErrGrantExpired) {

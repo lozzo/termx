@@ -21,14 +21,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/configsignature"
-	"github.com/muxvia/muxvia/cloud/controller/control"
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
-	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
-	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/configsignature"
+	"github.com/anytty/anytty/cloud/controller/control"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
+	"github.com/anytty/anytty/cloud/edge/controllerlink"
+	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -498,7 +498,7 @@ func newCertificateAuthority(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey
 	key := newPrivateKey(t)
 	template := &x509.Certificate{
 		SerialNumber:          newSerialNumber(t),
-		Subject:               pkix.Name{CommonName: "Muxvia integration root"},
+		Subject:               pkix.Name{CommonName: "AnyTTY integration root"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

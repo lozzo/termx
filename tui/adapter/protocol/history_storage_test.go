@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestProtocolCoreClientAdapterUsesGeneratedHistoryWindow(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // 合成事务 harness：用真实 vterm SemanticSource（scrollbackSize=0，与生产

@@ -39,12 +39,12 @@ func (database *Database) Migrate(ctx context.Context) error {
 		return fmt.Errorf("lock Cloud migration: %w", err)
 	}
 	defer func() { _, _ = connection.Exec(context.Background(), `SELECT pg_advisory_unlock(748392061)`) }()
-	if _, err := connection.Exec(ctx, `CREATE TABLE IF NOT EXISTS muxvia_schema_migrations (version bigint PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	if _, err := connection.Exec(ctx, `CREATE TABLE IF NOT EXISTS anytty_schema_migrations (version bigint PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("create migration ledger: %w", err)
 	}
 	for _, item := range migrations {
 		var checksum string
-		err := connection.QueryRow(ctx, `SELECT checksum FROM muxvia_schema_migrations WHERE version=$1`, item.version).Scan(&checksum)
+		err := connection.QueryRow(ctx, `SELECT checksum FROM anytty_schema_migrations WHERE version=$1`, item.version).Scan(&checksum)
 		if err == nil {
 			if checksum != item.checksum {
 				return fmt.Errorf("migration %d checksum mismatch", item.version)
@@ -59,7 +59,7 @@ func (database *Database) Migrate(ctx context.Context) error {
 			return err
 		}
 		if _, err = tx.Exec(ctx, item.sql); err == nil {
-			_, err = tx.Exec(ctx, `INSERT INTO muxvia_schema_migrations(version, checksum) VALUES($1,$2)`, item.version, item.checksum)
+			_, err = tx.Exec(ctx, `INSERT INTO anytty_schema_migrations(version, checksum) VALUES($1,$2)`, item.version, item.checksum)
 		}
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -80,7 +80,7 @@ func (database *Database) VerifySchema(ctx context.Context) error {
 	}
 	for _, item := range migrations {
 		var checksum string
-		if err := database.pool.QueryRow(ctx, `SELECT checksum FROM muxvia_schema_migrations WHERE version=$1`, item.version).Scan(&checksum); err != nil {
+		if err := database.pool.QueryRow(ctx, `SELECT checksum FROM anytty_schema_migrations WHERE version=$1`, item.version).Scan(&checksum); err != nil {
 			return fmt.Errorf("verify migration %d: %w", item.version, err)
 		}
 		if checksum != item.checksum {

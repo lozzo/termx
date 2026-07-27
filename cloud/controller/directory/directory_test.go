@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	"github.com/muxvia/muxvia/cloud/runtimesnapshot"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	"github.com/anytty/anytty/cloud/runtimesnapshot"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

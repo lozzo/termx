@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/render"
+	"github.com/anytty/anytty/tui/render"
 )
 
 func TestModuleName(t *testing.T) {
@@ -36,7 +36,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
 		}
 	}
-	if !frameContains(cases["workbench-live"].Lines, "muxvia live 🚀") ||
+	if !frameContains(cases["workbench-live"].Lines, "anytty live 🚀") ||
 		!frameContains(cases["workbench-live"].Lines, "你好 output") ||
 		!frameContains(cases["workbench-live"].Lines, " shell ") ||
 		!frameContains(cases["workbench-live"].Lines, "["+render.DefaultPaneChromeGlyphs().SizeUnlock+"]") {
@@ -81,7 +81,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
 	if !frameContains(cases["terminal-picker"].Lines, "search:") ||
-		!frameContains(cases["terminal-picker"].Lines, "muxvia-picker shell") ||
+		!frameContains(cases["terminal-picker"].Lines, "anytty-picker shell") ||
 		!frameContains(cases["terminal-picker"].Lines, "running") ||
 		!frameContains(cases["terminal-picker"].Lines, "80x24") ||
 		!frameContains(cases["terminal-picker"].Lines, "local") ||
@@ -231,7 +231,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker":     {"┌─ terminal picker", "search:", "muxvia-picker shell", "running", "80x24"},
+		"terminal-picker":     {"┌─ terminal picker", "search:", "anytty-picker shell", "running", "80x24"},
 		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "HIST metrics unavailable"},
 		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "WORKBENCH", "DETAIL", "VIEWS"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},

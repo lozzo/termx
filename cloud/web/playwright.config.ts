@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const onlineOrigin = process.env.MUXVIA_CLOUD_ONLINE_ORIGIN
-const onlineControllerIP = process.env.MUXVIA_CLOUD_ONLINE_CONTROLLER_IP
+const onlineOrigin = process.env.ANYTTY_CLOUD_ONLINE_ORIGIN
+const onlineControllerIP = process.env.ANYTTY_CLOUD_ONLINE_CONTROLLER_IP
 const resolverArgs = onlineOrigin && onlineControllerIP
   ? [`--host-resolver-rules=MAP ${new URL(onlineOrigin).hostname} ${onlineControllerIP}`]
   : []

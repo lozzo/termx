@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type FakeCoreClient struct {

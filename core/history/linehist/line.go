@@ -16,8 +16,8 @@ package linehist
 import (
 	"strings"
 
-	"github.com/muxvia/muxvia/core/history"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // Run 是 logical line 内一段样式一致的文本。Style 不含 link；link 单独放在

@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // NewCopyModeResizeRebindReducer 在 copy content rect 宽度变化后失效旧窗口并重新请求 latest。

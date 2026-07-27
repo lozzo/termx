@@ -136,7 +136,7 @@ type EdgeHello struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	EdgeId               string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
 	SoftwareVersion      string                 `protobuf:"bytes,2,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
-	Capabilities         []EdgeCapability       `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=muxvia.cloud.v1.EdgeCapability" json:"capabilities,omitempty"`
+	Capabilities         []EdgeCapability       `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=anytty.cloud.v1.EdgeCapability" json:"capabilities,omitempty"`
 	DesiredConfigVersion uint64                 `protobuf:"varint,4,opt,name=desired_config_version,json=desiredConfigVersion,proto3" json:"desired_config_version,omitempty"`
 	CertificateVersion   uint64                 `protobuf:"varint,5,opt,name=certificate_version,json=certificateVersion,proto3" json:"certificate_version,omitempty"`
 	CertificateProfileId string                 `protobuf:"bytes,6,opt,name=certificate_profile_id,json=certificateProfileId,proto3" json:"certificate_profile_id,omitempty"`
@@ -939,7 +939,7 @@ type EdgeCommandResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	CorrelationId string                 `protobuf:"bytes,2,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	Code          CommandResultCode      `protobuf:"varint,3,opt,name=code,proto3,enum=muxvia.cloud.v1.CommandResultCode" json:"code,omitempty"`
+	Code          CommandResultCode      `protobuf:"varint,3,opt,name=code,proto3,enum=anytty.cloud.v1.CommandResultCode" json:"code,omitempty"`
 	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1551,18 +1551,18 @@ var File_cloud_v1_edge_control_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcloud/v1/edge_control.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1acloud/v1/certificate.proto\x1a\x1acloud/v1/edge_config.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x02\n" +
+	"\x1bcloud/v1/edge_control.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1acloud/v1/certificate.proto\x1a\x1acloud/v1/edge_config.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x02\n" +
 	"\tEdgeHello\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12)\n" +
 	"\x10software_version\x18\x02 \x01(\tR\x0fsoftwareVersion\x12C\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1f.muxvia.cloud.v1.EdgeCapabilityR\fcapabilities\x124\n" +
+	"\fcapabilities\x18\x03 \x03(\x0e2\x1f.anytty.cloud.v1.EdgeCapabilityR\fcapabilities\x124\n" +
 	"\x16desired_config_version\x18\x04 \x01(\x04R\x14desiredConfigVersion\x12/\n" +
 	"\x13certificate_version\x18\x05 \x01(\x04R\x12certificateVersion\x124\n" +
 	"\x16certificate_profile_id\x18\x06 \x01(\tR\x14certificateProfileId\"\xe5\x01\n" +
 	"\vEdgeWelcome\x12:\n" +
 	"\x19accepted_protocol_version\x18\x01 \x01(\rR\x17acceptedProtocolVersion\x12>\n" +
-	"\theartbeat\x18\x02 \x01(\v2 .muxvia.cloud.v1.HeartbeatPolicyR\theartbeat\x12Z\n" +
-	"\x18ticket_verification_keys\x18\x03 \x03(\v2 .muxvia.cloud.v1.VerificationKeyR\x16ticketVerificationKeys\"L\n" +
+	"\theartbeat\x18\x02 \x01(\v2 .anytty.cloud.v1.HeartbeatPolicyR\theartbeat\x12Z\n" +
+	"\x18ticket_verification_keys\x18\x03 \x03(\v2 .anytty.cloud.v1.VerificationKeyR\x16ticketVerificationKeys\"L\n" +
 	"\rSnapshotBegin\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
@@ -1572,9 +1572,9 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"snapshotId\x12\x1f\n" +
 	"\vchunk_index\x18\x02 \x01(\rR\n" +
 	"chunkIndex\x126\n" +
-	"\x06agents\x18\x03 \x03(\v2\x1e.muxvia.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
-	"\bsessions\x18\x04 \x03(\v2%.muxvia.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
-	"\vallocations\x18\x05 \x03(\v2'.muxvia.cloud.v1.RelayAllocationSummaryR\vallocations\"\x83\x01\n" +
+	"\x06agents\x18\x03 \x03(\v2\x1e.anytty.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
+	"\bsessions\x18\x04 \x03(\v2%.anytty.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
+	"\vallocations\x18\x05 \x03(\v2'.anytty.cloud.v1.RelayAllocationSummaryR\vallocations\"\x83\x01\n" +
 	"\vSnapshotEnd\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
@@ -1628,7 +1628,7 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12%\n" +
 	"\x0ecorrelation_id\x18\x02 \x01(\tR\rcorrelationId\x126\n" +
-	"\x04code\x18\x03 \x01(\x0e2\".muxvia.cloud.v1.CommandResultCodeR\x04code\x12\x18\n" +
+	"\x04code\x18\x03 \x01(\x0e2\".anytty.cloud.v1.CommandResultCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12=\n" +
 	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xa2\b\n" +
 	"\tEdgeEvent\x12)\n" +
@@ -1641,18 +1641,18 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\n" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x122\n" +
-	"\x05hello\x18\x14 \x01(\v2\x1a.muxvia.cloud.v1.EdgeHelloH\x00R\x05hello\x12G\n" +
-	"\x0esnapshot_begin\x18\x15 \x01(\v2\x1e.muxvia.cloud.v1.SnapshotBeginH\x00R\rsnapshotBegin\x12G\n" +
-	"\x0esnapshot_chunk\x18\x16 \x01(\v2\x1e.muxvia.cloud.v1.SnapshotChunkH\x00R\rsnapshotChunk\x12A\n" +
-	"\fsnapshot_end\x18\x17 \x01(\v2\x1c.muxvia.cloud.v1.SnapshotEndH\x00R\vsnapshotEnd\x12D\n" +
-	"\rruntime_delta\x18\x18 \x01(\v2\x1d.muxvia.cloud.v1.RuntimeDeltaH\x00R\fruntimeDelta\x12>\n" +
-	"\theartbeat\x18\x19 \x01(\v2\x1e.muxvia.cloud.v1.EdgeHeartbeatH\x00R\theartbeat\x12G\n" +
-	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.muxvia.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12T\n" +
-	"\x13relay_lease_request\x18\x1b \x01(\v2\".muxvia.cloud.v1.RelayLeaseRequestH\x00R\x11relayLeaseRequest\x12>\n" +
-	"\vusage_batch\x18\x1c \x01(\v2\x1b.muxvia.cloud.v1.UsageBatchH\x00R\n" +
+	"\x05hello\x18\x14 \x01(\v2\x1a.anytty.cloud.v1.EdgeHelloH\x00R\x05hello\x12G\n" +
+	"\x0esnapshot_begin\x18\x15 \x01(\v2\x1e.anytty.cloud.v1.SnapshotBeginH\x00R\rsnapshotBegin\x12G\n" +
+	"\x0esnapshot_chunk\x18\x16 \x01(\v2\x1e.anytty.cloud.v1.SnapshotChunkH\x00R\rsnapshotChunk\x12A\n" +
+	"\fsnapshot_end\x18\x17 \x01(\v2\x1c.anytty.cloud.v1.SnapshotEndH\x00R\vsnapshotEnd\x12D\n" +
+	"\rruntime_delta\x18\x18 \x01(\v2\x1d.anytty.cloud.v1.RuntimeDeltaH\x00R\fruntimeDelta\x12>\n" +
+	"\theartbeat\x18\x19 \x01(\v2\x1e.anytty.cloud.v1.EdgeHeartbeatH\x00R\theartbeat\x12G\n" +
+	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.anytty.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12T\n" +
+	"\x13relay_lease_request\x18\x1b \x01(\v2\".anytty.cloud.v1.RelayLeaseRequestH\x00R\x11relayLeaseRequest\x12>\n" +
+	"\vusage_batch\x18\x1c \x01(\v2\x1b.anytty.cloud.v1.UsageBatchH\x00R\n" +
 	"usageBatch\x12K\n" +
-	"\x0ecommand_result\x18\x1d \x01(\v2\".muxvia.cloud.v1.EdgeCommandResultH\x00R\rcommandResult\x12V\n" +
-	"\x13certificate_applied\x18\x1e \x01(\v2#.muxvia.cloud.v1.CertificateAppliedH\x00R\x12certificateAppliedB\t\n" +
+	"\x0ecommand_result\x18\x1d \x01(\v2\".anytty.cloud.v1.EdgeCommandResultH\x00R\rcommandResult\x12V\n" +
+	"\x13certificate_applied\x18\x1e \x01(\v2#.anytty.cloud.v1.CertificateAppliedH\x00R\x12certificateAppliedB\t\n" +
 	"\apayload\"\xc7\a\n" +
 	"\x11ControllerCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
@@ -1664,15 +1664,15 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\n" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x128\n" +
-	"\awelcome\x18\x14 \x01(\v2\x1c.muxvia.cloud.v1.EdgeWelcomeH\x00R\awelcome\x12P\n" +
-	"\x11snapshot_accepted\x18\x15 \x01(\v2!.muxvia.cloud.v1.SnapshotAcceptedH\x00R\x10snapshotAccepted\x12J\n" +
-	"\x0fresync_required\x18\x16 \x01(\v2\x1f.muxvia.cloud.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12Q\n" +
-	"\x0edesired_config\x18\x17 \x01(\v2(.muxvia.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x12W\n" +
-	"\x14relay_lease_decision\x18\x18 \x01(\v2#.muxvia.cloud.v1.RelayLeaseDecisionH\x00R\x12relayLeaseDecision\x128\n" +
-	"\tusage_ack\x18\x19 \x01(\v2\x19.muxvia.cloud.v1.UsageAckH\x00R\busageAck\x12K\n" +
-	"\fclose_daemon\x18\x1a \x01(\v2&.muxvia.cloud.v1.CloseDaemonConnectionH\x00R\vcloseDaemon\x12J\n" +
-	"\rclose_session\x18\x1b \x01(\v2#.muxvia.cloud.v1.CloseClientSessionH\x00R\fcloseSession\x12W\n" +
-	"\x12certificate_bundle\x18\x1c \x01(\v2&.muxvia.cloud.v1.EdgeCertificateBundleH\x00R\x11certificateBundleB\t\n" +
+	"\awelcome\x18\x14 \x01(\v2\x1c.anytty.cloud.v1.EdgeWelcomeH\x00R\awelcome\x12P\n" +
+	"\x11snapshot_accepted\x18\x15 \x01(\v2!.anytty.cloud.v1.SnapshotAcceptedH\x00R\x10snapshotAccepted\x12J\n" +
+	"\x0fresync_required\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12Q\n" +
+	"\x0edesired_config\x18\x17 \x01(\v2(.anytty.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x12W\n" +
+	"\x14relay_lease_decision\x18\x18 \x01(\v2#.anytty.cloud.v1.RelayLeaseDecisionH\x00R\x12relayLeaseDecision\x128\n" +
+	"\tusage_ack\x18\x19 \x01(\v2\x19.anytty.cloud.v1.UsageAckH\x00R\busageAck\x12K\n" +
+	"\fclose_daemon\x18\x1a \x01(\v2&.anytty.cloud.v1.CloseDaemonConnectionH\x00R\vcloseDaemon\x12J\n" +
+	"\rclose_session\x18\x1b \x01(\v2#.anytty.cloud.v1.CloseClientSessionH\x00R\fcloseSession\x12W\n" +
+	"\x12certificate_bundle\x18\x1c \x01(\v2&.anytty.cloud.v1.EdgeCertificateBundleH\x00R\x11certificateBundleB\t\n" +
 	"\apayload*\xbe\x01\n" +
 	"\x0eEdgeCapability\x12\x1f\n" +
 	"\x1bEDGE_CAPABILITY_UNSPECIFIED\x10\x00\x12\"\n" +
@@ -1686,7 +1686,7 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\x1cCOMMAND_RESULT_CODE_REJECTED\x10\x02\x12\x1d\n" +
 	"\x19COMMAND_RESULT_CODE_STALE\x10\x032\\\n" +
 	"\vEdgeControl\x12M\n" +
-	"\aConnect\x12\x1a.muxvia.cloud.v1.EdgeEvent\x1a\".muxvia.cloud.v1.ControllerCommand(\x010\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\aConnect\x12\x1a.anytty.cloud.v1.EdgeEvent\x1a\".anytty.cloud.v1.ControllerCommand(\x010\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_edge_control_proto_rawDescOnce sync.Once
@@ -1703,72 +1703,72 @@ func file_cloud_v1_edge_control_proto_rawDescGZIP() []byte {
 var file_cloud_v1_edge_control_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_edge_control_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_cloud_v1_edge_control_proto_goTypes = []any{
-	(EdgeCapability)(0),             // 0: muxvia.cloud.v1.EdgeCapability
-	(CommandResultCode)(0),          // 1: muxvia.cloud.v1.CommandResultCode
-	(*EdgeHello)(nil),               // 2: muxvia.cloud.v1.EdgeHello
-	(*EdgeWelcome)(nil),             // 3: muxvia.cloud.v1.EdgeWelcome
-	(*SnapshotBegin)(nil),           // 4: muxvia.cloud.v1.SnapshotBegin
-	(*SnapshotChunk)(nil),           // 5: muxvia.cloud.v1.SnapshotChunk
-	(*SnapshotEnd)(nil),             // 6: muxvia.cloud.v1.SnapshotEnd
-	(*EdgeHeartbeat)(nil),           // 7: muxvia.cloud.v1.EdgeHeartbeat
-	(*SnapshotAccepted)(nil),        // 8: muxvia.cloud.v1.SnapshotAccepted
-	(*ResyncRequired)(nil),          // 9: muxvia.cloud.v1.ResyncRequired
-	(*ConfigApplied)(nil),           // 10: muxvia.cloud.v1.ConfigApplied
-	(*CertificateApplied)(nil),      // 11: muxvia.cloud.v1.CertificateApplied
-	(*CloseDaemonConnection)(nil),   // 12: muxvia.cloud.v1.CloseDaemonConnection
-	(*CloseClientSession)(nil),      // 13: muxvia.cloud.v1.CloseClientSession
-	(*EdgeCommandResult)(nil),       // 14: muxvia.cloud.v1.EdgeCommandResult
-	(*EdgeEvent)(nil),               // 15: muxvia.cloud.v1.EdgeEvent
-	(*ControllerCommand)(nil),       // 16: muxvia.cloud.v1.ControllerCommand
-	(*HeartbeatPolicy)(nil),         // 17: muxvia.cloud.v1.HeartbeatPolicy
-	(*VerificationKey)(nil),         // 18: muxvia.cloud.v1.VerificationKey
-	(*AgentPresence)(nil),           // 19: muxvia.cloud.v1.AgentPresence
-	(*ClientSessionSummary)(nil),    // 20: muxvia.cloud.v1.ClientSessionSummary
-	(*RelayAllocationSummary)(nil),  // 21: muxvia.cloud.v1.RelayAllocationSummary
+	(EdgeCapability)(0),             // 0: anytty.cloud.v1.EdgeCapability
+	(CommandResultCode)(0),          // 1: anytty.cloud.v1.CommandResultCode
+	(*EdgeHello)(nil),               // 2: anytty.cloud.v1.EdgeHello
+	(*EdgeWelcome)(nil),             // 3: anytty.cloud.v1.EdgeWelcome
+	(*SnapshotBegin)(nil),           // 4: anytty.cloud.v1.SnapshotBegin
+	(*SnapshotChunk)(nil),           // 5: anytty.cloud.v1.SnapshotChunk
+	(*SnapshotEnd)(nil),             // 6: anytty.cloud.v1.SnapshotEnd
+	(*EdgeHeartbeat)(nil),           // 7: anytty.cloud.v1.EdgeHeartbeat
+	(*SnapshotAccepted)(nil),        // 8: anytty.cloud.v1.SnapshotAccepted
+	(*ResyncRequired)(nil),          // 9: anytty.cloud.v1.ResyncRequired
+	(*ConfigApplied)(nil),           // 10: anytty.cloud.v1.ConfigApplied
+	(*CertificateApplied)(nil),      // 11: anytty.cloud.v1.CertificateApplied
+	(*CloseDaemonConnection)(nil),   // 12: anytty.cloud.v1.CloseDaemonConnection
+	(*CloseClientSession)(nil),      // 13: anytty.cloud.v1.CloseClientSession
+	(*EdgeCommandResult)(nil),       // 14: anytty.cloud.v1.EdgeCommandResult
+	(*EdgeEvent)(nil),               // 15: anytty.cloud.v1.EdgeEvent
+	(*ControllerCommand)(nil),       // 16: anytty.cloud.v1.ControllerCommand
+	(*HeartbeatPolicy)(nil),         // 17: anytty.cloud.v1.HeartbeatPolicy
+	(*VerificationKey)(nil),         // 18: anytty.cloud.v1.VerificationKey
+	(*AgentPresence)(nil),           // 19: anytty.cloud.v1.AgentPresence
+	(*ClientSessionSummary)(nil),    // 20: anytty.cloud.v1.ClientSessionSummary
+	(*RelayAllocationSummary)(nil),  // 21: anytty.cloud.v1.RelayAllocationSummary
 	(*timestamppb.Timestamp)(nil),   // 22: google.protobuf.Timestamp
-	(*RuntimeDelta)(nil),            // 23: muxvia.cloud.v1.RuntimeDelta
-	(*RelayLeaseRequest)(nil),       // 24: muxvia.cloud.v1.RelayLeaseRequest
-	(*UsageBatch)(nil),              // 25: muxvia.cloud.v1.UsageBatch
-	(*SignedEdgeDesiredConfig)(nil), // 26: muxvia.cloud.v1.SignedEdgeDesiredConfig
-	(*RelayLeaseDecision)(nil),      // 27: muxvia.cloud.v1.RelayLeaseDecision
-	(*UsageAck)(nil),                // 28: muxvia.cloud.v1.UsageAck
-	(*EdgeCertificateBundle)(nil),   // 29: muxvia.cloud.v1.EdgeCertificateBundle
+	(*RuntimeDelta)(nil),            // 23: anytty.cloud.v1.RuntimeDelta
+	(*RelayLeaseRequest)(nil),       // 24: anytty.cloud.v1.RelayLeaseRequest
+	(*UsageBatch)(nil),              // 25: anytty.cloud.v1.UsageBatch
+	(*SignedEdgeDesiredConfig)(nil), // 26: anytty.cloud.v1.SignedEdgeDesiredConfig
+	(*RelayLeaseDecision)(nil),      // 27: anytty.cloud.v1.RelayLeaseDecision
+	(*UsageAck)(nil),                // 28: anytty.cloud.v1.UsageAck
+	(*EdgeCertificateBundle)(nil),   // 29: anytty.cloud.v1.EdgeCertificateBundle
 }
 var file_cloud_v1_edge_control_proto_depIdxs = []int32{
-	0,  // 0: muxvia.cloud.v1.EdgeHello.capabilities:type_name -> muxvia.cloud.v1.EdgeCapability
-	17, // 1: muxvia.cloud.v1.EdgeWelcome.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
-	18, // 2: muxvia.cloud.v1.EdgeWelcome.ticket_verification_keys:type_name -> muxvia.cloud.v1.VerificationKey
-	19, // 3: muxvia.cloud.v1.SnapshotChunk.agents:type_name -> muxvia.cloud.v1.AgentPresence
-	20, // 4: muxvia.cloud.v1.SnapshotChunk.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	21, // 5: muxvia.cloud.v1.SnapshotChunk.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
-	22, // 6: muxvia.cloud.v1.CloseDaemonConnection.deadline:type_name -> google.protobuf.Timestamp
-	22, // 7: muxvia.cloud.v1.CloseClientSession.deadline:type_name -> google.protobuf.Timestamp
-	1,  // 8: muxvia.cloud.v1.EdgeCommandResult.code:type_name -> muxvia.cloud.v1.CommandResultCode
-	22, // 9: muxvia.cloud.v1.EdgeCommandResult.completed_at:type_name -> google.protobuf.Timestamp
-	22, // 10: muxvia.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 11: muxvia.cloud.v1.EdgeEvent.hello:type_name -> muxvia.cloud.v1.EdgeHello
-	4,  // 12: muxvia.cloud.v1.EdgeEvent.snapshot_begin:type_name -> muxvia.cloud.v1.SnapshotBegin
-	5,  // 13: muxvia.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> muxvia.cloud.v1.SnapshotChunk
-	6,  // 14: muxvia.cloud.v1.EdgeEvent.snapshot_end:type_name -> muxvia.cloud.v1.SnapshotEnd
-	23, // 15: muxvia.cloud.v1.EdgeEvent.runtime_delta:type_name -> muxvia.cloud.v1.RuntimeDelta
-	7,  // 16: muxvia.cloud.v1.EdgeEvent.heartbeat:type_name -> muxvia.cloud.v1.EdgeHeartbeat
-	10, // 17: muxvia.cloud.v1.EdgeEvent.config_applied:type_name -> muxvia.cloud.v1.ConfigApplied
-	24, // 18: muxvia.cloud.v1.EdgeEvent.relay_lease_request:type_name -> muxvia.cloud.v1.RelayLeaseRequest
-	25, // 19: muxvia.cloud.v1.EdgeEvent.usage_batch:type_name -> muxvia.cloud.v1.UsageBatch
-	14, // 20: muxvia.cloud.v1.EdgeEvent.command_result:type_name -> muxvia.cloud.v1.EdgeCommandResult
-	11, // 21: muxvia.cloud.v1.EdgeEvent.certificate_applied:type_name -> muxvia.cloud.v1.CertificateApplied
-	22, // 22: muxvia.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
-	3,  // 23: muxvia.cloud.v1.ControllerCommand.welcome:type_name -> muxvia.cloud.v1.EdgeWelcome
-	8,  // 24: muxvia.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> muxvia.cloud.v1.SnapshotAccepted
-	9,  // 25: muxvia.cloud.v1.ControllerCommand.resync_required:type_name -> muxvia.cloud.v1.ResyncRequired
-	26, // 26: muxvia.cloud.v1.ControllerCommand.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
-	27, // 27: muxvia.cloud.v1.ControllerCommand.relay_lease_decision:type_name -> muxvia.cloud.v1.RelayLeaseDecision
-	28, // 28: muxvia.cloud.v1.ControllerCommand.usage_ack:type_name -> muxvia.cloud.v1.UsageAck
-	12, // 29: muxvia.cloud.v1.ControllerCommand.close_daemon:type_name -> muxvia.cloud.v1.CloseDaemonConnection
-	13, // 30: muxvia.cloud.v1.ControllerCommand.close_session:type_name -> muxvia.cloud.v1.CloseClientSession
-	29, // 31: muxvia.cloud.v1.ControllerCommand.certificate_bundle:type_name -> muxvia.cloud.v1.EdgeCertificateBundle
-	15, // 32: muxvia.cloud.v1.EdgeControl.Connect:input_type -> muxvia.cloud.v1.EdgeEvent
-	16, // 33: muxvia.cloud.v1.EdgeControl.Connect:output_type -> muxvia.cloud.v1.ControllerCommand
+	0,  // 0: anytty.cloud.v1.EdgeHello.capabilities:type_name -> anytty.cloud.v1.EdgeCapability
+	17, // 1: anytty.cloud.v1.EdgeWelcome.heartbeat:type_name -> anytty.cloud.v1.HeartbeatPolicy
+	18, // 2: anytty.cloud.v1.EdgeWelcome.ticket_verification_keys:type_name -> anytty.cloud.v1.VerificationKey
+	19, // 3: anytty.cloud.v1.SnapshotChunk.agents:type_name -> anytty.cloud.v1.AgentPresence
+	20, // 4: anytty.cloud.v1.SnapshotChunk.sessions:type_name -> anytty.cloud.v1.ClientSessionSummary
+	21, // 5: anytty.cloud.v1.SnapshotChunk.allocations:type_name -> anytty.cloud.v1.RelayAllocationSummary
+	22, // 6: anytty.cloud.v1.CloseDaemonConnection.deadline:type_name -> google.protobuf.Timestamp
+	22, // 7: anytty.cloud.v1.CloseClientSession.deadline:type_name -> google.protobuf.Timestamp
+	1,  // 8: anytty.cloud.v1.EdgeCommandResult.code:type_name -> anytty.cloud.v1.CommandResultCode
+	22, // 9: anytty.cloud.v1.EdgeCommandResult.completed_at:type_name -> google.protobuf.Timestamp
+	22, // 10: anytty.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 11: anytty.cloud.v1.EdgeEvent.hello:type_name -> anytty.cloud.v1.EdgeHello
+	4,  // 12: anytty.cloud.v1.EdgeEvent.snapshot_begin:type_name -> anytty.cloud.v1.SnapshotBegin
+	5,  // 13: anytty.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> anytty.cloud.v1.SnapshotChunk
+	6,  // 14: anytty.cloud.v1.EdgeEvent.snapshot_end:type_name -> anytty.cloud.v1.SnapshotEnd
+	23, // 15: anytty.cloud.v1.EdgeEvent.runtime_delta:type_name -> anytty.cloud.v1.RuntimeDelta
+	7,  // 16: anytty.cloud.v1.EdgeEvent.heartbeat:type_name -> anytty.cloud.v1.EdgeHeartbeat
+	10, // 17: anytty.cloud.v1.EdgeEvent.config_applied:type_name -> anytty.cloud.v1.ConfigApplied
+	24, // 18: anytty.cloud.v1.EdgeEvent.relay_lease_request:type_name -> anytty.cloud.v1.RelayLeaseRequest
+	25, // 19: anytty.cloud.v1.EdgeEvent.usage_batch:type_name -> anytty.cloud.v1.UsageBatch
+	14, // 20: anytty.cloud.v1.EdgeEvent.command_result:type_name -> anytty.cloud.v1.EdgeCommandResult
+	11, // 21: anytty.cloud.v1.EdgeEvent.certificate_applied:type_name -> anytty.cloud.v1.CertificateApplied
+	22, // 22: anytty.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
+	3,  // 23: anytty.cloud.v1.ControllerCommand.welcome:type_name -> anytty.cloud.v1.EdgeWelcome
+	8,  // 24: anytty.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> anytty.cloud.v1.SnapshotAccepted
+	9,  // 25: anytty.cloud.v1.ControllerCommand.resync_required:type_name -> anytty.cloud.v1.ResyncRequired
+	26, // 26: anytty.cloud.v1.ControllerCommand.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
+	27, // 27: anytty.cloud.v1.ControllerCommand.relay_lease_decision:type_name -> anytty.cloud.v1.RelayLeaseDecision
+	28, // 28: anytty.cloud.v1.ControllerCommand.usage_ack:type_name -> anytty.cloud.v1.UsageAck
+	12, // 29: anytty.cloud.v1.ControllerCommand.close_daemon:type_name -> anytty.cloud.v1.CloseDaemonConnection
+	13, // 30: anytty.cloud.v1.ControllerCommand.close_session:type_name -> anytty.cloud.v1.CloseClientSession
+	29, // 31: anytty.cloud.v1.ControllerCommand.certificate_bundle:type_name -> anytty.cloud.v1.EdgeCertificateBundle
+	15, // 32: anytty.cloud.v1.EdgeControl.Connect:input_type -> anytty.cloud.v1.EdgeEvent
+	16, // 33: anytty.cloud.v1.EdgeControl.Connect:output_type -> anytty.cloud.v1.ControllerCommand
 	33, // [33:34] is the sub-list for method output_type
 	32, // [32:33] is the sub-list for method input_type
 	32, // [32:32] is the sub-list for extension type_name

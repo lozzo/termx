@@ -135,7 +135,7 @@ type AgentOffer struct {
 	OfferSdp           string                 `protobuf:"bytes,5,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
 	Candidates         []*CloudICECandidate   `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
 	Relay              *RelayICEConfig        `protobuf:"bytes,7,opt,name=relay,proto3" json:"relay,omitempty"`
-	AccessMode         CloudClientAccessMode  `protobuf:"varint,8,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	AccessMode         CloudClientAccessMode  `protobuf:"varint,8,opt,name=access_mode,json=accessMode,proto3,enum=anytty.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
 	PairingClaimSha256 []byte                 `protobuf:"bytes,9,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -241,8 +241,8 @@ type AgentAuthorize struct {
 	SessionId          string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	AgentGeneration    uint64                 `protobuf:"varint,3,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
 	ClientPublicKey    []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	Product            ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
-	AccessMode         CloudClientAccessMode  `protobuf:"varint,6,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	Product            ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
+	AccessMode         CloudClientAccessMode  `protobuf:"varint,6,opt,name=access_mode,json=accessMode,proto3,enum=anytty.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
 	PairingClaimSha256 []byte                 `protobuf:"bytes,7,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -935,10 +935,10 @@ var File_cloud_v1_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1ccloud/v1/agent_gateway.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
+	"\x1ccloud/v1/agent_gateway.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
 	"\n" +
 	"AgentHello\x12B\n" +
-	"\fagent_ticket\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\vagentTicket\x12!\n" +
+	"\fagent_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\vagentTicket\x12!\n" +
 	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\x12)\n" +
 	"\x10software_version\x18\x03 \x01(\tR\x0fsoftwareVersion\"0\n" +
 	"\x0eAgentHeartbeat\x12\x1e\n" +
@@ -954,10 +954,10 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\x11client_public_key\x18\x04 \x01(\fR\x0fclientPublicKey\x12\x1b\n" +
 	"\toffer_sdp\x18\x05 \x01(\tR\bofferSdp\x12B\n" +
 	"\n" +
-	"candidates\x18\x06 \x03(\v2\".muxvia.cloud.v1.CloudICECandidateR\n" +
+	"candidates\x18\x06 \x03(\v2\".anytty.cloud.v1.CloudICECandidateR\n" +
 	"candidates\x125\n" +
-	"\x05relay\x18\a \x01(\v2\x1f.muxvia.cloud.v1.RelayICEConfigR\x05relay\x12G\n" +
-	"\vaccess_mode\x18\b \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"\x05relay\x18\a \x01(\v2\x1f.anytty.cloud.v1.RelayICEConfigR\x05relay\x12G\n" +
+	"\vaccess_mode\x18\b \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
 	"accessMode\x120\n" +
 	"\x14pairing_claim_sha256\x18\t \x01(\fR\x12pairingClaimSha256\"\xe2\x02\n" +
 	"\x0eAgentAuthorize\x12%\n" +
@@ -966,8 +966,8 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12)\n" +
 	"\x10agent_generation\x18\x03 \x01(\x04R\x0fagentGeneration\x12*\n" +
 	"\x11client_public_key\x18\x04 \x01(\fR\x0fclientPublicKey\x128\n" +
-	"\aproduct\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12G\n" +
-	"\vaccess_mode\x18\x06 \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"\aproduct\x18\x05 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12G\n" +
+	"\vaccess_mode\x18\x06 \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
 	"accessMode\x120\n" +
 	"\x14pairing_claim_sha256\x18\a \x01(\fR\x12pairingClaimSha256\"\xae\x01\n" +
 	"\x18AgentAuthorizationResult\x12%\n" +
@@ -986,7 +986,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"answer_sdp\x18\x03 \x01(\tR\tanswerSdp\x12B\n" +
 	"\n" +
-	"candidates\x18\x04 \x03(\v2\".muxvia.cloud.v1.CloudICECandidateR\n" +
+	"candidates\x18\x04 \x03(\v2\".anytty.cloud.v1.CloudICECandidateR\n" +
 	"candidates\"\x89\x01\n" +
 	"\x13AgentSignalRejected\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
@@ -999,7 +999,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
 	"generation\x12>\n" +
-	"\theartbeat\x18\x02 \x01(\v2 .muxvia.cloud.v1.HeartbeatPolicyR\theartbeat\"\xd5\x04\n" +
+	"\theartbeat\x18\x02 \x01(\v2 .anytty.cloud.v1.HeartbeatPolicyR\theartbeat\"\xd5\x04\n" +
 	"\n" +
 	"AgentEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
@@ -1011,11 +1011,11 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x123\n" +
-	"\x05hello\x18\x14 \x01(\v2\x1b.muxvia.cloud.v1.AgentHelloH\x00R\x05hello\x12?\n" +
-	"\theartbeat\x18\x15 \x01(\v2\x1f.muxvia.cloud.v1.AgentHeartbeatH\x00R\theartbeat\x126\n" +
-	"\x06answer\x18\x16 \x01(\v2\x1c.muxvia.cloud.v1.AgentAnswerH\x00R\x06answer\x12B\n" +
-	"\brejected\x18\x17 \x01(\v2$.muxvia.cloud.v1.AgentSignalRejectedH\x00R\brejected\x12Q\n" +
-	"\rauthorization\x18\x18 \x01(\v2).muxvia.cloud.v1.AgentAuthorizationResultH\x00R\rauthorizationB\t\n" +
+	"\x05hello\x18\x14 \x01(\v2\x1b.anytty.cloud.v1.AgentHelloH\x00R\x05hello\x12?\n" +
+	"\theartbeat\x18\x15 \x01(\v2\x1f.anytty.cloud.v1.AgentHeartbeatH\x00R\theartbeat\x126\n" +
+	"\x06answer\x18\x16 \x01(\v2\x1c.anytty.cloud.v1.AgentAnswerH\x00R\x06answer\x12B\n" +
+	"\brejected\x18\x17 \x01(\v2$.anytty.cloud.v1.AgentSignalRejectedH\x00R\brejected\x12Q\n" +
+	"\rauthorization\x18\x18 \x01(\v2).anytty.cloud.v1.AgentAuthorizationResultH\x00R\rauthorizationB\t\n" +
 	"\apayload\"\xbc\x03\n" +
 	"\vEdgeCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
@@ -1027,12 +1027,12 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x123\n" +
-	"\x05ready\x18\x14 \x01(\v2\x1b.muxvia.cloud.v1.AgentReadyH\x00R\x05ready\x123\n" +
-	"\x05offer\x18\x15 \x01(\v2\x1b.muxvia.cloud.v1.AgentOfferH\x00R\x05offer\x12?\n" +
-	"\tauthorize\x18\x16 \x01(\v2\x1f.muxvia.cloud.v1.AgentAuthorizeH\x00R\tauthorizeB\t\n" +
+	"\x05ready\x18\x14 \x01(\v2\x1b.anytty.cloud.v1.AgentReadyH\x00R\x05ready\x123\n" +
+	"\x05offer\x18\x15 \x01(\v2\x1b.anytty.cloud.v1.AgentOfferH\x00R\x05offer\x12?\n" +
+	"\tauthorize\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.AgentAuthorizeH\x00R\tauthorizeB\t\n" +
 	"\apayload2X\n" +
 	"\fAgentGateway\x12H\n" +
-	"\aConnect\x12\x1b.muxvia.cloud.v1.AgentEvent\x1a\x1c.muxvia.cloud.v1.EdgeCommand(\x010\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\aConnect\x12\x1b.anytty.cloud.v1.AgentEvent\x1a\x1c.anytty.cloud.v1.EdgeCommand(\x010\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_agent_gateway_proto_rawDescOnce sync.Once
@@ -1048,45 +1048,45 @@ func file_cloud_v1_agent_gateway_proto_rawDescGZIP() []byte {
 
 var file_cloud_v1_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_cloud_v1_agent_gateway_proto_goTypes = []any{
-	(*AgentHello)(nil),               // 0: muxvia.cloud.v1.AgentHello
-	(*AgentHeartbeat)(nil),           // 1: muxvia.cloud.v1.AgentHeartbeat
-	(*AgentOffer)(nil),               // 2: muxvia.cloud.v1.AgentOffer
-	(*AgentAuthorize)(nil),           // 3: muxvia.cloud.v1.AgentAuthorize
-	(*AgentAuthorizationResult)(nil), // 4: muxvia.cloud.v1.AgentAuthorizationResult
-	(*AgentAnswer)(nil),              // 5: muxvia.cloud.v1.AgentAnswer
-	(*AgentSignalRejected)(nil),      // 6: muxvia.cloud.v1.AgentSignalRejected
-	(*AgentReady)(nil),               // 7: muxvia.cloud.v1.AgentReady
-	(*AgentEvent)(nil),               // 8: muxvia.cloud.v1.AgentEvent
-	(*EdgeCommand)(nil),              // 9: muxvia.cloud.v1.EdgeCommand
-	(*SignedEnvelope)(nil),           // 10: muxvia.cloud.v1.SignedEnvelope
-	(*CloudICECandidate)(nil),        // 11: muxvia.cloud.v1.CloudICECandidate
-	(*RelayICEConfig)(nil),           // 12: muxvia.cloud.v1.RelayICEConfig
-	(CloudClientAccessMode)(0),       // 13: muxvia.cloud.v1.CloudClientAccessMode
-	(ClientProduct)(0),               // 14: muxvia.cloud.v1.ClientProduct
-	(*HeartbeatPolicy)(nil),          // 15: muxvia.cloud.v1.HeartbeatPolicy
+	(*AgentHello)(nil),               // 0: anytty.cloud.v1.AgentHello
+	(*AgentHeartbeat)(nil),           // 1: anytty.cloud.v1.AgentHeartbeat
+	(*AgentOffer)(nil),               // 2: anytty.cloud.v1.AgentOffer
+	(*AgentAuthorize)(nil),           // 3: anytty.cloud.v1.AgentAuthorize
+	(*AgentAuthorizationResult)(nil), // 4: anytty.cloud.v1.AgentAuthorizationResult
+	(*AgentAnswer)(nil),              // 5: anytty.cloud.v1.AgentAnswer
+	(*AgentSignalRejected)(nil),      // 6: anytty.cloud.v1.AgentSignalRejected
+	(*AgentReady)(nil),               // 7: anytty.cloud.v1.AgentReady
+	(*AgentEvent)(nil),               // 8: anytty.cloud.v1.AgentEvent
+	(*EdgeCommand)(nil),              // 9: anytty.cloud.v1.EdgeCommand
+	(*SignedEnvelope)(nil),           // 10: anytty.cloud.v1.SignedEnvelope
+	(*CloudICECandidate)(nil),        // 11: anytty.cloud.v1.CloudICECandidate
+	(*RelayICEConfig)(nil),           // 12: anytty.cloud.v1.RelayICEConfig
+	(CloudClientAccessMode)(0),       // 13: anytty.cloud.v1.CloudClientAccessMode
+	(ClientProduct)(0),               // 14: anytty.cloud.v1.ClientProduct
+	(*HeartbeatPolicy)(nil),          // 15: anytty.cloud.v1.HeartbeatPolicy
 	(*timestamppb.Timestamp)(nil),    // 16: google.protobuf.Timestamp
 }
 var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
-	10, // 0: muxvia.cloud.v1.AgentHello.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
-	11, // 1: muxvia.cloud.v1.AgentOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	12, // 2: muxvia.cloud.v1.AgentOffer.relay:type_name -> muxvia.cloud.v1.RelayICEConfig
-	13, // 3: muxvia.cloud.v1.AgentOffer.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
-	14, // 4: muxvia.cloud.v1.AgentAuthorize.product:type_name -> muxvia.cloud.v1.ClientProduct
-	13, // 5: muxvia.cloud.v1.AgentAuthorize.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
-	11, // 6: muxvia.cloud.v1.AgentAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	15, // 7: muxvia.cloud.v1.AgentReady.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
-	16, // 8: muxvia.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
-	0,  // 9: muxvia.cloud.v1.AgentEvent.hello:type_name -> muxvia.cloud.v1.AgentHello
-	1,  // 10: muxvia.cloud.v1.AgentEvent.heartbeat:type_name -> muxvia.cloud.v1.AgentHeartbeat
-	5,  // 11: muxvia.cloud.v1.AgentEvent.answer:type_name -> muxvia.cloud.v1.AgentAnswer
-	6,  // 12: muxvia.cloud.v1.AgentEvent.rejected:type_name -> muxvia.cloud.v1.AgentSignalRejected
-	4,  // 13: muxvia.cloud.v1.AgentEvent.authorization:type_name -> muxvia.cloud.v1.AgentAuthorizationResult
-	16, // 14: muxvia.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
-	7,  // 15: muxvia.cloud.v1.EdgeCommand.ready:type_name -> muxvia.cloud.v1.AgentReady
-	2,  // 16: muxvia.cloud.v1.EdgeCommand.offer:type_name -> muxvia.cloud.v1.AgentOffer
-	3,  // 17: muxvia.cloud.v1.EdgeCommand.authorize:type_name -> muxvia.cloud.v1.AgentAuthorize
-	8,  // 18: muxvia.cloud.v1.AgentGateway.Connect:input_type -> muxvia.cloud.v1.AgentEvent
-	9,  // 19: muxvia.cloud.v1.AgentGateway.Connect:output_type -> muxvia.cloud.v1.EdgeCommand
+	10, // 0: anytty.cloud.v1.AgentHello.agent_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
+	11, // 1: anytty.cloud.v1.AgentOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	12, // 2: anytty.cloud.v1.AgentOffer.relay:type_name -> anytty.cloud.v1.RelayICEConfig
+	13, // 3: anytty.cloud.v1.AgentOffer.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	14, // 4: anytty.cloud.v1.AgentAuthorize.product:type_name -> anytty.cloud.v1.ClientProduct
+	13, // 5: anytty.cloud.v1.AgentAuthorize.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	11, // 6: anytty.cloud.v1.AgentAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	15, // 7: anytty.cloud.v1.AgentReady.heartbeat:type_name -> anytty.cloud.v1.HeartbeatPolicy
+	16, // 8: anytty.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
+	0,  // 9: anytty.cloud.v1.AgentEvent.hello:type_name -> anytty.cloud.v1.AgentHello
+	1,  // 10: anytty.cloud.v1.AgentEvent.heartbeat:type_name -> anytty.cloud.v1.AgentHeartbeat
+	5,  // 11: anytty.cloud.v1.AgentEvent.answer:type_name -> anytty.cloud.v1.AgentAnswer
+	6,  // 12: anytty.cloud.v1.AgentEvent.rejected:type_name -> anytty.cloud.v1.AgentSignalRejected
+	4,  // 13: anytty.cloud.v1.AgentEvent.authorization:type_name -> anytty.cloud.v1.AgentAuthorizationResult
+	16, // 14: anytty.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
+	7,  // 15: anytty.cloud.v1.EdgeCommand.ready:type_name -> anytty.cloud.v1.AgentReady
+	2,  // 16: anytty.cloud.v1.EdgeCommand.offer:type_name -> anytty.cloud.v1.AgentOffer
+	3,  // 17: anytty.cloud.v1.EdgeCommand.authorize:type_name -> anytty.cloud.v1.AgentAuthorize
+	8,  // 18: anytty.cloud.v1.AgentGateway.Connect:input_type -> anytty.cloud.v1.AgentEvent
+	9,  // 19: anytty.cloud.v1.AgentGateway.Connect:output_type -> anytty.cloud.v1.EdgeCommand
 	19, // [19:20] is the sub-list for method output_type
 	18, // [18:19] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name

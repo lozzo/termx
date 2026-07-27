@@ -15,7 +15,7 @@ func platformConfigHome() string {
 	if path, err := os.UserConfigDir(); err == nil && strings.TrimSpace(path) != "" {
 		return filepath.Clean(path)
 	}
-	return filepath.Join(os.TempDir(), "muxvia-config")
+	return filepath.Join(os.TempDir(), "anytty-config")
 }
 
 func platformStateHome() string {
@@ -25,5 +25,5 @@ func platformStateHome() string {
 	if path, err := os.UserCacheDir(); err == nil && strings.TrimSpace(path) != "" {
 		return filepath.Clean(path)
 	}
-	return filepath.Join(os.TempDir(), "muxvia-state")
+	return filepath.Join(os.TempDir(), "anytty-state")
 }

@@ -17,7 +17,10 @@ import (
 	"unicode/utf8"
 )
 
-const grantPrefix = "muxvia-grant-v2"
+const (
+	grantPrefix       = "anytty-grant-v2"
+	legacyGrantPrefix = "muxvia-grant-v2"
+)
 
 var (
 	// ErrGrantMalformed 表示 capability envelope、claims 或必填字段不符合当前版本。
@@ -99,6 +102,10 @@ func Fingerprint(publicKey ed25519.PublicKey) string {
 // Issue 使用 remote daemon 的设备私钥签发 CapabilityGrant v2。
 // grant 自包含 daemon 签名公钥和目标 ClientAccessIdentity fingerprint，但不包含任何私钥、Hub token 或 Cloud 授权结果。
 func Issue(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
+	return issueWithPrefix(privateKey, claims, grantPrefix)
+}
+
+func issueWithPrefix(privateKey ed25519.PrivateKey, claims Claims, prefix string) (string, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
 		return "", fmt.Errorf("%w: requires ed25519 private key", ErrGrantMalformed)
 	}
@@ -130,7 +137,7 @@ func Issue(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
 	}
 	payloadPart := base64.RawURLEncoding.EncodeToString(payload)
 	publicPart := base64.RawURLEncoding.EncodeToString(publicKey)
-	signingInput := strings.Join([]string{grantPrefix, payloadPart, publicPart}, ".")
+	signingInput := strings.Join([]string{prefix, payloadPart, publicPart}, ".")
 	signature := ed25519.Sign(privateKey, []byte(signingInput))
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature), nil
 }
@@ -161,7 +168,7 @@ func Verify(grant string, expectedFingerprint string, now time.Time, revocations
 
 func verifyGrantEnvelope(grant string, expectedFingerprint string) (Claims, error) {
 	parts := strings.Split(strings.TrimSpace(grant), ".")
-	if len(parts) != 4 || parts[0] != grantPrefix {
+	if len(parts) != 4 || (parts[0] != grantPrefix && parts[0] != legacyGrantPrefix) {
 		return Claims{}, fmt.Errorf("%w: unsupported envelope", ErrGrantMalformed)
 	}
 	publicKeyBytes, err := base64.RawURLEncoding.DecodeString(parts[2])

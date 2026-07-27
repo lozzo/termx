@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestEndpointRuntimeStatusMarksPanesWithoutGlobalToast(t *testing.T) {

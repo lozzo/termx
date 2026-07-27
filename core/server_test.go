@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 func TestServerOptions(t *testing.T) {
@@ -187,8 +187,8 @@ func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 		Command: []string{"sh"},
 		Size:    Size{Cols: 90, Rows: 30},
 		Options: TerminalCreateOptions{
-			Dir:                "/tmp/muxvia-peer",
-			Env:                []string{"MUXVIA_PEER=1", "MUXVIA_REGION=local"},
+			Dir:                "/tmp/anytty-peer",
+			Env:                []string{"ANYTTY_PEER=1", "ANYTTY_REGION=local"},
 			ScrollbackSize:     123,
 			ScrollbackMaxBytes: 4567,
 			ScrollbackMaxAge:   2 * time.Hour,
@@ -197,7 +197,7 @@ func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if info.CWD != "/tmp/muxvia-peer" || info.LiveCWD != "/tmp/muxvia-peer" {
+	if info.CWD != "/tmp/anytty-peer" || info.LiveCWD != "/tmp/anytty-peer" {
 		t.Fatalf("create cwd must enter terminal info, got %#v", info)
 	}
 	specs := factory.spawnedSpecs("term-peer")
@@ -205,10 +205,10 @@ func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 		t.Fatalf("expected one process spawn, got %#v", specs)
 	}
 	spec := specs[0]
-	if spec.Dir != "/tmp/muxvia-peer" || spec.Size != (Size{Cols: 90, Rows: 30}) {
+	if spec.Dir != "/tmp/anytty-peer" || spec.Size != (Size{Cols: 90, Rows: 30}) {
 		t.Fatalf("process spec lost dir/size: %#v", spec)
 	}
-	if got := strings.Join(spec.Env, "\x00"); !strings.Contains(got, "MUXVIA_PEER=1") || !strings.Contains(got, "MUXVIA_REGION=local") {
+	if got := strings.Join(spec.Env, "\x00"); !strings.Contains(got, "ANYTTY_PEER=1") || !strings.Contains(got, "ANYTTY_REGION=local") {
 		t.Fatalf("process spec lost env: %#v", spec.Env)
 	}
 	if spec.ScrollbackSize != 123 || spec.ScrollbackMaxBytes != 4567 || spec.ScrollbackMaxAge != 2*time.Hour {
@@ -447,8 +447,8 @@ func TestCoreV2DoesNotImportLegacyRuntime(t *testing.T) {
 
 func isLegacyRuntimeImport(importPath string) bool {
 	for _, legacy := range []string{
-		"github.com/muxvia/muxvia/termx-core",
-		"github.com/muxvia/muxvia/tuiv2",
+		"github.com/anytty/anytty/termx-core",
+		"github.com/anytty/anytty/tuiv2",
 	} {
 		if importPath == legacy || strings.HasPrefix(importPath, legacy+"/") {
 			return true

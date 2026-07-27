@@ -12,17 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/muxvia/muxvia/client/adapter/direct"
-	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/client/adapter/direct"
+	peeradapter "github.com/anytty/anytty/client/adapter/peer"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	golangssh "golang.org/x/crypto/ssh"
 )
 
 const (
-	defaultClientName     = "muxvia-go-ssh"
+	defaultClientName     = "anytty-go-ssh"
 	defaultConnectTimeout = 10 * time.Second
 	defaultSSHPort        = 22
 )
@@ -203,7 +203,7 @@ func dialSSHClient(ctx context.Context, route endpoint.AccessRoute, auth []golan
 	callback := pinnedHostKeyCallback(route.HostKeyFingerprints)
 	config := &golangssh.ClientConfig{
 		User: user, Auth: append([]golangssh.AuthMethod(nil), auth...), HostKeyCallback: callback,
-		ClientVersion: "SSH-2.0-Muxvia", Timeout: timeout,
+		ClientVersion: "SSH-2.0-AnyTTY", Timeout: timeout,
 	}
 	dialer := networkDialer
 	if dialer == nil {

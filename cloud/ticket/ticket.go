@@ -9,21 +9,22 @@ import (
 	"strings"
 	"time"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	agentTicketDomain       = "muxvia.cloud.agent-ticket.v1\x00"
-	agentProofDomain        = "muxvia.cloud.agent-hello-proof.v1\x00"
-	cloudRouteGrantDomain   = "muxvia.cloud.route-grant.v1\x00"
-	pairingRouteGrantDomain = "muxvia.cloud.pairing-route-grant.v1\x00"
-	clientTicketDomain      = "muxvia.cloud.client-ticket.v1\x00"
-	clientRouteProofDomain  = "muxvia.cloud.client-route-proof.v1\x00"
-	pairingRouteProofDomain = "muxvia.cloud.pairing-route-proof.v1\x00"
-	clientHelloProofDomain  = "muxvia.cloud.client-hello-proof.v1\x00"
-	relayLeaseDomain        = "muxvia.cloud.relay-lease.v1\x00"
+	agentTicketDomain           = "anytty.cloud.agent-ticket.v1\x00"
+	agentProofDomain            = "anytty.cloud.agent-hello-proof.v1\x00"
+	cloudRouteGrantDomain       = "anytty.cloud.route-grant.v1\x00"
+	legacyCloudRouteGrantDomain = "muxvia.cloud.route-grant.v1\x00"
+	pairingRouteGrantDomain     = "anytty.cloud.pairing-route-grant.v1\x00"
+	clientTicketDomain          = "anytty.cloud.client-ticket.v1\x00"
+	clientRouteProofDomain      = "anytty.cloud.client-route-proof.v1\x00"
+	pairingRouteProofDomain     = "anytty.cloud.pairing-route-proof.v1\x00"
+	clientHelloProofDomain      = "anytty.cloud.client-hello-proof.v1\x00"
+	relayLeaseDomain            = "anytty.cloud.relay-lease.v1\x00"
 )
 
 // KeySet 是 Edge 当前从 EdgeWelcome 获得的只读 Controller 票据公钥集合。
@@ -131,8 +132,14 @@ func SignCloudRouteGrant(identity remoteauth.Identity, claims *cloudv1.CloudRout
 // VerifyCloudRouteGrant 使用 Controller 持久化的 daemon 公钥验签，不读取或保存在线拓扑。
 func VerifyCloudRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed25519.PublicKey, expectedDaemonID string, now time.Time) (*cloudv1.CloudRouteGrantClaims, error) {
 	if envelope == nil || len(daemonPublicKey) != ed25519.PublicKeySize || len(envelope.GetSignature()) != ed25519.SignatureSize ||
-		strings.TrimSpace(envelope.GetKeyId()) != remoteauth.Fingerprint(daemonPublicKey) ||
-		!ed25519.Verify(daemonPublicKey, signingBytes(cloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature()) {
+		strings.TrimSpace(envelope.GetKeyId()) != remoteauth.Fingerprint(daemonPublicKey) {
+		return nil, errors.New("CloudRouteGrant signature is invalid")
+	}
+	validSignature := ed25519.Verify(daemonPublicKey, signingBytes(cloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature())
+	if !validSignature {
+		validSignature = ed25519.Verify(daemonPublicKey, signingBytes(legacyCloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature())
+	}
+	if !validSignature {
 		return nil, errors.New("CloudRouteGrant signature is invalid")
 	}
 	claims := &cloudv1.CloudRouteGrantClaims{}

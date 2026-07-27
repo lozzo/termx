@@ -63,7 +63,7 @@ export function TerminalActionToolbar({
     const handler = (e: PointerEvent) => {
       const target = e.target as HTMLElement
       // Allow clicking buttons that open this menu (they usually stop propagation or we can check closest)
-      if (target.closest('[data-testid="muxvia-terminal-tools-button"]')) return
+      if (target.closest('[data-testid="anytty-terminal-tools-button"]')) return
       if (panelRef.current && !panelRef.current.contains(target)) {
         onClose()
       }
@@ -74,12 +74,12 @@ export function TerminalActionToolbar({
 
   if (mode === 'selection') {
     return (
-      <div className="absolute inset-x-0 bottom-2 z-40 border-y border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] px-2 py-1.5 text-[var(--muxvia-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.22)] md:hidden">
+      <div className="absolute inset-x-0 bottom-2 z-40 border-y border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-2 py-1.5 text-[var(--anytty-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.22)] md:hidden">
         <div className="flex items-center justify-between gap-1.5 overflow-x-auto">
           <div className="flex items-center gap-1.5">
             <ToolbarButton label={t('terminal.tools.selectAll')} onClick={onSelectAll} />
             <ToolbarButton label={t('terminal.tools.visible')} onClick={onSelectVisible} />
-            <div className="mx-1 h-5 w-px shrink-0 bg-[var(--muxvia-border-subtle)]" />
+            <div className="mx-1 h-5 w-px shrink-0 bg-[var(--anytty-border-subtle)]" />
             <ToolbarButton
               label={t('files.actions.copy')}
               icon={<Copy className="h-3 w-3" />}
@@ -100,28 +100,28 @@ export function TerminalActionToolbar({
   const ownsResize = resizeControl?.canResize === true
 
   return (
-    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] px-3 py-3 text-[var(--muxvia-text)] md:hidden animate-in slide-in-from-top-2">
+    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-3 py-3 text-[var(--anytty-text)] md:hidden animate-in slide-in-from-top-2">
       <div className="flex flex-col gap-3">
         {/* Settings Row: Font Size */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--muxvia-muted)]">{t('settings.fontSize')}</span>
+          <span className="text-xs font-medium text-[var(--anytty-muted)]">{t('settings.fontSize')}</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               aria-label={t('settings.decreaseFont')}
               title={t('settings.decreaseFont')}
               onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
-              className="flex h-11 w-11 items-center justify-center border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)] active:opacity-75"
+              className="flex h-11 w-11 items-center justify-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)] active:opacity-75"
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
-            <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-[var(--muxvia-text)]">{fontSize}px</span>
+            <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-[var(--anytty-text)]">{fontSize}px</span>
             <button
               type="button"
               aria-label={t('settings.increaseFont')}
               title={t('settings.increaseFont')}
               onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
-              className="flex h-11 w-11 items-center justify-center border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)] active:opacity-75"
+              className="flex h-11 w-11 items-center justify-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)] active:opacity-75"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -130,23 +130,23 @@ export function TerminalActionToolbar({
 
         {/* Settings Row: Renderer */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--muxvia-muted)]">{t('settings.renderer')}</span>
+          <span className="text-xs font-medium text-[var(--anytty-muted)]">{t('settings.renderer')}</span>
           <button
             type="button"
             aria-label={`${t('settings.renderer')}: ${RENDERER_LABELS[renderer]}`}
             title={t('settings.renderer')}
             onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onRendererChange?.(nextRenderer) }}
-            className="flex h-11 items-center justify-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] px-3 text-xs font-semibold text-[var(--muxvia-text)] active:opacity-75"
+            className="flex h-11 items-center justify-center gap-1.5 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-3 text-xs font-semibold text-[var(--anytty-text)] active:opacity-75"
           >
             <Cpu className="h-3.5 w-3.5" />
             {RENDERER_LABELS[renderer]}
           </button>
         </div>
 
-        <div className="my-1 h-px w-full bg-[var(--muxvia-border-subtle)]" />
+        <div className="my-1 h-px w-full bg-[var(--anytty-border-subtle)]" />
 
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--muxvia-muted)]">{t('terminal.tools.resizeControl')}</span>
+          <span className="text-xs font-medium text-[var(--anytty-muted)]">{t('terminal.tools.resizeControl')}</span>
           <button
             type="button"
             aria-label={t(ownsResize ? 'terminal.tools.releaseResize' : 'terminal.tools.acquireResize')}
@@ -160,7 +160,7 @@ export function TerminalActionToolbar({
               e.preventDefault()
               e.stopPropagation()
             }}
-            className="flex h-11 items-center justify-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] px-3 text-xs font-semibold text-[var(--muxvia-text)] active:opacity-75"
+            className="flex h-11 items-center justify-center gap-1.5 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-3 text-xs font-semibold text-[var(--anytty-text)] active:opacity-75"
           >
             <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{ownsResize ? 'OW' : 'FL'}</span>
             {t(ownsResize ? 'terminal.tools.owner' : 'terminal.tools.follower')}
@@ -203,8 +203,8 @@ function ToolbarButton({
       type="button"
       title={title}
       aria-label={label}
-      className={`flex min-h-11 min-w-0 items-center justify-center gap-1.5 border border-[var(--muxvia-border-subtle)] px-2 text-xs font-semibold transition-colors disabled:opacity-40 ${
-        primary ? 'bg-[var(--muxvia-accent)]/20 text-[var(--muxvia-accent)]' : 'bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)] active:opacity-75'
+      className={`flex min-h-11 min-w-0 items-center justify-center gap-1.5 border border-[var(--anytty-border-subtle)] px-2 text-xs font-semibold transition-colors disabled:opacity-40 ${
+        primary ? 'bg-[var(--anytty-accent)]/20 text-[var(--anytty-accent)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)] active:opacity-75'
       }`}
       disabled={disabled}
       onPointerDown={(event) => event.preventDefault()}

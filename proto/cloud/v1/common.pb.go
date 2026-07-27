@@ -202,7 +202,7 @@ var File_cloud_v1_common_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x15cloud/v1/common.proto\x12\x0fmuxvia.cloud.v1\x1a\x1egoogle/protobuf/duration.proto\"e\n" +
+	"\x15cloud/v1/common.proto\x12\x0fanytty.cloud.v1\x1a\x1egoogle/protobuf/duration.proto\"e\n" +
 	"\x0fVerificationKey\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1c\n" +
 	"\talgorithm\x18\x02 \x01(\tR\talgorithm\x12\x1d\n" +
@@ -214,7 +214,7 @@ const file_cloud_v1_common_proto_rawDesc = "" +
 	"\x0eSignedEnvelope\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignatureB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\tsignature\x18\x03 \x01(\fR\tsignatureB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_common_proto_rawDescOnce sync.Once
@@ -230,14 +230,14 @@ func file_cloud_v1_common_proto_rawDescGZIP() []byte {
 
 var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_cloud_v1_common_proto_goTypes = []any{
-	(*VerificationKey)(nil),     // 0: muxvia.cloud.v1.VerificationKey
-	(*HeartbeatPolicy)(nil),     // 1: muxvia.cloud.v1.HeartbeatPolicy
-	(*SignedEnvelope)(nil),      // 2: muxvia.cloud.v1.SignedEnvelope
+	(*VerificationKey)(nil),     // 0: anytty.cloud.v1.VerificationKey
+	(*HeartbeatPolicy)(nil),     // 1: anytty.cloud.v1.HeartbeatPolicy
+	(*SignedEnvelope)(nil),      // 2: anytty.cloud.v1.SignedEnvelope
 	(*durationpb.Duration)(nil), // 3: google.protobuf.Duration
 }
 var file_cloud_v1_common_proto_depIdxs = []int32{
-	3, // 0: muxvia.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
-	3, // 1: muxvia.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
+	3, // 0: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
+	3, // 1: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name

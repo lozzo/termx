@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/processhealth"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/processhealth"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	grpc_health "google.golang.org/grpc/health"

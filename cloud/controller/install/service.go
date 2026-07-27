@@ -23,9 +23,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 // Config 是安装服务的受控部署输入；所有密钥都来自权限受控文件。
@@ -114,7 +114,7 @@ func (service *Service) InstallScript(ctx context.Context, token string) (string
 	if _, port, splitErr := net.SplitHostPort(edge.PublicEndpoint); splitErr == nil {
 		endpointPort = port
 	}
-	artifactURL := service.publicOrigin + "/artifacts/muxvia-cloud-edge-linux-amd64"
+	artifactURL := service.publicOrigin + "/artifacts/anytty-cloud-edge-linux-amd64"
 	signature := base64.StdEncoding.EncodeToString(service.artifactSignature)
 	return fmt.Sprintf(`#!/bin/sh
 set -eu
@@ -126,44 +126,44 @@ for command in curl openssl sha256sum systemctl useradd mktemp; do command -v "$
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM
-curl -fsSL %s -o "$tmp_dir/muxvia-cloud-edge"
-printf '%%s  %%s\n' %s "$tmp_dir/muxvia-cloud-edge" | sha256sum -c -
+curl -fsSL %s -o "$tmp_dir/anytty-cloud-edge"
+printf '%%s  %%s\n' %s "$tmp_dir/anytty-cloud-edge" | sha256sum -c -
 printf '%%s' %s | base64 -d > "$tmp_dir/artifact.sig"
-cat > "$tmp_dir/artifact-public.pem" <<'MUXVIA_RELEASE_KEY'
-%sMUXVIA_RELEASE_KEY
-openssl pkeyutl -verify -pubin -inkey "$tmp_dir/artifact-public.pem" -rawin -in "$tmp_dir/muxvia-cloud-edge" -sigfile "$tmp_dir/artifact.sig" >/dev/null
+cat > "$tmp_dir/artifact-public.pem" <<'ANYTTY_RELEASE_KEY'
+%sANYTTY_RELEASE_KEY
+openssl pkeyutl -verify -pubin -inkey "$tmp_dir/artifact-public.pem" -rawin -in "$tmp_dir/anytty-cloud-edge" -sigfile "$tmp_dir/artifact.sig" >/dev/null
 
-id muxvia-edge >/dev/null 2>&1 || useradd --system --home /var/lib/muxvia-cloud-edge --shell /usr/sbin/nologin muxvia-edge
-install -d -m 0755 /opt/muxvia-cloud-edge/releases/%s
-install -m 0755 "$tmp_dir/muxvia-cloud-edge" /opt/muxvia-cloud-edge/releases/%s/muxvia-cloud-edge
-ln -sfn /opt/muxvia-cloud-edge/releases/%s /opt/muxvia-cloud-edge/current
-install -d -o muxvia-edge -g muxvia-edge -m 0700 /var/lib/muxvia-cloud-edge
+id anytty-edge >/dev/null 2>&1 || useradd --system --home /var/lib/anytty-cloud-edge --shell /usr/sbin/nologin anytty-edge
+install -d -m 0755 /opt/anytty-cloud-edge/releases/%s
+install -m 0755 "$tmp_dir/anytty-cloud-edge" /opt/anytty-cloud-edge/releases/%s/anytty-cloud-edge
+ln -sfn /opt/anytty-cloud-edge/releases/%s /opt/anytty-cloud-edge/current
+install -d -o anytty-edge -g anytty-edge -m 0700 /var/lib/anytty-cloud-edge
 # Edge 必须在首次注册成功后原子替换配置文件，目录只向专用服务组开放写权限。
-install -d -o root -g muxvia-edge -m 0770 /etc/muxvia-cloud-edge
-cat > /etc/muxvia-cloud-edge/config.yaml <<'MUXVIA_EDGE_CONFIG'
+install -d -o root -g anytty-edge -m 0770 /etc/anytty-cloud-edge
+cat > /etc/anytty-cloud-edge/config.yaml <<'ANYTTY_EDGE_CONFIG'
 controller_origin: %s
 register_url: %s
 edge_id: %s
 bootstrap_token: %s
-state_directory: /var/lib/muxvia-cloud-edge
+state_directory: /var/lib/anytty-cloud-edge
 public_endpoint: %s
 listen_override: 0.0.0.0:%s
 turn_listen_override: 0.0.0.0:3478
 log_level: info
-MUXVIA_EDGE_CONFIG
-chown muxvia-edge:muxvia-edge /etc/muxvia-cloud-edge/config.yaml
-chmod 0600 /etc/muxvia-cloud-edge/config.yaml
-cat > /etc/systemd/system/muxvia-cloud-edge.service <<'MUXVIA_EDGE_SYSTEMD'
+ANYTTY_EDGE_CONFIG
+chown anytty-edge:anytty-edge /etc/anytty-cloud-edge/config.yaml
+chmod 0600 /etc/anytty-cloud-edge/config.yaml
+cat > /etc/systemd/system/anytty-cloud-edge.service <<'ANYTTY_EDGE_SYSTEMD'
 [Unit]
-Description=Muxvia Cloud Edge
+Description=AnyTTY Cloud Edge
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=muxvia-edge
-Group=muxvia-edge
-ExecStart=/opt/muxvia-cloud-edge/current/muxvia-cloud-edge --config=/etc/muxvia-cloud-edge/config.yaml
+User=anytty-edge
+Group=anytty-edge
+ExecStart=/opt/anytty-cloud-edge/current/anytty-cloud-edge --config=/etc/anytty-cloud-edge/config.yaml
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
@@ -172,16 +172,16 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/muxvia-cloud-edge /etc/muxvia-cloud-edge
+ReadWritePaths=/var/lib/anytty-cloud-edge /etc/anytty-cloud-edge
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
-MUXVIA_EDGE_SYSTEMD
+ANYTTY_EDGE_SYSTEMD
 systemctl daemon-reload
-systemctl enable muxvia-cloud-edge.service
-systemctl restart muxvia-cloud-edge.service
-echo "Muxvia Cloud Edge installed: %s"
+systemctl enable anytty-cloud-edge.service
+systemctl restart anytty-cloud-edge.service
+echo "AnyTTY Cloud Edge installed: %s"
 `, strconv.Quote(artifactURL), strconv.Quote(service.artifactDigest), strconv.Quote(signature), string(service.artifactPublicPEM), service.artifactVersion, service.artifactVersion, service.artifactVersion, strconv.Quote(service.publicOrigin), strconv.Quote(service.publicOrigin+"/api/install/register"), strconv.Quote(edge.ID), strconv.Quote(bootstrap), strconv.Quote(edge.PublicEndpoint), endpointPort, edge.ID), nil
 }
 

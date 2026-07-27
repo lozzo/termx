@@ -110,7 +110,7 @@ func (api *memoryWindowsClipboard) Size(handle uintptr) (uintptr, error) {
 
 func TestWindowsClipboardUnicodeRoundTrip(t *testing.T) {
 	api := newMemoryWindowsClipboard()
-	want := "Muxvia 中文 clipboard 🙂\r\nnext"
+	want := "AnyTTY 中文 clipboard 🙂\r\nnext"
 	if err := writeWindowsClipboard(context.Background(), api, want); err != nil {
 		t.Fatal(err)
 	}

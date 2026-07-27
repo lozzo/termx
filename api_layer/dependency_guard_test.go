@@ -13,31 +13,31 @@ import (
 
 func TestAPILayerAndAPIMappingRespectDependencyDirection(t *testing.T) {
 	assertImportsExclude(t, ".", []string{
-		"github.com/muxvia/muxvia/client",
-		"github.com/muxvia/muxvia/cmd",
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/private",
-		"github.com/muxvia/muxvia/proto/runtimepb",
-		"github.com/muxvia/muxvia/proto/wirepb",
-		"github.com/muxvia/muxvia/remote",
-		"github.com/muxvia/muxvia/shared/transport",
-		"github.com/muxvia/muxvia/tui",
+		"github.com/anytty/anytty/client",
+		"github.com/anytty/anytty/cmd",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/private",
+		"github.com/anytty/anytty/proto/runtimepb",
+		"github.com/anytty/anytty/proto/wirepb",
+		"github.com/anytty/anytty/remote",
+		"github.com/anytty/anytty/shared/transport",
+		"github.com/anytty/anytty/tui",
 	})
 	assertImportsExclude(t, "../api_mapping", []string{
-		"github.com/muxvia/muxvia/api_layer",
-		"github.com/muxvia/muxvia/client",
-		"github.com/muxvia/muxvia/cmd",
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/private",
-		"github.com/muxvia/muxvia/proto/runtimepb",
-		"github.com/muxvia/muxvia/proto/wirepb",
-		"github.com/muxvia/muxvia/remote",
-		"github.com/muxvia/muxvia/shared",
-		"github.com/muxvia/muxvia/tui",
+		"github.com/anytty/anytty/api_layer",
+		"github.com/anytty/anytty/client",
+		"github.com/anytty/anytty/cmd",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/private",
+		"github.com/anytty/anytty/proto/runtimepb",
+		"github.com/anytty/anytty/proto/wirepb",
+		"github.com/anytty/anytty/remote",
+		"github.com/anytty/anytty/shared",
+		"github.com/anytty/anytty/tui",
 	})
 	assertImportsExclude(t, "../core", []string{
-		"github.com/muxvia/muxvia/api_layer",
-		"github.com/muxvia/muxvia/api_mapping",
+		"github.com/anytty/anytty/api_layer",
+		"github.com/anytty/anytty/api_mapping",
 	})
 	if _, err := os.Stat("../core/application_api.go"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("legacy core application adapter must stay deleted: %v", err)

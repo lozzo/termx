@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('账号 session 轮换', () => {
   it('并发 401 只执行一次 refresh 并重试原请求', async () => {
-    vi.stubGlobal('document', { cookie: 'muxvia_cloud_csrf=csrf-proof' })
+    vi.stubGlobal('document', { cookie: 'anytty_cloud_csrf=csrf-proof' })
     let resourceCalls = 0
     let refreshCalls = 0
     let refreshHeader = ''
@@ -14,7 +14,7 @@ describe('账号 session 轮换', () => {
       const path = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (path === '/api/account/refresh') {
         refreshCalls++
-        refreshHeader = new Headers(init?.headers).get('X-Muxvia-CSRF') ?? ''
+        refreshHeader = new Headers(init?.headers).get('X-AnyTTY-CSRF') ?? ''
         await Promise.resolve()
         return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
       }

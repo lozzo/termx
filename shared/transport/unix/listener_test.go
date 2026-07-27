@@ -17,11 +17,11 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 func TestListenerDialRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -87,7 +87,7 @@ func TestListenerDialRoundTrip(t *testing.T) {
 }
 
 func TestListenerAcceptContextCancel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -103,7 +103,7 @@ func TestListenerAcceptContextCancel(t *testing.T) {
 }
 
 func TestListenerCanceledAcceptDoesNotStealNextDial(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -223,7 +223,7 @@ func TestTransportCloseUnblocksBlockedWrite(t *testing.T) {
 
 func TestListenerSupportsLongSocketPath(t *testing.T) {
 	base := filepath.Join(t.TempDir(), strings.Repeat("socket-dir-", 8))
-	path := filepath.Join(base, "muxvia.sock")
+	path := filepath.Join(base, "anytty.sock")
 	if len(path) <= maxSocketPathBytes() {
 		t.Fatalf("expected long socket path, got len=%d limit=%d", len(path), maxSocketPathBytes())
 	}
@@ -272,7 +272,7 @@ func TestListenerSupportsLongSocketPath(t *testing.T) {
 }
 
 func TestListenerDialRoundTripLargeAndEmptyFrames(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -304,7 +304,7 @@ func TestListenerDialRoundTripLargeAndEmptyFrames(t *testing.T) {
 	}
 	defer server.Close()
 
-	large := bytes.Repeat([]byte("muxvia-compressible-frame-"), 40*1024)
+	large := bytes.Repeat([]byte("anytty-compressible-frame-"), 40*1024)
 	if err := client.Send(large); err != nil {
 		t.Fatalf("client send large failed: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestListenerDialRoundTripLargeAndEmptyFrames(t *testing.T) {
 }
 
 func TestListenerDialRoundTripManyFrames(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -377,7 +377,7 @@ func TestListenerDialRoundTripManyFrames(t *testing.T) {
 }
 
 func TestListenerDialRoundTripFragmentedFrameBoundaries(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -425,7 +425,7 @@ func TestListenerDialRoundTripFragmentedFrameBoundaries(t *testing.T) {
 }
 
 func TestListenerDialRoundTripConcurrentSmallFrames(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -499,7 +499,7 @@ func TestTransportZstdWindowKeepsConnectionHeapBounded(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&before)
 
-	path := filepath.Join(t.TempDir(), "muxvia.sock")
+	path := filepath.Join(t.TempDir(), "anytty.sock")
 	listener, err := NewListener(path)
 	if err != nil {
 		t.Fatalf("new listener failed: %v", err)
@@ -544,7 +544,7 @@ func TestTransportZstdWindowKeepsConnectionHeapBounded(t *testing.T) {
 		}
 	}
 
-	payload := bytes.Repeat([]byte("muxvia-memory-transport-"), 32*1024)
+	payload := bytes.Repeat([]byte("anytty-memory-transport-"), 32*1024)
 	for i, client := range clients {
 		if err := client.Send(payload); err != nil {
 			t.Fatalf("client send %d failed: %v", i, err)

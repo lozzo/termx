@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/muxvia/muxvia/shared/userdirs"
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/shortcut"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/shared/userdirs"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/shortcut"
+	"github.com/anytty/anytty/tui/state"
 )
 
 const DefaultFileName = "tui-v3.yaml"
@@ -22,7 +22,7 @@ const (
 )
 
 func DefaultPath() string {
-	return filepath.Join(userdirs.ConfigHome(), "muxvia", DefaultFileName)
+	return filepath.Join(userdirs.ConfigHome(), "anytty", DefaultFileName)
 }
 
 func Default() state.TUIConfigStore {
@@ -781,29 +781,29 @@ func applyEnv(cfg *state.TUIConfigStore, lookup func(string) string) error {
 }
 
 var envScalarPaths = map[string]string{
-	"MUXVIA_TUI_THEME_MODE":                       "tui.theme.mode",
-	"MUXVIA_TUI_THEME_PALETTE":                    "tui.theme.palette",
-	"MUXVIA_TUI_THEME_PRIMARY":                    "tui.theme.primary",
-	"MUXVIA_TUI_THEME_SECONDARY":                  "tui.theme.secondary",
-	"MUXVIA_TUI_THEME_FOREGROUND":                 "tui.theme.foreground",
-	"MUXVIA_TUI_THEME_BACKGROUND":                 "tui.theme.background",
-	"MUXVIA_TUI_THEME_MUTED":                      "tui.theme.muted",
-	"MUXVIA_TUI_THEME_SUCCESS":                    "tui.theme.success",
-	"MUXVIA_TUI_THEME_WARNING":                    "tui.theme.warning",
-	"MUXVIA_TUI_THEME_DANGER":                     "tui.theme.danger",
-	"MUXVIA_TUI_THEME_INFO":                       "tui.theme.info",
-	"MUXVIA_TUI_CHROME_HEADER":                    "tui.chrome.header",
-	"MUXVIA_TUI_CHROME_FOOTER":                    "tui.chrome.footer",
-	"MUXVIA_TUI_CHROME_PANEL_PRESENTATION":        "tui.chrome.panel_presentation",
-	"MUXVIA_TUI_CHROME_TAB_CREATE_TEMPLATE":       "tui.chrome.tab_create_template",
-	"MUXVIA_TUI_CHROME_PANE_TITLE_TEMPLATE":       "tui.chrome.pane_title_template",
-	"MUXVIA_TUI_INTERACTION_MOUSE":                "tui.interaction.mouse",
-	"MUXVIA_TUI_STICKY_PREFIX_TIMEOUT_MS":         "tui.interaction.sticky_prefix_timeout_ms",
-	"MUXVIA_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "tui.interaction.shortcut_passthrough_interval_ms",
-	"MUXVIA_TUI_CONFIRM_DESTRUCTIVE":              "tui.interaction.confirm_destructive",
-	"MUXVIA_TUI_CLIPBOARD_HISTORY_MAX_ITEMS":      "tui.interaction.clipboard_history.max_items",
-	"MUXVIA_TUI_CLIPBOARD_HISTORY_NAME_WIDTH":     "tui.interaction.clipboard_history.name_width",
-	"MUXVIA_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "tui.interaction.clipboard_history.preview_width_ratio",
+	"ANYTTY_TUI_THEME_MODE":                       "tui.theme.mode",
+	"ANYTTY_TUI_THEME_PALETTE":                    "tui.theme.palette",
+	"ANYTTY_TUI_THEME_PRIMARY":                    "tui.theme.primary",
+	"ANYTTY_TUI_THEME_SECONDARY":                  "tui.theme.secondary",
+	"ANYTTY_TUI_THEME_FOREGROUND":                 "tui.theme.foreground",
+	"ANYTTY_TUI_THEME_BACKGROUND":                 "tui.theme.background",
+	"ANYTTY_TUI_THEME_MUTED":                      "tui.theme.muted",
+	"ANYTTY_TUI_THEME_SUCCESS":                    "tui.theme.success",
+	"ANYTTY_TUI_THEME_WARNING":                    "tui.theme.warning",
+	"ANYTTY_TUI_THEME_DANGER":                     "tui.theme.danger",
+	"ANYTTY_TUI_THEME_INFO":                       "tui.theme.info",
+	"ANYTTY_TUI_CHROME_HEADER":                    "tui.chrome.header",
+	"ANYTTY_TUI_CHROME_FOOTER":                    "tui.chrome.footer",
+	"ANYTTY_TUI_CHROME_PANEL_PRESENTATION":        "tui.chrome.panel_presentation",
+	"ANYTTY_TUI_CHROME_TAB_CREATE_TEMPLATE":       "tui.chrome.tab_create_template",
+	"ANYTTY_TUI_CHROME_PANE_TITLE_TEMPLATE":       "tui.chrome.pane_title_template",
+	"ANYTTY_TUI_INTERACTION_MOUSE":                "tui.interaction.mouse",
+	"ANYTTY_TUI_STICKY_PREFIX_TIMEOUT_MS":         "tui.interaction.sticky_prefix_timeout_ms",
+	"ANYTTY_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "tui.interaction.shortcut_passthrough_interval_ms",
+	"ANYTTY_TUI_CONFIRM_DESTRUCTIVE":              "tui.interaction.confirm_destructive",
+	"ANYTTY_TUI_CLIPBOARD_HISTORY_MAX_ITEMS":      "tui.interaction.clipboard_history.max_items",
+	"ANYTTY_TUI_CLIPBOARD_HISTORY_NAME_WIDTH":     "tui.interaction.clipboard_history.name_width",
+	"ANYTTY_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "tui.interaction.clipboard_history.preview_width_ratio",
 }
 
 func Validate(cfg state.TUIConfigStore) error {

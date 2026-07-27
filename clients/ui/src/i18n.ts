@@ -3,23 +3,23 @@ import { initReactI18next } from 'react-i18next'
 import en from './locales/en.json'
 import zhCN from './locales/zh-CN.json'
 
-export type MuxviaLanguage = 'en' | 'zh-CN'
+export type AnyTTYLanguage = 'en' | 'zh-CN'
 
-export const muxviaLanguages: { id: MuxviaLanguage; label: string }[] = [
+export const anyttyLanguages: { id: AnyTTYLanguage; label: string }[] = [
   { id: 'en', label: 'English' },
   { id: 'zh-CN', label: '简体中文' },
 ]
 
-export function normalizeMuxviaLanguage(value?: string | null): MuxviaLanguage {
+export function normalizeAnyTTYLanguage(value?: string | null): AnyTTYLanguage {
   return value?.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
 }
 
-function initialLanguage(): MuxviaLanguage {
+function initialLanguage(): AnyTTYLanguage {
   if (typeof window === 'undefined') return 'en'
   try {
-    return normalizeMuxviaLanguage(window.localStorage?.getItem('muxvia-language') ?? window.navigator.language)
+    return normalizeAnyTTYLanguage(window.localStorage?.getItem('anytty-language') ?? window.navigator.language)
   } catch {
-    return normalizeMuxviaLanguage(window.navigator.language)
+    return normalizeAnyTTYLanguage(window.navigator.language)
   }
 }
 
@@ -33,11 +33,11 @@ if (!i18n.isInitialized) {
 }
 
 if (typeof document !== 'undefined') {
-  document.documentElement.lang = normalizeMuxviaLanguage(i18n.resolvedLanguage)
+  document.documentElement.lang = normalizeAnyTTYLanguage(i18n.resolvedLanguage)
   i18n.on('languageChanged', (language) => {
-    const normalized = normalizeMuxviaLanguage(language)
+    const normalized = normalizeAnyTTYLanguage(language)
     try {
-      window.localStorage?.setItem('muxvia-language', normalized)
+      window.localStorage?.setItem('anytty-language', normalized)
     } catch {
       // 某些 WebView/测试环境禁用 localStorage；语言仍在当前进程内生效。
     }
@@ -45,8 +45,8 @@ if (typeof document !== 'undefined') {
   })
 }
 
-export function muxviaIntlLocale(): string {
-  return normalizeMuxviaLanguage(i18n.resolvedLanguage)
+export function anyttyIntlLocale(): string {
+  return normalizeAnyTTYLanguage(i18n.resolvedLanguage)
 }
 
-export { i18n as muxviaI18n }
+export { i18n as anyttyI18n }

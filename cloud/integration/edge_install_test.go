@@ -20,30 +20,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	"github.com/muxvia/muxvia/cloud/controller/apihttp"
-	"github.com/muxvia/muxvia/cloud/controller/certificate"
-	"github.com/muxvia/muxvia/cloud/controller/commerce"
-	"github.com/muxvia/muxvia/cloud/controller/control"
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	"github.com/muxvia/muxvia/cloud/controller/enrollment"
-	"github.com/muxvia/muxvia/cloud/controller/install"
-	operatorservice "github.com/muxvia/muxvia/cloud/controller/operator"
-	"github.com/muxvia/muxvia/cloud/controller/postgres"
-	"github.com/muxvia/muxvia/cloud/edge/bootstrap"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/apihttp"
+	"github.com/anytty/anytty/cloud/controller/certificate"
+	"github.com/anytty/anytty/cloud/controller/commerce"
+	"github.com/anytty/anytty/cloud/controller/control"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
+	"github.com/anytty/anytty/cloud/controller/install"
+	operatorservice "github.com/anytty/anytty/cloud/controller/operator"
+	"github.com/anytty/anytty/cloud/controller/postgres"
+	"github.com/anytty/anytty/cloud/edge/bootstrap"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 )
 
 func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
-	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -70,7 +70,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	caKeyFile := writeTestFile(t, temporary, "edge-ca-key.pem", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: caKeyDER}))
-	artifactFile := writeTestFile(t, temporary, "muxvia-cloud-edge", []byte("r3-test-artifact"))
+	artifactFile := writeTestFile(t, temporary, "anytty-cloud-edge", []byte("r3-test-artifact"))
 	installer, err := install.NewService(install.Config{
 		Edges: edges, PublicOrigin: "https://controller.example.com:18444", ControllerAddress: "controller.example.com:18443", ControllerServerName: "controller.example.com",
 		EdgeCACertificateFile: caCertificateFile, EdgeCAPrivateKeyFile: caKeyFile, ControllerCAFile: caCertificateFile,
@@ -135,11 +135,11 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	var accessCookie, refreshCookie, csrfCookie *http.Cookie
 	for _, cookie := range r7TestCookies {
 		switch cookie.Name {
-		case "muxvia_cloud_access":
+		case "anytty_cloud_access":
 			accessCookie = cookie
-		case "muxvia_cloud_refresh":
+		case "anytty_cloud_refresh":
 			refreshCookie = cookie
-		case "muxvia_cloud_csrf":
+		case "anytty_cloud_csrf":
 			csrfCookie = cookie
 			r7TestCSRF = cookie.Value
 		}
@@ -192,7 +192,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if scriptRecorder.Code != http.StatusOK || !strings.Contains(scriptRecorder.Body.String(), "openssl pkeyutl -verify") {
 		t.Fatalf("install script status=%d body=%s", scriptRecorder.Code, scriptRecorder.Body.String())
 	}
-	if !strings.Contains(scriptRecorder.Body.String(), "install -d -o root -g muxvia-edge -m 0770 /etc/muxvia-cloud-edge") {
+	if !strings.Contains(scriptRecorder.Body.String(), "install -d -o root -g anytty-edge -m 0770 /etc/anytty-cloud-edge") {
 		t.Fatal("install script does not permit the Edge service to atomically replace its bootstrap config")
 	}
 	syntaxCheck := exec.Command("sh", "-n")
@@ -332,9 +332,9 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 }
 
 func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
-	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -369,7 +369,7 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateEnrollment(ctx, &cloudv1.CreateDaemonEnrollmentRequest{AccountId: registered.GetAccount().GetAccountId(), AccountName: registered.GetAccount().GetDisplayName(), DaemonName: "R4 Daemon"}, "muxvia cloud enroll --controller https://controller.test")
+	created, err := service.CreateEnrollment(ctx, &cloudv1.CreateDaemonEnrollmentRequest{AccountId: registered.GetAccount().GetAccountId(), AccountName: registered.GetAccount().GetDisplayName(), DaemonName: "R4 Daemon"}, "anytty cloud enroll --controller https://controller.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func doProtoRequest(t *testing.T, handler http.Handler, method, path string, inp
 			request.AddCookie(cookie)
 		}
 		if method != http.MethodGet && method != http.MethodHead {
-			request.Header.Set("X-Muxvia-CSRF", r7TestCSRF)
+			request.Header.Set("X-AnyTTY-CSRF", r7TestCSRF)
 		}
 	}
 	recorder := httptest.NewRecorder()

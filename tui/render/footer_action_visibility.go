@@ -1,6 +1,6 @@
 package render
 
-import actiondomain "github.com/muxvia/muxvia/tui/action"
+import actiondomain "github.com/anytty/anytty/tui/action"
 
 func footerActionTokensVisibleByModeAndWidth(actions []FooterActionVM, mode string, width int) []FooterActionVM {
 	if mode == "resize" {

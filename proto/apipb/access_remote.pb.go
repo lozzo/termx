@@ -7,7 +7,7 @@
 package apipb
 
 import (
-	remoteauthpb "github.com/muxvia/muxvia/proto/remoteauthpb"
+	remoteauthpb "github.com/anytty/anytty/proto/remoteauthpb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -970,24 +970,24 @@ var File_apipb_access_remote_proto protoreflect.FileDescriptor
 
 const file_apipb_access_remote_proto_rawDesc = "" +
 	"\n" +
-	"\x19apipb/access_remote.proto\x12\rmuxvia.api.v1\x1a\x1eremoteauthpb/remote_auth.proto\"A\n" +
+	"\x19apipb/access_remote.proto\x12\ranytty.api.v1\x1a\x1eremoteauthpb/remote_auth.proto\"A\n" +
 	"\x1bClientAccessIdentityCommand\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallengeJ\x04\b\x01\x10\x02\"\x1f\n" +
 	"\x17ClientAccessListCommandJ\x04\b\x01\x10\x02\"y\n" +
 	"\x1fClientAccessTicketCreateCommand\x12P\n" +
-	"\arequest\x18\x02 \x01(\v26.muxvia.remote.auth.v1.ClientAccessTicketCreateRequestR\arequestJ\x04\b\x01\x10\x02\"m\n" +
+	"\arequest\x18\x02 \x01(\v26.anytty.remote.auth.v1.ClientAccessTicketCreateRequestR\arequestJ\x04\b\x01\x10\x02\"m\n" +
 	"\x19ClientAccessRevokeCommand\x12J\n" +
-	"\arequest\x18\x02 \x01(\v20.muxvia.remote.auth.v1.ClientAccessRevokeRequestR\arequestJ\x04\b\x01\x10\x02\"\x9f\x01\n" +
+	"\arequest\x18\x02 \x01(\v20.anytty.remote.auth.v1.ClientAccessRevokeRequestR\arequestJ\x04\b\x01\x10\x02\"\x9f\x01\n" +
 	"\x1aClientAccessIdentityResult\x12M\n" +
-	"\bidentity\x18\x01 \x01(\v21.muxvia.remote.auth.v1.ClientAccessIdentityResultR\bidentity\x12\x1c\n" +
+	"\bidentity\x18\x01 \x01(\v21.anytty.remote.auth.v1.ClientAccessIdentityResultR\bidentity\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x14\n" +
 	"\x05proof\x18\x03 \x01(\fR\x05proof\"_\n" +
 	"\x16ClientAccessListResult\x12E\n" +
-	"\x06access\x18\x01 \x01(\v2-.muxvia.remote.auth.v1.ClientAccessListResultR\x06access\"o\n" +
+	"\x06access\x18\x01 \x01(\v2-.anytty.remote.auth.v1.ClientAccessListResultR\x06access\"o\n" +
 	"\x1eClientAccessTicketCreateResult\x12M\n" +
-	"\x06ticket\x18\x01 \x01(\v25.muxvia.remote.auth.v1.ClientAccessTicketCreateResultR\x06ticket\"]\n" +
+	"\x06ticket\x18\x01 \x01(\v25.anytty.remote.auth.v1.ClientAccessTicketCreateResultR\x06ticket\"]\n" +
 	"\x18ClientAccessRevokeResult\x12A\n" +
-	"\x06record\x18\x01 \x01(\v2).muxvia.remote.auth.v1.ClientAccessRecordR\x06record\"\x1b\n" +
+	"\x06record\x18\x01 \x01(\v2).anytty.remote.auth.v1.ClientAccessRecordR\x06record\"\x1b\n" +
 	"\x13RemoteStatusCommandJ\x04\b\x01\x10\x02\"\x8f\x01\n" +
 	"\x16RemotePairStartCommand\x12$\n" +
 	"\x0elocal_pair_url\x18\x02 \x01(\tR\flocalPairUrl\x12\x1f\n" +
@@ -1040,7 +1040,7 @@ const file_apipb_access_remote_proto_rawDesc = "" +
 	"\x0fice_tcp_address\x18\x06 \x01(\tR\riceTcpAddress\x12 \n" +
 	"\fice_tcp_port\x18\a \x01(\x05R\n" +
 	"iceTcpPort\x12/\n" +
-	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNanoB&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
+	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNanoB&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_access_remote_proto_rawDescOnce sync.Once
@@ -1056,36 +1056,36 @@ func file_apipb_access_remote_proto_rawDescGZIP() []byte {
 
 var file_apipb_access_remote_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_apipb_access_remote_proto_goTypes = []any{
-	(*ClientAccessIdentityCommand)(nil),                  // 0: muxvia.api.v1.ClientAccessIdentityCommand
-	(*ClientAccessListCommand)(nil),                      // 1: muxvia.api.v1.ClientAccessListCommand
-	(*ClientAccessTicketCreateCommand)(nil),              // 2: muxvia.api.v1.ClientAccessTicketCreateCommand
-	(*ClientAccessRevokeCommand)(nil),                    // 3: muxvia.api.v1.ClientAccessRevokeCommand
-	(*ClientAccessIdentityResult)(nil),                   // 4: muxvia.api.v1.ClientAccessIdentityResult
-	(*ClientAccessListResult)(nil),                       // 5: muxvia.api.v1.ClientAccessListResult
-	(*ClientAccessTicketCreateResult)(nil),               // 6: muxvia.api.v1.ClientAccessTicketCreateResult
-	(*ClientAccessRevokeResult)(nil),                     // 7: muxvia.api.v1.ClientAccessRevokeResult
-	(*RemoteStatusCommand)(nil),                          // 8: muxvia.api.v1.RemoteStatusCommand
-	(*RemotePairStartCommand)(nil),                       // 9: muxvia.api.v1.RemotePairStartCommand
-	(*RemoteLocalEnableCommand)(nil),                     // 10: muxvia.api.v1.RemoteLocalEnableCommand
-	(*RemoteLocalStatusCommand)(nil),                     // 11: muxvia.api.v1.RemoteLocalStatusCommand
-	(*RemoteLocalDisableCommand)(nil),                    // 12: muxvia.api.v1.RemoteLocalDisableCommand
-	(*RemoteStatusResult)(nil),                           // 13: muxvia.api.v1.RemoteStatusResult
-	(*RemotePairStartResult)(nil),                        // 14: muxvia.api.v1.RemotePairStartResult
-	(*RemoteLocalStatusResult)(nil),                      // 15: muxvia.api.v1.RemoteLocalStatusResult
-	(*remoteauthpb.ClientAccessTicketCreateRequest)(nil), // 16: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest
-	(*remoteauthpb.ClientAccessRevokeRequest)(nil),       // 17: muxvia.remote.auth.v1.ClientAccessRevokeRequest
-	(*remoteauthpb.ClientAccessIdentityResult)(nil),      // 18: muxvia.remote.auth.v1.ClientAccessIdentityResult
-	(*remoteauthpb.ClientAccessListResult)(nil),          // 19: muxvia.remote.auth.v1.ClientAccessListResult
-	(*remoteauthpb.ClientAccessTicketCreateResult)(nil),  // 20: muxvia.remote.auth.v1.ClientAccessTicketCreateResult
-	(*remoteauthpb.ClientAccessRecord)(nil),              // 21: muxvia.remote.auth.v1.ClientAccessRecord
+	(*ClientAccessIdentityCommand)(nil),                  // 0: anytty.api.v1.ClientAccessIdentityCommand
+	(*ClientAccessListCommand)(nil),                      // 1: anytty.api.v1.ClientAccessListCommand
+	(*ClientAccessTicketCreateCommand)(nil),              // 2: anytty.api.v1.ClientAccessTicketCreateCommand
+	(*ClientAccessRevokeCommand)(nil),                    // 3: anytty.api.v1.ClientAccessRevokeCommand
+	(*ClientAccessIdentityResult)(nil),                   // 4: anytty.api.v1.ClientAccessIdentityResult
+	(*ClientAccessListResult)(nil),                       // 5: anytty.api.v1.ClientAccessListResult
+	(*ClientAccessTicketCreateResult)(nil),               // 6: anytty.api.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeResult)(nil),                     // 7: anytty.api.v1.ClientAccessRevokeResult
+	(*RemoteStatusCommand)(nil),                          // 8: anytty.api.v1.RemoteStatusCommand
+	(*RemotePairStartCommand)(nil),                       // 9: anytty.api.v1.RemotePairStartCommand
+	(*RemoteLocalEnableCommand)(nil),                     // 10: anytty.api.v1.RemoteLocalEnableCommand
+	(*RemoteLocalStatusCommand)(nil),                     // 11: anytty.api.v1.RemoteLocalStatusCommand
+	(*RemoteLocalDisableCommand)(nil),                    // 12: anytty.api.v1.RemoteLocalDisableCommand
+	(*RemoteStatusResult)(nil),                           // 13: anytty.api.v1.RemoteStatusResult
+	(*RemotePairStartResult)(nil),                        // 14: anytty.api.v1.RemotePairStartResult
+	(*RemoteLocalStatusResult)(nil),                      // 15: anytty.api.v1.RemoteLocalStatusResult
+	(*remoteauthpb.ClientAccessTicketCreateRequest)(nil), // 16: anytty.remote.auth.v1.ClientAccessTicketCreateRequest
+	(*remoteauthpb.ClientAccessRevokeRequest)(nil),       // 17: anytty.remote.auth.v1.ClientAccessRevokeRequest
+	(*remoteauthpb.ClientAccessIdentityResult)(nil),      // 18: anytty.remote.auth.v1.ClientAccessIdentityResult
+	(*remoteauthpb.ClientAccessListResult)(nil),          // 19: anytty.remote.auth.v1.ClientAccessListResult
+	(*remoteauthpb.ClientAccessTicketCreateResult)(nil),  // 20: anytty.remote.auth.v1.ClientAccessTicketCreateResult
+	(*remoteauthpb.ClientAccessRecord)(nil),              // 21: anytty.remote.auth.v1.ClientAccessRecord
 }
 var file_apipb_access_remote_proto_depIdxs = []int32{
-	16, // 0: muxvia.api.v1.ClientAccessTicketCreateCommand.request:type_name -> muxvia.remote.auth.v1.ClientAccessTicketCreateRequest
-	17, // 1: muxvia.api.v1.ClientAccessRevokeCommand.request:type_name -> muxvia.remote.auth.v1.ClientAccessRevokeRequest
-	18, // 2: muxvia.api.v1.ClientAccessIdentityResult.identity:type_name -> muxvia.remote.auth.v1.ClientAccessIdentityResult
-	19, // 3: muxvia.api.v1.ClientAccessListResult.access:type_name -> muxvia.remote.auth.v1.ClientAccessListResult
-	20, // 4: muxvia.api.v1.ClientAccessTicketCreateResult.ticket:type_name -> muxvia.remote.auth.v1.ClientAccessTicketCreateResult
-	21, // 5: muxvia.api.v1.ClientAccessRevokeResult.record:type_name -> muxvia.remote.auth.v1.ClientAccessRecord
+	16, // 0: anytty.api.v1.ClientAccessTicketCreateCommand.request:type_name -> anytty.remote.auth.v1.ClientAccessTicketCreateRequest
+	17, // 1: anytty.api.v1.ClientAccessRevokeCommand.request:type_name -> anytty.remote.auth.v1.ClientAccessRevokeRequest
+	18, // 2: anytty.api.v1.ClientAccessIdentityResult.identity:type_name -> anytty.remote.auth.v1.ClientAccessIdentityResult
+	19, // 3: anytty.api.v1.ClientAccessListResult.access:type_name -> anytty.remote.auth.v1.ClientAccessListResult
+	20, // 4: anytty.api.v1.ClientAccessTicketCreateResult.ticket:type_name -> anytty.remote.auth.v1.ClientAccessTicketCreateResult
+	21, // 5: anytty.api.v1.ClientAccessRevokeResult.record:type_name -> anytty.remote.auth.v1.ClientAccessRecord
 	6,  // [6:6] is the sub-list for method output_type
 	6,  // [6:6] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name

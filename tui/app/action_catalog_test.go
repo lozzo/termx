@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"reflect"
 	"strings"
 	"testing"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/shortcut"
-	"github.com/muxvia/muxvia/tui/state"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/shortcut"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestShortcutBindingsHaveCanonicalInvocationsAndDispatcherHandlers(t *testing.T) {

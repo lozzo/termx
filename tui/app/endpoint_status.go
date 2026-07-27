@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 const endpointStatusWatchToken = CancelToken("endpoint.status.watch")

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
 )
 
 func TestCompleteDaemonEnrollmentReturnsReactivatedIdentity(t *testing.T) {

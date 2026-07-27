@@ -1,6 +1,6 @@
 package render
 
-import "github.com/muxvia/muxvia/tui/state"
+import "github.com/anytty/anytty/tui/state"
 
 func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	shell := NewShellProjector().Project(root)

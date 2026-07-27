@@ -55,11 +55,11 @@ jobs:
       - name: Package Windows client
         shell: powershell
         env:
-          MUXVIA_PACKAGE_VERSION: ci-${{ github.sha }}
-        run: ./scripts/package-windows.ps1 -Version $env:MUXVIA_PACKAGE_VERSION -SkipBuild
+          ANYTTY_PACKAGE_VERSION: ci-${{ github.sha }}
+        run: ./scripts/package-windows.ps1 -Version $env:ANYTTY_PACKAGE_VERSION -SkipBuild
 
       - uses: actions/upload-artifact@v7
         with:
-          name: muxvia-windows-amd64
+          name: anytty-windows-amd64
           path: .artifacts/packages/*.zip
           if-no-files-found: error

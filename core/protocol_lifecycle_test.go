@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/transport"
-	"github.com/muxvia/muxvia/shared/transport/memory"
+	"github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/transport"
+	"github.com/anytty/anytty/shared/transport/memory"
 )
 
 type recordingTransportObserver struct {

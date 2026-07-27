@@ -22,22 +22,22 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	controllercertificate "github.com/muxvia/muxvia/cloud/controller/certificate"
-	"github.com/muxvia/muxvia/cloud/controller/control"
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	"github.com/muxvia/muxvia/cloud/controller/postgres"
-	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
-	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	controllercertificate "github.com/anytty/anytty/cloud/controller/certificate"
+	"github.com/anytty/anytty/cloud/controller/control"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/controller/postgres"
+	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
+	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testing.T) {
-	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

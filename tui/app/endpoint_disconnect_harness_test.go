@@ -3,14 +3,14 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.T) {
@@ -48,7 +48,7 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 	}
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "last remote output") ||
-		!frameContains(frame, "Remote muxvia daemon unavailable") ||
+		!frameContains(frame, "Remote anytty daemon unavailable") ||
 		!frameContains(frame, "detail") ||
 		!frameContains(frame, "next step") ||
 		!frameContains(frame, "Reconnect this pane") ||

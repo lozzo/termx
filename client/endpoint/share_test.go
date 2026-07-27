@@ -13,7 +13,7 @@ func TestClientEndpointShareBundleIsConfigOnlyAndProducesDiff(t *testing.T) {
 		DaemonIdentity: DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"},
 		ConnectMode:    ConnectAuto, Enabled: true, SelectionPolicy: SelectionPolicy{HedgeDelayConfigured: true, HedgeDelay: 250 * time.Millisecond},
 		Routes: map[RouteID]AccessRoute{
-			"local":  {ID: "local", Kind: RouteLocalUnix, Enabled: true, ManualOnly: true, Socket: "/tmp/muxvia.sock", Source: SourceLocal, PolicySource: SourceLocal},
+			"local":  {ID: "local", Kind: RouteLocalUnix, Enabled: true, ManualOnly: true, Socket: "/tmp/anytty.sock", Source: SourceLocal, PolicySource: SourceLocal},
 			"direct": {ID: "direct", Kind: RouteDirectWebRTCTCP, Enabled: true, Priority: &priority, CredentialRef: "grant:source", Source: SourceManual, PolicySource: SourceUser, SignalingAddresses: []string{"studio:41120"}, ICETCPAddresses: []string{"studio:41121"}},
 		},
 	}

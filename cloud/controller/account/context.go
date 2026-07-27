@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"time"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 type identityContextKey struct{}

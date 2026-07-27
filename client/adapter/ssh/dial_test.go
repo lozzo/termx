@@ -6,9 +6,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/adapter/direct"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/client/adapter/direct"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	golangssh "golang.org/x/crypto/ssh"
 )
 

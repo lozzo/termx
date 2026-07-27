@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	"github.com/anytty/anytty/proto/bindingpb"
 	golangssh "golang.org/x/crypto/ssh"
 )
 

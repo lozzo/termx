@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/shortcut"
-	"github.com/muxvia/muxvia/tui/state"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/shortcut"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // Binding 是 shortcut catalog 编译后的运行时路由项。
@@ -532,7 +532,7 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 
 func routeMouse(event InputEvent, options RouteOptions) Intent {
 	// 中文说明：copy/history 尚未接管时，前台 terminal 的 mouse tracking 优先于滚轮进历史；
-	// 一旦 copy/history 已经激活，滚轮仍属于 Muxvia history。
+	// 一旦 copy/history 已经激活，滚轮仍属于 AnyTTY history。
 	if !options.CopyModeActive && options.TerminalMousePassthrough && event.RawSeq != "" {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.RawSeq), RawMouse: true}
 	}

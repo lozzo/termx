@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

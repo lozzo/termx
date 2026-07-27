@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/anytty/anytty/proto/bindingpb"
 	"google.golang.org/protobuf/proto"
 )
 

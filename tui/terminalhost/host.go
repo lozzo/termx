@@ -13,8 +13,8 @@ import (
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/muesli/cancelreader"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/render"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/render"
 )
 
 const (
@@ -161,7 +161,7 @@ func WithThemeProbe(enabled bool) Option {
 	}
 }
 
-// WithLogger 打开 host/frame-sink 诊断日志；实际采样仍由 MUXVIA_TUI_DIAG 控制。
+// WithLogger 打开 host/frame-sink 诊断日志；实际采样仍由 ANYTTY_TUI_DIAG 控制。
 func WithLogger(logger *slog.Logger) Option {
 	return func(host *Host) {
 		host.logger = logger

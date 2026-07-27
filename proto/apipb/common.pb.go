@@ -410,7 +410,7 @@ func (x *OperationStamp) GetOperationId() string {
 type ResourceHandle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OpaqueToken   []byte                 `protobuf:"bytes,1,opt,name=opaque_token,json=opaqueToken,proto3" json:"opaque_token,omitempty"`
-	Kind          ResourceKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=muxvia.api.v1.ResourceKind" json:"kind,omitempty"`
+	Kind          ResourceKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=anytty.api.v1.ResourceKind" json:"kind,omitempty"`
 	Session       *EndpointSessionStamp  `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
 	Generation    uint64                 `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -685,7 +685,7 @@ func (x *ResourceErrorDetail) GetResource() *ResourceHandle {
 
 type ApiError struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
-	Code      ApiErrorCode           `protobuf:"varint,1,opt,name=code,proto3,enum=muxvia.api.v1.ApiErrorCode" json:"code,omitempty"`
+	Code      ApiErrorCode           `protobuf:"varint,1,opt,name=code,proto3,enum=anytty.api.v1.ApiErrorCode" json:"code,omitempty"`
 	Message   string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	Retryable bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
 	Attempted bool                   `protobuf:"varint,4,opt,name=attempted,proto3" json:"attempted,omitempty"`
@@ -817,7 +817,7 @@ var File_apipb_common_proto protoreflect.FileDescriptor
 
 const file_apipb_common_proto_rawDesc = "" +
 	"\n" +
-	"\x12apipb/common.proto\x12\rmuxvia.api.v1\"8\n" +
+	"\x12apipb/common.proto\x12\ranytty.api.v1\"8\n" +
 	"\n" +
 	"ApiVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
@@ -830,40 +830,40 @@ const file_apipb_common_proto_rawDesc = "" +
 	"generation\x18\x03 \x01(\x04R\n" +
 	"generation\"r\n" +
 	"\x0eOperationStamp\x12=\n" +
-	"\asession\x18\x01 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12!\n" +
+	"\asession\x18\x01 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\asession\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\"\xc3\x01\n" +
 	"\x0eResourceHandle\x12!\n" +
 	"\fopaque_token\x18\x01 \x01(\fR\vopaqueToken\x12/\n" +
-	"\x04kind\x18\x02 \x01(\x0e2\x1b.muxvia.api.v1.ResourceKindR\x04kind\x12=\n" +
-	"\asession\x18\x03 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12\x1e\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1b.anytty.api.v1.ResourceKindR\x04kind\x12=\n" +
+	"\asession\x18\x03 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\asession\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x04 \x01(\x04R\n" +
 	"generation\"\xb0\x01\n" +
 	"\x0eRequestContext\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
-	"\vapi_version\x18\x02 \x01(\v2\x19.muxvia.api.v1.ApiVersionR\n" +
+	"\vapi_version\x18\x02 \x01(\v2\x19.anytty.api.v1.ApiVersionR\n" +
 	"apiVersion\x12=\n" +
-	"\asession\x18\x04 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asessionJ\x04\b\x03\x10\x04\"E\n" +
+	"\asession\x18\x04 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\asessionJ\x04\b\x03\x10\x04\"E\n" +
 	"\x15ValidationErrorDetail\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\tR\x05field\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8b\x01\n" +
 	"\x17StaleSessionErrorDetail\x12A\n" +
-	"\trequested\x18\x01 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\trequested\x12-\n" +
+	"\trequested\x18\x01 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\trequested\x12-\n" +
 	"\x12current_generation\x18\x02 \x01(\x04R\x11currentGeneration\"P\n" +
 	"\x13ResourceErrorDetail\x129\n" +
-	"\bresource\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresource\"\xf4\x02\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\"\xf4\x02\n" +
 	"\bApiError\x12/\n" +
-	"\x04code\x18\x01 \x01(\x0e2\x1b.muxvia.api.v1.ApiErrorCodeR\x04code\x12\x18\n" +
+	"\x04code\x18\x01 \x01(\x0e2\x1b.anytty.api.v1.ApiErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
 	"\tretryable\x18\x03 \x01(\bR\tretryable\x12\x1c\n" +
 	"\tattempted\x18\x04 \x01(\bR\tattempted\x12F\n" +
 	"\n" +
 	"validation\x18\n" +
-	" \x01(\v2$.muxvia.api.v1.ValidationErrorDetailH\x00R\n" +
+	" \x01(\v2$.anytty.api.v1.ValidationErrorDetailH\x00R\n" +
 	"validation\x12M\n" +
-	"\rstale_session\x18\v \x01(\v2&.muxvia.api.v1.StaleSessionErrorDetailH\x00R\fstaleSession\x12@\n" +
-	"\bresource\x18\f \x01(\v2\".muxvia.api.v1.ResourceErrorDetailH\x00R\bresourceB\b\n" +
+	"\rstale_session\x18\v \x01(\v2&.anytty.api.v1.StaleSessionErrorDetailH\x00R\fstaleSession\x12@\n" +
+	"\bresource\x18\f \x01(\v2\".anytty.api.v1.ResourceErrorDetailH\x00R\bresourceB\b\n" +
 	"\x06detail*\x98\x04\n" +
 	"\rApiCapability\x12\x1e\n" +
 	"\x1aAPI_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1f\n" +
@@ -903,7 +903,7 @@ const file_apipb_common_proto_rawDesc = "" +
 	"\x1aRESOURCE_KIND_SUBSCRIPTION\x10\x02\x12%\n" +
 	"!RESOURCE_KIND_TERMINAL_ATTACHMENT\x10\x03\x12 \n" +
 	"\x1cRESOURCE_KIND_HISTORY_WINDOW\x10\x04\x12\x1f\n" +
-	"\x1bRESOURCE_KIND_FILE_TRANSFER\x10\x05B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
+	"\x1bRESOURCE_KIND_FILE_TRANSFER\x10\x05B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_common_proto_rawDescOnce sync.Once
@@ -920,31 +920,31 @@ func file_apipb_common_proto_rawDescGZIP() []byte {
 var file_apipb_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_apipb_common_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_apipb_common_proto_goTypes = []any{
-	(ApiCapability)(0),              // 0: muxvia.api.v1.ApiCapability
-	(ApiErrorCode)(0),               // 1: muxvia.api.v1.ApiErrorCode
-	(ResourceKind)(0),               // 2: muxvia.api.v1.ResourceKind
-	(*ApiVersion)(nil),              // 3: muxvia.api.v1.ApiVersion
-	(*EndpointSessionStamp)(nil),    // 4: muxvia.api.v1.EndpointSessionStamp
-	(*OperationStamp)(nil),          // 5: muxvia.api.v1.OperationStamp
-	(*ResourceHandle)(nil),          // 6: muxvia.api.v1.ResourceHandle
-	(*RequestContext)(nil),          // 7: muxvia.api.v1.RequestContext
-	(*ValidationErrorDetail)(nil),   // 8: muxvia.api.v1.ValidationErrorDetail
-	(*StaleSessionErrorDetail)(nil), // 9: muxvia.api.v1.StaleSessionErrorDetail
-	(*ResourceErrorDetail)(nil),     // 10: muxvia.api.v1.ResourceErrorDetail
-	(*ApiError)(nil),                // 11: muxvia.api.v1.ApiError
+	(ApiCapability)(0),              // 0: anytty.api.v1.ApiCapability
+	(ApiErrorCode)(0),               // 1: anytty.api.v1.ApiErrorCode
+	(ResourceKind)(0),               // 2: anytty.api.v1.ResourceKind
+	(*ApiVersion)(nil),              // 3: anytty.api.v1.ApiVersion
+	(*EndpointSessionStamp)(nil),    // 4: anytty.api.v1.EndpointSessionStamp
+	(*OperationStamp)(nil),          // 5: anytty.api.v1.OperationStamp
+	(*ResourceHandle)(nil),          // 6: anytty.api.v1.ResourceHandle
+	(*RequestContext)(nil),          // 7: anytty.api.v1.RequestContext
+	(*ValidationErrorDetail)(nil),   // 8: anytty.api.v1.ValidationErrorDetail
+	(*StaleSessionErrorDetail)(nil), // 9: anytty.api.v1.StaleSessionErrorDetail
+	(*ResourceErrorDetail)(nil),     // 10: anytty.api.v1.ResourceErrorDetail
+	(*ApiError)(nil),                // 11: anytty.api.v1.ApiError
 }
 var file_apipb_common_proto_depIdxs = []int32{
-	4,  // 0: muxvia.api.v1.OperationStamp.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	2,  // 1: muxvia.api.v1.ResourceHandle.kind:type_name -> muxvia.api.v1.ResourceKind
-	4,  // 2: muxvia.api.v1.ResourceHandle.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	3,  // 3: muxvia.api.v1.RequestContext.api_version:type_name -> muxvia.api.v1.ApiVersion
-	4,  // 4: muxvia.api.v1.RequestContext.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	4,  // 5: muxvia.api.v1.StaleSessionErrorDetail.requested:type_name -> muxvia.api.v1.EndpointSessionStamp
-	6,  // 6: muxvia.api.v1.ResourceErrorDetail.resource:type_name -> muxvia.api.v1.ResourceHandle
-	1,  // 7: muxvia.api.v1.ApiError.code:type_name -> muxvia.api.v1.ApiErrorCode
-	8,  // 8: muxvia.api.v1.ApiError.validation:type_name -> muxvia.api.v1.ValidationErrorDetail
-	9,  // 9: muxvia.api.v1.ApiError.stale_session:type_name -> muxvia.api.v1.StaleSessionErrorDetail
-	10, // 10: muxvia.api.v1.ApiError.resource:type_name -> muxvia.api.v1.ResourceErrorDetail
+	4,  // 0: anytty.api.v1.OperationStamp.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	2,  // 1: anytty.api.v1.ResourceHandle.kind:type_name -> anytty.api.v1.ResourceKind
+	4,  // 2: anytty.api.v1.ResourceHandle.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	3,  // 3: anytty.api.v1.RequestContext.api_version:type_name -> anytty.api.v1.ApiVersion
+	4,  // 4: anytty.api.v1.RequestContext.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	4,  // 5: anytty.api.v1.StaleSessionErrorDetail.requested:type_name -> anytty.api.v1.EndpointSessionStamp
+	6,  // 6: anytty.api.v1.ResourceErrorDetail.resource:type_name -> anytty.api.v1.ResourceHandle
+	1,  // 7: anytty.api.v1.ApiError.code:type_name -> anytty.api.v1.ApiErrorCode
+	8,  // 8: anytty.api.v1.ApiError.validation:type_name -> anytty.api.v1.ValidationErrorDetail
+	9,  // 9: anytty.api.v1.ApiError.stale_session:type_name -> anytty.api.v1.StaleSessionErrorDetail
+	10, // 10: anytty.api.v1.ApiError.resource:type_name -> anytty.api.v1.ResourceErrorDetail
 	11, // [11:11] is the sub-list for method output_type
 	11, // [11:11] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name

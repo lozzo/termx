@@ -8,9 +8,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/muxvia/muxvia/cloud/edge/policy"
-	"github.com/muxvia/muxvia/cloud/runtimesnapshot"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/edge/policy"
+	"github.com/anytty/anytty/cloud/runtimesnapshot"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
 )
 

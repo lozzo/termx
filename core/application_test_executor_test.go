@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 type applicationTestExecutor struct {

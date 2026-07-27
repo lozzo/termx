@@ -3,9 +3,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := build
 
 ARTIFACT_DIR := $(CURDIR)/.artifacts
-MUXVIA_BIN := $(ARTIFACT_DIR)/bin/muxvia
-CLOUD_CONTROLLER_BIN := $(ARTIFACT_DIR)/bin/muxvia-cloud-controller
-CLOUD_EDGE_BIN := $(ARTIFACT_DIR)/bin/muxvia-cloud-edge
+ANYTTY_BIN := $(ARTIFACT_DIR)/bin/anytty
+CLOUD_CONTROLLER_BIN := $(ARTIFACT_DIR)/bin/anytty-cloud-controller
+CLOUD_EDGE_BIN := $(ARTIFACT_DIR)/bin/anytty-cloud-edge
 ANDROID_DIR := $(CURDIR)/clients/mobile/android
 ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 
@@ -14,27 +14,27 @@ ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make / make build  Build muxvia into .artifacts/bin/' \
-		'  make build-cloud    Build both Muxvia Cloud processes' \
+		'  make / make build  Build anytty into .artifacts/bin/' \
+		'  make build-cloud    Build both AnyTTY Cloud processes' \
 		'  make test          Test the Go module' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
-		'  make test-android  Build/test the Muxvia Android APK' \
+		'  make test-android  Build/test the AnyTTY Android APK' \
 		'  make test-all      Run all repository test gates sequentially' \
 		'  make doctor        Check toolchain, generated code, and repository layout' \
 		'  make clean         Remove known generated build outputs'
 
 build:
-	mkdir -p "$(dir $(MUXVIA_BIN))"
-	GOWORK=off go build -o "$(MUXVIA_BIN)" ./cmd/muxvia
+	mkdir -p "$(dir $(ANYTTY_BIN))"
+	GOWORK=off go build -o "$(ANYTTY_BIN)" ./cmd/anytty
 
 build-cloud:
 	npm run build:cloud-web
 	mkdir -p "$(dir $(CLOUD_CONTROLLER_BIN))"
-	GOWORK=off go build -o "$(CLOUD_CONTROLLER_BIN)" ./cmd/muxvia-cloud-controller
-	GOWORK=off go build -o "$(CLOUD_EDGE_BIN)" ./cmd/muxvia-cloud-edge
+	GOWORK=off go build -o "$(CLOUD_CONTROLLER_BIN)" ./cmd/anytty-cloud-controller
+	GOWORK=off go build -o "$(CLOUD_EDGE_BIN)" ./cmd/anytty-cloud-edge
 
 test:
-	scripts/with-clean-muxvia-env.sh env GOWORK=off go test ./... -count=1
+	scripts/with-clean-anytty-env.sh env GOWORK=off go test ./... -count=1
 
 test-clients:
 	node scripts/client-workspace-guard.mjs

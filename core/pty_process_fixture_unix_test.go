@@ -7,7 +7,7 @@ func ptyInteractiveFixture() ([]string, []byte) {
 }
 
 func ptyEnvironmentFixture() []string {
-	return []string{"/bin/sh", "-c", "printf 'cwd:%s env:%s\\n' \"$PWD\" \"$MUXVIA_REMOTE_TEST\""}
+	return []string{"/bin/sh", "-c", "printf 'cwd:%s env:%s\\n' \"$PWD\" \"$ANYTTY_REMOTE_TEST\""}
 }
 
 func ptyLongRunningFixture() []string {

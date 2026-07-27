@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit deterministic background footprint rows for Muxvia tmux harness."""
+"""Emit deterministic background footprint rows for AnyTTY tmux harness."""
 
 from __future__ import annotations
 

@@ -7,8 +7,8 @@ package main
 #include <android/log.h>
 #include <stdlib.h>
 
-static void muxvia_android_log(const char *message) {
-  __android_log_write(ANDROID_LOG_WARN, "MuxviaGoClient", message);
+static void anytty_android_log(const char *message) {
+  __android_log_write(ANDROID_LOG_WARN, "AnyTTYGoClient", message);
 }
 */
 import "C"
@@ -24,7 +24,7 @@ type androidLogWriter struct{}
 func (androidLogWriter) Write(payload []byte) (int, error) {
 	message := C.CString(strings.TrimSpace(string(payload)))
 	defer C.free(unsafe.Pointer(message))
-	C.muxvia_android_log(message)
+	C.anytty_android_log(message)
 	return len(payload), nil
 }
 

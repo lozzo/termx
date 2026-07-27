@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 )
 
 func TestPairingClaimCodeUsesCanonicalCompressionAndBoundedDecode(t *testing.T) {
-	compressible := bytes.Repeat([]byte("muxvia-pairing-route-"), 100)
+	compressible := bytes.Repeat([]byte("anytty-pairing-route-"), 100)
 	code := EncodePairingClaimCode(compressible)
 	envelope, err := base64.RawURLEncoding.DecodeString(code[len(PairingClaimCodePrefix):])
 	if err != nil || len(envelope) == 0 || envelope[0] != pairingClaimEnvelopeDeflate {

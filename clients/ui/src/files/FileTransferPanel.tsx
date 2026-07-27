@@ -106,7 +106,7 @@ export function FileTransferPanel({
           ? 'flex w-full items-center justify-between px-4 py-2 text-left'
           : variant === 'icon'
             ? 'flex h-8 w-8 items-center justify-center text-zinc-400 transition-colors hover:bg-zinc-800 active:bg-zinc-800'
-            : 'flex min-h-12 items-center gap-3 border border-[var(--muxvia-app-line-strong)] bg-[var(--muxvia-app-surface)] px-3 py-2 text-left shadow-[0_8px_24px_rgba(15,23,42,0.12)] active:bg-[var(--muxvia-app-surface-soft)]'}
+            : 'flex min-h-12 items-center gap-3 border border-[var(--anytty-app-line-strong)] bg-[var(--anytty-app-surface)] px-3 py-2 text-left shadow-[0_8px_24px_rgba(15,23,42,0.12)] active:bg-[var(--anytty-app-surface-soft)]'}
       >
         <span className={variant === 'icon' ? 'relative flex h-8 w-8 items-center justify-center' : 'relative flex h-8 w-8 shrink-0 items-center justify-center bg-blue-50 text-blue-600'}>
           <Download className={variant === 'icon' ? 'h-4 w-4' : 'h-4 w-4'} />
@@ -252,10 +252,10 @@ function TransferCenterDialog({
   }
 
   return (
-    <div className="muxvia-app-page fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
+    <div className="anytty-app-page fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
       <section className="flex h-full min-h-0 w-full flex-col bg-white">
         {selectionMode ? (
-          <header className="muxvia-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+          <header className="anytty-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
             <button
               type="button"
               className="text-[15px] font-medium text-zinc-500 hover:text-zinc-700 active:text-zinc-800"
@@ -277,7 +277,7 @@ function TransferCenterDialog({
             </button>
           </header>
         ) : (
-          <header className="muxvia-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+          <header className="anytty-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
             <div className="min-w-0">
               <h2 className="text-[18px] font-semibold text-zinc-950">{translate('files.transfer.center')}</h2>
               <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
@@ -287,7 +287,7 @@ function TransferCenterDialog({
                 <button
                   type="button"
                   aria-label={translate('files.transfer.resumeAll')}
-                  className="muxvia-app-primary-button gap-1.5 px-3 text-[12px] font-semibold"
+                  className="anytty-app-primary-button gap-1.5 px-3 text-[12px] font-semibold"
                   onClick={() => { hapticImpact(); onResumeAll() }}
                 >
                   <RotateCw className="h-4 w-4" />
@@ -297,7 +297,7 @@ function TransferCenterDialog({
               <button
                 type="button"
                 aria-label={translate('files.transfer.closeCenter')}
-                className="muxvia-app-icon-button border-transparent bg-transparent"
+                className="anytty-app-icon-button border-transparent bg-transparent"
                 onClick={() => { hapticSelection(); onClose() }}
               >
                 <X className="h-5 w-5" />
@@ -334,7 +334,7 @@ function TransferCenterDialog({
                       {selected ? <CheckSquare className="h-4 w-4 text-zinc-900" /> : <Square className="h-4 w-4" />}
                     </button>
                   ) : null}
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-[var(--muxvia-app-line)] ${t.direction === 'download' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-[var(--anytty-app-line)] ${t.direction === 'download' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
                     {t.direction === 'download' ? <ArrowDownToLine className="h-4 w-4" /> : <ArrowUpFromLine className="h-4 w-4" />}
                   </div>
                   <div className="min-w-0 flex-1">

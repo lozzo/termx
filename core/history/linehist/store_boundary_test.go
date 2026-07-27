@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // R434 准入（store 级）：resize / ED3-ClearScrollback / alt-screen 边界。

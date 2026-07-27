@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/filelock"
-	"github.com/muxvia/muxvia/shared/filepublish"
-	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/anytty/anytty/shared/filelock"
+	"github.com/anytty/anytty/shared/filepublish"
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 const (

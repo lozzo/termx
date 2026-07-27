@@ -4,7 +4,7 @@ import "strings"
 
 // SizeLockTag 是 terminal metadata 中表达尺寸锁定策略的共享 tag。
 // daemon、remote inventory 和 TUI 都只能把它当作语义字段；具体图标和按钮文案归展示层所有。
-const SizeLockTag = "muxvia.size_lock"
+const SizeLockTag = "anytty.size_lock"
 
 const (
 	SizeLockOff  = "off"

@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/wire"
 
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/shared/transport"
 	"google.golang.org/protobuf/proto"
 )
 

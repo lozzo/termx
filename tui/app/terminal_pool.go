@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/shared/terminalmeta"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/shared/terminalmeta"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 const (

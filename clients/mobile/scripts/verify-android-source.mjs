@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const androidRoot = join(mobileRoot, 'android')
-const sourceRoot = join(androidRoot, 'app', 'src', 'main', 'java', 'com', 'muxvia', 'app')
+const sourceRoot = join(androidRoot, 'app', 'src', 'main', 'java', 'com', 'anytty', 'app')
 
 function fail(message) {
   throw new Error(`Android source integrity failed: ${message}`)
@@ -27,8 +27,8 @@ for (const path of [
   'NativeConnectionPlugin.kt',
   'NativeFilePickerPlugin.kt',
   'NativeHapticPlugin.java',
-  'MuxviaDebugLog.kt',
-  'MuxviaWebChromeClient.java',
+  'AnyTTYDebugLog.kt',
+  'AnyTTYWebChromeClient.java',
   join('goclient', 'AndroidClientPlatform.kt'),
   join('goclient', 'GoClientBridgeServer.kt'),
   join('goclient', 'GoClientNative.kt'),
@@ -66,7 +66,7 @@ for (const fragment of ['android.permission.ACCESS_NETWORK_STATE', 'android.perm
   if (!manifestText.includes(fragment)) fail(`manifest lost required fragment: ${fragment}`)
 }
 const gradleText = readFileSync(buildGradle, 'utf8')
-for (const fragment of ["apply plugin: 'kotlin-android'", '// muxvia NativeConnection dependencies', 'shrinkResources true', "main.proto.srcDir '../../../../proto'"]) {
+for (const fragment of ["apply plugin: 'kotlin-android'", '// anytty NativeConnection dependencies', 'shrinkResources true', "main.proto.srcDir '../../../../proto'"]) {
   if (!gradleText.includes(fragment)) fail(`Gradle configuration lost required fragment: ${fragment}`)
 }
 const capacitorConfigText = readFileSync(capacitorConfig, 'utf8')

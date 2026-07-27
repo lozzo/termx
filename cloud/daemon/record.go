@@ -1,4 +1,4 @@
-// Package daemon 实现 daemon 进程内唯一 Muxvia Cloud owner。
+// Package daemon 实现 daemon 进程内唯一 AnyTTY Cloud owner。
 package daemon
 
 import (

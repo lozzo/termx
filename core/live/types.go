@@ -4,10 +4,10 @@ import (
 	"os"
 	"strings"
 
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
-const preserveAltScreenOnExitEnv = "MUXVIA_PRESERVE_ALT_SCREEN_ON_EXIT"
+const preserveAltScreenOnExitEnv = "ANYTTY_PRESERVE_ALT_SCREEN_ON_EXIT"
 
 // SurfaceSize describes the current host projection size.
 type SurfaceSize struct {

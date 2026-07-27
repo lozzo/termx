@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package muxvia.cloud.v1;
+package anytty.cloud.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 enum PlanState {
   PLAN_STATE_UNSPECIFIED = 0;

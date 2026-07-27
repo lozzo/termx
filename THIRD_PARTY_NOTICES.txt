@@ -1,10 +1,10 @@
-Muxvia Third-Party Notices
+AnyTTY Third-Party Notices
 
-本文件是当前仓库的第三方材料索引。根 LICENSE 对 Muxvia 自有材料的当前约定不改变任何第三方材料的原始许可。
+本文件是当前仓库的第三方材料索引。根 LICENSE 对 AnyTTY 自有材料的当前约定不改变任何第三方材料的原始许可。
 
 Artifact Notice Bundles
 
-- muxvia CLI/daemon: cmd/muxvia/THIRD_PARTY_NOTICES.txt; 用户入口为 muxvia licenses。
+- anytty CLI/daemon: cmd/anytty/THIRD_PARTY_NOTICES.txt; 用户入口为 anytty licenses。
 - Android App: clients/mobile/public/THIRD_PARTY_NOTICES.txt 和 clients/mobile/public/third-party/; 随 App web assets 与 APK assets/public/ 分发。
 
 这些 bundle 按实际 Go build graph、npm lockfile、Gradle runtime graph 和内嵌资产分别生成。单独列出 SPDX 名称或本索引不能替代 artifact 内的完整版权、许可和 NOTICE 文本。

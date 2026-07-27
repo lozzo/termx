@@ -234,9 +234,9 @@ type ClientSessionSummary struct {
 	AccountId     string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	DaemonId      string                 `protobuf:"bytes,3,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
 	ClientId      string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	Product       ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	Product       ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
 	Generation    uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
-	AccessMode    CloudClientAccessMode  `protobuf:"varint,7,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	AccessMode    CloudClientAccessMode  `protobuf:"varint,7,opt,name=access_mode,json=accessMode,proto3,enum=anytty.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -328,7 +328,7 @@ type RelayAllocationSummary struct {
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	LeaseId       string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	AccountId     string                 `protobuf:"bytes,4,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Transport     RelayTransport         `protobuf:"varint,5,opt,name=transport,proto3,enum=muxvia.cloud.v1.RelayTransport" json:"transport,omitempty"`
+	Transport     RelayTransport         `protobuf:"varint,5,opt,name=transport,proto3,enum=anytty.cloud.v1.RelayTransport" json:"transport,omitempty"`
 	Generation    uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
 	IngressBytes  uint64                 `protobuf:"varint,7,opt,name=ingress_bytes,json=ingressBytes,proto3" json:"ingress_bytes,omitempty"`
 	EgressBytes   uint64                 `protobuf:"varint,8,opt,name=egress_bytes,json=egressBytes,proto3" json:"egress_bytes,omitempty"`
@@ -814,7 +814,7 @@ var File_cloud_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\x16cloud/v1/runtime.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14cloud/v1/usage.proto\"\x8c\x02\n" +
+	"\x16cloud/v1/runtime.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14cloud/v1/usage.proto\"\x8c\x02\n" +
 	"\rAgentPresence\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1d\n" +
 	"\n" +
@@ -833,11 +833,11 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n" +
 	"\tdaemon_id\x18\x03 \x01(\tR\bdaemonId\x12\x1b\n" +
 	"\tclient_id\x18\x04 \x01(\tR\bclientId\x128\n" +
-	"\aproduct\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12\x1e\n" +
+	"\aproduct\x18\x05 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x06 \x01(\x04R\n" +
 	"generation\x12G\n" +
-	"\vaccess_mode\x18\a \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"\vaccess_mode\x18\a \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
 	"accessMode\"\xf8\x02\n" +
 	"\x16RelayAllocationSummary\x12#\n" +
 	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x12\x1d\n" +
@@ -846,7 +846,7 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\blease_id\x18\x03 \x01(\tR\aleaseId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x04 \x01(\tR\taccountId\x12=\n" +
-	"\ttransport\x18\x05 \x01(\x0e2\x1f.muxvia.cloud.v1.RelayTransportR\ttransport\x12\x1e\n" +
+	"\ttransport\x18\x05 \x01(\x0e2\x1f.anytty.cloud.v1.RelayTransportR\ttransport\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x06 \x01(\x04R\n" +
 	"generation\x12#\n" +
@@ -856,9 +856,9 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"started_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\"\xf3\x01\n" +
 	"\x0fRuntimeSnapshot\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x126\n" +
-	"\x06agents\x18\x02 \x03(\v2\x1e.muxvia.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
-	"\bsessions\x18\x03 \x03(\v2%.muxvia.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
-	"\vallocations\x18\x04 \x03(\v2'.muxvia.cloud.v1.RelayAllocationSummaryR\vallocations\"K\n" +
+	"\x06agents\x18\x02 \x03(\v2\x1e.anytty.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
+	"\bsessions\x18\x03 \x03(\v2%.anytty.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
+	"\vallocations\x18\x04 \x03(\v2'.anytty.cloud.v1.RelayAllocationSummaryR\vallocations\"K\n" +
 	"\fAgentRemoved\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1e\n" +
 	"\n" +
@@ -878,12 +878,12 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\fRuntimeDelta\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12G\n" +
 	"\x0eagent_upserted\x18\n" +
-	" \x01(\v2\x1e.muxvia.cloud.v1.AgentPresenceH\x00R\ragentUpserted\x12D\n" +
-	"\ragent_removed\x18\v \x01(\v2\x1d.muxvia.cloud.v1.AgentRemovedH\x00R\fagentRemoved\x12R\n" +
-	"\x10session_upserted\x18\f \x01(\v2%.muxvia.cloud.v1.ClientSessionSummaryH\x00R\x0fsessionUpserted\x12P\n" +
-	"\x0fsession_removed\x18\r \x01(\v2%.muxvia.cloud.v1.ClientSessionRemovedH\x00R\x0esessionRemoved\x12Z\n" +
-	"\x13allocation_upserted\x18\x0e \x01(\v2'.muxvia.cloud.v1.RelayAllocationSummaryH\x00R\x12allocationUpserted\x12X\n" +
-	"\x12allocation_removed\x18\x0f \x01(\v2'.muxvia.cloud.v1.RelayAllocationRemovedH\x00R\x11allocationRemovedB\b\n" +
+	" \x01(\v2\x1e.anytty.cloud.v1.AgentPresenceH\x00R\ragentUpserted\x12D\n" +
+	"\ragent_removed\x18\v \x01(\v2\x1d.anytty.cloud.v1.AgentRemovedH\x00R\fagentRemoved\x12R\n" +
+	"\x10session_upserted\x18\f \x01(\v2%.anytty.cloud.v1.ClientSessionSummaryH\x00R\x0fsessionUpserted\x12P\n" +
+	"\x0fsession_removed\x18\r \x01(\v2%.anytty.cloud.v1.ClientSessionRemovedH\x00R\x0esessionRemoved\x12Z\n" +
+	"\x13allocation_upserted\x18\x0e \x01(\v2'.anytty.cloud.v1.RelayAllocationSummaryH\x00R\x12allocationUpserted\x12X\n" +
+	"\x12allocation_removed\x18\x0f \x01(\v2'.anytty.cloud.v1.RelayAllocationRemovedH\x00R\x11allocationRemovedB\b\n" +
 	"\x06change*\xb3\x01\n" +
 	"\rClientProduct\x12\x1e\n" +
 	"\x1aCLIENT_PRODUCT_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -895,7 +895,7 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\x15CloudClientAccessMode\x12(\n" +
 	"$CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED\x10\x00\x12'\n" +
 	"#CLOUD_CLIENT_ACCESS_MODE_CAPABILITY\x10\x01\x12$\n" +
-	" CLOUD_CLIENT_ACCESS_MODE_PAIRING\x10\x02B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	" CLOUD_CLIENT_ACCESS_MODE_PAIRING\x10\x02B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_runtime_proto_rawDescOnce sync.Once
@@ -912,34 +912,34 @@ func file_cloud_v1_runtime_proto_rawDescGZIP() []byte {
 var file_cloud_v1_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_cloud_v1_runtime_proto_goTypes = []any{
-	(ClientProduct)(0),             // 0: muxvia.cloud.v1.ClientProduct
-	(CloudClientAccessMode)(0),     // 1: muxvia.cloud.v1.CloudClientAccessMode
-	(*AgentPresence)(nil),          // 2: muxvia.cloud.v1.AgentPresence
-	(*ClientSessionSummary)(nil),   // 3: muxvia.cloud.v1.ClientSessionSummary
-	(*RelayAllocationSummary)(nil), // 4: muxvia.cloud.v1.RelayAllocationSummary
-	(*RuntimeSnapshot)(nil),        // 5: muxvia.cloud.v1.RuntimeSnapshot
-	(*AgentRemoved)(nil),           // 6: muxvia.cloud.v1.AgentRemoved
-	(*ClientSessionRemoved)(nil),   // 7: muxvia.cloud.v1.ClientSessionRemoved
-	(*RelayAllocationRemoved)(nil), // 8: muxvia.cloud.v1.RelayAllocationRemoved
-	(*RuntimeDelta)(nil),           // 9: muxvia.cloud.v1.RuntimeDelta
+	(ClientProduct)(0),             // 0: anytty.cloud.v1.ClientProduct
+	(CloudClientAccessMode)(0),     // 1: anytty.cloud.v1.CloudClientAccessMode
+	(*AgentPresence)(nil),          // 2: anytty.cloud.v1.AgentPresence
+	(*ClientSessionSummary)(nil),   // 3: anytty.cloud.v1.ClientSessionSummary
+	(*RelayAllocationSummary)(nil), // 4: anytty.cloud.v1.RelayAllocationSummary
+	(*RuntimeSnapshot)(nil),        // 5: anytty.cloud.v1.RuntimeSnapshot
+	(*AgentRemoved)(nil),           // 6: anytty.cloud.v1.AgentRemoved
+	(*ClientSessionRemoved)(nil),   // 7: anytty.cloud.v1.ClientSessionRemoved
+	(*RelayAllocationRemoved)(nil), // 8: anytty.cloud.v1.RelayAllocationRemoved
+	(*RuntimeDelta)(nil),           // 9: anytty.cloud.v1.RuntimeDelta
 	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
-	(RelayTransport)(0),            // 11: muxvia.cloud.v1.RelayTransport
+	(RelayTransport)(0),            // 11: anytty.cloud.v1.RelayTransport
 }
 var file_cloud_v1_runtime_proto_depIdxs = []int32{
-	10, // 0: muxvia.cloud.v1.AgentPresence.ticket_issued_at:type_name -> google.protobuf.Timestamp
-	0,  // 1: muxvia.cloud.v1.ClientSessionSummary.product:type_name -> muxvia.cloud.v1.ClientProduct
-	1,  // 2: muxvia.cloud.v1.ClientSessionSummary.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
-	11, // 3: muxvia.cloud.v1.RelayAllocationSummary.transport:type_name -> muxvia.cloud.v1.RelayTransport
-	10, // 4: muxvia.cloud.v1.RelayAllocationSummary.started_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: muxvia.cloud.v1.RuntimeSnapshot.agents:type_name -> muxvia.cloud.v1.AgentPresence
-	3,  // 6: muxvia.cloud.v1.RuntimeSnapshot.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	4,  // 7: muxvia.cloud.v1.RuntimeSnapshot.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
-	2,  // 8: muxvia.cloud.v1.RuntimeDelta.agent_upserted:type_name -> muxvia.cloud.v1.AgentPresence
-	6,  // 9: muxvia.cloud.v1.RuntimeDelta.agent_removed:type_name -> muxvia.cloud.v1.AgentRemoved
-	3,  // 10: muxvia.cloud.v1.RuntimeDelta.session_upserted:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	7,  // 11: muxvia.cloud.v1.RuntimeDelta.session_removed:type_name -> muxvia.cloud.v1.ClientSessionRemoved
-	4,  // 12: muxvia.cloud.v1.RuntimeDelta.allocation_upserted:type_name -> muxvia.cloud.v1.RelayAllocationSummary
-	8,  // 13: muxvia.cloud.v1.RuntimeDelta.allocation_removed:type_name -> muxvia.cloud.v1.RelayAllocationRemoved
+	10, // 0: anytty.cloud.v1.AgentPresence.ticket_issued_at:type_name -> google.protobuf.Timestamp
+	0,  // 1: anytty.cloud.v1.ClientSessionSummary.product:type_name -> anytty.cloud.v1.ClientProduct
+	1,  // 2: anytty.cloud.v1.ClientSessionSummary.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	11, // 3: anytty.cloud.v1.RelayAllocationSummary.transport:type_name -> anytty.cloud.v1.RelayTransport
+	10, // 4: anytty.cloud.v1.RelayAllocationSummary.started_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: anytty.cloud.v1.RuntimeSnapshot.agents:type_name -> anytty.cloud.v1.AgentPresence
+	3,  // 6: anytty.cloud.v1.RuntimeSnapshot.sessions:type_name -> anytty.cloud.v1.ClientSessionSummary
+	4,  // 7: anytty.cloud.v1.RuntimeSnapshot.allocations:type_name -> anytty.cloud.v1.RelayAllocationSummary
+	2,  // 8: anytty.cloud.v1.RuntimeDelta.agent_upserted:type_name -> anytty.cloud.v1.AgentPresence
+	6,  // 9: anytty.cloud.v1.RuntimeDelta.agent_removed:type_name -> anytty.cloud.v1.AgentRemoved
+	3,  // 10: anytty.cloud.v1.RuntimeDelta.session_upserted:type_name -> anytty.cloud.v1.ClientSessionSummary
+	7,  // 11: anytty.cloud.v1.RuntimeDelta.session_removed:type_name -> anytty.cloud.v1.ClientSessionRemoved
+	4,  // 12: anytty.cloud.v1.RuntimeDelta.allocation_upserted:type_name -> anytty.cloud.v1.RelayAllocationSummary
+	8,  // 13: anytty.cloud.v1.RuntimeDelta.allocation_removed:type_name -> anytty.cloud.v1.RelayAllocationRemoved
 	14, // [14:14] is the sub-list for method output_type
 	14, // [14:14] is the sub-list for method input_type
 	14, // [14:14] is the sub-list for extension type_name

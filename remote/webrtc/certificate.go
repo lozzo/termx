@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/shared/remoteauth"
 	pion "github.com/pion/webrtc/v4"
 )
 

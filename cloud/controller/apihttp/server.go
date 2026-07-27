@@ -17,17 +17,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	"github.com/muxvia/muxvia/cloud/controller/certificate"
-	"github.com/muxvia/muxvia/cloud/controller/commerce"
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	"github.com/muxvia/muxvia/cloud/controller/enrollment"
-	"github.com/muxvia/muxvia/cloud/controller/install"
-	operatorservice "github.com/muxvia/muxvia/cloud/controller/operator"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/certificate"
+	"github.com/anytty/anytty/cloud/controller/commerce"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	"github.com/anytty/anytty/cloud/controller/directoryapi"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
+	"github.com/anytty/anytty/cloud/controller/install"
+	operatorservice "github.com/anytty/anytty/cloud/controller/operator"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -146,7 +146,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	switch {
 	case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/install/edge/"):
 		handler.installScript(writer, request)
-	case request.Method == http.MethodGet && request.URL.Path == "/artifacts/muxvia-cloud-edge-linux-amd64":
+	case request.Method == http.MethodGet && request.URL.Path == "/artifacts/anytty-cloud-edge-linux-amd64":
 		writer.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = writer.Write(handler.config.Install.Artifact())
 	case request.Method == http.MethodPost && request.URL.Path == "/api/install/register":
@@ -236,7 +236,7 @@ func (handler *handler) operator(writer http.ResponseWriter, request *http.Reque
 				writeError(writer, http.StatusBadRequest, err)
 				return
 			}
-			response, err := handler.config.Enrollment.CreateEnrollment(request.Context(), input, "muxvia cloud enroll --controller "+handler.config.PublicOrigin)
+			response, err := handler.config.Enrollment.CreateEnrollment(request.Context(), input, "anytty cloud enroll --controller "+handler.config.PublicOrigin)
 			if err != nil {
 				writeError(writer, http.StatusBadRequest, err)
 				return
@@ -381,14 +381,14 @@ func (handler *handler) allowMutationOrigin(writer http.ResponseWriter, request 
 	}
 	if request.URL.Path == "/api/account/refresh" {
 		csrfCookie, err := request.Cookie(csrfCookieName)
-		if err != nil || csrfCookie.Value == "" || csrfCookie.Value != strings.TrimSpace(request.Header.Get("X-Muxvia-CSRF")) {
+		if err != nil || csrfCookie.Value == "" || csrfCookie.Value != strings.TrimSpace(request.Header.Get("X-AnyTTY-CSRF")) {
 			writeError(writer, http.StatusForbidden, errors.New("CSRF proof is invalid"))
 			return false
 		}
 	} else if strings.HasPrefix(request.URL.Path, "/api/") && request.URL.Path != "/api/account/login" && request.URL.Path != "/api/account/register" {
 		identity, ok := account.IdentityFromContext(request.Context())
 		csrfCookie, err := request.Cookie(csrfCookieName)
-		csrfHeader := strings.TrimSpace(request.Header.Get("X-Muxvia-CSRF"))
+		csrfHeader := strings.TrimSpace(request.Header.Get("X-AnyTTY-CSRF"))
 		if !ok || err != nil || csrfCookie.Value == "" || csrfHeader == "" || csrfCookie.Value != csrfHeader || !validateEncodedCSRF(identity, csrfHeader) {
 			writeError(writer, http.StatusForbidden, errors.New("CSRF proof is invalid"))
 			return false

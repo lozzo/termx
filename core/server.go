@@ -10,14 +10,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/core/history/linehist"
-	"github.com/muxvia/muxvia/core/live"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/shared/runtimepath"
-	"github.com/muxvia/muxvia/shared/transport"
-	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/core/history/linehist"
+	"github.com/anytty/anytty/core/live"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/shared/runtimepath"
+	"github.com/anytty/anytty/shared/transport"
+	unixtransport "github.com/anytty/anytty/shared/transport/unix"
 )
 
 type ListenerFactory func(socketPath string) (transport.Listener, error)
@@ -334,7 +334,7 @@ func (server *Server) historyStoreDir() (string, error) {
 	server.historyFallbackDirMu.Lock()
 	defer server.historyFallbackDirMu.Unlock()
 	if server.historyFallbackDir == "" {
-		dir, err := os.MkdirTemp("", "muxvia-linehist-")
+		dir, err := os.MkdirTemp("", "anytty-linehist-")
 		if err != nil {
 			return "", err
 		}
@@ -964,5 +964,5 @@ func unixListenerFactory(socketPath string) (transport.Listener, error) {
 }
 
 func defaultSocketPath() string {
-	return runtimepath.SocketPath(fmt.Sprintf("muxvia-v2-wire%d.sock", wire.Version))
+	return runtimepath.SocketPath(fmt.Sprintf("anytty-v2-wire%d.sock", wire.Version))
 }

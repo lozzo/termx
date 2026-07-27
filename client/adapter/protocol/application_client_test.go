@@ -5,11 +5,11 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 

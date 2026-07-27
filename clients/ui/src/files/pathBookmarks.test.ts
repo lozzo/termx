@@ -15,7 +15,7 @@ describe('createPathBookmarkApi generated Proto storage', () => {
     })
 
     await expect(createPathBookmarkApi(session).add('/srv/app/', 'prod')).resolves.toMatchObject({ path: '/srv/app', label: 'prod', version: 7 })
-    expect(session.commands[0]?.command).toMatchObject({ case: 'storagePut', value: { key: { appId: 'muxvia.paths' } } })
+    expect(session.commands[0]?.command).toMatchObject({ case: 'storagePut', value: { key: { appId: 'anytty.paths' } } })
   })
 
   it('derives compact labels', () => {

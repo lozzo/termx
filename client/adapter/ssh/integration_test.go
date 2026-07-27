@@ -17,17 +17,17 @@ import (
 	"testing"
 	"time"
 
-	apilayer "github.com/muxvia/muxvia/api_layer"
-	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
-	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	core "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/apipb"
-	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
-	remotev2webrtc "github.com/muxvia/muxvia/remote/webrtc"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	apilayer "github.com/anytty/anytty/api_layer"
+	peeradapter "github.com/anytty/anytty/client/adapter/peer"
+	pionadapter "github.com/anytty/anytty/client/adapter/webrtc/pion"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	core "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/apipb"
+	remotev2daemon "github.com/anytty/anytty/remote/daemon"
+	remotev2webrtc "github.com/anytty/anytty/remote/webrtc"
+	"github.com/anytty/anytty/shared/remoteauth"
 	pionwebrtc "github.com/pion/webrtc/v4"
 	golangssh "golang.org/x/crypto/ssh"
 )
@@ -100,7 +100,7 @@ func TestDialSSHClientSupportsPasswordCredential(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	route := endpoint.AccessRoute{
-		Host: "127.0.0.1", Port: uint16(server.port), User: "muxvia",
+		Host: "127.0.0.1", Port: uint16(server.port), User: "anytty",
 		HostKeyFingerprints: []string{server.hostFingerprint},
 	}
 	client, err := dialSSHClient(ctx, route, []golangssh.AuthMethod{golangssh.Password("correct-password")}, time.Second, nil)
@@ -133,7 +133,7 @@ func TestDialSSHClientCancellationClosesBlockedHandshake(t *testing.T) {
 	address := listener.Addr().(*net.TCPAddr)
 	go func() {
 		_, dialErr := dialSSHClient(ctx, endpoint.AccessRoute{
-			Host: "127.0.0.1", Port: uint16(address.Port), User: "muxvia", HostKeyFingerprints: []string{"SHA256:unused"},
+			Host: "127.0.0.1", Port: uint16(address.Port), User: "anytty", HostKeyFingerprints: []string{"SHA256:unused"},
 		}, []golangssh.AuthMethod{golangssh.Password("unused")}, time.Second, nil)
 		done <- dialErr
 	}()
@@ -379,7 +379,7 @@ func startPasswordSSHServer(t *testing.T, password string) *passwordSSHServer {
 		hostFingerprint: golangssh.FingerprintSHA256(signer.PublicKey()), done: make(chan struct{}),
 	}
 	config := &golangssh.ServerConfig{PasswordCallback: func(metadata golangssh.ConnMetadata, candidate []byte) (*golangssh.Permissions, error) {
-		if metadata.User() != "muxvia" || string(candidate) != password {
+		if metadata.User() != "anytty" || string(candidate) != password {
 			return nil, fmt.Errorf("invalid password")
 		}
 		return nil, nil

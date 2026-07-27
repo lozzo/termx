@@ -3,43 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --muxvia-app-bg: #f1f3f6;
-  --muxvia-app-surface: #ffffff;
-  --muxvia-app-soft: #e8edf3;
-  --muxvia-app-line: #cfd6df;
-  --muxvia-app-line-strong: #aeb8c5;
-  --muxvia-app-text: #111418;
-  --muxvia-app-muted: #626d7a;
-  --muxvia-app-accent: #246bed;
-  --muxvia-app-accent-text: #ffffff;
-  --muxvia-app-success: #087a45;
-  --muxvia-app-danger: #c52b32;
-  --muxvia-app-inverse: #12161b;
+  --anytty-app-bg: #f1f3f6;
+  --anytty-app-surface: #ffffff;
+  --anytty-app-soft: #e8edf3;
+  --anytty-app-line: #cfd6df;
+  --anytty-app-line-strong: #aeb8c5;
+  --anytty-app-text: #111418;
+  --anytty-app-muted: #626d7a;
+  --anytty-app-accent: #246bed;
+  --anytty-app-accent-text: #ffffff;
+  --anytty-app-success: #087a45;
+  --anytty-app-danger: #c52b32;
+  --anytty-app-inverse: #12161b;
 }
 
-.muxvia-app-page {
-  background: var(--muxvia-app-bg);
-  color: var(--muxvia-app-text);
+.anytty-app-page {
+  background: var(--anytty-app-bg);
+  color: var(--anytty-app-text);
 }
 
-.muxvia-app-header {
-  background: var(--muxvia-app-bg);
-  border-color: var(--muxvia-app-line);
+.anytty-app-header {
+  background: var(--anytty-app-bg);
+  border-color: var(--anytty-app-line);
 }
 
-.muxvia-app-panel {
-  background: var(--muxvia-app-surface);
-  border: 1px solid var(--muxvia-app-line);
+.anytty-app-panel {
+  background: var(--anytty-app-surface);
+  border: 1px solid var(--anytty-app-line);
   border-radius: 0;
   box-shadow: none;
 }
 
-.muxvia-app-icon-button {
+.anytty-app-icon-button {
   align-items: center;
-  background: var(--muxvia-app-surface);
-  border: 1px solid var(--muxvia-app-line);
+  background: var(--anytty-app-surface);
+  border: 1px solid var(--anytty-app-line);
   border-radius: 0;
-  color: var(--muxvia-app-muted);
+  color: var(--anytty-app-muted);
   display: inline-flex;
   height: 48px;
   justify-content: center;
@@ -48,17 +48,17 @@
   transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
 }
 
-.muxvia-app-icon-button:active {
-  background: var(--muxvia-app-soft);
-  color: var(--muxvia-app-text);
+.anytty-app-icon-button:active {
+  background: var(--anytty-app-soft);
+  color: var(--anytty-app-text);
 }
 
-.muxvia-app-primary-button {
+.anytty-app-primary-button {
   align-items: center;
-  background: var(--muxvia-app-accent);
-  border: 1px solid var(--muxvia-app-accent);
+  background: var(--anytty-app-accent);
+  border: 1px solid var(--anytty-app-accent);
   border-radius: 0;
-  color: var(--muxvia-app-accent-text);
+  color: var(--anytty-app-accent-text);
   display: inline-flex;
   justify-content: center;
   min-height: 44px;
@@ -66,16 +66,16 @@
   transition: background-color 180ms ease-out, opacity 180ms ease-out;
 }
 
-.muxvia-app-primary-button:active {
+.anytty-app-primary-button:active {
   opacity: 0.82;
 }
 
-.muxvia-app-secondary-button {
+.anytty-app-secondary-button {
   align-items: center;
-  background: var(--muxvia-app-surface);
-  border: 1px solid var(--muxvia-app-line);
+  background: var(--anytty-app-surface);
+  border: 1px solid var(--anytty-app-line);
   border-radius: 0;
-  color: var(--muxvia-app-text);
+  color: var(--anytty-app-text);
   display: inline-flex;
   justify-content: center;
   min-height: 44px;
@@ -83,17 +83,17 @@
   transition: background-color 180ms ease-out, border-color 180ms ease-out;
 }
 
-.muxvia-app-secondary-button:active {
-  background: var(--muxvia-app-soft);
+.anytty-app-secondary-button:active {
+  background: var(--anytty-app-soft);
 }
 
-@property --muxvia-square-progress-angle {
+@property --anytty-square-progress-angle {
   syntax: '<angle>';
   inherits: false;
   initial-value: 0deg;
 }
 
-.muxvia-square-spinner {
+.anytty-square-spinner {
   box-sizing: border-box;
   display: inline-block;
   flex: none;
@@ -102,8 +102,8 @@
   width: 16px;
 }
 
-.muxvia-square-spinner::before,
-.muxvia-square-spinner::after {
+.anytty-square-spinner::before,
+.anytty-square-spinner::after {
   box-sizing: border-box;
   content: '';
   inset: 0;
@@ -116,32 +116,32 @@
   -webkit-mask-composite: xor;
 }
 
-.muxvia-square-spinner::before {
+.anytty-square-spinner::before {
   background: color-mix(in srgb, currentColor 32%, transparent);
 }
 
-.muxvia-square-spinner::after {
-  animation: muxvia-square-progress 840ms linear infinite;
+.anytty-square-spinner::after {
+  animation: anytty-square-progress 840ms linear infinite;
   background: conic-gradient(
-    from var(--muxvia-square-progress-angle),
+    from var(--anytty-square-progress-angle),
     currentColor 0deg 54deg,
     transparent 54deg 360deg
   );
 }
 
-@keyframes muxvia-square-progress {
+@keyframes anytty-square-progress {
   to {
-    --muxvia-square-progress-angle: 360deg;
+    --anytty-square-progress-angle: 360deg;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-in,
   .animate-slide-up,
-  .muxvia-app-icon-button,
-  .muxvia-app-primary-button,
-  .muxvia-app-secondary-button,
-  .muxvia-square-spinner::after {
+  .anytty-app-icon-button,
+  .anytty-app-primary-button,
+  .anytty-app-secondary-button,
+  .anytty-square-spinner::after {
     animation: none !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
@@ -317,7 +317,7 @@
 }
 
 .term-scrollbar-thumb {
-  background: var(--muxvia-scrollbar, rgba(255, 255, 255, 0.35));
+  background: var(--anytty-scrollbar, rgba(255, 255, 255, 0.35));
   border-radius: 999px;
   min-height: 24px;
   position: absolute;
@@ -330,7 +330,7 @@
 
 .term-scrollbar-track.active .term-scrollbar-thumb,
 .term-scrollbar-track:hover .term-scrollbar-thumb {
-  background: var(--muxvia-scrollbar-active, rgba(255, 255, 255, 0.55));
+  background: var(--anytty-scrollbar-active, rgba(255, 255, 255, 0.55));
   width: 10px;
 }
 

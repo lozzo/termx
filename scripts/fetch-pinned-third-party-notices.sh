@@ -11,7 +11,7 @@ elif [[ $# -ne 0 ]]; then
   exit 2
 fi
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/muxvia-pinned-notices.XXXXXX")"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/anytty-pinned-notices.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 sha256_file() {

@@ -16,10 +16,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 	protocolErrorInternal    = 500
 )
 
-const daemonBoundaryReclaimMinHeapMBEnv = "MUXVIA_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
+const daemonBoundaryReclaimMinHeapMBEnv = "ANYTTY_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 const daemonBoundaryReclaimDefaultMinHeapBytes = 0
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")

@@ -1,12 +1,12 @@
 /.artifacts/
-/cmd/muxvia/cloud_bundle/
+/cmd/*/cloud_bundle/
 .swp
 .toolchain/
 .worktrees/
 *.tsbuildinfo
-/clients/ui/public/muxvia-wasm/
+/clients/ui/public/*-wasm/
 /node_modules/
 /cloud/web/node_modules/
 /private/archive/**/.build/
 Screenshot_*.jpg
-muxvia-debug-*.zip
+*-debug-*.zip

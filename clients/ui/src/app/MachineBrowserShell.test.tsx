@@ -19,11 +19,11 @@ describe('MachineBrowserShell', () => {
       />,
     )
 
-    expect(screen.getByTestId('muxvia-remote-app-shell')).toBeTruthy()
-    expect(screen.getByTestId('muxvia-machine-list')).toBeTruthy()
+    expect(screen.getByTestId('anytty-remote-app-shell')).toBeTruthy()
+    expect(screen.getByTestId('anytty-machine-list')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Devices' })).toBeTruthy()
-    expect(screen.queryByTestId('muxvia-terminal')).toBeNull()
-    expect(screen.queryByTestId('muxvia-terminal-list')).toBeNull()
+    expect(screen.queryByTestId('anytty-terminal')).toBeNull()
+    expect(screen.queryByTestId('anytty-terminal-list')).toBeNull()
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|tmux|session/i)
   })
 
@@ -49,10 +49,10 @@ describe('MachineBrowserShell', () => {
       name: 'Local Mac',
       terminalCount: 2,
     }))
-    expect(screen.getByTestId('muxvia-connection-flow')).toBeTruthy()
+    expect(screen.getByTestId('anytty-connection-flow')).toBeTruthy()
     expect(screen.getByText('Trying local')).toBeTruthy()
-    expect(screen.queryByTestId('muxvia-terminal')).toBeNull()
-    expect(screen.queryByTestId('muxvia-terminal-list')).toBeNull()
+    expect(screen.queryByTestId('anytty-terminal')).toBeNull()
+    expect(screen.queryByTestId('anytty-terminal-list')).toBeNull()
 
     await waitFor(() => expect(screen.getByText('Trying hub')).toBeTruthy())
     expect(screen.getByText('Local unavailable. Trying Hub.')).toBeTruthy()
@@ -79,7 +79,7 @@ describe('MachineBrowserShell', () => {
 
     await waitFor(() => expect(screen.getByText('Trying hub')).toBeTruthy())
     expect(screen.getByText('Relay active')).toBeTruthy()
-    expect(screen.getByTestId('muxvia-connection-flow').textContent).not.toMatch(/\brelay path\b|\bpaid relay\b|\banonymous p2p\b/i)
+    expect(screen.getByTestId('anytty-connection-flow').textContent).not.toMatch(/\brelay path\b|\bpaid relay\b|\banonymous p2p\b/i)
   })
 })
 

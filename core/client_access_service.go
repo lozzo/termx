@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 )
 
 // ErrClientAccessServiceUnavailable 表示当前 daemon 未装配 DeviceIdentity/AccessStore 管理边界。

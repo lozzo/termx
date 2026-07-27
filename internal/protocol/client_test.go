@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/transport/memory"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/transport/memory"
 	"google.golang.org/protobuf/proto"
 )
 

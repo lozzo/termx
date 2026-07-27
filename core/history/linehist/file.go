@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 const (

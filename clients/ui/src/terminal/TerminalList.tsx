@@ -36,13 +36,13 @@ export function TerminalList({
     <div
       className={className}
       data-machine-id={machineId}
-      data-testid="muxvia-terminal-list"
+      data-testid="anytty-terminal-list"
     >
       {terminals.length === 0 ? (
         loading ? (
-          <ul className="border-x border-t border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-surface)] animate-pulse" aria-hidden="true">
+          <ul className="border-x border-t border-[var(--anytty-app-line)] bg-[var(--anytty-app-surface)] animate-pulse" aria-hidden="true">
             {[1, 2, 3].map((i) => (
-              <li key={i} className="flex w-full items-center gap-3 border-b border-[var(--muxvia-app-line)] p-3">
+              <li key={i} className="flex w-full items-center gap-3 border-b border-[var(--anytty-app-line)] p-3">
                 <div className="flex h-10 w-10 shrink-0 bg-zinc-100" />
                 <div className="flex min-w-0 flex-1 flex-col gap-2 py-1">
                   <div className="h-3.5 w-1/3 rounded bg-zinc-200" />
@@ -56,23 +56,23 @@ export function TerminalList({
             ))}
           </ul>
         ) : (
-          <div className="flex h-32 flex-col items-center justify-center gap-3 border border-dashed border-[var(--muxvia-app-line-strong)] bg-[var(--muxvia-app-surface-soft)] text-sm text-[var(--muxvia-app-muted)] animate-in fade-in duration-300">
+          <div className="flex h-32 flex-col items-center justify-center gap-3 border border-dashed border-[var(--anytty-app-line-strong)] bg-[var(--anytty-app-surface-soft)] text-sm text-[var(--anytty-app-muted)] animate-in fade-in duration-300">
             <TerminalIcon className="h-8 w-8 text-zinc-300" />
             <p>{t('terminal.noActive')}</p>
           </div>
         )
       ) : (
-        <ul aria-label={t('terminal.list')} className="border-x border-t border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-surface)]">
+        <ul aria-label={t('terminal.list')} className="border-x border-t border-[var(--anytty-app-line)] bg-[var(--anytty-app-surface)]">
           {terminals.map((terminal) => {
             const isActive = activeTerminalId === terminal.terminalId
             const itemKey = uniqueTerminalListKey(terminalKeyCounts, machineId, terminal)
             return (
               <li key={itemKey} data-terminal-id={terminal.terminalId}>
                 <div
-                  className={`group relative flex w-full items-center gap-3 border-b border-[var(--muxvia-app-line)] p-3 text-left transition-colors duration-200 focus-within:ring-2 focus-within:ring-inset focus-within:ring-[var(--muxvia-app-accent)] ${
+                  className={`group relative flex w-full items-center gap-3 border-b border-[var(--anytty-app-line)] p-3 text-left transition-colors duration-200 focus-within:ring-2 focus-within:ring-inset focus-within:ring-[var(--anytty-app-accent)] ${
                     isActive
-                      ? 'bg-[var(--muxvia-app-inverse)] text-white'
-                      : 'bg-[var(--muxvia-app-surface)] text-zinc-700 hover:bg-[var(--muxvia-app-surface-soft)]'
+                      ? 'bg-[var(--anytty-app-inverse)] text-white'
+                      : 'bg-[var(--anytty-app-surface)] text-zinc-700 hover:bg-[var(--anytty-app-surface-soft)]'
                   }`}
                   onContextMenu={(event) => {
                     if (!onManageTerminal) return
@@ -107,7 +107,7 @@ export function TerminalList({
                       onOpenTerminal({ machineId, terminalId: terminal.terminalId })
                     }}
                   >
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center transition-colors ${isActive ? 'bg-zinc-800' : 'border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-surface-soft)] group-hover:bg-zinc-200'}`}>
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center transition-colors ${isActive ? 'bg-zinc-800' : 'border border-[var(--anytty-app-line)] bg-[var(--anytty-app-surface-soft)] group-hover:bg-zinc-200'}`}>
                       <TerminalIcon className={`h-5 w-5 ${isActive ? 'text-zinc-200' : 'text-zinc-500'}`} />
                     </div>
 
@@ -151,7 +151,7 @@ export function TerminalList({
                   {onManageTerminal ? (
                     <button
                       type="button"
-                      className={`flex h-11 w-11 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] ${isActive ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'}`}
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)] ${isActive ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'}`}
                       aria-label={t('terminal.manage', { name: terminal.title || terminal.command || t('terminal.defaultTitle') })}
                       onClick={() => {
                         hapticImpact()

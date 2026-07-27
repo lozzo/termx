@@ -22,7 +22,7 @@ describe('FileTransferPanel', () => {
             transferredSize: 1024,
             status: 'completed',
             filePath: '/var/log/server.log',
-            savedPath: 'Downloads/Muxvia/server.log',
+            savedPath: 'Downloads/AnyTTY/server.log',
           }),
           transfer({
             id: 'upload-1',
@@ -44,7 +44,7 @@ describe('FileTransferPanel', () => {
     )
 
     expect(screen.getByText('From Build Runner')).toBeTruthy()
-    expect(screen.getByText('/var/log/server.log -> Downloads/Muxvia/server.log')).toBeTruthy()
+    expect(screen.getByText('/var/log/server.log -> Downloads/AnyTTY/server.log')).toBeTruthy()
     expect(screen.getByText('To Office Mac')).toBeTruthy()
     expect(screen.getByText('/srv/reports / report.txt')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /close data transfer center/i }))

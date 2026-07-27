@@ -19,7 +19,7 @@ func TestRawGrantOnlyCrossesEndToEndCapabilityOrPairingFrames(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"muxvia.remote.auth.v1.CapabilityOpen.grant", "muxvia.remote.auth.v1.PairingAccepted.grant"}
+	want := []string{"anytty.remote.auth.v1.CapabilityOpen.grant", "anytty.remote.auth.v1.PairingAccepted.grant"}
 	if len(grantFields) != len(want) || grantFields[0] != want[0] || grantFields[1] != want[1] {
 		t.Fatalf("raw grant fields = %v, want %v", grantFields, want)
 	}

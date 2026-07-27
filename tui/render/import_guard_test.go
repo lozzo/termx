@@ -18,9 +18,9 @@ func TestRenderPackageDoesNotImportBubbleTea(t *testing.T) {
 
 func TestRenderPackageDoesNotImportRuntimeOrServices(t *testing.T) {
 	forbidden := []string{
-		"github.com/muxvia/muxvia/tui/app",
-		"github.com/muxvia/muxvia/tui/port",
-		"github.com/muxvia/muxvia/tui/terminalhost",
+		"github.com/anytty/anytty/tui/app",
+		"github.com/anytty/anytty/tui/port",
+		"github.com/anytty/anytty/tui/terminalhost",
 	}
 	assertRenderImports(t, func(file string, path string) {
 		for _, prefix := range forbidden {

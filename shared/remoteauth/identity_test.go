@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 func TestLoadOrCreateIdentityKeepsStableFingerprintAndPrivatePermissions(t *testing.T) {

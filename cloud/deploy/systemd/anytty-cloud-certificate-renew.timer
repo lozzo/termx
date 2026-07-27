@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily cloud.anytty.com TLS certificate renewal check
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=6h
+Unit=anytty-cloud-certificate-renew.service
+
+[Install]
+WantedBy=timers.target

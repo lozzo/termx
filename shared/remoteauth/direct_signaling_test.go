@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 )
 
 func TestDirectSignalingAnswerSignatureBindsPinCorrelationAndLifetime(t *testing.T) {

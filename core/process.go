@@ -14,7 +14,7 @@ import (
 	"time"
 
 	crosspty "github.com/aymanbagabas/go-pty"
-	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/anytty/anytty/shared/perftrace"
 )
 
 type ProcessFactory interface {
@@ -289,8 +289,8 @@ func ptyProcessEnv(id string, extra []string) []string {
 	env := os.Environ()
 	env = append(env,
 		"TERM=xterm-256color",
-		"MUXVIA=1",
-		"MUXVIA_TERMINAL_ID="+id,
+		"ANYTTY=1",
+		"ANYTTY_TERMINAL_ID="+id,
 	)
 	return append(env, extra...)
 }

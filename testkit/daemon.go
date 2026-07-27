@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/wire"
-	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
+	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/wire"
+	unixtransport "github.com/anytty/anytty/shared/transport/unix"
 )
 
 const (
@@ -28,7 +28,7 @@ type Daemon struct {
 func StartDaemon(t testing.TB, ctx context.Context, socketName string) *Daemon {
 	t.Helper()
 	if socketName == "" {
-		socketName = "muxvia.sock"
+		socketName = "anytty.sock"
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	socketPath := filepath.Join(t.TempDir(), socketName)

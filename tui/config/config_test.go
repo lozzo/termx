@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestParseExampleConfigMatchesDefaults(t *testing.T) {
@@ -273,13 +273,13 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	env := map[string]string{
-		"MUXVIA_TUI_THEME_PRIMARY":                    "#010203",
-		"MUXVIA_TUI_THEME_PALETTE":                    "builtin",
-		"MUXVIA_TUI_CHROME_HEADER":                    "false",
-		"MUXVIA_TUI_CHROME_TAB_CREATE_TEMPLATE":       "{{create_icon}}",
-		"MUXVIA_TUI_CHROME_PANE_TITLE_TEMPLATE":       "{{terminal}}@{{endpoint}}",
-		"MUXVIA_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "650",
-		"MUXVIA_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "0.75",
+		"ANYTTY_TUI_THEME_PRIMARY":                    "#010203",
+		"ANYTTY_TUI_THEME_PALETTE":                    "builtin",
+		"ANYTTY_TUI_CHROME_HEADER":                    "false",
+		"ANYTTY_TUI_CHROME_TAB_CREATE_TEMPLATE":       "{{create_icon}}",
+		"ANYTTY_TUI_CHROME_PANE_TITLE_TEMPLATE":       "{{terminal}}@{{endpoint}}",
+		"ANYTTY_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "650",
+		"ANYTTY_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "0.75",
 	}
 	cfg, err := Load(path, func(key string) string { return env[key] })
 	if err != nil {
@@ -681,7 +681,7 @@ func TestShortcutValidationUsesDomainScenesParametersAndCanonicalKeys(t *testing
 func TestDefaultPathUsesXDGConfigHome(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
-	if got, want := DefaultPath(), filepath.Join(configHome, "muxvia", DefaultFileName); got != want {
+	if got, want := DefaultPath(), filepath.Join(configHome, "anytty", DefaultFileName); got != want {
 		t.Fatalf("default path mismatch got=%q want=%q", got, want)
 	}
 }

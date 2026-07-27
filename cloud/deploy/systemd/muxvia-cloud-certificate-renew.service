@@ -1,9 +1,0 @@
-[Unit]
-Description=Renew cloud.muxvia.com TLS certificate
-After=docker.service network-online.target
-Wants=network-online.target
-Requires=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/renew-muxvia-cloud-certificate

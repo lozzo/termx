@@ -8,7 +8,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 app_apk="$1"
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/muxvia-apk-boundary.XXXXXX")"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/anytty-apk-boundary.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 for apk in "$app_apk"; do
@@ -19,11 +19,11 @@ for apk in "$app_apk"; do
   while IFS= read -r native_path; do
     [[ -n "$native_path" ]] || continue
     unzip -p "$apk" "$native_path" >"$tmp_dir/native.so"
-    if strings "$tmp_dir/native.so" | rg -q 'android-spike-daemon|android-managed-1|muxvia-go-client-%d'; then
+    if strings "$tmp_dir/native.so" | rg -q 'android-spike-daemon|android-managed-1|anytty-go-client-%d'; then
       echo "Release APK contains the PA005N1 spike daemon: $apk ($native_path)" >&2
       exit 1
     fi
-  done < <(unzip -Z1 "$apk" | rg '^lib/[^/]+/libmuxvia_client\.so$' || true)
+  done < <(unzip -Z1 "$apk" | rg '^lib/[^/]+/libanytty_client\.so$' || true)
 done
 
 echo "Android client boundary passed"

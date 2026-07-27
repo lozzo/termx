@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const origin = process.env.MUXVIA_CLOUD_ONLINE_ORIGIN
+const origin = process.env.ANYTTY_CLOUD_ONLINE_ORIGIN
 
-test.describe('Muxvia Cloud 线上普通用户产品', () => {
+test.describe('AnyTTY Cloud 线上普通用户产品', () => {
   test.skip(!origin, '需要显式提供线上地址')
   test.describe.configure({ timeout: 180_000 })
 
@@ -12,8 +12,8 @@ test.describe('Muxvia Cloud 线上普通用户产品', () => {
     const identity = uniqueIdentity(testInfo.project.name)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Muxvia Cloud', exact: true })).toBeVisible()
-    await expect(page.getByLabel('Muxvia Cloud 产品连接画面')).toContainText('muxvia-cloud-ok')
+    await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
+    await expect(page.getByLabel('AnyTTY Cloud 产品连接画面')).toContainText('anytty-cloud-ok')
     await page.getByRole('link', { name: '创建账号' }).first().click()
     await register(page, identity)
 
@@ -27,7 +27,7 @@ test.describe('Muxvia Cloud 线上普通用户产品', () => {
     await page.getByRole('button', { name: '生成命令' }).click()
     const enrollmentDialog = page.getByRole('dialog', { name: '安装命令已生成' })
     await expect(enrollmentDialog).toBeVisible()
-    await expect(enrollmentDialog.locator('code')).toContainText('muxvia cloud enroll --controller https://cloud.muxvia.com mxe_')
+    await expect(enrollmentDialog.locator('code')).toContainText('anytty cloud enroll --controller https://cloud.anytty.com mxe_')
     await enrollmentDialog.getByRole('button', { name: '完成' }).click()
 
     await page.getByRole('navigation', { name: '用户功能' }).getByRole('link', { name: '订阅套餐' }).click()
@@ -91,7 +91,7 @@ function uniqueIdentity(project: string) {
   return {
     displayName: project === 'desktop-chromium' ? '桌面验收用户' : '移动验收用户',
     email: `cloud-e2e-${project}-${suffix}@example.com`,
-    password: `Muxvia-e2e-${suffix}`,
+    password: `AnyTTY-e2e-${suffix}`,
   }
 }
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 // ApplicationCapability 表示 connection admission 需要的 core-native 能力类别。

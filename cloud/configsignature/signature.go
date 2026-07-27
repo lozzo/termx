@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
 )
 
-const domain = "muxvia.cloud.edge-config.v1\x00"
+const domain = "anytty.cloud.edge-config.v1\x00"
 
 // Sign 对确定性 Proto payload 加独立 domain 后签名。
 func Sign(config *cloudv1.EdgeDesiredConfig, keyID string, privateKey ed25519.PrivateKey) (*cloudv1.SignedEdgeDesiredConfig, error) {

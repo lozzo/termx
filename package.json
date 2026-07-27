@@ -1,5 +1,5 @@
 {
-  "name": "muxvia-monorepo",
+  "name": "anytty-monorepo",
   "version": "0.0.0",
   "private": true,
   "workspaces": [
@@ -26,14 +26,14 @@
     "undici-types": "7.19.2"
   },
   "scripts": {
-    "proto": "npm run proto --workspace @muxvia/ui && npm run proto --workspace @muxvia/cloud-web",
-    "test": "npm test --workspace @muxvia/ui && npm test --workspace @muxvia/mobile && npm test --workspace @muxvia/cloud-web",
+    "proto": "npm run proto --workspace @anytty/ui && npm run proto --workspace @anytty/cloud-web",
+    "test": "npm test --workspace @anytty/ui && npm test --workspace @anytty/mobile && npm test --workspace @anytty/cloud-web",
     "test:i18n": "node scripts/check-i18n.mjs",
-    "typecheck": "npm run typecheck --workspace @muxvia/ui && npm run build --workspace @muxvia/cloud-web",
-    "build": "npm run build --workspace @muxvia/ui && npm run build --workspace @muxvia/mobile",
-    "build:cloud-web": "npm run build --workspace @muxvia/cloud-web",
-    "test:cloud-web": "npm test --workspace @muxvia/cloud-web",
-    "cap:sync": "npm run cap:sync --workspace @muxvia/mobile",
-    "cap:build": "npm run cap:build --workspace @muxvia/mobile"
+    "typecheck": "npm run typecheck --workspace @anytty/ui && npm run build --workspace @anytty/cloud-web",
+    "build": "npm run build --workspace @anytty/ui && npm run build --workspace @anytty/mobile",
+    "build:cloud-web": "npm run build --workspace @anytty/cloud-web",
+    "test:cloud-web": "npm test --workspace @anytty/cloud-web",
+    "cap:sync": "npm run cap:sync --workspace @anytty/mobile",
+    "cap:build": "npm run cap:build --workspace @anytty/mobile"
   }
 }

@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // NewBackNavigationReducer 是 TUI 全局返回语义的唯一 owner。

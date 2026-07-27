@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 // R435 准入（server 级回归等价）：旧 screen-backed 验收（r328/r331/r334 系列）

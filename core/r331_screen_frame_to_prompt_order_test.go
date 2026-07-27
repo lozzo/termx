@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 func TestR331OrdinaryPromptAfterScreenRedrawDoesNotInterleaveBeforeCurrentFrame(t *testing.T) {

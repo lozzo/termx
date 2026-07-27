@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -23,7 +23,7 @@ type ProtocolTerminalClient interface {
 	ApplicationAttachment(uint16) (*apipb.ResourceHandle, bool)
 }
 
-// ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 muxvia protocol。
+// ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 anytty protocol。
 type ProtocolTerminalServiceAdapter struct {
 	Client      ProtocolTerminalClient
 	Application *clientruntime.ApplicationSession

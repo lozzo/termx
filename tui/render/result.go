@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	actiondomain "github.com/muxvia/muxvia/tui/action"
+	actiondomain "github.com/anytty/anytty/tui/action"
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
@@ -45,7 +45,7 @@ type Cell struct {
 	Safe            bool
 }
 
-// ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 Muxvia chrome theme token。
+// ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 AnyTTY chrome theme token。
 type ANSICellStyle struct {
 	FG            string
 	BG            string

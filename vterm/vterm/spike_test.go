@@ -1,7 +1,7 @@
 package vterm
 
 import (
-	charmvt "github.com/muxvia/muxvia/vterm/internal/vt"
+	charmvt "github.com/anytty/anytty/vterm/internal/vt"
 	"strings"
 	"sync"
 	"testing"

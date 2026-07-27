@@ -14,10 +14,10 @@ function cssBlock(selector: string, containing?: string): string {
 
 describe('square loading primitive', () => {
   it('keeps the frame fixed while one masked segment travels along its perimeter', () => {
-    const frame = cssBlock('.muxvia-square-spinner')
-    const fixedPerimeter = cssBlock('.muxvia-square-spinner::before', 'color-mix(')
-    const segment = cssBlock('.muxvia-square-spinner::after', 'conic-gradient(')
-    const keyframes = cssBlock('to', '--muxvia-square-progress-angle: 360deg')
+    const frame = cssBlock('.anytty-square-spinner')
+    const fixedPerimeter = cssBlock('.anytty-square-spinner::before', 'color-mix(')
+    const segment = cssBlock('.anytty-square-spinner::after', 'conic-gradient(')
+    const keyframes = cssBlock('to', '--anytty-square-progress-angle: 360deg')
 
     expect(frame).toContain('height: 16px')
     expect(frame).toContain('width: 16px')
@@ -26,19 +26,19 @@ describe('square loading primitive', () => {
     expect(fixedPerimeter).toContain('color-mix(')
     expect(fixedPerimeter).not.toMatch(/animation|transform|rotate/)
 
-    expect(appStylesSource).toContain('@property --muxvia-square-progress-angle')
+    expect(appStylesSource).toContain('@property --anytty-square-progress-angle')
     expect(segment).toContain('conic-gradient(')
     expect(appStylesSource).toMatch(
-      /\.muxvia-square-spinner::before,\s*\.muxvia-square-spinner::after\s*\{[^}]+inset: 0[^}]+mask-composite: exclude[^}]+-webkit-mask-composite: xor/s,
+      /\.anytty-square-spinner::before,\s*\.anytty-square-spinner::after\s*\{[^}]+inset: 0[^}]+mask-composite: exclude[^}]+-webkit-mask-composite: xor/s,
     )
     expect(segment).not.toMatch(/transform|rotate/)
-    expect(keyframes).toContain('--muxvia-square-progress-angle: 360deg')
+    expect(keyframes).toContain('--anytty-square-progress-angle: 360deg')
     expect(keyframes).not.toMatch(/transform|rotate/)
   })
 
   it('stops the perimeter segment when reduced motion is requested', () => {
     expect(appStylesSource).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]+?\.muxvia-square-spinner::after[\s\S]+?animation: none !important/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]+?\.anytty-square-spinner::after[\s\S]+?animation: none !important/,
     )
   })
 })

@@ -1,4 +1,4 @@
-// Package runtime 组装单个 Muxvia Cloud Edge 进程的公网 listener、健康状态和 ControllerLink。
+// Package runtime 组装单个 AnyTTY Cloud Edge 进程的公网 listener、健康状态和 ControllerLink。
 package runtime
 
 import (
@@ -18,18 +18,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/muxvia/muxvia/cloud/configsignature"
-	"github.com/muxvia/muxvia/cloud/edge/agentgateway"
-	edgecertificate "github.com/muxvia/muxvia/cloud/edge/certificate"
-	"github.com/muxvia/muxvia/cloud/edge/clientgateway"
-	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
-	"github.com/muxvia/muxvia/cloud/edge/policy"
-	"github.com/muxvia/muxvia/cloud/edge/relay"
-	"github.com/muxvia/muxvia/cloud/edge/usage"
-	"github.com/muxvia/muxvia/cloud/processhealth"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	"github.com/muxvia/muxvia/cloud/ticket"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/configsignature"
+	"github.com/anytty/anytty/cloud/edge/agentgateway"
+	edgecertificate "github.com/anytty/anytty/cloud/edge/certificate"
+	"github.com/anytty/anytty/cloud/edge/clientgateway"
+	"github.com/anytty/anytty/cloud/edge/controllerlink"
+	"github.com/anytty/anytty/cloud/edge/policy"
+	"github.com/anytty/anytty/cloud/edge/relay"
+	"github.com/anytty/anytty/cloud/edge/usage"
+	"github.com/anytty/anytty/cloud/processhealth"
+	"github.com/anytty/anytty/cloud/securetransport"
+	"github.com/anytty/anytty/cloud/ticket"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/grpc"
 	grpc_health "google.golang.org/grpc/health"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"

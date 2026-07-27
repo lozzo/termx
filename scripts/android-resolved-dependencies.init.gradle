@@ -1,9 +1,9 @@
 gradle.projectsEvaluated {
     def appProject = gradle.rootProject.findProject(':app')
     if (appProject == null) {
-        throw new GradleException('Muxvia Android app project was not found')
+        throw new GradleException('AnyTTY Android app project was not found')
     }
-    appProject.tasks.register('muxviaResolvedRuntimeDependencies') {
+    appProject.tasks.register('anyttyResolvedRuntimeDependencies') {
         doLast {
             def configuration = appProject.configurations.getByName('releaseRuntimeClasspath')
             def coordinates = configuration.incoming.resolutionResult.allComponents
@@ -13,7 +13,7 @@ gradle.projectsEvaluated {
                 .toSet()
                 .toList()
                 .sort()
-            coordinates.each { println "MUXVIA_DEPENDENCY ${it}" }
+            coordinates.each { println "ANYTTY_DEPENDENCY ${it}" }
         }
     }
 }

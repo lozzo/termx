@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 func TestManagerHotReloadAndFailureKeepsCurrentCertificate(t *testing.T) {

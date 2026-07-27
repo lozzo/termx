@@ -3,11 +3,11 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/muxvia/muxvia/tui/testkit"
+	"github.com/anytty/anytty/tui/testkit"
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestShellReducerHandlesPanelPresentationSemanticActions(t *testing.T) {

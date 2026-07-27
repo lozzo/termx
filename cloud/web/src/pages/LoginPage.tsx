@@ -19,7 +19,7 @@ export function LoginPage() {
     mutationFn: () => protoSend('/api/account/login', LoginAccountRequestSchema, create(LoginAccountRequestSchema, { login, password }), LoginAccountResponseSchema),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['account', 'current'] }); const from = (location.state as { from?: string } | null)?.from; navigate(from?.startsWith('/app/') ? from : '/app/overview', { replace: true }) },
   })
-  useEffect(() => { document.title = '登录 · Muxvia Cloud' }, [])
+  useEffect(() => { document.title = '登录 · AnyTTY Cloud' }, [])
   function submit(event: FormEvent) { event.preventDefault(); if (login.trim() && password) mutation.mutate() }
   return <AuthLayout title="欢迎回来" description="登录后继续连接设备、查看用量和管理订阅。" alternate={<>还没有账号？<Link to="/register">免费创建</Link></>}>
     <form onSubmit={submit}>

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 

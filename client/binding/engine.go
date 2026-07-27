@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/bindingpb"
-	"github.com/muxvia/muxvia/proto/wirepb"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/bindingpb"
+	"github.com/anytty/anytty/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -990,7 +990,7 @@ func apiError(err error) *apipb.ApiError {
 		case clientruntime.ErrorStaleSession:
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_STALE_SESSION, "client session is stale"
 		case clientruntime.ErrorEntitlement:
-			code, message = apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, "Relay is not included in the current Muxvia Cloud plan"
+			code, message = apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, "Relay is not included in the current AnyTTY Cloud plan"
 		case clientruntime.ErrorUnavailable, clientruntime.ErrorUnsupportedRoute:
 			code, message, retryable = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, "client session is unavailable", true
 		}

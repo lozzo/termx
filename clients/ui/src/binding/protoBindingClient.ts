@@ -1,9 +1,9 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
-import * as MuxviaApiApplication from '../generated/apipb/application_pb'
-import * as MuxviaApiCommon from '../generated/apipb/common_pb'
-import * as MuxviaApiFile from '../generated/apipb/file_pb'
-import * as MuxviaClientBinding from '../generated/bindingpb/client_binding_pb'
-import * as MuxviaRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
+import * as AnyTTYApiApplication from '../generated/apipb/application_pb'
+import * as AnyTTYApiCommon from '../generated/apipb/common_pb'
+import * as AnyTTYApiFile from '../generated/apipb/file_pb'
+import * as AnyTTYClientBinding from '../generated/bindingpb/client_binding_pb'
+import * as AnyTTYRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
 import type { ConnectionPolicy, ConnectionPolicyState } from '../core/transport'
 
@@ -40,23 +40,23 @@ const CANCELLED_CLEANUP_TIMEOUT_MS = 5_000
 /** ProtoBindingClient is the shared Android-JNI and Web-WASM session/resource contract owner. */
 export class ProtoBindingClient {
   private readonly openOperations = new Map<bigint, PendingOperation<ProtoBindingSession>>()
-  private readonly executeOperations = new Map<bigint, PendingOperation<MuxviaApiApplication.ResultEnvelope>>()
-  private readonly importOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ImportPairingResult>>()
+  private readonly executeOperations = new Map<bigint, PendingOperation<AnyTTYApiApplication.ResultEnvelope>>()
+  private readonly importOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ImportPairingResult>>()
   private readonly deleteOperations = new Map<bigint, PendingOperation<void>>()
-  private readonly registryGetOperations = new Map<bigint, PendingOperation<MuxviaRemoteAuth.EndpointRegistryV1>>()
-  private readonly endpointUpsertOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointUpsertResult>>()
-  private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointDeleteResult>>()
-  private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointShareReceiveResult>>()
-  private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointShareCommitResult>>()
-  private readonly sshCredentialProvisionOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.SSHCredentialProvisionResult>>()
-  private readonly connectionPolicyGetOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ConnectionPolicyState>>()
-  private readonly connectionPolicyApplyOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ConnectionPolicyState>>()
-  private readonly connectionSnapshotGetOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ConnectionSnapshot>>()
+  private readonly registryGetOperations = new Map<bigint, PendingOperation<AnyTTYRemoteAuth.EndpointRegistryV1>>()
+  private readonly endpointUpsertOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.EndpointUpsertResult>>()
+  private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.EndpointDeleteResult>>()
+  private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.EndpointShareReceiveResult>>()
+  private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.EndpointShareCommitResult>>()
+  private readonly sshCredentialProvisionOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.SSHCredentialProvisionResult>>()
+  private readonly connectionPolicyGetOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ConnectionPolicyState>>()
+  private readonly connectionPolicyApplyOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ConnectionPolicyState>>()
+  private readonly connectionSnapshotGetOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ConnectionSnapshot>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
-  private readonly earlyOperationEvents = new Map<bigint, MuxviaClientBinding.EventEnvelope>()
+  private readonly earlyOperationEvents = new Map<bigint, AnyTTYClientBinding.EventEnvelope>()
   private readonly cancelledOperations = new Set<bigint>()
-  private readonly earlyStreamEvents = new Map<bigint, MuxviaClientBinding.EventEnvelope[]>()
+  private readonly earlyStreamEvents = new Map<bigint, AnyTTYClientBinding.EventEnvelope[]>()
   private readonly abandonedStreamHandles = new Set<bigint>()
   private readonly retiredSessionHandles = new Set<bigint>()
   private readonly releasedSessionHandles = new Set<bigint>()
@@ -67,80 +67,80 @@ export class ProtoBindingClient {
   private intentionalClose = false
 
   constructor(private readonly backend: ProtoBindingBackend) {
-    backend.start((payload) => this.onEvent(fromBinary(MuxviaClientBinding.EventEnvelopeSchema, payload)), (error) => this.onClosed(error))
+    backend.start((payload) => this.onEvent(fromBinary(AnyTTYClientBinding.EventEnvelopeSchema, payload)), (error) => this.onClosed(error))
   }
 
-  async openSession(request: MuxviaClientBinding.OpenSessionRequest, signal?: AbortSignal): Promise<ProtoClientSession> {
-    const operation = await this.backend.request(BindingOperation.OPEN_SESSION, toBinary(MuxviaClientBinding.OpenSessionRequestSchema, request), undefined, signal)
+  async openSession(request: AnyTTYClientBinding.OpenSessionRequest, signal?: AbortSignal): Promise<ProtoClientSession> {
+    const operation = await this.backend.request(BindingOperation.OPEN_SESSION, toBinary(AnyTTYClientBinding.OpenSessionRequestSchema, request), undefined, signal)
     return await this.waitOperation(this.openOperations, operation, signal)
   }
 
-  async importPairing(request: MuxviaClientBinding.ImportPairingRequest, signal?: AbortSignal): Promise<MuxviaClientBinding.ImportPairingResult> {
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'importPairing', value: request } }), signal)
+  async importPairing(request: AnyTTYClientBinding.ImportPairingRequest, signal?: AbortSignal): Promise<AnyTTYClientBinding.ImportPairingResult> {
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'importPairing', value: request } }), signal)
     return await this.waitOperation(this.importOperations, operation, signal)
   }
 
-  async deleteCredential(request: MuxviaClientBinding.DeleteCredentialRequest, signal?: AbortSignal): Promise<void> {
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'deleteCredential', value: request } }), signal)
+  async deleteCredential(request: AnyTTYClientBinding.DeleteCredentialRequest, signal?: AbortSignal): Promise<void> {
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'deleteCredential', value: request } }), signal)
     await this.waitOperation(this.deleteOperations, operation, signal)
   }
 
-  async getEndpointRegistry(signal?: AbortSignal): Promise<MuxviaRemoteAuth.EndpointRegistryV1> {
-    const request = create(MuxviaClientBinding.EndpointRegistryGetRequestSchema, { requestId: crypto.randomUUID() })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointRegistryGet', value: request } }), signal)
+  async getEndpointRegistry(signal?: AbortSignal): Promise<AnyTTYRemoteAuth.EndpointRegistryV1> {
+    const request = create(AnyTTYClientBinding.EndpointRegistryGetRequestSchema, { requestId: crypto.randomUUID() })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'endpointRegistryGet', value: request } }), signal)
     return await this.waitOperation(this.registryGetOperations, operation, signal)
   }
 
-  async upsertEndpoint(endpoint: MuxviaRemoteAuth.EndpointConfigV1, makeDefault = false, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointUpsertResult> {
-    const request = create(MuxviaClientBinding.EndpointUpsertRequestSchema, { requestId: crypto.randomUUID(), endpoint, makeDefault })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointUpsert', value: request } }), signal)
+  async upsertEndpoint(endpoint: AnyTTYRemoteAuth.EndpointConfigV1, makeDefault = false, signal?: AbortSignal): Promise<AnyTTYClientBinding.EndpointUpsertResult> {
+    const request = create(AnyTTYClientBinding.EndpointUpsertRequestSchema, { requestId: crypto.randomUUID(), endpoint, makeDefault })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'endpointUpsert', value: request } }), signal)
     return await this.waitOperation(this.endpointUpsertOperations, operation, signal)
   }
 
-  async deleteEndpoint(endpointId: string, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointDeleteResult> {
-    const request = create(MuxviaClientBinding.EndpointDeleteRequestSchema, { requestId: crypto.randomUUID(), endpointId })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointDelete', value: request } }), signal)
+  async deleteEndpoint(endpointId: string, signal?: AbortSignal): Promise<AnyTTYClientBinding.EndpointDeleteResult> {
+    const request = create(AnyTTYClientBinding.EndpointDeleteRequestSchema, { requestId: crypto.randomUUID(), endpointId })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'endpointDelete', value: request } }), signal)
     return await this.waitOperation(this.endpointDeleteOperations, operation, signal)
   }
 
-  async receiveEndpointShare(portableOffer: string, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointShareReceiveResult> {
-    const request = create(MuxviaClientBinding.EndpointShareReceiveRequestSchema, { requestId: crypto.randomUUID(), portableOffer })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointShareReceive', value: request } }), signal)
+  async receiveEndpointShare(portableOffer: string, signal?: AbortSignal): Promise<AnyTTYClientBinding.EndpointShareReceiveResult> {
+    const request = create(AnyTTYClientBinding.EndpointShareReceiveRequestSchema, { requestId: crypto.randomUUID(), portableOffer })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'endpointShareReceive', value: request } }), signal)
     return await this.waitOperation(this.endpointShareReceiveOperations, operation, signal)
   }
 
-  async commitEndpointShare(importToken: string, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointShareCommitResult> {
-    const request = create(MuxviaClientBinding.EndpointShareCommitRequestSchema, { requestId: crypto.randomUUID(), importToken })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointShareCommit', value: request } }), signal)
+  async commitEndpointShare(importToken: string, signal?: AbortSignal): Promise<AnyTTYClientBinding.EndpointShareCommitResult> {
+    const request = create(AnyTTYClientBinding.EndpointShareCommitRequestSchema, { requestId: crypto.randomUUID(), importToken })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'endpointShareCommit', value: request } }), signal)
     return await this.waitOperation(this.endpointShareCommitOperations, operation, signal)
   }
 
-  async provisionSSHCredential(endpointId: string, routeId: string, signal?: AbortSignal): Promise<MuxviaClientBinding.SSHCredentialProvisionResult> {
-    const request = create(MuxviaClientBinding.SSHCredentialProvisionRequestSchema, { requestId: crypto.randomUUID(), endpointId, routeId })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'sshCredentialProvision', value: request } }), signal)
+  async provisionSSHCredential(endpointId: string, routeId: string, signal?: AbortSignal): Promise<AnyTTYClientBinding.SSHCredentialProvisionResult> {
+    const request = create(AnyTTYClientBinding.SSHCredentialProvisionRequestSchema, { requestId: crypto.randomUUID(), endpointId, routeId })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'sshCredentialProvision', value: request } }), signal)
     return await this.waitOperation(this.sshCredentialProvisionOperations, operation, signal)
   }
 
-  async getConnectionPolicy(endpointId: string, signal?: AbortSignal): Promise<MuxviaClientBinding.ConnectionPolicyState> {
-    const request = create(MuxviaClientBinding.ConnectionPolicyGetRequestSchema, { requestId: crypto.randomUUID(), endpointId })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'connectionPolicyGet', value: request } }), signal)
+  async getConnectionPolicy(endpointId: string, signal?: AbortSignal): Promise<AnyTTYClientBinding.ConnectionPolicyState> {
+    const request = create(AnyTTYClientBinding.ConnectionPolicyGetRequestSchema, { requestId: crypto.randomUUID(), endpointId })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'connectionPolicyGet', value: request } }), signal)
     return await this.waitOperation(this.connectionPolicyGetOperations, operation, signal)
   }
 
-  async applyConnectionPolicy(endpointId: string, policy: MuxviaClientBinding.ConnectionPolicy, signal?: AbortSignal): Promise<MuxviaClientBinding.ConnectionPolicyState> {
-    const request = create(MuxviaClientBinding.ConnectionPolicyApplyRequestSchema, { requestId: crypto.randomUUID(), endpointId, policy })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'connectionPolicyApply', value: request } }), signal)
+  async applyConnectionPolicy(endpointId: string, policy: AnyTTYClientBinding.ConnectionPolicy, signal?: AbortSignal): Promise<AnyTTYClientBinding.ConnectionPolicyState> {
+    const request = create(AnyTTYClientBinding.ConnectionPolicyApplyRequestSchema, { requestId: crypto.randomUUID(), endpointId, policy })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'connectionPolicyApply', value: request } }), signal)
     return await this.waitOperation(this.connectionPolicyApplyOperations, operation, signal)
   }
 
-  async getConnectionSnapshot(sessionHandle: bigint, signal?: AbortSignal): Promise<MuxviaClientBinding.ConnectionSnapshot> {
-    const request = create(MuxviaClientBinding.ConnectionSnapshotGetRequestSchema, { requestId: crypto.randomUUID(), sessionHandle })
-    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'connectionSnapshotGet', value: request } }), signal)
+  async getConnectionSnapshot(sessionHandle: bigint, signal?: AbortSignal): Promise<AnyTTYClientBinding.ConnectionSnapshot> {
+    const request = create(AnyTTYClientBinding.ConnectionSnapshotGetRequestSchema, { requestId: crypto.randomUUID(), sessionHandle })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'connectionSnapshotGet', value: request } }), signal)
     return await this.waitOperation(this.connectionSnapshotGetOperations, operation, signal)
   }
 
-  private async engineCommand(command: MuxviaClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
-    return await this.backend.request(BindingOperation.ENGINE_COMMAND, toBinary(MuxviaClientBinding.EngineCommandSchema, command), undefined, signal)
+  private async engineCommand(command: AnyTTYClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
+    return await this.backend.request(BindingOperation.ENGINE_COMMAND, toBinary(AnyTTYClientBinding.EngineCommandSchema, command), undefined, signal)
   }
 
   async close(): Promise<void> {
@@ -156,15 +156,15 @@ export class ProtoBindingClient {
     this.streams.clear()
   }
 
-  async execute(session: bigint, command: MuxviaApiApplication.CommandEnvelope, signal?: AbortSignal): Promise<MuxviaApiApplication.ResultEnvelope> {
-    const operation = await this.backend.request(BindingOperation.EXECUTE, toBinary(MuxviaApiApplication.CommandEnvelopeSchema, command), session, signal)
+  async execute(session: bigint, command: AnyTTYApiApplication.CommandEnvelope, signal?: AbortSignal): Promise<AnyTTYApiApplication.ResultEnvelope> {
+    const operation = await this.backend.request(BindingOperation.EXECUTE, toBinary(AnyTTYApiApplication.CommandEnvelopeSchema, command), session, signal)
     return await this.waitOperation(this.executeOperations, operation, signal)
   }
 
-  async openResourceStream(session: bigint, resource: NonNullable<MuxviaClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoBindingResourceStream> {
-    const request = create(MuxviaClientBinding.OpenResourceStreamRequestSchema, { resource, initialUploadOffset: options?.initialUploadOffset ?? 0n })
+  async openResourceStream(session: bigint, resource: NonNullable<AnyTTYClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoBindingResourceStream> {
+    const request = create(AnyTTYClientBinding.OpenResourceStreamRequestSchema, { resource, initialUploadOffset: options?.initialUploadOffset ?? 0n })
     const handle = await awaitAbortableHandle(
-      this.backend.request(BindingOperation.OPEN_RESOURCE_STREAM, toBinary(MuxviaClientBinding.OpenResourceStreamRequestSchema, request), session, options?.signal),
+      this.backend.request(BindingOperation.OPEN_RESOURCE_STREAM, toBinary(AnyTTYClientBinding.OpenResourceStreamRequestSchema, request), session, options?.signal),
       options?.signal,
       (late) => this.abandonResourceStream(late),
     )
@@ -178,9 +178,9 @@ export class ProtoBindingClient {
     return stream
   }
 
-  async sendResourceStreamFrame(handle: bigint, type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
-    const frame = create(MuxviaClientBinding.ResourceStreamFrameSchema, { streamHandle: handle, type, payload })
-    await this.backend.request(BindingOperation.SEND_RESOURCE_STREAM_FRAME, toBinary(MuxviaClientBinding.ResourceStreamFrameSchema, frame), handle)
+  async sendResourceStreamFrame(handle: bigint, type: AnyTTYClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
+    const frame = create(AnyTTYClientBinding.ResourceStreamFrameSchema, { streamHandle: handle, type, payload })
+    await this.backend.request(BindingOperation.SEND_RESOURCE_STREAM_FRAME, toBinary(AnyTTYClientBinding.ResourceStreamFrameSchema, frame), handle)
   }
 
   async closeResourceStream(handle: bigint): Promise<void> {
@@ -248,7 +248,7 @@ export class ProtoBindingClient {
     void this.cancel(operation)
   }
 
-  private onEvent(envelope: MuxviaClientBinding.EventEnvelope): void {
+  private onEvent(envelope: AnyTTYClientBinding.EventEnvelope): void {
     const event = envelope.event
     const operationHandle = bindingOperationHandle(envelope)
     if (operationHandle !== undefined && this.cancelledOperations.delete(operationHandle)) {
@@ -431,7 +431,7 @@ export class ProtoBindingClient {
     }
   }
 
-  private hasPendingOperation(eventCase: MuxviaClientBinding.EventEnvelope['event']['case'], handle: bigint): boolean {
+  private hasPendingOperation(eventCase: AnyTTYClientBinding.EventEnvelope['event']['case'], handle: bigint): boolean {
     switch (eventCase) {
       case 'openSession': return this.openOperations.has(handle)
       case 'execute': return this.executeOperations.has(handle)
@@ -459,7 +459,7 @@ export class ProtoBindingClient {
     this.streams.forEach((stream) => stream.markClosed(error))
     this.sessions.clear()
     this.streams.clear()
-    if (!this.intentionalClose) document.dispatchEvent(new CustomEvent('muxvia:binding-closed', { detail: error.message }))
+    if (!this.intentionalClose) document.dispatchEvent(new CustomEvent('anytty:binding-closed', { detail: error.message }))
   }
 
   private rejectAll(error: Error): void {
@@ -478,7 +478,7 @@ export class ProtoBindingClient {
   this.releasedStreamOrder.length = 0
   }
 
-  private queueEarlyStreamEvent(handle: bigint, envelope: MuxviaClientBinding.EventEnvelope): void {
+  private queueEarlyStreamEvent(handle: bigint, envelope: AnyTTYClientBinding.EventEnvelope): void {
     if (this.abandonedStreamHandles.has(handle)) return
     const pending = this.earlyStreamEvents.get(handle) ?? []
     if (pending.length >= MAX_EARLY_STREAM_EVENTS) {
@@ -506,16 +506,16 @@ export class ProtoBindingClient {
       .catch((error) => this.onClosed(new Error(`abandoned resource stream cleanup failed: ${errorMessage(error)}`)))
   }
 
-  private async cleanupCancelledExecute(result: MuxviaClientBinding.ExecuteResult): Promise<void> {
-    if (result.error && result.error.code !== MuxviaApiCommon.ApiErrorCode.CANCELLED) {
+  private async cleanupCancelledExecute(result: AnyTTYClientBinding.ExecuteResult): Promise<void> {
+    if (result.error && result.error.code !== AnyTTYApiCommon.ApiErrorCode.CANCELLED) {
       throw apiError(result.error, 'cancelled operation cleanup failed')
     }
     const session = this.sessions.get(result.sessionHandle)
     const transfer = result.result?.result.case === 'fileTransferOpen' ? result.result.result.value.transfer : undefined
     if (!session || !transfer?.resource) return
     const cleanup = transfer.resume
-      ? create(MuxviaApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(MuxviaApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
-      : create(MuxviaApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(MuxviaApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
+      ? create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(AnyTTYApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
+      : create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(AnyTTYApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(new DOMException('cancelled operation cleanup timed out', 'TimeoutError')), CANCELLED_CLEANUP_TIMEOUT_MS)
     try {
@@ -528,7 +528,7 @@ export class ProtoBindingClient {
     }
   }
 
-  private retireCancelledOperation(operationHandle: bigint, envelope: MuxviaClientBinding.EventEnvelope): void {
+  private retireCancelledOperation(operationHandle: bigint, envelope: AnyTTYClientBinding.EventEnvelope): void {
     const event = envelope.event
     if (event.case === 'execute') {
       void this.cleanupCancelledExecute(event.value).catch((error) => this.onClosed(new Error(`cancelled operation cleanup failed: ${errorMessage(error)}`)))
@@ -560,16 +560,16 @@ export class ProtoBindingConnector {
     options?.onStatus?.('Connecting...')
     options?.onConnectionState?.({ machineId: input.machineId, phase: 'connecting', statusText: 'Connecting...', relayInUse: options.forceRelay === true })
     try {
-      const session = await this.client().openSession(create(MuxviaClientBinding.OpenSessionRequestSchema, {
+      const session = await this.client().openSession(create(AnyTTYClientBinding.OpenSessionRequestSchema, {
     requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
-    intent: MuxviaClientBinding.ConnectIntent.INTERACTIVE,
+    intent: AnyTTYClientBinding.ConnectIntent.INTERACTIVE,
       }), options?.signal)
       options?.onStatus?.('Connected')
       options?.onConnectionState?.({
     machineId: input.machineId,
     phase: 'connected',
     statusText: 'Connected',
-    relayInUse: session.connection?.localCandidateType === MuxviaClientBinding.ConnectionCandidateType.RELAY,
+    relayInUse: session.connection?.localCandidateType === AnyTTYClientBinding.ConnectionCandidateType.RELAY,
     })
       return session
     } catch (error) {
@@ -583,7 +583,7 @@ export class ProtoBindingConnector {
   }
 
   async applyConnectionPolicy(policy: ConnectionPolicy, signal?: AbortSignal): Promise<void> {
-    await this.client().applyConnectionPolicy(this.input.endpointId, create(MuxviaClientBinding.ConnectionPolicySchema, {
+    await this.client().applyConnectionPolicy(this.input.endpointId, create(AnyTTYClientBinding.ConnectionPolicySchema, {
       routePreference: routePreferenceToProto(policy.route),
       cloudRelayMode: cloudPreferenceToProto(policy.cloud),
       relayTransport: relayTransportToProto(policy.relayTransport),
@@ -593,33 +593,33 @@ export class ProtoBindingConnector {
 
 class ProtoBindingSession implements ProtoClientSession {
   private alive = true
-  private readonly eventHandlers = new Set<(event: MuxviaApiApplication.EventEnvelope) => void>()
+  private readonly eventHandlers = new Set<(event: AnyTTYApiApplication.EventEnvelope) => void>()
 
   constructor(
   private readonly client: ProtoBindingClient,
   readonly handle: bigint,
-  readonly stamp: NonNullable<MuxviaClientBinding.OpenSessionResult['session']>,
-  public connection?: MuxviaClientBinding.ConnectionSnapshot,
+  readonly stamp: NonNullable<AnyTTYClientBinding.OpenSessionResult['session']>,
+  public connection?: AnyTTYClientBinding.ConnectionSnapshot,
   ) {}
 
-  execute(command: MuxviaApiApplication.CommandEnvelope, options?: { signal?: AbortSignal }): Promise<MuxviaApiApplication.ResultEnvelope> {
+  execute(command: AnyTTYApiApplication.CommandEnvelope, options?: { signal?: AbortSignal }): Promise<AnyTTYApiApplication.ResultEnvelope> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
     return this.client.execute(this.handle, command, options?.signal)
   }
 
-  subscribeEvents(handler: (event: MuxviaApiApplication.EventEnvelope) => void): ProtoClientSubscription {
+  subscribeEvents(handler: (event: AnyTTYApiApplication.EventEnvelope) => void): ProtoClientSubscription {
     this.eventHandlers.add(handler)
     return { close: () => this.eventHandlers.delete(handler) }
   }
 
-  openResourceStream(resource: NonNullable<MuxviaClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
+  openResourceStream(resource: NonNullable<AnyTTYClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
     return this.client.openResourceStream(this.handle, resource, options)
   }
 
   isAlive(): boolean { return this.alive }
 
-  async getConnectionSnapshot(): Promise<MuxviaClientBinding.ConnectionSnapshot | undefined> {
+  async getConnectionSnapshot(): Promise<AnyTTYClientBinding.ConnectionSnapshot | undefined> {
     if (!this.alive) throw new Error('Proto session is closed')
     this.connection = await this.client.getConnectionSnapshot(this.handle)
     return this.connection
@@ -632,7 +632,7 @@ class ProtoBindingSession implements ProtoClientSession {
     await this.client.closeSession(this.handle)
   }
 
-  publish(event: MuxviaApiApplication.EventEnvelope | undefined): void {
+  publish(event: AnyTTYApiApplication.EventEnvelope | undefined): void {
     if (!event || !this.alive) return
     this.eventHandlers.forEach((handler) => handler(event))
   }
@@ -645,17 +645,17 @@ class ProtoBindingSession implements ProtoClientSession {
 
 class ProtoBindingResourceStream implements ProtoResourceStream {
   private closed = false
-  private readonly handlers = new Set<(type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void>()
+  private readonly handlers = new Set<(type: AnyTTYClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void>()
   private readonly closeHandlers = new Set<(error: Error) => void>()
 
   constructor(private readonly client: ProtoBindingClient, readonly handle: bigint) {}
 
-  send(type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
+  send(type: AnyTTYClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
     if (this.closed) return Promise.reject(new Error('Proto resource stream is closed'))
     return this.client.sendResourceStreamFrame(this.handle, type, payload)
   }
 
-  subscribe(handler: (type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void): ProtoClientSubscription {
+  subscribe(handler: (type: AnyTTYClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void): ProtoClientSubscription {
     this.handlers.add(handler)
     return { close: () => this.handlers.delete(handler) }
   }
@@ -671,7 +671,7 @@ class ProtoBindingResourceStream implements ProtoResourceStream {
     await this.client.closeResourceStream(this.handle)
   }
 
-  publish(type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array): void {
+  publish(type: AnyTTYClientBinding.ResourceStreamFrameType, payload: Uint8Array): void {
     if (this.closed) return
     this.handlers.forEach((handler) => handler(type, payload.slice()))
   }
@@ -685,7 +685,7 @@ class ProtoBindingResourceStream implements ProtoResourceStream {
   }
 }
 
-function apiError(error: { code?: MuxviaApiCommon.ApiErrorCode, message?: string, retryable?: boolean } | undefined, fallback: string): Error {
+function apiError(error: { code?: AnyTTYApiCommon.ApiErrorCode, message?: string, retryable?: boolean } | undefined, fallback: string): Error {
   const result = new Error(error?.message || fallback) as Error & { code?: string, retryable?: boolean }
   const code = error ? apiErrorCode(error.code) : ''
   if (code) result.code = code
@@ -693,73 +693,73 @@ function apiError(error: { code?: MuxviaApiCommon.ApiErrorCode, message?: string
   return result
 }
 
-function routePreferenceFromProto(value: MuxviaRemoteAuth.EndpointRoutePreference | undefined): ConnectionPolicy['route'] {
+function routePreferenceFromProto(value: AnyTTYRemoteAuth.EndpointRoutePreference | undefined): ConnectionPolicy['route'] {
   switch (value) {
-    case MuxviaRemoteAuth.EndpointRoutePreference.DIRECT: return 'direct'
-    case MuxviaRemoteAuth.EndpointRoutePreference.SSH: return 'ssh'
-    case MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD: return 'cloud'
+    case AnyTTYRemoteAuth.EndpointRoutePreference.DIRECT: return 'direct'
+    case AnyTTYRemoteAuth.EndpointRoutePreference.SSH: return 'ssh'
+    case AnyTTYRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD: return 'cloud'
     default: return 'auto'
   }
 }
 
-function routePreferenceToProto(value: ConnectionPolicy['route']): MuxviaRemoteAuth.EndpointRoutePreference {
+function routePreferenceToProto(value: ConnectionPolicy['route']): AnyTTYRemoteAuth.EndpointRoutePreference {
   switch (value) {
-    case 'direct': return MuxviaRemoteAuth.EndpointRoutePreference.DIRECT
-    case 'ssh': return MuxviaRemoteAuth.EndpointRoutePreference.SSH
-    case 'cloud': return MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD
-    default: return MuxviaRemoteAuth.EndpointRoutePreference.AUTO
+    case 'direct': return AnyTTYRemoteAuth.EndpointRoutePreference.DIRECT
+    case 'ssh': return AnyTTYRemoteAuth.EndpointRoutePreference.SSH
+    case 'cloud': return AnyTTYRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD
+    default: return AnyTTYRemoteAuth.EndpointRoutePreference.AUTO
   }
 }
 
-function cloudPreferenceFromProto(value: MuxviaRemoteAuth.ManagedWebRTCRelayMode): ConnectionPolicy['cloud'] {
+function cloudPreferenceFromProto(value: AnyTTYRemoteAuth.ManagedWebRTCRelayMode): ConnectionPolicy['cloud'] {
   switch (value) {
-    case MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT: return 'p2p'
-    case MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY: return 'relay'
+    case AnyTTYRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT: return 'p2p'
+    case AnyTTYRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY: return 'relay'
     default: return 'auto'
   }
 }
 
-function cloudPreferenceToProto(value: ConnectionPolicy['cloud']): MuxviaRemoteAuth.ManagedWebRTCRelayMode {
+function cloudPreferenceToProto(value: ConnectionPolicy['cloud']): AnyTTYRemoteAuth.ManagedWebRTCRelayMode {
   switch (value) {
-    case 'p2p': return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT
-    case 'relay': return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
-    default: return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
+    case 'p2p': return AnyTTYRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT
+    case 'relay': return AnyTTYRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+    default: return AnyTTYRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
   }
 }
 
-function relayTransportFromProto(value: MuxviaRemoteAuth.ManagedWebRTCRelayTransport): ConnectionPolicy['relayTransport'] {
+function relayTransportFromProto(value: AnyTTYRemoteAuth.ManagedWebRTCRelayTransport): ConnectionPolicy['relayTransport'] {
   switch (value) {
-    case MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP: return 'udp'
-    case MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP: return 'tcp'
+    case AnyTTYRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP: return 'udp'
+    case AnyTTYRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP: return 'tcp'
     default: return 'auto'
   }
 }
 
-function relayTransportToProto(value: ConnectionPolicy['relayTransport']): MuxviaRemoteAuth.ManagedWebRTCRelayTransport {
+function relayTransportToProto(value: ConnectionPolicy['relayTransport']): AnyTTYRemoteAuth.ManagedWebRTCRelayTransport {
   switch (value) {
-    case 'udp': return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
-    case 'tcp': return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
-    default: return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO
+    case 'udp': return AnyTTYRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
+    case 'tcp': return AnyTTYRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
+    default: return AnyTTYRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO
   }
 }
 
-function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPolicyState): ConnectionPolicyState {
+function connectionPolicyStateFromProto(state: AnyTTYClientBinding.ConnectionPolicyState): ConnectionPolicyState {
   const policy = state.policy
   const result: ConnectionPolicyState = {
     policy: {
       route: routePreferenceFromProto(policy?.routePreference),
-      cloud: cloudPreferenceFromProto(policy?.cloudRelayMode ?? MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO),
-      relayTransport: relayTransportFromProto(policy?.relayTransport ?? MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO),
+      cloud: cloudPreferenceFromProto(policy?.cloudRelayMode ?? AnyTTYRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO),
+      relayTransport: relayTransportFromProto(policy?.relayTransport ?? AnyTTYRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO),
     },
     available: { direct: false, ssh: false, cloud: false },
     unavailableReasons: {},
   }
   for (const route of state.routes) {
-    const key = route.routeKind === MuxviaClientBinding.ConnectionRouteKind.DIRECT
+    const key = route.routeKind === AnyTTYClientBinding.ConnectionRouteKind.DIRECT
       ? 'direct'
-      : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.SSH
+      : route.routeKind === AnyTTYClientBinding.ConnectionRouteKind.SSH
         ? 'ssh'
-        : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.CLOUD
+        : route.routeKind === AnyTTYClientBinding.ConnectionRouteKind.CLOUD
           ? 'cloud'
           : undefined
     if (!key) continue
@@ -769,35 +769,35 @@ function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPol
   return result
 }
 
-function connectionPolicyReasonFromProto(reason: MuxviaClientBinding.ConnectionPolicyAvailabilityReason): NonNullable<ConnectionPolicyState['unavailableReasons']['direct']> {
+function connectionPolicyReasonFromProto(reason: AnyTTYClientBinding.ConnectionPolicyAvailabilityReason): NonNullable<ConnectionPolicyState['unavailableReasons']['direct']> {
   switch (reason) {
-    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.ROUTE_DISABLED: return 'route_disabled'
-    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.PLATFORM_UNSUPPORTED: return 'platform_unsupported'
-    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CREDENTIAL_UNAVAILABLE: return 'credential_unavailable'
-    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CLOUD_UNAVAILABLE: return 'cloud_unavailable'
+    case AnyTTYClientBinding.ConnectionPolicyAvailabilityReason.ROUTE_DISABLED: return 'route_disabled'
+    case AnyTTYClientBinding.ConnectionPolicyAvailabilityReason.PLATFORM_UNSUPPORTED: return 'platform_unsupported'
+    case AnyTTYClientBinding.ConnectionPolicyAvailabilityReason.CREDENTIAL_UNAVAILABLE: return 'credential_unavailable'
+    case AnyTTYClientBinding.ConnectionPolicyAvailabilityReason.CLOUD_UNAVAILABLE: return 'cloud_unavailable'
     default: return 'route_not_configured'
   }
 }
 
-function apiErrorCode(code: MuxviaApiCommon.ApiErrorCode | undefined): string {
+function apiErrorCode(code: AnyTTYApiCommon.ApiErrorCode | undefined): string {
   switch (code) {
-    case MuxviaApiCommon.ApiErrorCode.INVALID_REQUEST: return 'invalid_request'
-    case MuxviaApiCommon.ApiErrorCode.UNSUPPORTED_VERSION: return 'unsupported_version'
-    case MuxviaApiCommon.ApiErrorCode.UNSUPPORTED_CAPABILITY: return 'unsupported_capability'
-    case MuxviaApiCommon.ApiErrorCode.UNAUTHORIZED: return 'unauthenticated'
-    case MuxviaApiCommon.ApiErrorCode.FORBIDDEN: return 'forbidden'
-    case MuxviaApiCommon.ApiErrorCode.NOT_FOUND: return 'not_found'
-    case MuxviaApiCommon.ApiErrorCode.CONFLICT: return 'conflict'
-    case MuxviaApiCommon.ApiErrorCode.STALE_SESSION: return 'stale_session'
-    case MuxviaApiCommon.ApiErrorCode.CANCELLED: return 'cancelled'
-    case MuxviaApiCommon.ApiErrorCode.UNAVAILABLE: return 'unavailable'
-    case MuxviaApiCommon.ApiErrorCode.INTERNAL: return 'internal'
-    case MuxviaApiCommon.ApiErrorCode.ENTITLEMENT_DENIED: return 'entitlement_denied'
+    case AnyTTYApiCommon.ApiErrorCode.INVALID_REQUEST: return 'invalid_request'
+    case AnyTTYApiCommon.ApiErrorCode.UNSUPPORTED_VERSION: return 'unsupported_version'
+    case AnyTTYApiCommon.ApiErrorCode.UNSUPPORTED_CAPABILITY: return 'unsupported_capability'
+    case AnyTTYApiCommon.ApiErrorCode.UNAUTHORIZED: return 'unauthenticated'
+    case AnyTTYApiCommon.ApiErrorCode.FORBIDDEN: return 'forbidden'
+    case AnyTTYApiCommon.ApiErrorCode.NOT_FOUND: return 'not_found'
+    case AnyTTYApiCommon.ApiErrorCode.CONFLICT: return 'conflict'
+    case AnyTTYApiCommon.ApiErrorCode.STALE_SESSION: return 'stale_session'
+    case AnyTTYApiCommon.ApiErrorCode.CANCELLED: return 'cancelled'
+    case AnyTTYApiCommon.ApiErrorCode.UNAVAILABLE: return 'unavailable'
+    case AnyTTYApiCommon.ApiErrorCode.INTERNAL: return 'internal'
+    case AnyTTYApiCommon.ApiErrorCode.ENTITLEMENT_DENIED: return 'entitlement_denied'
     default: return ''
   }
 }
 
-function bindingOperationHandle(envelope: MuxviaClientBinding.EventEnvelope): bigint | undefined {
+function bindingOperationHandle(envelope: AnyTTYClientBinding.EventEnvelope): bigint | undefined {
   switch (envelope.event.case) {
     case 'openSession':
     case 'execute':

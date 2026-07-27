@@ -11,15 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 const (
-	// AuthProtocol 是 direct TLS/DTLS DataChannel 切换到 muxvia protocol 前的独立协议标识。
-	AuthProtocol = "muxvia-remote-auth"
+	// AuthProtocol 是 direct TLS/DTLS DataChannel 切换到 anytty protocol 前的独立协议标识。
+	AuthProtocol = "anytty-remote-auth"
 	// AuthVersion 是 client-bound CapabilityGrant 与 PairingExchange canonical contract 的版本。
 	// v1 bearer/HMAC envelope 不再接受，也没有版本回退。
 	AuthVersion uint32 = 2
@@ -88,7 +88,7 @@ func LocalUnixChannelBinding(socketPath string) (ChannelBinding, error) {
 	canonical := filepath.Clean(socketPath)
 	return ChannelBinding{
 		Kind: remoteauthpb.ChannelBindingKind_CHANNEL_BINDING_KIND_LOCAL_UNIX,
-		Hash: sha256.Sum256([]byte("muxvia-local-unix-binding-v1\x00" + canonical)),
+		Hash: sha256.Sum256([]byte("anytty-local-unix-binding-v1\x00" + canonical)),
 	}, nil
 }
 
@@ -149,7 +149,7 @@ func MarshalAuthEnvelope(envelope *remoteauthpb.AuthEnvelope) ([]byte, error) {
 }
 
 // UnmarshalAuthEnvelope 解码并严格校验一条 v2 pre-protocol 授权帧。
-// muxvia protocol frame、错误 magic、v1 envelope、unknown field 或多义 payload都会返回 PROTOCOL，不会尝试旧 bearer 格式。
+// anytty protocol frame、错误 magic、v1 envelope、unknown field 或多义 payload都会返回 PROTOCOL，不会尝试旧 bearer 格式。
 func UnmarshalAuthEnvelope(frame []byte) (*remoteauthpb.AuthEnvelope, error) {
 	if len(frame) <= len(authFrameMagic) || len(frame) > MaxAuthFrameSize || subtle.ConstantTimeCompare(frame[:min(len(frame), len(authFrameMagic))], authFrameMagic[:]) != 1 {
 		return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "invalid remote auth frame", nil)

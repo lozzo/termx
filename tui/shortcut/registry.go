@@ -5,7 +5,7 @@ package shortcut
 import (
 	"strings"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
+	actiondomain "github.com/anytty/anytty/tui/action"
 )
 
 // Visibility 描述一个 shortcut binding 是否进入指定快捷键提示目录。

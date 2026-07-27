@@ -942,11 +942,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setError(null)
       reattachActiveTerminals(session)
     }
-    document.addEventListener('muxvia:resume', handleResume)
-    document.addEventListener('muxvia:binding-closed', handleResume)
+    document.addEventListener('anytty:resume', handleResume)
+    document.addEventListener('anytty:binding-closed', handleResume)
     return () => {
-      document.removeEventListener('muxvia:resume', handleResume)
-      document.removeEventListener('muxvia:binding-closed', handleResume)
+      document.removeEventListener('anytty:resume', handleResume)
+      document.removeEventListener('anytty:binding-closed', handleResume)
     }
   }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
@@ -1725,14 +1725,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       .filter(isDirectoryEntry)
       .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))
     return (
-      <MobileSheetPanel title={t('workspace.chooseDirectory')} testId="muxvia-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+      <MobileSheetPanel title={t('workspace.chooseDirectory')} testId="anytty-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
-          <div className="muxvia-app-panel p-3">
+          <div className="anytty-app-panel p-3">
             <div className="break-all font-mono text-[12px] font-semibold text-zinc-800">{normalizedPath}</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold disabled:text-zinc-300"
+                className="anytty-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold disabled:text-zinc-300"
                 disabled={normalizedPath === '/'}
                 onClick={() => { hapticImpact(); void loadTerminalPathPicker(parentPath(normalizedPath)) }}
               >
@@ -1741,7 +1741,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="muxvia-app-primary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+                className="anytty-app-primary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                 onClick={() => { hapticImpact(); selectTerminalWorkingDirectory(normalizedPath) }}
               >
                 <FolderOpen className="h-4 w-4" />
@@ -1757,12 +1757,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           ) : null}
 
           <div
-            className="muxvia-app-panel flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden"
-            data-testid="muxvia-terminal-path-picker-list"
+            className="anytty-app-panel flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden"
+            data-testid="anytty-terminal-path-picker-list"
           >
             {terminalPathPickerLoading ? (
               <div className="flex h-full items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <span className="muxvia-square-spinner" aria-hidden="true" />
+                <span className="anytty-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : directories.length === 0 ? (
@@ -1796,12 +1796,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderTerminalPathBookmarksSheet = () => {
     if (mobileSheet !== 'terminal-path-bookmarks') return null
     return (
-      <MobileSheetPanel title={t('files.bookmarks.title')} testId="muxvia-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+      <MobileSheetPanel title={t('files.bookmarks.title')} testId="anytty-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+              className="anytty-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
               onClick={() => { hapticImpact(); void addTerminalPathBookmark() }}
             >
               <BookmarkPlus className="h-4 w-4" />
@@ -1809,7 +1809,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
             <button
               type="button"
-              className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+              className="anytty-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
               onClick={() => { hapticImpact(); void loadTerminalPathBookmarks() }}
             >
               <RefreshCw className="h-4 w-4" />
@@ -1823,10 +1823,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
           ) : null}
 
-          <div className="muxvia-app-panel overflow-hidden">
+          <div className="anytty-app-panel overflow-hidden">
             {terminalPathBookmarksLoading ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <span className="muxvia-square-spinner" aria-hidden="true" />
+                <span className="anytty-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : terminalPathBookmarks.length === 0 ? (
@@ -1864,19 +1864,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderClipboardHistorySheet = () => {
     if (mobileSheet !== 'clipboard-history') return null
     return (
-      <MobileSheetPanel title={t('workspace.clipboard')} testId="muxvia-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
+      <MobileSheetPanel title={t('workspace.clipboard')} testId="anytty-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
         <div className="flex flex-col gap-3">
-          <div className="muxvia-app-panel p-3">
+          <div className="anytty-app-panel p-3">
             <textarea
               aria-label={t('workspace.clipboardText')}
-              className="min-h-24 w-full resize-none border border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
+              className="min-h-24 w-full resize-none border border-[var(--anytty-app-line)] bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
               value={clipboardDraft}
               onChange={(event) => setClipboardDraft(event.currentTarget.value)}
             />
             <div className="mt-2 grid grid-cols-3 gap-2">
               <button
                 type="button"
-                className="muxvia-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
+                className="anytty-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                 onClick={() => { hapticImpact(); void loadBrowserClipboardDraft() }}
               >
                 <ClipboardList className="h-4 w-4" />
@@ -1884,7 +1884,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="muxvia-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
+                className="anytty-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                 onClick={() => { hapticImpact(); void refreshClipboardEntries() }}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1892,7 +1892,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="muxvia-app-primary-button min-h-11 px-2 text-[12px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
+                className="anytty-app-primary-button min-h-11 px-2 text-[12px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
                 disabled={!clipboardDraft || clipboardLoading}
                 onClick={() => { hapticImpact(); void saveClipboardDraft() }}
               >
@@ -1907,10 +1907,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
           ) : null}
 
-          <div className="muxvia-app-panel overflow-hidden">
+          <div className="anytty-app-panel overflow-hidden">
             {clipboardLoading && clipboardEntries.length === 0 ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <span className="muxvia-square-spinner" aria-hidden="true" />
+                <span className="anytty-square-spinner" aria-hidden="true" />
                 {t('common.loading')}
               </div>
             ) : clipboardEntries.length === 0 ? (
@@ -1931,7 +1931,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="muxvia-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
+                      className="anytty-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                       onClick={() => { hapticImpact(); setEditingClipboardId(entry.id); setClipboardDraft(entry.text) }}
                     >
                       <SquarePen className="h-3.5 w-3.5" />
@@ -2011,16 +2011,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
     return (
       <aside
-        className={`muxvia-app-page relative min-h-0 flex-1 flex-col md:flex md:w-72 md:flex-none md:border-r md:border-[var(--muxvia-app-line)] ${page === 'terminal' ? 'hidden' : 'flex'}`}
-        data-testid={page === 'terminal' ? undefined : 'muxvia-terminal-list-page'}
+        className={`anytty-app-page relative min-h-0 flex-1 flex-col md:flex md:w-72 md:flex-none md:border-r md:border-[var(--anytty-app-line)] ${page === 'terminal' ? 'hidden' : 'flex'}`}
+        data-testid={page === 'terminal' ? undefined : 'anytty-terminal-list-page'}
       >
-        <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between border-b px-3 pt-[env(safe-area-inset-top)] md:pt-0">
+        <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between border-b px-3 pt-[env(safe-area-inset-top)] md:pt-0">
           <div className="flex min-w-0 items-center gap-2">
             {onBack ? (
               <button
                 type="button"
                 aria-label={t('common.backToMachines')}
-                className="muxvia-app-icon-button mr-1 border-transparent bg-transparent"
+                className="anytty-app-icon-button mr-1 border-transparent bg-transparent"
                 onClick={() => { hapticSelection(); onBack() }}
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -2037,7 +2037,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label={t('workspace.connectionInfo')}
-              className="muxvia-app-icon-button border-transparent bg-transparent"
+              className="anytty-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openConnectionInfo() }}
             >
@@ -2047,7 +2047,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label={t('workspace.openFiles')}
-              className="muxvia-app-icon-button border-transparent bg-transparent"
+              className="anytty-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openFiles() }}
             >
@@ -2057,7 +2057,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 aria-label={t('workspace.createTerminal')}
-                className="muxvia-app-icon-button border-transparent bg-transparent"
+                className="anytty-app-icon-button border-transparent bg-transparent"
                 onClick={() => { hapticImpact(); openCreateTerminal() }}
               >
                 <Plus className="h-5 w-5" />
@@ -2067,7 +2067,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         </header>
         {showDelayedMachineNetworkOverlay ? (
           <div className="flex animate-in fade-in slide-in-from-top-1 duration-200 items-center justify-center gap-2 border-b border-zinc-200 bg-blue-50/50 px-3 py-1.5">
-            <span className="muxvia-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
+            <span className="anytty-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
             <span className="text-[11px] font-medium text-blue-700">
               {displayedConnectionStatus || t('workspace.connecting')}
             </span>
@@ -2079,9 +2079,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </div>
         ) : null}
         {requireVerification ? (
-          <section className="muxvia-app-panel mx-3 mt-3 p-5" data-testid="muxvia-verification-gate">
+          <section className="anytty-app-panel mx-3 mt-3 p-5" data-testid="anytty-verification-gate">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-zinc-600">
+              <div className="flex h-11 w-11 items-center justify-center border border-[var(--anytty-app-line)] bg-[var(--anytty-app-soft)] text-zinc-600">
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
@@ -2091,7 +2091,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
             <button
               type="button"
-              className="muxvia-app-primary-button min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
+              className="anytty-app-primary-button min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
               onClick={() => { hapticImpact(); handleConnectionAuthFailure(machine.machineId) }}
             >
               <KeyRound className="h-4 w-4" />
@@ -2101,7 +2101,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
         <div
           className="min-h-0 flex-1 overflow-y-auto p-3"
-          data-testid="muxvia-terminal-list-scroll"
+          data-testid="anytty-terminal-list-scroll"
         >
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">{t('terminal.list')}</h2>
           <TerminalList
@@ -2115,12 +2115,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         </div>
 
         {mobileSheet === 'manage-terminal' && selectedTerminal ? (
-          <MobileSheetPanel title={selectedTerminal.title || t('terminal.defaultTitle')} testId="muxvia-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={selectedTerminal.title || t('terminal.defaultTitle')} testId="anytty-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
             <div className="flex flex-col gap-3">
               {selectedTerminal.state === 'exited' ? (
                 <button
                   type="button"
-                  className="muxvia-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
+                  className="anytty-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                   onClick={() => { hapticImpact(); void restartManagedTerminal() }}
                 >
                   <span>{t('workspace.restartTerminal')}</span>
@@ -2129,7 +2129,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               ) : null}
               <button
                 type="button"
-                className="muxvia-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
+                className="anytty-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                 onClick={() => { hapticImpact(); openEditTerminal() }}
               >
                 <span>{t('workspace.editTerminal')}</span>
@@ -2150,7 +2150,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         {(mobileSheet === 'create-terminal' || mobileSheet === 'edit-terminal') ? (
           <MobileSheetPanel
             title={t(mobileSheet === 'create-terminal' ? 'workspace.newTerminal' : 'workspace.editTerminal')}
-            testId="muxvia-terminal-editor-sheet"
+            testId="anytty-terminal-editor-sheet"
             onClose={() => setMobileSheet(null)}
           >
             <div className="flex flex-col gap-4">
@@ -2162,7 +2162,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 {t('workspace.terminalForm.name')}
                 <input
-                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--anytty-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.name}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2174,7 +2174,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                   {t('workspace.terminalForm.command')}
                   <input
-                    className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                    className="min-h-12 border border-[var(--anytty-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                     value={terminalForm.command}
                     onChange={(event) => {
                       const value = event.currentTarget.value
@@ -2186,7 +2186,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 {t('workspace.terminalForm.cwd')}
                 <input
-                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--anytty-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.cwd}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2196,7 +2196,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+                    className="anytty-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathPicker()
@@ -2207,7 +2207,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                   <button
                     type="button"
-                    className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+                    className="anytty-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathBookmarks()
@@ -2227,7 +2227,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 {t('workspace.terminalForm.sizeLock')}
                 <select
-                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--anytty-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.sizeLockMode}
                   onChange={(event) => {
                     const value = event.currentTarget.value as 'off' | 'warn' | 'lock'
@@ -2241,7 +2241,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </label>
               <button
                 type="button"
-                className="muxvia-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
+                className="anytty-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
                 disabled={terminalSubmitting || terminalDefaultsLoading}
                 onClick={() => {
                   hapticImpact()
@@ -2275,7 +2275,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   if (error && !machine) {
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
-        <div className="muxvia-app-panel w-full max-w-md border-red-200 p-4 text-sm text-red-700" role="alert">
+        <div className="anytty-app-panel w-full max-w-md border-red-200 p-4 text-sm text-red-700" role="alert">
           <h2 className="mb-2 font-semibold text-red-900">{t('workspace.connectionError')}</h2>
           <p>{error}</p>
         </div>
@@ -2287,8 +2287,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 ${className || ''}`}>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
-          <span className="muxvia-square-spinner text-zinc-600" aria-hidden="true" />
-          Connecting to Muxvia...
+          <span className="anytty-square-spinner text-zinc-600" aria-hidden="true" />
+          Connecting to AnyTTY...
         </div>
       </div>
     )
@@ -2297,15 +2297,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   return (
     <div
       ref={outerContainerRef}
-      className={`relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-[var(--muxvia-bg)] font-sans text-[var(--muxvia-text)] md:flex-row ${className || ''}`}
+      className={`relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-[var(--anytty-bg)] font-sans text-[var(--anytty-text)] md:flex-row ${className || ''}`}
       data-machine-id={machine.machineId}
       style={terminalThemeStyle}
     >
       {renderTerminalListPage()}
 
       <main
-        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)]'}`}
-        data-testid="muxvia-terminal-page"
+        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--anytty-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)]'}`}
+        data-testid="anytty-terminal-page"
       >
         {page === 'terminal-list' ? (
           <div className="flex flex-col items-center gap-3 text-zinc-400">
@@ -2315,14 +2315,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : (
           <>
         <header
-          className="relative z-30 row-start-1 flex min-h-12 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
-          data-testid="muxvia-terminal-header"
+          className="relative z-30 row-start-1 flex min-h-12 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
+          data-testid="anytty-terminal-header"
         >
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               aria-label={t('workspace.showTerminalList')}
-              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--anytty-muted)] transition-colors active:bg-[var(--anytty-surface-raised)]"
               onClick={() => { hapticSelection(); showTerminalListPage() }}
             >
               <ChevronLeft className="h-5 w-5" />
@@ -2330,13 +2330,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label={t('workspace.switchTerminal')}
-              className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--muxvia-surface-raised)]"
+              className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--anytty-surface-raised)]"
               onClick={() => { hapticSelection(); setMobileSheet('terminals') }}
             >
-              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--muxvia-muted)]">{machine.name}</span>
-              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--muxvia-text)]" data-testid="muxvia-terminal-title">{terminalHeaderTitle}</span>
+              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--anytty-muted)]">{machine.name}</span>
+              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--anytty-text)]" data-testid="anytty-terminal-title">{terminalHeaderTitle}</span>
               {terminalHeaderDirectory ? (
-                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-[var(--muxvia-muted)]">{terminalHeaderDirectory}</span>
+                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-[var(--anytty-muted)]">{terminalHeaderDirectory}</span>
               ) : null}
             </button>
           </div>
@@ -2346,8 +2346,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label={t('workspace.openFiles')}
               title={t('workspace.openFiles')}
-              data-testid="muxvia-terminal-files-button"
-              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
+              data-testid="anytty-terminal-files-button"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--anytty-muted)] transition-colors active:bg-[var(--anytty-surface-raised)]"
               onClick={() => { hapticSelection(); openFiles() }}
             >
               <Folder className="h-5 w-5" />
@@ -2356,8 +2356,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label={t(activeTerminalOwnsResize ? 'workspace.releaseResize' : 'workspace.controlResize')}
               title={t(activeTerminalOwnsResize ? 'workspace.releaseResize' : 'workspace.controlResize')}
-              data-testid="muxvia-terminal-resize-button"
-              className={`flex h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--muxvia-surface-raised)] ${activeTerminalOwnsResize ? 'text-[var(--muxvia-accent)]' : 'text-[var(--muxvia-muted)]'}`}
+              data-testid="anytty-terminal-resize-button"
+              className={`flex h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--anytty-surface-raised)] ${activeTerminalOwnsResize ? 'text-[var(--anytty-accent)]' : 'text-[var(--anytty-muted)]'}`}
               onClick={() => { hapticSelection(); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}
             >
               <Scaling className="h-5 w-5" />
@@ -2366,8 +2366,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label={t('workspace.terminalTools')}
               title={t('workspace.terminalTools')}
-              data-testid="muxvia-terminal-tools-button"
-              className={`hidden h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--muxvia-surface-raised)] min-[360px]:flex ${terminalToolbarOpen ? 'text-[var(--muxvia-accent)]' : 'text-[var(--muxvia-muted)]'}`}
+              data-testid="anytty-terminal-tools-button"
+              className={`hidden h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--anytty-surface-raised)] min-[360px]:flex ${terminalToolbarOpen ? 'text-[var(--anytty-accent)]' : 'text-[var(--anytty-muted)]'}`}
               onClick={() => { hapticSelection(); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}
             >
               <SlidersHorizontal className="h-5 w-5" />
@@ -2376,7 +2376,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label={t('workspace.openTerminalMenu')}
               title={t('workspace.openTerminalMenu')}
-              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--anytty-muted)] transition-colors active:bg-[var(--anytty-surface-raised)]"
               onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -2386,8 +2386,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
         <div
           ref={terminalAreaRef}
-          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] md:row-start-1"
-          data-testid="muxvia-terminal-body"
+          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--anytty-terminal-bg)] md:row-start-1"
+          data-testid="anytty-terminal-body"
         >
           {terminalToolbarOpen ? (
             <TerminalActionToolbar
@@ -2446,11 +2446,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
           ) : null}
 
-          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--muxvia-terminal-bg)] ${splitTerminalId ? 'gap-px' : ''}`}>
+          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--anytty-terminal-bg)] ${splitTerminalId ? 'gap-px' : ''}`}>
             <div
-              className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--muxvia-border-subtle)] ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--muxvia-accent)]' : ''}` : ''}`}
+              className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--anytty-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--anytty-border-subtle)] ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--anytty-accent)]' : ''}` : ''}`}
               data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
-              data-testid="muxvia-terminal-panel"
+              data-testid="anytty-terminal-panel"
               onPointerDown={() => {
                 if (activeTerminalSlot !== 0) hapticSelection()
                 setActiveTerminalSlot(0)
@@ -2476,7 +2476,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   suppressConnectingOverlay={showMachineNetworkOverlay}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--muxvia-muted)]">
+                <div className="flex h-full items-center justify-center text-sm text-[var(--anytty-muted)]">
                   {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (displayedConnectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
                 </div>
               )}
@@ -2484,7 +2484,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <button
                   type="button"
                   aria-label={t('workspace.unlockResize')}
-                  className={`absolute right-2 z-20 flex min-h-8 items-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-overlay)] px-2 text-[11px] font-semibold text-[var(--muxvia-text)] backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
+                  className={`absolute right-2 z-20 flex min-h-8 items-center gap-1.5 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-overlay)] px-2 text-[11px] font-semibold text-[var(--anytty-text)] backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
                   disabled={unlockingResize}
                   onClick={() => { hapticImpact(); void unlockTerminalResize() }}
                 >
@@ -2496,9 +2496,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
             {splitTerminalId ? (
               <div
-                className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--muxvia-accent)]' : ''}`}
+                className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--anytty-terminal-bg)] ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--anytty-accent)]' : ''}`}
                 data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
-                data-testid="muxvia-split-terminal-panel"
+                data-testid="anytty-split-terminal-panel"
                 onPointerDown={() => {
                   if (activeTerminalSlot !== 1) hapticSelection()
                   setActiveTerminalSlot(1)
@@ -2523,7 +2523,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     suppressConnectingOverlay={showMachineNetworkOverlay}
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--muxvia-muted)]">
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--anytty-muted)]">
                     {showMachineNetworkOverlay ? null : displayedConnectionStatus ?? t('workspace.connectingTerminal')}
                   </div>
                 )}
@@ -2564,7 +2564,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'terminals' ? (
-          <MobileSheetPanel title={t('terminal.list')} testId="muxvia-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={t('terminal.list')} testId="anytty-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
             <TerminalList
               machineId={machine.machineId}
               terminals={terminals}
@@ -2575,26 +2575,26 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'terminal-menu' ? (
-          <MobileSheetPanel title={t('workspace.terminalTools')} testId="muxvia-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
-            <div className="grid grid-cols-2 border-l border-t border-[var(--muxvia-app-line)]">
-              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
-                <Rows2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
+          <MobileSheetPanel title={t('workspace.terminalTools')} testId="anytty-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
+            <div className="grid grid-cols-2 border-l border-t border-[var(--anytty-app-line)]">
+              <button type="button" className="anytty-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
+                <Rows2 className="h-4 w-4 text-[var(--anytty-app-accent)]" />
                 {splitTerminalId ? t('workspace.changeSplit') : t('workspace.splitTerminal')}
               </button>
               {splitTerminalId ? (
                 <>
-                  <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
-                    {syncSplitInput ? <Link2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" /> : <Link2Off className="h-4 w-4 text-[var(--muxvia-app-muted)]" />}
+                  <button type="button" className="anytty-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
+                    {syncSplitInput ? <Link2 className="h-4 w-4 text-[var(--anytty-app-accent)]" /> : <Link2Off className="h-4 w-4 text-[var(--anytty-app-muted)]" />}
                     {t('workspace.syncInput')}
                   </button>
-                  <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); closeSplitTerminal(); setMobileSheet(null) }}>
-                    <PanelBottomClose className="h-4 w-4 text-[var(--muxvia-app-danger)]" />
+                  <button type="button" className="anytty-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); closeSplitTerminal(); setMobileSheet(null) }}>
+                    <PanelBottomClose className="h-4 w-4 text-[var(--anytty-app-danger)]" />
                     {t('workspace.closeSplit')}
                   </button>
                 </>
               ) : null}
-              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
-                <Info className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
+              <button type="button" className="anytty-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
+                <Info className="h-4 w-4 text-[var(--anytty-app-accent)]" />
                 {t('workspace.connection.label')}
               </button>
             </div>
@@ -2602,7 +2602,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'split-terminal' ? (
-          <MobileSheetPanel title={t('workspace.splitTerminal')} testId="muxvia-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={t('workspace.splitTerminal')} testId="anytty-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
             {terminals.filter((terminal) => terminal.terminalId !== activeTerminalId).length > 0 ? (
               <TerminalList
                 machineId={machine.machineId}
@@ -2624,10 +2624,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       </main>
 
       <div
-        className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--muxvia-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
-        data-testid="muxvia-machine-files-overlay"
+        className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--anytty-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
+        data-testid="anytty-machine-files-overlay"
       >
-        <div className="muxvia-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+        <div className="anytty-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
           <div className="flex items-center gap-2">
             <Folder className="h-5 w-5 text-zinc-500" />
             <span className="text-[17px] font-bold tracking-tight text-zinc-900">{t('files.list')}</span>
@@ -2635,7 +2635,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <button
             type="button"
             aria-label={t('workspace.closeFiles')}
-            className="muxvia-app-icon-button border-transparent bg-transparent"
+            className="anytty-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); openTerminalPanel() }}
           >
             <X className="h-5 w-5" />
@@ -2657,7 +2657,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
             {showMachineNetworkOverlay ? null : filesOpen ? (
               <div className="flex items-center gap-2">
-                <span className="muxvia-square-spinner" aria-hidden="true" />
+                <span className="anytty-square-spinner" aria-hidden="true" />
                 <span>{t('workspace.connecting')}</span>
               </div>
             ) : t('workspace.fileAccessNotReady')}
@@ -2726,17 +2726,17 @@ function MobileSheetPanel({
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={() => { hapticSelection(); onClose() }}>
       <section
-        className="muxvia-app-page relative max-h-[85vh] w-full overflow-hidden border-t border-[var(--muxvia-app-line)] md:max-w-md md:border"
+        className="anytty-app-page relative max-h-[85vh] w-full overflow-hidden border-t border-[var(--anytty-app-line)] md:max-w-md md:border"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="absolute left-1/2 top-3 h-1 w-12 -translate-x-1/2 bg-[var(--muxvia-app-line-strong)] md:hidden" />
-        <header className="flex h-16 items-center justify-between border-b border-[var(--muxvia-app-line)] px-5 pt-3">
+        <div className="absolute left-1/2 top-3 h-1 w-12 -translate-x-1/2 bg-[var(--anytty-app-line-strong)] md:hidden" />
+        <header className="flex h-16 items-center justify-between border-b border-[var(--anytty-app-line)] px-5 pt-3">
           <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{title}</h2>
           <button
             type="button"
             aria-label={`Close ${title}`}
-            className="muxvia-app-icon-button border-transparent bg-transparent"
+            className="anytty-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
@@ -2821,13 +2821,13 @@ export function ConnectionInfoDialog({
   ]
   return (
     <div ref={overlayRef} className="absolute inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-4" onClick={() => { hapticSelection(); onClose() }} onKeyDown={(event) => trapConnectionDialogFocus(event, overlayRef.current, onClose)}>
-      <section className="muxvia-app-page flex max-h-[96dvh] w-full max-w-xl flex-col overflow-hidden border-t border-[var(--muxvia-app-line)] md:max-h-[90vh] md:border" role="dialog" aria-modal="true" aria-labelledby="muxvia-connection-title" onClick={(event) => event.stopPropagation()}>
+      <section className="anytty-app-page flex max-h-[96dvh] w-full max-w-xl flex-col overflow-hidden border-t border-[var(--anytty-app-line)] md:max-h-[90vh] md:border" role="dialog" aria-modal="true" aria-labelledby="anytty-connection-title" onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
-            <h2 id="muxvia-connection-title" className="text-[17px] font-semibold text-zinc-950">{t('workspace.connection.title')}</h2>
+            <h2 id="anytty-connection-title" className="text-[17px] font-semibold text-zinc-950">{t('workspace.connection.title')}</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type, t)}</p>
           </div>
-          <button ref={closeRef} type="button" aria-label={t('workspace.connection.closeInfo')} className="muxvia-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
+          <button ref={closeRef} type="button" aria-label={t('workspace.connection.closeInfo')} className="anytty-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -2837,14 +2837,14 @@ export function ConnectionInfoDialog({
             <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-[13px] font-medium text-red-800" role="alert">
               <p>{error}</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" onClick={onRetry}>{t('workspace.connection.retry')}</button>
-                <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" onClick={onRestoreAuto}>{t('workspace.connection.restoreAuto')}</button>
+                <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" onClick={onRetry}>{t('workspace.connection.retry')}</button>
+                <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" onClick={onRestoreAuto}>{t('workspace.connection.restoreAuto')}</button>
               </div>
             </div>
           ) : null}
-          <section className="border-b border-[var(--muxvia-app-line)] px-4 py-4">
+          <section className="border-b border-[var(--anytty-app-line)] px-4 py-4">
             <h3 className="text-[13px] font-semibold text-zinc-950">{t('workspace.connection.current')}</h3>
-            <dl className="mt-2 overflow-hidden border border-[var(--muxvia-app-line)]">
+            <dl className="mt-2 overflow-hidden border border-[var(--anytty-app-line)]">
               <ConnectionInfoRow label={t('workspace.connection.route')} value={loading ? t('workspace.connection.reading') : connectionRouteLabel(info?.routeKind, t)} strong />
               <ConnectionInfoRow label={t('workspace.connection.path')} value={observedPathLabel(info?.observedPath, t)} />
               <ConnectionInfoRow label={t('workspace.connection.relayTransport')} value={displayDiagnostic(info?.relayTransport, t)} />
@@ -2852,9 +2852,9 @@ export function ConnectionInfoDialog({
             </dl>
           </section>
 
-          <fieldset className="border-b border-[var(--muxvia-app-line)] px-4 py-4" disabled={loading || applying || !policyState}>
+          <fieldset className="border-b border-[var(--anytty-app-line)] px-4 py-4" disabled={loading || applying || !policyState}>
             <legend className="text-[13px] font-semibold text-zinc-950">{t('workspace.connection.preference')}</legend>
-            <div className="mt-2 divide-y divide-[var(--muxvia-app-line)] border-y border-[var(--muxvia-app-line)]">
+            <div className="mt-2 divide-y divide-[var(--anytty-app-line)] border-y border-[var(--anytty-app-line)]">
               {routeOptions.map((option) => (
                 <label key={option.value} className={`flex min-h-12 items-center gap-3 py-2 text-[14px] ${option.available ? 'text-zinc-900' : 'text-zinc-400'}`}>
                   <input aria-label={option.label} aria-describedby={!option.available ? `connection-route-${option.value}-reason` : undefined} type="radio" name="connection-route" value={option.value} checked={draft.route === option.value} disabled={!option.available} onChange={() => setDraft((current) => ({ ...current, route: option.value }))} className="h-5 w-5 shrink-0 accent-zinc-900" />
@@ -2865,7 +2865,7 @@ export function ConnectionInfoDialog({
             </div>
           </fieldset>
 
-          <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3" open={draft.route === 'cloud'}>
+          <details className="border-b border-[var(--anytty-app-line)] px-4 py-3" open={draft.route === 'cloud'}>
             <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.cloudAdvanced')}</summary>
             <div className="space-y-5 pb-2">
               <ConnectionRadioGroup label={t('workspace.connection.cloudPath')} name="cloud-path" value={draft.cloud} options={[
@@ -2878,7 +2878,7 @@ export function ConnectionInfoDialog({
           </details>
 
           {routeManagement ? (
-            <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3">
+            <details className="border-b border-[var(--anytty-app-line)] px-4 py-3">
               <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.routeManager.title')}</summary>
               <ConnectionRouteManager adapter={routeManagement} endpointId={endpointId} />
             </details>
@@ -2886,7 +2886,7 @@ export function ConnectionInfoDialog({
 
           <details className="px-4 py-3">
             <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.diagnostics')}</summary>
-            <dl className="mb-2 overflow-hidden border border-[var(--muxvia-app-line)]">
+            <dl className="mb-2 overflow-hidden border border-[var(--anytty-app-line)]">
               <ConnectionInfoRow label={t('workspace.connection.routeId')} value={displayDiagnostic(info?.routeId, t)} />
               <ConnectionInfoRow label={t('workspace.connection.generation')} value={info?.generation?.toString() ?? t('workspace.connection.notProvided')} />
               <ConnectionInfoRow label={t('workspace.connection.reason')} value={displayDiagnostic(info?.routeSelectionReason, t)} />
@@ -2900,12 +2900,12 @@ export function ConnectionInfoDialog({
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
-          <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" disabled={applying} onClick={() => { hapticImpact(); onRefresh() }}>
+          <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" disabled={applying} onClick={() => { hapticImpact(); onRefresh() }}>
             {t('common.refresh')}
           </button>
           <button
             type="button"
-            className="muxvia-app-primary-button min-h-12 px-4 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
+            className="anytty-app-primary-button min-h-12 px-4 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
             disabled={loading || applying || !policyState || !policyChanged}
             onClick={() => { hapticImpact(); onApply(draft) }}
           >
@@ -2943,7 +2943,7 @@ function ConnectionRadioGroup<T extends string>({ label, name, value, options, d
   return (
     <fieldset disabled={disabled}>
       <legend className="text-[12px] font-semibold text-zinc-600">{label}</legend>
-      <div className="mt-1 grid grid-cols-3 gap-1 border border-[var(--muxvia-app-line)] p-1">
+      <div className="mt-1 grid grid-cols-3 gap-1 border border-[var(--anytty-app-line)] p-1">
         {options.map(([option, text]) => (
           <label key={option} className={`flex min-h-12 items-center justify-center px-2 text-center text-[12px] font-semibold ${value === option ? 'bg-zinc-900 text-white' : 'bg-zinc-50 text-zinc-700'}`}>
             <input className="sr-only" type="radio" name={name} value={option} checked={value === option} onChange={() => onChange(option)} />
@@ -2957,7 +2957,7 @@ function ConnectionRadioGroup<T extends string>({ label, name, value, options, d
 
 function ConnectionInfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean | undefined }) {
   return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--anytty-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
       <dt className="text-[12px] font-semibold text-zinc-500">{label}</dt>
       <dd className={`min-w-0 break-words text-[12px] ${strong ? 'font-semibold text-zinc-950' : 'font-medium text-zinc-700'}`}>{value}</dd>
     </div>

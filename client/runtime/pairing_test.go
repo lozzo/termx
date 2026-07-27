@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 func TestPairingServiceRejectsIdentityMismatchAndClosesPeerExactlyOnce(t *testing.T) {

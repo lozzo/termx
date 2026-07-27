@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Muxvia</string>
-    <string name="title_activity_main">Muxvia</string>
-    <string name="package_name">com.muxvia.app</string>
-    <string name="custom_url_scheme">com.muxvia.app</string>
+    <string name="app_name">AnyTTY</string>
+    <string name="title_activity_main">AnyTTY</string>
+    <string name="package_name">com.anytty.app</string>
+    <string name="custom_url_scheme">com.anytty.app</string>
 </resources>

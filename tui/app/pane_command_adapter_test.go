@@ -3,9 +3,9 @@ package app
 import (
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestParsePaneMiniCommandCoversStructuralActions(t *testing.T) {

@@ -211,7 +211,7 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
         onPointerUp={onPointerEnd}
         onWheel={onWheel}
       >
-        <div ref={mountRef} className="absolute inset-0" data-testid="muxvia-stl-preview" />
+        <div ref={mountRef} className="absolute inset-0" data-testid="anytty-stl-preview" />
         {renderError ? (
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/95 px-6 text-center">
             <div>

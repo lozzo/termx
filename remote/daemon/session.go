@@ -7,16 +7,16 @@ import (
 	"io"
 	"time"
 
-	core "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
+	core "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 // ScopedTransportServer 是 remote-v2 允许调用的 core-v2 transport 边界。
 // 实现方只能按已经验证的 capability scope 建立 protocol session，不能把远程 DataChannel 当作本地无限权限 listener。
 type ScopedTransportServer interface {
-	// ServeScopedTransport 按 daemon 已验证的 scope 服务同一条 DataChannel 上的 muxvia protocol。
+	// ServeScopedTransport 按 daemon 已验证的 scope 服务同一条 DataChannel 上的 anytty protocol。
 	ServeScopedTransport(context.Context, transport.Transport, core.TransportScope) error
 }
 

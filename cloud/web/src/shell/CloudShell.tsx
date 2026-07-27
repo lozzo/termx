@@ -68,7 +68,7 @@ export function CloudShell() {
     mutationFn: () => protoSend('/api/account/logout', LogoutAccountSessionRequestSchema, create(LogoutAccountSessionRequestSchema), LogoutAccountSessionResponseSchema),
     onSuccess: () => { queryClient.clear(); navigate('/login', { replace: true }) },
   })
-  const title = useMemo(() => [...userNavigation, ...adminNavigation].find((item) => location.pathname.startsWith(item.to))?.label ?? 'Muxvia Cloud', [location.pathname])
+  const title = useMemo(() => [...userNavigation, ...adminNavigation].find((item) => location.pathname.startsWith(item.to))?.label ?? 'AnyTTY Cloud', [location.pathname])
 
   if (current.isPending) return <div className="boot-shell"><img src={logo} alt="" /><Skeleton rows={6} /></div>
   if (!current.data?.account) return <Navigate to="/login" replace />
@@ -80,7 +80,7 @@ export function CloudShell() {
   return <div className={`cloud-layout ${collapsed ? 'nav-collapsed' : ''}`}>
     <a className="skip-link" href="#main-content">跳到主要内容</a>
     <aside className={`sidebar ${drawer ? 'sidebar-open' : ''}`}>
-      <div className="brand-row"><img src={logo} alt="Muxvia" /><div className="brand-copy"><strong>Muxvia</strong><span>Cloud</span></div><IconButton className="mobile-close" label="关闭导航" onClick={() => setDrawer(false)}><X size={20} /></IconButton></div>
+      <div className="brand-row"><img src={logo} alt="AnyTTY" /><div className="brand-copy"><strong>AnyTTY</strong><span>Cloud</span></div><IconButton className="mobile-close" label="关闭导航" onClick={() => setDrawer(false)}><X size={20} /></IconButton></div>
       <div className="nav-section"><span className="nav-caption">我的 Cloud</span>{navigation(userNavigation, '用户功能')}</div>
       {isOperator && <div className="nav-section nav-section-admin"><span className="nav-caption">运营管理</span>{navigation(adminNavigation, '运营管理')}</div>}
       <button className="collapse-button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? '展开导航' : '折叠导航'}><ChevronLeft size={18} /><span>折叠导航</span></button>

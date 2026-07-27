@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 // CredentialSource 从当前平台 secure store 解析单个 endpoint-bound capability credential。

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { muxviaI18n } from '../i18n'
+import { anyttyI18n } from '../i18n'
 import type { RtcConnectionPhase } from '../core/transport'
 import { connectionPathLabel, connectionPhaseLabel, connectionStatusIsSettled } from './connectionState'
 
@@ -12,7 +12,7 @@ describe('connectionStatusIsSettled', () => {
 
 describe('connection display projection', () => {
   afterEach(async () => {
-    await muxviaI18n.changeLanguage('en')
+    await anyttyI18n.changeLanguage('en')
   })
 
   it('maps every runtime phase to symmetric English and Chinese user concepts', async () => {
@@ -21,10 +21,10 @@ describe('connection display projection', () => {
       'connected', 'verifying', 'reconnecting', 'waiting_network', 'failed',
     ]
 
-    await muxviaI18n.changeLanguage('en')
-    const english = phases.map((phase) => connectionPhaseLabel(phase, muxviaI18n.t))
-    await muxviaI18n.changeLanguage('zh-CN')
-    const chinese = phases.map((phase) => connectionPhaseLabel(phase, muxviaI18n.t))
+    await anyttyI18n.changeLanguage('en')
+    const english = phases.map((phase) => connectionPhaseLabel(phase, anyttyI18n.t))
+    await anyttyI18n.changeLanguage('zh-CN')
+    const chinese = phases.map((phase) => connectionPhaseLabel(phase, anyttyI18n.t))
 
     expect(english).toHaveLength(phases.length)
     expect(chinese).toHaveLength(phases.length)
@@ -36,7 +36,7 @@ describe('connection display projection', () => {
   })
 
   it('does not expose internal path-owner names as connection labels', () => {
-    expect(connectionPathLabel('hub')).toBe('Muxvia Cloud')
+    expect(connectionPathLabel('hub')).toBe('AnyTTY Cloud')
     expect(connectionPathLabel('local')).toBe('Local')
     expect(connectionPathLabel(undefined)).toBe('Connection')
   })

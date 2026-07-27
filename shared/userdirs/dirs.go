@@ -8,7 +8,7 @@ import (
 )
 
 // ConfigHome 返回当前用户配置根目录。
-// XDG_CONFIG_HOME 是跨平台显式覆盖；未覆盖时由目标操作系统决定路径，调用方只在其下追加 muxvia 领域目录。
+// XDG_CONFIG_HOME 是跨平台显式覆盖；未覆盖时由目标操作系统决定路径，调用方只在其下追加 anytty 领域目录。
 func ConfigHome() string {
 	if path := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); path != "" {
 		return filepath.Clean(path)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func lifecycleTerminalViewsSummary(store state.TerminalViewStore) string {

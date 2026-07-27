@@ -16,27 +16,27 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	apilayer "github.com/muxvia/muxvia/api_layer"
-	cloudadapter "github.com/muxvia/muxvia/client/adapter/cloud"
-	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
-	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	cloudclient "github.com/muxvia/muxvia/cloud/client"
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	"github.com/muxvia/muxvia/cloud/controller/enrollment"
-	clouddaemon "github.com/muxvia/muxvia/cloud/daemon"
-	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
-	"github.com/muxvia/muxvia/cloud/ticket"
-	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/apipb"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	remotedaemon "github.com/muxvia/muxvia/remote/daemon"
-	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	apilayer "github.com/anytty/anytty/api_layer"
+	cloudadapter "github.com/anytty/anytty/client/adapter/cloud"
+	peeradapter "github.com/anytty/anytty/client/adapter/peer"
+	pionadapter "github.com/anytty/anytty/client/adapter/webrtc/pion"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	cloudclient "github.com/anytty/anytty/cloud/client"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	"github.com/anytty/anytty/cloud/controller/directoryapi"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
+	clouddaemon "github.com/anytty/anytty/cloud/daemon"
+	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	"github.com/anytty/anytty/cloud/ticket"
+	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/apipb"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	remotedaemon "github.com/anytty/anytty/remote/daemon"
+	remotewebrtc "github.com/anytty/anytty/remote/webrtc"
+	"github.com/anytty/anytty/shared/remoteauth"
 	pionwebrtc "github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -396,7 +396,7 @@ func assertR5TerminalIO(t *testing.T, session *cloudadapter.Session, endpointID,
 		t.Fatalf("attach terminal through Cloud: %v", err)
 	}
 	resource := attached.GetAttachment().GetResource()
-	marker := "muxvia-r5-" + suffix
+	marker := "anytty-r5-" + suffix
 	if err := session.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: resource, Data: []byte(marker + "\n")}); err != nil {
 		t.Fatalf("write terminal input through Cloud: %v", err)
 	}

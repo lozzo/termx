@@ -5,14 +5,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/adapter/direct"
-	"github.com/muxvia/muxvia/client/binding"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/client/adapter/direct"
+	"github.com/anytty/anytty/client/binding"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/proto/remoteauthpb"
+	"github.com/anytty/anytty/shared/remoteauth"
 )
 
 func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {

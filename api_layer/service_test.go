@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 type fakeAdmission struct {

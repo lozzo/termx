@@ -3,11 +3,11 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sdk_root="${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}"
-ndk_version="${MUXVIA_ANDROID_NDK_VERSION:-27.2.12479018}"
+ndk_version="${ANYTTY_ANDROID_NDK_VERSION:-27.2.12479018}"
 ndk_root="${ANDROID_NDK_ROOT:-${sdk_root}/ndk/${ndk_version}}"
-output_root="${1:-${repo_root}/clients/mobile/android/app/build/generated/muxviaJniLibs}"
-api="${MUXVIA_ANDROID_API:-24}"
-go_tags="${MUXVIA_ANDROID_GO_TAGS:-}"
+output_root="${1:-${repo_root}/clients/mobile/android/app/build/generated/anyttyJniLibs}"
+api="${ANYTTY_ANDROID_API:-24}"
+go_tags="${ANYTTY_ANDROID_GO_TAGS:-}"
 
 if [[ ! -d "${ndk_root}" ]]; then
   echo "Android NDK ${ndk_version} is not installed at ${ndk_root}" >&2
@@ -22,7 +22,7 @@ esac
 
 toolchain="${ndk_root}/toolchains/llvm/prebuilt/${host_tag}/bin"
 include_dir="${repo_root}/client/binding/cabi"
-jni_source="${repo_root}/clients/mobile/android/app/src/main/cpp/muxvia_client_jni.c"
+jni_source="${repo_root}/clients/mobile/android/app/src/main/cpp/anytty_client_jni.c"
 
 build_abi() {
   local abi="$1" goarch="$2" triple="$3"
@@ -34,19 +34,19 @@ build_abi() {
     if [[ -n "${go_tags}" ]]; then
       GOOS=android GOARCH="${goarch}" CGO_ENABLED=1 CC="${toolchain}/${triple}${api}-clang" \
         go build -trimpath -buildmode=c-shared -ldflags='-checklinkname=0' -tags "${go_tags}" \
-        -o "${destination}/libmuxvia_client.so" ./client/binding/cabi/androidlib
+        -o "${destination}/libanytty_client.so" ./client/binding/cabi/androidlib
     else
       GOOS=android GOARCH="${goarch}" CGO_ENABLED=1 CC="${toolchain}/${triple}${api}-clang" \
         go build -trimpath -buildmode=c-shared -ldflags='-checklinkname=0' \
-        -o "${destination}/libmuxvia_client.so" ./client/binding/cabi/androidlib
+        -o "${destination}/libanytty_client.so" ./client/binding/cabi/androidlib
     fi
   )
   "${toolchain}/${triple}${api}-clang" -shared -fPIC \
     -I"${include_dir}" "${jni_source}" \
-    -L"${destination}" -lmuxvia_client \
-    -Wl,-soname,libmuxvia_client_jni.so \
-    -o "${destination}/libmuxvia_client_jni.so"
-  rm -f "${destination}/libmuxvia_client.h"
+    -L"${destination}" -lanytty_client \
+    -Wl,-soname,libanytty_client_jni.so \
+    -o "${destination}/libanytty_client_jni.so"
+  rm -f "${destination}/libanytty_client.h"
 }
 
 build_abi arm64-v8a arm64 aarch64-linux-android

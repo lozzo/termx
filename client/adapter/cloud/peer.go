@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	cloudclient "github.com/muxvia/muxvia/cloud/client"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
-	"github.com/muxvia/muxvia/shared/transport/datachannel"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	cloudclient "github.com/anytty/anytty/cloud/client"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
+	"github.com/anytty/anytty/shared/transport/datachannel"
 )
 
 type openedCloudPeer struct {

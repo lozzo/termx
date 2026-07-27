@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/tui/app"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/app"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type fakeTerminalOps struct {

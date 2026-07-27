@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,24 +17,40 @@ import (
 
 func TestValidatePairAndEndpoint(t *testing.T) {
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
-	certificatePEM, privateKeyPEM := testPair(t, now, "edge.cn.omscd.com")
+	certificatePEM, privateKeyPEM := testPair(t, now, "edge.cn.anytty.com")
 	metadata, err := ValidatePair(certificatePEM, privateKeyPEM, now)
 	if err != nil {
 		t.Fatalf("validate matching pair: %v", err)
 	}
 	profile := Profile{DNSNames: metadata.DNSNames}
-	if err := VerifyEndpoint(profile, "edge.cn.omscd.com:443"); err != nil {
+	if err := VerifyEndpoint(profile, "edge.cn.anytty.com:443"); err != nil {
 		t.Fatalf("verify covered endpoint: %v", err)
 	}
-	if err := VerifyEndpoint(profile, "other.omscd.com:443"); err == nil {
+	if err := VerifyEndpoint(profile, "other.anytty.com:443"); err == nil {
 		t.Fatal("certificate was accepted for an uncovered Edge domain")
 	}
-	_, otherKey := testPair(t, now, "edge.cn.omscd.com")
+	_, otherKey := testPair(t, now, "edge.cn.anytty.com")
 	if _, err := ValidatePair(certificatePEM, otherKey, now); err == nil {
 		t.Fatal("mismatched private key was accepted")
 	}
 	if _, err := ValidatePair(certificatePEM, privateKeyPEM, now.Add(48*time.Hour)); err == nil {
 		t.Fatal("expired certificate was accepted")
+	}
+}
+
+func TestValidatePairAndEndpointWithIPAddress(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	certificatePEM, privateKeyPEM := testPairWithIPs(t, now, "cn1.edge.anytty.com", []net.IP{net.ParseIP("114.66.58.243")})
+	metadata, err := ValidatePair(certificatePEM, privateKeyPEM, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{DNSNames: metadata.DNSNames}
+	if err := VerifyEndpoint(profile, "114.66.58.243:41102"); err != nil {
+		t.Fatalf("verify covered IP endpoint: %v", err)
+	}
+	if err := VerifyEndpoint(profile, "114.66.58.244:41102"); err == nil {
+		t.Fatal("certificate was accepted for an uncovered Edge IP")
 	}
 }
 
@@ -82,13 +99,17 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 }
 
 func testPair(t *testing.T, now time.Time, dnsName string) ([]byte, []byte) {
+	return testPairWithIPs(t, now, dnsName, nil)
+}
+
+func testPairWithIPs(t *testing.T, now time.Time, dnsName string, addresses []net.IP) ([]byte, []byte) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: dnsName}, DNSNames: []string{dnsName},
+		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: dnsName}, DNSNames: []string{dnsName}, IPAddresses: addresses,
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true,
 	}

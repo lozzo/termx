@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	endpointdomain "github.com/anytty/anytty/client/endpoint"
 )
 
 func TestDefaultShellOwnsWorkbenchTreeAndChromeState(t *testing.T) {

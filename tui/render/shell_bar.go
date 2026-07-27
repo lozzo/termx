@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
+	actiondomain "github.com/anytty/anytty/tui/action"
 )
 
 const HeaderTabCreateText = "  󰐕 "
@@ -35,7 +35,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 		workspace = header.Title
 	}
 	if workspace == "" {
-		workspace = "muxvia"
+		workspace = "anytty"
 	}
 	left := headerWorkspaceSegments(header, workspace)
 	left = append(left, headerTabSegmentsForHeader(header, header.Tab)...)

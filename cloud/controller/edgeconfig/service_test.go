@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 )
 
 func TestServiceSignsVersionsAndConsumesTwoStageClaimOnce(t *testing.T) {
@@ -56,6 +56,25 @@ func TestServiceSignsVersionsAndConsumesTwoStageClaimOnce(t *testing.T) {
 	}
 	if _, err := service.UpdateEdge(context.Background(), edgeconfig.UpdateInput{EdgeID: edge.ID, ExpectedRevision: 1, Name: edge.Name, Region: "cn-north", Capacity: 1, PublicEndpoint: edge.PublicEndpoint, Enabled: true}); !errors.Is(err, edgeconfig.ErrRevisionConflict) {
 		t.Fatalf("stale update error=%v", err)
+	}
+}
+
+func TestServiceAcceptsIPAddressPublicEndpoint(t *testing.T) {
+	_, signingKey, _ := ed25519.GenerateKey(rand.Reader)
+	service, err := edgeconfig.NewService(edgeconfig.Config{
+		Store: &memoryStore{}, SigningKey: signingKey, SigningKeyID: "config-key-ip", ClaimTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edge, _, _, err := service.CreateEdge(context.Background(), edgeconfig.CreateInput{
+		Name: "CN1 Edge", Region: "cn-east", Capacity: 1000, PublicEndpoint: "114.66.58.243:41102",
+	})
+	if err != nil {
+		t.Fatalf("create Edge with IP endpoint: %v", err)
+	}
+	if edge.PublicEndpoint != "114.66.58.243:41102" {
+		t.Fatalf("public endpoint = %q", edge.PublicEndpoint)
 	}
 }
 

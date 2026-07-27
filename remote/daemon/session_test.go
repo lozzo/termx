@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	core "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
-	"github.com/muxvia/muxvia/shared/transport/memory"
+	core "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
+	"github.com/anytty/anytty/shared/transport/memory"
 )
 
 func TestSessionAcceptorAuthenticatesBeforeServingScopedTransport(t *testing.T) {
@@ -160,7 +160,7 @@ func TestSessionAcceptorPairingModeNeverStartsCoreProtocol(t *testing.T) {
 
 func TestPairingAcceptorRejectsCapabilityMode(t *testing.T) {
 	identity, credential, store, now := sessionFixture(t, remoteauth.FullDaemonScope())
-	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/muxvia-session-pairing.sock")
+	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/anytty-session-pairing.sock")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestPairingAcceptorRejectsCapabilityMode(t *testing.T) {
 
 func TestSessionAcceptorRejectsLocalUnixBindingBeforeCore(t *testing.T) {
 	identity, _, store, now := sessionFixture(t, remoteauth.FullDaemonScope())
-	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/muxvia-generic-session.sock")
+	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/anytty-generic-session.sock")
 	if err != nil {
 		t.Fatal(err)
 	}

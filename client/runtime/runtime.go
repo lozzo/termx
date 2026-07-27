@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
 )
 
 // EndpointPlanSnapshot 是 application runtime 建连前取得的不可变 endpoint/planner 输入。

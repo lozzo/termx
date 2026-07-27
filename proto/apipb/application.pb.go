@@ -1843,131 +1843,131 @@ var File_apipb_application_proto protoreflect.FileDescriptor
 
 const file_apipb_application_proto_rawDesc = "" +
 	"\n" +
-	"\x17apipb/application.proto\x12\rmuxvia.api.v1\x1a\x12apipb/common.proto\x1a\x19apipb/access_remote.proto\x1a\x12apipb/events.proto\x1a\x10apipb/file.proto\x1a\x13apipb/history.proto\x1a\x13apipb/storage.proto\x1a\x14apipb/terminal.proto\"[\n" +
+	"\x17apipb/application.proto\x12\ranytty.api.v1\x1a\x12apipb/common.proto\x1a\x19apipb/access_remote.proto\x1a\x12apipb/events.proto\x1a\x10apipb/file.proto\x1a\x13apipb/history.proto\x1a\x13apipb/storage.proto\x1a\x14apipb/terminal.proto\"[\n" +
 	"\x16CancelOperationCommand\x12;\n" +
-	"\toperation\x18\x02 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"Y\n" +
+	"\toperation\x18\x02 \x01(\v2\x1d.anytty.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"Y\n" +
 	"\x16ReleaseResourceCommand\x129\n" +
-	"\bresource\x18\x02 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xa4\x1f\n" +
+	"\bresource\x18\x02 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xa4\x1f\n" +
 	"\x0fCommandEnvelope\x127\n" +
-	"\acontext\x18\x01 \x01(\v2\x1d.muxvia.api.v1.RequestContextR\acontext\x12R\n" +
+	"\acontext\x18\x01 \x01(\v2\x1d.anytty.api.v1.RequestContextR\acontext\x12R\n" +
 	"\x10cancel_operation\x18\n" +
-	" \x01(\v2%.muxvia.api.v1.CancelOperationCommandH\x00R\x0fcancelOperation\x12R\n" +
-	"\x10release_resource\x18\v \x01(\v2%.muxvia.api.v1.ReleaseResourceCommandH\x00R\x0freleaseResource\x12U\n" +
-	"\x11terminal_defaults\x18\x14 \x01(\v2&.muxvia.api.v1.TerminalDefaultsCommandH\x00R\x10terminalDefaults\x12O\n" +
-	"\x0fterminal_create\x18\x15 \x01(\v2$.muxvia.api.v1.TerminalCreateCommandH\x00R\x0eterminalCreate\x12I\n" +
-	"\rterminal_list\x18\x16 \x01(\v2\".muxvia.api.v1.TerminalListCommandH\x00R\fterminalList\x12F\n" +
-	"\fterminal_get\x18\x17 \x01(\v2!.muxvia.api.v1.TerminalGetCommandH\x00R\vterminalGet\x12R\n" +
-	"\x10terminal_restart\x18\x18 \x01(\v2%.muxvia.api.v1.TerminalRestartCommandH\x00R\x0fterminalRestart\x12I\n" +
-	"\rterminal_kill\x18\x19 \x01(\v2\".muxvia.api.v1.TerminalKillCommandH\x00R\fterminalKill\x12O\n" +
-	"\x0fterminal_remove\x18\x1a \x01(\v2$.muxvia.api.v1.TerminalRemoveCommandH\x00R\x0eterminalRemove\x12_\n" +
-	"\x15terminal_set_metadata\x18\x1b \x01(\v2).muxvia.api.v1.TerminalSetMetadataCommandH\x00R\x13terminalSetMetadata\x12S\n" +
-	"\x11terminal_set_tags\x18\x1c \x01(\v2%.muxvia.api.v1.TerminalSetTagsCommandH\x00R\x0fterminalSetTags\x12O\n" +
-	"\x0fterminal_attach\x18\x1d \x01(\v2$.muxvia.api.v1.TerminalAttachCommandH\x00R\x0eterminalAttach\x12O\n" +
-	"\x0fterminal_detach\x18\x1e \x01(\v2$.muxvia.api.v1.TerminalDetachCommandH\x00R\x0eterminalDetach\x12L\n" +
-	"\x0eterminal_input\x18\x1f \x01(\v2#.muxvia.api.v1.TerminalInputCommandH\x00R\rterminalInput\x12O\n" +
-	"\x0fterminal_resize\x18  \x01(\v2$.muxvia.api.v1.TerminalResizeCommandH\x00R\x0eterminalResize\x12\\\n" +
-	"\x14terminal_resize_lock\x18! \x01(\v2(.muxvia.api.v1.TerminalResizeLockCommandH\x00R\x12terminalResizeLock\x12_\n" +
-	"\x15path_list_directories\x18\" \x01(\v2).muxvia.api.v1.PathListDirectoriesCommandH\x00R\x13pathListDirectories\x12L\n" +
-	"\x0ehistory_window\x18( \x01(\v2#.muxvia.api.v1.HistoryWindowCommandH\x00R\rhistoryWindow\x12F\n" +
-	"\fhistory_copy\x18) \x01(\v2!.muxvia.api.v1.HistoryCopyCommandH\x00R\vhistoryCopy\x12O\n" +
-	"\x0fhistory_release\x18* \x01(\v2$.muxvia.api.v1.HistoryReleaseCommandH\x00R\x0ehistoryRelease\x12b\n" +
-	"\x16history_backlog_status\x18+ \x01(\v2*.muxvia.api.v1.HistoryBacklogStatusCommandH\x00R\x14historyBacklogStatus\x12M\n" +
-	"\x0flive_screen_get\x18, \x01(\v2#.muxvia.api.v1.LiveScreenGetCommandH\x00R\rliveScreenGet\x12b\n" +
-	"\x16live_invalidation_next\x18- \x01(\v2*.muxvia.api.v1.LiveInvalidationNextCommandH\x00R\x14liveInvalidationNext\x12O\n" +
-	"\x0fevent_subscribe\x18. \x01(\v2$.muxvia.api.v1.EventSubscribeCommandH\x00R\x0eeventSubscribe\x12=\n" +
-	"\tfile_list\x18< \x01(\v2\x1e.muxvia.api.v1.FileListCommandH\x00R\bfileList\x12=\n" +
-	"\tfile_stat\x18= \x01(\v2\x1e.muxvia.api.v1.FileStatCommandH\x00R\bfileStat\x12F\n" +
-	"\ffile_preview\x18> \x01(\v2!.muxvia.api.v1.FilePreviewCommandH\x00R\vfilePreview\x12@\n" +
+	" \x01(\v2%.anytty.api.v1.CancelOperationCommandH\x00R\x0fcancelOperation\x12R\n" +
+	"\x10release_resource\x18\v \x01(\v2%.anytty.api.v1.ReleaseResourceCommandH\x00R\x0freleaseResource\x12U\n" +
+	"\x11terminal_defaults\x18\x14 \x01(\v2&.anytty.api.v1.TerminalDefaultsCommandH\x00R\x10terminalDefaults\x12O\n" +
+	"\x0fterminal_create\x18\x15 \x01(\v2$.anytty.api.v1.TerminalCreateCommandH\x00R\x0eterminalCreate\x12I\n" +
+	"\rterminal_list\x18\x16 \x01(\v2\".anytty.api.v1.TerminalListCommandH\x00R\fterminalList\x12F\n" +
+	"\fterminal_get\x18\x17 \x01(\v2!.anytty.api.v1.TerminalGetCommandH\x00R\vterminalGet\x12R\n" +
+	"\x10terminal_restart\x18\x18 \x01(\v2%.anytty.api.v1.TerminalRestartCommandH\x00R\x0fterminalRestart\x12I\n" +
+	"\rterminal_kill\x18\x19 \x01(\v2\".anytty.api.v1.TerminalKillCommandH\x00R\fterminalKill\x12O\n" +
+	"\x0fterminal_remove\x18\x1a \x01(\v2$.anytty.api.v1.TerminalRemoveCommandH\x00R\x0eterminalRemove\x12_\n" +
+	"\x15terminal_set_metadata\x18\x1b \x01(\v2).anytty.api.v1.TerminalSetMetadataCommandH\x00R\x13terminalSetMetadata\x12S\n" +
+	"\x11terminal_set_tags\x18\x1c \x01(\v2%.anytty.api.v1.TerminalSetTagsCommandH\x00R\x0fterminalSetTags\x12O\n" +
+	"\x0fterminal_attach\x18\x1d \x01(\v2$.anytty.api.v1.TerminalAttachCommandH\x00R\x0eterminalAttach\x12O\n" +
+	"\x0fterminal_detach\x18\x1e \x01(\v2$.anytty.api.v1.TerminalDetachCommandH\x00R\x0eterminalDetach\x12L\n" +
+	"\x0eterminal_input\x18\x1f \x01(\v2#.anytty.api.v1.TerminalInputCommandH\x00R\rterminalInput\x12O\n" +
+	"\x0fterminal_resize\x18  \x01(\v2$.anytty.api.v1.TerminalResizeCommandH\x00R\x0eterminalResize\x12\\\n" +
+	"\x14terminal_resize_lock\x18! \x01(\v2(.anytty.api.v1.TerminalResizeLockCommandH\x00R\x12terminalResizeLock\x12_\n" +
+	"\x15path_list_directories\x18\" \x01(\v2).anytty.api.v1.PathListDirectoriesCommandH\x00R\x13pathListDirectories\x12L\n" +
+	"\x0ehistory_window\x18( \x01(\v2#.anytty.api.v1.HistoryWindowCommandH\x00R\rhistoryWindow\x12F\n" +
+	"\fhistory_copy\x18) \x01(\v2!.anytty.api.v1.HistoryCopyCommandH\x00R\vhistoryCopy\x12O\n" +
+	"\x0fhistory_release\x18* \x01(\v2$.anytty.api.v1.HistoryReleaseCommandH\x00R\x0ehistoryRelease\x12b\n" +
+	"\x16history_backlog_status\x18+ \x01(\v2*.anytty.api.v1.HistoryBacklogStatusCommandH\x00R\x14historyBacklogStatus\x12M\n" +
+	"\x0flive_screen_get\x18, \x01(\v2#.anytty.api.v1.LiveScreenGetCommandH\x00R\rliveScreenGet\x12b\n" +
+	"\x16live_invalidation_next\x18- \x01(\v2*.anytty.api.v1.LiveInvalidationNextCommandH\x00R\x14liveInvalidationNext\x12O\n" +
+	"\x0fevent_subscribe\x18. \x01(\v2$.anytty.api.v1.EventSubscribeCommandH\x00R\x0eeventSubscribe\x12=\n" +
+	"\tfile_list\x18< \x01(\v2\x1e.anytty.api.v1.FileListCommandH\x00R\bfileList\x12=\n" +
+	"\tfile_stat\x18= \x01(\v2\x1e.anytty.api.v1.FileStatCommandH\x00R\bfileStat\x12F\n" +
+	"\ffile_preview\x18> \x01(\v2!.anytty.api.v1.FilePreviewCommandH\x00R\vfilePreview\x12@\n" +
 	"\n" +
-	"file_mkdir\x18? \x01(\v2\x1f.muxvia.api.v1.FileMkdirCommandH\x00R\tfileMkdir\x12C\n" +
-	"\vfile_rename\x18@ \x01(\v2 .muxvia.api.v1.FileRenameCommandH\x00R\n" +
+	"file_mkdir\x18? \x01(\v2\x1f.anytty.api.v1.FileMkdirCommandH\x00R\tfileMkdir\x12C\n" +
+	"\vfile_rename\x18@ \x01(\v2 .anytty.api.v1.FileRenameCommandH\x00R\n" +
 	"fileRename\x12C\n" +
-	"\vfile_delete\x18A \x01(\v2 .muxvia.api.v1.FileDeleteCommandH\x00R\n" +
+	"\vfile_delete\x18A \x01(\v2 .anytty.api.v1.FileDeleteCommandH\x00R\n" +
 	"fileDelete\x12=\n" +
-	"\tfile_copy\x18B \x01(\v2\x1e.muxvia.api.v1.FileCopyCommandH\x00R\bfileCopy\x12=\n" +
-	"\tfile_move\x18C \x01(\v2\x1e.muxvia.api.v1.FileMoveCommandH\x00R\bfileMove\x12V\n" +
-	"\x12file_download_open\x18D \x01(\v2&.muxvia.api.v1.FileDownloadOpenCommandH\x00R\x10fileDownloadOpen\x12P\n" +
-	"\x10file_upload_open\x18E \x01(\v2$.muxvia.api.v1.FileUploadOpenCommandH\x00R\x0efileUploadOpen\x12\\\n" +
-	"\x14file_transfer_cancel\x18F \x01(\v2(.muxvia.api.v1.FileTransferCancelCommandH\x00R\x12fileTransferCancel\x12C\n" +
-	"\vstorage_get\x18P \x01(\v2 .muxvia.api.v1.StorageGetCommandH\x00R\n" +
+	"\tfile_copy\x18B \x01(\v2\x1e.anytty.api.v1.FileCopyCommandH\x00R\bfileCopy\x12=\n" +
+	"\tfile_move\x18C \x01(\v2\x1e.anytty.api.v1.FileMoveCommandH\x00R\bfileMove\x12V\n" +
+	"\x12file_download_open\x18D \x01(\v2&.anytty.api.v1.FileDownloadOpenCommandH\x00R\x10fileDownloadOpen\x12P\n" +
+	"\x10file_upload_open\x18E \x01(\v2$.anytty.api.v1.FileUploadOpenCommandH\x00R\x0efileUploadOpen\x12\\\n" +
+	"\x14file_transfer_cancel\x18F \x01(\v2(.anytty.api.v1.FileTransferCancelCommandH\x00R\x12fileTransferCancel\x12C\n" +
+	"\vstorage_get\x18P \x01(\v2 .anytty.api.v1.StorageGetCommandH\x00R\n" +
 	"storageGet\x12C\n" +
-	"\vstorage_put\x18Q \x01(\v2 .muxvia.api.v1.StoragePutCommandH\x00R\n" +
+	"\vstorage_put\x18Q \x01(\v2 .anytty.api.v1.StoragePutCommandH\x00R\n" +
 	"storagePut\x12L\n" +
-	"\x0estorage_delete\x18R \x01(\v2#.muxvia.api.v1.StorageDeleteCommandH\x00R\rstorageDelete\x12F\n" +
-	"\fstorage_list\x18S \x01(\v2!.muxvia.api.v1.StorageListCommandH\x00R\vstorageList\x12b\n" +
-	"\x16client_access_identity\x18d \x01(\v2*.muxvia.api.v1.ClientAccessIdentityCommandH\x00R\x14clientAccessIdentity\x12V\n" +
-	"\x12client_access_list\x18e \x01(\v2&.muxvia.api.v1.ClientAccessListCommandH\x00R\x10clientAccessList\x12o\n" +
-	"\x1bclient_access_ticket_create\x18f \x01(\v2..muxvia.api.v1.ClientAccessTicketCreateCommandH\x00R\x18clientAccessTicketCreate\x12\\\n" +
-	"\x14client_access_revoke\x18g \x01(\v2(.muxvia.api.v1.ClientAccessRevokeCommandH\x00R\x12clientAccessRevoke\x12I\n" +
-	"\rremote_status\x18n \x01(\v2\".muxvia.api.v1.RemoteStatusCommandH\x00R\fremoteStatus\x12S\n" +
-	"\x11remote_pair_start\x18o \x01(\v2%.muxvia.api.v1.RemotePairStartCommandH\x00R\x0fremotePairStart\x12Y\n" +
-	"\x13remote_local_enable\x18p \x01(\v2'.muxvia.api.v1.RemoteLocalEnableCommandH\x00R\x11remoteLocalEnable\x12Y\n" +
-	"\x13remote_local_status\x18q \x01(\v2'.muxvia.api.v1.RemoteLocalStatusCommandH\x00R\x11remoteLocalStatus\x12\\\n" +
-	"\x14remote_local_disable\x18r \x01(\v2(.muxvia.api.v1.RemoteLocalDisableCommandH\x00R\x12remoteLocalDisableB\t\n" +
+	"\x0estorage_delete\x18R \x01(\v2#.anytty.api.v1.StorageDeleteCommandH\x00R\rstorageDelete\x12F\n" +
+	"\fstorage_list\x18S \x01(\v2!.anytty.api.v1.StorageListCommandH\x00R\vstorageList\x12b\n" +
+	"\x16client_access_identity\x18d \x01(\v2*.anytty.api.v1.ClientAccessIdentityCommandH\x00R\x14clientAccessIdentity\x12V\n" +
+	"\x12client_access_list\x18e \x01(\v2&.anytty.api.v1.ClientAccessListCommandH\x00R\x10clientAccessList\x12o\n" +
+	"\x1bclient_access_ticket_create\x18f \x01(\v2..anytty.api.v1.ClientAccessTicketCreateCommandH\x00R\x18clientAccessTicketCreate\x12\\\n" +
+	"\x14client_access_revoke\x18g \x01(\v2(.anytty.api.v1.ClientAccessRevokeCommandH\x00R\x12clientAccessRevoke\x12I\n" +
+	"\rremote_status\x18n \x01(\v2\".anytty.api.v1.RemoteStatusCommandH\x00R\fremoteStatus\x12S\n" +
+	"\x11remote_pair_start\x18o \x01(\v2%.anytty.api.v1.RemotePairStartCommandH\x00R\x0fremotePairStart\x12Y\n" +
+	"\x13remote_local_enable\x18p \x01(\v2'.anytty.api.v1.RemoteLocalEnableCommandH\x00R\x11remoteLocalEnable\x12Y\n" +
+	"\x13remote_local_status\x18q \x01(\v2'.anytty.api.v1.RemoteLocalStatusCommandH\x00R\x11remoteLocalStatus\x12\\\n" +
+	"\x14remote_local_disable\x18r \x01(\v2(.anytty.api.v1.RemoteLocalDisableCommandH\x00R\x12remoteLocalDisableB\t\n" +
 	"\acommand\"\x13\n" +
 	"\x11AcknowledgeResult\"\xbf\x15\n" +
 	"\x0eResultEnvelope\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12J\n" +
-	"\x0eorigin_session\x18\x02 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\roriginSession\x12D\n" +
+	"\x0eorigin_session\x18\x02 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\roriginSession\x12D\n" +
 	"\vacknowledge\x18\n" +
-	" \x01(\v2 .muxvia.api.v1.AcknowledgeResultH\x00R\vacknowledge\x12/\n" +
-	"\x05error\x18\v \x01(\v2\x17.muxvia.api.v1.ApiErrorH\x00R\x05error\x12T\n" +
-	"\x11terminal_defaults\x18\x14 \x01(\v2%.muxvia.api.v1.TerminalDefaultsResultH\x00R\x10terminalDefaults\x12N\n" +
-	"\x0fterminal_create\x18\x15 \x01(\v2#.muxvia.api.v1.TerminalCreateResultH\x00R\x0eterminalCreate\x12H\n" +
-	"\rterminal_list\x18\x16 \x01(\v2!.muxvia.api.v1.TerminalListResultH\x00R\fterminalList\x12E\n" +
-	"\fterminal_get\x18\x17 \x01(\v2 .muxvia.api.v1.TerminalGetResultH\x00R\vterminalGet\x12N\n" +
-	"\x0fterminal_attach\x18\x18 \x01(\v2#.muxvia.api.v1.TerminalAttachResultH\x00R\x0eterminalAttach\x12N\n" +
-	"\x0fterminal_resize\x18\x19 \x01(\v2#.muxvia.api.v1.TerminalResizeResultH\x00R\x0eterminalResize\x12^\n" +
-	"\x15path_list_directories\x18\x1a \x01(\v2(.muxvia.api.v1.PathListDirectoriesResultH\x00R\x13pathListDirectories\x12K\n" +
-	"\x0ehistory_window\x18( \x01(\v2\".muxvia.api.v1.HistoryWindowResultH\x00R\rhistoryWindow\x12E\n" +
-	"\fhistory_copy\x18) \x01(\v2 .muxvia.api.v1.HistoryCopyResultH\x00R\vhistoryCopy\x12a\n" +
-	"\x16history_backlog_status\x18* \x01(\v2).muxvia.api.v1.HistoryBacklogStatusResultH\x00R\x14historyBacklogStatus\x12D\n" +
-	"\vlive_screen\x18+ \x01(\v2!.muxvia.api.v1.NativeScreenResultH\x00R\n" +
+	" \x01(\v2 .anytty.api.v1.AcknowledgeResultH\x00R\vacknowledge\x12/\n" +
+	"\x05error\x18\v \x01(\v2\x17.anytty.api.v1.ApiErrorH\x00R\x05error\x12T\n" +
+	"\x11terminal_defaults\x18\x14 \x01(\v2%.anytty.api.v1.TerminalDefaultsResultH\x00R\x10terminalDefaults\x12N\n" +
+	"\x0fterminal_create\x18\x15 \x01(\v2#.anytty.api.v1.TerminalCreateResultH\x00R\x0eterminalCreate\x12H\n" +
+	"\rterminal_list\x18\x16 \x01(\v2!.anytty.api.v1.TerminalListResultH\x00R\fterminalList\x12E\n" +
+	"\fterminal_get\x18\x17 \x01(\v2 .anytty.api.v1.TerminalGetResultH\x00R\vterminalGet\x12N\n" +
+	"\x0fterminal_attach\x18\x18 \x01(\v2#.anytty.api.v1.TerminalAttachResultH\x00R\x0eterminalAttach\x12N\n" +
+	"\x0fterminal_resize\x18\x19 \x01(\v2#.anytty.api.v1.TerminalResizeResultH\x00R\x0eterminalResize\x12^\n" +
+	"\x15path_list_directories\x18\x1a \x01(\v2(.anytty.api.v1.PathListDirectoriesResultH\x00R\x13pathListDirectories\x12K\n" +
+	"\x0ehistory_window\x18( \x01(\v2\".anytty.api.v1.HistoryWindowResultH\x00R\rhistoryWindow\x12E\n" +
+	"\fhistory_copy\x18) \x01(\v2 .anytty.api.v1.HistoryCopyResultH\x00R\vhistoryCopy\x12a\n" +
+	"\x16history_backlog_status\x18* \x01(\v2).anytty.api.v1.HistoryBacklogStatusResultH\x00R\x14historyBacklogStatus\x12D\n" +
+	"\vlive_screen\x18+ \x01(\v2!.anytty.api.v1.NativeScreenResultH\x00R\n" +
 	"liveScreen\x12T\n" +
-	"\x11live_invalidation\x18, \x01(\v2%.muxvia.api.v1.LiveInvalidationResultH\x00R\x10liveInvalidation\x12W\n" +
-	"\x12event_subscription\x18- \x01(\v2&.muxvia.api.v1.EventSubscriptionResultH\x00R\x11eventSubscription\x12<\n" +
-	"\tfile_list\x18< \x01(\v2\x1d.muxvia.api.v1.FileListResultH\x00R\bfileList\x12<\n" +
-	"\tfile_stat\x18= \x01(\v2\x1d.muxvia.api.v1.FileStatResultH\x00R\bfileStat\x12E\n" +
-	"\ffile_preview\x18> \x01(\v2 .muxvia.api.v1.FilePreviewResultH\x00R\vfilePreview\x12K\n" +
-	"\x0efile_operation\x18? \x01(\v2\".muxvia.api.v1.FileOperationResultH\x00R\rfileOperation\x12?\n" +
+	"\x11live_invalidation\x18, \x01(\v2%.anytty.api.v1.LiveInvalidationResultH\x00R\x10liveInvalidation\x12W\n" +
+	"\x12event_subscription\x18- \x01(\v2&.anytty.api.v1.EventSubscriptionResultH\x00R\x11eventSubscription\x12<\n" +
+	"\tfile_list\x18< \x01(\v2\x1d.anytty.api.v1.FileListResultH\x00R\bfileList\x12<\n" +
+	"\tfile_stat\x18= \x01(\v2\x1d.anytty.api.v1.FileStatResultH\x00R\bfileStat\x12E\n" +
+	"\ffile_preview\x18> \x01(\v2 .anytty.api.v1.FilePreviewResultH\x00R\vfilePreview\x12K\n" +
+	"\x0efile_operation\x18? \x01(\v2\".anytty.api.v1.FileOperationResultH\x00R\rfileOperation\x12?\n" +
 	"\n" +
-	"file_batch\x18@ \x01(\v2\x1e.muxvia.api.v1.FileBatchResultH\x00R\tfileBatch\x12U\n" +
-	"\x12file_transfer_open\x18A \x01(\v2%.muxvia.api.v1.FileTransferOpenResultH\x00R\x10fileTransferOpen\x12[\n" +
-	"\x14file_transfer_cancel\x18B \x01(\v2'.muxvia.api.v1.FileTransferCancelResultH\x00R\x12fileTransferCancel\x12B\n" +
-	"\vstorage_get\x18P \x01(\v2\x1f.muxvia.api.v1.StorageGetResultH\x00R\n" +
+	"file_batch\x18@ \x01(\v2\x1e.anytty.api.v1.FileBatchResultH\x00R\tfileBatch\x12U\n" +
+	"\x12file_transfer_open\x18A \x01(\v2%.anytty.api.v1.FileTransferOpenResultH\x00R\x10fileTransferOpen\x12[\n" +
+	"\x14file_transfer_cancel\x18B \x01(\v2'.anytty.api.v1.FileTransferCancelResultH\x00R\x12fileTransferCancel\x12B\n" +
+	"\vstorage_get\x18P \x01(\v2\x1f.anytty.api.v1.StorageGetResultH\x00R\n" +
 	"storageGet\x12B\n" +
-	"\vstorage_put\x18Q \x01(\v2\x1f.muxvia.api.v1.StoragePutResultH\x00R\n" +
+	"\vstorage_put\x18Q \x01(\v2\x1f.anytty.api.v1.StoragePutResultH\x00R\n" +
 	"storagePut\x12K\n" +
-	"\x0estorage_delete\x18R \x01(\v2\".muxvia.api.v1.StorageDeleteResultH\x00R\rstorageDelete\x12E\n" +
-	"\fstorage_list\x18S \x01(\v2 .muxvia.api.v1.StorageListResultH\x00R\vstorageList\x12a\n" +
-	"\x16client_access_identity\x18d \x01(\v2).muxvia.api.v1.ClientAccessIdentityResultH\x00R\x14clientAccessIdentity\x12U\n" +
-	"\x12client_access_list\x18e \x01(\v2%.muxvia.api.v1.ClientAccessListResultH\x00R\x10clientAccessList\x12n\n" +
-	"\x1bclient_access_ticket_create\x18f \x01(\v2-.muxvia.api.v1.ClientAccessTicketCreateResultH\x00R\x18clientAccessTicketCreate\x12[\n" +
-	"\x14client_access_revoke\x18g \x01(\v2'.muxvia.api.v1.ClientAccessRevokeResultH\x00R\x12clientAccessRevoke\x12H\n" +
-	"\rremote_status\x18n \x01(\v2!.muxvia.api.v1.RemoteStatusResultH\x00R\fremoteStatus\x12R\n" +
-	"\x11remote_pair_start\x18o \x01(\v2$.muxvia.api.v1.RemotePairStartResultH\x00R\x0fremotePairStart\x12X\n" +
-	"\x13remote_local_status\x18p \x01(\v2&.muxvia.api.v1.RemoteLocalStatusResultH\x00R\x11remoteLocalStatusB\b\n" +
+	"\x0estorage_delete\x18R \x01(\v2\".anytty.api.v1.StorageDeleteResultH\x00R\rstorageDelete\x12E\n" +
+	"\fstorage_list\x18S \x01(\v2 .anytty.api.v1.StorageListResultH\x00R\vstorageList\x12a\n" +
+	"\x16client_access_identity\x18d \x01(\v2).anytty.api.v1.ClientAccessIdentityResultH\x00R\x14clientAccessIdentity\x12U\n" +
+	"\x12client_access_list\x18e \x01(\v2%.anytty.api.v1.ClientAccessListResultH\x00R\x10clientAccessList\x12n\n" +
+	"\x1bclient_access_ticket_create\x18f \x01(\v2-.anytty.api.v1.ClientAccessTicketCreateResultH\x00R\x18clientAccessTicketCreate\x12[\n" +
+	"\x14client_access_revoke\x18g \x01(\v2'.anytty.api.v1.ClientAccessRevokeResultH\x00R\x12clientAccessRevoke\x12H\n" +
+	"\rremote_status\x18n \x01(\v2!.anytty.api.v1.RemoteStatusResultH\x00R\fremoteStatus\x12R\n" +
+	"\x11remote_pair_start\x18o \x01(\v2$.anytty.api.v1.RemotePairStartResultH\x00R\x0fremotePairStart\x12X\n" +
+	"\x13remote_local_status\x18p \x01(\v2&.anytty.api.v1.RemoteLocalStatusResultH\x00R\x11remoteLocalStatusB\b\n" +
 	"\x06result\"V\n" +
 	"\x17OperationCancelledEvent\x12;\n" +
-	"\toperation\x18\x01 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\"R\n" +
+	"\toperation\x18\x01 \x01(\v2\x1d.anytty.api.v1.OperationStampR\toperation\"R\n" +
 	"\x15ResourceReleasedEvent\x129\n" +
-	"\bresource\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresource\"\xc8\x06\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\"\xc8\x06\n" +
 	"\rEventEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x02 \x01(\x03R\x11timestampUnixNano\x12:\n" +
-	"\vapi_version\x18\x03 \x01(\v2\x19.muxvia.api.v1.ApiVersionR\n" +
+	"\vapi_version\x18\x03 \x01(\v2\x19.anytty.api.v1.ApiVersionR\n" +
 	"apiVersion\x12J\n" +
-	"\x0eorigin_session\x18\x04 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\roriginSession\x12A\n" +
-	"\fsubscription\x18\x05 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\fsubscription\x12Y\n" +
+	"\x0eorigin_session\x18\x04 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\roriginSession\x12A\n" +
+	"\fsubscription\x18\x05 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\fsubscription\x12Y\n" +
 	"\x13operation_cancelled\x18\n" +
-	" \x01(\v2&.muxvia.api.v1.OperationCancelledEventH\x00R\x12operationCancelled\x12S\n" +
-	"\x11resource_released\x18\v \x01(\v2$.muxvia.api.v1.ResourceReleasedEventH\x00R\x10resourceReleased\x12V\n" +
-	"\x12terminal_lifecycle\x18\x14 \x01(\v2%.muxvia.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12P\n" +
-	"\x10live_invalidated\x18\x16 \x01(\v2#.muxvia.api.v1.LiveInvalidatedEventH\x00R\x0fliveInvalidated\x12M\n" +
-	"\x0fstorage_changed\x18\x1e \x01(\v2\".muxvia.api.v1.StorageChangedEventH\x00R\x0estorageChanged\x12c\n" +
-	"\x17file_transfer_completed\x18( \x01(\v2).muxvia.api.v1.FileTransferCompletedEventH\x00R\x15fileTransferCompletedB\a\n" +
-	"\x05eventJ\x04\b\x15\x10\x16J\x04\b\x17\x10\x18B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
+	" \x01(\v2&.anytty.api.v1.OperationCancelledEventH\x00R\x12operationCancelled\x12S\n" +
+	"\x11resource_released\x18\v \x01(\v2$.anytty.api.v1.ResourceReleasedEventH\x00R\x10resourceReleased\x12V\n" +
+	"\x12terminal_lifecycle\x18\x14 \x01(\v2%.anytty.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12P\n" +
+	"\x10live_invalidated\x18\x16 \x01(\v2#.anytty.api.v1.LiveInvalidatedEventH\x00R\x0fliveInvalidated\x12M\n" +
+	"\x0fstorage_changed\x18\x1e \x01(\v2\".anytty.api.v1.StorageChangedEventH\x00R\x0estorageChanged\x12c\n" +
+	"\x17file_transfer_completed\x18( \x01(\v2).anytty.api.v1.FileTransferCompletedEventH\x00R\x15fileTransferCompletedB\a\n" +
+	"\x05eventJ\x04\b\x15\x10\x16J\x04\b\x17\x10\x18B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_application_proto_rawDescOnce sync.Once
@@ -1983,199 +1983,199 @@ func file_apipb_application_proto_rawDescGZIP() []byte {
 
 var file_apipb_application_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_apipb_application_proto_goTypes = []any{
-	(*CancelOperationCommand)(nil),          // 0: muxvia.api.v1.CancelOperationCommand
-	(*ReleaseResourceCommand)(nil),          // 1: muxvia.api.v1.ReleaseResourceCommand
-	(*CommandEnvelope)(nil),                 // 2: muxvia.api.v1.CommandEnvelope
-	(*AcknowledgeResult)(nil),               // 3: muxvia.api.v1.AcknowledgeResult
-	(*ResultEnvelope)(nil),                  // 4: muxvia.api.v1.ResultEnvelope
-	(*OperationCancelledEvent)(nil),         // 5: muxvia.api.v1.OperationCancelledEvent
-	(*ResourceReleasedEvent)(nil),           // 6: muxvia.api.v1.ResourceReleasedEvent
-	(*EventEnvelope)(nil),                   // 7: muxvia.api.v1.EventEnvelope
-	(*OperationStamp)(nil),                  // 8: muxvia.api.v1.OperationStamp
-	(*ResourceHandle)(nil),                  // 9: muxvia.api.v1.ResourceHandle
-	(*RequestContext)(nil),                  // 10: muxvia.api.v1.RequestContext
-	(*TerminalDefaultsCommand)(nil),         // 11: muxvia.api.v1.TerminalDefaultsCommand
-	(*TerminalCreateCommand)(nil),           // 12: muxvia.api.v1.TerminalCreateCommand
-	(*TerminalListCommand)(nil),             // 13: muxvia.api.v1.TerminalListCommand
-	(*TerminalGetCommand)(nil),              // 14: muxvia.api.v1.TerminalGetCommand
-	(*TerminalRestartCommand)(nil),          // 15: muxvia.api.v1.TerminalRestartCommand
-	(*TerminalKillCommand)(nil),             // 16: muxvia.api.v1.TerminalKillCommand
-	(*TerminalRemoveCommand)(nil),           // 17: muxvia.api.v1.TerminalRemoveCommand
-	(*TerminalSetMetadataCommand)(nil),      // 18: muxvia.api.v1.TerminalSetMetadataCommand
-	(*TerminalSetTagsCommand)(nil),          // 19: muxvia.api.v1.TerminalSetTagsCommand
-	(*TerminalAttachCommand)(nil),           // 20: muxvia.api.v1.TerminalAttachCommand
-	(*TerminalDetachCommand)(nil),           // 21: muxvia.api.v1.TerminalDetachCommand
-	(*TerminalInputCommand)(nil),            // 22: muxvia.api.v1.TerminalInputCommand
-	(*TerminalResizeCommand)(nil),           // 23: muxvia.api.v1.TerminalResizeCommand
-	(*TerminalResizeLockCommand)(nil),       // 24: muxvia.api.v1.TerminalResizeLockCommand
-	(*PathListDirectoriesCommand)(nil),      // 25: muxvia.api.v1.PathListDirectoriesCommand
-	(*HistoryWindowCommand)(nil),            // 26: muxvia.api.v1.HistoryWindowCommand
-	(*HistoryCopyCommand)(nil),              // 27: muxvia.api.v1.HistoryCopyCommand
-	(*HistoryReleaseCommand)(nil),           // 28: muxvia.api.v1.HistoryReleaseCommand
-	(*HistoryBacklogStatusCommand)(nil),     // 29: muxvia.api.v1.HistoryBacklogStatusCommand
-	(*LiveScreenGetCommand)(nil),            // 30: muxvia.api.v1.LiveScreenGetCommand
-	(*LiveInvalidationNextCommand)(nil),     // 31: muxvia.api.v1.LiveInvalidationNextCommand
-	(*EventSubscribeCommand)(nil),           // 32: muxvia.api.v1.EventSubscribeCommand
-	(*FileListCommand)(nil),                 // 33: muxvia.api.v1.FileListCommand
-	(*FileStatCommand)(nil),                 // 34: muxvia.api.v1.FileStatCommand
-	(*FilePreviewCommand)(nil),              // 35: muxvia.api.v1.FilePreviewCommand
-	(*FileMkdirCommand)(nil),                // 36: muxvia.api.v1.FileMkdirCommand
-	(*FileRenameCommand)(nil),               // 37: muxvia.api.v1.FileRenameCommand
-	(*FileDeleteCommand)(nil),               // 38: muxvia.api.v1.FileDeleteCommand
-	(*FileCopyCommand)(nil),                 // 39: muxvia.api.v1.FileCopyCommand
-	(*FileMoveCommand)(nil),                 // 40: muxvia.api.v1.FileMoveCommand
-	(*FileDownloadOpenCommand)(nil),         // 41: muxvia.api.v1.FileDownloadOpenCommand
-	(*FileUploadOpenCommand)(nil),           // 42: muxvia.api.v1.FileUploadOpenCommand
-	(*FileTransferCancelCommand)(nil),       // 43: muxvia.api.v1.FileTransferCancelCommand
-	(*StorageGetCommand)(nil),               // 44: muxvia.api.v1.StorageGetCommand
-	(*StoragePutCommand)(nil),               // 45: muxvia.api.v1.StoragePutCommand
-	(*StorageDeleteCommand)(nil),            // 46: muxvia.api.v1.StorageDeleteCommand
-	(*StorageListCommand)(nil),              // 47: muxvia.api.v1.StorageListCommand
-	(*ClientAccessIdentityCommand)(nil),     // 48: muxvia.api.v1.ClientAccessIdentityCommand
-	(*ClientAccessListCommand)(nil),         // 49: muxvia.api.v1.ClientAccessListCommand
-	(*ClientAccessTicketCreateCommand)(nil), // 50: muxvia.api.v1.ClientAccessTicketCreateCommand
-	(*ClientAccessRevokeCommand)(nil),       // 51: muxvia.api.v1.ClientAccessRevokeCommand
-	(*RemoteStatusCommand)(nil),             // 52: muxvia.api.v1.RemoteStatusCommand
-	(*RemotePairStartCommand)(nil),          // 53: muxvia.api.v1.RemotePairStartCommand
-	(*RemoteLocalEnableCommand)(nil),        // 54: muxvia.api.v1.RemoteLocalEnableCommand
-	(*RemoteLocalStatusCommand)(nil),        // 55: muxvia.api.v1.RemoteLocalStatusCommand
-	(*RemoteLocalDisableCommand)(nil),       // 56: muxvia.api.v1.RemoteLocalDisableCommand
-	(*EndpointSessionStamp)(nil),            // 57: muxvia.api.v1.EndpointSessionStamp
-	(*ApiError)(nil),                        // 58: muxvia.api.v1.ApiError
-	(*TerminalDefaultsResult)(nil),          // 59: muxvia.api.v1.TerminalDefaultsResult
-	(*TerminalCreateResult)(nil),            // 60: muxvia.api.v1.TerminalCreateResult
-	(*TerminalListResult)(nil),              // 61: muxvia.api.v1.TerminalListResult
-	(*TerminalGetResult)(nil),               // 62: muxvia.api.v1.TerminalGetResult
-	(*TerminalAttachResult)(nil),            // 63: muxvia.api.v1.TerminalAttachResult
-	(*TerminalResizeResult)(nil),            // 64: muxvia.api.v1.TerminalResizeResult
-	(*PathListDirectoriesResult)(nil),       // 65: muxvia.api.v1.PathListDirectoriesResult
-	(*HistoryWindowResult)(nil),             // 66: muxvia.api.v1.HistoryWindowResult
-	(*HistoryCopyResult)(nil),               // 67: muxvia.api.v1.HistoryCopyResult
-	(*HistoryBacklogStatusResult)(nil),      // 68: muxvia.api.v1.HistoryBacklogStatusResult
-	(*NativeScreenResult)(nil),              // 69: muxvia.api.v1.NativeScreenResult
-	(*LiveInvalidationResult)(nil),          // 70: muxvia.api.v1.LiveInvalidationResult
-	(*EventSubscriptionResult)(nil),         // 71: muxvia.api.v1.EventSubscriptionResult
-	(*FileListResult)(nil),                  // 72: muxvia.api.v1.FileListResult
-	(*FileStatResult)(nil),                  // 73: muxvia.api.v1.FileStatResult
-	(*FilePreviewResult)(nil),               // 74: muxvia.api.v1.FilePreviewResult
-	(*FileOperationResult)(nil),             // 75: muxvia.api.v1.FileOperationResult
-	(*FileBatchResult)(nil),                 // 76: muxvia.api.v1.FileBatchResult
-	(*FileTransferOpenResult)(nil),          // 77: muxvia.api.v1.FileTransferOpenResult
-	(*FileTransferCancelResult)(nil),        // 78: muxvia.api.v1.FileTransferCancelResult
-	(*StorageGetResult)(nil),                // 79: muxvia.api.v1.StorageGetResult
-	(*StoragePutResult)(nil),                // 80: muxvia.api.v1.StoragePutResult
-	(*StorageDeleteResult)(nil),             // 81: muxvia.api.v1.StorageDeleteResult
-	(*StorageListResult)(nil),               // 82: muxvia.api.v1.StorageListResult
-	(*ClientAccessIdentityResult)(nil),      // 83: muxvia.api.v1.ClientAccessIdentityResult
-	(*ClientAccessListResult)(nil),          // 84: muxvia.api.v1.ClientAccessListResult
-	(*ClientAccessTicketCreateResult)(nil),  // 85: muxvia.api.v1.ClientAccessTicketCreateResult
-	(*ClientAccessRevokeResult)(nil),        // 86: muxvia.api.v1.ClientAccessRevokeResult
-	(*RemoteStatusResult)(nil),              // 87: muxvia.api.v1.RemoteStatusResult
-	(*RemotePairStartResult)(nil),           // 88: muxvia.api.v1.RemotePairStartResult
-	(*RemoteLocalStatusResult)(nil),         // 89: muxvia.api.v1.RemoteLocalStatusResult
-	(*ApiVersion)(nil),                      // 90: muxvia.api.v1.ApiVersion
-	(*TerminalLifecycleEvent)(nil),          // 91: muxvia.api.v1.TerminalLifecycleEvent
-	(*LiveInvalidatedEvent)(nil),            // 92: muxvia.api.v1.LiveInvalidatedEvent
-	(*StorageChangedEvent)(nil),             // 93: muxvia.api.v1.StorageChangedEvent
-	(*FileTransferCompletedEvent)(nil),      // 94: muxvia.api.v1.FileTransferCompletedEvent
+	(*CancelOperationCommand)(nil),          // 0: anytty.api.v1.CancelOperationCommand
+	(*ReleaseResourceCommand)(nil),          // 1: anytty.api.v1.ReleaseResourceCommand
+	(*CommandEnvelope)(nil),                 // 2: anytty.api.v1.CommandEnvelope
+	(*AcknowledgeResult)(nil),               // 3: anytty.api.v1.AcknowledgeResult
+	(*ResultEnvelope)(nil),                  // 4: anytty.api.v1.ResultEnvelope
+	(*OperationCancelledEvent)(nil),         // 5: anytty.api.v1.OperationCancelledEvent
+	(*ResourceReleasedEvent)(nil),           // 6: anytty.api.v1.ResourceReleasedEvent
+	(*EventEnvelope)(nil),                   // 7: anytty.api.v1.EventEnvelope
+	(*OperationStamp)(nil),                  // 8: anytty.api.v1.OperationStamp
+	(*ResourceHandle)(nil),                  // 9: anytty.api.v1.ResourceHandle
+	(*RequestContext)(nil),                  // 10: anytty.api.v1.RequestContext
+	(*TerminalDefaultsCommand)(nil),         // 11: anytty.api.v1.TerminalDefaultsCommand
+	(*TerminalCreateCommand)(nil),           // 12: anytty.api.v1.TerminalCreateCommand
+	(*TerminalListCommand)(nil),             // 13: anytty.api.v1.TerminalListCommand
+	(*TerminalGetCommand)(nil),              // 14: anytty.api.v1.TerminalGetCommand
+	(*TerminalRestartCommand)(nil),          // 15: anytty.api.v1.TerminalRestartCommand
+	(*TerminalKillCommand)(nil),             // 16: anytty.api.v1.TerminalKillCommand
+	(*TerminalRemoveCommand)(nil),           // 17: anytty.api.v1.TerminalRemoveCommand
+	(*TerminalSetMetadataCommand)(nil),      // 18: anytty.api.v1.TerminalSetMetadataCommand
+	(*TerminalSetTagsCommand)(nil),          // 19: anytty.api.v1.TerminalSetTagsCommand
+	(*TerminalAttachCommand)(nil),           // 20: anytty.api.v1.TerminalAttachCommand
+	(*TerminalDetachCommand)(nil),           // 21: anytty.api.v1.TerminalDetachCommand
+	(*TerminalInputCommand)(nil),            // 22: anytty.api.v1.TerminalInputCommand
+	(*TerminalResizeCommand)(nil),           // 23: anytty.api.v1.TerminalResizeCommand
+	(*TerminalResizeLockCommand)(nil),       // 24: anytty.api.v1.TerminalResizeLockCommand
+	(*PathListDirectoriesCommand)(nil),      // 25: anytty.api.v1.PathListDirectoriesCommand
+	(*HistoryWindowCommand)(nil),            // 26: anytty.api.v1.HistoryWindowCommand
+	(*HistoryCopyCommand)(nil),              // 27: anytty.api.v1.HistoryCopyCommand
+	(*HistoryReleaseCommand)(nil),           // 28: anytty.api.v1.HistoryReleaseCommand
+	(*HistoryBacklogStatusCommand)(nil),     // 29: anytty.api.v1.HistoryBacklogStatusCommand
+	(*LiveScreenGetCommand)(nil),            // 30: anytty.api.v1.LiveScreenGetCommand
+	(*LiveInvalidationNextCommand)(nil),     // 31: anytty.api.v1.LiveInvalidationNextCommand
+	(*EventSubscribeCommand)(nil),           // 32: anytty.api.v1.EventSubscribeCommand
+	(*FileListCommand)(nil),                 // 33: anytty.api.v1.FileListCommand
+	(*FileStatCommand)(nil),                 // 34: anytty.api.v1.FileStatCommand
+	(*FilePreviewCommand)(nil),              // 35: anytty.api.v1.FilePreviewCommand
+	(*FileMkdirCommand)(nil),                // 36: anytty.api.v1.FileMkdirCommand
+	(*FileRenameCommand)(nil),               // 37: anytty.api.v1.FileRenameCommand
+	(*FileDeleteCommand)(nil),               // 38: anytty.api.v1.FileDeleteCommand
+	(*FileCopyCommand)(nil),                 // 39: anytty.api.v1.FileCopyCommand
+	(*FileMoveCommand)(nil),                 // 40: anytty.api.v1.FileMoveCommand
+	(*FileDownloadOpenCommand)(nil),         // 41: anytty.api.v1.FileDownloadOpenCommand
+	(*FileUploadOpenCommand)(nil),           // 42: anytty.api.v1.FileUploadOpenCommand
+	(*FileTransferCancelCommand)(nil),       // 43: anytty.api.v1.FileTransferCancelCommand
+	(*StorageGetCommand)(nil),               // 44: anytty.api.v1.StorageGetCommand
+	(*StoragePutCommand)(nil),               // 45: anytty.api.v1.StoragePutCommand
+	(*StorageDeleteCommand)(nil),            // 46: anytty.api.v1.StorageDeleteCommand
+	(*StorageListCommand)(nil),              // 47: anytty.api.v1.StorageListCommand
+	(*ClientAccessIdentityCommand)(nil),     // 48: anytty.api.v1.ClientAccessIdentityCommand
+	(*ClientAccessListCommand)(nil),         // 49: anytty.api.v1.ClientAccessListCommand
+	(*ClientAccessTicketCreateCommand)(nil), // 50: anytty.api.v1.ClientAccessTicketCreateCommand
+	(*ClientAccessRevokeCommand)(nil),       // 51: anytty.api.v1.ClientAccessRevokeCommand
+	(*RemoteStatusCommand)(nil),             // 52: anytty.api.v1.RemoteStatusCommand
+	(*RemotePairStartCommand)(nil),          // 53: anytty.api.v1.RemotePairStartCommand
+	(*RemoteLocalEnableCommand)(nil),        // 54: anytty.api.v1.RemoteLocalEnableCommand
+	(*RemoteLocalStatusCommand)(nil),        // 55: anytty.api.v1.RemoteLocalStatusCommand
+	(*RemoteLocalDisableCommand)(nil),       // 56: anytty.api.v1.RemoteLocalDisableCommand
+	(*EndpointSessionStamp)(nil),            // 57: anytty.api.v1.EndpointSessionStamp
+	(*ApiError)(nil),                        // 58: anytty.api.v1.ApiError
+	(*TerminalDefaultsResult)(nil),          // 59: anytty.api.v1.TerminalDefaultsResult
+	(*TerminalCreateResult)(nil),            // 60: anytty.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),              // 61: anytty.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),               // 62: anytty.api.v1.TerminalGetResult
+	(*TerminalAttachResult)(nil),            // 63: anytty.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),            // 64: anytty.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),       // 65: anytty.api.v1.PathListDirectoriesResult
+	(*HistoryWindowResult)(nil),             // 66: anytty.api.v1.HistoryWindowResult
+	(*HistoryCopyResult)(nil),               // 67: anytty.api.v1.HistoryCopyResult
+	(*HistoryBacklogStatusResult)(nil),      // 68: anytty.api.v1.HistoryBacklogStatusResult
+	(*NativeScreenResult)(nil),              // 69: anytty.api.v1.NativeScreenResult
+	(*LiveInvalidationResult)(nil),          // 70: anytty.api.v1.LiveInvalidationResult
+	(*EventSubscriptionResult)(nil),         // 71: anytty.api.v1.EventSubscriptionResult
+	(*FileListResult)(nil),                  // 72: anytty.api.v1.FileListResult
+	(*FileStatResult)(nil),                  // 73: anytty.api.v1.FileStatResult
+	(*FilePreviewResult)(nil),               // 74: anytty.api.v1.FilePreviewResult
+	(*FileOperationResult)(nil),             // 75: anytty.api.v1.FileOperationResult
+	(*FileBatchResult)(nil),                 // 76: anytty.api.v1.FileBatchResult
+	(*FileTransferOpenResult)(nil),          // 77: anytty.api.v1.FileTransferOpenResult
+	(*FileTransferCancelResult)(nil),        // 78: anytty.api.v1.FileTransferCancelResult
+	(*StorageGetResult)(nil),                // 79: anytty.api.v1.StorageGetResult
+	(*StoragePutResult)(nil),                // 80: anytty.api.v1.StoragePutResult
+	(*StorageDeleteResult)(nil),             // 81: anytty.api.v1.StorageDeleteResult
+	(*StorageListResult)(nil),               // 82: anytty.api.v1.StorageListResult
+	(*ClientAccessIdentityResult)(nil),      // 83: anytty.api.v1.ClientAccessIdentityResult
+	(*ClientAccessListResult)(nil),          // 84: anytty.api.v1.ClientAccessListResult
+	(*ClientAccessTicketCreateResult)(nil),  // 85: anytty.api.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeResult)(nil),        // 86: anytty.api.v1.ClientAccessRevokeResult
+	(*RemoteStatusResult)(nil),              // 87: anytty.api.v1.RemoteStatusResult
+	(*RemotePairStartResult)(nil),           // 88: anytty.api.v1.RemotePairStartResult
+	(*RemoteLocalStatusResult)(nil),         // 89: anytty.api.v1.RemoteLocalStatusResult
+	(*ApiVersion)(nil),                      // 90: anytty.api.v1.ApiVersion
+	(*TerminalLifecycleEvent)(nil),          // 91: anytty.api.v1.TerminalLifecycleEvent
+	(*LiveInvalidatedEvent)(nil),            // 92: anytty.api.v1.LiveInvalidatedEvent
+	(*StorageChangedEvent)(nil),             // 93: anytty.api.v1.StorageChangedEvent
+	(*FileTransferCompletedEvent)(nil),      // 94: anytty.api.v1.FileTransferCompletedEvent
 }
 var file_apipb_application_proto_depIdxs = []int32{
-	8,  // 0: muxvia.api.v1.CancelOperationCommand.operation:type_name -> muxvia.api.v1.OperationStamp
-	9,  // 1: muxvia.api.v1.ReleaseResourceCommand.resource:type_name -> muxvia.api.v1.ResourceHandle
-	10, // 2: muxvia.api.v1.CommandEnvelope.context:type_name -> muxvia.api.v1.RequestContext
-	0,  // 3: muxvia.api.v1.CommandEnvelope.cancel_operation:type_name -> muxvia.api.v1.CancelOperationCommand
-	1,  // 4: muxvia.api.v1.CommandEnvelope.release_resource:type_name -> muxvia.api.v1.ReleaseResourceCommand
-	11, // 5: muxvia.api.v1.CommandEnvelope.terminal_defaults:type_name -> muxvia.api.v1.TerminalDefaultsCommand
-	12, // 6: muxvia.api.v1.CommandEnvelope.terminal_create:type_name -> muxvia.api.v1.TerminalCreateCommand
-	13, // 7: muxvia.api.v1.CommandEnvelope.terminal_list:type_name -> muxvia.api.v1.TerminalListCommand
-	14, // 8: muxvia.api.v1.CommandEnvelope.terminal_get:type_name -> muxvia.api.v1.TerminalGetCommand
-	15, // 9: muxvia.api.v1.CommandEnvelope.terminal_restart:type_name -> muxvia.api.v1.TerminalRestartCommand
-	16, // 10: muxvia.api.v1.CommandEnvelope.terminal_kill:type_name -> muxvia.api.v1.TerminalKillCommand
-	17, // 11: muxvia.api.v1.CommandEnvelope.terminal_remove:type_name -> muxvia.api.v1.TerminalRemoveCommand
-	18, // 12: muxvia.api.v1.CommandEnvelope.terminal_set_metadata:type_name -> muxvia.api.v1.TerminalSetMetadataCommand
-	19, // 13: muxvia.api.v1.CommandEnvelope.terminal_set_tags:type_name -> muxvia.api.v1.TerminalSetTagsCommand
-	20, // 14: muxvia.api.v1.CommandEnvelope.terminal_attach:type_name -> muxvia.api.v1.TerminalAttachCommand
-	21, // 15: muxvia.api.v1.CommandEnvelope.terminal_detach:type_name -> muxvia.api.v1.TerminalDetachCommand
-	22, // 16: muxvia.api.v1.CommandEnvelope.terminal_input:type_name -> muxvia.api.v1.TerminalInputCommand
-	23, // 17: muxvia.api.v1.CommandEnvelope.terminal_resize:type_name -> muxvia.api.v1.TerminalResizeCommand
-	24, // 18: muxvia.api.v1.CommandEnvelope.terminal_resize_lock:type_name -> muxvia.api.v1.TerminalResizeLockCommand
-	25, // 19: muxvia.api.v1.CommandEnvelope.path_list_directories:type_name -> muxvia.api.v1.PathListDirectoriesCommand
-	26, // 20: muxvia.api.v1.CommandEnvelope.history_window:type_name -> muxvia.api.v1.HistoryWindowCommand
-	27, // 21: muxvia.api.v1.CommandEnvelope.history_copy:type_name -> muxvia.api.v1.HistoryCopyCommand
-	28, // 22: muxvia.api.v1.CommandEnvelope.history_release:type_name -> muxvia.api.v1.HistoryReleaseCommand
-	29, // 23: muxvia.api.v1.CommandEnvelope.history_backlog_status:type_name -> muxvia.api.v1.HistoryBacklogStatusCommand
-	30, // 24: muxvia.api.v1.CommandEnvelope.live_screen_get:type_name -> muxvia.api.v1.LiveScreenGetCommand
-	31, // 25: muxvia.api.v1.CommandEnvelope.live_invalidation_next:type_name -> muxvia.api.v1.LiveInvalidationNextCommand
-	32, // 26: muxvia.api.v1.CommandEnvelope.event_subscribe:type_name -> muxvia.api.v1.EventSubscribeCommand
-	33, // 27: muxvia.api.v1.CommandEnvelope.file_list:type_name -> muxvia.api.v1.FileListCommand
-	34, // 28: muxvia.api.v1.CommandEnvelope.file_stat:type_name -> muxvia.api.v1.FileStatCommand
-	35, // 29: muxvia.api.v1.CommandEnvelope.file_preview:type_name -> muxvia.api.v1.FilePreviewCommand
-	36, // 30: muxvia.api.v1.CommandEnvelope.file_mkdir:type_name -> muxvia.api.v1.FileMkdirCommand
-	37, // 31: muxvia.api.v1.CommandEnvelope.file_rename:type_name -> muxvia.api.v1.FileRenameCommand
-	38, // 32: muxvia.api.v1.CommandEnvelope.file_delete:type_name -> muxvia.api.v1.FileDeleteCommand
-	39, // 33: muxvia.api.v1.CommandEnvelope.file_copy:type_name -> muxvia.api.v1.FileCopyCommand
-	40, // 34: muxvia.api.v1.CommandEnvelope.file_move:type_name -> muxvia.api.v1.FileMoveCommand
-	41, // 35: muxvia.api.v1.CommandEnvelope.file_download_open:type_name -> muxvia.api.v1.FileDownloadOpenCommand
-	42, // 36: muxvia.api.v1.CommandEnvelope.file_upload_open:type_name -> muxvia.api.v1.FileUploadOpenCommand
-	43, // 37: muxvia.api.v1.CommandEnvelope.file_transfer_cancel:type_name -> muxvia.api.v1.FileTransferCancelCommand
-	44, // 38: muxvia.api.v1.CommandEnvelope.storage_get:type_name -> muxvia.api.v1.StorageGetCommand
-	45, // 39: muxvia.api.v1.CommandEnvelope.storage_put:type_name -> muxvia.api.v1.StoragePutCommand
-	46, // 40: muxvia.api.v1.CommandEnvelope.storage_delete:type_name -> muxvia.api.v1.StorageDeleteCommand
-	47, // 41: muxvia.api.v1.CommandEnvelope.storage_list:type_name -> muxvia.api.v1.StorageListCommand
-	48, // 42: muxvia.api.v1.CommandEnvelope.client_access_identity:type_name -> muxvia.api.v1.ClientAccessIdentityCommand
-	49, // 43: muxvia.api.v1.CommandEnvelope.client_access_list:type_name -> muxvia.api.v1.ClientAccessListCommand
-	50, // 44: muxvia.api.v1.CommandEnvelope.client_access_ticket_create:type_name -> muxvia.api.v1.ClientAccessTicketCreateCommand
-	51, // 45: muxvia.api.v1.CommandEnvelope.client_access_revoke:type_name -> muxvia.api.v1.ClientAccessRevokeCommand
-	52, // 46: muxvia.api.v1.CommandEnvelope.remote_status:type_name -> muxvia.api.v1.RemoteStatusCommand
-	53, // 47: muxvia.api.v1.CommandEnvelope.remote_pair_start:type_name -> muxvia.api.v1.RemotePairStartCommand
-	54, // 48: muxvia.api.v1.CommandEnvelope.remote_local_enable:type_name -> muxvia.api.v1.RemoteLocalEnableCommand
-	55, // 49: muxvia.api.v1.CommandEnvelope.remote_local_status:type_name -> muxvia.api.v1.RemoteLocalStatusCommand
-	56, // 50: muxvia.api.v1.CommandEnvelope.remote_local_disable:type_name -> muxvia.api.v1.RemoteLocalDisableCommand
-	57, // 51: muxvia.api.v1.ResultEnvelope.origin_session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	3,  // 52: muxvia.api.v1.ResultEnvelope.acknowledge:type_name -> muxvia.api.v1.AcknowledgeResult
-	58, // 53: muxvia.api.v1.ResultEnvelope.error:type_name -> muxvia.api.v1.ApiError
-	59, // 54: muxvia.api.v1.ResultEnvelope.terminal_defaults:type_name -> muxvia.api.v1.TerminalDefaultsResult
-	60, // 55: muxvia.api.v1.ResultEnvelope.terminal_create:type_name -> muxvia.api.v1.TerminalCreateResult
-	61, // 56: muxvia.api.v1.ResultEnvelope.terminal_list:type_name -> muxvia.api.v1.TerminalListResult
-	62, // 57: muxvia.api.v1.ResultEnvelope.terminal_get:type_name -> muxvia.api.v1.TerminalGetResult
-	63, // 58: muxvia.api.v1.ResultEnvelope.terminal_attach:type_name -> muxvia.api.v1.TerminalAttachResult
-	64, // 59: muxvia.api.v1.ResultEnvelope.terminal_resize:type_name -> muxvia.api.v1.TerminalResizeResult
-	65, // 60: muxvia.api.v1.ResultEnvelope.path_list_directories:type_name -> muxvia.api.v1.PathListDirectoriesResult
-	66, // 61: muxvia.api.v1.ResultEnvelope.history_window:type_name -> muxvia.api.v1.HistoryWindowResult
-	67, // 62: muxvia.api.v1.ResultEnvelope.history_copy:type_name -> muxvia.api.v1.HistoryCopyResult
-	68, // 63: muxvia.api.v1.ResultEnvelope.history_backlog_status:type_name -> muxvia.api.v1.HistoryBacklogStatusResult
-	69, // 64: muxvia.api.v1.ResultEnvelope.live_screen:type_name -> muxvia.api.v1.NativeScreenResult
-	70, // 65: muxvia.api.v1.ResultEnvelope.live_invalidation:type_name -> muxvia.api.v1.LiveInvalidationResult
-	71, // 66: muxvia.api.v1.ResultEnvelope.event_subscription:type_name -> muxvia.api.v1.EventSubscriptionResult
-	72, // 67: muxvia.api.v1.ResultEnvelope.file_list:type_name -> muxvia.api.v1.FileListResult
-	73, // 68: muxvia.api.v1.ResultEnvelope.file_stat:type_name -> muxvia.api.v1.FileStatResult
-	74, // 69: muxvia.api.v1.ResultEnvelope.file_preview:type_name -> muxvia.api.v1.FilePreviewResult
-	75, // 70: muxvia.api.v1.ResultEnvelope.file_operation:type_name -> muxvia.api.v1.FileOperationResult
-	76, // 71: muxvia.api.v1.ResultEnvelope.file_batch:type_name -> muxvia.api.v1.FileBatchResult
-	77, // 72: muxvia.api.v1.ResultEnvelope.file_transfer_open:type_name -> muxvia.api.v1.FileTransferOpenResult
-	78, // 73: muxvia.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> muxvia.api.v1.FileTransferCancelResult
-	79, // 74: muxvia.api.v1.ResultEnvelope.storage_get:type_name -> muxvia.api.v1.StorageGetResult
-	80, // 75: muxvia.api.v1.ResultEnvelope.storage_put:type_name -> muxvia.api.v1.StoragePutResult
-	81, // 76: muxvia.api.v1.ResultEnvelope.storage_delete:type_name -> muxvia.api.v1.StorageDeleteResult
-	82, // 77: muxvia.api.v1.ResultEnvelope.storage_list:type_name -> muxvia.api.v1.StorageListResult
-	83, // 78: muxvia.api.v1.ResultEnvelope.client_access_identity:type_name -> muxvia.api.v1.ClientAccessIdentityResult
-	84, // 79: muxvia.api.v1.ResultEnvelope.client_access_list:type_name -> muxvia.api.v1.ClientAccessListResult
-	85, // 80: muxvia.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> muxvia.api.v1.ClientAccessTicketCreateResult
-	86, // 81: muxvia.api.v1.ResultEnvelope.client_access_revoke:type_name -> muxvia.api.v1.ClientAccessRevokeResult
-	87, // 82: muxvia.api.v1.ResultEnvelope.remote_status:type_name -> muxvia.api.v1.RemoteStatusResult
-	88, // 83: muxvia.api.v1.ResultEnvelope.remote_pair_start:type_name -> muxvia.api.v1.RemotePairStartResult
-	89, // 84: muxvia.api.v1.ResultEnvelope.remote_local_status:type_name -> muxvia.api.v1.RemoteLocalStatusResult
-	8,  // 85: muxvia.api.v1.OperationCancelledEvent.operation:type_name -> muxvia.api.v1.OperationStamp
-	9,  // 86: muxvia.api.v1.ResourceReleasedEvent.resource:type_name -> muxvia.api.v1.ResourceHandle
-	90, // 87: muxvia.api.v1.EventEnvelope.api_version:type_name -> muxvia.api.v1.ApiVersion
-	57, // 88: muxvia.api.v1.EventEnvelope.origin_session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	9,  // 89: muxvia.api.v1.EventEnvelope.subscription:type_name -> muxvia.api.v1.ResourceHandle
-	5,  // 90: muxvia.api.v1.EventEnvelope.operation_cancelled:type_name -> muxvia.api.v1.OperationCancelledEvent
-	6,  // 91: muxvia.api.v1.EventEnvelope.resource_released:type_name -> muxvia.api.v1.ResourceReleasedEvent
-	91, // 92: muxvia.api.v1.EventEnvelope.terminal_lifecycle:type_name -> muxvia.api.v1.TerminalLifecycleEvent
-	92, // 93: muxvia.api.v1.EventEnvelope.live_invalidated:type_name -> muxvia.api.v1.LiveInvalidatedEvent
-	93, // 94: muxvia.api.v1.EventEnvelope.storage_changed:type_name -> muxvia.api.v1.StorageChangedEvent
-	94, // 95: muxvia.api.v1.EventEnvelope.file_transfer_completed:type_name -> muxvia.api.v1.FileTransferCompletedEvent
+	8,  // 0: anytty.api.v1.CancelOperationCommand.operation:type_name -> anytty.api.v1.OperationStamp
+	9,  // 1: anytty.api.v1.ReleaseResourceCommand.resource:type_name -> anytty.api.v1.ResourceHandle
+	10, // 2: anytty.api.v1.CommandEnvelope.context:type_name -> anytty.api.v1.RequestContext
+	0,  // 3: anytty.api.v1.CommandEnvelope.cancel_operation:type_name -> anytty.api.v1.CancelOperationCommand
+	1,  // 4: anytty.api.v1.CommandEnvelope.release_resource:type_name -> anytty.api.v1.ReleaseResourceCommand
+	11, // 5: anytty.api.v1.CommandEnvelope.terminal_defaults:type_name -> anytty.api.v1.TerminalDefaultsCommand
+	12, // 6: anytty.api.v1.CommandEnvelope.terminal_create:type_name -> anytty.api.v1.TerminalCreateCommand
+	13, // 7: anytty.api.v1.CommandEnvelope.terminal_list:type_name -> anytty.api.v1.TerminalListCommand
+	14, // 8: anytty.api.v1.CommandEnvelope.terminal_get:type_name -> anytty.api.v1.TerminalGetCommand
+	15, // 9: anytty.api.v1.CommandEnvelope.terminal_restart:type_name -> anytty.api.v1.TerminalRestartCommand
+	16, // 10: anytty.api.v1.CommandEnvelope.terminal_kill:type_name -> anytty.api.v1.TerminalKillCommand
+	17, // 11: anytty.api.v1.CommandEnvelope.terminal_remove:type_name -> anytty.api.v1.TerminalRemoveCommand
+	18, // 12: anytty.api.v1.CommandEnvelope.terminal_set_metadata:type_name -> anytty.api.v1.TerminalSetMetadataCommand
+	19, // 13: anytty.api.v1.CommandEnvelope.terminal_set_tags:type_name -> anytty.api.v1.TerminalSetTagsCommand
+	20, // 14: anytty.api.v1.CommandEnvelope.terminal_attach:type_name -> anytty.api.v1.TerminalAttachCommand
+	21, // 15: anytty.api.v1.CommandEnvelope.terminal_detach:type_name -> anytty.api.v1.TerminalDetachCommand
+	22, // 16: anytty.api.v1.CommandEnvelope.terminal_input:type_name -> anytty.api.v1.TerminalInputCommand
+	23, // 17: anytty.api.v1.CommandEnvelope.terminal_resize:type_name -> anytty.api.v1.TerminalResizeCommand
+	24, // 18: anytty.api.v1.CommandEnvelope.terminal_resize_lock:type_name -> anytty.api.v1.TerminalResizeLockCommand
+	25, // 19: anytty.api.v1.CommandEnvelope.path_list_directories:type_name -> anytty.api.v1.PathListDirectoriesCommand
+	26, // 20: anytty.api.v1.CommandEnvelope.history_window:type_name -> anytty.api.v1.HistoryWindowCommand
+	27, // 21: anytty.api.v1.CommandEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyCommand
+	28, // 22: anytty.api.v1.CommandEnvelope.history_release:type_name -> anytty.api.v1.HistoryReleaseCommand
+	29, // 23: anytty.api.v1.CommandEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusCommand
+	30, // 24: anytty.api.v1.CommandEnvelope.live_screen_get:type_name -> anytty.api.v1.LiveScreenGetCommand
+	31, // 25: anytty.api.v1.CommandEnvelope.live_invalidation_next:type_name -> anytty.api.v1.LiveInvalidationNextCommand
+	32, // 26: anytty.api.v1.CommandEnvelope.event_subscribe:type_name -> anytty.api.v1.EventSubscribeCommand
+	33, // 27: anytty.api.v1.CommandEnvelope.file_list:type_name -> anytty.api.v1.FileListCommand
+	34, // 28: anytty.api.v1.CommandEnvelope.file_stat:type_name -> anytty.api.v1.FileStatCommand
+	35, // 29: anytty.api.v1.CommandEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewCommand
+	36, // 30: anytty.api.v1.CommandEnvelope.file_mkdir:type_name -> anytty.api.v1.FileMkdirCommand
+	37, // 31: anytty.api.v1.CommandEnvelope.file_rename:type_name -> anytty.api.v1.FileRenameCommand
+	38, // 32: anytty.api.v1.CommandEnvelope.file_delete:type_name -> anytty.api.v1.FileDeleteCommand
+	39, // 33: anytty.api.v1.CommandEnvelope.file_copy:type_name -> anytty.api.v1.FileCopyCommand
+	40, // 34: anytty.api.v1.CommandEnvelope.file_move:type_name -> anytty.api.v1.FileMoveCommand
+	41, // 35: anytty.api.v1.CommandEnvelope.file_download_open:type_name -> anytty.api.v1.FileDownloadOpenCommand
+	42, // 36: anytty.api.v1.CommandEnvelope.file_upload_open:type_name -> anytty.api.v1.FileUploadOpenCommand
+	43, // 37: anytty.api.v1.CommandEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelCommand
+	44, // 38: anytty.api.v1.CommandEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetCommand
+	45, // 39: anytty.api.v1.CommandEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutCommand
+	46, // 40: anytty.api.v1.CommandEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteCommand
+	47, // 41: anytty.api.v1.CommandEnvelope.storage_list:type_name -> anytty.api.v1.StorageListCommand
+	48, // 42: anytty.api.v1.CommandEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityCommand
+	49, // 43: anytty.api.v1.CommandEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListCommand
+	50, // 44: anytty.api.v1.CommandEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateCommand
+	51, // 45: anytty.api.v1.CommandEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeCommand
+	52, // 46: anytty.api.v1.CommandEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusCommand
+	53, // 47: anytty.api.v1.CommandEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartCommand
+	54, // 48: anytty.api.v1.CommandEnvelope.remote_local_enable:type_name -> anytty.api.v1.RemoteLocalEnableCommand
+	55, // 49: anytty.api.v1.CommandEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusCommand
+	56, // 50: anytty.api.v1.CommandEnvelope.remote_local_disable:type_name -> anytty.api.v1.RemoteLocalDisableCommand
+	57, // 51: anytty.api.v1.ResultEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
+	3,  // 52: anytty.api.v1.ResultEnvelope.acknowledge:type_name -> anytty.api.v1.AcknowledgeResult
+	58, // 53: anytty.api.v1.ResultEnvelope.error:type_name -> anytty.api.v1.ApiError
+	59, // 54: anytty.api.v1.ResultEnvelope.terminal_defaults:type_name -> anytty.api.v1.TerminalDefaultsResult
+	60, // 55: anytty.api.v1.ResultEnvelope.terminal_create:type_name -> anytty.api.v1.TerminalCreateResult
+	61, // 56: anytty.api.v1.ResultEnvelope.terminal_list:type_name -> anytty.api.v1.TerminalListResult
+	62, // 57: anytty.api.v1.ResultEnvelope.terminal_get:type_name -> anytty.api.v1.TerminalGetResult
+	63, // 58: anytty.api.v1.ResultEnvelope.terminal_attach:type_name -> anytty.api.v1.TerminalAttachResult
+	64, // 59: anytty.api.v1.ResultEnvelope.terminal_resize:type_name -> anytty.api.v1.TerminalResizeResult
+	65, // 60: anytty.api.v1.ResultEnvelope.path_list_directories:type_name -> anytty.api.v1.PathListDirectoriesResult
+	66, // 61: anytty.api.v1.ResultEnvelope.history_window:type_name -> anytty.api.v1.HistoryWindowResult
+	67, // 62: anytty.api.v1.ResultEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyResult
+	68, // 63: anytty.api.v1.ResultEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusResult
+	69, // 64: anytty.api.v1.ResultEnvelope.live_screen:type_name -> anytty.api.v1.NativeScreenResult
+	70, // 65: anytty.api.v1.ResultEnvelope.live_invalidation:type_name -> anytty.api.v1.LiveInvalidationResult
+	71, // 66: anytty.api.v1.ResultEnvelope.event_subscription:type_name -> anytty.api.v1.EventSubscriptionResult
+	72, // 67: anytty.api.v1.ResultEnvelope.file_list:type_name -> anytty.api.v1.FileListResult
+	73, // 68: anytty.api.v1.ResultEnvelope.file_stat:type_name -> anytty.api.v1.FileStatResult
+	74, // 69: anytty.api.v1.ResultEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewResult
+	75, // 70: anytty.api.v1.ResultEnvelope.file_operation:type_name -> anytty.api.v1.FileOperationResult
+	76, // 71: anytty.api.v1.ResultEnvelope.file_batch:type_name -> anytty.api.v1.FileBatchResult
+	77, // 72: anytty.api.v1.ResultEnvelope.file_transfer_open:type_name -> anytty.api.v1.FileTransferOpenResult
+	78, // 73: anytty.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelResult
+	79, // 74: anytty.api.v1.ResultEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetResult
+	80, // 75: anytty.api.v1.ResultEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutResult
+	81, // 76: anytty.api.v1.ResultEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteResult
+	82, // 77: anytty.api.v1.ResultEnvelope.storage_list:type_name -> anytty.api.v1.StorageListResult
+	83, // 78: anytty.api.v1.ResultEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityResult
+	84, // 79: anytty.api.v1.ResultEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListResult
+	85, // 80: anytty.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateResult
+	86, // 81: anytty.api.v1.ResultEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeResult
+	87, // 82: anytty.api.v1.ResultEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusResult
+	88, // 83: anytty.api.v1.ResultEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartResult
+	89, // 84: anytty.api.v1.ResultEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusResult
+	8,  // 85: anytty.api.v1.OperationCancelledEvent.operation:type_name -> anytty.api.v1.OperationStamp
+	9,  // 86: anytty.api.v1.ResourceReleasedEvent.resource:type_name -> anytty.api.v1.ResourceHandle
+	90, // 87: anytty.api.v1.EventEnvelope.api_version:type_name -> anytty.api.v1.ApiVersion
+	57, // 88: anytty.api.v1.EventEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
+	9,  // 89: anytty.api.v1.EventEnvelope.subscription:type_name -> anytty.api.v1.ResourceHandle
+	5,  // 90: anytty.api.v1.EventEnvelope.operation_cancelled:type_name -> anytty.api.v1.OperationCancelledEvent
+	6,  // 91: anytty.api.v1.EventEnvelope.resource_released:type_name -> anytty.api.v1.ResourceReleasedEvent
+	91, // 92: anytty.api.v1.EventEnvelope.terminal_lifecycle:type_name -> anytty.api.v1.TerminalLifecycleEvent
+	92, // 93: anytty.api.v1.EventEnvelope.live_invalidated:type_name -> anytty.api.v1.LiveInvalidatedEvent
+	93, // 94: anytty.api.v1.EventEnvelope.storage_changed:type_name -> anytty.api.v1.StorageChangedEvent
+	94, // 95: anytty.api.v1.EventEnvelope.file_transfer_completed:type_name -> anytty.api.v1.FileTransferCompletedEvent
 	96, // [96:96] is the sub-list for method output_type
 	96, // [96:96] is the sub-list for method input_type
 	96, // [96:96] is the sub-list for extension type_name

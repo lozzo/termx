@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -16,7 +16,7 @@ const (
 	DirectSignalingSchemaVersion uint32 = 1
 	// DirectSignalingMaxTTL 限制公开 signaling admission 的最大有效窗口。
 	DirectSignalingMaxTTL   = 30 * time.Second
-	directSignalingProtocol = "muxvia.direct-signaling.v1"
+	directSignalingProtocol = "anytty.direct-signaling.v1"
 )
 
 // SignDirectSignalingAnswer 使用 daemon-local DeviceIdentity 对短期 Direct answer 签名。

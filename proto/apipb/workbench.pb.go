@@ -337,7 +337,7 @@ func (x *WorkbenchPane) GetTerminalId() string {
 type WorkbenchSplitNode struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	PaneId        string                  `protobuf:"bytes,1,opt,name=pane_id,json=paneId,proto3" json:"pane_id,omitempty"`
-	Direction     WorkbenchSplitDirection `protobuf:"varint,2,opt,name=direction,proto3,enum=muxvia.api.v1.WorkbenchSplitDirection" json:"direction,omitempty"`
+	Direction     WorkbenchSplitDirection `protobuf:"varint,2,opt,name=direction,proto3,enum=anytty.api.v1.WorkbenchSplitDirection" json:"direction,omitempty"`
 	Children      []*WorkbenchSplitNode   `protobuf:"bytes,3,rep,name=children,proto3" json:"children,omitempty"`
 	Ratio         float64                 `protobuf:"fixed64,4,opt,name=ratio,proto3" json:"ratio,omitempty"`
 	BiasCells     int32                   `protobuf:"varint,5,opt,name=bias_cells,json=biasCells,proto3" json:"bias_cells,omitempty"`
@@ -438,25 +438,25 @@ var File_apipb_workbench_proto protoreflect.FileDescriptor
 
 const file_apipb_workbench_proto_rawDesc = "" +
 	"\n" +
-	"\x15apipb/workbench.proto\x12\rmuxvia.api.v1\"\xaa\x01\n" +
+	"\x15apipb/workbench.proto\x12\ranytty.api.v1\"\xaa\x01\n" +
 	"\x0eWorkbenchValue\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12.\n" +
 	"\x13active_workspace_id\x18\x02 \x01(\tR\x11activeWorkspaceId\x12A\n" +
 	"\n" +
-	"workspaces\x18\x03 \x03(\v2!.muxvia.api.v1.WorkbenchWorkspaceR\n" +
+	"workspaces\x18\x03 \x03(\v2!.anytty.api.v1.WorkbenchWorkspaceR\n" +
 	"workspaces\"\x8d\x01\n" +
 	"\x12WorkbenchWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\"\n" +
 	"\ractive_tab_id\x18\x03 \x01(\tR\vactiveTabId\x12/\n" +
-	"\x04tabs\x18\x04 \x03(\v2\x1b.muxvia.api.v1.WorkbenchTabR\x04tabs\"\xd0\x01\n" +
+	"\x04tabs\x18\x04 \x03(\v2\x1b.anytty.api.v1.WorkbenchTabR\x04tabs\"\xd0\x01\n" +
 	"\fWorkbenchTab\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12$\n" +
 	"\x0eactive_pane_id\x18\x03 \x01(\tR\factivePaneId\x122\n" +
-	"\x05panes\x18\x04 \x03(\v2\x1c.muxvia.api.v1.WorkbenchPaneR\x05panes\x12@\n" +
+	"\x05panes\x18\x04 \x03(\v2\x1c.anytty.api.v1.WorkbenchPaneR\x05panes\x12@\n" +
 	"\n" +
-	"root_split\x18\x05 \x01(\v2!.muxvia.api.v1.WorkbenchSplitNodeR\trootSplit\"V\n" +
+	"root_split\x18\x05 \x01(\v2!.anytty.api.v1.WorkbenchSplitNodeR\trootSplit\"V\n" +
 	"\rWorkbenchPane\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
@@ -464,8 +464,8 @@ const file_apipb_workbench_proto_rawDesc = "" +
 	"terminalId\"\xc9\x02\n" +
 	"\x12WorkbenchSplitNode\x12\x17\n" +
 	"\apane_id\x18\x01 \x01(\tR\x06paneId\x12D\n" +
-	"\tdirection\x18\x02 \x01(\x0e2&.muxvia.api.v1.WorkbenchSplitDirectionR\tdirection\x12=\n" +
-	"\bchildren\x18\x03 \x03(\v2!.muxvia.api.v1.WorkbenchSplitNodeR\bchildren\x12\x14\n" +
+	"\tdirection\x18\x02 \x01(\x0e2&.anytty.api.v1.WorkbenchSplitDirectionR\tdirection\x12=\n" +
+	"\bchildren\x18\x03 \x03(\v2!.anytty.api.v1.WorkbenchSplitNodeR\bchildren\x12\x14\n" +
 	"\x05ratio\x18\x04 \x01(\x01R\x05ratio\x12\x1d\n" +
 	"\n" +
 	"bias_cells\x18\x05 \x01(\x05R\tbiasCells\x12\"\n" +
@@ -477,7 +477,7 @@ const file_apipb_workbench_proto_rawDesc = "" +
 	"\x17WorkbenchSplitDirection\x12)\n" +
 	"%WORKBENCH_SPLIT_DIRECTION_UNSPECIFIED\x10\x00\x12(\n" +
 	"$WORKBENCH_SPLIT_DIRECTION_HORIZONTAL\x10\x01\x12&\n" +
-	"\"WORKBENCH_SPLIT_DIRECTION_VERTICAL\x10\x02B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
+	"\"WORKBENCH_SPLIT_DIRECTION_VERTICAL\x10\x02B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_workbench_proto_rawDescOnce sync.Once
@@ -494,20 +494,20 @@ func file_apipb_workbench_proto_rawDescGZIP() []byte {
 var file_apipb_workbench_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_apipb_workbench_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_apipb_workbench_proto_goTypes = []any{
-	(WorkbenchSplitDirection)(0), // 0: muxvia.api.v1.WorkbenchSplitDirection
-	(*WorkbenchValue)(nil),       // 1: muxvia.api.v1.WorkbenchValue
-	(*WorkbenchWorkspace)(nil),   // 2: muxvia.api.v1.WorkbenchWorkspace
-	(*WorkbenchTab)(nil),         // 3: muxvia.api.v1.WorkbenchTab
-	(*WorkbenchPane)(nil),        // 4: muxvia.api.v1.WorkbenchPane
-	(*WorkbenchSplitNode)(nil),   // 5: muxvia.api.v1.WorkbenchSplitNode
+	(WorkbenchSplitDirection)(0), // 0: anytty.api.v1.WorkbenchSplitDirection
+	(*WorkbenchValue)(nil),       // 1: anytty.api.v1.WorkbenchValue
+	(*WorkbenchWorkspace)(nil),   // 2: anytty.api.v1.WorkbenchWorkspace
+	(*WorkbenchTab)(nil),         // 3: anytty.api.v1.WorkbenchTab
+	(*WorkbenchPane)(nil),        // 4: anytty.api.v1.WorkbenchPane
+	(*WorkbenchSplitNode)(nil),   // 5: anytty.api.v1.WorkbenchSplitNode
 }
 var file_apipb_workbench_proto_depIdxs = []int32{
-	2, // 0: muxvia.api.v1.WorkbenchValue.workspaces:type_name -> muxvia.api.v1.WorkbenchWorkspace
-	3, // 1: muxvia.api.v1.WorkbenchWorkspace.tabs:type_name -> muxvia.api.v1.WorkbenchTab
-	4, // 2: muxvia.api.v1.WorkbenchTab.panes:type_name -> muxvia.api.v1.WorkbenchPane
-	5, // 3: muxvia.api.v1.WorkbenchTab.root_split:type_name -> muxvia.api.v1.WorkbenchSplitNode
-	0, // 4: muxvia.api.v1.WorkbenchSplitNode.direction:type_name -> muxvia.api.v1.WorkbenchSplitDirection
-	5, // 5: muxvia.api.v1.WorkbenchSplitNode.children:type_name -> muxvia.api.v1.WorkbenchSplitNode
+	2, // 0: anytty.api.v1.WorkbenchValue.workspaces:type_name -> anytty.api.v1.WorkbenchWorkspace
+	3, // 1: anytty.api.v1.WorkbenchWorkspace.tabs:type_name -> anytty.api.v1.WorkbenchTab
+	4, // 2: anytty.api.v1.WorkbenchTab.panes:type_name -> anytty.api.v1.WorkbenchPane
+	5, // 3: anytty.api.v1.WorkbenchTab.root_split:type_name -> anytty.api.v1.WorkbenchSplitNode
+	0, // 4: anytty.api.v1.WorkbenchSplitNode.direction:type_name -> anytty.api.v1.WorkbenchSplitDirection
+	5, // 5: anytty.api.v1.WorkbenchSplitNode.children:type_name -> anytty.api.v1.WorkbenchSplitNode
 	6, // [6:6] is the sub-list for method output_type
 	6, // [6:6] is the sub-list for method input_type
 	6, // [6:6] is the sub-list for extension type_name

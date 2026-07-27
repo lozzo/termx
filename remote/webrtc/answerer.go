@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/muxvia/muxvia/shared/transport"
-	"github.com/muxvia/muxvia/shared/transport/datachannel"
+	"github.com/anytty/anytty/shared/transport"
+	"github.com/anytty/anytty/shared/transport/datachannel"
 	pion "github.com/pion/webrtc/v4"
 )
 
@@ -70,7 +70,7 @@ type Answerer struct {
 	OnSessionError func(error)
 }
 
-// Answer 创建 WebRTC answer，并把唯一可靠有序的 muxvia DataChannel 交给端到端授权 handler。
+// Answer 创建 WebRTC answer，并把唯一可靠有序的 anytty DataChannel 交给端到端授权 handler。
 func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceServers []ICEServer) (*SignalingAnswer, error) {
 	if answerer.Handler == nil {
 		return nil, fmt.Errorf("remote daemon authorized data channel handler is not configured")

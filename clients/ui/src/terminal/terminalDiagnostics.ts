@@ -19,10 +19,10 @@ export function logTerminalDiagnostic(event: string, input: TerminalDiagnosticEv
     if (input.connectionId) metadata.connectionId = input.connectionId
     if (input.channelLabel) metadata.channelLabel = input.channelLabel
     if (input.details) Object.assign(metadata, input.details)
-    console[method](`[muxvia:terminal] ${event}`, metadata)
+    console[method](`[anytty:terminal] ${event}`, metadata)
     const nativeWriter = (globalThis as {
-      __muxviaWriteNativeDebugLog?: (level: TerminalDiagnosticLevel, tag: string, message: string) => void
-    }).__muxviaWriteNativeDebugLog
+      __anyttyWriteNativeDebugLog?: (level: TerminalDiagnosticLevel, tag: string, message: string) => void
+    }).__anyttyWriteNativeDebugLog
     if (typeof nativeWriter === 'function') {
       nativeWriter(level, 'TerminalJS', `${event} ${JSON.stringify(metadata)}`)
     }

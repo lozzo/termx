@@ -3,7 +3,7 @@ package runtime
 import (
 	"context"
 
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 // EndpointApplication 是 CLI/App 使用的 endpoint 诊断 application interface。

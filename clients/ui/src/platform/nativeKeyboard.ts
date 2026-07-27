@@ -1,31 +1,31 @@
-export const MUXVIA_NATIVE_KEYBOARD_EVENT = 'muxvia:native-keyboard'
+export const ANYTTY_NATIVE_KEYBOARD_EVENT = 'anytty:native-keyboard'
 
-export interface MuxviaNativeKeyboardEventDetail {
+export interface AnyTTYNativeKeyboardEventDetail {
   visible: boolean
   keyboardHeight?: number | undefined
 }
 
-export type MuxviaNativeKeyboardHandler = (detail: MuxviaNativeKeyboardEventDetail) => void
+export type AnyTTYNativeKeyboardHandler = (detail: AnyTTYNativeKeyboardEventDetail) => void
 
-export function dispatchNativeKeyboardEvent(detail: MuxviaNativeKeyboardEventDetail): void {
+export function dispatchNativeKeyboardEvent(detail: AnyTTYNativeKeyboardEventDetail): void {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
-  window.dispatchEvent(new CustomEvent<MuxviaNativeKeyboardEventDetail>(MUXVIA_NATIVE_KEYBOARD_EVENT, {
+  window.dispatchEvent(new CustomEvent<AnyTTYNativeKeyboardEventDetail>(ANYTTY_NATIVE_KEYBOARD_EVENT, {
     detail: normalizeNativeKeyboardDetail(detail),
   }))
 }
 
-export function addNativeKeyboardListener(handler: MuxviaNativeKeyboardHandler): () => void {
+export function addNativeKeyboardListener(handler: AnyTTYNativeKeyboardHandler): () => void {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return () => {}
   const listener = (event: Event) => {
     const detail = nativeKeyboardDetailFromEvent(event)
     if (!detail) return
     handler(detail)
   }
-  window.addEventListener(MUXVIA_NATIVE_KEYBOARD_EVENT, listener)
-  return () => window.removeEventListener(MUXVIA_NATIVE_KEYBOARD_EVENT, listener)
+  window.addEventListener(ANYTTY_NATIVE_KEYBOARD_EVENT, listener)
+  return () => window.removeEventListener(ANYTTY_NATIVE_KEYBOARD_EVENT, listener)
 }
 
-function nativeKeyboardDetailFromEvent(event: Event): MuxviaNativeKeyboardEventDetail | null {
+function nativeKeyboardDetailFromEvent(event: Event): AnyTTYNativeKeyboardEventDetail | null {
   const detail = (event as Event & { detail?: unknown }).detail
   if (!detail || typeof detail !== 'object') return null
   const record = detail as Record<string, unknown>
@@ -36,7 +36,7 @@ function nativeKeyboardDetailFromEvent(event: Event): MuxviaNativeKeyboardEventD
   })
 }
 
-function normalizeNativeKeyboardDetail(detail: MuxviaNativeKeyboardEventDetail): MuxviaNativeKeyboardEventDetail {
+function normalizeNativeKeyboardDetail(detail: AnyTTYNativeKeyboardEventDetail): AnyTTYNativeKeyboardEventDetail {
   const keyboardHeight = typeof detail.keyboardHeight === 'number' && Number.isFinite(detail.keyboardHeight)
     ? Math.max(0, detail.keyboardHeight)
     : undefined

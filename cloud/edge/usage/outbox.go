@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	bolt "go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 )

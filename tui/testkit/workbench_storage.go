@@ -1,6 +1,6 @@
 package testkit
 
-import "github.com/muxvia/muxvia/tui/state"
+import "github.com/anytty/anytty/tui/state"
 
 func cloneWorkbenchStorageSnapshot(snapshot state.WorkbenchStorageSnapshot) state.WorkbenchStorageSnapshot {
 	clone := snapshot

@@ -10,16 +10,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestListOperatorAccountsUsesOneQueryAndMatchesDetails(t *testing.T) {
-	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()

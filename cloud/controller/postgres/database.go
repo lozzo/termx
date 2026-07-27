@@ -21,7 +21,7 @@ type Database struct {
 func Open(ctx context.Context, databaseURL string) (*Database, error) {
 	databaseURL = strings.TrimSpace(databaseURL)
 	if databaseURL == "" {
-		return nil, errors.New("MUXVIA_CLOUD_DATABASE_URL is required")
+		return nil, errors.New("ANYTTY_CLOUD_DATABASE_URL is required")
 	}
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {

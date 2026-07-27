@@ -19,17 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CommerceService_ListPlans_FullMethodName                  = "/muxvia.cloud.v1.CommerceService/ListPlans"
-	CommerceService_CreatePlanVersion_FullMethodName          = "/muxvia.cloud.v1.CommerceService/CreatePlanVersion"
-	CommerceService_PublishPlanVersion_FullMethodName         = "/muxvia.cloud.v1.CommerceService/PublishPlanVersion"
-	CommerceService_CreateOrder_FullMethodName                = "/muxvia.cloud.v1.CommerceService/CreateOrder"
-	CommerceService_ApplyPaymentEvent_FullMethodName          = "/muxvia.cloud.v1.CommerceService/ApplyPaymentEvent"
-	CommerceService_TransitionSubscription_FullMethodName     = "/muxvia.cloud.v1.CommerceService/TransitionSubscription"
-	CommerceService_GetAccountCommerce_FullMethodName         = "/muxvia.cloud.v1.CommerceService/GetAccountCommerce"
-	CommerceService_CreateMyOrder_FullMethodName              = "/muxvia.cloud.v1.CommerceService/CreateMyOrder"
-	CommerceService_GetMyCommerce_FullMethodName              = "/muxvia.cloud.v1.CommerceService/GetMyCommerce"
-	CommerceService_ChangeMySubscription_FullMethodName       = "/muxvia.cloud.v1.CommerceService/ChangeMySubscription"
-	CommerceService_CompleteDevelopmentPayment_FullMethodName = "/muxvia.cloud.v1.CommerceService/CompleteDevelopmentPayment"
+	CommerceService_ListPlans_FullMethodName                  = "/anytty.cloud.v1.CommerceService/ListPlans"
+	CommerceService_CreatePlanVersion_FullMethodName          = "/anytty.cloud.v1.CommerceService/CreatePlanVersion"
+	CommerceService_PublishPlanVersion_FullMethodName         = "/anytty.cloud.v1.CommerceService/PublishPlanVersion"
+	CommerceService_CreateOrder_FullMethodName                = "/anytty.cloud.v1.CommerceService/CreateOrder"
+	CommerceService_ApplyPaymentEvent_FullMethodName          = "/anytty.cloud.v1.CommerceService/ApplyPaymentEvent"
+	CommerceService_TransitionSubscription_FullMethodName     = "/anytty.cloud.v1.CommerceService/TransitionSubscription"
+	CommerceService_GetAccountCommerce_FullMethodName         = "/anytty.cloud.v1.CommerceService/GetAccountCommerce"
+	CommerceService_CreateMyOrder_FullMethodName              = "/anytty.cloud.v1.CommerceService/CreateMyOrder"
+	CommerceService_GetMyCommerce_FullMethodName              = "/anytty.cloud.v1.CommerceService/GetMyCommerce"
+	CommerceService_ChangeMySubscription_FullMethodName       = "/anytty.cloud.v1.CommerceService/ChangeMySubscription"
+	CommerceService_CompleteDevelopmentPayment_FullMethodName = "/anytty.cloud.v1.CommerceService/CompleteDevelopmentPayment"
 )
 
 // CommerceServiceClient is the client API for CommerceService service.
@@ -452,7 +452,7 @@ func _CommerceService_CompleteDevelopmentPayment_Handler(srv interface{}, ctx co
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CommerceService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.CommerceService",
+	ServiceName: "anytty.cloud.v1.CommerceService",
 	HandlerType: (*CommerceServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

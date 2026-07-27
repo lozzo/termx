@@ -3,9 +3,9 @@ package apimapping
 import (
 	"time"
 
-	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 

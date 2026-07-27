@@ -1,4 +1,4 @@
-module github.com/muxvia/muxvia
+module github.com/anytty/anytty
 
 go 1.26.0
 

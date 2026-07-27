@@ -1,10 +1,10 @@
 package apimapping
 
 import (
-	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/proto/apipb"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/proto/apipb"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // ValidateHistoryLiveCommand 校验 history/live command 的 terminal identity、token 和窗口边界。

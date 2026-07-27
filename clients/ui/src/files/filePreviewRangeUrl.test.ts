@@ -51,14 +51,14 @@ describe('createFilePreviewRangeUrl', () => {
       streamPreview,
     })
 
-    expect(result?.url).toMatch(/^\/__muxvia_file_preview__\/preview-/)
-    expect(navigator.serviceWorker.register).toHaveBeenCalledWith('/muxvia-file-preview-sw.js', { scope: '/' })
+    expect(result?.url).toMatch(/^\/__anytty_file_preview__\/preview-/)
+    expect(navigator.serviceWorker.register).toHaveBeenCalledWith('/anytty-file-preview-sw.js', { scope: '/' })
 
     await listeners[0]?.(new MessageEvent('message', {
       data: {
-        type: 'muxvia-preview-range-request',
+        type: 'anytty-preview-range-request',
         requestId: 'range-1',
-        token: decodeURIComponent(result?.url.split('/__muxvia_file_preview__/')[1]?.split('?')[0] ?? ''),
+        token: decodeURIComponent(result?.url.split('/__anytty_file_preview__/')[1]?.split('?')[0] ?? ''),
         offset: 4,
         length: 3,
       },
@@ -70,7 +70,7 @@ describe('createFilePreviewRangeUrl', () => {
       length: 3,
     })
     expect(controllerMessages).toContainEqual(expect.objectContaining({
-      type: 'muxvia-preview-response',
+      type: 'anytty-preview-response',
       requestId: 'range-1',
       blob,
       offset: 4,
@@ -94,9 +94,9 @@ describe('createFilePreviewRangeUrl', () => {
 
     await listeners[0]?.(new MessageEvent('message', {
       data: {
-        type: 'muxvia-preview-range-request',
+        type: 'anytty-preview-range-request',
         requestId: 'range-2',
-        token: decodeURIComponent(result?.url.split('/__muxvia_file_preview__/')[1]?.split('?')[0] ?? ''),
+        token: decodeURIComponent(result?.url.split('/__anytty_file_preview__/')[1]?.split('?')[0] ?? ''),
         offset: 0,
         length: 0,
       },
@@ -105,7 +105,7 @@ describe('createFilePreviewRangeUrl', () => {
 
     expect(streamPreview).not.toHaveBeenCalled()
     expect(controllerMessages).toContainEqual(expect.objectContaining({
-      type: 'muxvia-preview-error',
+      type: 'anytty-preview-error',
       requestId: 'range-2',
       message: 'file preview range length is required',
     }))

@@ -279,7 +279,7 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
     document.addEventListener('focusin', onTerminalFocusIn)
     document.addEventListener('focusout', onTerminalFocusOut)
     document.addEventListener('visibilitychange', onResume)
-    document.addEventListener('muxvia:resume', onResume)
+    document.addEventListener('anytty:resume', onResume)
 
     return () => {
       removeNativeKeyboardListener()
@@ -292,7 +292,7 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
       document.removeEventListener('focusin', onTerminalFocusIn)
       document.removeEventListener('focusout', onTerminalFocusOut)
       document.removeEventListener('visibilitychange', onResume)
-      document.removeEventListener('muxvia:resume', onResume)
+      document.removeEventListener('anytty:resume', onResume)
       clearTimeout(visibilityDebounce)
       clearTimeout(fallbackTimer)
       if (scrollRafId) cancelAnimationFrame(scrollRafId)

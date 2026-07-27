@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

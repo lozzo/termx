@@ -87,7 +87,7 @@ type CertificateBinding struct {
 	BindingRevision        uint64                 `protobuf:"varint,6,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
 	DesiredRevision        uint64                 `protobuf:"varint,7,opt,name=desired_revision,json=desiredRevision,proto3" json:"desired_revision,omitempty"`
 	AppliedRevision        uint64                 `protobuf:"varint,8,opt,name=applied_revision,json=appliedRevision,proto3" json:"applied_revision,omitempty"`
-	SyncState              CertificateSyncState   `protobuf:"varint,9,opt,name=sync_state,json=syncState,proto3,enum=muxvia.cloud.v1.CertificateSyncState" json:"sync_state,omitempty"`
+	SyncState              CertificateSyncState   `protobuf:"varint,9,opt,name=sync_state,json=syncState,proto3,enum=anytty.cloud.v1.CertificateSyncState" json:"sync_state,omitempty"`
 	LastErrorCode          string                 `protobuf:"bytes,10,opt,name=last_error_code,json=lastErrorCode,proto3" json:"last_error_code,omitempty"`
 	LastErrorMessage       string                 `protobuf:"bytes,11,opt,name=last_error_message,json=lastErrorMessage,proto3" json:"last_error_message,omitempty"`
 	AppliedAt              *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=applied_at,json=appliedAt,proto3" json:"applied_at,omitempty"`
@@ -731,7 +731,7 @@ var File_cloud_v1_certificate_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_certificate_proto_rawDesc = "" +
 	"\n" +
-	"\x1acloud/v1/certificate.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd3\x04\n" +
+	"\x1acloud/v1/certificate.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd3\x04\n" +
 	"\x12CertificateBinding\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x1b\n" +
 	"\tedge_name\x18\x02 \x01(\tR\bedgeName\x12'\n" +
@@ -742,7 +742,7 @@ const file_cloud_v1_certificate_proto_rawDesc = "" +
 	"\x10desired_revision\x18\a \x01(\x04R\x0fdesiredRevision\x12)\n" +
 	"\x10applied_revision\x18\b \x01(\x04R\x0fappliedRevision\x12D\n" +
 	"\n" +
-	"sync_state\x18\t \x01(\x0e2%.muxvia.cloud.v1.CertificateSyncStateR\tsyncState\x12&\n" +
+	"sync_state\x18\t \x01(\x0e2%.anytty.cloud.v1.CertificateSyncStateR\tsyncState\x12&\n" +
 	"\x0flast_error_code\x18\n" +
 	" \x01(\tR\rlastErrorCode\x12,\n" +
 	"\x12last_error_message\x18\v \x01(\tR\x10lastErrorMessage\x129\n" +
@@ -763,10 +763,10 @@ const file_cloud_v1_certificate_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12?\n" +
 	"\bbindings\x18\n" +
-	" \x03(\v2#.muxvia.cloud.v1.CertificateBindingR\bbindings\" \n" +
+	" \x03(\v2#.anytty.cloud.v1.CertificateBindingR\bbindings\" \n" +
 	"\x1eListCertificateProfilesRequest\"b\n" +
 	"\x1fListCertificateProfilesResponse\x12?\n" +
-	"\bprofiles\x18\x01 \x03(\v2#.muxvia.cloud.v1.CertificateProfileR\bprofiles\"\xf4\x01\n" +
+	"\bprofiles\x18\x01 \x03(\v2#.anytty.cloud.v1.CertificateProfileR\bprofiles\"\xf4\x01\n" +
 	"\x1fUploadCertificateProfileRequest\x124\n" +
 	"\x16certificate_profile_id\x18\x01 \x01(\tR\x14certificateProfileId\x12+\n" +
 	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x12\n" +
@@ -774,13 +774,13 @@ const file_cloud_v1_certificate_proto_rawDesc = "" +
 	"\x15certificate_chain_pem\x18\x04 \x01(\fR\x13certificateChainPem\x12&\n" +
 	"\x0fprivate_key_pem\x18\x05 \x01(\fR\rprivateKeyPem\"a\n" +
 	" UploadCertificateProfileResponse\x12=\n" +
-	"\aprofile\x18\x01 \x01(\v2#.muxvia.cloud.v1.CertificateProfileR\aprofile\"\xaa\x01\n" +
+	"\aprofile\x18\x01 \x01(\v2#.anytty.cloud.v1.CertificateProfileR\aprofile\"\xaa\x01\n" +
 	"\x1dBindCertificateProfileRequest\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x124\n" +
 	"\x16certificate_profile_id\x18\x02 \x01(\tR\x14certificateProfileId\x12:\n" +
 	"\x19expected_binding_revision\x18\x03 \x01(\x04R\x17expectedBindingRevision\"_\n" +
 	"\x1eBindCertificateProfileResponse\x12=\n" +
-	"\abinding\x18\x01 \x01(\v2#.muxvia.cloud.v1.CertificateBindingR\abinding\"\x94\x02\n" +
+	"\abinding\x18\x01 \x01(\v2#.anytty.cloud.v1.CertificateBindingR\abinding\"\x94\x02\n" +
 	"\x15EdgeCertificateBundle\x12$\n" +
 	"\x0etarget_edge_id\x18\x01 \x01(\tR\ftargetEdgeId\x124\n" +
 	"\x16certificate_profile_id\x18\x02 \x01(\tR\x14certificateProfileId\x12\x1a\n" +
@@ -792,7 +792,7 @@ const file_cloud_v1_certificate_proto_rawDesc = "" +
 	"\"CERTIFICATE_SYNC_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eCERTIFICATE_SYNC_STATE_PENDING\x10\x01\x12\"\n" +
 	"\x1eCERTIFICATE_SYNC_STATE_APPLIED\x10\x02\x12!\n" +
-	"\x1dCERTIFICATE_SYNC_STATE_FAILED\x10\x03B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x1dCERTIFICATE_SYNC_STATE_FAILED\x10\x03B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_certificate_proto_rawDescOnce sync.Once
@@ -809,29 +809,29 @@ func file_cloud_v1_certificate_proto_rawDescGZIP() []byte {
 var file_cloud_v1_certificate_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_cloud_v1_certificate_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_cloud_v1_certificate_proto_goTypes = []any{
-	(CertificateSyncState)(0),                // 0: muxvia.cloud.v1.CertificateSyncState
-	(*CertificateBinding)(nil),               // 1: muxvia.cloud.v1.CertificateBinding
-	(*CertificateProfile)(nil),               // 2: muxvia.cloud.v1.CertificateProfile
-	(*ListCertificateProfilesRequest)(nil),   // 3: muxvia.cloud.v1.ListCertificateProfilesRequest
-	(*ListCertificateProfilesResponse)(nil),  // 4: muxvia.cloud.v1.ListCertificateProfilesResponse
-	(*UploadCertificateProfileRequest)(nil),  // 5: muxvia.cloud.v1.UploadCertificateProfileRequest
-	(*UploadCertificateProfileResponse)(nil), // 6: muxvia.cloud.v1.UploadCertificateProfileResponse
-	(*BindCertificateProfileRequest)(nil),    // 7: muxvia.cloud.v1.BindCertificateProfileRequest
-	(*BindCertificateProfileResponse)(nil),   // 8: muxvia.cloud.v1.BindCertificateProfileResponse
-	(*EdgeCertificateBundle)(nil),            // 9: muxvia.cloud.v1.EdgeCertificateBundle
+	(CertificateSyncState)(0),                // 0: anytty.cloud.v1.CertificateSyncState
+	(*CertificateBinding)(nil),               // 1: anytty.cloud.v1.CertificateBinding
+	(*CertificateProfile)(nil),               // 2: anytty.cloud.v1.CertificateProfile
+	(*ListCertificateProfilesRequest)(nil),   // 3: anytty.cloud.v1.ListCertificateProfilesRequest
+	(*ListCertificateProfilesResponse)(nil),  // 4: anytty.cloud.v1.ListCertificateProfilesResponse
+	(*UploadCertificateProfileRequest)(nil),  // 5: anytty.cloud.v1.UploadCertificateProfileRequest
+	(*UploadCertificateProfileResponse)(nil), // 6: anytty.cloud.v1.UploadCertificateProfileResponse
+	(*BindCertificateProfileRequest)(nil),    // 7: anytty.cloud.v1.BindCertificateProfileRequest
+	(*BindCertificateProfileResponse)(nil),   // 8: anytty.cloud.v1.BindCertificateProfileResponse
+	(*EdgeCertificateBundle)(nil),            // 9: anytty.cloud.v1.EdgeCertificateBundle
 	(*timestamppb.Timestamp)(nil),            // 10: google.protobuf.Timestamp
 }
 var file_cloud_v1_certificate_proto_depIdxs = []int32{
-	0,  // 0: muxvia.cloud.v1.CertificateBinding.sync_state:type_name -> muxvia.cloud.v1.CertificateSyncState
-	10, // 1: muxvia.cloud.v1.CertificateBinding.applied_at:type_name -> google.protobuf.Timestamp
-	10, // 2: muxvia.cloud.v1.CertificateProfile.not_before:type_name -> google.protobuf.Timestamp
-	10, // 3: muxvia.cloud.v1.CertificateProfile.not_after:type_name -> google.protobuf.Timestamp
-	10, // 4: muxvia.cloud.v1.CertificateProfile.created_at:type_name -> google.protobuf.Timestamp
-	10, // 5: muxvia.cloud.v1.CertificateProfile.updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 6: muxvia.cloud.v1.CertificateProfile.bindings:type_name -> muxvia.cloud.v1.CertificateBinding
-	2,  // 7: muxvia.cloud.v1.ListCertificateProfilesResponse.profiles:type_name -> muxvia.cloud.v1.CertificateProfile
-	2,  // 8: muxvia.cloud.v1.UploadCertificateProfileResponse.profile:type_name -> muxvia.cloud.v1.CertificateProfile
-	1,  // 9: muxvia.cloud.v1.BindCertificateProfileResponse.binding:type_name -> muxvia.cloud.v1.CertificateBinding
+	0,  // 0: anytty.cloud.v1.CertificateBinding.sync_state:type_name -> anytty.cloud.v1.CertificateSyncState
+	10, // 1: anytty.cloud.v1.CertificateBinding.applied_at:type_name -> google.protobuf.Timestamp
+	10, // 2: anytty.cloud.v1.CertificateProfile.not_before:type_name -> google.protobuf.Timestamp
+	10, // 3: anytty.cloud.v1.CertificateProfile.not_after:type_name -> google.protobuf.Timestamp
+	10, // 4: anytty.cloud.v1.CertificateProfile.created_at:type_name -> google.protobuf.Timestamp
+	10, // 5: anytty.cloud.v1.CertificateProfile.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 6: anytty.cloud.v1.CertificateProfile.bindings:type_name -> anytty.cloud.v1.CertificateBinding
+	2,  // 7: anytty.cloud.v1.ListCertificateProfilesResponse.profiles:type_name -> anytty.cloud.v1.CertificateProfile
+	2,  // 8: anytty.cloud.v1.UploadCertificateProfileResponse.profile:type_name -> anytty.cloud.v1.CertificateProfile
+	1,  // 9: anytty.cloud.v1.BindCertificateProfileResponse.binding:type_name -> anytty.cloud.v1.CertificateBinding
 	10, // [10:10] is the sub-list for method output_type
 	10, // [10:10] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name

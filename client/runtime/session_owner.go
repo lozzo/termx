@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 // SessionOwner 是跨端 Go Client Engine 的 endpoint generation、planner race 与当前 ready session 真值。

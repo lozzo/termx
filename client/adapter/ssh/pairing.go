@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/muxvia/muxvia/client/adapter/direct"
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/client/port"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/anytty/anytty/client/adapter/direct"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/shared/remoteauth"
 )
 
 // PairingConnector 通过 SSH direct-tcpip 到达 daemon 的 loopback signaling/ICE，并复用公共 PairingService。

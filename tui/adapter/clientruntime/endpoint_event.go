@@ -1,9 +1,9 @@
 package clientruntimeadapter
 
 import (
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // ProjectEndpointEvent 把共享 runtime lifecycle event 映射为 TUI-owned endpoint 投影。

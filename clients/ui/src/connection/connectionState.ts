@@ -72,7 +72,7 @@ export function connectionPhaseLabel(
  * 它不改变 path 真值，也不会把内部 Hub 或 runtime owner 名称投影到产品界面。
  */
 export function connectionPathLabel(path: ConnectionPath | undefined): string {
-  if (path === 'hub') return 'Muxvia Cloud'
+  if (path === 'hub') return 'AnyTTY Cloud'
   if (path === 'local') return 'Local'
   return 'Connection'
 }

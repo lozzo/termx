@@ -8,12 +8,12 @@ import (
 	"log"
 	"strings"
 
-	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
-	"github.com/muxvia/muxvia/client/binding"
-	"github.com/muxvia/muxvia/client/binding/enginehost"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/bindingpb"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	pionadapter "github.com/anytty/anytty/client/adapter/webrtc/pion"
+	"github.com/anytty/anytty/client/binding"
+	"github.com/anytty/anytty/client/binding/enginehost"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/bindingpb"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 var androidSessionAuthority = clientruntime.NewSessionGenerationAuthority()
@@ -35,7 +35,7 @@ func newAndroidProductionHost() (*androidProductionHost, error) {
 	}
 	peers := pionadapter.Factory{Network: network}
 	host, err := enginehost.New(enginehost.Options{
-		Broker: broker, DirectPeers: peers, ClientName: "muxvia-android", CredentialPrefix: "android-access-",
+		Broker: broker, DirectPeers: peers, ClientName: "anytty-android", CredentialPrefix: "android-access-",
 		SessionAuthority: androidSessionAuthority, CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
 	})
 	if err != nil {
@@ -52,7 +52,7 @@ func (host *androidProductionHost) close() error { return host.Close() }
 func (host *androidProductionHost) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
 	session, err := host.Host.OpenSession(ctx, request)
 	if err != nil {
-		log.Printf("muxvia binding open session failed: %s", androidErrorChain(err))
+		log.Printf("anytty binding open session failed: %s", androidErrorChain(err))
 	}
 	return session, err
 }

@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package muxvia.cloud.v1;
+package anytty.cloud.v1;
 
 import "google/protobuf/timestamp.proto";
 import "cloud/v1/runtime.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 // AgentCapability 是 AgentTicket 冻结的 Edge 侧准入能力，不表达 terminal 权限。
 enum AgentCapability {

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/wire"
 )
 
 const fileTransferChunkBytes = 64 << 10
@@ -195,7 +195,7 @@ func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (Fi
 			session.server.fileTransferMu.Unlock()
 			return FileTransfer{}, idErr
 		}
-		temp, tempErr := os.CreateTemp(filepath.Dir(target), ".muxvia-upload-*.part")
+		temp, tempErr := os.CreateTemp(filepath.Dir(target), ".anytty-upload-*.part")
 		if tempErr != nil {
 			session.server.fileTransferMu.Unlock()
 			return FileTransfer{}, tempErr

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestConnectionsOverlayProjectsActualRouteGenerationAndPriorityAtNarrowWidths(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ClientGateway_Connect_FullMethodName = "/muxvia.cloud.v1.ClientGateway/Connect"
+	ClientGateway_Connect_FullMethodName = "/anytty.cloud.v1.ClientGateway/Connect"
 )
 
 // ClientGatewayClient is the client API for ClientGateway service.
@@ -104,7 +104,7 @@ type ClientGateway_ConnectServer = grpc.BidiStreamingServer[ClientSignal, EdgeSi
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ClientGateway_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.ClientGateway",
+	ServiceName: "anytty.cloud.v1.ClientGateway",
 	HandlerType: (*ClientGatewayServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{

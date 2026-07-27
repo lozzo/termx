@@ -48,7 +48,7 @@ func TestTerminalHostDoesNotImportForbiddenStateOrServices(t *testing.T) {
 			t.Fatalf("read %s: %v", file, err)
 		}
 		for _, dir := range []string{"state", "services"} {
-			forbidden := "github.com/muxvia/muxvia/tui/" + dir
+			forbidden := "github.com/anytty/anytty/tui/" + dir
 			if strings.Contains(string(source), forbidden) {
 				t.Fatalf("%s must not import %s under %s", file, dir, root)
 			}

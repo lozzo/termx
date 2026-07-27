@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 // R434 准入（terminal 级）：linehist 在真实 Terminal 链路上的边界语义。

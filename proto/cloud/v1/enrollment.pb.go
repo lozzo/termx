@@ -1325,7 +1325,7 @@ var File_cloud_v1_enrollment_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\n" +
-	"\x19cloud/v1/enrollment.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x03\n" +
+	"\x19cloud/v1/enrollment.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x03\n" +
 	"\fDaemonRecord\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1d\n" +
 	"\n" +
@@ -1354,8 +1354,8 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"generation\x120\n" +
 	"\x14edge_public_endpoint\x18\b \x01(\tR\x12edgePublicEndpoint\"\x8a\x01\n" +
 	"\rManagedDaemon\x125\n" +
-	"\x06daemon\x18\x01 \x01(\v2\x1d.muxvia.cloud.v1.DaemonRecordR\x06daemon\x12B\n" +
-	"\aruntime\x18\x02 \x01(\v2(.muxvia.cloud.v1.DaemonRuntimeProjectionR\aruntime\"\x82\x01\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12B\n" +
+	"\aruntime\x18\x02 \x01(\v2(.anytty.cloud.v1.DaemonRuntimeProjectionR\aruntime\"\x82\x01\n" +
 	"\x1dCreateDaemonEnrollmentRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12!\n" +
@@ -1371,19 +1371,19 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x0eenroll_command\x18\x04 \x01(\tR\renrollCommand\"\x14\n" +
 	"\x12ListDaemonsRequest\"O\n" +
 	"\x13ListDaemonsResponse\x128\n" +
-	"\adaemons\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.ManagedDaemonR\adaemons\"B\n" +
+	"\adaemons\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.ManagedDaemonR\adaemons\"B\n" +
 	"\x1fCreateMyDaemonEnrollmentRequest\x12\x1f\n" +
 	"\vdaemon_name\x18\x01 \x01(\tR\n" +
 	"daemonName\"\x16\n" +
 	"\x14ListMyDaemonsRequest\"Q\n" +
 	"\x15ListMyDaemonsResponse\x128\n" +
-	"\adaemons\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.ManagedDaemonR\adaemons\"y\n" +
+	"\adaemons\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.ManagedDaemonR\adaemons\"y\n" +
 	"\x15RevokeMyDaemonRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12+\n" +
 	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xbb\x01\n" +
 	"\x16RevokeMyDaemonResponse\x125\n" +
-	"\x06daemon\x18\x01 \x01(\v2\x1d.muxvia.cloud.v1.DaemonRecordR\x06daemon\x12,\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12,\n" +
 	"\x12runtime_was_online\x18\x02 \x01(\bR\x10runtimeWasOnline\x12<\n" +
 	"\x1aruntime_disconnect_applied\x18\x03 \x01(\bR\x18runtimeDisconnectApplied\"\xbf\x01\n" +
 	"\x1cBeginDaemonEnrollmentRequest\x12'\n" +
@@ -1400,7 +1400,7 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12!\n" +
 	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"Y\n" +
 	" CompleteDaemonEnrollmentResponse\x125\n" +
-	"\x06daemon\x18\x01 \x01(\v2\x1d.muxvia.cloud.v1.DaemonRecordR\x06daemon\"d\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\"d\n" +
 	"\x1aListAgentCandidatesRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12)\n" +
 	"\x10preferred_region\x18\x02 \x01(\tR\x0fpreferredRegion\"\x8f\x02\n" +
@@ -1416,7 +1416,7 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x0ecurrent_agents\x18\b \x01(\x04R\rcurrentAgents\"]\n" +
 	"\x1bListAgentCandidatesResponse\x12>\n" +
 	"\n" +
-	"candidates\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.CandidateEdgeR\n" +
+	"candidates\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.CandidateEdgeR\n" +
 	"candidates\"O\n" +
 	"\x17BeginAgentTicketRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x17\n" +
@@ -1425,18 +1425,18 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12!\n" +
 	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"\x92\x01\n" +
 	"\x18IssueAgentTicketResponse\x12B\n" +
-	"\fagent_ticket\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\vagentTicket\x122\n" +
-	"\x04edge\x18\x02 \x01(\v2\x1e.muxvia.cloud.v1.CandidateEdgeR\x04edge2\xbd\x04\n" +
+	"\fagent_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\vagentTicket\x122\n" +
+	"\x04edge\x18\x02 \x01(\v2\x1e.anytty.cloud.v1.CandidateEdgeR\x04edge2\xbd\x04\n" +
 	"\x11EnrollmentService\x12j\n" +
-	"\x15BeginDaemonEnrollment\x12-.muxvia.cloud.v1.BeginDaemonEnrollmentRequest\x1a\".muxvia.cloud.v1.IdentityChallenge\x12\x7f\n" +
-	"\x18CompleteDaemonEnrollment\x120.muxvia.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.muxvia.cloud.v1.CompleteDaemonEnrollmentResponse\x12p\n" +
-	"\x13ListAgentCandidates\x12+.muxvia.cloud.v1.ListAgentCandidatesRequest\x1a,.muxvia.cloud.v1.ListAgentCandidatesResponse\x12`\n" +
-	"\x10BeginAgentTicket\x12(.muxvia.cloud.v1.BeginAgentTicketRequest\x1a\".muxvia.cloud.v1.IdentityChallenge\x12g\n" +
-	"\x10IssueAgentTicket\x12(.muxvia.cloud.v1.IssueAgentTicketRequest\x1a).muxvia.cloud.v1.IssueAgentTicketResponse2\xd5\x02\n" +
+	"\x15BeginDaemonEnrollment\x12-.anytty.cloud.v1.BeginDaemonEnrollmentRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12\x7f\n" +
+	"\x18CompleteDaemonEnrollment\x120.anytty.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.anytty.cloud.v1.CompleteDaemonEnrollmentResponse\x12p\n" +
+	"\x13ListAgentCandidates\x12+.anytty.cloud.v1.ListAgentCandidatesRequest\x1a,.anytty.cloud.v1.ListAgentCandidatesResponse\x12`\n" +
+	"\x10BeginAgentTicket\x12(.anytty.cloud.v1.BeginAgentTicketRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12g\n" +
+	"\x10IssueAgentTicket\x12(.anytty.cloud.v1.IssueAgentTicketRequest\x1a).anytty.cloud.v1.IssueAgentTicketResponse2\xd5\x02\n" +
 	"\x17DaemonManagementService\x12w\n" +
-	"\x12CreateMyEnrollment\x120.muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest\x1a/.muxvia.cloud.v1.CreateDaemonEnrollmentResponse\x12^\n" +
-	"\rListMyDaemons\x12%.muxvia.cloud.v1.ListMyDaemonsRequest\x1a&.muxvia.cloud.v1.ListMyDaemonsResponse\x12a\n" +
-	"\x0eRevokeMyDaemon\x12&.muxvia.cloud.v1.RevokeMyDaemonRequest\x1a'.muxvia.cloud.v1.RevokeMyDaemonResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x12CreateMyEnrollment\x120.anytty.cloud.v1.CreateMyDaemonEnrollmentRequest\x1a/.anytty.cloud.v1.CreateDaemonEnrollmentResponse\x12^\n" +
+	"\rListMyDaemons\x12%.anytty.cloud.v1.ListMyDaemonsRequest\x1a&.anytty.cloud.v1.ListMyDaemonsResponse\x12a\n" +
+	"\x0eRevokeMyDaemon\x12&.anytty.cloud.v1.RevokeMyDaemonRequest\x1a'.anytty.cloud.v1.RevokeMyDaemonResponseB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_enrollment_proto_rawDescOnce sync.Once
@@ -1452,61 +1452,61 @@ func file_cloud_v1_enrollment_proto_rawDescGZIP() []byte {
 
 var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_cloud_v1_enrollment_proto_goTypes = []any{
-	(*DaemonRecord)(nil),                     // 0: muxvia.cloud.v1.DaemonRecord
-	(*DaemonRuntimeProjection)(nil),          // 1: muxvia.cloud.v1.DaemonRuntimeProjection
-	(*ManagedDaemon)(nil),                    // 2: muxvia.cloud.v1.ManagedDaemon
-	(*CreateDaemonEnrollmentRequest)(nil),    // 3: muxvia.cloud.v1.CreateDaemonEnrollmentRequest
-	(*CreateDaemonEnrollmentResponse)(nil),   // 4: muxvia.cloud.v1.CreateDaemonEnrollmentResponse
-	(*ListDaemonsRequest)(nil),               // 5: muxvia.cloud.v1.ListDaemonsRequest
-	(*ListDaemonsResponse)(nil),              // 6: muxvia.cloud.v1.ListDaemonsResponse
-	(*CreateMyDaemonEnrollmentRequest)(nil),  // 7: muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest
-	(*ListMyDaemonsRequest)(nil),             // 8: muxvia.cloud.v1.ListMyDaemonsRequest
-	(*ListMyDaemonsResponse)(nil),            // 9: muxvia.cloud.v1.ListMyDaemonsResponse
-	(*RevokeMyDaemonRequest)(nil),            // 10: muxvia.cloud.v1.RevokeMyDaemonRequest
-	(*RevokeMyDaemonResponse)(nil),           // 11: muxvia.cloud.v1.RevokeMyDaemonResponse
-	(*BeginDaemonEnrollmentRequest)(nil),     // 12: muxvia.cloud.v1.BeginDaemonEnrollmentRequest
-	(*IdentityChallenge)(nil),                // 13: muxvia.cloud.v1.IdentityChallenge
-	(*CompleteDaemonEnrollmentRequest)(nil),  // 14: muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
-	(*CompleteDaemonEnrollmentResponse)(nil), // 15: muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
-	(*ListAgentCandidatesRequest)(nil),       // 16: muxvia.cloud.v1.ListAgentCandidatesRequest
-	(*CandidateEdge)(nil),                    // 17: muxvia.cloud.v1.CandidateEdge
-	(*ListAgentCandidatesResponse)(nil),      // 18: muxvia.cloud.v1.ListAgentCandidatesResponse
-	(*BeginAgentTicketRequest)(nil),          // 19: muxvia.cloud.v1.BeginAgentTicketRequest
-	(*IssueAgentTicketRequest)(nil),          // 20: muxvia.cloud.v1.IssueAgentTicketRequest
-	(*IssueAgentTicketResponse)(nil),         // 21: muxvia.cloud.v1.IssueAgentTicketResponse
+	(*DaemonRecord)(nil),                     // 0: anytty.cloud.v1.DaemonRecord
+	(*DaemonRuntimeProjection)(nil),          // 1: anytty.cloud.v1.DaemonRuntimeProjection
+	(*ManagedDaemon)(nil),                    // 2: anytty.cloud.v1.ManagedDaemon
+	(*CreateDaemonEnrollmentRequest)(nil),    // 3: anytty.cloud.v1.CreateDaemonEnrollmentRequest
+	(*CreateDaemonEnrollmentResponse)(nil),   // 4: anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	(*ListDaemonsRequest)(nil),               // 5: anytty.cloud.v1.ListDaemonsRequest
+	(*ListDaemonsResponse)(nil),              // 6: anytty.cloud.v1.ListDaemonsResponse
+	(*CreateMyDaemonEnrollmentRequest)(nil),  // 7: anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	(*ListMyDaemonsRequest)(nil),             // 8: anytty.cloud.v1.ListMyDaemonsRequest
+	(*ListMyDaemonsResponse)(nil),            // 9: anytty.cloud.v1.ListMyDaemonsResponse
+	(*RevokeMyDaemonRequest)(nil),            // 10: anytty.cloud.v1.RevokeMyDaemonRequest
+	(*RevokeMyDaemonResponse)(nil),           // 11: anytty.cloud.v1.RevokeMyDaemonResponse
+	(*BeginDaemonEnrollmentRequest)(nil),     // 12: anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	(*IdentityChallenge)(nil),                // 13: anytty.cloud.v1.IdentityChallenge
+	(*CompleteDaemonEnrollmentRequest)(nil),  // 14: anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	(*CompleteDaemonEnrollmentResponse)(nil), // 15: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	(*ListAgentCandidatesRequest)(nil),       // 16: anytty.cloud.v1.ListAgentCandidatesRequest
+	(*CandidateEdge)(nil),                    // 17: anytty.cloud.v1.CandidateEdge
+	(*ListAgentCandidatesResponse)(nil),      // 18: anytty.cloud.v1.ListAgentCandidatesResponse
+	(*BeginAgentTicketRequest)(nil),          // 19: anytty.cloud.v1.BeginAgentTicketRequest
+	(*IssueAgentTicketRequest)(nil),          // 20: anytty.cloud.v1.IssueAgentTicketRequest
+	(*IssueAgentTicketResponse)(nil),         // 21: anytty.cloud.v1.IssueAgentTicketResponse
 	(*timestamppb.Timestamp)(nil),            // 22: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),                   // 23: muxvia.cloud.v1.SignedEnvelope
+	(*SignedEnvelope)(nil),                   // 23: anytty.cloud.v1.SignedEnvelope
 }
 var file_cloud_v1_enrollment_proto_depIdxs = []int32{
-	22, // 0: muxvia.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
-	22, // 1: muxvia.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 2: muxvia.cloud.v1.ManagedDaemon.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
-	1,  // 3: muxvia.cloud.v1.ManagedDaemon.runtime:type_name -> muxvia.cloud.v1.DaemonRuntimeProjection
-	22, // 4: muxvia.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: muxvia.cloud.v1.ListDaemonsResponse.daemons:type_name -> muxvia.cloud.v1.ManagedDaemon
-	2,  // 6: muxvia.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> muxvia.cloud.v1.ManagedDaemon
-	0,  // 7: muxvia.cloud.v1.RevokeMyDaemonResponse.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
-	22, // 8: muxvia.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 9: muxvia.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
-	17, // 10: muxvia.cloud.v1.ListAgentCandidatesResponse.candidates:type_name -> muxvia.cloud.v1.CandidateEdge
-	23, // 11: muxvia.cloud.v1.IssueAgentTicketResponse.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
-	17, // 12: muxvia.cloud.v1.IssueAgentTicketResponse.edge:type_name -> muxvia.cloud.v1.CandidateEdge
-	12, // 13: muxvia.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> muxvia.cloud.v1.BeginDaemonEnrollmentRequest
-	14, // 14: muxvia.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
-	16, // 15: muxvia.cloud.v1.EnrollmentService.ListAgentCandidates:input_type -> muxvia.cloud.v1.ListAgentCandidatesRequest
-	19, // 16: muxvia.cloud.v1.EnrollmentService.BeginAgentTicket:input_type -> muxvia.cloud.v1.BeginAgentTicketRequest
-	20, // 17: muxvia.cloud.v1.EnrollmentService.IssueAgentTicket:input_type -> muxvia.cloud.v1.IssueAgentTicketRequest
-	7,  // 18: muxvia.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest
-	8,  // 19: muxvia.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> muxvia.cloud.v1.ListMyDaemonsRequest
-	10, // 20: muxvia.cloud.v1.DaemonManagementService.RevokeMyDaemon:input_type -> muxvia.cloud.v1.RevokeMyDaemonRequest
-	13, // 21: muxvia.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> muxvia.cloud.v1.IdentityChallenge
-	15, // 22: muxvia.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
-	18, // 23: muxvia.cloud.v1.EnrollmentService.ListAgentCandidates:output_type -> muxvia.cloud.v1.ListAgentCandidatesResponse
-	13, // 24: muxvia.cloud.v1.EnrollmentService.BeginAgentTicket:output_type -> muxvia.cloud.v1.IdentityChallenge
-	21, // 25: muxvia.cloud.v1.EnrollmentService.IssueAgentTicket:output_type -> muxvia.cloud.v1.IssueAgentTicketResponse
-	4,  // 26: muxvia.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> muxvia.cloud.v1.CreateDaemonEnrollmentResponse
-	9,  // 27: muxvia.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> muxvia.cloud.v1.ListMyDaemonsResponse
-	11, // 28: muxvia.cloud.v1.DaemonManagementService.RevokeMyDaemon:output_type -> muxvia.cloud.v1.RevokeMyDaemonResponse
+	22, // 0: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
+	22, // 1: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: anytty.cloud.v1.ManagedDaemon.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	1,  // 3: anytty.cloud.v1.ManagedDaemon.runtime:type_name -> anytty.cloud.v1.DaemonRuntimeProjection
+	22, // 4: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: anytty.cloud.v1.ListDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
+	2,  // 6: anytty.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
+	0,  // 7: anytty.cloud.v1.RevokeMyDaemonResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	22, // 8: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 9: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	17, // 10: anytty.cloud.v1.ListAgentCandidatesResponse.candidates:type_name -> anytty.cloud.v1.CandidateEdge
+	23, // 11: anytty.cloud.v1.IssueAgentTicketResponse.agent_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
+	17, // 12: anytty.cloud.v1.IssueAgentTicketResponse.edge:type_name -> anytty.cloud.v1.CandidateEdge
+	12, // 13: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	14, // 14: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	16, // 15: anytty.cloud.v1.EnrollmentService.ListAgentCandidates:input_type -> anytty.cloud.v1.ListAgentCandidatesRequest
+	19, // 16: anytty.cloud.v1.EnrollmentService.BeginAgentTicket:input_type -> anytty.cloud.v1.BeginAgentTicketRequest
+	20, // 17: anytty.cloud.v1.EnrollmentService.IssueAgentTicket:input_type -> anytty.cloud.v1.IssueAgentTicketRequest
+	7,  // 18: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	8,  // 19: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
+	10, // 20: anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon:input_type -> anytty.cloud.v1.RevokeMyDaemonRequest
+	13, // 21: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
+	15, // 22: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	18, // 23: anytty.cloud.v1.EnrollmentService.ListAgentCandidates:output_type -> anytty.cloud.v1.ListAgentCandidatesResponse
+	13, // 24: anytty.cloud.v1.EnrollmentService.BeginAgentTicket:output_type -> anytty.cloud.v1.IdentityChallenge
+	21, // 25: anytty.cloud.v1.EnrollmentService.IssueAgentTicket:output_type -> anytty.cloud.v1.IssueAgentTicketResponse
+	4,  // 26: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	9,  // 27: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
+	11, // 28: anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon:output_type -> anytty.cloud.v1.RevokeMyDaemonResponse
 	21, // [21:29] is the sub-list for method output_type
 	13, // [13:21] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

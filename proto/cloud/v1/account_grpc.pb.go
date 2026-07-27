@@ -19,15 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_Register_FullMethodName                   = "/muxvia.cloud.v1.AccountService/Register"
-	AccountService_Login_FullMethodName                      = "/muxvia.cloud.v1.AccountService/Login"
-	AccountService_Refresh_FullMethodName                    = "/muxvia.cloud.v1.AccountService/Refresh"
-	AccountService_Logout_FullMethodName                     = "/muxvia.cloud.v1.AccountService/Logout"
-	AccountService_GetCurrent_FullMethodName                 = "/muxvia.cloud.v1.AccountService/GetCurrent"
-	AccountService_VerifyRecentAuthentication_FullMethodName = "/muxvia.cloud.v1.AccountService/VerifyRecentAuthentication"
-	AccountService_ListSessions_FullMethodName               = "/muxvia.cloud.v1.AccountService/ListSessions"
-	AccountService_ChangePassword_FullMethodName             = "/muxvia.cloud.v1.AccountService/ChangePassword"
-	AccountService_RevokeSession_FullMethodName              = "/muxvia.cloud.v1.AccountService/RevokeSession"
+	AccountService_Register_FullMethodName                   = "/anytty.cloud.v1.AccountService/Register"
+	AccountService_Login_FullMethodName                      = "/anytty.cloud.v1.AccountService/Login"
+	AccountService_Refresh_FullMethodName                    = "/anytty.cloud.v1.AccountService/Refresh"
+	AccountService_Logout_FullMethodName                     = "/anytty.cloud.v1.AccountService/Logout"
+	AccountService_GetCurrent_FullMethodName                 = "/anytty.cloud.v1.AccountService/GetCurrent"
+	AccountService_VerifyRecentAuthentication_FullMethodName = "/anytty.cloud.v1.AccountService/VerifyRecentAuthentication"
+	AccountService_ListSessions_FullMethodName               = "/anytty.cloud.v1.AccountService/ListSessions"
+	AccountService_ChangePassword_FullMethodName             = "/anytty.cloud.v1.AccountService/ChangePassword"
+	AccountService_RevokeSession_FullMethodName              = "/anytty.cloud.v1.AccountService/RevokeSession"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -384,7 +384,7 @@ func _AccountService_RevokeSession_Handler(srv interface{}, ctx context.Context,
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var AccountService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.AccountService",
+	ServiceName: "anytty.cloud.v1.AccountService",
 	HandlerType: (*AccountServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

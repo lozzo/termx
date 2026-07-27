@@ -1,17 +1,17 @@
-export const MUXVIA_NATIVE_BACK_EVENT = 'muxvia:native-back'
+export const ANYTTY_NATIVE_BACK_EVENT = 'anytty:native-back'
 
-export type MuxviaNativeBackHandler = () => boolean
+export type AnyTTYNativeBackHandler = () => boolean
 
 interface NativeBackHandlerEntry {
   id: number
   priority: number
-  handler: MuxviaNativeBackHandler
+  handler: AnyTTYNativeBackHandler
 }
 
 let nextNativeBackHandlerId = 1
 const nativeBackHandlers: NativeBackHandlerEntry[] = []
 
-export function addNativeBackHandler(handler: MuxviaNativeBackHandler, priority = 0): () => void {
+export function addNativeBackHandler(handler: AnyTTYNativeBackHandler, priority = 0): () => void {
   const entry = {
     id: nextNativeBackHandlerId++,
     priority,
@@ -42,7 +42,7 @@ export function dispatchNativeBack(): boolean {
   }
 
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return false
-  const event = new Event(MUXVIA_NATIVE_BACK_EVENT, { cancelable: true })
+  const event = new Event(ANYTTY_NATIVE_BACK_EVENT, { cancelable: true })
   window.dispatchEvent(event)
   return event.defaultPrevented
 }

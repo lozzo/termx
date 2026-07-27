@@ -1,13 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
-const origin = process.env.MUXVIA_CLOUD_ONLINE_ORIGIN
-const login = process.env.MUXVIA_CLOUD_ONLINE_LOGIN
+const origin = process.env.ANYTTY_CLOUD_ONLINE_ORIGIN
+const login = process.env.ANYTTY_CLOUD_ONLINE_LOGIN
 const password = readCredential()
-const certificateFile = process.env.MUXVIA_CLOUD_ONLINE_EDGE_CERTIFICATE_FILE
-const privateKeyFile = process.env.MUXVIA_CLOUD_ONLINE_EDGE_PRIVATE_KEY_FILE
-const profileName = process.env.MUXVIA_CLOUD_ONLINE_CERTIFICATE_PROFILE ?? 'CN1 Edge 公网证书'
-const edgeEndpoint = process.env.MUXVIA_CLOUD_ONLINE_EDGE_ENDPOINT ?? 'muxvia-cn1.omscd.com:41102'
+const certificateFile = process.env.ANYTTY_CLOUD_ONLINE_EDGE_CERTIFICATE_FILE
+const privateKeyFile = process.env.ANYTTY_CLOUD_ONLINE_EDGE_PRIVATE_KEY_FILE
+const profileName = process.env.ANYTTY_CLOUD_ONLINE_CERTIFICATE_PROFILE ?? 'CN1 Edge 公网证书'
+const edgeEndpoint = process.env.ANYTTY_CLOUD_ONLINE_EDGE_ENDPOINT ?? 'cn1.edge.anytty.com:41102'
 
 test.describe('R8 线上证书自动更新', () => {
   test.skip(
@@ -95,9 +95,9 @@ async function loginOperator(page: Page) {
 }
 
 function readCredential(): string {
-  const inline = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD
+  const inline = process.env.ANYTTY_CLOUD_ONLINE_PASSWORD
   if (inline) return inline
-  const file = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD_FILE
+  const file = process.env.ANYTTY_CLOUD_ONLINE_PASSWORD_FILE
   return file ? readFileSync(file, 'utf8').trim() : ''
 }
 

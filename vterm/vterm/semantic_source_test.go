@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	uv "github.com/charmbracelet/ultraviolet"
-	charmvt "github.com/muxvia/muxvia/vterm/internal/vt"
+	charmvt "github.com/anytty/anytty/vterm/internal/vt"
 )
 
 func TestSemanticSourceApplyPTYWriteEmitsOrderedTransaction(t *testing.T) {

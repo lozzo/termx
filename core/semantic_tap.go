@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/core/history/linehist"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history/linehist"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // SemanticTapInputKind 描述进入 history semantic tap 的输入类型。

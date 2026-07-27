@@ -151,7 +151,7 @@ export function ConnectionRouteManager({ adapter, endpointId }: { adapter: Conne
         <p className="text-[12px] leading-5 text-zinc-600">{t('workspace.routeManager.description')}</p>
         <div className="flex flex-wrap gap-2">
           {(['direct', 'ssh'] as RouteKind[]).map((kind) => (
-            <button key={kind} type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { hapticSelection(); setEditing(null); setAddingKind(kind) }}>
+            <button key={kind} type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { hapticSelection(); setEditing(null); setAddingKind(kind) }}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />{t(`workspace.routeManager.add.${kind}`)}
             </button>
           ))}
@@ -172,7 +172,7 @@ export function ConnectionRouteManager({ adapter, endpointId }: { adapter: Conne
         />
       ) : null}
 
-      <div className="divide-y divide-[var(--muxvia-app-line)] border-y border-[var(--muxvia-app-line)]">
+      <div className="divide-y divide-[var(--anytty-app-line)] border-y border-[var(--anytty-app-line)]">
         {routes.map((route, index) => {
           const operation = operations[route.routeId] ?? { kind: 'idle' }
           const kind = routeKind(route)
@@ -198,9 +198,9 @@ export function ConnectionRouteManager({ adapter, endpointId }: { adapter: Conne
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-2 pl-8">
-                <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { setAddingKind(null); setEditing(create(EndpointRouteConfigV1Schema, route)) }}>{t('workspace.routeManager.edit')}</button>
-                {kind === 'ssh' ? <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => void provisionSSH(route.routeId)}><KeyRound className="mr-1.5 h-4 w-4" />{t('workspace.routeManager.prepareSSH')}</button> : null}
-                <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[12px] font-semibold text-red-700" disabled={routes.length <= 1 || operation.kind === 'saving'} onClick={() => {
+                <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { setAddingKind(null); setEditing(create(EndpointRouteConfigV1Schema, route)) }}>{t('workspace.routeManager.edit')}</button>
+                {kind === 'ssh' ? <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => void provisionSSH(route.routeId)}><KeyRound className="mr-1.5 h-4 w-4" />{t('workspace.routeManager.prepareSSH')}</button> : null}
+                <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[12px] font-semibold text-red-700" disabled={routes.length <= 1 || operation.kind === 'saving'} onClick={() => {
                   if (globalThis.confirm(t('workspace.routeManager.deleteConfirm', { name: route.displayName || route.routeId }))) void persist(removeRoute(endpoint, route.routeId), route.routeId)
                 }}><Trash2 className="mr-1.5 h-4 w-4" />{t('workspace.routeManager.delete')}</button>
               </div>
@@ -213,14 +213,14 @@ export function ConnectionRouteManager({ adapter, endpointId }: { adapter: Conne
       </div>
 
       {sshResult?.authorizedKey ? (
-        <section className="border-y border-[var(--muxvia-app-line)] py-3">
+        <section className="border-y border-[var(--anytty-app-line)] py-3">
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-[13px] font-semibold text-zinc-950">{t('workspace.routeManager.sshPublicKey')}</h4>
             <IconAction label={t('workspace.routeManager.closeKey')} onClick={() => setSSHResult(null)}><X /></IconAction>
           </div>
           <p className="mt-1 break-all text-[11px] text-zinc-500">{sshResult.keyFingerprint}</p>
-          <textarea className="muxvia-app-input mt-2 min-h-24 w-full resize-y px-3 py-2 font-mono text-[12px]" readOnly value={sshResult.authorizedKey} aria-label={t('workspace.routeManager.sshPublicKey')} />
-          <button type="button" className="muxvia-app-secondary-button mt-2 min-h-12 px-3 text-[12px] font-semibold" onClick={() => void navigator.clipboard.writeText(sshResult.authorizedKey)}>{t('workspace.routeManager.copyKey')}</button>
+          <textarea className="anytty-app-input mt-2 min-h-24 w-full resize-y px-3 py-2 font-mono text-[12px]" readOnly value={sshResult.authorizedKey} aria-label={t('workspace.routeManager.sshPublicKey')} />
+          <button type="button" className="anytty-app-secondary-button mt-2 min-h-12 px-3 text-[12px] font-semibold" onClick={() => void navigator.clipboard.writeText(sshResult.authorizedKey)}>{t('workspace.routeManager.copyKey')}</button>
         </section>
       ) : null}
     </div>
@@ -241,7 +241,7 @@ function RouteEditForm({ endpoint, route, isNew = false, onCancel, onSave }: { e
     onSave(create(EndpointRouteConfigV1Schema, { ...draft, source: EndpointSource.USER, policySource: EndpointSource.USER }))
   }
   return (
-    <div className="mt-3 space-y-3 border-y border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-3">
+    <div className="mt-3 space-y-3 border-y border-[var(--anytty-app-line)] bg-zinc-50 px-3 py-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <RouteField label={t('workspace.routeManager.routeId')} value={draft.routeId} disabled={!isNew} onChange={(value) => setDraft((current) => create(EndpointRouteConfigV1Schema, { ...current, routeId: value.trim() }))} />
         <RouteField label={t('workspace.routeManager.displayName')} value={draft.displayName} onChange={(displayName) => setDraft((current) => create(EndpointRouteConfigV1Schema, { ...current, displayName }))} />
@@ -270,8 +270,8 @@ function RouteEditForm({ endpoint, route, isNew = false, onCancel, onSave }: { e
       {kind === 'cloud' ? <p className="text-[12px] leading-5 text-zinc-600">{t('workspace.routeManager.cloudManaged')}</p> : null}
       {error ? <p className="text-[12px] text-red-700" role="alert">{error}</p> : null}
       <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={onCancel}><X className="mr-1.5 h-4 w-4" />{t('common.cancel')}</button>
-        <button type="button" className="muxvia-app-primary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { hapticImpact(); submit() }}><Save className="mr-1.5 h-4 w-4" />{t('workspace.routeManager.save')}</button>
+        <button type="button" className="anytty-app-secondary-button min-h-12 px-3 text-[12px] font-semibold" onClick={onCancel}><X className="mr-1.5 h-4 w-4" />{t('common.cancel')}</button>
+        <button type="button" className="anytty-app-primary-button min-h-12 px-3 text-[12px] font-semibold" onClick={() => { hapticImpact(); submit() }}><Save className="mr-1.5 h-4 w-4" />{t('workspace.routeManager.save')}</button>
       </div>
     </div>
   )
@@ -279,12 +279,12 @@ function RouteEditForm({ endpoint, route, isNew = false, onCancel, onSave }: { e
 
 function RouteField({ label, value, disabled = false, multiline = false, inputMode, onChange }: { label: string; value: string; disabled?: boolean; multiline?: boolean; inputMode?: 'numeric'; onChange(value: string): void }) {
   return <label className="block text-[12px] font-semibold text-zinc-700"><span className="mb-1 block">{label}</span>{multiline
-    ? <textarea className="muxvia-app-input min-h-20 w-full resize-y px-3 py-2 text-[14px] font-normal" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
-    : <input className="muxvia-app-input min-h-12 w-full px-3 text-[14px] font-normal" value={value} disabled={disabled} inputMode={inputMode} onChange={(event) => onChange(event.target.value)} />}</label>
+    ? <textarea className="anytty-app-input min-h-20 w-full resize-y px-3 py-2 text-[14px] font-normal" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+    : <input className="anytty-app-input min-h-12 w-full px-3 text-[14px] font-normal" value={value} disabled={disabled} inputMode={inputMode} onChange={(event) => onChange(event.target.value)} />}</label>
 }
 
 function IconAction({ label, disabled = false, onClick, children }: { label: string; disabled?: boolean; onClick(): void; children: ReactNode }) {
-  return <button type="button" title={label} aria-label={label} disabled={disabled} className="muxvia-app-icon-button [&_svg]:h-4 [&_svg]:w-4 disabled:opacity-40" onClick={() => { hapticSelection(); onClick() }}>{children}</button>
+  return <button type="button" title={label} aria-label={label} disabled={disabled} className="anytty-app-icon-button [&_svg]:h-4 [&_svg]:w-4 disabled:opacity-40" onClick={() => { hapticSelection(); onClick() }}>{children}</button>
 }
 
 function newRouteDraft(endpoint: EndpointConfigV1, kind: RouteKind): EndpointRouteConfigV1 {

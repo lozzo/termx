@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
-const origin = process.env.MUXVIA_CLOUD_ONLINE_ORIGIN
-const login = process.env.MUXVIA_CLOUD_ONLINE_LOGIN
+const origin = process.env.ANYTTY_CLOUD_ONLINE_ORIGIN
+const login = process.env.ANYTTY_CLOUD_ONLINE_LOGIN
 const password = readCredential()
 
 test.describe('R7 线上运营后台', () => {
@@ -47,13 +47,13 @@ test.describe('R7 线上运营后台', () => {
     }
 
     await navigation.getByRole('link', { name: 'Edge 管理', exact: true }).click()
-    const edgeRow = page.getByRole('row').filter({ hasText: 'muxvia-cn1.omscd.com:41102' })
+    const edgeRow = page.getByRole('row').filter({ hasText: 'cn1.edge.anytty.com:41102' })
     await expect(edgeRow).toContainText('CN1 Edge')
     await expect(edgeRow).toContainText('CN1')
     await expect(edgeRow).toContainText('在线', { timeout: 30_000 })
     await edgeRow.getByRole('link', { name: '查看' }).click()
     await expect(page.getByRole('heading', { name: 'CN1 Edge', exact: true })).toBeVisible()
-    await expect(page.getByText('muxvia-cn1.omscd.com:41102', { exact: true })).toBeVisible()
+    await expect(page.getByText('cn1.edge.anytty.com:41102', { exact: true })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '运营管理' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('online-r7-desktop-edge.png'), fullPage: true })
     expect(errors).toEqual([])
@@ -100,8 +100,8 @@ function captureErrors(page: Page): string[] {
 }
 
 function readCredential(): string {
-  const inline = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD
+  const inline = process.env.ANYTTY_CLOUD_ONLINE_PASSWORD
   if (inline) return inline
-  const file = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD_FILE
+  const file = process.env.ANYTTY_CLOUD_ONLINE_PASSWORD_FILE
   return file ? readFileSync(file, 'utf8').trim() : ''
 }

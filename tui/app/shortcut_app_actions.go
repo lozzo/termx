@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/state"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // reduceAppShortcutAction 执行不能降解为通用 input intent 的 canonical keyboard action。

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/muxvia/muxvia/cloud/controller/certificate"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/certificate"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 const certificateProfileSelect = `SELECT certificate_profile_id::text,name,dns_names,sha256_fingerprint,not_before,not_after,revision,secret_ref,created_at,updated_at FROM certificate_profiles`

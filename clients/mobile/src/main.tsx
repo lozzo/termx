@@ -1,9 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
-import { setHapticImpactHandler } from '@muxvia/ui'
+import { setHapticImpactHandler } from '@anytty/ui'
 import './index.css'
-import { MuxviaApp } from './MuxviaApp'
+import { AnyTTYApp } from './AnyTTYApp'
 import NativeHaptic from './plugins/nativeHaptic'
 import { installNativeDebugLogCapture } from './nativeDebugLog'
 
@@ -17,6 +17,6 @@ if (!root) throw new Error('root element not found')
 
 createRoot(root).render(
   <StrictMode>
-    <MuxviaApp />
+    <AnyTTYApp />
   </StrictMode>,
 )

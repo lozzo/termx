@@ -14,20 +14,20 @@ import (
 // TestTUIDirectoryDependencies 保证 TUI 的 application port、adapter 和测试资产保持单向依赖。
 func TestTUIDirectoryDependencies(t *testing.T) {
 	assertImportsExclude(t, "port", []string{
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/tui/adapter",
-		"github.com/muxvia/muxvia/tui/testkit",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/tui/adapter",
+		"github.com/anytty/anytty/tui/testkit",
 		"os/exec",
 	})
 	for _, root := range []string{"state", "app", "render"} {
 		assertImportsExclude(t, root, []string{
-			"github.com/muxvia/muxvia/internal/protocol",
-			"github.com/muxvia/muxvia/shared/transport",
-			"github.com/muxvia/muxvia/shared/remoteauth",
-			"github.com/muxvia/muxvia/remote/client",
-			"github.com/muxvia/muxvia/remote/webrtc",
-			"github.com/muxvia/muxvia/tui/adapter",
-			"github.com/muxvia/muxvia/tui/testkit",
+			"github.com/anytty/anytty/internal/protocol",
+			"github.com/anytty/anytty/shared/transport",
+			"github.com/anytty/anytty/shared/remoteauth",
+			"github.com/anytty/anytty/remote/client",
+			"github.com/anytty/anytty/remote/webrtc",
+			"github.com/anytty/anytty/tui/adapter",
+			"github.com/anytty/anytty/tui/testkit",
 		})
 	}
 }
@@ -36,9 +36,9 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
 	allowedImports := map[string]struct{}{
 		"context": {}, "errors": {}, "time": {},
-		"github.com/muxvia/muxvia/proto/apipb": {},
-		"github.com/muxvia/muxvia/tui/input":   {},
-		"github.com/muxvia/muxvia/tui/state":   {},
+		"github.com/anytty/anytty/proto/apipb": {},
+		"github.com/anytty/anytty/tui/input":   {},
+		"github.com/anytty/anytty/tui/state":   {},
 	}
 	err := filepath.WalkDir("port", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

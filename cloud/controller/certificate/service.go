@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	"github.com/anytty/anytty/cloud/securetransport"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	"github.com/muxvia/muxvia/cloud/securetransport"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -334,14 +334,25 @@ func ValidatePair(certificatePEM, privateKeyPEM []byte, now time.Time) (PairMeta
 	leaf := validated.Leaf
 	digest := sha256.Sum256(leaf.Raw)
 	dnsNames := append([]string(nil), leaf.DNSNames...)
+	for _, address := range leaf.IPAddresses {
+		dnsNames = append(dnsNames, address.String())
+	}
 	return PairMetadata{DNSNames: dnsNames, Fingerprint: strings.ToUpper(hex.EncodeToString(digest[:])), NotBefore: leaf.NotBefore.UTC(), NotAfter: leaf.NotAfter.UTC()}, nil
 }
 
-// VerifyEndpoint 保证档案 DNS SAN 覆盖 Edge 的公网域名。
+// VerifyEndpoint 保证档案 SAN 覆盖 Edge 的公网域名或 IP 地址。
 func VerifyEndpoint(profile Profile, publicEndpoint string) error {
 	host := strings.TrimSpace(publicEndpoint)
 	if parsed, _, err := net.SplitHostPort(host); err == nil {
 		host = strings.Trim(parsed, "[]")
+	}
+	if address := net.ParseIP(host); address != nil {
+		for _, identity := range profile.DNSNames {
+			if candidate := net.ParseIP(identity); candidate != nil && candidate.Equal(address) {
+				return nil
+			}
+		}
+		return fmt.Errorf("certificate does not cover Edge public endpoint %q", host)
 	}
 	certificate := &x509.Certificate{DNSNames: profile.DNSNames}
 	if err := certificate.VerifyHostname(host); err != nil {

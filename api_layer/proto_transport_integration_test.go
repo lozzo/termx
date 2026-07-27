@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/transport/memory"
+	clientendpoint "github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/transport/memory"
 )
 
 func TestGeneratedEventSubscriptionsCorrelateAndRelease(t *testing.T) {

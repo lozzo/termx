@@ -1,9 +1,9 @@
 import { Capacitor } from '@capacitor/core'
 import { create } from '@bufbuild/protobuf'
 import {
-  MuxviaApiApplication,
-  MuxviaApiFile,
-  MuxviaClientBinding,
+  AnyTTYApiApplication,
+  AnyTTYApiFile,
+  AnyTTYClientBinding,
   type ProtoClientSession,
   type ProtoResourceStream,
   decodeFileStreamErrorPayload,
@@ -14,7 +14,7 @@ import {
   encodeFileTransferAckPayload,
   encodeFileTransferDataPayload,
   encodeFileTransferFinishPayload,
-} from '@muxvia/ui'
+} from '@anytty/ui'
 import NativeFilePicker from './plugins/nativeFilePicker'
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
@@ -55,8 +55,8 @@ type ActiveTransfer = {
   cancel: AbortController
   session?: ProtoClientSession
   stream?: ProtoResourceStream
-  resource?: NonNullable<MuxviaApiFile.FileTransferHandle['resource']>
-  uploadResume?: NonNullable<MuxviaApiFile.FileTransferHandle['resume']>
+  resource?: NonNullable<AnyTTYApiFile.FileTransferHandle['resource']>
+  uploadResume?: NonNullable<AnyTTYApiFile.FileTransferHandle['resume']>
   destructiveCancel: boolean
   readyForClose: Promise<void>
   markReadyForClose: () => void
@@ -220,7 +220,7 @@ export class NativeFileTransferStore {
       const bufferedBytes = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
       const resumeOffset = bufferedBytes === transfer.transferredSize ? bufferedBytes : 0
       if (resumeOffset === 0) this.downloadChunks.set(id, [])
-      const opened = await session.execute(command('fileDownloadOpen', create(MuxviaApiFile.FileDownloadOpenCommandSchema, {
+      const opened = await session.execute(command('fileDownloadOpen', create(AnyTTYApiFile.FileDownloadOpenCommandSchema, {
         path: transfer.filePath ?? '', offset: BigInt(resumeOffset),
         expectedSize: transfer.remoteModifiedAtUnixNano ? BigInt(transfer.totalSize) : 0n,
         expectedModifiedAtUnixNano: transfer.remoteModifiedAtUnixNano ?? 0n,
@@ -286,9 +286,9 @@ export class NativeFileTransferStore {
       task.session = session
       this.assertCurrentAttempt(id, task)
       const target = `${transfer.targetDir.replace(/\/$/, '')}/${transfer.name}`
-      const opened = await session.execute(command('fileUploadOpen', create(MuxviaApiFile.FileUploadOpenCommandSchema, {
+      const opened = await session.execute(command('fileUploadOpen', create(AnyTTYApiFile.FileUploadOpenCommandSchema, {
         path: target, size: BigInt(transfer.totalSize), overwrite: true,
-        resume: transfer.uploadResumeToken ? create(MuxviaApiFile.FileUploadResumeHandleSchema, { opaqueToken: transfer.uploadResumeToken }) : undefined,
+        resume: transfer.uploadResumeToken ? create(AnyTTYApiFile.FileUploadResumeHandleSchema, { opaqueToken: transfer.uploadResumeToken }) : undefined,
       })), { signal: task.cancel.signal })
       if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('upload returned no transfer resource')
       const remote = opened.result.value.transfer
@@ -330,7 +330,7 @@ export class NativeFileTransferStore {
     const useSessionResource = task.resource && sameSession(task.resource.session, task.session.stamp)
     let cancelError: Error | undefined
     try {
-      const result = await task.session.execute(command('fileTransferCancel', create(MuxviaApiFile.FileTransferCancelCommandSchema, {
+      const result = await task.session.execute(command('fileTransferCancel', create(AnyTTYApiFile.FileTransferCancelCommandSchema, {
         transfer: useSessionResource ? task.resource : undefined,
         uploadResume: useSessionResource ? undefined : task.uploadResume,
       })))
@@ -364,7 +364,7 @@ export class NativeFileTransferStore {
   }
 
   private async releaseRemote(session: ProtoClientSession, resource: NonNullable<ActiveTransfer['resource']>): Promise<void> {
-    await session.execute(command('releaseResource', create(MuxviaApiApplication.ReleaseResourceCommandSchema, { resource })))
+    await session.execute(command('releaseResource', create(AnyTTYApiApplication.ReleaseResourceCommandSchema, { resource })))
   }
 
   private closeTask(id: string, task: ActiveTransfer): Promise<void> {
@@ -606,7 +606,7 @@ async function blobBase64(blob: Blob): Promise<string> {
 
 async function receiveDownload(
   stream: ProtoResourceStream,
-  transfer: MuxviaApiFile.FileTransferHandle,
+  transfer: AnyTTYApiFile.FileTransferHandle,
   chunks: Uint8Array[],
   signal: AbortSignal,
   progress: (bytes: number) => void,
@@ -627,7 +627,7 @@ async function receiveDownload(
     signal.addEventListener('abort', abort, { once: true })
     const subscription = stream.subscribe((type, payload) => {
       try {
-        if (type === MuxviaClientBinding.ResourceStreamFrameType.FILE_DATA) {
+        if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_DATA) {
           const data = decodeFileTransferDataPayload(payload)
           if (data.offset !== offset || data.data.byteLength === 0 || data.data.byteLength > transfer.chunkBytes) throw new Error('download chunk is invalid')
           chunks.push(data.data)
@@ -637,15 +637,15 @@ async function receiveDownload(
           if (credit >= Number(transfer.windowBytes)) {
             const windowBytes = credit
             credit = 0
-            void stream.send(MuxviaClientBinding.ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset, windowBytes })).catch(reject)
+            void stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset, windowBytes })).catch(reject)
           }
-        } else if (type === MuxviaClientBinding.ResourceStreamFrameType.FILE_FINISH) {
+        } else if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH) {
           const finish = decodeFileTransferFinishPayload(payload)
           if (finish.size !== Number(transfer.size) || offset !== finish.size) throw new Error('download completed with the wrong size')
           cleanup()
           const blob = new Blob(chunks.map((chunk) => chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer))
           void verifyBlobDigest(blob, finish.sha256).then(() => resolve(blob), reject)
-        } else if (type === MuxviaClientBinding.ResourceStreamFrameType.ERROR) {
+        } else if (type === AnyTTYClientBinding.ResourceStreamFrameType.ERROR) {
           throw new Error(decodeFileStreamErrorPayload(payload))
         }
       } catch (error) {
@@ -662,7 +662,7 @@ async function receiveDownload(
 
 async function sendUpload(
   stream: ProtoResourceStream,
-  transfer: MuxviaApiFile.FileTransferHandle,
+  transfer: AnyTTYApiFile.FileTransferHandle,
   blob: Blob,
   signal: AbortSignal,
   progress: (bytes: number) => void,
@@ -684,7 +684,7 @@ async function sendUpload(
     resultReject?.(error)
   }
   const subscription = stream.subscribe((type, payload) => {
-    if (type === MuxviaClientBinding.ResourceStreamFrameType.FILE_ACK) {
+    if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_ACK) {
       const ack = decodeFileTransferAckPayload(payload)
       const acknowledgedBytes = ack.offset - acknowledgedOffset
       if (ack.offset <= acknowledgedOffset || ack.offset > offset || ack.windowBytes !== acknowledgedBytes) {
@@ -695,14 +695,14 @@ async function sendUpload(
       credit += ack.windowBytes
       wake?.()
       wake = null
-    } else if (type === MuxviaClientBinding.ResourceStreamFrameType.FILE_RESULT) {
+    } else if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_RESULT) {
       const completed = decodeFileTransferResultPayload(payload)
       if (completed.size !== blob.size) {
         fail(new Error('upload completed with the wrong size'))
         return
       }
       resultResolve?.()
-    } else if (type === MuxviaClientBinding.ResourceStreamFrameType.ERROR) {
+    } else if (type === AnyTTYClientBinding.ResourceStreamFrameType.ERROR) {
       fail(new Error(decodeFileStreamErrorPayload(payload)))
     }
   })
@@ -720,11 +720,11 @@ async function sendUpload(
       const chunkOffset = offset
       offset += data.byteLength
       credit -= data.byteLength
-      await stream.send(MuxviaClientBinding.ResourceStreamFrameType.FILE_DATA, encodeFileTransferDataPayload({ offset: chunkOffset, data }))
+      await stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_DATA, encodeFileTransferDataPayload({ offset: chunkOffset, data }))
       progress(offset)
     }
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))
-    await stream.send(MuxviaClientBinding.ResourceStreamFrameType.FILE_FINISH, encodeFileTransferFinishPayload({ size: blob.size, sha256: digest }))
+    await stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH, encodeFileTransferFinishPayload({ size: blob.size, sha256: digest }))
     await result
   } finally {
     subscription.close()
@@ -747,7 +747,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 function command(caseName: string, value: object) {
-  return create(MuxviaApiApplication.CommandEnvelopeSchema, { command: { case: caseName, value } } as never)
+  return create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: caseName, value } } as never)
 }
 
 function canResume(status: TransferStatus): boolean { return status === 'paused' || status === 'failed' || status === 'missing' }

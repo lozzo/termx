@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 func TestR302CoreConsumesVTermSemanticTransactionContract(t *testing.T) {

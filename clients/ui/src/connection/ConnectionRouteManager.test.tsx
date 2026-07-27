@@ -105,7 +105,7 @@ describe('ConnectionRouteManager', () => {
     await screen.findByText('Office LAN')
     await user.click(screen.getAllByRole('button', { name: 'Test route' })[0]!)
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Muxvia could not test this route. Try again.')
+    expect((await screen.findByRole('alert')).textContent).toBe('AnyTTY could not test this route. Try again.')
     expect(screen.queryByText(/192\.0\.2\.10|connection refused/)).toBeNull()
   })
 
@@ -123,14 +123,14 @@ describe('ConnectionRouteManager', () => {
         value: create(SSHWebRTCTCPRouteConfigSchema, {
           host: 'ssh.example.test',
           port: 22,
-          user: 'muxvia',
+          user: 'anytty',
           hostKeyFingerprints: ['SHA256:host'],
         }),
       },
     }))
     const provisionSSH = vi.fn(async () => create(SSHCredentialProvisionResultSchema, {
       endpoint,
-      authorizedKey: 'ssh-ed25519 AAAATEST muxvia',
+      authorizedKey: 'ssh-ed25519 AAAATEST anytty',
       keyFingerprint: 'SHA256:client',
     }))
 
@@ -148,7 +148,7 @@ describe('ConnectionRouteManager', () => {
     await user.click(screen.getAllByRole('button', { name: 'Prepare SSH key' })[1]!)
 
     await waitFor(() => expect(provisionSSH).toHaveBeenCalledWith('ssh-office'))
-    expect((await screen.findByLabelText('SSH public key') as HTMLTextAreaElement).value).toBe('ssh-ed25519 AAAATEST muxvia')
+    expect((await screen.findByLabelText('SSH public key') as HTMLTextAreaElement).value).toBe('ssh-ed25519 AAAATEST anytty')
     expect(screen.getByText('SHA256:client')).toBeTruthy()
   })
 })
@@ -184,7 +184,7 @@ function testEndpoint() {
           value: create(SSHWebRTCTCPRouteConfigSchema, {
             host: 'ssh.example.test',
             port: 22,
-            user: 'muxvia',
+            user: 'anytty',
             hostKeyFingerprints: ['SHA256:host'],
           }),
         },

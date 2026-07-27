@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/apipb"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // TerminalService 是 TUI terminal control effect 使用的 application port。

@@ -11,16 +11,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	"github.com/muxvia/muxvia/cloud/controller/enrollment"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestConsumeDaemonEnrollmentReactivatesSameDeviceIdentity(t *testing.T) {
-	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -93,9 +93,9 @@ func TestConsumeDaemonEnrollmentReactivatesSameDeviceIdentity(t *testing.T) {
 }
 
 func TestConsumeDaemonEnrollmentRejectsDeviceIDKeyReplacement(t *testing.T) {
-	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

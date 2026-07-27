@@ -1,8 +1,8 @@
-# Muxvia Cloud 重构设计与执行基线
+# AnyTTY Cloud 重构设计与执行基线
 
 ## 1. 文档地位
 
-本文档保存 Muxvia Cloud 已稳定的产品与技术架构。当前分支的活动范围、切片顺序、测试准入和提交规则由仓库根目录 `workflow.md` 驱动；两者冲突时以 `workflow.md` 为准。
+本文档保存 AnyTTY Cloud 已稳定的产品与技术架构。当前分支的活动范围、切片顺序、测试准入和提交规则由仓库根目录 `workflow.md` 驱动；两者冲突时以 `workflow.md` 为准。
 
 历史方案、旧代码行为和聊天记录不能覆盖当前工作流。需要改变稳定架构时同步修改本文；活动切片的细节先进入 `workflow.md`，验收后再沉淀到本文。
 
@@ -19,7 +19,7 @@
 
 ### 2.1 产品与开源边界
 
-- 产品名称是 Muxvia，托管服务名称是 Muxvia Cloud。
+- 产品名称是 AnyTTY，托管服务名称是 AnyTTY Cloud。
 - 全部产品代码最终开源，不再维护 public/private 两套源码，也不为“以后可能开源”保留 `private/` 分层、导出器或双仓同步机制。
 - 账号、订单、订阅、权限、证书秘密、生产凭据和运营数据属于部署数据，不因源码开源而公开。
 - 开源许可证必须在对外发布前单独确定并替换当前过渡性根许可证。没有确定许可证前，不得把“代码可见”误称为已完成开源发布。
@@ -27,9 +27,9 @@
 
 ### 2.2 Cloud 的产品位置
 
-- Muxvia 的 terminal、文件、输入、历史和授权真值仍由 daemon 持有。
-- Direct 和 SSH 是不依赖 Muxvia Cloud 的基础连接方式；用户未登录、未订阅或 Cloud 故障时，它们仍应工作。
-- Muxvia Cloud 只提供托管的设备发现、信令、打洞协助、Relay、账号、订阅、配额、用量和运营管理能力。
+- AnyTTY 的 terminal、文件、输入、历史和授权真值仍由 daemon 持有。
+- Direct 和 SSH 是不依赖 AnyTTY Cloud 的基础连接方式；用户未登录、未订阅或 Cloud 故障时，它们仍应工作。
+- AnyTTY Cloud 只提供托管的设备发现、信令、打洞协助、Relay、账号、订阅、配额、用量和运营管理能力。
 - 浏览器管理后台用于账号和云服务管理，不拥有 terminal 会话、CapabilityGrant 或 daemon 内部资源。
 - Cloud 不能解密 WebRTC DataChannel 内的 terminal 和文件业务数据。
 
@@ -43,19 +43,19 @@ Edge 对外表现为一个节点：只有一个 `edge_id`、一个节点身份�
 
 ### 2.4 平台支持边界
 
-- Windows 一等支持范围是 Windows 10 1809+/Windows 11 的 amd64 本地产品面：`muxvia` CLI、TUI、ConPTY terminal、当前用户 daemon、Direct/SSH/Cloud 客户端链路、文件传输、历史、配对、安装、升级和卸载。
+- Windows 一等支持范围是 Windows 10 1809+/Windows 11 的 amd64 本地产品面：`anytty` CLI、TUI、ConPTY terminal、当前用户 daemon、Direct/SSH/Cloud 客户端链路、文件传输、历史、配对、安装、升级和卸载。
 - Windows terminal 的唯一 PTY owner 是 ConPTY；进程树由 Job Object 管理，退出、强制停止、resize 和输出 drain 不得退回到 pipe 模拟、Unix shell 或 WSL。
 - Windows 私有状态使用当前用户、SYSTEM、Administrators 的受保护 DACL，不能用 `os.FileMode` 的 `0600/0700` 映射假装完成权限隔离。Unix 继续使用 owner UID 与 mode 真值。
-- Windows 当前用户 daemon 使用同一二进制的 `daemon start/status/stop/restart` 生命周期；安装包写入 `%LOCALAPPDATA%\\Programs\\Muxvia`，用户 PATH 与登录自启动都属于 HKCU，不要求管理员权限。升级必须先按 runtime record 精确停止旧进程，再原子替换二进制并重新启动。
-- TUI 图标字形由外部 terminal host 渲染，应用不能通过 ANSI 强制切换字体。Windows 安装包必须携带固定版本且校验摘要的 `JetBrainsMono Nerd Font Mono`，按当前用户注册字体，并通过 `%LOCALAPPDATA%\\Microsoft\\Windows Terminal\\Fragments\\Muxvia` 提供独立的 Muxvia profile；不得重写用户现有 `settings.json` 或全局默认 profile。卸载只删除 Muxvia 自有字体注册、字体副本和 fragment。
+- Windows 当前用户 daemon 使用同一二进制的 `daemon start/status/stop/restart` 生命周期；安装包写入 `%LOCALAPPDATA%\\Programs\\AnyTTY`，用户 PATH 与登录自启动都属于 HKCU，不要求管理员权限。升级必须先按 runtime record 精确停止旧进程，再原子替换二进制并重新启动。
+- TUI 图标字形由外部 terminal host 渲染，应用不能通过 ANSI 强制切换字体。Windows 安装包必须携带固定版本且校验摘要的 `JetBrainsMono Nerd Font Mono`，按当前用户注册字体，并通过 `%LOCALAPPDATA%\\Microsoft\\Windows Terminal\\Fragments\\AnyTTY` 提供独立的 AnyTTY profile；不得重写用户现有 `settings.json` 或全局默认 profile。卸载只删除 AnyTTY 自有字体注册、字体副本和 fragment。
 - Windows 开发门禁使用仓库 PowerShell 脚本，覆盖 Go 全量测试、Proto 生成、UI/mobile 测试、typecheck、生产构建、三个 Go 二进制构建和安装包 smoke。Android 的 Go/JNI 产物允许在安装了固定 NDK 的 Windows 主机生成。
-- `muxvia-cloud-controller` 与 `muxvia-cloud-edge` 必须在 Windows 编译并通过平台无关单测，但 Cloud 生产服务器、一键 Edge 安装、systemd unit、人工程序部署与运维证据仍固定为 Linux/amd64。该服务器部署约束不允许污染 Windows 客户端或本地 daemon 的运行路径，也不得把 Windows 二进制展示成可部署的生产 Edge artifact。
+- `anytty-cloud-controller` 与 `anytty-cloud-edge` 必须在 Windows 编译并通过平台无关单测，但 Cloud 生产服务器、一键 Edge 安装、systemd unit、人工程序部署与运维证据仍固定为 Linux/amd64。该服务器部署约束不允许污染 Windows 客户端或本地 daemon 的运行路径，也不得把 Windows 二进制展示成可部署的生产 Edge artifact。
 
 ## 3. 系统角色与职责
 
 ### 3.1 Controller
 
-目标二进制：`muxvia-cloud-controller`。
+目标二进制：`anytty-cloud-controller`。
 
 Controller 是云端持久业务真值和实时目录的组合入口，负责：
 
@@ -73,7 +73,7 @@ Controller 不直接持有每个 daemon 的网络长连接，不保存实时拓�
 
 ### 3.2 Edge
 
-目标二进制：`muxvia-cloud-edge`。
+目标二进制：`anytty-cloud-edge`。
 
 Edge 负责：
 
@@ -104,7 +104,7 @@ daemon 是 terminal 生命周期和端到端授权的所有者，负责：
 
 TUI、CLI、Android、未来 iOS 和桌面 GUI 都通过同一套 Go Client Engine 使用 Direct、SSH 或 Cloud Route。平台 UI 不复制连接、重试、认证或 Proto 状态机。
 
-客户端可以没有 Muxvia 账号。Cloud 目录中的“连接者”必须记录客户端身份和产品类型，不能在没有账号认证的情况下把它显示成某个“用户”。产品类型至少包括：`TUI`、`CLI`、`Android`、`iOS`、`DesktopGUI` 和 `Unknown`。
+客户端可以没有 AnyTTY 账号。Cloud 目录中的“连接者”必须记录客户端身份和产品类型，不能在没有账号认证的情况下把它显示成某个“用户”。产品类型至少包括：`TUI`、`CLI`、`Android`、`iOS`、`DesktopGUI` 和 `Unknown`。
 
 ### 3.5 Web 管理后台
 
@@ -289,7 +289,7 @@ Controller 的 PostgreSQL 只保存重启后仍然成立、需要审计或需要
 
 客户端通过 daemon 创建的配对 claim 或已持有的 CapabilityGrant 获得访问能力。Controller 和 Edge 不读取、不签发 terminal capability，也不知道具体 terminal 权限。
 
-客户端身份可以是匿名的 ClientAccessIdentity。只有客户端额外完成 Muxvia 账号认证时，Controller 才能把该连接关联到账号；否则管理页面显示客户端 ID、产品类型和连接元数据，不显示虚构的用户名。
+客户端身份可以是匿名的 ClientAccessIdentity。只有客户端额外完成 AnyTTY 账号认证时，Controller 才能把该连接关联到账号；否则管理页面显示客户端 ID、产品类型和连接元数据，不显示虚构的用户名。
 
 ### 9.2 建立连接
 
@@ -464,8 +464,8 @@ cloud/
   testkit/
 
 proto/cloud/v1/
-cmd/muxvia-cloud-controller/
-cmd/muxvia-cloud-edge/
+cmd/anytty-cloud-controller/
+cmd/anytty-cloud-edge/
 ```
 
 约束如下：
@@ -651,8 +651,8 @@ proto/cloud/v1/
   certificate.proto
   usage.proto
 
-cmd/muxvia-cloud-controller/
-cmd/muxvia-cloud-edge/
+cmd/anytty-cloud-controller/
+cmd/anytty-cloud-edge/
 ```
 
 ### 20.2 依赖规则
@@ -731,7 +731,7 @@ Edge 对外主 TLS 地址由运营人员填写的域名/端口推导，承载 Ag
 
 ### 22.1 Schema 规则
 
-Proto package 固定为 `muxvia.cloud.v1`，Go package 固定为 `github.com/muxvia/muxvia/proto/cloud/v1;cloudv1`。旧 `proto/cloudpb` 尚未公开发布，直接删除，不保留兼容字段或 adapter；新 v1 从本文重新定义。
+Proto package 固定为 `anytty.cloud.v1`，Go package 固定为 `github.com/anytty/anytty/proto/cloud/v1;cloudv1`。旧 `proto/cloudpb` 尚未公开发布，直接删除，不保留兼容字段或 adapter；新 v1 从本文重新定义。
 
 每个双向流 envelope 至少包含：
 
@@ -1221,19 +1221,19 @@ claim 至少 192 bit、10 分钟过期、单次消费。入口日志必须在落
 1. 检测 Linux、CPU 架构、systemd 和必要端口。
 2. 下载 Controller 返回的固定 artifact manifest。
 3. 验证 artifact SHA-256 和 Controller release signature。
-4. 安装到 `/opt/muxvia-cloud-edge/releases/<version>/`，原子切换 `current` symlink。
-5. 创建 `/var/lib/muxvia-cloud-edge/` 与 `/etc/muxvia-cloud-edge/`，权限为专用系统用户可读。
+4. 安装到 `/opt/anytty-cloud-edge/releases/<version>/`，原子切换 `current` symlink。
+5. 创建 `/var/lib/anytty-cloud-edge/` 与 `/etc/anytty-cloud-edge/`，权限为专用系统用户可读。
 6. 写入只含 Controller origin 和一次性 bootstrap credential 的初始配置。
-7. 安装并启动 `muxvia-cloud-edge.service`。
+7. 安装并启动 `anytty-cloud-edge.service`。
 8. Edge 注册成功后删除 bootstrap credential。
 
 脚本不包含长期 Controller secret、Edge private key、证书 private key、数据库 DSN、手填健康地址或 Hub/Relay 两套参数。
 
 ### 30.2 Edge 配置文件
 
-`/etc/muxvia-cloud-edge/config.yaml` 只保存启动所需本机配置：Controller origin、Edge state directory、listener bind override 和日志级别。域名、容量、区域、证书版本、ticket key set 和 policy 来自签名 DesiredConfig 缓存；缓存只能让已注册 Edge启动并连接 Controller，不能自行扩大能力。
+`/etc/anytty-cloud-edge/config.yaml` 只保存启动所需本机配置：Controller origin、Edge state directory、listener bind override 和日志级别。域名、容量、区域、证书版本、ticket key set 和 policy 来自签名 DesiredConfig 缓存；缓存只能让已注册 Edge启动并连接 Controller，不能自行扩大能力。
 
-EdgeIdentity、证书和 usage outbox 位于 `/var/lib/muxvia-cloud-edge/`，文件 owner 为专用用户，私钥 `0600`。日志进入 journald/stdout，不把 secret 写入环境 dump。
+EdgeIdentity、证书和 usage outbox 位于 `/var/lib/anytty-cloud-edge/`，文件 owner 为专用用户，私钥 `0600`。日志进入 journald/stdout，不把 secret 写入环境 dump。
 
 ### 30.3 Edge 程序部署边界
 
@@ -1339,12 +1339,12 @@ Edge 最少暴露：
 ### 32.4.1 R1D：在线开发环境装配（已完成）
 
 - 当前产品尚未发布，允许把 R1 双进程部署到公网开发服务器进行真实跨机验证；该环境不具备生产或可用 Cloud 产品语义。
-- 旧 Controller、Hub、Relay、Edge、Web 和运行状态先进入带时间戳的可恢复归档，再从活动 systemd、Nginx 和 `/opt/muxvia` 路径退出，禁止新旧进程并存或复用旧协议。
-- Controller 固定部署到 `155.94.155.192`；首个 Edge 固定部署到 `114.66.58.243`，公网健康入口使用已确认的 `muxvia-cn1.omscd.com:41102`。
+- 旧 Controller、Hub、Relay、Edge、Web 和运行状态先进入带时间戳的可恢复归档，再从活动 systemd、Nginx 和 `/opt/anytty` 路径退出，禁止新旧进程并存或复用旧协议。
+- Controller 固定部署到 `155.94.155.192`；首个 Edge 固定部署到 `114.66.58.243`，公网健康入口使用已确认的 `cn1.edge.anytty.com:41102`。
 - R1D 使用独立 staging Edge CA 和显式 mTLS 文件权限；手工签发只用于当前开发装配，不替代 R3 的 claim、CSR、证书轮换和 curl installer。
 - 完成条件是 Linux artifact checksum、systemd active、Controller `/healthz` 与 `/readyz`、Edge 公网 `/healthz` 与 `/readyz`、跨服务器 mTLS `Hello/Welcome`、重启恢复和旧监听端口消失均有真实证据。
 
-2026-07-26 的 R1D 实际部署使用源码提交 `3f7288a5`：Controller 位于 `155.94.155.192:18443`，SHA-256 为 `1cb45c1b788e38690f2253d4cefef457f3ae583ec0d925ddaaac2539bf0ccb50`；Edge 位于 `https://muxvia-cn1.omscd.com:41102`，SHA-256 为 `0dca4b2226f959db46111789fc27f886016a07b5f416a3252d69878790461055`。Controller 故障时 Edge 保持 alive、撤销 ready，Controller 恢复及两个 unit 分别重启后均自动重建 `Hello/Welcome`；活跃控制流存在时 Controller 在 211ms 内正常退出，systemd 结果为 success、退出码为 0。旧活动资产分别归档在两台主机的 `/var/backups/muxvia/r1d-20260726T013831Z`；开发公网证书在 2026-08-07 到期，必须在到期前更换，不得把它视为 R8 证书管理完成。
+2026-07-26 的 R1D 实际部署使用源码提交 `3f7288a5`：Controller 位于 `155.94.155.192:18443`，SHA-256 为 `1cb45c1b788e38690f2253d4cefef457f3ae583ec0d925ddaaac2539bf0ccb50`；Edge 位于 `https://cn1.edge.anytty.com:41102`，SHA-256 为 `0dca4b2226f959db46111789fc27f886016a07b5f416a3252d69878790461055`。Controller 故障时 Edge 保持 alive、撤销 ready，Controller 恢复及两个 unit 分别重启后均自动重建 `Hello/Welcome`；活跃控制流存在时 Controller 在 211ms 内正常退出，systemd 结果为 success、退出码为 0。旧活动资产分别归档在两台主机的 `/var/backups/anytty/r1d-20260726T013831Z`；开发公网证书在 2026-08-07 到期，必须在到期前更换，不得把它视为 R8 证书管理完成。
 
 ### 32.5 R2：Edge runtime 与 Controller Directory（已完成）
 
@@ -1364,9 +1364,9 @@ R2 实现提交为 `0a391012`。2026-07-26 的 R3 在线装配同时复验了 R2
 
 R3 建立了 PostgreSQL Edge deployment/config version 与两阶段一次性 claim 事务、Ed25519 desired config 签名、Edge 本机双私钥/CSR、Controller CA 签发、固定 artifact SHA-256 + 发布签名校验、原生 HTTPS Proto JSON API 和简体中文 Edge 管理页。真实 PostgreSQL 纵向 harness 已证明创建、列表、编辑、install claim 单次消费、bootstrap claim 单次消费、CSR 绑定、私钥 `0600`、注册后凭据删除和 signed config 在 `SnapshotAccepted` 前应用。
 
-2026-07-26 的最终在线验收使用源码提交 `ad1b2d4dcefea5349b9bc508acf1416b9e1314f2`。Controller 部署在 `155.94.155.192:18443`，原生 HTTPS 管理/安装入口为 `muxvia-controller.omscd.com:18444`，Controller SHA-256 为 `c2c6a8b5ed24aca2e810c364c608031175c4bcdfcd5445aadccac46f3c46a716`；Edge `65f6aade-5560-416e-9765-0d6fb0bacc00` 部署在 `muxvia-cn1.omscd.com:41102`，SHA-256 为 `68baf9b2e801aa02553a2390616dc8480b5692cd2ef4c26e577f44551b55e0ce`。最终安装从空的 `/opt/muxvia-cloud-edge`、`/etc/muxvia-cloud-edge` 和 `/var/lib/muxvia-cloud-edge` 运行态执行页面生成的 curl 命令，artifact 摘要和 Ed25519 发布签名校验成功，systemd `NRestarts=0`，配置目录为 `root:muxvia-edge 0770`，配置和两把私钥均为 `0600`，bootstrap token 自动删除，install claim 重放返回 HTTP `410`。Edge 与 Controller 分别重启后均自动重连，Controller 重启后的 `connection_id` 从 `ce2e6bc3-4562-4260-8b5f-799c70d7856d` 变为 `6539640c-5be0-4e31-87cd-a14ee1bcca1f`。
+2026-07-26 的最终在线验收使用源码提交 `ad1b2d4dcefea5349b9bc508acf1416b9e1314f2`。Controller 部署在 `155.94.155.192:18443`，原生 HTTPS 管理/安装入口为 `controller.anytty.com:18444`，Controller SHA-256 为 `c2c6a8b5ed24aca2e810c364c608031175c4bcdfcd5445aadccac46f3c46a716`；Edge `65f6aade-5560-416e-9765-0d6fb0bacc00` 部署在 `cn1.edge.anytty.com:41102`，SHA-256 为 `68baf9b2e801aa02553a2390616dc8480b5692cd2ef4c26e577f44551b55e0ce`。最终安装从空的 `/opt/anytty-cloud-edge`、`/etc/anytty-cloud-edge` 和 `/var/lib/anytty-cloud-edge` 运行态执行页面生成的 curl 命令，artifact 摘要和 Ed25519 发布签名校验成功，systemd `NRestarts=0`，配置目录为 `root:anytty-edge 0770`，配置和两把私钥均为 `0600`，bootstrap token 自动删除，install claim 重放返回 HTTP `410`。Edge 与 Controller 分别重启后均自动重连，Controller 重启后的 `connection_id` 从 `ce2e6bc3-4562-4260-8b5f-799c70d7856d` 变为 `6539640c-5be0-4e31-87cd-a14ee1bcca1f`。
 
-Playwright 1.61.0 对线上页面完成了 `1440x900` 和 `390x844` 两种视口验收：简体中文页面、固定左侧导航、真实在线 Edge 表格、编辑表单、容量 `1000 -> 1001 -> 1000` 的在线提交、静态资源、API 和浏览器错误门禁均通过。Controller 没有引入 Nginx；当前 DNS 尚未发布 `muxvia-controller.omscd.com` 记录，测试 Edge 使用明确的 hosts 映射，Playwright 使用等价 host resolver。该 DNS 记录和 2026-08-07 到期的开发证书必须在 R8 生产化前处理，不能把当前环境视为生产上线。
+Playwright 1.61.0 对线上页面完成了 `1440x900` 和 `390x844` 两种视口验收：简体中文页面、固定左侧导航、真实在线 Edge 表格、编辑表单、容量 `1000 -> 1001 -> 1000` 的在线提交、静态资源、API 和浏览器错误门禁均通过。Controller 没有引入 Nginx；当前 DNS 尚未发布 `controller.anytty.com` 记录，测试 Edge 使用明确的 hosts 映射，Playwright 使用等价 host resolver。该 DNS 记录和 2026-08-07 到期的开发证书必须在 R8 生产化前处理，不能把当前环境视为生产上线。
 
 ### 32.7 R4：daemon enrollment 与 AgentGateway（已完成）
 
@@ -1376,7 +1376,7 @@ Playwright 1.61.0 对线上页面完成了 `1440x900` 和 `390x844` 两种视口
 
 R4 通过 `e5cfc600` 建立了 Proto-first EnrollmentService、一次性 DeviceIdentity challenge、PostgreSQL token 消费与 daemon identity 同事务、候选 Edge 选择、独立 Controller TicketSigner、十分钟 AgentTicket、Edge 离线验票、AgentGateway 单 writer/generation fence、daemon 唯一 Cloud runtime 和 Presence delta；`1f3431ce` 补齐了管理投影中的当前 Edge 域名/端口。真实 PostgreSQL harness 证明 code 重放失败且持久 daemon 不会被误报在线；真实 TLS integration 证明同 daemon replacement 和 Controller 在同一地址重启后由 Edge 快照重建 Presence。
 
-2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `3b6368b3be4eddb2b1caaec12ffd8ad8edcb67b6b2e9815bb8f658a96c05d6a3`，Edge `muxvia-cn1.omscd.com:41102` SHA-256 为 `82e828d8951bec9f0b0d343b713f46b188622bce5982dfd9e12f742ef8cfe3c6`，Linux daemon CLI SHA-256 为 `7c73e6a5dccec93ccad2c2512641f8c10e0ce0a48c5116373005f79135acdc32`。真实 daemon `7332516b-063a-41f6-a010-c3579eb92e29` 通过一次性命令注册到 Edge `65f6aade-5560-416e-9765-0d6fb0bacc00`；Controller 重启后数据库只恢复 identity，Directory 从 Edge 内存快照恢复为在线，三个进程均为 `NRestarts=0`。Playwright 对 `1440x900` 与 `390x844` 验证了中文固定侧栏、Edge/Daemon 独立模块、实时在线行、当前 Edge 域名/端口、注册表单、页面/console error 门禁，共 2 项通过。
+2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `3b6368b3be4eddb2b1caaec12ffd8ad8edcb67b6b2e9815bb8f658a96c05d6a3`，Edge `cn1.edge.anytty.com:41102` SHA-256 为 `82e828d8951bec9f0b0d343b713f46b188622bce5982dfd9e12f742ef8cfe3c6`，Linux daemon CLI SHA-256 为 `7c73e6a5dccec93ccad2c2512641f8c10e0ce0a48c5116373005f79135acdc32`。真实 daemon `7332516b-063a-41f6-a010-c3579eb92e29` 通过一次性命令注册到 Edge `65f6aade-5560-416e-9765-0d6fb0bacc00`；Controller 重启后数据库只恢复 identity，Directory 从 Edge 内存快照恢复为在线，三个进程均为 `NRestarts=0`。Playwright 对 `1440x900` 与 `390x844` 验证了中文固定侧栏、Edge/Daemon 独立模块、实时在线行、当前 Edge 域名/端口、注册表单、页面/console error 门禁，共 2 项通过。
 
 ### 32.8 R5：客户端 P2P 纵向（已完成）
 
@@ -1386,9 +1386,9 @@ R4 通过 `e5cfc600` 建立了 Proto-first EnrollmentService、一次性 DeviceI
 
 R5 通过 `0316f725` 建立了 Proto-first Directory/ClientGateway、Controller 签发与 Edge 离线校验 ClientTicket、daemon 真实 Pion answer/revocation、客户端 resolve -> ticket -> P2P -> 端到端认证 -> protocol Hello 链路，以及 Android Cloud Route 的同一 Go engine 装配；`4417cc51` 修正了可移植配对路由。最终收口补齐了 Go Endpoint registry 对 managed Cloud preference 的双向持久化映射，以及 ConnectionSnapshot 的 Cloud route kind 投影，防止已建立 Cloud 连接在 UI 中显示为未知路由。
 
-2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `5e9e6ec85200d08e1bce5154d59f94537e09e9c80cfb60c8eae6e774ca37e3c1`，Edge `muxvia-cn1.omscd.com:41102` SHA-256 为 `bf093903650ce35643f3e1aa7f5c2ecfc5a5c58776ed08a1a511de12aca4d90a`，Linux daemon CLI SHA-256 为 `ad5da5ba18bf57902a71adcd2c3fb571aed14ff33435893ce186e01f62726492`，三个 systemd 服务均为 active 且 `NRestarts=0`。CLI 通过公网 Controller resolve 和 Edge ClientGateway 建立 host/host UDP P2P DataChannel，在远端 `/bin/cat` 终端完成 `muxvia-r5-online-cli` 输入输出。
+2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `5e9e6ec85200d08e1bce5154d59f94537e09e9c80cfb60c8eae6e774ca37e3c1`，Edge `cn1.edge.anytty.com:41102` SHA-256 为 `bf093903650ce35643f3e1aa7f5c2ecfc5a5c58776ed08a1a511de12aca4d90a`，Linux daemon CLI SHA-256 为 `ad5da5ba18bf57902a71adcd2c3fb571aed14ff33435893ce186e01f62726492`，三个 systemd 服务均为 active 且 `NRestarts=0`。CLI 通过公网 Controller resolve 和 Edge ClientGateway 建立 host/host UDP P2P DataChannel，在远端 `/bin/cat` 终端完成 `anytty-r5-online-cli` 输入输出。
 
-最终 Android ARM64 debug APK SHA-256 为 `7aefcb71d21779ca9174e80e9c8e711d8061a1db10752f15e6b9eff469174fd7`。Playwright 1.62.0 通过 API 35 ARM64 模拟器中的真实 App UI 选择 Muxvia Cloud、打开远端终端并输入 `muxvia-r5-android-final`；daemon terminal capture 得到两次 cat 回显。连接投影显示 route ID `cloud`、实际路径 P2P direct、host/host candidate、UDP/UDP transport 和 51ms RTT；Android crash 扫描无异常。Cloud 相关 Go 全域测试通过，integration 连续运行 10 次通过。R5 只完成 P2P Cloud Route，P2P 失败后的 TURN Relay、配额和 usage 属于 R6。
+最终 Android ARM64 debug APK SHA-256 为 `7aefcb71d21779ca9174e80e9c8e711d8061a1db10752f15e6b9eff469174fd7`。Playwright 1.62.0 通过 API 35 ARM64 模拟器中的真实 App UI 选择 AnyTTY Cloud、打开远端终端并输入 `anytty-r5-android-final`；daemon terminal capture 得到两次 cat 回显。连接投影显示 route ID `cloud`、实际路径 P2P direct、host/host candidate、UDP/UDP transport 和 51ms RTT；Android crash 扫描无异常。Cloud 相关 Go 全域测试通过，integration 连续运行 10 次通过。R5 只完成 P2P Cloud Route，P2P 失败后的 TURN Relay、配额和 usage 属于 R6。
 
 ### 32.9 R6：Relay、配额与 usage（已完成）
 
@@ -1398,9 +1398,9 @@ R5 通过 `0316f725` 建立了 Proto-first Directory/ClientGateway、Controller 
 
 R6 通过 `a150e684` 建立同一 Edge 进程内的 Pion TURN UDP/TCP、短期 RelayLease、共享 allocation 配额、速率/字节限制、bbolt usage outbox 和 Controller PostgreSQL 幂等结算；`61a35830` 删除迁移期旧 Relay 用量表，`01d3e379`、`90a761f6` 与 `acbc1a6f` 收口 systemd 网络权限、多网卡双端 allocation 和租约并发上限。Android/Go Client Engine 增加由 Go registry 持久化的 Cloud P2P/Relay 与 UDP/TCP 策略；Android Pion 只使用默认路由网络投影，不依赖 SELinux 禁止的 netlink 接口枚举。共享 UI 的 terminal Proto adapter 按同一 terminal 的用户输入顺序串行等待 ACK，避免并发 command completion 重排 PTY 字符。
 
-2026-07-26 的在线开发验收中，Controller `155.94.155.192` 的 `18443` 明确只承载 EdgeControl mTLS，公开 DirectoryService/HTTPS 使用 `18444`；Controller 二进制 SHA-256 为 `ebaeab1d64206dd77fb521598dde1416f01a1338b4a0b3e58ac1149ee72f446e`。Edge `muxvia-cn1.omscd.com:41102` 与内置 TURN `3478/udp,tcp` 的二进制 SHA-256 为 `c6ca49c78d6cd80627a54c143f5dff79150c2517d0993796b494307a19c55848`。两个 systemd unit 均为 active、`NRestarts=0`；旧 Controller、Hub、Relay、Edge unit 和运行文件没有恢复。
+2026-07-26 的在线开发验收中，Controller `155.94.155.192` 的 `18443` 明确只承载 EdgeControl mTLS，公开 DirectoryService/HTTPS 使用 `18444`；Controller 二进制 SHA-256 为 `ebaeab1d64206dd77fb521598dde1416f01a1338b4a0b3e58ac1149ee72f446e`。Edge `cn1.edge.anytty.com:41102` 与内置 TURN `3478/udp,tcp` 的二进制 SHA-256 为 `c6ca49c78d6cd80627a54c143f5dff79150c2517d0993796b494307a19c55848`。两个 systemd unit 均为 active、`NRestarts=0`；旧 Controller、Hub、Relay、Edge unit 和运行文件没有恢复。
 
-最终 Android ARM64 debug APK SHA-256 为 `f9d203861a7e0b31412826a8cdb3cb0563309739c96c7739d9a76b5dbabe79ab`。Playwright 1.62.0 在 API 35 ARM64 模拟器的真实 App UI 中选择 Muxvia Cloud、强制 Relay only + UDP，连接投影显示 `Actual path=Relay`、`Relay transport=UDP`、RTT `102-105 ms`；随后打开远端 `/bin/cat` 并零延迟输入 `muxvia-r6-android-relay-ordered-20260726`，daemon authoritative live screen 得到两次完整回显，Android crash 扫描为空。关闭 App 后，线上 Controller 收到并结算 UDP usage，Edge outbox 副本为 `pending_usage_events=0`；当前 Edge 聚合为 `121` 个事件、ingress `767705`、egress `785859` 字节。UDP/TCP integration 证明 Controller 中断时租约内数据面继续、恢复后 durable usage 清空；隔离 PostgreSQL schema 证明重复 event ACK 不会重复增加 aggregate，测试 schema 已删除。
+最终 Android ARM64 debug APK SHA-256 为 `f9d203861a7e0b31412826a8cdb3cb0563309739c96c7739d9a76b5dbabe79ab`。Playwright 1.62.0 在 API 35 ARM64 模拟器的真实 App UI 中选择 AnyTTY Cloud、强制 Relay only + UDP，连接投影显示 `Actual path=Relay`、`Relay transport=UDP`、RTT `102-105 ms`；随后打开远端 `/bin/cat` 并零延迟输入 `anytty-r6-android-relay-ordered-20260726`，daemon authoritative live screen 得到两次完整回显，Android crash 扫描为空。关闭 App 后，线上 Controller 收到并结算 UDP usage，Edge outbox 副本为 `pending_usage_events=0`；当前 Edge 聚合为 `121` 个事件、ingress `767705`、egress `785859` 字节。UDP/TCP integration 证明 Controller 中断时租约内数据面继续、恢复后 durable usage 清空；隔离 PostgreSQL schema 证明重复 event ACK 不会重复增加 aggregate，测试 schema 已删除。
 
 ### 32.10 R7：账号、交易与完整后台（已完成）
 
@@ -1410,9 +1410,9 @@ R6 通过 `a150e684` 建立同一 Edge 进程内的 Pion TURN UDP/TCP、短期 R
 
 R7 通过 `f0c87300` 建立 Proto-first 账号、角色、会话、交易、Subscription、Entitlement、运营 mutation、审计和 PostgreSQL `0004`，通过 `95ba21b5` 收口管理员引导参数，通过 `2eaef74d` 增加可重复执行的线上 Playwright 门禁并修正手机抽屉关闭后仍拦截点击、窄屏查询按钮换行的问题。运营后台默认简体中文，登录后始终通过左侧导航或手机抽屉进入独立的总览、Edge、daemon、实时连接、用户与权限、套餐、订阅、订单与交易、证书、用量与结算、审计和系统模块；各模块拥有独立路由和内容，不再使用全屏单页堆叠或重复 boot loading。
 
-2026-07-26 按开发阶段策略完整重建了 `muxvia_staging` schema，并重新执行 `0001` 到 `0004`；最终数据库只包含重建后的系统管理员、当前 Cloud 配置和唯一 CN1 Edge，不保留旧 daemon、Hub/Relay 拓扑、连接、交易或迁移期表。重建前的 Controller 数据库 dump、二进制和 unit/env 备份位于 `/var/backups/muxvia/r7-20260726T141921Z`，Edge 旧运行态备份位于 `/var/backups/muxvia/r7-20260726T142120Z`；它们不进入活动服务或新数据库。
+2026-07-26 按开发阶段策略完整重建了 `anytty_staging` schema，并重新执行 `0001` 到 `0004`；最终数据库只包含重建后的系统管理员、当前 Cloud 配置和唯一 CN1 Edge，不保留旧 daemon、Hub/Relay 拓扑、连接、交易或迁移期表。重建前的 Controller 数据库 dump、二进制和 unit/env 备份位于 `/var/backups/anytty/r7-20260726T141921Z`，Edge 旧运行态备份位于 `/var/backups/anytty/r7-20260726T142120Z`；它们不进入活动服务或新数据库。
 
-最终在线开发环境的 Controller 位于 `155.94.155.192`，公开入口为 `https://muxvia-controller.omscd.com:18444`，二进制 SHA-256 为 `328d4b30353ae67e7560936dfd5f28f2e7d82107029d95e82c4779da6287ca3a`。唯一 Edge `acc6075f-a28e-4b08-a67c-a419b5709199` 的区域为 `CN1`，入口为 `muxvia-cn1.omscd.com:41102`，容量为 `1000`，二进制 SHA-256 为 `a7da7541af5a8f06ab283f39ecce1e5148f3a0c396fe72a6745a38a895779c5d`。Controller 与 Edge 均为 `active/ready`、`NRestarts=0`，活动 unit 中没有旧 Controller、Hub、Relay 或 Edge 服务。国内 Edge 不再把跨境下载速度当作安装门禁：最终安装先由本地转传同一 artifact，只替换生成脚本中的 artifact 下载步骤，固定 SHA-256、Ed25519 发布签名、CSR、一次性 bootstrap 和 systemd 装配仍由原脚本验证。后续程序批量升级属于独立切片，不再由 R8 承担。
+最终在线开发环境的 Controller 位于 `155.94.155.192`，公开入口为 `https://controller.anytty.com:18444`，二进制 SHA-256 为 `328d4b30353ae67e7560936dfd5f28f2e7d82107029d95e82c4779da6287ca3a`。唯一 Edge `acc6075f-a28e-4b08-a67c-a419b5709199` 的区域为 `CN1`，入口为 `cn1.edge.anytty.com:41102`，容量为 `1000`，二进制 SHA-256 为 `a7da7541af5a8f06ab283f39ecce1e5148f3a0c396fe72a6745a38a895779c5d`。Controller 与 Edge 均为 `active/ready`、`NRestarts=0`，活动 unit 中没有旧 Controller、Hub、Relay 或 Edge 服务。国内 Edge 不再把跨境下载速度当作安装门禁：最终安装先由本地转传同一 artifact，只替换生成脚本中的 artifact 下载步骤，固定 SHA-256、Ed25519 发布签名、CSR、一次性 bootstrap 和 systemd 装配仍由原脚本验证。后续程序批量升级属于独立切片，不再由 R8 承担。
 
 Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel 7 `390x844` 手机验收：桌面固定侧栏逐项进入 11 个管理模块并查看真实在线 CN1 Edge，手机连续打开抽屉进入 4 个模块，关闭后不再遮挡或拦截内容，用户表加载真实系统管理员且查询按钮保持单行。最终线上结果为 2 项通过、2 项按设备项目正常跳过；页面 error、console error、横向页面溢出和服务 crash 门禁均通过。
 
@@ -1423,21 +1423,21 @@ Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel
 - Controller secret 文件、PostgreSQL 元数据、mTLS 传输、Edge 二次校验、`0600` 原子状态文件和 TLS loader 分别保持自己的安全边界。
 - Edge 程序升级维持人工 SSH/systemd 部署，运营面只展示实际软件版本；artifact、rollout、在线更新和自动回滚不属于本切片。
 
-2026-07-26 已先完成开发环境的正式域名入口迁移，但 R8 仍为未完成。Muxvia Cloud 主站、Web Controller、JSON API 和公开客户端 gRPC 统一使用 `https://cloud.muxvia.com`，Cloudflare DNS-only A 记录指向海外 Controller `155.94.155.192`；该机保留现有共享 Nginx，在 `443` 终止公开 TLS，并分别反向代理 Web/API 和 `/muxvia.cloud.v1.*` gRPC 到 Controller 原生 `18444` listener。EdgeControl mTLS 继续使用 `155.94.155.192:18443`，不经过公开 Nginx，也不因此重新注册 Edge。国内唯一 Edge 部署在 `114.66.58.243`，继续使用阿里云解析的 `muxvia-cn1.omscd.com:41102`，TURN 使用同机 `3478/udp,tcp`。
+2026-07-26 已先完成开发环境的正式域名入口迁移，但 R8 仍为未完成。AnyTTY Cloud 主站、Web Controller、JSON API 和公开客户端 gRPC 统一使用 `https://cloud.anytty.com`，Cloudflare DNS-only A 记录指向海外 Controller `155.94.155.192`；该机保留现有共享 Nginx，在 `443` 终止公开 TLS，并分别反向代理 Web/API 和 `/anytty.cloud.v1.*` gRPC 到 Controller 原生 `18444` listener。EdgeControl mTLS 继续使用 `155.94.155.192:18443`，不经过公开 Nginx，也不因此重新注册 Edge。国内唯一 Edge 部署在 `114.66.58.243`，继续使用阿里云解析的 `cn1.edge.anytty.com:41102`，TURN 使用同机 `3478/udp,tcp`。
 
-`cloud.muxvia.com` 的 Let's Encrypt 证书有效期至 2026-10-24；证书私钥只保存在海外服务器，仓库只保留 Nginx 路由和续期装配。每日 systemd timer 在宿主机运行容器化 Certbot，续期后复制证书到 Nginx 只读挂载目录并执行配置检查和热加载。迁移后 Controller 与 Edge 均完成真实重启并返回 ready、`NRestarts=0`；标准 `443` gRPC 请求实际到达 `DirectoryService`，Playwright 1.62.0 从新域名完成桌面和手机视口真实登录、全部侧栏路由及在线 CN1 Edge 验收，结果为 2 项通过、2 项按项目正常跳过。公开主站 Nginx 证书续期与 Edge 证书档案是两个独立 owner；前者不通过 EdgeControl 分发，后者的最终线上证据由本节后续记录补充。
+`cloud.anytty.com` 的 Let's Encrypt 证书有效期至 2026-10-24；证书私钥只保存在海外服务器，仓库只保留 Nginx 路由和续期装配。每日 systemd timer 在宿主机运行容器化 Certbot，续期后复制证书到 Nginx 只读挂载目录并执行配置检查和热加载。迁移后 Controller 与 Edge 均完成真实重启并返回 ready、`NRestarts=0`；标准 `443` gRPC 请求实际到达 `DirectoryService`，Playwright 1.62.0 从新域名完成桌面和手机视口真实登录、全部侧栏路由及在线 CN1 Edge 验收，结果为 2 项通过、2 项按项目正常跳过。公开主站 Nginx 证书续期与 Edge 证书档案是两个独立 owner；前者不通过 EdgeControl 分发，后者的最终线上证据由本节后续记录补充。
 
-2026-07-27 的 R8 在线开发部署使用已推送源码提交 `c2fea7af`。Controller `155.94.155.192` 的 Linux/amd64 二进制 SHA-256 为 `d64036606ddc300c8cc39ffa7d6ab503a6058df1b47b5957aea132002cfa67c7`，Edge `114.66.58.243` 的二进制 SHA-256 为 `c562f12b6902c783585dfaf0b90d00f854535f5a5c88b04b4944fa7f937495d5`；程序继续由人工 SSH/systemd 部署，没有引入 release、rollout、更新器或回滚 API。Controller 执行 PostgreSQL migration `0005` 后，`muxvia_staging` migration 范围为 `1-5`；`StateDirectory=muxvia-cloud-controller` 创建的 `/var/lib/muxvia-cloud-controller` 及证书引用目录均为 `0700 muxvia:muxvia`，当前两个 secret 文件均为 `0600 muxvia:muxvia`。部署前二进制和 unit 分别保存在 `/var/backups/muxvia/r8-c2fea7af-controller` 与 `/var/backups/muxvia/r8-c2fea7af-edge`，不进入活动运行路径。
+2026-07-27 的 R8 在线开发部署使用已推送源码提交 `c2fea7af`。Controller `155.94.155.192` 的 Linux/amd64 二进制 SHA-256 为 `d64036606ddc300c8cc39ffa7d6ab503a6058df1b47b5957aea132002cfa67c7`，Edge `114.66.58.243` 的二进制 SHA-256 为 `c562f12b6902c783585dfaf0b90d00f854535f5a5c88b04b4944fa7f937495d5`；程序继续由人工 SSH/systemd 部署，没有引入 release、rollout、更新器或回滚 API。Controller 执行 PostgreSQL migration `0005` 后，`anytty_staging` migration 范围为 `1-5`；`StateDirectory=anytty-cloud-controller` 创建的 `/var/lib/anytty-cloud-controller` 及证书引用目录均为 `0700 anytty:anytty`，当前两个 secret 文件均为 `0600 anytty:anytty`。部署前二进制和 unit 分别保存在 `/var/backups/anytty/r8-c2fea7af-controller` 与 `/var/backups/anytty/r8-c2fea7af-edge`，不进入活动运行路径。
 
-运营人员通过 `https://cloud.muxvia.com/app/admin/certificates` 上传人工签发的 `fullchain.pem` 与 `privkey.pem`，并把档案绑定到 `muxvia-cn1.omscd.com:41102`。最终 PostgreSQL 中只有一个 `CN1 Edge 公网证书` 档案，指纹为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`，档案 `revision=2`，绑定 `desired_revision=2`、`applied_revision=2` 且最近错误为空；数据库 data dump、Controller journal 和 Edge journal 中的私钥 PEM 标记数均为 0。Edge 的 `/var/lib/muxvia-cloud-edge/managed-certificate.pb` 为 `0600 muxvia-edge:muxvia-edge`，SHA-256 为 `322377e6174873a1b29a92df0bd16b6ae568e90c28fa8a4cfb1e6b08f580834c`。公网 TLS 握手实际返回相同新证书指纹，有效期为 2026-07-27 至 2026-09-25；Edge 重启前后状态文件摘要和握手指纹不变。
+运营人员通过 `https://cloud.anytty.com/app/admin/certificates` 上传人工签发的 `fullchain.pem` 与 `privkey.pem`，并把档案绑定到 `cn1.edge.anytty.com:41102`。最终 PostgreSQL 中只有一个 `CN1 Edge 公网证书` 档案，指纹为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`，档案 `revision=2`，绑定 `desired_revision=2`、`applied_revision=2` 且最近错误为空；数据库 data dump、Controller journal 和 Edge journal 中的私钥 PEM 标记数均为 0。Edge 的 `/var/lib/anytty-cloud-edge/managed-certificate.pb` 为 `0600 anytty-edge:anytty-edge`，SHA-256 为 `322377e6174873a1b29a92df0bd16b6ae568e90c28fa8a4cfb1e6b08f580834c`。公网 TLS 握手实际返回相同新证书指纹，有效期为 2026-07-27 至 2026-09-25；Edge 重启前后状态文件摘要和握手指纹不变。
 
 本地 Playwright 三视口回归为 24 项通过、18 项按线上条件跳过；线上 R7/R8 联合回归为 4 项通过、5 项按项目跳过，严格 revision 用例另外证明已绑定档案从 revision 1 自动替换并收敛到 `r2 / r2`。随后分别重启 Edge 和 Controller，二者都恢复 `active/ready`、`NRestarts=0`，Controller 重启后的桌面 Playwright 再次确认 CN1 Edge 在线和全部运营模块可访问。线上测试修正提交最终收敛到 `6e83b6a4`，只改变验收定位和 revision 断言，不改变已部署二进制或 Web 静态资源。
 
 双 Agent 终审进一步发现并关闭了三类真实竞态：丢失 `CertificateApplied` 后由认证 Hello 幂等修复 applied；绑定事务在同一事务内锁定并核对 Edge、档案和 binding revision；证书 mutation 只向 Edge writer 发送刷新通知，由 writer 在分配 command sequence 时重新读取 PostgreSQL 当前 desired，避免同档案替换或跨档案重绑的迟到通知下发旧 bundle。Edge 本机同时拒绝同档案降序 revision，完整证书链逐张解析；架构 reviewer 与代码 reviewer 最终均为 PASS。
 
-2026-07-27 的 R8 最终修复与部署对应已推送提交 `1ddf231f`。Controller `155.94.155.192` 二进制 SHA-256 为 `199361c7a553e70382caca7e90861769219c570f0393bd153e6ad32b8dd234c1`，其安装入口提供的 Edge artifact 与国内 Edge `114.66.58.243` 在用二进制 SHA-256 均为 `598a8d7f57f8f54db84f20902f759517618445b92b6e3a5adedb237d96d39de3`；备份分别位于 `/var/backups/muxvia/r8-1ddf231f-controller` 和 `/var/backups/muxvia/r8-1ddf231f-edge`。两个 systemd unit 重启后均为 `active/ready`、`NRestarts=0`。
+2026-07-27 的 R8 最终修复与部署对应已推送提交 `1ddf231f`。Controller `155.94.155.192` 二进制 SHA-256 为 `199361c7a553e70382caca7e90861769219c570f0393bd153e6ad32b8dd234c1`，其安装入口提供的 Edge artifact 与国内 Edge `114.66.58.243` 在用二进制 SHA-256 均为 `598a8d7f57f8f54db84f20902f759517618445b92b6e3a5adedb237d96d39de3`；备份分别位于 `/var/backups/anytty/r8-1ddf231f-controller` 和 `/var/backups/anytty/r8-1ddf231f-edge`。两个 systemd unit 重启后均为 `active/ready`、`NRestarts=0`。
 
-线上 Playwright 在桌面、平板和手机项目完成运营后台回归，结果为 3 项通过、3 项按视口预期跳过；R8 严格用例另有 1 项通过，把同一档案从 revision 2 替换并自动收敛到 `desired_revision=3 / applied_revision=3`。Edge managed state SHA-256 更新为 `3bdd6f335f47eb3d4119b26d7bb345c6468fe5b160c2e342b6a402f973098b86`，文件仍为 `0600 muxvia-edge:muxvia-edge`；公网 TLS 指纹仍为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`。数据库 dump、Controller journal 和 Edge journal 的私钥标记计数均为 0，Controller secret 目录与文件权限仍分别为 `0700`、`0600`。
+线上 Playwright 在桌面、平板和手机项目完成运营后台回归，结果为 3 项通过、3 项按视口预期跳过；R8 严格用例另有 1 项通过，把同一档案从 revision 2 替换并自动收敛到 `desired_revision=3 / applied_revision=3`。Edge managed state SHA-256 更新为 `3bdd6f335f47eb3d4119b26d7bb345c6468fe5b160c2e342b6a402f973098b86`，文件仍为 `0600 anytty-edge:anytty-edge`；公网 TLS 指纹仍为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`。数据库 dump、Controller journal 和 Edge journal 的私钥标记计数均为 0，Controller secret 目录与文件权限仍分别为 `0700`、`0600`。
 
 ### 32.12 R9：上线门禁
 
@@ -1457,7 +1457,7 @@ R1D 的公网开发装配不改变 R9：它只验证当前切片的真实网络�
 D2 完成后才建立 R1。R1 的第一条可观察链路必须是：
 
 ```text
-muxvia-cloud-edge
+anytty-cloud-edge
   -> 使用 mTLS 建立 EdgeControl.Connect
   -> Controller 校验证书 Edge URI SAN、envelope 和协议版本
   -> Controller 返回 EdgeWelcome 并回显当前 connection generation

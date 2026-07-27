@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight, LaptopMinimal, LogIn, Plus, QrCode, Server, X } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord } from '../state/appMachine'
-import { muxviaIntlLocale } from '../i18n'
+import { anyttyIntlLocale } from '../i18n'
 
 export interface MachineListProps {
   machines: AppMachineRecord[]
@@ -31,10 +31,10 @@ export function MachineList({
 
   return (
     <section
-      className={`muxvia-app-page flex min-h-0 flex-1 flex-col ${className ?? ''}`}
-      data-testid="muxvia-machine-list"
+      className={`anytty-app-page flex min-h-0 flex-1 flex-col ${className ?? ''}`}
+      data-testid="anytty-machine-list"
     >
-      <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 text-zinc-950">{t('machines.title')}</h1>
           <p className="truncate text-xs font-medium text-zinc-500">
@@ -44,7 +44,7 @@ export function MachineList({
         <div className="flex shrink-0 items-center gap-2">
           <button
             aria-label={t('machines.scanPairing')}
-            className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
+            className="anytty-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onScanMachine() }}
           >
@@ -52,7 +52,7 @@ export function MachineList({
           </button>
           <button
             aria-label={t('machines.add')}
-            className="muxvia-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
+            className="anytty-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onAddMachine() }}
           >
@@ -64,10 +64,10 @@ export function MachineList({
       {machines.length === 0 ? (
         <div className="flex flex-1 items-start justify-center pt-16 md:items-center md:py-8 md:pt-8">
           <div
-            className="muxvia-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x"
-            data-testid="muxvia-machine-empty-state"
+            className="anytty-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x"
+            data-testid="anytty-machine-empty-state"
           >
-            <div className="flex h-12 w-12 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-[var(--muxvia-app-accent)]">
+            <div className="flex h-12 w-12 items-center justify-center border border-[var(--anytty-app-line)] bg-[var(--anytty-app-soft)] text-[var(--anytty-app-accent)]">
               <Server className="h-6 w-6" />
             </div>
             <div className="space-y-1.5">
@@ -76,7 +76,7 @@ export function MachineList({
             </div>
             <div className="grid w-full grid-cols-2 gap-2">
               <button
-                className="muxvia-app-secondary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
+                className="anytty-app-secondary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onScanMachine() }}
               >
@@ -84,7 +84,7 @@ export function MachineList({
                 {t('machines.scan')}
               </button>
               <button
-                className="muxvia-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
+                className="anytty-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onAddMachine() }}
               >
@@ -94,7 +94,7 @@ export function MachineList({
             </div>
             {authState === 'anonymous' ? (
               <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 border-b border-blue-700 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 border-b border-blue-700 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
                 type="button"
                 onClick={() => { hapticSelection(); onSignIn?.() }}
               >
@@ -142,10 +142,10 @@ function MachineSection({
 }) {
   return (
     <section className="mb-5 last:mb-0">
-      <div className="mb-2 px-4 text-[10px] font-semibold uppercase text-[var(--muxvia-app-muted)]">{title}</div>
-      <ul aria-label={title} className="muxvia-app-panel overflow-hidden border-x-0 sm:border-x">
+      <div className="mb-2 px-4 text-[10px] font-semibold uppercase text-[var(--anytty-app-muted)]">{title}</div>
+      <ul aria-label={title} className="anytty-app-panel overflow-hidden border-x-0 sm:border-x">
         {machines.map((machine, index) => (
-          <li key={machine.machineId} className={index > 0 ? 'border-t border-[var(--muxvia-app-line)]' : ''}>
+          <li key={machine.machineId} className={index > 0 ? 'border-t border-[var(--anytty-app-line)]' : ''}>
             <MachineRow
               machine={machine}
               onSelectMachine={onSelectMachine}
@@ -193,7 +193,7 @@ function MachineRow({
   return (
     <button
       aria-label={t('machines.connectTo', { name: machine.name })}
-      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--muxvia-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--muxvia-app-accent)]"
+      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--anytty-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--anytty-app-accent)]"
       type="button"
       onClick={() => {
         if (longPressTriggeredRef.current) {
@@ -223,7 +223,7 @@ function MachineRow({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
-      <div className="relative flex h-11 w-11 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-zinc-700">
+      <div className="relative flex h-11 w-11 items-center justify-center border border-[var(--anytty-app-line)] bg-[var(--anytty-app-soft)] text-zinc-700">
         <DeviceIcon className="h-5 w-5" />
         <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 border-2 border-white ${
           machine.state === 'online'
@@ -272,9 +272,9 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
   ] as const
 
   return (
-    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="muxvia-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
+    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
       <section
-        className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--muxvia-app-line)] bg-white md:max-w-md md:border"
+        className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--anytty-app-line)] bg-white md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
@@ -286,16 +286,16 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
           <button
             type="button"
             aria-label={t('machines.closeDetails')}
-            className="muxvia-app-icon-button border-transparent bg-transparent"
+            className="anytty-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
           </button>
         </header>
         <div className="max-h-[calc(85vh-4rem)] overflow-y-auto p-4">
-          <dl className="border border-[var(--muxvia-app-line)]">
+          <dl className="border border-[var(--anytty-app-line)]">
             {fields.map(([label, value]) => (
-              <div key={label} className="border-b border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2.5 last:border-b-0">
+              <div key={label} className="border-b border-[var(--anytty-app-line)] bg-zinc-50 px-3 py-2.5 last:border-b-0">
                 <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</dt>
                 <dd className="mt-1 break-all font-mono text-[13px] font-medium text-zinc-900">{value}</dd>
               </div>
@@ -325,7 +325,7 @@ function StateBadge({ state }: { state: AppMachineRecord['state'] }) {
 
 function InfoPill({ children }: { children: string }) {
   return (
-    <span className="inline-flex h-6 items-center border border-[var(--muxvia-app-line)] bg-zinc-100 px-2 text-[11px] font-semibold leading-none text-zinc-600">
+    <span className="inline-flex h-6 items-center border border-[var(--anytty-app-line)] bg-zinc-100 px-2 text-[11px] font-semibold leading-none text-zinc-600">
       {children}
     </span>
   )
@@ -335,5 +335,5 @@ function formatMachineTime(value?: string): string {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat(muxviaIntlLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  return new Intl.DateTimeFormat(anyttyIntlLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }

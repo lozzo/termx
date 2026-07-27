@@ -565,7 +565,7 @@ var File_wirepb_terminal_proto protoreflect.FileDescriptor
 
 const file_wirepb_terminal_proto_rawDesc = "" +
 	"\n" +
-	"\x15wirepb/terminal.proto\x12\x16muxvia.protocol.wirepb\"Q\n" +
+	"\x15wirepb/terminal.proto\x12\x16anytty.protocol.wirepb\"Q\n" +
 	"\x05Hello\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x16\n" +
 	"\x06client\x18\x02 \x01(\tR\x06client\x12\x16\n" +
@@ -584,7 +584,7 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\\\n" +
 	"\rErrorEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12;\n" +
-	"\x05error\x18\x02 \x01(\v2%.muxvia.protocol.wirepb.ProtocolErrorR\x05error\">\n" +
+	"\x05error\x18\x02 \x01(\v2%.anytty.protocol.wirepb.ProtocolErrorR\x05error\">\n" +
 	"\x10FileTransferData\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x03R\x06offset\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\"L\n" +
@@ -597,7 +597,7 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\x12FileTransferResult\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x16\n" +
-	"\x06sha256\x18\x03 \x01(\fR\x06sha256B'Z%github.com/muxvia/muxvia/proto/wirepbb\x06proto3"
+	"\x06sha256\x18\x03 \x01(\fR\x06sha256B'Z%github.com/anytty/anytty/proto/wirepbb\x06proto3"
 
 var (
 	file_wirepb_terminal_proto_rawDescOnce sync.Once
@@ -613,19 +613,19 @@ func file_wirepb_terminal_proto_rawDescGZIP() []byte {
 
 var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_wirepb_terminal_proto_goTypes = []any{
-	(*Hello)(nil),              // 0: muxvia.protocol.wirepb.Hello
-	(*SessionClose)(nil),       // 1: muxvia.protocol.wirepb.SessionClose
-	(*RequestEnvelope)(nil),    // 2: muxvia.protocol.wirepb.RequestEnvelope
-	(*ResponseEnvelope)(nil),   // 3: muxvia.protocol.wirepb.ResponseEnvelope
-	(*ProtocolError)(nil),      // 4: muxvia.protocol.wirepb.ProtocolError
-	(*ErrorEnvelope)(nil),      // 5: muxvia.protocol.wirepb.ErrorEnvelope
-	(*FileTransferData)(nil),   // 6: muxvia.protocol.wirepb.FileTransferData
-	(*FileTransferAck)(nil),    // 7: muxvia.protocol.wirepb.FileTransferAck
-	(*FileTransferFinish)(nil), // 8: muxvia.protocol.wirepb.FileTransferFinish
-	(*FileTransferResult)(nil), // 9: muxvia.protocol.wirepb.FileTransferResult
+	(*Hello)(nil),              // 0: anytty.protocol.wirepb.Hello
+	(*SessionClose)(nil),       // 1: anytty.protocol.wirepb.SessionClose
+	(*RequestEnvelope)(nil),    // 2: anytty.protocol.wirepb.RequestEnvelope
+	(*ResponseEnvelope)(nil),   // 3: anytty.protocol.wirepb.ResponseEnvelope
+	(*ProtocolError)(nil),      // 4: anytty.protocol.wirepb.ProtocolError
+	(*ErrorEnvelope)(nil),      // 5: anytty.protocol.wirepb.ErrorEnvelope
+	(*FileTransferData)(nil),   // 6: anytty.protocol.wirepb.FileTransferData
+	(*FileTransferAck)(nil),    // 7: anytty.protocol.wirepb.FileTransferAck
+	(*FileTransferFinish)(nil), // 8: anytty.protocol.wirepb.FileTransferFinish
+	(*FileTransferResult)(nil), // 9: anytty.protocol.wirepb.FileTransferResult
 }
 var file_wirepb_terminal_proto_depIdxs = []int32{
-	4, // 0: muxvia.protocol.wirepb.ErrorEnvelope.error:type_name -> muxvia.protocol.wirepb.ProtocolError
+	4, // 0: anytty.protocol.wirepb.ErrorEnvelope.error:type_name -> anytty.protocol.wirepb.ProtocolError
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

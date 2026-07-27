@@ -18,16 +18,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/filelock"
-	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/anytty/anytty/shared/filelock"
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 const (
 	accessStoreFile             = "remote_client_access.json"
 	accessStoreLockFile         = "remote_client_access.lock"
 	accessStoreVersion          = 3
-	accessStateSignatureDomain  = "muxvia.remoteauth.access-state.v2"
-	pairingReceiptDomain        = "muxvia.remoteauth.pairing-receipt.v1"
+	accessStateSignatureDomain  = "anytty.remoteauth.access-state.v2"
+	legacyAccessSignatureDomain = "muxvia.remoteauth.access-state.v2"
+	pairingReceiptDomain        = "anytty.remoteauth.pairing-receipt.v1"
+	legacyPairingReceiptDomain  = "muxvia.remoteauth.pairing-receipt.v1"
 	defaultDeliveryGrace        = 24 * time.Hour
 	expiredTicketRetention      = 24 * time.Hour
 	expiredGrantRecordRetention = 30 * 24 * time.Hour
@@ -644,7 +646,12 @@ func loadStoredAccessState(path string, identity Identity) (storedAccessState, b
 		return storedAccessState{}, false, fmt.Errorf("client access store signature is invalid")
 	}
 	signingBytes, err := accessStateSigningBytes(state)
-	if err != nil || !ed25519.Verify(identity.PublicKey, signingBytes, signature) {
+	validSignature := err == nil && ed25519.Verify(identity.PublicKey, signingBytes, signature)
+	if !validSignature {
+		legacySigningBytes, legacyErr := accessStateSigningBytesWithDomain(state, legacyAccessSignatureDomain)
+		validSignature = legacyErr == nil && ed25519.Verify(identity.PublicKey, legacySigningBytes, signature)
+	}
+	if !validSignature {
 		return storedAccessState{}, false, fmt.Errorf("client access store signature does not match daemon identity")
 	}
 	if state.Tickets == nil {
@@ -657,12 +664,16 @@ func loadStoredAccessState(path string, identity Identity) (storedAccessState, b
 }
 
 func accessStateSigningBytes(state storedAccessState) ([]byte, error) {
+	return accessStateSigningBytesWithDomain(state, accessStateSignatureDomain)
+}
+
+func accessStateSigningBytesWithDomain(state storedAccessState, domain string) ([]byte, error) {
 	state.StateSignature = ""
 	payload, err := json.Marshal(state)
 	if err != nil {
 		return nil, fmt.Errorf("encode client access state signature input: %w", err)
 	}
-	return append([]byte(accessStateSignatureDomain+"\x00"), payload...), nil
+	return append([]byte(domain+"\x00"), payload...), nil
 }
 
 func (store *AccessStore) validateLoadedState() error {
@@ -717,12 +728,21 @@ func (store *AccessStore) pairingResultFromStored(ticket storedPairingTicket) (P
 		return PairingExchangeResult{}, fmt.Errorf("stored pairing grant is missing")
 	}
 	boundGrant, err := Issue(store.identity.PrivateKey, grant.Claims)
-	if err != nil || subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(boundGrant))), []byte(ticket.ResultGrantDigest)) != 1 {
-		return PairingExchangeResult{}, fmt.Errorf("stored pairing grant digest mismatch")
+	if err != nil {
+		return PairingExchangeResult{}, fmt.Errorf("stored pairing grant cannot be reconstructed")
+	}
+	if subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(boundGrant))), []byte(ticket.ResultGrantDigest)) != 1 {
+		boundGrant, err = issueWithPrefix(store.identity.PrivateKey, grant.Claims, legacyGrantPrefix)
+		if err != nil || subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(boundGrant))), []byte(ticket.ResultGrantDigest)) != 1 {
+			return PairingExchangeResult{}, fmt.Errorf("stored pairing grant digest mismatch")
+		}
 	}
 	receipt := pairingDeliveryReceipt(store.identity.PrivateKey, ticket.Claims.TicketID, ticket.SubjectKeyFingerprint, ticket.GrantID)
 	if subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(receipt))), []byte(ticket.DeliveryReceiptDigest)) != 1 {
-		return PairingExchangeResult{}, fmt.Errorf("stored pairing receipt digest mismatch")
+		receipt = pairingDeliveryReceiptWithFormat(store.identity.PrivateKey, legacyPairingReceiptDomain, "muxvia-pairing-receipt-v1", ticket.Claims.TicketID, ticket.SubjectKeyFingerprint, ticket.GrantID)
+		if subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(receipt))), []byte(ticket.DeliveryReceiptDigest)) != 1 {
+			return PairingExchangeResult{}, fmt.Errorf("stored pairing receipt digest mismatch")
+		}
 	}
 	if ticket.CloudRouteGrantDigest != "" && subtle.ConstantTimeCompare([]byte(payloadDigest(grant.CloudRouteGrant)), []byte(ticket.CloudRouteGrantDigest)) != 1 {
 		return PairingExchangeResult{}, fmt.Errorf("stored managed Route grant digest mismatch")
@@ -785,9 +805,13 @@ func pairingBundleHasManagedRoute(bundle *PairingBundle) bool {
 }
 
 func pairingDeliveryReceipt(privateKey ed25519.PrivateKey, ticketID, subjectFingerprint, grantID string) string {
-	digest := sha256.Sum256([]byte(pairingReceiptDomain + "\x00" + ticketID + "\x00" + subjectFingerprint + "\x00" + grantID))
+	return pairingDeliveryReceiptWithFormat(privateKey, pairingReceiptDomain, "anytty-pairing-receipt-v1", ticketID, subjectFingerprint, grantID)
+}
+
+func pairingDeliveryReceiptWithFormat(privateKey ed25519.PrivateKey, domain, prefix, ticketID, subjectFingerprint, grantID string) string {
+	digest := sha256.Sum256([]byte(domain + "\x00" + ticketID + "\x00" + subjectFingerprint + "\x00" + grantID))
 	signature := ed25519.Sign(privateKey, digest[:])
-	return "muxvia-pairing-receipt-v1." + base64.RawURLEncoding.EncodeToString(signature)
+	return prefix + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
 func payloadDigest(payload []byte) string {

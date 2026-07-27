@@ -263,7 +263,7 @@ type RelayLeaseRequest struct {
 	AccountId     string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	DaemonId      string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
 	ClientId      string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	Preference    RelayPreference        `protobuf:"varint,6,opt,name=preference,proto3,enum=muxvia.cloud.v1.RelayPreference" json:"preference,omitempty"`
+	Preference    RelayPreference        `protobuf:"varint,6,opt,name=preference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"preference,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -589,7 +589,7 @@ type UsageEvent struct {
 	ClientId      string                 `protobuf:"bytes,7,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	SessionId     string                 `protobuf:"bytes,8,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	AllocationId  string                 `protobuf:"bytes,9,opt,name=allocation_id,json=allocationId,proto3" json:"allocation_id,omitempty"`
-	Transport     RelayTransport         `protobuf:"varint,10,opt,name=transport,proto3,enum=muxvia.cloud.v1.RelayTransport" json:"transport,omitempty"`
+	Transport     RelayTransport         `protobuf:"varint,10,opt,name=transport,proto3,enum=anytty.cloud.v1.RelayTransport" json:"transport,omitempty"`
 	IngressBytes  uint64                 `protobuf:"varint,11,opt,name=ingress_bytes,json=ingressBytes,proto3" json:"ingress_bytes,omitempty"`
 	EgressBytes   uint64                 `protobuf:"varint,12,opt,name=egress_bytes,json=egressBytes,proto3" json:"egress_bytes,omitempty"`
 	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
@@ -828,7 +828,7 @@ var File_cloud_v1_usage_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\n" +
-	"\x14cloud/v1/usage.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x03\n" +
+	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x03\n" +
 	"\x10RelayLeaseClaims\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1d\n" +
 	"\n" +
@@ -854,7 +854,7 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\tdaemon_id\x18\x04 \x01(\tR\bdaemonId\x12\x1b\n" +
 	"\tclient_id\x18\x05 \x01(\tR\bclientId\x12@\n" +
 	"\n" +
-	"preference\x18\x06 \x01(\x0e2 .muxvia.cloud.v1.RelayPreferenceR\n" +
+	"preference\x18\x06 \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\n" +
 	"preference\"^\n" +
 	"\x10RelayLeaseDenied\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
@@ -865,8 +865,8 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x127\n" +
 	"\x05lease\x18\n" +
-	" \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeH\x00R\x05lease\x12;\n" +
-	"\x06denied\x18\v \x01(\v2!.muxvia.cloud.v1.RelayLeaseDeniedH\x00R\x06deniedB\b\n" +
+	" \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeH\x00R\x05lease\x12;\n" +
+	"\x06denied\x18\v \x01(\v2!.anytty.cloud.v1.RelayLeaseDeniedH\x00R\x06deniedB\b\n" +
 	"\x06result\"\xb6\x01\n" +
 	"\x0eRelayICEConfig\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x12\n" +
@@ -891,7 +891,7 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"session_id\x18\b \x01(\tR\tsessionId\x12#\n" +
 	"\rallocation_id\x18\t \x01(\tR\fallocationId\x12=\n" +
 	"\ttransport\x18\n" +
-	" \x01(\x0e2\x1f.muxvia.cloud.v1.RelayTransportR\ttransport\x12#\n" +
+	" \x01(\x0e2\x1f.anytty.cloud.v1.RelayTransportR\ttransport\x12#\n" +
 	"\ringress_bytes\x18\v \x01(\x04R\fingressBytes\x12!\n" +
 	"\fegress_bytes\x18\f \x01(\x04R\vegressBytes\x129\n" +
 	"\n" +
@@ -900,7 +900,7 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"UsageBatch\x12\x19\n" +
 	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x123\n" +
-	"\x06events\x18\x02 \x03(\v2\x1b.muxvia.cloud.v1.UsageEventR\x06events\"'\n" +
+	"\x06events\x18\x02 \x03(\v2\x1b.anytty.cloud.v1.UsageEventR\x06events\"'\n" +
 	"\bUsageAck\x12\x1b\n" +
 	"\tevent_ids\x18\x01 \x03(\tR\beventIds*\x91\x01\n" +
 	"\x0fRelayPreference\x12 \n" +
@@ -912,7 +912,7 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\x1bRELAY_TRANSPORT_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13RELAY_TRANSPORT_UDP\x10\x01\x12\x17\n" +
 	"\x13RELAY_TRANSPORT_TCP\x10\x02\x12\x17\n" +
-	"\x13RELAY_TRANSPORT_TLS\x10\x03B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x13RELAY_TRANSPORT_TLS\x10\x03B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_usage_proto_rawDescOnce sync.Once
@@ -929,30 +929,30 @@ func file_cloud_v1_usage_proto_rawDescGZIP() []byte {
 var file_cloud_v1_usage_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_cloud_v1_usage_proto_goTypes = []any{
-	(RelayPreference)(0),          // 0: muxvia.cloud.v1.RelayPreference
-	(RelayTransport)(0),           // 1: muxvia.cloud.v1.RelayTransport
-	(*RelayLeaseClaims)(nil),      // 2: muxvia.cloud.v1.RelayLeaseClaims
-	(*RelayLeaseRequest)(nil),     // 3: muxvia.cloud.v1.RelayLeaseRequest
-	(*RelayLeaseDenied)(nil),      // 4: muxvia.cloud.v1.RelayLeaseDenied
-	(*RelayLeaseDecision)(nil),    // 5: muxvia.cloud.v1.RelayLeaseDecision
-	(*RelayICEConfig)(nil),        // 6: muxvia.cloud.v1.RelayICEConfig
-	(*UsageEvent)(nil),            // 7: muxvia.cloud.v1.UsageEvent
-	(*UsageBatch)(nil),            // 8: muxvia.cloud.v1.UsageBatch
-	(*UsageAck)(nil),              // 9: muxvia.cloud.v1.UsageAck
+	(RelayPreference)(0),          // 0: anytty.cloud.v1.RelayPreference
+	(RelayTransport)(0),           // 1: anytty.cloud.v1.RelayTransport
+	(*RelayLeaseClaims)(nil),      // 2: anytty.cloud.v1.RelayLeaseClaims
+	(*RelayLeaseRequest)(nil),     // 3: anytty.cloud.v1.RelayLeaseRequest
+	(*RelayLeaseDenied)(nil),      // 4: anytty.cloud.v1.RelayLeaseDenied
+	(*RelayLeaseDecision)(nil),    // 5: anytty.cloud.v1.RelayLeaseDecision
+	(*RelayICEConfig)(nil),        // 6: anytty.cloud.v1.RelayICEConfig
+	(*UsageEvent)(nil),            // 7: anytty.cloud.v1.UsageEvent
+	(*UsageBatch)(nil),            // 8: anytty.cloud.v1.UsageBatch
+	(*UsageAck)(nil),              // 9: anytty.cloud.v1.UsageAck
 	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),        // 11: muxvia.cloud.v1.SignedEnvelope
+	(*SignedEnvelope)(nil),        // 11: anytty.cloud.v1.SignedEnvelope
 }
 var file_cloud_v1_usage_proto_depIdxs = []int32{
-	10, // 0: muxvia.cloud.v1.RelayLeaseClaims.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 1: muxvia.cloud.v1.RelayLeaseClaims.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 2: muxvia.cloud.v1.RelayLeaseRequest.preference:type_name -> muxvia.cloud.v1.RelayPreference
-	11, // 3: muxvia.cloud.v1.RelayLeaseDecision.lease:type_name -> muxvia.cloud.v1.SignedEnvelope
-	4,  // 4: muxvia.cloud.v1.RelayLeaseDecision.denied:type_name -> muxvia.cloud.v1.RelayLeaseDenied
-	10, // 5: muxvia.cloud.v1.RelayICEConfig.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 6: muxvia.cloud.v1.UsageEvent.transport:type_name -> muxvia.cloud.v1.RelayTransport
-	10, // 7: muxvia.cloud.v1.UsageEvent.started_at:type_name -> google.protobuf.Timestamp
-	10, // 8: muxvia.cloud.v1.UsageEvent.ended_at:type_name -> google.protobuf.Timestamp
-	7,  // 9: muxvia.cloud.v1.UsageBatch.events:type_name -> muxvia.cloud.v1.UsageEvent
+	10, // 0: anytty.cloud.v1.RelayLeaseClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 1: anytty.cloud.v1.RelayLeaseClaims.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: anytty.cloud.v1.RelayLeaseRequest.preference:type_name -> anytty.cloud.v1.RelayPreference
+	11, // 3: anytty.cloud.v1.RelayLeaseDecision.lease:type_name -> anytty.cloud.v1.SignedEnvelope
+	4,  // 4: anytty.cloud.v1.RelayLeaseDecision.denied:type_name -> anytty.cloud.v1.RelayLeaseDenied
+	10, // 5: anytty.cloud.v1.RelayICEConfig.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 6: anytty.cloud.v1.UsageEvent.transport:type_name -> anytty.cloud.v1.RelayTransport
+	10, // 7: anytty.cloud.v1.UsageEvent.started_at:type_name -> google.protobuf.Timestamp
+	10, // 8: anytty.cloud.v1.UsageEvent.ended_at:type_name -> google.protobuf.Timestamp
+	7,  // 9: anytty.cloud.v1.UsageBatch.events:type_name -> anytty.cloud.v1.UsageEvent
 	10, // [10:10] is the sub-list for method output_type
 	10, // [10:10] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name

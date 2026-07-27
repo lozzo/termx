@@ -1,13 +1,13 @@
 syntax = "proto3";
 
-package muxvia.cloud.v1;
+package anytty.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "cloud/v1/runtime.proto";
 import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 // CloudICECandidate 是 Cloud 信令的中性 candidate；不携带授权或 terminal 数据。
 message CloudICECandidate {

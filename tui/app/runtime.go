@@ -10,11 +10,11 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/muxvia/muxvia/shared/perftrace"
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/render"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/shared/perftrace"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/render"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // Msg 是 TUI-v3 runtime 的根消息契约，不绑定 Bubble Tea。
@@ -1264,7 +1264,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return msg
 		}
 		// 中文说明：前台程序启用 mouse tracking 后，raw 鼠标事件归子进程所有；
-		// 只有未被 terminal 接管的滚轮才作为 Muxvia infinite history 入口。
+		// 只有未被 terminal 接管的滚轮才作为 AnyTTY infinite history 入口。
 		if inputMsg.Event.RawSeq != "" {
 			if passthroughMsg, ok := runtime.mousePassthroughInputMsg(inputMsg, resolution); ok {
 				return passthroughMsg
@@ -1745,7 +1745,7 @@ func encodeMouseEventForTerminal(event input.InputEvent, rect render.Rect, modes
 	if modes.MouseSGR {
 		if raw, ok := rewriteSGRMouseRawSeq(event.RawSeq, localCol, localRow); ok {
 			// 中文说明：子进程 mouse tracking 的 truth source 是它自己的 PTY 网格，
-			// Muxvia chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
+			// AnyTTY chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
 			event.RawSeq = raw
 			event.Col = localCol
 			event.Row = localRow

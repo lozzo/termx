@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -13,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/filelock"
-	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/anytty/anytty/shared/filelock"
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 func TestCredentialStoreKeepsEndpointIdentityStableAcrossLostResponseRecovery(t *testing.T) {
@@ -434,7 +435,7 @@ func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bytes.Contains(storedPayload, []byte(winner.result.Grant)) || bytes.Contains(storedPayload, []byte(winner.result.DeliveryReceipt)) ||
-		bytes.Contains(storedPayload, []byte("muxvia-grant-v2")) || bytes.Contains(storedPayload, bundlePayload) {
+		bytes.Contains(storedPayload, []byte("anytty-grant-v2")) || bytes.Contains(storedPayload, bundlePayload) {
 		t.Fatal("AccessStore persisted raw pairing bundle, grant, or delivery receipt")
 	}
 	unknownGrant, err := Issue(identity.PrivateKey, Claims{
@@ -545,5 +546,71 @@ func TestAccessStoreRejectsBrokenTicketGrantLinkOnRestart(t *testing.T) {
 	}
 	if _, err := LoadAccessStore(dir, identity, AccessStoreOptions{}); err == nil {
 		t.Fatal("corrupt ticket/grant linkage was accepted after restart")
+	}
+}
+
+func TestAccessStoreLoadsMuxviaSignatureDuringBrandMigration(t *testing.T) {
+	_, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	identity, _ := NewIdentity("device-legacy", daemonPrivate)
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	store, err := LoadAccessStore(dir, identity, AccessStoreOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, ticketClaims, err := store.IssuePairingBundle(PairingIssueOptions{Scope: FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundlePayload, err := EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _ := GenerateClientAccessIdentity("endpoint-legacy", rand.Reader)
+	if _, err := store.RedeemPairingBundle(bundlePayload, client.PublicKey, "legacy", now); err != nil {
+		t.Fatal(err)
+	}
+	state := storedAccessState{
+		Version: accessStoreVersion, IssuerDeviceID: identity.DeviceID, IssuerFingerprint: identity.Fingerprint,
+		Tickets: cloneTicketRecords(store.tickets), Grants: cloneGrantRecords(store.grants), AccessProjectionRevision: store.accessProjectionRevision,
+	}
+	ticketRecord := state.Tickets[ticketClaims.TicketID]
+	grantRecord := state.Grants[ticketRecord.GrantID]
+	legacyGrant, err := issueWithPrefix(identity.PrivateKey, grantRecord.Claims, legacyGrantPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketRecord.ResultGrantDigest = payloadDigest([]byte(legacyGrant))
+	legacyReceipt := pairingDeliveryReceiptWithFormat(identity.PrivateKey, legacyPairingReceiptDomain, "muxvia-pairing-receipt-v1", ticketClaims.TicketID, ticketRecord.SubjectKeyFingerprint, ticketRecord.GrantID)
+	ticketRecord.DeliveryReceiptDigest = payloadDigest([]byte(legacyReceipt))
+	state.Tickets[ticketClaims.TicketID] = ticketRecord
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	signingBytes, err := accessStateSigningBytesWithDomain(state, legacyAccessSignatureDomain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.StateSignature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(identity.PrivateKey, signingBytes))
+	payload, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, accessStoreFile), append(payload, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err = LoadAccessStore(dir, identity, AccessStoreOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("legacy muxvia access state rejected during migration: %v", err)
+	}
+	result, err := store.RedeemPairingBundle(bundlePayload, client.PublicKey, "legacy", now)
+	if err != nil {
+		t.Fatalf("legacy muxvia pairing result rejected during migration: %v", err)
+	}
+	if result.Grant != legacyGrant || result.DeliveryReceipt != legacyReceipt {
+		t.Fatal("legacy muxvia pairing result was not reconstructed byte-for-byte")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

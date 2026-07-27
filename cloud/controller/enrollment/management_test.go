@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	"github.com/muxvia/muxvia/cloud/controller/control"
-	"github.com/muxvia/muxvia/cloud/controller/directory"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/control"
+	"github.com/anytty/anytty/cloud/controller/directory"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 func TestDaemonManagementDerivesAccountForEnrollmentAndRevoke(t *testing.T) {
@@ -23,10 +23,10 @@ func TestDaemonManagementDerivesAccountForEnrollmentAndRevoke(t *testing.T) {
 	}
 	t.Cleanup(runtimeDirectory.Close)
 	enrollmentService := &Service{config: Config{Store: enrollments, EnrollmentTTL: 10 * time.Minute, Now: func() time.Time { return now }}}
-	if _, err := enrollmentService.CreateEnrollment(context.Background(), &cloudv1.CreateDaemonEnrollmentRequest{AccountName: "残缺账号", DaemonName: "daemon"}, "muxvia cloud enroll"); err == nil {
+	if _, err := enrollmentService.CreateEnrollment(context.Background(), &cloudv1.CreateDaemonEnrollmentRequest{AccountName: "残缺账号", DaemonName: "daemon"}, "anytty cloud enroll"); err == nil {
 		t.Fatal("enrollment without an existing account ID was accepted")
 	}
-	service, err := NewManagementService(ManagementConfig{Enrollment: enrollmentService, Store: persistent, Directory: runtimeDirectory, Control: &control.Service{}, CommandPrefix: "muxvia cloud enroll", Now: func() time.Time { return now }})
+	service, err := NewManagementService(ManagementConfig{Enrollment: enrollmentService, Store: persistent, Directory: runtimeDirectory, Control: &control.Service{}, CommandPrefix: "anytty cloud enroll", Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}

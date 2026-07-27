@@ -73,7 +73,7 @@ func (StorageScope) EnumDescriptor() ([]byte, []int) {
 type StorageKey struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Scope         StorageScope           `protobuf:"varint,2,opt,name=scope,proto3,enum=muxvia.api.v1.StorageScope" json:"scope,omitempty"`
+	Scope         StorageScope           `protobuf:"varint,2,opt,name=scope,proto3,enum=anytty.api.v1.StorageScope" json:"scope,omitempty"`
 	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	Key           string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -417,7 +417,7 @@ func (x *StorageDeleteCommand) GetVersion() *StorageVersionFence {
 type StorageListCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AppId         string                 `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Scope         StorageScope           `protobuf:"varint,3,opt,name=scope,proto3,enum=muxvia.api.v1.StorageScope" json:"scope,omitempty"`
+	Scope         StorageScope           `protobuf:"varint,3,opt,name=scope,proto3,enum=anytty.api.v1.StorageScope" json:"scope,omitempty"`
 	OwnerId       string                 `protobuf:"bytes,4,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	Prefix        string                 `protobuf:"bytes,5,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -738,15 +738,15 @@ var File_apipb_storage_proto protoreflect.FileDescriptor
 
 const file_apipb_storage_proto_rawDesc = "" +
 	"\n" +
-	"\x13apipb/storage.proto\x12\rmuxvia.api.v1\"\x83\x01\n" +
+	"\x13apipb/storage.proto\x12\ranytty.api.v1\"\x83\x01\n" +
 	"\n" +
 	"StorageKey\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x121\n" +
-	"\x05scope\x18\x02 \x01(\x0e2\x1b.muxvia.api.v1.StorageScopeR\x05scope\x12\x19\n" +
+	"\x05scope\x18\x02 \x01(\x0e2\x1b.anytty.api.v1.StorageScopeR\x05scope\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x10\n" +
 	"\x03key\x18\x04 \x01(\tR\x03key\"\x9c\x01\n" +
 	"\fStorageEntry\x12+\n" +
-	"\x03key\x18\x01 \x01(\v2\x19.muxvia.api.v1.StorageKeyR\x03key\x12\x14\n" +
+	"\x03key\x18\x01 \x01(\v2\x19.anytty.api.v1.StorageKeyR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x04R\aversion\x12/\n" +
 	"\x14updated_at_unix_nano\x18\x04 \x01(\x03R\x11updatedAtUnixNano\"e\n" +
@@ -754,37 +754,37 @@ const file_apipb_storage_proto_rawDesc = "" +
 	"\rcheck_version\x18\x01 \x01(\bR\fcheckVersion\x12)\n" +
 	"\x10expected_version\x18\x02 \x01(\x04R\x0fexpectedVersion\"F\n" +
 	"\x11StorageGetCommand\x12+\n" +
-	"\x03key\x18\x02 \x01(\v2\x19.muxvia.api.v1.StorageKeyR\x03keyJ\x04\b\x01\x10\x02\"\x9a\x01\n" +
+	"\x03key\x18\x02 \x01(\v2\x19.anytty.api.v1.StorageKeyR\x03keyJ\x04\b\x01\x10\x02\"\x9a\x01\n" +
 	"\x11StoragePutCommand\x12+\n" +
-	"\x03key\x18\x02 \x01(\v2\x19.muxvia.api.v1.StorageKeyR\x03key\x12\x14\n" +
+	"\x03key\x18\x02 \x01(\v2\x19.anytty.api.v1.StorageKeyR\x03key\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\fR\x05value\x12<\n" +
-	"\aversion\x18\x04 \x01(\v2\".muxvia.api.v1.StorageVersionFenceR\aversionJ\x04\b\x01\x10\x02\"\x87\x01\n" +
+	"\aversion\x18\x04 \x01(\v2\".anytty.api.v1.StorageVersionFenceR\aversionJ\x04\b\x01\x10\x02\"\x87\x01\n" +
 	"\x14StorageDeleteCommand\x12+\n" +
-	"\x03key\x18\x02 \x01(\v2\x19.muxvia.api.v1.StorageKeyR\x03key\x12<\n" +
-	"\aversion\x18\x03 \x01(\v2\".muxvia.api.v1.StorageVersionFenceR\aversionJ\x04\b\x01\x10\x02\"\x97\x01\n" +
+	"\x03key\x18\x02 \x01(\v2\x19.anytty.api.v1.StorageKeyR\x03key\x12<\n" +
+	"\aversion\x18\x03 \x01(\v2\".anytty.api.v1.StorageVersionFenceR\aversionJ\x04\b\x01\x10\x02\"\x97\x01\n" +
 	"\x12StorageListCommand\x12\x15\n" +
 	"\x06app_id\x18\x02 \x01(\tR\x05appId\x121\n" +
-	"\x05scope\x18\x03 \x01(\x0e2\x1b.muxvia.api.v1.StorageScopeR\x05scope\x12\x19\n" +
+	"\x05scope\x18\x03 \x01(\x0e2\x1b.anytty.api.v1.StorageScopeR\x05scope\x12\x19\n" +
 	"\bowner_id\x18\x04 \x01(\tR\aownerId\x12\x16\n" +
 	"\x06prefix\x18\x05 \x01(\tR\x06prefixJ\x04\b\x01\x10\x02\"E\n" +
 	"\x10StorageGetResult\x121\n" +
-	"\x05entry\x18\x01 \x01(\v2\x1b.muxvia.api.v1.StorageEntryR\x05entry\"E\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1b.anytty.api.v1.StorageEntryR\x05entry\"E\n" +
 	"\x10StoragePutResult\x121\n" +
-	"\x05entry\x18\x01 \x01(\v2\x1b.muxvia.api.v1.StorageEntryR\x05entry\"v\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1b.anytty.api.v1.StorageEntryR\x05entry\"v\n" +
 	"\x13StorageDeleteResult\x12+\n" +
-	"\x03key\x18\x01 \x01(\v2\x19.muxvia.api.v1.StorageKeyR\x03key\x12\x18\n" +
+	"\x03key\x18\x01 \x01(\v2\x19.anytty.api.v1.StorageKeyR\x03key\x12\x18\n" +
 	"\adeleted\x18\x02 \x01(\bR\adeleted\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x04R\aversion\"J\n" +
 	"\x11StorageListResult\x125\n" +
-	"\aentries\x18\x01 \x03(\v2\x1b.muxvia.api.v1.StorageEntryR\aentries\"z\n" +
+	"\aentries\x18\x01 \x03(\v2\x1b.anytty.api.v1.StorageEntryR\aentries\"z\n" +
 	"\x13StorageChangedEvent\x12+\n" +
-	"\x03key\x18\x01 \x01(\v2\x19.muxvia.api.v1.StorageKeyR\x03key\x12\x18\n" +
+	"\x03key\x18\x01 \x01(\v2\x19.anytty.api.v1.StorageKeyR\x03key\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\x12\x1c\n" +
 	"\toperation\x18\x03 \x01(\tR\toperation*b\n" +
 	"\fStorageScope\x12\x1d\n" +
 	"\x19STORAGE_SCOPE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STORAGE_SCOPE_PUBLIC\x10\x01\x12\x19\n" +
-	"\x15STORAGE_SCOPE_PRIVATE\x10\x02B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
+	"\x15STORAGE_SCOPE_PRIVATE\x10\x02B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_storage_proto_rawDescOnce sync.Once
@@ -801,34 +801,34 @@ func file_apipb_storage_proto_rawDescGZIP() []byte {
 var file_apipb_storage_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_apipb_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_apipb_storage_proto_goTypes = []any{
-	(StorageScope)(0),            // 0: muxvia.api.v1.StorageScope
-	(*StorageKey)(nil),           // 1: muxvia.api.v1.StorageKey
-	(*StorageEntry)(nil),         // 2: muxvia.api.v1.StorageEntry
-	(*StorageVersionFence)(nil),  // 3: muxvia.api.v1.StorageVersionFence
-	(*StorageGetCommand)(nil),    // 4: muxvia.api.v1.StorageGetCommand
-	(*StoragePutCommand)(nil),    // 5: muxvia.api.v1.StoragePutCommand
-	(*StorageDeleteCommand)(nil), // 6: muxvia.api.v1.StorageDeleteCommand
-	(*StorageListCommand)(nil),   // 7: muxvia.api.v1.StorageListCommand
-	(*StorageGetResult)(nil),     // 8: muxvia.api.v1.StorageGetResult
-	(*StoragePutResult)(nil),     // 9: muxvia.api.v1.StoragePutResult
-	(*StorageDeleteResult)(nil),  // 10: muxvia.api.v1.StorageDeleteResult
-	(*StorageListResult)(nil),    // 11: muxvia.api.v1.StorageListResult
-	(*StorageChangedEvent)(nil),  // 12: muxvia.api.v1.StorageChangedEvent
+	(StorageScope)(0),            // 0: anytty.api.v1.StorageScope
+	(*StorageKey)(nil),           // 1: anytty.api.v1.StorageKey
+	(*StorageEntry)(nil),         // 2: anytty.api.v1.StorageEntry
+	(*StorageVersionFence)(nil),  // 3: anytty.api.v1.StorageVersionFence
+	(*StorageGetCommand)(nil),    // 4: anytty.api.v1.StorageGetCommand
+	(*StoragePutCommand)(nil),    // 5: anytty.api.v1.StoragePutCommand
+	(*StorageDeleteCommand)(nil), // 6: anytty.api.v1.StorageDeleteCommand
+	(*StorageListCommand)(nil),   // 7: anytty.api.v1.StorageListCommand
+	(*StorageGetResult)(nil),     // 8: anytty.api.v1.StorageGetResult
+	(*StoragePutResult)(nil),     // 9: anytty.api.v1.StoragePutResult
+	(*StorageDeleteResult)(nil),  // 10: anytty.api.v1.StorageDeleteResult
+	(*StorageListResult)(nil),    // 11: anytty.api.v1.StorageListResult
+	(*StorageChangedEvent)(nil),  // 12: anytty.api.v1.StorageChangedEvent
 }
 var file_apipb_storage_proto_depIdxs = []int32{
-	0,  // 0: muxvia.api.v1.StorageKey.scope:type_name -> muxvia.api.v1.StorageScope
-	1,  // 1: muxvia.api.v1.StorageEntry.key:type_name -> muxvia.api.v1.StorageKey
-	1,  // 2: muxvia.api.v1.StorageGetCommand.key:type_name -> muxvia.api.v1.StorageKey
-	1,  // 3: muxvia.api.v1.StoragePutCommand.key:type_name -> muxvia.api.v1.StorageKey
-	3,  // 4: muxvia.api.v1.StoragePutCommand.version:type_name -> muxvia.api.v1.StorageVersionFence
-	1,  // 5: muxvia.api.v1.StorageDeleteCommand.key:type_name -> muxvia.api.v1.StorageKey
-	3,  // 6: muxvia.api.v1.StorageDeleteCommand.version:type_name -> muxvia.api.v1.StorageVersionFence
-	0,  // 7: muxvia.api.v1.StorageListCommand.scope:type_name -> muxvia.api.v1.StorageScope
-	2,  // 8: muxvia.api.v1.StorageGetResult.entry:type_name -> muxvia.api.v1.StorageEntry
-	2,  // 9: muxvia.api.v1.StoragePutResult.entry:type_name -> muxvia.api.v1.StorageEntry
-	1,  // 10: muxvia.api.v1.StorageDeleteResult.key:type_name -> muxvia.api.v1.StorageKey
-	2,  // 11: muxvia.api.v1.StorageListResult.entries:type_name -> muxvia.api.v1.StorageEntry
-	1,  // 12: muxvia.api.v1.StorageChangedEvent.key:type_name -> muxvia.api.v1.StorageKey
+	0,  // 0: anytty.api.v1.StorageKey.scope:type_name -> anytty.api.v1.StorageScope
+	1,  // 1: anytty.api.v1.StorageEntry.key:type_name -> anytty.api.v1.StorageKey
+	1,  // 2: anytty.api.v1.StorageGetCommand.key:type_name -> anytty.api.v1.StorageKey
+	1,  // 3: anytty.api.v1.StoragePutCommand.key:type_name -> anytty.api.v1.StorageKey
+	3,  // 4: anytty.api.v1.StoragePutCommand.version:type_name -> anytty.api.v1.StorageVersionFence
+	1,  // 5: anytty.api.v1.StorageDeleteCommand.key:type_name -> anytty.api.v1.StorageKey
+	3,  // 6: anytty.api.v1.StorageDeleteCommand.version:type_name -> anytty.api.v1.StorageVersionFence
+	0,  // 7: anytty.api.v1.StorageListCommand.scope:type_name -> anytty.api.v1.StorageScope
+	2,  // 8: anytty.api.v1.StorageGetResult.entry:type_name -> anytty.api.v1.StorageEntry
+	2,  // 9: anytty.api.v1.StoragePutResult.entry:type_name -> anytty.api.v1.StorageEntry
+	1,  // 10: anytty.api.v1.StorageDeleteResult.key:type_name -> anytty.api.v1.StorageKey
+	2,  // 11: anytty.api.v1.StorageListResult.entries:type_name -> anytty.api.v1.StorageEntry
+	1,  // 12: anytty.api.v1.StorageChangedEvent.key:type_name -> anytty.api.v1.StorageKey
 	13, // [13:13] is the sub-list for method output_type
 	13, // [13:13] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

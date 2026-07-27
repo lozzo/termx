@@ -13,23 +13,23 @@ import (
 )
 
 var expectedCSymbols = []string{
-	"muxvia_client_abi_version", "muxvia_engine_create", "muxvia_engine_open_session", "muxvia_engine_execute",
-	"muxvia_engine_open_resource_stream", "muxvia_engine_send_resource_stream_frame", "muxvia_engine_close_resource_stream",
-	"muxvia_engine_command", "muxvia_engine_next_event",
-	"muxvia_platform_next_request", "muxvia_platform_complete", "muxvia_engine_cancel", "muxvia_engine_close_session", "muxvia_engine_release",
-	"muxvia_engine_close", "muxvia_buffer_free",
+	"anytty_client_abi_version", "anytty_engine_create", "anytty_engine_open_session", "anytty_engine_execute",
+	"anytty_engine_open_resource_stream", "anytty_engine_send_resource_stream_frame", "anytty_engine_close_resource_stream",
+	"anytty_engine_command", "anytty_engine_next_event",
+	"anytty_platform_next_request", "anytty_platform_complete", "anytty_engine_cancel", "anytty_engine_close_session", "anytty_engine_release",
+	"anytty_engine_close", "anytty_buffer_free",
 }
 
 func TestBindingABIBaselinesStayGeneric(t *testing.T) {
-	header, err := os.ReadFile("cabi/muxvia_client.h")
+	header, err := os.ReadFile("cabi/anytty_client.h")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(header), "MUXVIA_CLIENT_ABI_VERSION 3u") || ABIVersion != 3 {
+	if !strings.Contains(string(header), "ANYTTY_CLIENT_ABI_VERSION 3u") || ABIVersion != 3 {
 		t.Fatalf("ABI version mismatch header=%q go=%d", header, ABIVersion)
 	}
-	re := regexp.MustCompile(`(?m)^muxvia_status_v1 (muxvia_[a-z0-9_]+)\(`)
-	symbols := []string{"muxvia_client_abi_version"}
+	re := regexp.MustCompile(`(?m)^anytty_status_v1 (anytty_[a-z0-9_]+)\(`)
+	symbols := []string{"anytty_client_abi_version"}
 	for _, match := range re.FindAllStringSubmatch(string(header), -1) {
 		symbols = append(symbols, match[1])
 	}
@@ -46,9 +46,9 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 func TestBindingCoreDoesNotImportPlatformOrDomainOwners(t *testing.T) {
 	forbidden := []string{
 		"C", "unsafe", "syscall/js", "encoding/json", "encoding/base64",
-		"github.com/muxvia/muxvia/core", "github.com/muxvia/muxvia/tui", "github.com/muxvia/muxvia/cmd/muxvia",
-		"github.com/muxvia/muxvia/private", "github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/remote", "github.com/pion/webrtc",
+		"github.com/anytty/anytty/core", "github.com/anytty/anytty/tui", "github.com/anytty/anytty/cmd/anytty",
+		"github.com/anytty/anytty/private", "github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/remote", "github.com/pion/webrtc",
 	}
 	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {

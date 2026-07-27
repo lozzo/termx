@@ -15,13 +15,13 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
   const groups = selectedTab === 'program' ? programPreset?.groups ?? SYSTEM_FN_GROUPS : SYSTEM_FN_GROUPS
 
   return (
-    <div className="absolute inset-x-0 top-0 z-30 border-b border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] text-[var(--muxvia-text)] md:hidden" data-testid="muxvia-fn-panel">
+    <div className="absolute inset-x-0 top-0 z-30 border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] text-[var(--anytty-text)] md:hidden" data-testid="anytty-fn-panel">
       <div className="max-h-[42vh] overflow-y-auto px-2 py-2">
         <div className="mb-2 flex items-center gap-1.5">
           {programPreset ? (
             <button
               type="button"
-              className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--muxvia-accent)] text-[var(--muxvia-accent-text)]' : 'bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)]'}`}
+              className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)]'}`}
               onClick={() => { hapticSelection(); setActiveTab('program') }}
             >
               {programPreset.name}
@@ -29,13 +29,13 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
           ) : null}
           <button
             type="button"
-            className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--muxvia-accent)] text-[var(--muxvia-accent-text)]' : 'bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)]'}`}
+            className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)]'}`}
             onClick={() => { hapticSelection(); setActiveTab('system') }}
           >
             System
           </button>
           <div className="flex-1" />
-          <Settings className="h-3.5 w-3.5 text-[var(--muxvia-muted)]" />
+          <Settings className="h-3.5 w-3.5 text-[var(--anytty-muted)]" />
         </div>
         <div className="space-y-3">
           {groups.map((group) => (
@@ -50,18 +50,18 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
 function FnGroupView({ group, onSend }: { group: TerminalFnGroup; onSend: (data: string) => void }) {
   return (
     <section>
-      <h3 className="mb-1.5 px-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--muxvia-muted)]">{group.name}</h3>
+      <h3 className="mb-1.5 px-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--anytty-muted)]">{group.name}</h3>
       <div className="grid grid-cols-3 gap-1.5">
         {group.items.map((item) => (
           <button
             key={`${group.name}:${item.label}:${item.data}`}
             type="button"
-            className="min-h-10 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] px-2 py-1.5 text-left active:opacity-80"
+            className="min-h-10 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-2 py-1.5 text-left active:opacity-80"
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => { hapticImpact(); onSend(item.data) }}
           >
-            <span className="block truncate font-mono text-[11px] font-semibold text-[var(--muxvia-accent)]">{item.label}</span>
-            {item.description ? <span className="mt-0.5 block truncate text-[9px] font-medium text-[var(--muxvia-muted)]">{item.description}</span> : null}
+            <span className="block truncate font-mono text-[11px] font-semibold text-[var(--anytty-accent)]">{item.label}</span>
+            {item.description ? <span className="mt-0.5 block truncate text-[9px] font-medium text-[var(--anytty-muted)]">{item.description}</span> : null}
           </button>
         ))}
       </div>

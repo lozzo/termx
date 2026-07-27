@@ -3,8 +3,8 @@ package render
 import (
 	"testing"
 
-	actiondomain "github.com/muxvia/muxvia/tui/action"
-	"github.com/muxvia/muxvia/tui/state"
+	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/state"
 )
 
 func TestProjectionCatalogIsSingleSourceForRenderedActions(t *testing.T) {

@@ -18,7 +18,7 @@ func coreLifecycleTrace(logger *slog.Logger, event string, attrs ...any) {
 }
 
 func coreLifecycleTraceEnabled() bool {
-	return coreTraceEnvEnabled("MUXVIA_TUI_INPUT_TRACE") || coreTraceEnvEnabled("MUXVIA_TUI_DIAG")
+	return coreTraceEnvEnabled("ANYTTY_TUI_INPUT_TRACE") || coreTraceEnvEnabled("ANYTTY_TUI_DIAG")
 }
 
 func coreTraceEnvEnabled(name string) bool {

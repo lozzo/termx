@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
-	"github.com/muxvia/muxvia/proto/wire"
-	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
+	protocoladapter "github.com/anytty/anytty/client/adapter/protocol"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	internalprotocol "github.com/anytty/anytty/internal/protocol"
+	"github.com/anytty/anytty/proto/wire"
+	unixtransport "github.com/anytty/anytty/shared/transport/unix"
 )
 
 // Starter 是 local Unix route 首次拨号失败后的 daemon 启动 primitive。
@@ -43,7 +43,7 @@ type Dialer struct {
 // NewDialer 创建 local Unix route dialer。
 func NewDialer(options Options) *Dialer {
 	if strings.TrimSpace(options.ClientName) == "" {
-		options.ClientName = "muxvia-client"
+		options.ClientName = "anytty-client"
 	}
 	if options.ReadyTimeout <= 0 {
 		options.ReadyTimeout = 5 * time.Second

@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	accessCookieName  = "muxvia_cloud_access"
-	refreshCookieName = "muxvia_cloud_refresh"
-	csrfCookieName    = "muxvia_cloud_csrf"
+	accessCookieName  = "anytty_cloud_access"
+	refreshCookieName = "anytty_cloud_refresh"
+	csrfCookieName    = "anytty_cloud_csrf"
 )
 
 func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.Request) {

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"sync"
 
-	clientprotocol "github.com/muxvia/muxvia/client/adapter/protocol"
-	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	protocoladapter "github.com/muxvia/muxvia/tui/adapter/protocol"
-	"github.com/muxvia/muxvia/tui/port"
-	"github.com/muxvia/muxvia/tui/state"
+	clientprotocol "github.com/anytty/anytty/client/adapter/protocol"
+	clientendpoint "github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	protocoladapter "github.com/anytty/anytty/tui/adapter/protocol"
+	"github.com/anytty/anytty/tui/port"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // EndpointApplicationRouter 把 TUI 的 endpoint-scoped services 路由到共享 ClientRuntime。

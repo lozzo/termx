@@ -5,8 +5,8 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/muxvia/muxvia/core/history"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // 本文件是 linehist 的查询投影层：把宽度无关的 logical line 展开成

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/perftrace"
-	"github.com/muxvia/muxvia/tui/render"
+	"github.com/anytty/anytty/shared/perftrace"
+	"github.com/anytty/anytty/tui/render"
 )
 
 // LatestFrameSink 把真实 TTY 写帧变成 latest-only 背压边界。
@@ -193,7 +193,7 @@ func (sink *LatestFrameSink) observeQueueLocked(patch bool) {
 }
 
 func latestFrameSinkDiagnosticsEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MUXVIA_TUI_DIAG"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ANYTTY_TUI_DIAG"))) {
 	case "1", "true", "on", "yes", "debug":
 		return true
 	default:
@@ -202,7 +202,7 @@ func latestFrameSinkDiagnosticsEnabled() bool {
 }
 
 func latestFrameSinkDiagnosticsInterval() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("MUXVIA_TUI_DIAG_INTERVAL_MS"))
+	raw := strings.TrimSpace(os.Getenv("ANYTTY_TUI_DIAG_INTERVAL_MS"))
 	if raw == "" {
 		return time.Second
 	}

@@ -2,28 +2,28 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'com.google.protobuf'
 
-def muxviaBuildString = { value -> '"' + value.toString().replace('\\', '\\\\').replace('"', '\\"') + '"' }
-def muxviaCloudControllerAddress = project.findProperty('muxviaCloudControllerAddress') ?: ''
-def muxviaCloudControllerServerName = project.findProperty('muxviaCloudControllerServerName') ?: ''
-def muxviaCloudControllerCAPEMBase64 = project.findProperty('muxviaCloudControllerCAPEMBase64') ?: ''
+def anyttyBuildString = { value -> '"' + value.toString().replace('\\', '\\\\').replace('"', '\\"') + '"' }
+def anyttyCloudControllerAddress = project.findProperty('anyttyCloudControllerAddress') ?: ''
+def anyttyCloudControllerServerName = project.findProperty('anyttyCloudControllerServerName') ?: ''
+def anyttyCloudControllerCAPEMBase64 = project.findProperty('anyttyCloudControllerCAPEMBase64') ?: ''
 
 android {
-    namespace = "com.muxvia.app"
+    namespace = "com.anytty.app"
     compileSdk = rootProject.ext.compileSdkVersion
     ndkVersion "27.2.12479018"
     compileOptions {
         coreLibraryDesugaringEnabled true
     }
     defaultConfig {
-        applicationId "com.muxvia.app"
+        applicationId "com.anytty.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField "String", "MUXVIA_CLOUD_CONTROLLER_ADDRESS", muxviaBuildString(muxviaCloudControllerAddress)
-        buildConfigField "String", "MUXVIA_CLOUD_CONTROLLER_SERVER_NAME", muxviaBuildString(muxviaCloudControllerServerName)
-        buildConfigField "String", "MUXVIA_CLOUD_CONTROLLER_CA_PEM_BASE64", muxviaBuildString(muxviaCloudControllerCAPEMBase64)
+        buildConfigField "String", "ANYTTY_CLOUD_CONTROLLER_ADDRESS", anyttyBuildString(anyttyCloudControllerAddress)
+        buildConfigField "String", "ANYTTY_CLOUD_CONTROLLER_SERVER_NAME", anyttyBuildString(anyttyCloudControllerServerName)
+        buildConfigField "String", "ANYTTY_CLOUD_CONTROLLER_CA_PEM_BASE64", anyttyBuildString(anyttyCloudControllerCAPEMBase64)
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -36,9 +36,9 @@ android {
     sourceSets {
         test.resources.srcDir '../../../../client/endpoint/testdata'
         main.proto.srcDir '../../../../proto'
-        main.jniLibs.srcDir "$buildDir/generated/muxviaJniLibs"
+        main.jniLibs.srcDir "$buildDir/generated/anyttyJniLibs"
     }
-    if (project.hasProperty("muxviaArmOnly")) {
+    if (project.hasProperty("anyttyArmOnly")) {
         splits {
             abi {
                 enable true
@@ -57,17 +57,17 @@ android {
     }
 }
 
-def muxviaAndroidGoTags = ""
+def anyttyAndroidGoTags = ""
 
-tasks.register("buildMuxviaClientNative", Exec) {
+tasks.register("buildAnyTTYClientNative", Exec) {
     workingDir rootProject.projectDir
     if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-        commandLine "powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", file('../../../../scripts/build-android-client-windows.ps1').absolutePath, "-OutputRoot", "$buildDir/generated/muxviaJniLibs"
+        commandLine "powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", file('../../../../scripts/build-android-client-windows.ps1').absolutePath, "-OutputRoot", "$buildDir/generated/anyttyJniLibs"
     } else {
-        commandLine file('../../../../scripts/build-android-client.sh').absolutePath, "$buildDir/generated/muxviaJniLibs"
+        commandLine file('../../../../scripts/build-android-client.sh').absolutePath, "$buildDir/generated/anyttyJniLibs"
     }
-    environment "MUXVIA_ANDROID_GO_TAGS", muxviaAndroidGoTags
-    inputs.property "muxviaAndroidGoTags", muxviaAndroidGoTags
+    environment "ANYTTY_ANDROID_GO_TAGS", anyttyAndroidGoTags
+    inputs.property "anyttyAndroidGoTags", anyttyAndroidGoTags
     inputs.files(
         fileTree('../../../../client'),
         fileTree('../../../../api_layer'),
@@ -76,13 +76,13 @@ tasks.register("buildMuxviaClientNative", Exec) {
         fileTree('../../../../remote'),
         fileTree('../../../../shared'),
         fileTree('../../../../proto'),
-        file('src/main/cpp/muxvia_client_jni.c')
+        file('src/main/cpp/anytty_client_jni.c')
     )
-    outputs.dir "$buildDir/generated/muxviaJniLibs"
+    outputs.dir "$buildDir/generated/anyttyJniLibs"
 }
 
 tasks.named("preBuild").configure {
-    dependsOn tasks.named("buildMuxviaClientNative")
+    dependsOn tasks.named("buildAnyTTYClientNative")
 }
 
 repositories {
@@ -92,7 +92,7 @@ repositories {
 }
 
 dependencies {
-    // muxvia NativeConnection dependencies
+    // anytty NativeConnection dependencies
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'

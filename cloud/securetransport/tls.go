@@ -16,7 +16,7 @@ import (
 
 const (
 	edgeIdentityScheme = "spiffe"
-	edgeIdentityHost   = "muxvia.com"
+	edgeIdentityHost   = "anytty.com"
 	edgeIdentityPrefix = "/edge/"
 )
 

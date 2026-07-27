@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/core/history"
-	"github.com/muxvia/muxvia/core/history/linehist"
-	"github.com/muxvia/muxvia/core/live"
-	"github.com/muxvia/muxvia/shared/perftrace"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/core/history/linehist"
+	"github.com/anytty/anytty/core/live"
+	"github.com/anytty/anytty/shared/perftrace"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 type Terminal struct {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/anytty/anytty/client/endpoint"
 )
 
 // ICECandidate 是 WebRTC 信令边界使用的中性 ICE candidate。

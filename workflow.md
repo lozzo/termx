@@ -1,16 +1,16 @@
-# Muxvia 当前工作流
+# AnyTTY 当前工作流
 
 ## 文档地位
 
 本文档是当前分支唯一有效的活动驱动文件，决定工作范围、执行顺序、测试准入和提交边界。`ARCHITECTURE.md` 保存 Cloud 重构的稳定架构背景；当其里程碑状态或旧部署记录与本文冲突时，以本文为准。
 
-当前仍处于私有开发阶段。浏览器 Web/WASM terminal 产品冻结；本轮 Web 只负责 Muxvia Cloud 的公开介绍、账号、设备、订阅、用量和运营管理，不能承载 terminal 数据面或建立第二套客户端运行时。
+当前仍处于私有开发阶段。浏览器 Web/WASM terminal 产品冻结；本轮 Web 只负责 AnyTTY Cloud 的公开介绍、账号、设备、订阅、用量和运营管理，不能承载 terminal 数据面或建立第二套客户端运行时。
 
 ## 当前状态
 
 | 切片 | 状态 | 目标 | 完成证据 |
 | --- | --- | --- | --- |
-| BRAND001-BRAND005 | 已完成 | Muxvia 品牌与发布身份迁移 | 历史提交与现有构建门禁 |
+| BRAND001-BRAND005 | 已完成 | AnyTTY 品牌与发布身份迁移 | 历史提交与现有构建门禁 |
 | R1-R6 | 已完成 | Cloud 契约、Controller/Edge、注册、P2P、Relay、用量纵向链路 | 现有集成测试、在线部署与 `ARCHITECTURE.md` 记录 |
 | R7 | 已完成但产品验收已并入 CLOUDP007 | 账号、交易、中文运营 API 和管理模块 | 现有账号/交易集成测试与运营路由 Playwright；不能据此宣称普通用户产品完成 |
 | CLOUDP007 | 已完成 | Development 全产品 E2E | `f11ef1f6` 已推送并在线部署；Web 三视口、最终 ARM64 APK 全 Route、真实 PostgreSQL 与双 Agent 审查全部 PASS |
@@ -75,7 +75,7 @@
 ## 当前允许修改
 
 - 主范围：`workflow.md`、`proto/cloud/v1/`、对应生成代码、`cloud/controller/certificate/`、`cloud/controller/control/`、`cloud/controller/postgres/`、`cloud/controller/apihttp/`、`cloud/edge/certificate/`、`cloud/edge/controllerlink/`、`cloud/edge/runtime/`、`cloud/web/`、`cloud/integration/`。
-- 组装联动：`cloud/controller/edgeconfig/`、`cloud/edge/bootstrap/`、`cloud/securetransport/`、`cmd/muxvia-cloud-controller/`、`cmd/muxvia-cloud-edge/`，只允许 R8 真实纵向所需的最小改动。
+- 组装联动：`cloud/controller/edgeconfig/`、`cloud/edge/bootstrap/`、`cloud/securetransport/`、`cmd/anytty-cloud-controller/`、`cmd/anytty-cloud-edge/`，只允许 R8 真实纵向所需的最小改动。
 - 部署和准入联动：`cloud/deploy/`、`scripts/`、`Makefile`、`go.work*`，只允许 secret 目录、当前开发部署和已有门禁所需的最小改动。
 - `cloud/controller/release/`、`cloud/edge/release/`、程序在线升级和自动回滚代码明确不在 R8 范围；不得创建通用 certificate provider、CSR CA、artifact 或 rollout 框架。
 - `client/`、`remote/`、`cloud/daemon/`、`clients/ui/` 与 `clients/mobile/` 默认只读；只有 R8 回归证明现有 P2P/Relay 契约必须联动时，才允许最小修复，不得增加客户端产品能力。

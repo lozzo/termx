@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/state"
 )
 
 type endpointConnectionsStub struct {

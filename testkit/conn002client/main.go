@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/remoteauth"
-	"github.com/muxvia/muxvia/shared/transport"
-	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/transport"
+	unixtransport "github.com/anytty/anytty/shared/transport/unix"
 	"google.golang.org/protobuf/proto"
 )
 

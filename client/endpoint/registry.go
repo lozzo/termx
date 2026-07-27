@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/muxvia/muxvia/shared/userdirs"
+	"github.com/anytty/anytty/shared/userdirs"
 )
 
 const (
@@ -195,7 +195,7 @@ const (
 	RoutePreferenceDirect RoutePreference = "direct"
 	// RoutePreferenceSSH 只允许 SSH tunnel Route。
 	RoutePreferenceSSH RoutePreference = "ssh"
-	// RoutePreferenceManagedCloud 只允许 Muxvia Cloud managed Route。
+	// RoutePreferenceManagedCloud 只允许 AnyTTY Cloud managed Route。
 	RoutePreferenceManagedCloud RoutePreference = "managed_cloud"
 )
 
@@ -441,7 +441,7 @@ type DialIdentity struct {
 // DefaultPath 返回 connection registry 默认读取路径。
 // 该路径归 CLI/TUI 共享 Endpoint registry 所有，不属于 TUI-only 配置。
 func DefaultPath() string {
-	return filepath.Join(userdirs.ConfigHome(), "muxvia", DefaultFileName)
+	return filepath.Join(userdirs.ConfigHome(), "anytty", DefaultFileName)
 }
 
 // DefaultRegistry 返回缺少配置时的单 Endpoint/单 local-unix route registry。

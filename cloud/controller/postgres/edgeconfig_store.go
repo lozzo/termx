@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/muxvia/muxvia/cloud/controller/certificate"
-	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/certificate"
+	"github.com/anytty/anytty/cloud/controller/edgeconfig"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
 )
 

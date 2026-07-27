@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import mobileAppSource from './MuxviaApp.tsx?raw'
+import mobileAppSource from './AnyTTYApp.tsx?raw'
 import remoteControlSource from '../../ui/src/app/RemoteControlApp.tsx?raw'
-import nativeConnectionSource from '../android/app/src/main/java/com/muxvia/app/NativeConnectionPlugin.kt?raw'
+import nativeConnectionSource from '../android/app/src/main/java/com/anytty/app/NativeConnectionPlugin.kt?raw'
 
 describe('mobile product shell', () => {
   it('keeps the terminal client accountless and scoped to saved services', () => {

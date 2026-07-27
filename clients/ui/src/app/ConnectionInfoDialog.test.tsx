@@ -86,7 +86,7 @@ describe('ConnectionInfoDialog', () => {
 
     expect((screen.getByRole('radio', { name: 'SSH tunnel' }) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText('Credential unavailable')).toBeTruthy()
-    await user.click(screen.getByRole('radio', { name: 'Muxvia Cloud' }))
+    await user.click(screen.getByRole('radio', { name: 'AnyTTY Cloud' }))
     await user.click(screen.getByRole('radio', { name: 'Relay only' }))
     await user.click(screen.getByRole('radio', { name: 'TCP only' }))
     await user.click(screen.getByRole('button', { name: 'Apply & reconnect' }))

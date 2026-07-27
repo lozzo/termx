@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 func TestSessionOwnerReplacesGenerationAndRejectsStaleOperations(t *testing.T) {

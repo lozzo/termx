@@ -8,16 +8,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/muxvia/muxvia/client/binding"
-	"github.com/muxvia/muxvia/client/endpoint"
-	clientruntime "github.com/muxvia/muxvia/client/runtime"
-	"github.com/muxvia/muxvia/proto/bindingpb"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/client/binding"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	"github.com/anytty/anytty/proto/bindingpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	endpointShareURIPrefix   = "muxvia://share?payload="
+	endpointShareURIPrefix   = "anytty://share?payload="
 	maxPendingEndpointShares = 16
 )
 

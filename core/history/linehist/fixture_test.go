@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 // R435 准入（fixture 级）：真实 vterm 事务喂 `fixtures/history/*.ansi`，

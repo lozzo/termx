@@ -1,7 +1,7 @@
 # tui config example
 #
 # 建议保存为：
-#   ~/.config/muxvia/tui-v3.yaml
+#   ~/.config/anytty/tui-v3.yaml
 #
 # 解析规则：
 # - 缩进必须使用两个空格。
@@ -30,7 +30,7 @@ tui:
 
     # palette 控制基础 palette 来源。
     # 可选值：host、builtin。
-    # host 会优先尊重宿主终端/环境；builtin 使用 Muxvia 内置 palette。
+    # host 会优先尊重宿主终端/环境；builtin 使用 AnyTTY 内置 palette。
     # 下面的颜色字段非空时会覆盖 palette 派生值。
     # 默认值：host。
     palette: host
@@ -158,7 +158,7 @@ tui:
     #   {{action "tab.close"}}、{{end_style}}、{{end_action}}。
     # - 也可以使用 struct 字段：{{.TabID}}、{{.Index}}、{{.Title}}、{{.Active}}。
     #
-    # Muxvia span 语法：
+    # AnyTTY span 语法：
     # - span 在 text/template 执行后解析；动态 title 里的 [action:...] 只会作为文字显示。
     # - [fg:#RRGGBB] 设置后续片段前景色；[bg:#RRGGBB] 设置背景色。
     # - [fg:#RRGGBB;bg:#RRGGBB;font:bold] 可以组合多个样式。
@@ -192,7 +192,7 @@ tui:
     # 例如右上角默认语义仍是 zoom / split right / split down / close。
     # action_left/action_right 是每个 action token 的左右部，默认等价于 "[" 和 "]"。
     # action_group_left/action_group_right 是整组 action 的最外层左右部，可做 Powerline 半圆胶囊。
-    # 这些模板支持和 tab_template 相同的 text/template 占位符与 Muxvia span：
+    # 这些模板支持和 tab_template 相同的 text/template 占位符与 AnyTTY span：
     # - action token 可用 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}、{{active}}、{{not_active}}、{{is_zoom_mode}}、{{not_zoom_mode}}。
     # - owner token 可用 {{text}}。
     # - [fg:#RRGGBB;bg:#RRGGBB;font:bold]、[style:accent]、[reset] 会作为样式解析。

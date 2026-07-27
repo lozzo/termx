@@ -1,7 +1,7 @@
-Muxvia App License And Third-Party Notice Index
+AnyTTY App License And Third-Party Notice Index
 
 APACHE-2.0.txt
-  Apache License 2.0 text used by applicable Muxvia and third-party components.
+  Apache License 2.0 text used by applicable AnyTTY and third-party components.
 
 third-party/NPM_NOTICES.txt
   Production npm lockfile dependency versions, attributions, and full texts.
@@ -18,5 +18,5 @@ third-party/WEBRTC.txt
 third-party/FONTS.txt
   Embedded Nerd Font Mono attribution and license terms.
 
-Muxvia source and product components use the repository license. Third-party
+AnyTTY source and product components use the repository license. Third-party
 components remain governed by the individual notices listed above.

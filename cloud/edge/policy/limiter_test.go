@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/edge/policy"
+	"github.com/anytty/anytty/cloud/edge/policy"
 )
 
 func TestLeaseLimiterSharesBudgetAndStopsAtExpiry(t *testing.T) {

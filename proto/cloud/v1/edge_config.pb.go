@@ -896,7 +896,7 @@ var File_cloud_v1_edge_config_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1acloud/v1/edge_config.proto\x12\x0fmuxvia.cloud.v1\x1a\x1acloud/v1/certificate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
+	"\x1acloud/v1/edge_config.proto\x12\x0fanytty.cloud.v1\x1a\x1acloud/v1/certificate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
 	"\x11EdgeDesiredConfig\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\x12\x12\n" +
@@ -923,20 +923,20 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x16relay_allocation_count\x18\n" +
 	" \x01(\x04R\x14relayAllocationCount\"\xfb\x01\n" +
 	"\vManagedEdge\x12:\n" +
-	"\x06config\x18\x01 \x01(\v2\".muxvia.cloud.v1.EdgeDesiredConfigR\x06config\x12'\n" +
+	"\x06config\x18\x01 \x01(\v2\".anytty.cloud.v1.EdgeDesiredConfigR\x06config\x12'\n" +
 	"\x0fconfig_revision\x18\x02 \x01(\x04R\x0econfigRevision\x12@\n" +
-	"\aruntime\x18\x03 \x01(\v2&.muxvia.cloud.v1.EdgeRuntimeProjectionR\aruntime\x12E\n" +
-	"\vcertificate\x18\x04 \x01(\v2#.muxvia.cloud.v1.CertificateBindingR\vcertificate\"\x12\n" +
+	"\aruntime\x18\x03 \x01(\v2&.anytty.cloud.v1.EdgeRuntimeProjectionR\aruntime\x12E\n" +
+	"\vcertificate\x18\x04 \x01(\v2#.anytty.cloud.v1.CertificateBindingR\vcertificate\"\x12\n" +
 	"\x10ListEdgesRequest\"G\n" +
 	"\x11ListEdgesResponse\x122\n" +
-	"\x05edges\x18\x01 \x03(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x05edges\"\x84\x01\n" +
+	"\x05edges\x18\x01 \x03(\v2\x1c.anytty.cloud.v1.ManagedEdgeR\x05edges\"\x84\x01\n" +
 	"\x11CreateEdgeRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12\x1a\n" +
 	"\bcapacity\x18\x03 \x01(\x04R\bcapacity\x12'\n" +
 	"\x0fpublic_endpoint\x18\x04 \x01(\tR\x0epublicEndpoint\"\xb5\x01\n" +
 	"\x12CreateEdgeResponse\x120\n" +
-	"\x04edge\x18\x01 \x01(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x04edge\x12'\n" +
+	"\x04edge\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.ManagedEdgeR\x04edge\x12'\n" +
 	"\x0finstall_command\x18\x02 \x01(\tR\x0einstallCommand\x12D\n" +
 	"\x10claim_expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0eclaimExpiresAt\"\xe4\x01\n" +
 	"\x11UpdateEdgeRequest\x12\x17\n" +
@@ -948,7 +948,7 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x0fpublic_endpoint\x18\x06 \x01(\tR\x0epublicEndpoint\x12\x18\n" +
 	"\aenabled\x18\a \x01(\bR\aenabled\"F\n" +
 	"\x12UpdateEdgeResponse\x120\n" +
-	"\x04edge\x18\x01 \x01(\v2\x1c.muxvia.cloud.v1.ManagedEdgeR\x04edge\"\xa7\x01\n" +
+	"\x04edge\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.ManagedEdgeR\x04edge\"\xa7\x01\n" +
 	"\x13RegisterEdgeRequest\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12'\n" +
 	"\x0fbootstrap_token\x18\x02 \x01(\tR\x0ebootstrapToken\x12(\n" +
@@ -962,10 +962,10 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x1dcontroller_ca_certificate_pem\x18\x05 \x01(\fR\x1acontrollerCaCertificatePem\x12-\n" +
 	"\x12controller_address\x18\x06 \x01(\tR\x11controllerAddress\x124\n" +
 	"\x16controller_server_name\x18\a \x01(\tR\x14controllerServerName\x12O\n" +
-	"\x0edesired_config\x18\b \x01(\v2(.muxvia.cloud.v1.SignedEdgeDesiredConfigR\rdesiredConfig\x12\"\n" +
+	"\x0edesired_config\x18\b \x01(\v2(.anytty.cloud.v1.SignedEdgeDesiredConfigR\rdesiredConfig\x12\"\n" +
 	"\rconfig_key_id\x18\t \x01(\tR\vconfigKeyId\x129\n" +
 	"\x19config_signing_public_key\x18\n" +
-	" \x01(\fR\x16configSigningPublicKeyB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	" \x01(\fR\x16configSigningPublicKeyB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_edge_config_proto_rawDescOnce sync.Once
@@ -981,32 +981,32 @@ func file_cloud_v1_edge_config_proto_rawDescGZIP() []byte {
 
 var file_cloud_v1_edge_config_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_cloud_v1_edge_config_proto_goTypes = []any{
-	(*EdgeDesiredConfig)(nil),       // 0: muxvia.cloud.v1.EdgeDesiredConfig
-	(*SignedEdgeDesiredConfig)(nil), // 1: muxvia.cloud.v1.SignedEdgeDesiredConfig
-	(*EdgeRuntimeProjection)(nil),   // 2: muxvia.cloud.v1.EdgeRuntimeProjection
-	(*ManagedEdge)(nil),             // 3: muxvia.cloud.v1.ManagedEdge
-	(*ListEdgesRequest)(nil),        // 4: muxvia.cloud.v1.ListEdgesRequest
-	(*ListEdgesResponse)(nil),       // 5: muxvia.cloud.v1.ListEdgesResponse
-	(*CreateEdgeRequest)(nil),       // 6: muxvia.cloud.v1.CreateEdgeRequest
-	(*CreateEdgeResponse)(nil),      // 7: muxvia.cloud.v1.CreateEdgeResponse
-	(*UpdateEdgeRequest)(nil),       // 8: muxvia.cloud.v1.UpdateEdgeRequest
-	(*UpdateEdgeResponse)(nil),      // 9: muxvia.cloud.v1.UpdateEdgeResponse
-	(*RegisterEdgeRequest)(nil),     // 10: muxvia.cloud.v1.RegisterEdgeRequest
-	(*RegisterEdgeResponse)(nil),    // 11: muxvia.cloud.v1.RegisterEdgeResponse
+	(*EdgeDesiredConfig)(nil),       // 0: anytty.cloud.v1.EdgeDesiredConfig
+	(*SignedEdgeDesiredConfig)(nil), // 1: anytty.cloud.v1.SignedEdgeDesiredConfig
+	(*EdgeRuntimeProjection)(nil),   // 2: anytty.cloud.v1.EdgeRuntimeProjection
+	(*ManagedEdge)(nil),             // 3: anytty.cloud.v1.ManagedEdge
+	(*ListEdgesRequest)(nil),        // 4: anytty.cloud.v1.ListEdgesRequest
+	(*ListEdgesResponse)(nil),       // 5: anytty.cloud.v1.ListEdgesResponse
+	(*CreateEdgeRequest)(nil),       // 6: anytty.cloud.v1.CreateEdgeRequest
+	(*CreateEdgeResponse)(nil),      // 7: anytty.cloud.v1.CreateEdgeResponse
+	(*UpdateEdgeRequest)(nil),       // 8: anytty.cloud.v1.UpdateEdgeRequest
+	(*UpdateEdgeResponse)(nil),      // 9: anytty.cloud.v1.UpdateEdgeResponse
+	(*RegisterEdgeRequest)(nil),     // 10: anytty.cloud.v1.RegisterEdgeRequest
+	(*RegisterEdgeResponse)(nil),    // 11: anytty.cloud.v1.RegisterEdgeResponse
 	(*timestamppb.Timestamp)(nil),   // 12: google.protobuf.Timestamp
-	(*CertificateBinding)(nil),      // 13: muxvia.cloud.v1.CertificateBinding
+	(*CertificateBinding)(nil),      // 13: anytty.cloud.v1.CertificateBinding
 }
 var file_cloud_v1_edge_config_proto_depIdxs = []int32{
-	12, // 0: muxvia.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
-	12, // 1: muxvia.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
-	0,  // 2: muxvia.cloud.v1.ManagedEdge.config:type_name -> muxvia.cloud.v1.EdgeDesiredConfig
-	2,  // 3: muxvia.cloud.v1.ManagedEdge.runtime:type_name -> muxvia.cloud.v1.EdgeRuntimeProjection
-	13, // 4: muxvia.cloud.v1.ManagedEdge.certificate:type_name -> muxvia.cloud.v1.CertificateBinding
-	3,  // 5: muxvia.cloud.v1.ListEdgesResponse.edges:type_name -> muxvia.cloud.v1.ManagedEdge
-	3,  // 6: muxvia.cloud.v1.CreateEdgeResponse.edge:type_name -> muxvia.cloud.v1.ManagedEdge
-	12, // 7: muxvia.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 8: muxvia.cloud.v1.UpdateEdgeResponse.edge:type_name -> muxvia.cloud.v1.ManagedEdge
-	1,  // 9: muxvia.cloud.v1.RegisterEdgeResponse.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
+	12, // 0: anytty.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
+	12, // 1: anytty.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
+	0,  // 2: anytty.cloud.v1.ManagedEdge.config:type_name -> anytty.cloud.v1.EdgeDesiredConfig
+	2,  // 3: anytty.cloud.v1.ManagedEdge.runtime:type_name -> anytty.cloud.v1.EdgeRuntimeProjection
+	13, // 4: anytty.cloud.v1.ManagedEdge.certificate:type_name -> anytty.cloud.v1.CertificateBinding
+	3,  // 5: anytty.cloud.v1.ListEdgesResponse.edges:type_name -> anytty.cloud.v1.ManagedEdge
+	3,  // 6: anytty.cloud.v1.CreateEdgeResponse.edge:type_name -> anytty.cloud.v1.ManagedEdge
+	12, // 7: anytty.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 8: anytty.cloud.v1.UpdateEdgeResponse.edge:type_name -> anytty.cloud.v1.ManagedEdge
+	1,  // 9: anytty.cloud.v1.RegisterEdgeResponse.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
 	10, // [10:10] is the sub-list for method output_type
 	10, // [10:10] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name

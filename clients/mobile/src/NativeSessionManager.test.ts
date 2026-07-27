@@ -1,6 +1,6 @@
 import { create } from '@bufbuild/protobuf'
 import { describe, expect, it, vi } from 'vitest'
-import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '@muxvia/ui'
+import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '@anytty/ui'
 import { EndpointSessionStampSchema, type ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
 import { CommandEnvelopeSchema, type CommandEnvelope, type EventEnvelope, type ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
 import { ConnectionSnapshotSchema } from '../../ui/src/generated/bindingpb/client_binding_pb'

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
+	"github.com/anytty/anytty/core/history"
 )
 
 // LineFile 是 append-only 二进制文件：offset 索引 + 分页读 + 崩溃截尾恢复。

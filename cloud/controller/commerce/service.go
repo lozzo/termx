@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muxvia/muxvia/cloud/controller/account"
-	"github.com/muxvia/muxvia/cloud/controller/control"
-	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/control"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

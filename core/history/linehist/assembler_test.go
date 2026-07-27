@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/muxvia/muxvia/core/history"
-	vterm "github.com/muxvia/muxvia/vterm/vterm"
+	"github.com/anytty/anytty/core/history"
+	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
 // Assembler 是纯拼装器：滚出物理行 + wrap 标志 -> 宽度无关 logical line。

@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 // Transport 是同进程测试用 frame transport。

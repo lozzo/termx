@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muxvia/muxvia/proto/bindingpb"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/proto/bindingpb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -88,7 +88,7 @@ func TestEnginePairingAndCredentialOperationsUseGenericEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	importPayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_ImportPairing{ImportPairing: &bindingpb.ImportPairingRequest{RequestId: "pair-1", PortablePayload: "muxvia://bootstrap?payload=proof"}}})
+	importPayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_ImportPairing{ImportPairing: &bindingpb.ImportPairingRequest{RequestId: "pair-1", PortablePayload: "anytty://bootstrap?payload=proof"}}})
 	importOperation, err := engine.EngineCommand(importPayload)
 	if err != nil {
 		t.Fatal(err)

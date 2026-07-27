@@ -1,0 +1,37 @@
+[Unit]
+Description=AnyTTY Cloud Controller (online development)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=anytty
+Group=anytty
+EnvironmentFile=/etc/anytty/cloud/controller.env
+StateDirectory=anytty-cloud-controller
+StateDirectoryMode=0700
+ExecStart=/opt/anytty/bin/anytty-cloud-controller --controller-id=${ANYTTY_CLOUD_CONTROLLER_ID} --grpc-listen=${ANYTTY_CLOUD_CONTROLLER_LISTEN} --http-listen=${ANYTTY_CLOUD_CONTROLLER_HTTP_LISTEN} --health-listen=${ANYTTY_CLOUD_CONTROLLER_HEALTH_LISTEN} --tls-cert=/etc/anytty/cloud/tls/controller-fullchain.pem --tls-key=/etc/anytty/cloud/tls/controller-key.pem --controller-ca=/etc/anytty/cloud/tls/controller-fullchain.pem --edge-ca=/etc/anytty/cloud/tls/edge-ca.pem --edge-ca-key=/etc/anytty/cloud/pki/edge-ca-key.pem --public-origin=${ANYTTY_CLOUD_PUBLIC_ORIGIN} --controller-address=${ANYTTY_CLOUD_CONTROLLER_PUBLIC_ADDRESS} --controller-server-name=${ANYTTY_CLOUD_CONTROLLER_SERVER_NAME} --operator-username=${ANYTTY_CLOUD_OPERATOR_USERNAME} --operator-password-file=/etc/anytty/cloud/secrets/operator-password --config-signing-key=/etc/anytty/cloud/pki/config-signing-key.pem --config-signing-key-id=${ANYTTY_CLOUD_CONFIG_KEY_ID} --edge-artifact=/opt/anytty/artifacts/anytty-cloud-edge --edge-artifact-version=${ANYTTY_CLOUD_EDGE_ARTIFACT_VERSION} --artifact-signing-key=/etc/anytty/cloud/pki/artifact-signing-key.pem --ticket-signing-key=/etc/anytty/cloud/pki/ticket-signing-key.pem --ticket-signing-key-id=${ANYTTY_CLOUD_TICKET_KEY_ID} --development-payments
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+LimitNOFILE=1048576
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/anytty-cloud-controller
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

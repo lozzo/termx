@@ -12,39 +12,39 @@ import (
 
 func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	commonForbidden := []string{
-		"github.com/muxvia/muxvia/tui",
-		"github.com/muxvia/muxvia/cmd/muxvia",
-		"github.com/muxvia/muxvia/private",
+		"github.com/anytty/anytty/tui",
+		"github.com/anytty/anytty/cmd/anytty",
+		"github.com/anytty/anytty/private",
 	}
 	assertClientImportsExclude(t, "endpoint", append(commonForbidden,
-		"github.com/muxvia/muxvia/client/runtime",
-		"github.com/muxvia/muxvia/client/port",
-		"github.com/muxvia/muxvia/client/adapter",
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/remote/client",
-		"github.com/muxvia/muxvia/remote/webrtc",
+		"github.com/anytty/anytty/client/runtime",
+		"github.com/anytty/anytty/client/port",
+		"github.com/anytty/anytty/client/adapter",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/remote/client",
+		"github.com/anytty/anytty/remote/webrtc",
 	))
 	assertClientImportsExclude(t, "runtime", append(commonForbidden,
-		"github.com/muxvia/muxvia/client/adapter",
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/remote/client",
-		"github.com/muxvia/muxvia/remote/webrtc",
+		"github.com/anytty/anytty/client/adapter",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/remote/client",
+		"github.com/anytty/anytty/remote/webrtc",
 		"os",
 		"path/filepath",
 		"syscall/js",
 	))
 	assertClientImportsLimitedToFiles(t, "runtime", []string{
-		"github.com/muxvia/muxvia/shared/transport",
-		"github.com/muxvia/muxvia/shared/remoteauth",
+		"github.com/anytty/anytty/shared/transport",
+		"github.com/anytty/anytty/shared/remoteauth",
 	}, map[string]bool{"pairing.go": true})
 	assertClientImportsExclude(t, "port", append(commonForbidden,
-		"github.com/muxvia/muxvia/client/runtime",
-		"github.com/muxvia/muxvia/client/adapter",
-		"github.com/muxvia/muxvia/internal/protocol",
-		"github.com/muxvia/muxvia/shared/transport",
-		"github.com/muxvia/muxvia/shared/remoteauth",
-		"github.com/muxvia/muxvia/remote/client",
-		"github.com/muxvia/muxvia/remote/webrtc",
+		"github.com/anytty/anytty/client/runtime",
+		"github.com/anytty/anytty/client/adapter",
+		"github.com/anytty/anytty/internal/protocol",
+		"github.com/anytty/anytty/shared/transport",
+		"github.com/anytty/anytty/shared/remoteauth",
+		"github.com/anytty/anytty/remote/client",
+		"github.com/anytty/anytty/remote/webrtc",
 	))
 	// binding 是 JNI/C/WASM 的公开 composition root，可以装配 concrete platform adapter；
 	// 它仍不能反向依赖 TUI、CLI 或 private owner。

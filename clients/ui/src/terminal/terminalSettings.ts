@@ -40,9 +40,9 @@ export interface TerminalSettings {
   cursorBlink: boolean
 }
 
-export const TERMINAL_SETTINGS_STORAGE_KEY = 'muxvia.terminal.settings.v1'
+export const TERMINAL_SETTINGS_STORAGE_KEY = 'anytty.terminal.settings.v1'
 
-export const MUXVIA_DARK_TERMINAL_THEME: ITheme = {
+export const ANYTTY_DARK_TERMINAL_THEME: ITheme = {
   background: '#0c0c0c',
   foreground: '#f4f4f5',
   cursor: '#d4d4d8',
@@ -86,10 +86,10 @@ interface TerminalThemeUiPreset {
 
 export const TERMINAL_THEME_OPTIONS = [
   {
-    id: 'muxvia-dark',
-    label: 'Muxvia Dark',
+    id: 'anytty-dark',
+    label: 'AnyTTY Dark',
     group: 'dark',
-    theme: MUXVIA_DARK_TERMINAL_THEME,
+    theme: ANYTTY_DARK_TERMINAL_THEME,
   },
   {
     id: 'tokyo-night',
@@ -529,7 +529,7 @@ export type TerminalThemeOption = (typeof TERMINAL_THEME_OPTIONS)[number]
 export type TerminalThemeId = TerminalThemeOption['id']
 
 const TERMINAL_THEME_UI_PRESETS: Record<TerminalThemeId, TerminalThemeUiPreset> = {
-  'muxvia-dark': {
+  'anytty-dark': {
     page: '#030712',
     surface: '#0c0c0c',
     surfaceRaised: '#18181b',
@@ -731,7 +731,7 @@ export const TERMINAL_FONT_OPTIONS: TerminalFontOption[] = [
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   fontSize: 14,
   fontFamily: TERMINAL_FONT_OPTIONS[0]!.value,
-  themeId: 'muxvia-dark',
+  themeId: 'anytty-dark',
   renderer: 'auto',
   keyboardMode: 'auto',
   scrollback: 10000,
@@ -765,7 +765,7 @@ export function writeTerminalSettings(
 }
 
 export function resolveTerminalTheme(themeId: TerminalThemeId | string | undefined): ITheme {
-  return TERMINAL_THEME_OPTIONS.find((option) => option.id === themeId)?.theme ?? MUXVIA_DARK_TERMINAL_THEME
+  return TERMINAL_THEME_OPTIONS.find((option) => option.id === themeId)?.theme ?? ANYTTY_DARK_TERMINAL_THEME
 }
 
 export function resolveTerminalThemeOption(themeId: TerminalThemeId | string | undefined): TerminalThemeOption {
@@ -776,8 +776,8 @@ export function resolveTerminalThemeUi(themeId: TerminalThemeId | string | undef
   const option = resolveTerminalThemeOption(themeId)
   const theme = option.theme
   const preset = TERMINAL_THEME_UI_PRESETS[option.id]
-  const background = colorValue(theme.background, MUXVIA_DARK_TERMINAL_THEME.background!)
-  const foreground = colorValue(theme.foreground, MUXVIA_DARK_TERMINAL_THEME.foreground!)
+  const background = colorValue(theme.background, ANYTTY_DARK_TERMINAL_THEME.background!)
+  const foreground = colorValue(theme.foreground, ANYTTY_DARK_TERMINAL_THEME.foreground!)
   const cursor = colorValue(theme.cursor, foreground)
   const accent = colorValue(theme.blue ?? theme.cyan ?? theme.brightBlue, cursor)
 
@@ -804,22 +804,22 @@ export function resolveTerminalThemeUi(themeId: TerminalThemeId | string | undef
 export function terminalThemeCssVariables(themeId: TerminalThemeId | string | undefined): Record<string, string> {
   const ui = resolveTerminalThemeUi(themeId)
   return {
-    '--muxvia-bg': ui.page,
-    '--muxvia-surface': ui.surface,
-    '--muxvia-surface-raised': ui.surfaceRaised,
-    '--muxvia-border': ui.border,
-    '--muxvia-border-subtle': ui.borderSubtle,
-    '--muxvia-text': ui.text,
-    '--muxvia-muted': ui.muted,
-    '--muxvia-faint': ui.faint,
-    '--muxvia-accent': ui.accent,
-    '--muxvia-accent-text': ui.accentText,
-    '--muxvia-terminal-bg': ui.terminalBackground,
-    '--muxvia-terminal-fg': ui.terminalForeground,
-    '--muxvia-terminal-cursor': ui.terminalCursor,
-    '--muxvia-overlay': ui.overlay,
-    '--muxvia-scrollbar': ui.scrollbar,
-    '--muxvia-scrollbar-active': ui.scrollbarActive,
+    '--anytty-bg': ui.page,
+    '--anytty-surface': ui.surface,
+    '--anytty-surface-raised': ui.surfaceRaised,
+    '--anytty-border': ui.border,
+    '--anytty-border-subtle': ui.borderSubtle,
+    '--anytty-text': ui.text,
+    '--anytty-muted': ui.muted,
+    '--anytty-faint': ui.faint,
+    '--anytty-accent': ui.accent,
+    '--anytty-accent-text': ui.accentText,
+    '--anytty-terminal-bg': ui.terminalBackground,
+    '--anytty-terminal-fg': ui.terminalForeground,
+    '--anytty-terminal-cursor': ui.terminalCursor,
+    '--anytty-overlay': ui.overlay,
+    '--anytty-scrollbar': ui.scrollbar,
+    '--anytty-scrollbar-active': ui.scrollbarActive,
   }
 }
 
@@ -845,9 +845,9 @@ export function normalizeTerminalSettings(input: Partial<TerminalSettings> | Rec
 
 function migrateLegacyTerminalSettings(storage: Pick<Storage, 'getItem'> | RemoteRuntimeStorage | undefined): TerminalSettings {
   const base = { ...DEFAULT_TERMINAL_SETTINGS }
-  const legacyRenderer = readStorageValue(storage, 'muxvia.renderer')
+  const legacyRenderer = readStorageValue(storage, 'anytty.renderer')
   if (isTerminalRenderer(legacyRenderer)) base.renderer = legacyRenderer
-  const legacyFontSizeValue = readStorageValue(storage, 'muxvia.fontSize')
+  const legacyFontSizeValue = readStorageValue(storage, 'anytty.fontSize')
   const legacyFontSize = legacyFontSizeValue === null ? Number.NaN : Number(legacyFontSizeValue)
   if (Number.isFinite(legacyFontSize)) base.fontSize = legacyFontSize
   return normalizeTerminalSettings(base)

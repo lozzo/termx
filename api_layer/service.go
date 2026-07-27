@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/muxvia/muxvia/api_mapping"
-	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/anytty/anytty/api_mapping"
+	"github.com/anytty/anytty/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
 

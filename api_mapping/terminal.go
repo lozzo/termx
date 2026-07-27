@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	corev2 "github.com/muxvia/muxvia/core"
-	"github.com/muxvia/muxvia/proto/apipb"
+	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/apipb"
 )
 
 const (

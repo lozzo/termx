@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/muxvia/muxvia/tui/input"
-	"github.com/muxvia/muxvia/tui/state"
+	"github.com/anytty/anytty/tui/input"
+	"github.com/anytty/anytty/tui/state"
 )
 
 // ShellOpenConnectionsMsg 请求打开独立 Connections 页面；真实策略由随后触发的 LoadConnections effect 刷新。

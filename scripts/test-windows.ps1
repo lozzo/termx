@@ -7,8 +7,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
-# Tests own their MUXVIA configuration and must not inherit a developer session.
-Get-ChildItem Env: | Where-Object Name -Like 'MUXVIA*' | ForEach-Object {
+# Tests own their ANYTTY configuration and must not inherit a developer session.
+Get-ChildItem Env: | Where-Object Name -Like 'ANYTTY*' | ForEach-Object {
     Remove-Item "Env:$($_.Name)"
 }
 $env:GOWORK = 'off'

@@ -37,7 +37,7 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 }
 
 func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
-	dir, err := os.MkdirTemp("", "muxvia-pty-env-")
+	dir, err := os.MkdirTemp("", "anytty-pty-env-")
 	if err != nil {
 		t.Fatalf("create pty cwd: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 		Size:    Size{Cols: 120, Rows: 4},
 		Options: TerminalCreateOptions{
 			Dir: dir,
-			Env: []string{"MUXVIA_REMOTE_TEST=ok"},
+			Env: []string{"ANYTTY_REMOTE_TEST=ok"},
 		},
 	}); err != nil {
 		t.Fatalf("register pty terminal: %v", err)

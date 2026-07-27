@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/muxvia/muxvia/shared/filelock"
-	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/anytty/anytty/shared/filelock"
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 const clientCredentialVersion = 1

@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/muxvia/muxvia/cloud/controller/enrollment"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
 )
 
 // CreateDaemonEnrollment 只为已存在的活动账号写入一次性 token 摘要，不隐式创建残缺账号。

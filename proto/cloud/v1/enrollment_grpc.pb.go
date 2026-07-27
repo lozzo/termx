@@ -19,11 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EnrollmentService_BeginDaemonEnrollment_FullMethodName    = "/muxvia.cloud.v1.EnrollmentService/BeginDaemonEnrollment"
-	EnrollmentService_CompleteDaemonEnrollment_FullMethodName = "/muxvia.cloud.v1.EnrollmentService/CompleteDaemonEnrollment"
-	EnrollmentService_ListAgentCandidates_FullMethodName      = "/muxvia.cloud.v1.EnrollmentService/ListAgentCandidates"
-	EnrollmentService_BeginAgentTicket_FullMethodName         = "/muxvia.cloud.v1.EnrollmentService/BeginAgentTicket"
-	EnrollmentService_IssueAgentTicket_FullMethodName         = "/muxvia.cloud.v1.EnrollmentService/IssueAgentTicket"
+	EnrollmentService_BeginDaemonEnrollment_FullMethodName    = "/anytty.cloud.v1.EnrollmentService/BeginDaemonEnrollment"
+	EnrollmentService_CompleteDaemonEnrollment_FullMethodName = "/anytty.cloud.v1.EnrollmentService/CompleteDaemonEnrollment"
+	EnrollmentService_ListAgentCandidates_FullMethodName      = "/anytty.cloud.v1.EnrollmentService/ListAgentCandidates"
+	EnrollmentService_BeginAgentTicket_FullMethodName         = "/anytty.cloud.v1.EnrollmentService/BeginAgentTicket"
+	EnrollmentService_IssueAgentTicket_FullMethodName         = "/anytty.cloud.v1.EnrollmentService/IssueAgentTicket"
 )
 
 // EnrollmentServiceClient is the client API for EnrollmentService service.
@@ -248,7 +248,7 @@ func _EnrollmentService_IssueAgentTicket_Handler(srv interface{}, ctx context.Co
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.EnrollmentService",
+	ServiceName: "anytty.cloud.v1.EnrollmentService",
 	HandlerType: (*EnrollmentServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -277,9 +277,9 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	DaemonManagementService_CreateMyEnrollment_FullMethodName = "/muxvia.cloud.v1.DaemonManagementService/CreateMyEnrollment"
-	DaemonManagementService_ListMyDaemons_FullMethodName      = "/muxvia.cloud.v1.DaemonManagementService/ListMyDaemons"
-	DaemonManagementService_RevokeMyDaemon_FullMethodName     = "/muxvia.cloud.v1.DaemonManagementService/RevokeMyDaemon"
+	DaemonManagementService_CreateMyEnrollment_FullMethodName = "/anytty.cloud.v1.DaemonManagementService/CreateMyEnrollment"
+	DaemonManagementService_ListMyDaemons_FullMethodName      = "/anytty.cloud.v1.DaemonManagementService/ListMyDaemons"
+	DaemonManagementService_RevokeMyDaemon_FullMethodName     = "/anytty.cloud.v1.DaemonManagementService/RevokeMyDaemon"
 )
 
 // DaemonManagementServiceClient is the client API for DaemonManagementService service.
@@ -439,7 +439,7 @@ func _DaemonManagementService_RevokeMyDaemon_Handler(srv interface{}, ctx contex
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var DaemonManagementService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "muxvia.cloud.v1.DaemonManagementService",
+	ServiceName: "anytty.cloud.v1.DaemonManagementService",
 	HandlerType: (*DaemonManagementServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

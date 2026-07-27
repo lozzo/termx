@@ -1,4 +1,4 @@
-import type { ConnectionPolicy, ConnectionPolicyState, ProtoClientSession, ProtoClientSubscription, ProtoResourceStream, RtcConnectOptions } from '@muxvia/ui'
+import type { ConnectionPolicy, ConnectionPolicyState, ProtoClientSession, ProtoClientSubscription, ProtoResourceStream, RtcConnectOptions } from '@anytty/ui'
 import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
 import type { EndpointSessionStamp, ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
 

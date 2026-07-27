@@ -11,7 +11,7 @@ import {
   TerminalInfoSchema,
   TerminalRefSchema,
 } from '../generated/apipb/terminal_pb'
-import { muxviaI18n } from '../i18n'
+import { anyttyI18n } from '../i18n'
 import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { MachineWorkspace } from './MachineWorkspace'
 
@@ -47,7 +47,7 @@ vi.mock('../terminal/Terminal', () => ({
 describe('MachineWorkspace terminal creation', () => {
   beforeEach(async () => {
     terminalRender.mockReset()
-    await muxviaI18n.changeLanguage('en')
+    await anyttyI18n.changeLanguage('en')
   })
   afterEach(() => {
     cleanup()
@@ -83,7 +83,7 @@ describe('MachineWorkspace terminal creation', () => {
     />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Create terminal' }))
-    const sheet = await screen.findByTestId('muxvia-terminal-editor-sheet')
+    const sheet = await screen.findByTestId('anytty-terminal-editor-sheet')
     await waitFor(() => expect((within(sheet).getByLabelText('Command') as HTMLInputElement).value).toBe('/bin/fish'))
     expect((within(sheet).getByLabelText('Working directory') as HTMLInputElement).value).toBe('/home/ada')
 
@@ -123,7 +123,7 @@ describe('MachineWorkspace terminal creation', () => {
     />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
-    const header = await screen.findByTestId('muxvia-terminal-header')
+    const header = await screen.findByTestId('anytty-terminal-header')
     expect(within(header).getByRole('button', { name: 'Open files' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Control resize' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Terminal tools' })).toBeTruthy()
@@ -234,7 +234,7 @@ describe('MachineWorkspace terminal creation', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Open files' }))
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
     await staleSession.close()
-    document.dispatchEvent(new Event('muxvia:resume'))
+    document.dispatchEvent(new Event('anytty:resume'))
 
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThan(1))

@@ -22,17 +22,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/muxvia/muxvia/client/endpoint"
-	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	receiverProofProtocol = "muxvia.endpoint-share.receiver-proof"
+	receiverProofProtocol = "anytty.endpoint-share.receiver-proof"
 	receiverProofVersion  = uint32(1)
 	shareMessageVersion   = uint32(1)
 	maxFrameBytes         = endpoint.MaxPortableContractBytes
-	shareURIPrefix        = "muxvia://share?payload="
+	shareURIPrefix        = "anytty://share?payload="
 )
 
 // ServerOptions 定义一次性 share listener 的公开 locator 与 config-only payload。
@@ -311,7 +311,7 @@ func ephemeralCertificate(now time.Time, ttl time.Duration) (tls.Certificate, st
 		return tls.Certificate{}, "", err
 	}
 	template := &x509.Certificate{
-		SerialNumber: serial, Subject: pkix.Name{CommonName: "Muxvia Endpoint Share"},
+		SerialNumber: serial, Subject: pkix.Name{CommonName: "AnyTTY Endpoint Share"},
 		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(ttl), KeyUsage: x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true,
 	}
