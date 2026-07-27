@@ -15,6 +15,18 @@
 # 当前唯一有效值：1。
 version: 1
 
+# 旧 history 格式不迁移；升级后的首次 daemon 启动会直接删除旧文件。
+daemon:
+  history:
+    # 单个 terminal history 的物理上限（MiB）；0 表示不限额。
+    max_size_mb: 512
+    # 自动删除早于指定天数的历史块；0 表示关闭按天数删除。
+    max_age_days: 0
+    # 可选值：zstd、s2、none。s2 CPU 开销更低，zstd 压缩率通常更高。
+    compression: zstd
+    # 可选值：fast、balanced、best。
+    compression_level: fast
+
 tui:
   # profile 是当前 TUI 客户端配置档名称。
   # 用途：给未来多 profile、诊断输出或 UI 标识使用；不表达 terminal/session 状态。

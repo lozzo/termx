@@ -1,6 +1,7 @@
 package linehist
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -90,6 +91,7 @@ type frozenView struct {
 	cols       int
 	hot        []history.HistoryRow
 	generation history.Generation
+	retention  uint64
 }
 
 // liveView 是一次查询的一致性视图：coldBase/coldCount/热段行在 ingest gate
@@ -101,6 +103,7 @@ type liveView struct {
 	cols       int
 	hot        []history.HistoryRow
 	generation history.Generation
+	retention  uint64
 }
 
 // Store 实现 history.HistoryStore：冷段 = logical-line 文件，热段 =
@@ -117,14 +120,20 @@ type Store struct {
 	generation history.Generation
 	nextToken  uint64
 	frozen     map[history.HistoryToken]*frozenView
+	retention  uint64
 }
 
 // NewStore 创建 linehist store。screen/gate 由 Terminal 通过 Bind 注入。
 func NewStore(terminalID string, engine *Engine) *Store {
+	var retention uint64
+	if engine != nil {
+		retention = engine.RetentionEpoch()
+	}
 	return &Store{
 		terminalID: terminalID,
 		engine:     engine,
 		frozen:     make(map[history.HistoryToken]*frozenView),
+		retention:  retention,
 	}
 }
 
@@ -156,9 +165,7 @@ func (store *Store) ApplyTransaction(tx vterm.TerminalSemanticTransaction) error
 	if err == nil && tx.ClearScrollback {
 		err = store.engine.ApplyClearScrollbackBoundary()
 	}
-	store.mu.Lock()
-	store.generation++
-	store.mu.Unlock()
+	store.noteHistoryMutation()
 	return err
 }
 
@@ -171,9 +178,7 @@ func (store *Store) SealOpenTail() error {
 	unlock := store.lockGate()
 	defer unlock()
 	err := store.engine.SealOpenTail()
-	store.mu.Lock()
-	store.generation++
-	store.mu.Unlock()
+	store.noteHistoryMutation()
 	return err
 }
 
@@ -199,9 +204,7 @@ func (store *Store) SealLifecycleTail() error {
 		rows = snap.PrimaryRows
 	}
 	err := store.engine.SealPrimaryScreenRows(rows)
-	store.mu.Lock()
-	store.generation++
-	store.mu.Unlock()
+	store.noteHistoryMutation()
 	return err
 }
 
@@ -215,9 +218,7 @@ func (store *Store) AppendLifecycleLines(lines []string) error {
 	unlock := store.lockGate()
 	defer unlock()
 	err := store.engine.AppendLifecycleLines(lines)
-	store.mu.Lock()
-	store.generation++
-	store.mu.Unlock()
+	store.noteHistoryMutation()
 	return err
 }
 
@@ -229,6 +230,21 @@ func (store *Store) Close() error {
 	unlock := store.lockGate()
 	defer unlock()
 	return store.engine.Close()
+}
+
+// PruneRetention 在 ingest gate 内执行物理淘汰，并废止引用已删除前缀的 token。
+func (store *Store) PruneRetention() error {
+	if store == nil {
+		return nil
+	}
+	unlock := store.lockGate()
+	defer unlock()
+	before := store.engine.RetentionEpoch()
+	err := store.engine.PruneRetention()
+	if store.engine.RetentionEpoch() != before {
+		store.noteHistoryMutation()
+	}
+	return err
 }
 
 // Apply 是 HistoryStore 兼容入口。linehist 的写 truth 只来自
@@ -381,6 +397,7 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 		cols:       view.cols,
 		hot:        cloneRows(view.hot),
 		generation: view.generation,
+		retention:  view.retention,
 	}
 	store.mu.Unlock()
 	windowReq := history.HistoryWindowRequest{
@@ -491,6 +508,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 	defer func() { finish(projectedRows) }()
 	unlock := store.lockGate()
 	coldBase, coldCount := store.engine.VisibleLineRange()
+	retention := store.engine.RetentionEpoch()
 	openTail := store.engine.OpenTail()
 	var snap ScreenSnapshot
 	store.mu.Lock()
@@ -518,6 +536,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 		cols:       cols,
 		hot:        hot,
 		generation: generation,
+		retention:  retention,
 	}
 }
 
@@ -602,6 +621,7 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 			cols:       frozen.cols,
 			hot:        cloneRows(frozen.hot),
 			generation: frozen.generation,
+			retention:  frozen.retention,
 		}, nil
 	}
 	view := store.captureLive(req.Cols)
@@ -626,7 +646,7 @@ func (store *Store) logicalRowsForLineRange(view liveView, start int, end int) (
 	var rows []history.HistoryRow
 	if start < view.coldCount {
 		coldEnd := minInt(end, view.coldCount)
-		coldPage, err := store.coldLogicalRowsForLineRange(view.coldBase, view.coldCount, start, coldEnd)
+		coldPage, err := store.coldLogicalRowsForLineRange(view.coldBase, view.coldCount, view.retention, start, coldEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -640,15 +660,18 @@ func (store *Store) logicalRowsForLineRange(view liveView, start int, end int) (
 	return rows, nil
 }
 
-func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, start int, end int) ([]history.HistoryRow, error) {
+func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, retention uint64, start int, end int) ([]history.HistoryRow, error) {
 	if end <= start {
 		return nil, nil
 	}
 	start = clampInt(start, 0, coldCount)
 	end = clampInt(end, start, coldCount)
 	firstLine := coldBase + start
-	lines, err := store.engine.Lines(firstLine, coldBase+end)
+	lines, err := store.engine.LinesAtRetention(retention, firstLine, coldBase+end)
 	if err != nil {
+		if errors.Is(err, errRetentionChanged) {
+			return nil, history.ErrHistoryInvalidMutation
+		}
 		return nil, err
 	}
 	rows := make([]history.HistoryRow, 0, len(lines))
@@ -664,6 +687,17 @@ func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, sta
 		})
 	}
 	return rows, nil
+}
+
+func (store *Store) noteHistoryMutation() {
+	retention := store.engine.RetentionEpoch()
+	store.mu.Lock()
+	if retention != store.retention {
+		clear(store.frozen)
+		store.retention = retention
+	}
+	store.generation++
+	store.mu.Unlock()
 }
 
 func (store *Store) terminalIDFor(terminalID string) string {

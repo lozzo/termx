@@ -14,6 +14,12 @@ import (
 type EndpointConnectionControl struct {
 	RegistryPath string
 	Runtime      EndpointPlanSnapshotSource
+	Diagnostics  EndpointConnectionSnapshotSource
+}
+
+// EndpointConnectionSnapshotSource samples only sessions already owned by the TUI.
+type EndpointConnectionSnapshotSource interface {
+	ConnectionSnapshot(context.Context, state.EndpointID) (clientruntime.ConnectionSnapshot, bool, error)
 }
 
 // EndpointPlanSnapshotSource 是 adapter 读取 Go runtime planner policy 的窄只读能力。
@@ -31,20 +37,44 @@ func (control EndpointConnectionControl) LoadConnections(ctx context.Context) (s
 	return control.project(ctx, registry)
 }
 
-// ApplyRoutePriorities 在跨进程 registry 锁内提交完整 priority 集合，并返回提交后的 Go-owned 投影。
-// mutation 失败时文件与当前 runtime session 均保持不变；成功也不会隐式触发重连。
-func (control EndpointConnectionControl) ApplyRoutePriorities(ctx context.Context, endpointID state.EndpointID, priorities map[string]*int) (state.EndpointStore, error) {
+// ApplyConnectionSettings atomically commits policy and the complete automatic-route priority set.
+func (control EndpointConnectionControl) ApplyConnectionSettings(ctx context.Context, endpointID state.EndpointID, policy state.EndpointConnectionPolicy, priorities map[string]*int) (state.EndpointStore, error) {
 	domainPriorities := make(map[endpoint.RouteID]*int, len(priorities))
 	for routeID, priority := range priorities {
 		domainPriorities[endpoint.RouteID(routeID)] = priority
 	}
 	registry, err := endpoint.UpdateContext(ctx, control.RegistryPath, false, func(current endpoint.Registry) (endpoint.Registry, error) {
-		return endpoint.SetAutomaticRoutePriorities(current, endpoint.EndpointID(endpointID), domainPriorities)
+		next, err := endpoint.SetConnectionPolicy(current, endpoint.EndpointID(endpointID), endpoint.ConnectionPolicy{
+			RoutePreference: policy.RoutePreference, CloudRelayMode: policy.CloudRelayMode, RelayTransport: policy.RelayTransport,
+		})
+		if err != nil {
+			return endpoint.Registry{}, err
+		}
+		return endpoint.SetAutomaticRoutePriorities(next, endpoint.EndpointID(endpointID), domainPriorities)
 	})
 	if err != nil {
 		return state.EndpointStore{}, err
 	}
 	return control.project(ctx, registry)
+}
+
+// SampleConnection reads the selected pair from an existing TUI session and never dials an offline endpoint.
+func (control EndpointConnectionControl) SampleConnection(ctx context.Context, endpointID state.EndpointID) (state.EndpointConnectionSnapshot, bool, error) {
+	if control.Diagnostics == nil {
+		return state.EndpointConnectionSnapshot{}, false, nil
+	}
+	snapshot, valid, err := control.Diagnostics.ConnectionSnapshot(ctx, endpointID)
+	if err != nil || !valid {
+		return state.EndpointConnectionSnapshot{}, valid, err
+	}
+	return state.EndpointConnectionSnapshot{
+		SampledAt: snapshot.SampledAt, RoundTrip: snapshot.RoundTrip,
+		LocalCandidateType: snapshot.LocalCandidateType, RemoteCandidateType: snapshot.RemoteCandidateType,
+		LocalAddress: snapshot.LocalAddress, RemoteAddress: snapshot.RemoteAddress, LocalPort: snapshot.LocalPort, RemotePort: snapshot.RemotePort,
+		LocalProtocol: snapshot.LocalProtocol, RemoteProtocol: snapshot.RemoteProtocol, RelayTransport: snapshot.RelayTransport,
+		NetworkClass: snapshot.NetworkClass, BytesSent: snapshot.BytesSent, BytesReceived: snapshot.BytesReceived,
+		PacketsSent: snapshot.PacketsSent, LossEvents: snapshot.LossEvents, Connected: snapshot.Connected,
+	}, true, nil
 }
 
 func (control EndpointConnectionControl) project(ctx context.Context, registry endpoint.Registry) (state.EndpointStore, error) {

@@ -72,7 +72,7 @@ describe('ConnectionInfoDialog', () => {
     const user = userEvent.setup()
     const onApply = vi.fn()
     render(<ConnectionInfoDialog
-      info={{ path: 'local', routeKind: 'direct', observedPath: 'direct', connectionId: 'studio:7', machineId: 'studio', relayInUse: false, type: 'p2p', generation: 7n }}
+      info={{ path: 'local', routeKind: 'direct', observedPath: 'direct', connectionId: 'studio:7', machineId: 'studio', relayInUse: false, type: 'p2p', localAddr: '192.0.2.10:41000', remoteAddr: '[2001:db8::20]:41121', generation: 7n }}
       loading={false}
       error={null}
       policyState={{ policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' }, available: { direct: true, ssh: false, cloud: true }, unavailableReasons: { ssh: 'credential_unavailable' } }}
@@ -85,6 +85,8 @@ describe('ConnectionInfoDialog', () => {
     />)
 
     expect((screen.getByRole('radio', { name: 'SSH tunnel' }) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByText('192.0.2.10:41000')).toBeTruthy()
+    expect(screen.getByText('[2001:db8::20]:41121')).toBeTruthy()
     expect(screen.getByText('Credential unavailable')).toBeTruthy()
     await user.click(screen.getByRole('radio', { name: 'AnyTTY Cloud' }))
     await user.click(screen.getByRole('radio', { name: 'Relay only' }))

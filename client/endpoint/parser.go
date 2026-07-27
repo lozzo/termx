@@ -29,7 +29,8 @@ type endpointDocument struct {
 }
 
 type selectionPolicyDocument struct {
-	HedgeDelay string `yaml:"hedge_delay,omitempty"`
+	HedgeDelay      string `yaml:"hedge_delay,omitempty"`
+	RoutePreference string `yaml:"route_preference,omitempty"`
 }
 
 type routeDocument struct {
@@ -62,6 +63,7 @@ type routeDocument struct {
 	TargetDeviceID    string `yaml:"target_device_id,omitempty"`
 	AccountProfileRef string `yaml:"account_profile_ref,omitempty"`
 	RelayMode         string `yaml:"relay_mode,omitempty"`
+	RelayTransport    string `yaml:"relay_transport,omitempty"`
 }
 
 type credentialDescriptorDocument struct {
@@ -123,7 +125,7 @@ func parseRegistry(data []byte) (Registry, error) {
 			ID: id, Label: value.Label, LabelSource: EndpointSource(value.LabelSource),
 			DaemonIdentity: DaemonIdentity{DeviceID: value.DeviceID, DeviceFingerprint: value.DeviceFingerprint},
 			Enabled:        enabled, ConnectMode: ConnectMode(value.ConnectMode),
-			SelectionPolicy: SelectionPolicy{HedgeDelay: hedgeDelay, HedgeDelayConfigured: hedgeDelayConfigured},
+			SelectionPolicy: SelectionPolicy{HedgeDelay: hedgeDelay, HedgeDelayConfigured: hedgeDelayConfigured, RoutePreference: RoutePreference(value.Selection.RoutePreference)},
 			Routes:          make(map[RouteID]AccessRoute, len(value.Routes)),
 		}
 		for routeKey, routeValue := range value.Routes {
@@ -153,7 +155,8 @@ func parseRegistry(data []byte) (Registry, error) {
 				RemoteSignalingAddress: routeValue.RemoteSignalingAddress, RemoteICETCPAddress: routeValue.RemoteICETCPAddress,
 				SignalingAddresses: append([]string(nil), routeValue.SignalingAddresses...), ICETCPAddresses: append([]string(nil), routeValue.ICETCPAddresses...),
 				AdvertisedAddresses: append([]string(nil), routeValue.AdvertisedAddresses...), ServerName: routeValue.ServerName,
-				TargetDeviceID: routeValue.TargetDeviceID, AccountProfileRef: routeValue.AccountProfileRef, RelayMode: RelayMode(routeValue.RelayMode),
+				TargetDeviceID: routeValue.TargetDeviceID, AccountProfileRef: routeValue.AccountProfileRef,
+				RelayMode: RelayMode(routeValue.RelayMode), RelayTransport: RelayTransport(routeValue.RelayTransport),
 			}
 		}
 		registry.Endpoints[id] = endpoint

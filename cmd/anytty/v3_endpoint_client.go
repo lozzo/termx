@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	localadapter "github.com/anytty/anytty/client/adapter/local"
 	protocoladapter "github.com/anytty/anytty/client/adapter/protocol"
@@ -18,12 +19,13 @@ func openEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.End
 	return client, func() { _ = client.Close() }, nil
 }
 
-func probeEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.Endpoint, requestedRoute endpointdomain.RouteID, socketOverride, logFile string) (endpointdomain.RouteID, string, string, func(), error) {
+func probeEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.Endpoint, requestedRoute endpointdomain.RouteID, socketOverride, logFile string) (endpointdomain.RouteID, string, string, clientruntime.ConnectionSnapshot, bool, func(), error) {
 	client, route, err := connectCLIEndpoint(ctx, endpoint, requestedRoute, socketOverride, logFile, clientruntime.ConnectIntentProbe)
 	if err != nil {
-		return "", "", "", func() {}, err
+		return "", "", "", clientruntime.ConnectionSnapshot{}, false, func() {}, err
 	}
-	return route.ID, client.ObservedPath(), "only_viable", func() { _ = client.Close() }, nil
+	snapshot, valid := client.ConnectionSnapshot(time.Now().UTC())
+	return route.ID, client.ObservedPath(), "only_viable", snapshot, valid, func() { _ = client.Close() }, nil
 }
 
 func connectCLIEndpoint(ctx context.Context, target endpointdomain.Endpoint, requested endpointdomain.RouteID, socketOverride, logFile string, intent clientruntime.ConnectIntent) (*protocoladapter.ApplicationClient, endpointdomain.AccessRoute, error) {

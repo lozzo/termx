@@ -14,10 +14,7 @@ import (
 
 func newEngineForTest(t *testing.T, dir string) *Engine {
 	t.Helper()
-	file, err := OpenLineFile(dir, "term-e2e")
-	if err != nil {
-		t.Fatalf("open line file: %v", err)
-	}
+	file := openTestLineStorage(t, dir, "term-e2e")
 	return NewEngine(file)
 }
 

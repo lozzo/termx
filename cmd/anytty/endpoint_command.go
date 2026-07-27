@@ -9,6 +9,7 @@ import (
 	"time"
 
 	endpointdomain "github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,7 @@ type endpointRouteView struct {
 	TargetDeviceID         string   `json:"target_device_id,omitempty"`
 	AccountProfileRef      string   `json:"account_profile_ref,omitempty"`
 	RelayMode              string   `json:"relay_mode,omitempty"`
+	RelayTransport         string   `json:"relay_transport,omitempty"`
 }
 
 type endpointView struct {
@@ -55,14 +57,41 @@ type endpointView struct {
 }
 
 type endpointTestView struct {
-	SchemaVersion        int    `json:"schema_version"`
-	Kind                 string `json:"kind"`
-	ID                   string `json:"id"`
-	RouteID              string `json:"route_id"`
-	RouteKind            string `json:"route_kind"`
-	State                string `json:"state"`
-	ObservedPath         string `json:"observed_path,omitempty"`
-	RouteSelectionReason string `json:"route_selection_reason,omitempty"`
+	SchemaVersion        int     `json:"schema_version"`
+	Kind                 string  `json:"kind"`
+	ID                   string  `json:"id"`
+	RouteID              string  `json:"route_id"`
+	RouteKind            string  `json:"route_kind"`
+	State                string  `json:"state"`
+	ObservedPath         string  `json:"observed_path,omitempty"`
+	RouteSelectionReason string  `json:"route_selection_reason,omitempty"`
+	SnapshotAvailable    bool    `json:"snapshot_available"`
+	SampledAt            string  `json:"sampled_at,omitempty"`
+	RoundTripMillis      float64 `json:"round_trip_ms,omitempty"`
+	LocalIP              string  `json:"local_ip,omitempty"`
+	RemoteIP             string  `json:"remote_ip,omitempty"`
+	LocalPort            uint16  `json:"local_port,omitempty"`
+	RemotePort           uint16  `json:"remote_port,omitempty"`
+	LocalCandidateType   string  `json:"local_candidate_type,omitempty"`
+	RemoteCandidateType  string  `json:"remote_candidate_type,omitempty"`
+	LocalProtocol        string  `json:"local_protocol,omitempty"`
+	RemoteProtocol       string  `json:"remote_protocol,omitempty"`
+	RelayTransport       string  `json:"relay_transport,omitempty"`
+	NetworkClass         string  `json:"network_class,omitempty"`
+	BytesSent            uint64  `json:"bytes_sent,omitempty"`
+	BytesReceived        uint64  `json:"bytes_received,omitempty"`
+	PacketsSent          uint64  `json:"packets_sent,omitempty"`
+	LossEvents           uint64  `json:"loss_events,omitempty"`
+	Connected            bool    `json:"connected"`
+}
+
+type endpointPolicyView struct {
+	SchemaVersion  int    `json:"schema_version"`
+	Kind           string `json:"kind"`
+	EndpointID     string `json:"endpoint_id"`
+	Route          string `json:"route"`
+	CloudPath      string `json:"cloud_path"`
+	RelayTransport string `json:"relay_transport"`
 }
 
 func newEndpointCommand(socket, logFile *string) *cobra.Command {
@@ -79,6 +108,7 @@ func newEndpointCommand(socket, logFile *string) *cobra.Command {
 		newEndpointToggleCommand(runtime, false),
 		newEndpointSetDefaultCommand(runtime),
 		newEndpointRouteCommand(runtime),
+		newEndpointPolicyCommand(runtime),
 		newEndpointTestCommand(runtime),
 		newEndpointShareCommand(runtime),
 	)
@@ -182,14 +212,14 @@ type endpointEditFlags struct {
 }
 
 type routeEditFlags struct {
-	routeID, credentialRef, socket, host, user, proxyJump    string
-	remoteSignalingAddress, remoteICETCPAddress              string
-	serverName, targetDeviceID, accountProfileRef, relayMode string
-	port                                                     uint16
-	priority                                                 int
-	manualOnly                                               bool
-	hostKeyFingerprints, signalingAddresses, iceTCPAddresses []string
-	advertisedAddresses                                      []string
+	routeID, credentialRef, socket, host, user, proxyJump                    string
+	remoteSignalingAddress, remoteICETCPAddress                              string
+	serverName, targetDeviceID, accountProfileRef, relayMode, relayTransport string
+	port                                                                     uint16
+	priority                                                                 int
+	manualOnly                                                               bool
+	hostKeyFingerprints, signalingAddresses, iceTCPAddresses                 []string
+	advertisedAddresses                                                      []string
 }
 
 func newEndpointAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
@@ -256,7 +286,8 @@ func newEndpointUpdateCommand(runtime *endpointCommandRuntime) *cobra.Command {
 					endpoint.ConnectMode = endpointdomain.ConnectMode(flags.connectMode)
 				}
 				if cmd.Flags().Changed("hedge-delay") {
-					endpoint.SelectionPolicy = endpointdomain.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
+					endpoint.SelectionPolicy.HedgeDelay = flags.hedgeDelay
+					endpoint.SelectionPolicy.HedgeDelayConfigured = true
 				}
 				registry.Endpoints[id] = endpoint
 				return registry, nil
@@ -533,27 +564,228 @@ func newEndpointTestCommand(runtime *endpointCommandRuntime) *cobra.Command {
 				return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
 			}
 			cmd.Root().SilenceUsage = true
-			routeID, observedPath, selectionReason, closeClient, err := probeEndpointProtocolClient(cmd.Context(), endpoint, endpointdomain.RouteID(routeValue), *runtime.socket, *runtime.logFile)
+			routeID, observedPath, selectionReason, snapshot, snapshotAvailable, closeClient, err := probeEndpointProtocolClient(cmd.Context(), endpoint, endpointdomain.RouteID(routeValue), *runtime.socket, *runtime.logFile)
 			if err != nil {
 				return classifyCLIError(err)
 			}
 			defer closeClient()
 			route, _ := endpoint.Route(routeID)
-			view := endpointTestView{SchemaVersion: 2, Kind: "endpoint_test", ID: string(id), RouteID: string(routeID), RouteKind: string(route.Kind), State: "reachable", ObservedPath: observedPath, RouteSelectionReason: selectionReason}
+			view := endpointTestViewFromSnapshot(id, route, observedPath, selectionReason, snapshot, snapshotAvailable)
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\treachable\t%s\t%s", id, routeID, route.Kind)
-			if observedPath != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "\t%s", observedPath)
-			}
-			fmt.Fprintln(cmd.OutOrStdout())
+			printEndpointTestView(cmd, view)
 			return nil
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
 	command.Flags().StringVar(&routeValue, "route", "", "explicit route ID (required when multiple routes are eligible before CONN003)")
 	return command
+}
+
+func endpointTestViewFromSnapshot(id endpointdomain.EndpointID, route endpointdomain.AccessRoute, observedPath, selectionReason string, snapshot clientruntime.ConnectionSnapshot, valid bool) endpointTestView {
+	view := endpointTestView{
+		SchemaVersion: 3, Kind: "endpoint_test", ID: string(id), RouteID: string(route.ID), RouteKind: string(route.Kind),
+		State: "reachable", ObservedPath: observedPath, RouteSelectionReason: selectionReason, SnapshotAvailable: valid,
+	}
+	if !valid {
+		return view
+	}
+	view.SampledAt = snapshot.SampledAt.UTC().Format(time.RFC3339Nano)
+	view.RoundTripMillis = float64(snapshot.RoundTrip) / float64(time.Millisecond)
+	view.LocalIP, view.RemoteIP, view.LocalPort, view.RemotePort = snapshot.LocalAddress, snapshot.RemoteAddress, snapshot.LocalPort, snapshot.RemotePort
+	view.LocalCandidateType, view.RemoteCandidateType = snapshot.LocalCandidateType, snapshot.RemoteCandidateType
+	view.LocalProtocol, view.RemoteProtocol, view.RelayTransport = snapshot.LocalProtocol, snapshot.RemoteProtocol, snapshot.RelayTransport
+	view.NetworkClass = snapshot.NetworkClass
+	view.BytesSent, view.BytesReceived, view.PacketsSent, view.LossEvents, view.Connected = snapshot.BytesSent, snapshot.BytesReceived, snapshot.PacketsSent, snapshot.LossEvents, snapshot.Connected
+	if snapshot.ObservedPath != "" {
+		view.ObservedPath = snapshot.ObservedPath
+	}
+	return view
+}
+
+func printEndpointTestView(cmd *cobra.Command, view endpointTestView) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Endpoint: %s\nState: %s\nRoute: %s (%s)\n", view.ID, view.State, view.RouteID, view.RouteKind)
+	if view.ObservedPath != "" {
+		fmt.Fprintf(out, "Path: %s\n", view.ObservedPath)
+	}
+	if !view.SnapshotAvailable {
+		fmt.Fprintln(out, "Network snapshot: unavailable")
+		return
+	}
+	fmt.Fprintf(out, "Local: %s\nRemote: %s\n", formatCLIEndpoint(view.LocalIP, view.LocalPort), formatCLIEndpoint(view.RemoteIP, view.RemotePort))
+	if view.RoundTripMillis > 0 {
+		fmt.Fprintf(out, "RTT: %.1f ms\n", view.RoundTripMillis)
+	}
+	fmt.Fprintf(out, "Candidates: %s / %s\nICE transport: %s / %s\n", emptyCLIValue(view.LocalCandidateType), emptyCLIValue(view.RemoteCandidateType), emptyCLIValue(view.LocalProtocol), emptyCLIValue(view.RemoteProtocol))
+	if view.RelayTransport != "" {
+		fmt.Fprintf(out, "Relay transport: %s\n", view.RelayTransport)
+	}
+	if view.NetworkClass != "" {
+		fmt.Fprintf(out, "Network: %s\n", view.NetworkClass)
+	}
+	fmt.Fprintf(out, "Traffic: %d sent / %d received bytes\n", view.BytesSent, view.BytesReceived)
+}
+
+func formatCLIEndpoint(address string, port uint16) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return "-"
+	}
+	if port == 0 {
+		return address
+	}
+	if strings.Contains(address, ":") {
+		return fmt.Sprintf("[%s]:%d", address, port)
+	}
+	return fmt.Sprintf("%s:%d", address, port)
+}
+
+func emptyCLIValue(value string) string {
+	if value = strings.TrimSpace(value); value != "" {
+		return value
+	}
+	return "-"
+}
+
+func newEndpointPolicyCommand(runtime *endpointCommandRuntime) *cobra.Command {
+	command := &cobra.Command{Use: "policy", Short: "Show or change the connection policy used by the next session"}
+	command.AddCommand(newEndpointPolicyShowCommand(runtime), newEndpointPolicySetCommand(runtime))
+	return command
+}
+
+func newEndpointPolicyShowCommand(runtime *endpointCommandRuntime) *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{Use: "show ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		registry, err := runtime.load()
+		if err != nil {
+			return err
+		}
+		target, ok := registry.Endpoints[endpointdomain.EndpointID(args[0])]
+		if !ok {
+			return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", args[0])}
+		}
+		return writeEndpointPolicy(cmd, endpointPolicyViewFromEndpoint(target), jsonOutput)
+	}}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	return command
+}
+
+func newEndpointPolicySetCommand(runtime *endpointCommandRuntime) *cobra.Command {
+	var route, cloudPath, relayTransport string
+	var jsonOutput bool
+	command := &cobra.Command{Use: "set ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("route") && !cmd.Flags().Changed("cloud-path") && !cmd.Flags().Changed("relay-transport") {
+			return usageCLIError("endpoint policy set requires at least one policy flag")
+		}
+		id := endpointdomain.EndpointID(args[0])
+		var updated endpointdomain.Endpoint
+		err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
+			target, ok := registry.Endpoints[id]
+			if !ok {
+				return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+			}
+			current := endpointPolicyViewFromEndpoint(target)
+			if cmd.Flags().Changed("route") {
+				current.Route = route
+			}
+			if cmd.Flags().Changed("cloud-path") {
+				current.CloudPath = cloudPath
+			}
+			if cmd.Flags().Changed("relay-transport") {
+				current.RelayTransport = relayTransport
+			}
+			policy, err := endpointPolicyFromView(current)
+			if err != nil {
+				return endpointdomain.Registry{}, err
+			}
+			next, err := endpointdomain.SetConnectionPolicy(registry, id, policy)
+			if err == nil {
+				updated = next.Endpoints[id]
+			}
+			return next, err
+		})
+		if err != nil {
+			return err
+		}
+		return writeEndpointPolicy(cmd, endpointPolicyViewFromEndpoint(updated), jsonOutput)
+	}}
+	command.Flags().StringVar(&route, "route", "", "auto, direct, ssh, or cloud")
+	command.Flags().StringVar(&cloudPath, "cloud-path", "", "auto, p2p, relay, or smart_route")
+	command.Flags().StringVar(&relayTransport, "relay-transport", "", "auto, udp, or tcp")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	return command
+}
+
+func endpointPolicyViewFromEndpoint(target endpointdomain.Endpoint) endpointPolicyView {
+	view := endpointPolicyView{SchemaVersion: 1, Kind: "endpoint_policy", EndpointID: string(target.ID), Route: "auto", CloudPath: "auto", RelayTransport: "auto"}
+	switch target.SelectionPolicy.RoutePreference {
+	case endpointdomain.RoutePreferenceDirect:
+		view.Route = "direct"
+	case endpointdomain.RoutePreferenceSSH:
+		view.Route = "ssh"
+	case endpointdomain.RoutePreferenceManagedCloud:
+		view.Route = "cloud"
+	}
+	for _, item := range target.RouteList() {
+		if item.Kind != endpointdomain.RouteManagedWebRTC {
+			continue
+		}
+		switch item.RelayMode {
+		case endpointdomain.RelayDirect:
+			view.CloudPath = "p2p"
+		case endpointdomain.RelayOnly:
+			view.CloudPath = "relay"
+		case endpointdomain.RelaySmart:
+			view.CloudPath = "smart_route"
+		}
+		if item.RelayTransport != "" {
+			view.RelayTransport = string(item.RelayTransport)
+		}
+		break
+	}
+	return view
+}
+
+func endpointPolicyFromView(view endpointPolicyView) (endpointdomain.ConnectionPolicy, error) {
+	policy := endpointdomain.ConnectionPolicy{CloudRelayMode: endpointdomain.RelayAuto, RelayTransport: endpointdomain.RelayTransport(view.RelayTransport)}
+	switch view.Route {
+	case "auto":
+		policy.RoutePreference = endpointdomain.RoutePreferenceAuto
+	case "direct":
+		policy.RoutePreference = endpointdomain.RoutePreferenceDirect
+	case "ssh":
+		policy.RoutePreference = endpointdomain.RoutePreferenceSSH
+	case "cloud":
+		policy.RoutePreference = endpointdomain.RoutePreferenceManagedCloud
+	default:
+		return endpointdomain.ConnectionPolicy{}, usageCLIError("route must be auto, direct, ssh, or cloud")
+	}
+	switch view.CloudPath {
+	case "auto":
+		policy.CloudRelayMode = endpointdomain.RelayAuto
+	case "p2p":
+		policy.CloudRelayMode = endpointdomain.RelayDirect
+	case "relay":
+		policy.CloudRelayMode = endpointdomain.RelayOnly
+	case "smart_route":
+		policy.CloudRelayMode = endpointdomain.RelaySmart
+	default:
+		return endpointdomain.ConnectionPolicy{}, usageCLIError("cloud-path must be auto, p2p, relay, or smart_route")
+	}
+	if policy.RelayTransport != endpointdomain.RelayTransportAuto && policy.RelayTransport != endpointdomain.RelayTransportUDP && policy.RelayTransport != endpointdomain.RelayTransportTCP {
+		return endpointdomain.ConnectionPolicy{}, usageCLIError("relay-transport must be auto, udp, or tcp")
+	}
+	return policy, nil
+}
+
+func writeEndpointPolicy(cmd *cobra.Command, view endpointPolicyView, jsonOutput bool) error {
+	if jsonOutput {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Endpoint: %s\nRoute: %s\nCloud path: %s\nRelay transport: %s\n", view.EndpointID, view.Route, view.CloudPath, view.RelayTransport)
+	return nil
 }
 
 func bindEndpointPolicyFlags(command *cobra.Command, flags *endpointEditFlags) {
@@ -598,6 +830,7 @@ func bindRouteEditFlags(command *cobra.Command, flags *routeEditFlags, kind endp
 		command.Flags().StringVar(&flags.targetDeviceID, "target-device-id", "", "managed target device ID")
 		command.Flags().StringVar(&flags.accountProfileRef, "account-profile-ref", "", "local Cloud account profile reference")
 		command.Flags().StringVar(&flags.relayMode, "relay", string(endpointdomain.RelayAuto), "auto, direct, relay_only, or smart_route")
+		command.Flags().StringVar(&flags.relayTransport, "relay-transport", string(endpointdomain.RelayTransportAuto), "auto, udp, or tcp")
 	}
 }
 
@@ -630,7 +863,8 @@ func routeFromFlags(kind endpointdomain.RouteKind, flags routeEditFlags) endpoin
 		RemoteSignalingAddress: strings.TrimSpace(flags.remoteSignalingAddress), RemoteICETCPAddress: strings.TrimSpace(flags.remoteICETCPAddress),
 		SignalingAddresses: append([]string(nil), flags.signalingAddresses...), ICETCPAddresses: append([]string(nil), flags.iceTCPAddresses...),
 		AdvertisedAddresses: append([]string(nil), flags.advertisedAddresses...), ServerName: strings.TrimSpace(flags.serverName),
-		TargetDeviceID: strings.TrimSpace(flags.targetDeviceID), AccountProfileRef: strings.TrimSpace(flags.accountProfileRef), RelayMode: endpointdomain.RelayMode(flags.relayMode),
+		TargetDeviceID: strings.TrimSpace(flags.targetDeviceID), AccountProfileRef: strings.TrimSpace(flags.accountProfileRef),
+		RelayMode: endpointdomain.RelayMode(flags.relayMode), RelayTransport: endpointdomain.RelayTransport(flags.relayTransport),
 	}
 	if flags.priority >= 0 {
 		priority := flags.priority
@@ -699,6 +933,9 @@ func applyRouteFlagChanges(command *cobra.Command, route *endpointdomain.AccessR
 	if command.Flags().Changed("relay") {
 		route.RelayMode = endpointdomain.RelayMode(flags.relayMode)
 	}
+	if command.Flags().Changed("relay-transport") {
+		route.RelayTransport = endpointdomain.RelayTransport(flags.relayTransport)
+	}
 }
 
 func routeCommandName(kind endpointdomain.RouteKind) string {
@@ -741,7 +978,8 @@ func endpointConfigView(endpoint endpointdomain.Endpoint, isDefault bool) endpoi
 			HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), RemoteSignalingAddress: route.RemoteSignalingAddress, RemoteICETCPAddress: route.RemoteICETCPAddress,
 			SignalingAddresses: append([]string(nil), route.SignalingAddresses...), ICETCPAddresses: append([]string(nil), route.ICETCPAddresses...),
 			AdvertisedAddresses: append([]string(nil), route.AdvertisedAddresses...), ServerName: route.ServerName,
-			TargetDeviceID: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef, RelayMode: string(route.RelayMode),
+			TargetDeviceID: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef,
+			RelayMode: string(route.RelayMode), RelayTransport: string(route.RelayTransport),
 		})
 	}
 	return view

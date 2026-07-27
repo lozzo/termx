@@ -59,6 +59,17 @@ func TestWaitReadyReturnsWhenChannelClosesBeforeOpen(t *testing.T) {
 	}
 }
 
+func TestCandidatePortRejectsInvalidStatsValues(t *testing.T) {
+	if got := candidatePort(41121); got != 41121 {
+		t.Fatalf("candidatePort(41121) = %d", got)
+	}
+	for _, value := range []int32{-1, 0, 65536} {
+		if got := candidatePort(value); got != 0 {
+			t.Fatalf("candidatePort(%d) = %d, want 0", value, got)
+		}
+	}
+}
+
 func TestWaitReadyReturnsPeerFailureAndTimeout(t *testing.T) {
 	connectionFailed := make(chan error, 1)
 	connectionFailed <- errors.New("ICE failed")

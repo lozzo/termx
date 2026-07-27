@@ -2,6 +2,47 @@ package endpoint
 
 import "testing"
 
+func TestSetConnectionPolicyUpdatesEveryManagedRouteAtomically(t *testing.T) {
+	registry := Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": plannerEndpoint()}}
+	registry.Endpoints["studio"] = cloneEndpoint(registry.Endpoints["studio"])
+	target := registry.Endpoints["studio"]
+	target.Routes["cloud-backup"] = AccessRoute{ID: "cloud-backup", Kind: RouteManagedWebRTC, Enabled: true, TargetDeviceID: target.DaemonIdentity.DeviceID, CredentialRef: "credential:studio"}
+	registry.Endpoints["studio"] = target
+
+	next, err := SetConnectionPolicy(registry, "studio", ConnectionPolicy{
+		RoutePreference: RoutePreferenceManagedCloud, CloudRelayMode: RelayOnly, RelayTransport: RelayTransportTCP,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := next.Endpoints["studio"]
+	if updated.SelectionPolicy.RoutePreference != RoutePreferenceManagedCloud {
+		t.Fatalf("route preference = %q", updated.SelectionPolicy.RoutePreference)
+	}
+	for _, routeID := range []RouteID{"cloud", "cloud-backup"} {
+		route := updated.Routes[routeID]
+		if route.RelayMode != RelayOnly || route.RelayTransport != RelayTransportTCP || route.PolicySource != SourceUser {
+			t.Fatalf("managed route %q = %#v", routeID, route)
+		}
+	}
+	if registry.Endpoints["studio"].SelectionPolicy.RoutePreference == RoutePreferenceManagedCloud {
+		t.Fatal("input registry was mutated")
+	}
+}
+
+func TestSetConnectionPolicyRejectsUnknownValues(t *testing.T) {
+	for _, policy := range []ConnectionPolicy{
+		{RoutePreference: "bad", CloudRelayMode: RelayAuto, RelayTransport: RelayTransportAuto},
+		{RoutePreference: RoutePreferenceAuto, CloudRelayMode: "bad", RelayTransport: RelayTransportAuto},
+		{RoutePreference: RoutePreferenceAuto, CloudRelayMode: RelayAuto, RelayTransport: "bad"},
+	} {
+		registry := Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": plannerEndpoint()}}
+		if _, err := SetConnectionPolicy(registry, "studio", policy); err == nil {
+			t.Fatalf("invalid policy accepted: %#v", policy)
+		}
+	}
+}
+
 func TestSetAutomaticRoutePrioritiesIsAtomicAndPreservesFullRace(t *testing.T) {
 	registry := Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": plannerEndpoint()}}
 	fullRace, err := SetAutomaticRoutePriorities(registry, "studio", map[RouteID]*int{"cloud": nil, "local": nil, "ssh": nil})

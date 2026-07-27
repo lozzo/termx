@@ -3,6 +3,7 @@ package state
 import (
 	"sort"
 	"strings"
+	"time"
 
 	endpointdomain "github.com/anytty/anytty/client/endpoint"
 )
@@ -118,6 +119,34 @@ type EndpointRouteItem struct {
 	DialIdentity       endpointdomain.DialIdentity
 }
 
+// EndpointConnectionSnapshot 是 TUI 对当前 ReadySession selected pair 的只读投影。
+type EndpointConnectionSnapshot struct {
+	SampledAt           time.Time
+	RoundTrip           time.Duration
+	LocalCandidateType  string
+	RemoteCandidateType string
+	LocalAddress        string
+	RemoteAddress       string
+	LocalPort           uint16
+	RemotePort          uint16
+	LocalProtocol       string
+	RemoteProtocol      string
+	RelayTransport      string
+	NetworkClass        string
+	BytesSent           uint64
+	BytesReceived       uint64
+	PacketsSent         uint64
+	LossEvents          uint64
+	Connected           bool
+}
+
+// EndpointConnectionPolicy is the TUI port projection of the shared next-session policy.
+type EndpointConnectionPolicy struct {
+	RoutePreference endpointdomain.RoutePreference
+	CloudRelayMode  endpointdomain.RelayMode
+	RelayTransport  endpointdomain.RelayTransport
+}
+
 // EndpointItem 是 reducer-owned endpoint 展示投影。
 // ID 是 workbench/路由主键；Label/Transport/ConnectMode 来自 registry；
 // Status/LastError 来自 client runtime adapter 的运行时消息；DefaultCommand/DefaultCWD
@@ -145,6 +174,7 @@ type EndpointItem struct {
 	ObservedPath string
 	// RouteSelectionReason 是当前 SmartRoute session 的稳定公开原因；非 SmartRoute endpoint 保持为空。
 	RouteSelectionReason string
+	ConnectionSnapshot   EndpointConnectionSnapshot
 	Status               EndpointStatusKind
 	LastError            string
 	LastErrorKind        EndpointErrorKind
@@ -183,6 +213,7 @@ func (store EndpointStore) ApplyConnectionProjection(projection EndpointStore) E
 		item.ConnectionGeneration = previous.ConnectionGeneration
 		item.ObservedPath = previous.ObservedPath
 		item.RouteSelectionReason = previous.RouteSelectionReason
+		item.ConnectionSnapshot = previous.ConnectionSnapshot
 		item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
 		item.DefaultCWD = previous.DefaultCWD
 		item.DefaultsLoaded = previous.DefaultsLoaded
@@ -232,6 +263,7 @@ func (store EndpointStore) ApplyConnectionRegistry(registry endpointdomain.Regis
 			item.ConnectionPhase = previous.ConnectionPhase
 			item.ActiveRouteID = previous.ActiveRouteID
 			item.ConnectionGeneration = previous.ConnectionGeneration
+			item.ConnectionSnapshot = previous.ConnectionSnapshot
 			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
 			item.DefaultCWD = previous.DefaultCWD
 			item.DefaultsLoaded = previous.DefaultsLoaded
@@ -404,6 +436,7 @@ func (store EndpointStore) MarkRuntimeConnection(endpointID EndpointID, routeID 
 		item.ActiveRouteID = ""
 		item.ObservedPath = ""
 		item.RouteSelectionReason = ""
+		item.ConnectionSnapshot = EndpointConnectionSnapshot{}
 	}
 	switch status {
 	case EndpointStatusConnected:
@@ -427,7 +460,26 @@ func (store EndpointStore) MarkRuntimeConnection(endpointID EndpointID, routeID 
 		item.ActiveRouteID = ""
 		item.ObservedPath = ""
 		item.RouteSelectionReason = ""
+		item.ConnectionSnapshot = EndpointConnectionSnapshot{}
 	}
+	return store.Upsert(item)
+}
+
+// ApplyConnectionSnapshot replaces diagnostics for the selected endpoint without changing lifecycle truth.
+func (store EndpointStore) ApplyConnectionSnapshot(endpointID EndpointID, snapshot EndpointConnectionSnapshot) EndpointStore {
+	item, ok := store.DisplayEndpoint(NormalizeEndpointID(endpointID))
+	if !ok {
+		return store
+	}
+	snapshot.LocalAddress = strings.TrimSpace(snapshot.LocalAddress)
+	snapshot.RemoteAddress = strings.TrimSpace(snapshot.RemoteAddress)
+	snapshot.LocalCandidateType = strings.TrimSpace(snapshot.LocalCandidateType)
+	snapshot.RemoteCandidateType = strings.TrimSpace(snapshot.RemoteCandidateType)
+	snapshot.LocalProtocol = strings.TrimSpace(snapshot.LocalProtocol)
+	snapshot.RemoteProtocol = strings.TrimSpace(snapshot.RemoteProtocol)
+	snapshot.RelayTransport = strings.TrimSpace(snapshot.RelayTransport)
+	snapshot.NetworkClass = strings.TrimSpace(snapshot.NetworkClass)
+	item.ConnectionSnapshot = snapshot
 	return store.Upsert(item)
 }
 

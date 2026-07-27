@@ -1,15 +1,29 @@
 package state
 
-// TUIConfigStore 是 reducer 持有的已验证 TUI 配置快照。
-// 它只保存当前客户端视觉、交互和 shortcuts 偏好；workspace、terminal lifecycle 与 history truth 分属各自 domain owner。
+// TUIConfigStore 是当前配置文件的已验证快照。Daemon 保存服务端物理策略；
+// 其余字段仍只保存当前客户端视觉、交互和 shortcuts 偏好。
 type TUIConfigStore struct {
 	Version     int
+	Daemon      DaemonConfig
 	Profile     string
 	Theme       TUIThemeConfig
 	Chrome      TUIChromeConfig
 	Footer      TUIFooterConfig
 	Interaction TUIInteractionConfig
 	Shortcuts   TUIShortcutConfig
+}
+
+type DaemonConfig struct {
+	History DaemonHistoryConfig
+}
+
+// DaemonHistoryConfig 只控制 history 的物理存储，不改变 terminal/history
+// semantic truth。MaxSizeMB=0、MaxAgeDays=0 分别表示关闭对应限制。
+type DaemonHistoryConfig struct {
+	MaxSizeMB        int
+	MaxAgeDays       int
+	Compression      string
+	CompressionLevel string
 }
 
 type TUIThemeConfig struct {

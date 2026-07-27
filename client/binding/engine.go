@@ -592,6 +592,8 @@ func connectionSnapshotToProto(snapshot clientruntime.ConnectionSnapshot) *bindi
 		ObservedPath: bindingObservedPath(snapshot.ObservedPath), SelectionReason: snapshot.SelectionReason,
 		SampledAtUnixNano: snapshot.SampledAt.UTC().UnixNano(), RoundTripNanos: int64(snapshot.RoundTrip),
 		LocalCandidateType: bindingCandidateType(snapshot.LocalCandidateType), RemoteCandidateType: bindingCandidateType(snapshot.RemoteCandidateType),
+		LocalIp: snapshot.LocalAddress, RemoteIp: snapshot.RemoteAddress,
+		LocalPort: uint32(snapshot.LocalPort), RemotePort: uint32(snapshot.RemotePort),
 		LocalProtocol: bindingConnectionTransport(snapshot.LocalProtocol), RemoteProtocol: bindingConnectionTransport(snapshot.RemoteProtocol),
 		RelayTransport: bindingConnectionTransport(snapshot.RelayTransport), NetworkClass: snapshot.NetworkClass,
 		BytesSent: snapshot.BytesSent, BytesReceived: snapshot.BytesReceived, PacketsSent: snapshot.PacketsSent,

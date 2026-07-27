@@ -15,10 +15,7 @@ import (
 
 func newStoreHarnessInDir(t *testing.T, dir string, terminalID string, cols int, rows int) *storeHarness {
 	t.Helper()
-	file, err := OpenLineFile(dir, terminalID)
-	if err != nil {
-		t.Fatalf("open line file: %v", err)
-	}
+	file := openTestLineStorage(t, dir, terminalID)
 	harness := &storeHarness{
 		t:      t,
 		source: vterm.NewSemanticSource(cols, rows, 0, nil),

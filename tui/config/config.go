@@ -16,6 +16,8 @@ import (
 
 const DefaultFileName = "tui-v3.yaml"
 
+const maxHistorySizeMB = 8 * 1024 * 1024
+
 const (
 	DefaultWorkspaceTemplate = "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
 	DefaultTabTemplate       = "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
@@ -28,6 +30,14 @@ func DefaultPath() string {
 func Default() state.TUIConfigStore {
 	return state.TUIConfigStore{
 		Version: 1,
+		Daemon: state.DaemonConfig{
+			History: state.DaemonHistoryConfig{
+				MaxSizeMB:        512,
+				MaxAgeDays:       0,
+				Compression:      "zstd",
+				CompressionLevel: "fast",
+			},
+		},
 		Profile: "default",
 		Theme: state.TUIThemeConfig{
 			Mode:    "dark",
@@ -335,6 +345,8 @@ func parseConfigKey(value string) (string, error) {
 func knownSection(path string) bool {
 	switch path {
 	case "tui",
+		"daemon",
+		"daemon.history",
 		"tui.theme",
 		"tui.theme.border",
 		"tui.theme.surface",
@@ -388,31 +400,35 @@ func knownShortcutDynamicSection(path string) bool {
 type scalarSetter func(*state.TUIConfigStore, string) error
 
 var scalarSetters = map[string]scalarSetter{
-	"version":                       setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Version = value }),
-	"tui.profile":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Profile = value }),
-	"tui.theme.mode":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Mode = value }),
-	"tui.theme.palette":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Palette = value }),
-	"tui.theme.primary":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Primary = value }),
-	"tui.theme.secondary":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Secondary = value }),
-	"tui.theme.foreground":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Foreground = value }),
-	"tui.theme.background":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Background = value }),
-	"tui.theme.muted":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Muted = value }),
-	"tui.theme.success":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Success = value }),
-	"tui.theme.warning":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Warning = value }),
-	"tui.theme.danger":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Danger = value }),
-	"tui.theme.info":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Info = value }),
-	"tui.theme.border.panel":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Panel = value }),
-	"tui.theme.border.active":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Active = value }),
-	"tui.theme.border.inactive":     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Inactive = value }),
-	"tui.theme.border.muted":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Muted = value }),
-	"tui.theme.surface.chrome_bg":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ChromeBG = value }),
-	"tui.theme.surface.status_bg":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.StatusBG = value }),
-	"tui.theme.surface.overlay_bg":  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.OverlayBG = value }),
-	"tui.theme.surface.toast_bg":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ToastBG = value }),
-	"tui.chrome.header":             setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Header = value }),
-	"tui.chrome.footer":             setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
-	"tui.chrome.panel_presentation": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
-	"tui.chrome.tab_create_icon":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
+	"version":                          setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Version = value }),
+	"daemon.history.max_size_mb":       setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Daemon.History.MaxSizeMB = value }),
+	"daemon.history.max_age_days":      setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Daemon.History.MaxAgeDays = value }),
+	"daemon.history.compression":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Daemon.History.Compression = value }),
+	"daemon.history.compression_level": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Daemon.History.CompressionLevel = value }),
+	"tui.profile":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Profile = value }),
+	"tui.theme.mode":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Mode = value }),
+	"tui.theme.palette":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Palette = value }),
+	"tui.theme.primary":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Primary = value }),
+	"tui.theme.secondary":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Secondary = value }),
+	"tui.theme.foreground":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Foreground = value }),
+	"tui.theme.background":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Background = value }),
+	"tui.theme.muted":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Muted = value }),
+	"tui.theme.success":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Success = value }),
+	"tui.theme.warning":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Warning = value }),
+	"tui.theme.danger":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Danger = value }),
+	"tui.theme.info":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Info = value }),
+	"tui.theme.border.panel":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Panel = value }),
+	"tui.theme.border.active":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Active = value }),
+	"tui.theme.border.inactive":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Inactive = value }),
+	"tui.theme.border.muted":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Muted = value }),
+	"tui.theme.surface.chrome_bg":      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ChromeBG = value }),
+	"tui.theme.surface.status_bg":      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.StatusBG = value }),
+	"tui.theme.surface.overlay_bg":     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.OverlayBG = value }),
+	"tui.theme.surface.toast_bg":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ToastBG = value }),
+	"tui.chrome.header":                setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Header = value }),
+	"tui.chrome.footer":                setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
+	"tui.chrome.panel_presentation":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
+	"tui.chrome.tab_create_icon":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
 	"tui.chrome.tab_create_template": setString(func(cfg *state.TUIConfigStore, value string) {
 		cfg.Chrome.TabCreateTemplate = value
 	}),
@@ -781,6 +797,10 @@ func applyEnv(cfg *state.TUIConfigStore, lookup func(string) string) error {
 }
 
 var envScalarPaths = map[string]string{
+	"ANYTTY_HISTORY_MAX_SIZE_MB":                  "daemon.history.max_size_mb",
+	"ANYTTY_HISTORY_MAX_AGE_DAYS":                 "daemon.history.max_age_days",
+	"ANYTTY_HISTORY_COMPRESSION":                  "daemon.history.compression",
+	"ANYTTY_HISTORY_COMPRESSION_LEVEL":            "daemon.history.compression_level",
 	"ANYTTY_TUI_THEME_MODE":                       "tui.theme.mode",
 	"ANYTTY_TUI_THEME_PALETTE":                    "tui.theme.palette",
 	"ANYTTY_TUI_THEME_PRIMARY":                    "tui.theme.primary",
@@ -809,6 +829,18 @@ var envScalarPaths = map[string]string{
 func Validate(cfg state.TUIConfigStore) error {
 	if cfg.Version != 1 {
 		return fmt.Errorf("version must be 1, got %d", cfg.Version)
+	}
+	if cfg.Daemon.History.MaxSizeMB < 0 || cfg.Daemon.History.MaxSizeMB > maxHistorySizeMB {
+		return fmt.Errorf("daemon.history.max_size_mb must be between 0 and %d", maxHistorySizeMB)
+	}
+	if cfg.Daemon.History.MaxAgeDays < 0 || cfg.Daemon.History.MaxAgeDays > 36500 {
+		return fmt.Errorf("daemon.history.max_age_days must be between 0 and 36500")
+	}
+	if !oneOf(cfg.Daemon.History.Compression, "zstd", "s2", "none") {
+		return fmt.Errorf("daemon.history.compression must be zstd, s2 or none, got %q", cfg.Daemon.History.Compression)
+	}
+	if !oneOf(cfg.Daemon.History.CompressionLevel, "fast", "balanced", "best") {
+		return fmt.Errorf("daemon.history.compression_level must be fast, balanced or best, got %q", cfg.Daemon.History.CompressionLevel)
 	}
 	if strings.TrimSpace(cfg.Profile) == "" {
 		return fmt.Errorf("tui.profile must not be empty")

@@ -1,10 +1,13 @@
 package linehist
 
 import (
+	"errors"
 	"sync"
 
 	vterm "github.com/anytty/anytty/vterm/vterm"
 )
+
+var errRetentionChanged = errors.New("history retention changed")
 
 // Engine 组合拼装器与文件 backend，是 logical-line 历史的落盘入口。
 // 它只消费 vterm 事务的 EvictedRows（seal-on-eviction 信号），
@@ -12,13 +15,31 @@ import (
 type Engine struct {
 	mu   sync.Mutex
 	asm  *Assembler
-	file *LineFile
+	file LineStorage
 }
 
-// NewEngine 用已打开的 LineFile 创建引擎。文件里已有的记录即恢复出的
+// LineStorage 是 linehist engine 所需的最小持久化契约。
+type LineStorage interface {
+	AppendLines([]Line) error
+	AppendBoundary() error
+	LineCount() int
+	Base() int
+	Lines(start int, end int) ([]Line, error)
+	Close() error
+}
+
+type retentionPruner interface {
+	PruneRetention() error
+}
+
+type retentionTracker interface {
+	RetentionEpoch() uint64
+}
+
+// NewEngine 用已打开的 LineStorage 创建引擎。文件里已有的记录即恢复出的
 // 冷历史；未闭合尾部不跨进程恢复（重启时旧行的续写上下文已不存在，
 // Close 会把它按硬结束落盘）。
-func NewEngine(file *LineFile) *Engine {
+func NewEngine(file LineStorage) *Engine {
 	return &Engine{asm: NewAssembler(), file: file}
 }
 
@@ -61,6 +82,30 @@ func (e *Engine) VisibleLineRange() (int, int) {
 	return base, e.file.LineCount() - base
 }
 
+// RetentionEpoch 在持久化后端淘汰最旧历史时递增。Store 用它废止仍引用
+// 已淘汰 cold range 的 frozen token。
+func (e *Engine) RetentionEpoch() uint64 {
+	if e == nil {
+		return 0
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return storageRetentionEpoch(e.file)
+}
+
+// PruneRetention 立即执行后端配置的物理淘汰策略。
+func (e *Engine) PruneRetention() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if pruner, ok := e.file.(retentionPruner); ok {
+		return pruner.PruneRetention()
+	}
+	return nil
+}
+
 // ApplyClearScrollbackBoundary 处理 ED3/ClearScrollback 软页边界。
 // authoritative history 不因终端 clear-scrollback 被删除或隐藏；这里仅把
 // assembler 的未闭合尾部封成一条 logical line，避免 clear 前后页面被继续
@@ -87,6 +132,27 @@ func (e *Engine) Lines(start int, end int) ([]Line, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.file.Lines(start, end)
+}
+
+// LinesAtRetention 把 epoch 校验与分页读放在同一临界区内，避免 range 捕获后
+// 恰好发生前缀淘汰时，把旧坐标错误映射到新文件的另一批行。
+func (e *Engine) LinesAtRetention(epoch uint64, start int, end int) ([]Line, error) {
+	if e == nil {
+		return nil, nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if storageRetentionEpoch(e.file) != epoch {
+		return nil, errRetentionChanged
+	}
+	return e.file.Lines(start, end)
+}
+
+func storageRetentionEpoch(file LineStorage) uint64 {
+	if tracker, ok := file.(retentionTracker); ok {
+		return tracker.RetentionEpoch()
+	}
+	return 0
 }
 
 // OpenTail 返回未闭合尾部（已滚出但还没等到硬换行的续行内容）。

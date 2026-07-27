@@ -424,6 +424,13 @@ func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	return terminal.flushHistoryTapQueue(ctx)
 }
 
+func (terminal *Terminal) pruneHistoryRetention() error {
+	if terminal == nil || terminal.lineHistory == nil {
+		return nil
+	}
+	return terminal.lineHistory.PruneRetention()
+}
+
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
 	terminal.publishEvent(typ, info, false)
 }

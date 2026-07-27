@@ -41,7 +41,8 @@ func TestEndpointConnectionControlLoadsAndAtomicallyAppliesPriorities(t *testing
 		t.Fatalf("Go planner availability was not projected: %#v ok=%v", studio, ok)
 	}
 	zero, ten := 0, 10
-	updated, err := control.ApplyRoutePriorities(context.Background(), "studio", map[string]*int{"cloud": &ten, "local": &zero})
+	policy := state.EndpointConnectionPolicy{RoutePreference: endpoint.RoutePreferenceManagedCloud, CloudRelayMode: endpoint.RelayOnly, RelayTransport: endpoint.RelayTransportTCP}
+	updated, err := control.ApplyConnectionSettings(context.Background(), "studio", policy, map[string]*int{"cloud": &ten, "local": &zero})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,10 @@ func TestEndpointConnectionControlLoadsAndAtomicallyAppliesPriorities(t *testing
 	if got := *persisted.Endpoints["studio"].Routes["local"].Priority; got != 0 {
 		t.Fatalf("persisted local priority = %d", got)
 	}
-	if _, err := control.ApplyRoutePriorities(context.Background(), state.EndpointID("studio"), map[string]*int{"local": &zero}); err == nil {
+	if persisted.Endpoints["studio"].SelectionPolicy.RoutePreference != endpoint.RoutePreferenceManagedCloud || persisted.Endpoints["studio"].Routes["cloud"].RelayTransport != endpoint.RelayTransportTCP {
+		t.Fatalf("persisted connection policy = %#v", persisted.Endpoints["studio"])
+	}
+	if _, err := control.ApplyConnectionSettings(context.Background(), state.EndpointID("studio"), policy, map[string]*int{"local": &zero}); err == nil {
 		t.Fatal("partial priority transaction succeeded")
 	}
 	persisted, _ = endpoint.Load(path)

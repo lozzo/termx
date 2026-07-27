@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	endpointdomain "github.com/anytty/anytty/client/endpoint"
 	"github.com/anytty/anytty/tui/input"
 	"github.com/anytty/anytty/tui/state"
 )
@@ -28,22 +30,41 @@ type ConnectionsLoadResultMsg struct {
 
 func (ConnectionsLoadResultMsg) isMsg() {}
 
-// ConnectionsApplyRoutePrioritiesRequestMsg 请求原子保存一个 Endpoint 的完整自动 Route priority 集合。
-type ConnectionsApplyRoutePrioritiesRequestMsg struct {
+const (
+	connectionsSnapshotRefreshToken    CancelToken   = "connections.snapshot.refresh"
+	connectionsSnapshotRefreshInterval time.Duration = time.Second
+)
+
+// ConnectionsApplySettingsRequestMsg requests one atomic policy and priority update.
+type ConnectionsApplySettingsRequestMsg struct {
 	EndpointID state.EndpointID
+	Policy     state.EndpointConnectionPolicy
 	Priorities map[string]*int
 }
 
-func (ConnectionsApplyRoutePrioritiesRequestMsg) isMsg() {}
+func (ConnectionsApplySettingsRequestMsg) isMsg() {}
 
-// ConnectionsApplyRoutePrioritiesResultMsg 返回已提交后的 Go projection 或事务失败。
-type ConnectionsApplyRoutePrioritiesResultMsg struct {
+type ConnectionsApplySettingsResultMsg struct {
 	EndpointID state.EndpointID
 	Store      state.EndpointStore
 	Err        error
 }
 
-func (ConnectionsApplyRoutePrioritiesResultMsg) isMsg() {}
+func (ConnectionsApplySettingsResultMsg) isMsg() {}
+
+type ConnectionsSnapshotRefreshMsg struct{}
+
+func (ConnectionsSnapshotRefreshMsg) isMsg()           {}
+func (ConnectionsSnapshotRefreshMsg) SkipRender() bool { return true }
+
+type ConnectionsSnapshotResultMsg struct {
+	EndpointID state.EndpointID
+	Snapshot   state.EndpointConnectionSnapshot
+	Valid      bool
+	Err        error
+}
+
+func (ConnectionsSnapshotResultMsg) isMsg() {}
 
 // NewEndpointConnectionsReducer 只编排 Connections 的 load/apply effect 与结果投影。
 // priority 校验、registry 原子事务和 planner availability 均由 port 实现负责，reducer 不建立第二份连接策略。
@@ -60,11 +81,19 @@ func NewEndpointConnectionsReducer(deps LiveDeps) Reducer {
 			selectedID := selectedConnectionsEndpointID(root)
 			root.Endpoints = root.Endpoints.ApplyConnectionProjection(msg.Store)
 			root.Shell = restoreConnectionsSelection(root.Shell, root.Endpoints, selectedID)
-			return root.Advance(), nil
-		case ConnectionsApplyRoutePrioritiesRequestMsg:
+			return root.Advance(), connectionsSnapshotEffects(root, deps)
+		case ConnectionsApplySettingsRequestMsg:
 			return root, []Effect{connectionsApplyEffect(deps, msg)}
-		case ConnectionsApplyRoutePrioritiesResultMsg:
-			return reduceConnectionsApplyResult(root, msg)
+		case ConnectionsApplySettingsResultMsg:
+			return reduceConnectionsApplyResult(root, msg, deps)
+		case ConnectionsSnapshotRefreshMsg:
+			return root, connectionsSnapshotEffects(root, deps)
+		case ConnectionsSnapshotResultMsg:
+			if msg.Err == nil && msg.Valid {
+				root.Endpoints = root.Endpoints.ApplyConnectionSnapshot(msg.EndpointID, msg.Snapshot)
+				root = root.Advance()
+			}
+			return root, connectionsSnapshotLoopEffects(root)
 		default:
 			return root, nil
 		}
@@ -81,32 +110,62 @@ func connectionsLoadEffect(deps LiveDeps) Effect {
 	}}
 }
 
-func connectionsApplyEffect(deps LiveDeps, request ConnectionsApplyRoutePrioritiesRequestMsg) Effect {
+func connectionsApplyEffect(deps LiveDeps, request ConnectionsApplySettingsRequestMsg) Effect {
 	return FuncEffect{Run: func(ctx context.Context) Msg {
 		if deps.EndpointConnections == nil {
-			return ConnectionsApplyRoutePrioritiesResultMsg{EndpointID: request.EndpointID, Err: fmt.Errorf("connection settings are unavailable")}
+			return ConnectionsApplySettingsResultMsg{EndpointID: request.EndpointID, Err: fmt.Errorf("connection settings are unavailable")}
 		}
-		store, err := deps.EndpointConnections.ApplyRoutePriorities(ctx, request.EndpointID, request.Priorities)
-		return ConnectionsApplyRoutePrioritiesResultMsg{EndpointID: request.EndpointID, Store: store, Err: err}
+		store, err := deps.EndpointConnections.ApplyConnectionSettings(ctx, request.EndpointID, request.Policy, request.Priorities)
+		return ConnectionsApplySettingsResultMsg{EndpointID: request.EndpointID, Store: store, Err: err}
 	}}
 }
 
-func reduceConnectionsApplyResult(root state.Root, msg ConnectionsApplyRoutePrioritiesResultMsg) (state.Root, []Effect) {
+func reduceConnectionsApplyResult(root state.Root, msg ConnectionsApplySettingsResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		shell := root.Shell.EnsureDefaults()
-		if shell.Overlay.Kind == state.OverlayPrompt && shell.Overlay.Prompt.Purpose == "connections.priority" {
+		if shell.Overlay.Kind == state.OverlayPrompt && shell.Overlay.Prompt.Purpose == "connections.settings" {
 			prompt := shell.Overlay.Prompt
 			prompt.Submitted = false
 			prompt.LastResult = msg.Err.Error()
 			shell.Overlay.Prompt = prompt
 		}
-		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastError, Title: "Route priority", Body: msg.Err.Error()})
+		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastError, Title: "Connection settings", Body: msg.Err.Error()})
 		return root.Advance(), nil
 	}
 	root.Endpoints = root.Endpoints.ApplyConnectionProjection(msg.Store)
 	root.Shell = restoreConnectionsSelection(root.Shell.OpenConnections(), root.Endpoints, msg.EndpointID)
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Route priority saved", Body: "Applies to the next connection"})
-	return root.Advance(), nil
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Connection settings saved", Body: "Applies to the next connection"})
+	return root.Advance(), connectionsSnapshotEffects(root, deps)
+}
+
+func connectionsSnapshotEffects(root state.Root, deps LiveDeps) []Effect {
+	if root.Shell.EnsureDefaults().Overlay.Kind != state.OverlayConnections || deps.EndpointConnections == nil {
+		return nil
+	}
+	selected, ok := selectedConnectionsEndpoint(root)
+	if !ok {
+		return connectionsSnapshotLoopEffects(root)
+	}
+	return []Effect{FuncEffect{Async: true, Run: func(ctx context.Context) Msg {
+		snapshot, valid, err := deps.EndpointConnections.SampleConnection(ctx, selected.ID)
+		return ConnectionsSnapshotResultMsg{EndpointID: selected.ID, Snapshot: snapshot, Valid: valid, Err: err}
+	}}}
+}
+
+func connectionsSnapshotLoopEffects(root state.Root) []Effect {
+	if root.Shell.EnsureDefaults().Overlay.Kind != state.OverlayConnections {
+		return nil
+	}
+	return []Effect{FuncEffect{Token: connectionsSnapshotRefreshToken, Async: true, Run: func(ctx context.Context) Msg {
+		timer := time.NewTimer(connectionsSnapshotRefreshInterval)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+			return ConnectionsSnapshotRefreshMsg{}
+		}
+	}}}
 }
 
 func reduceConnectionsInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
@@ -136,7 +195,27 @@ func reduceConnectionsEdit(root state.Root, row int) (state.Root, []Effect) {
 	if !ok {
 		return shortcutUnavailable(root, "connections.edit", "no endpoint")
 	}
-	fields := make([]state.PromptFieldState, 0, len(selected.Routes))
+	preference := selected.RoutePreference
+	if preference == "" {
+		preference = endpointdomain.RoutePreferenceAuto
+	}
+	relayMode, relayTransport := endpointdomain.RelayAuto, endpointdomain.RelayTransportAuto
+	for _, route := range selected.Routes {
+		if route.Kind == state.EndpointTransportHubP2P {
+			if route.RelayMode != "" {
+				relayMode = route.RelayMode
+			}
+			if route.RelayTransport != "" {
+				relayTransport = route.RelayTransport
+			}
+			break
+		}
+	}
+	fields := []state.PromptFieldState{
+		{Key: "policy:route", Label: "Route", Value: string(preference), Placeholder: "auto/direct/ssh/managed_cloud", SuggestionItems: []string{"auto", "direct", "ssh", "managed_cloud"}},
+		{Key: "policy:cloud", Label: "Cloud path", Value: string(relayMode), Placeholder: "auto/direct/relay_only/smart_route", SuggestionItems: []string{"auto", "direct", "relay_only", "smart_route"}},
+		{Key: "policy:relay_transport", Label: "Relay transport", Value: string(relayTransport), Placeholder: "auto/udp/tcp", SuggestionItems: []string{"auto", "udp", "tcp"}},
+	}
 	for _, route := range selected.Routes {
 		if !route.Enabled || route.ManualOnly {
 			continue
@@ -149,23 +228,24 @@ func reduceConnectionsEdit(root state.Root, row int) (state.Root, []Effect) {
 			Key: "route:" + string(route.ID), Label: string(route.ID) + " (" + string(route.Kind) + ")", Value: value, Placeholder: "Full race",
 		})
 	}
-	if len(fields) == 0 {
-		return shortcutUnavailable(root, "connections.edit", "no automatic route")
-	}
 	root.Shell = root.Shell.OpenPrompt(state.PromptState{
-		Title: "Route priority", Context: "Next connection only. Lower first; equal values race together; all blank is Full race.",
-		Purpose: "connections.priority", TargetEndpointID: selected.ID, Fields: fields,
+		Title: "Connection settings", Context: "Next connection only. Priorities: lower first, equal values race, all blank is Full race.",
+		Purpose: "connections.settings", TargetEndpointID: selected.ID, Fields: fields,
 	})
 	return root.Advance(), []Effect{handledEffect{}}
 }
 
-func routePriorityRequestFromPrompt(root state.Root, prompt state.PromptState) (ConnectionsApplyRoutePrioritiesRequestMsg, error) {
-	if prompt.Purpose != "connections.priority" || prompt.TargetEndpointID == "" {
-		return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("route priority endpoint is required")
+func connectionSettingsRequestFromPrompt(root state.Root, prompt state.PromptState) (ConnectionsApplySettingsRequestMsg, error) {
+	if prompt.Purpose != "connections.settings" || prompt.TargetEndpointID == "" {
+		return ConnectionsApplySettingsRequestMsg{}, fmt.Errorf("connection settings endpoint is required")
 	}
 	target, ok := root.Endpoints.Endpoint(prompt.TargetEndpointID)
 	if !ok {
-		return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("endpoint %q is unavailable", prompt.TargetEndpointID)
+		return ConnectionsApplySettingsRequestMsg{}, fmt.Errorf("endpoint %q is unavailable", prompt.TargetEndpointID)
+	}
+	policy, err := connectionPolicyFromPrompt(prompt)
+	if err != nil {
+		return ConnectionsApplySettingsRequestMsg{}, err
 	}
 	automatic := make(map[string]struct{})
 	for _, route := range target.Routes {
@@ -176,12 +256,12 @@ func routePriorityRequestFromPrompt(root state.Root, prompt state.PromptState) (
 	priorities := make(map[string]*int, len(prompt.Fields))
 	anyValue, allValue := false, true
 	for _, field := range prompt.Fields {
-		routeID := strings.TrimPrefix(field.Key, "route:")
 		if !strings.HasPrefix(field.Key, "route:") {
-			return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("route priority form is invalid")
+			continue
 		}
+		routeID := strings.TrimPrefix(field.Key, "route:")
 		if _, ok := automatic[routeID]; !ok {
-			return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("route %q is no longer automatic", routeID)
+			return ConnectionsApplySettingsRequestMsg{}, fmt.Errorf("route %q is no longer automatic", routeID)
 		}
 		value := strings.TrimSpace(field.Value)
 		anyValue = anyValue || value != ""
@@ -192,18 +272,42 @@ func routePriorityRequestFromPrompt(root state.Root, prompt state.PromptState) (
 		}
 		priority, err := strconv.Atoi(value)
 		if err != nil || priority < 0 {
-			return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("route %q priority must be a non-negative integer", routeID)
+			return ConnectionsApplySettingsRequestMsg{}, fmt.Errorf("route %q priority must be a non-negative integer", routeID)
 		}
 		priorityCopy := priority
 		priorities[routeID] = &priorityCopy
 	}
 	if len(priorities) != len(automatic) {
-		return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("route priority form must include every automatic route")
+		return ConnectionsApplySettingsRequestMsg{}, fmt.Errorf("route priority form must include every automatic route")
 	}
 	if anyValue && !allValue {
-		return ConnectionsApplyRoutePrioritiesRequestMsg{}, fmt.Errorf("set every route priority or leave every field blank for Full race")
+		return ConnectionsApplySettingsRequestMsg{}, fmt.Errorf("set every route priority or leave every field blank for Full race")
 	}
-	return ConnectionsApplyRoutePrioritiesRequestMsg{EndpointID: prompt.TargetEndpointID, Priorities: priorities}, nil
+	return ConnectionsApplySettingsRequestMsg{EndpointID: prompt.TargetEndpointID, Policy: policy, Priorities: priorities}, nil
+}
+
+func connectionPolicyFromPrompt(prompt state.PromptState) (state.EndpointConnectionPolicy, error) {
+	policy := state.EndpointConnectionPolicy{
+		RoutePreference: endpointdomain.RoutePreference(strings.TrimSpace(prompt.FieldValue("policy:route"))),
+		CloudRelayMode:  endpointdomain.RelayMode(strings.TrimSpace(prompt.FieldValue("policy:cloud"))),
+		RelayTransport:  endpointdomain.RelayTransport(strings.TrimSpace(prompt.FieldValue("policy:relay_transport"))),
+	}
+	switch policy.RoutePreference {
+	case endpointdomain.RoutePreferenceAuto, endpointdomain.RoutePreferenceDirect, endpointdomain.RoutePreferenceSSH, endpointdomain.RoutePreferenceManagedCloud:
+	default:
+		return state.EndpointConnectionPolicy{}, fmt.Errorf("route must be auto, direct, ssh, or managed_cloud")
+	}
+	switch policy.CloudRelayMode {
+	case endpointdomain.RelayAuto, endpointdomain.RelayDirect, endpointdomain.RelayOnly, endpointdomain.RelaySmart:
+	default:
+		return state.EndpointConnectionPolicy{}, fmt.Errorf("Cloud path must be auto, direct, relay_only, or smart_route")
+	}
+	switch policy.RelayTransport {
+	case endpointdomain.RelayTransportAuto, endpointdomain.RelayTransportUDP, endpointdomain.RelayTransportTCP:
+	default:
+		return state.EndpointConnectionPolicy{}, fmt.Errorf("Relay transport must be auto, udp, or tcp")
+	}
+	return policy, nil
 }
 
 func selectedConnectionsEndpoint(root state.Root) (state.EndpointItem, bool) {

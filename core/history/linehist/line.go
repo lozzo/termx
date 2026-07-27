@@ -8,7 +8,7 @@
 // 由 TUI 本地完成。
 //
 // 消息链路：PTY bytes -> SemanticTap -> TerminalSemanticTransaction.EvictedRows
-// -> Assembler 拼 logical line -> LineFile append-only 文件。
+// -> Assembler 拼 logical line -> CompressedLineFile 紧凑块文件。
 // 失败条件：从 current frame 反推历史、把文本相等当正确性依据、
 // 在本包内出现第二份屏幕状态机。
 package linehist

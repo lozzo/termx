@@ -412,7 +412,7 @@ func (ConnectionPolicyAvailabilityReason) EnumDescriptor() ([]byte, []int) {
 }
 
 // ConnectionSnapshot 是同一个 Go-owned ReadySession 的只读诊断投影。
-// 它禁止携带 IP、hostname、SDP、credential、账号或 terminal 数据。
+// 它只携带 selected candidate pair 的 IP/port，禁止携带 SDP、credential、账号或 terminal 数据。
 type ConnectionSnapshot struct {
 	state               protoimpl.MessageState  `protogen:"open.v1"`
 	RouteId             string                  `protobuf:"bytes,1,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
@@ -432,6 +432,10 @@ type ConnectionSnapshot struct {
 	PacketsSent         uint64                  `protobuf:"varint,15,opt,name=packets_sent,json=packetsSent,proto3" json:"packets_sent,omitempty"`
 	LossEvents          uint64                  `protobuf:"varint,16,opt,name=loss_events,json=lossEvents,proto3" json:"loss_events,omitempty"`
 	Connected           bool                    `protobuf:"varint,17,opt,name=connected,proto3" json:"connected,omitempty"`
+	LocalIp             string                  `protobuf:"bytes,18,opt,name=local_ip,json=localIp,proto3" json:"local_ip,omitempty"`
+	RemoteIp            string                  `protobuf:"bytes,19,opt,name=remote_ip,json=remoteIp,proto3" json:"remote_ip,omitempty"`
+	LocalPort           uint32                  `protobuf:"varint,20,opt,name=local_port,json=localPort,proto3" json:"local_port,omitempty"`
+	RemotePort          uint32                  `protobuf:"varint,21,opt,name=remote_port,json=remotePort,proto3" json:"remote_port,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -583,6 +587,34 @@ func (x *ConnectionSnapshot) GetConnected() bool {
 		return x.Connected
 	}
 	return false
+}
+
+func (x *ConnectionSnapshot) GetLocalIp() string {
+	if x != nil {
+		return x.LocalIp
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshot) GetRemoteIp() string {
+	if x != nil {
+		return x.RemoteIp
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshot) GetLocalPort() uint32 {
+	if x != nil {
+		return x.LocalPort
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetRemotePort() uint32 {
+	if x != nil {
+		return x.RemotePort
+	}
+	return 0
 }
 
 // ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。
@@ -4800,7 +4832,7 @@ var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x18anytty.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xf9\a\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x18anytty.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xf1\b\n" +
 	"\x12ConnectionSnapshot\x12\x19\n" +
 	"\broute_id\x18\x01 \x01(\tR\arouteId\x12L\n" +
 	"\n" +
@@ -4822,7 +4854,13 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\fpackets_sent\x18\x0f \x01(\x04R\vpacketsSent\x12\x1f\n" +
 	"\vloss_events\x18\x10 \x01(\x04R\n" +
 	"lossEvents\x12\x1c\n" +
-	"\tconnected\x18\x11 \x01(\bR\tconnected\"\xa3\x02\n" +
+	"\tconnected\x18\x11 \x01(\bR\tconnected\x12\x19\n" +
+	"\blocal_ip\x18\x12 \x01(\tR\alocalIp\x12\x1b\n" +
+	"\tremote_ip\x18\x13 \x01(\tR\bremoteIp\x12\x1d\n" +
+	"\n" +
+	"local_port\x18\x14 \x01(\rR\tlocalPort\x12\x1f\n" +
+	"\vremote_port\x18\x15 \x01(\rR\n" +
+	"remotePort\"\xa3\x02\n" +
 	"\x10ConnectionPolicy\x12Y\n" +
 	"\x10route_preference\x18\x01 \x01(\x0e2..anytty.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\x12W\n" +
 	"\x10cloud_relay_mode\x18\x02 \x01(\x0e2-.anytty.remote.auth.v1.ManagedWebRTCRelayModeR\x0ecloudRelayMode\x12[\n" +

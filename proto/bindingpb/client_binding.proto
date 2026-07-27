@@ -72,7 +72,7 @@ enum ConnectionPolicyAvailabilityReason {
 }
 
 // ConnectionSnapshot 是同一个 Go-owned ReadySession 的只读诊断投影。
-// 它禁止携带 IP、hostname、SDP、credential、账号或 terminal 数据。
+// 它只携带 selected candidate pair 的 IP/port，禁止携带 SDP、credential、账号或 terminal 数据。
 message ConnectionSnapshot {
   string route_id = 1;
   ConnectionRouteKind route_kind = 2;
@@ -91,6 +91,10 @@ message ConnectionSnapshot {
   uint64 packets_sent = 15;
   uint64 loss_events = 16;
   bool connected = 17;
+  string local_ip = 18;
+  string remote_ip = 19;
+  uint32 local_port = 20;
+  uint32 remote_port = 21;
 }
 
 // ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。

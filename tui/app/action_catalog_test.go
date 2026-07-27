@@ -72,7 +72,11 @@ func (service defaultActionEndpointConnections) LoadConnections(context.Context)
 	return service.store, nil
 }
 
-func (service defaultActionEndpointConnections) ApplyRoutePriorities(context.Context, state.EndpointID, map[string]*int) (state.EndpointStore, error) {
+func (service defaultActionEndpointConnections) SampleConnection(context.Context, state.EndpointID) (state.EndpointConnectionSnapshot, bool, error) {
+	return state.EndpointConnectionSnapshot{}, false, nil
+}
+
+func (service defaultActionEndpointConnections) ApplyConnectionSettings(context.Context, state.EndpointID, state.EndpointConnectionPolicy, map[string]*int) (state.EndpointStore, error) {
 	return service.store, nil
 }
 

@@ -2750,7 +2750,7 @@ function MobileSheetPanel({
   )
 }
 
-/** ConnectionInfoDialog 分离持久连接偏好、当前 ReadySession 和脱敏诊断，不在 UI 推断网络路径。 */
+/** ConnectionInfoDialog 分离持久连接偏好和当前 ReadySession 诊断，不在 UI 推断网络路径。 */
 export function ConnectionInfoDialog({
   info,
   loading,
@@ -2847,6 +2847,8 @@ export function ConnectionInfoDialog({
             <dl className="mt-2 overflow-hidden border border-[var(--anytty-app-line)]">
               <ConnectionInfoRow label={t('workspace.connection.route')} value={loading ? t('workspace.connection.reading') : connectionRouteLabel(info?.routeKind, t)} strong />
               <ConnectionInfoRow label={t('workspace.connection.path')} value={observedPathLabel(info?.observedPath, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.localAddress')} value={displayDiagnostic(info?.localAddr, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.remoteAddress')} value={displayDiagnostic(info?.remoteAddr, t)} />
               <ConnectionInfoRow label={t('workspace.connection.relayTransport')} value={displayDiagnostic(info?.relayTransport, t)} />
               <ConnectionInfoRow label={t('workspace.connection.rtt')} value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : t('workspace.connection.notProvided')} />
             </dl>
@@ -3026,6 +3028,8 @@ async function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSes
   type: relayInUse ? 'relay' : observedPath === 'direct' ? 'p2p' : 'unknown',
   candidateType: candidateTypeFromProto(snapshot?.localCandidateType),
   remoteCandidateType: candidateTypeFromProto(snapshot?.remoteCandidateType),
+  localAddr: candidateAddress(snapshot?.localIp, snapshot?.localPort),
+  remoteAddr: candidateAddress(snapshot?.remoteIp, snapshot?.remotePort),
   localProtocol: transportFromProto(snapshot?.localProtocol),
   remoteProtocol: transportFromProto(snapshot?.remoteProtocol),
   relayTransport: transportFromProto(snapshot?.relayTransport),
@@ -3038,6 +3042,13 @@ async function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSes
   lossEvents: snapshot?.lossEvents,
   generation: session.stamp.generation,
   }
+}
+
+function candidateAddress(ip: string | undefined, port: number | undefined): string | undefined {
+  const address = ip?.trim()
+  if (!address) return undefined
+  if (!port) return address
+  return address.includes(':') ? `[${address}]:${port}` : `${address}:${port}`
 }
 
 function trapConnectionDialogFocus(event: ReactKeyboardEvent<HTMLDivElement>, overlay: HTMLDivElement | null, onClose: () => void): void {

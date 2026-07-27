@@ -1,6 +1,6 @@
 package state
 
-// OpenConnections 打开独立连接观察与 Route priority 页面。
+// OpenConnections 打开独立连接观察与策略页面。
 // 页面只保存选中行；Endpoint/Route policy 和 runtime 状态仍来自 Root.Endpoints 的 Go-owned 投影。
 func (store ShellStore) OpenConnections() ShellStore {
 	store = store.EnsureDefaults()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	clientprotocol "github.com/anytty/anytty/client/adapter/protocol"
 	clientendpoint "github.com/anytty/anytty/client/endpoint"
@@ -57,6 +58,30 @@ func TestEndpointApplicationRouterAcquiresOwningEndpoint(t *testing.T) {
 	}
 }
 
+func TestEndpointApplicationRouterSamplesOnlyCachedSession(t *testing.T) {
+	local := newRouterReady("local", "/Users/local")
+	local.connection = clientruntime.ConnectionSnapshot{LocalAddress: "192.0.2.10", RemoteAddress: "192.0.2.20", RoundTrip: 20 * time.Millisecond, Connected: true}
+	runtime := &routerRuntime{sessions: map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession{}}
+	initial, err := clientprotocol.NewRuntimeApplicationClient(local, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewEndpointApplicationRouter("local", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, valid, err := router.ConnectionSnapshot(context.Background(), "local")
+	if err != nil || !valid || snapshot.RemoteAddress != "192.0.2.20" {
+		t.Fatalf("cached snapshot = %#v valid=%t err=%v", snapshot, valid, err)
+	}
+	if _, valid, err = router.ConnectionSnapshot(context.Background(), "offline"); err != nil || valid {
+		t.Fatalf("offline snapshot valid=%t err=%v", valid, err)
+	}
+	if len(runtime.requests) != 0 {
+		t.Fatalf("sampling dialed an endpoint: %#v", runtime.requests)
+	}
+}
+
 type routerRuntime struct {
 	mu       sync.Mutex
 	sessions map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession
@@ -86,6 +111,7 @@ type routerReady struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 	closeCount int
+	connection clientruntime.ConnectionSnapshot
 }
 
 func newRouterReady(endpointID clientendpoint.EndpointID, cwd string) *routerReady {
@@ -118,6 +144,12 @@ func (ready *routerReady) ExecuteApplication(_ context.Context, command *apipb.C
 func (*routerReady) ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error) {
 	return make(chan *apipb.EventEnvelope), nil
 }
+func (ready *routerReady) ConnectionSnapshot(at time.Time) (clientruntime.ConnectionSnapshot, bool) {
+	snapshot := ready.connection
+	snapshot.SampledAt = at
+	return snapshot, snapshot.Connected
+}
 
 var _ clientruntime.ApplicationRuntime = (*routerRuntime)(nil)
 var _ clientruntime.ApplicationReadyPeerSession = (*routerReady)(nil)
+var _ clientruntime.ConnectionSnapshotProvider = (*routerReady)(nil)

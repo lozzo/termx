@@ -510,6 +510,17 @@ func TestV3PaneCommandAdapterParsesMiniCommand(t *testing.T) {
 	}
 }
 func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	obsoleteDir := filepath.Join(stateHome, "anytty", "core-v2-history")
+	if err := os.MkdirAll(obsoleteDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	obsoletePath := filepath.Join(obsoleteDir, "old.compact")
+	if err := os.WriteFile(obsoletePath, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	oldNewCoreV2Server := newCoreV2Server
 	t.Cleanup(func() {
 		newCoreV2Server = oldNewCoreV2Server
@@ -521,6 +532,9 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 		server := newCoreV2TestServer(opts...)
 		if server.HistoryStorageDir() == "" {
 			t.Fatal("default daemon must configure file-backed core-v2 history storage dir")
+		}
+		if got := server.HistoryStorageConfig(); got.MaxBytesPerTerminal != corev2.DefaultHistoryMaxBytesPerTerminal || got.Compression != corev2.HistoryCompressionZstd || got.CompressionLevel != corev2.HistoryCompressionLevelFast {
+			t.Fatalf("unexpected default daemon history storage config: %#v", got)
 		}
 		return fakeV3
 	}
@@ -536,9 +550,39 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	if fakeV3.newServerCalls != 1 || fakeV3.listenCalls != 1 || fakeV3.shutdownCalls != 1 {
 		t.Fatalf("unexpected core-v2 fake server calls: new=%d listen=%d shutdown=%d", fakeV3.newServerCalls, fakeV3.listenCalls, fakeV3.shutdownCalls)
 	}
+	if _, err := os.Stat(obsoletePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("obsolete compact history remains: %v", err)
+	}
+}
+
+func TestDaemonAppliesHistoryStorageConfigFile(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	oldNewCoreV2Server := newCoreV2Server
+	t.Cleanup(func() { newCoreV2Server = oldNewCoreV2Server })
+	configPath := filepath.Join(t.TempDir(), "anytty.yaml")
+	if err := os.WriteFile(configPath, []byte("version: 1\ndaemon:\n  history:\n    max_size_mb: 64\n    max_age_days: 14\n    compression: s2\n    compression_level: best\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fakeV3 := &fakeCoreV2Server{}
+	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
+		server := newCoreV2TestServer(opts...)
+		if got := server.HistoryStorageConfig(); got.MaxBytesPerTerminal != 64<<20 || got.MaxAge != 14*24*time.Hour || got.Compression != corev2.HistoryCompressionS2 || got.CompressionLevel != corev2.HistoryCompressionLevelBest {
+			t.Fatalf("daemon did not apply history storage config: %#v", got)
+		}
+		return fakeV3
+	}
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "--socket", filepath.Join(t.TempDir(), "anytty-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "anytty.log"), "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
 }
 
 func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	oldNewCoreV2Server := newCoreV2Server
 	t.Cleanup(func() {
 		newCoreV2Server = oldNewCoreV2Server
@@ -581,6 +625,8 @@ func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
 }
 
 func TestR446DaemonConfiguresHistoryBackpressureFromEnv(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	oldNewCoreV2Server := newCoreV2Server
 	t.Cleanup(func() {
 		newCoreV2Server = oldNewCoreV2Server

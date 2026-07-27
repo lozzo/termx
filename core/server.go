@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/core/history/linehist"
@@ -35,9 +36,84 @@ type serverConfig struct {
 	eventBuffer         int
 	historyStoreFactory HistoryStoreFactory
 	historyStorageDir   string
+	historyStorage      HistoryStorageConfig
 	historyDisabled     bool
 	historyBackpressure HistoryBackpressureConfig
 	applicationFactory  ApplicationExecutorFactory
+}
+
+const DefaultHistoryMaxBytesPerTerminal int64 = 512 << 20
+
+const (
+	HistoryCompressionZstd = "zstd"
+	HistoryCompressionS2   = "s2"
+	HistoryCompressionNone = "none"
+
+	HistoryCompressionLevelFast     = "fast"
+	HistoryCompressionLevelBalanced = "balanced"
+	HistoryCompressionLevelBest     = "best"
+)
+
+// HistoryStorageConfig 控制每个 terminal 的历史物理保留上限、期限与块编码。
+// MaxBytesPerTerminal=0、MaxAge=0 分别表示不设对应限制。
+type HistoryStorageConfig struct {
+	MaxBytesPerTerminal int64
+	MaxAge              time.Duration
+	Compression         string
+	CompressionLevel    string
+}
+
+func DefaultHistoryStorageConfig() HistoryStorageConfig {
+	return HistoryStorageConfig{
+		MaxBytesPerTerminal: DefaultHistoryMaxBytesPerTerminal,
+		Compression:         HistoryCompressionZstd,
+		CompressionLevel:    HistoryCompressionLevelFast,
+	}
+}
+
+// PrepareHistoryStorage 在 daemon 单实例锁内清理旧格式，并把所有当前块文件
+// 收敛到新的按 terminal 上限。旧格式明确不迁移。
+func PrepareHistoryStorage(dir string, storage HistoryStorageConfig) error {
+	storage = storage.normalized()
+	return linehist.PrepareDirectory(dir, linehist.CompressedLineFileOptions{
+		MaxBytes:         storage.MaxBytesPerTerminal,
+		MaxAge:           storage.MaxAge,
+		Compression:      storage.Compression,
+		CompressionLevel: storage.CompressionLevel,
+	})
+}
+
+// DeleteTerminalHistory 删除指定 terminal 的全部本地 history 文件。
+func DeleteTerminalHistory(dir string, terminalID string) (int, error) {
+	return linehist.DeleteTerminalHistory(dir, terminalID)
+}
+
+// DeleteAllHistory 删除本地 history 目录内的全部 terminal history 文件。
+func DeleteAllHistory(dir string) (int, error) {
+	return linehist.DeleteAllHistory(dir)
+}
+
+// DeleteObsoleteCompactHistory 删除不再读取的早期 core-v2 history 文件。
+func DeleteObsoleteCompactHistory(dir string) (int, error) {
+	return linehist.DeleteObsoleteCompactHistory(dir)
+}
+
+func (config HistoryStorageConfig) normalized() HistoryStorageConfig {
+	if config.MaxBytesPerTerminal < 0 {
+		config.MaxBytesPerTerminal = DefaultHistoryMaxBytesPerTerminal
+	}
+	if config.MaxAge < 0 {
+		config.MaxAge = 0
+	}
+	config.Compression = strings.ToLower(strings.TrimSpace(config.Compression))
+	if config.Compression != HistoryCompressionNone && config.Compression != HistoryCompressionS2 {
+		config.Compression = HistoryCompressionZstd
+	}
+	config.CompressionLevel = strings.ToLower(strings.TrimSpace(config.CompressionLevel))
+	if config.CompressionLevel != HistoryCompressionLevelBalanced && config.CompressionLevel != HistoryCompressionLevelBest {
+		config.CompressionLevel = HistoryCompressionLevelFast
+	}
+	return config
 }
 
 // HistoryStoreFactory 为每个 terminal 创建 core-v2 authoritative history store。
@@ -46,33 +122,36 @@ type serverConfig struct {
 type HistoryStoreFactory func(terminalID string) (history.HistoryStore, error)
 
 type Server struct {
-	cfg                   serverConfig
-	registry              *terminalRegistry
-	storage               *storageStore
-	terminals             map[string]*Terminal
-	events                *eventBroker
-	closed                atomic.Bool
-	nextProtocolSessionID atomic.Uint64
-	lifecycleMu           sync.Mutex
-	protocolAttachmentMu  sync.Mutex
-	protocolAttachments   map[string]protocolAttachment
-	protocolChannelIndex  map[protocolAttachmentKey]string
-	protocolResizeOwners  map[string]string
-	protocolSizeLocks     map[string]bool
-	protocolOwnerEpoch    uint64
-	remoteServiceMu       sync.RWMutex
-	remoteService         RemoteService
-	clientAccessServiceMu sync.RWMutex
-	clientAccessService   ClientAccessService
-	fileTransferMu        sync.Mutex
-	fileUploads           map[string]*uploadTransferRecord
-	historyFallbackDirMu  sync.Mutex
-	historyFallbackDir    string
-	mu                    sync.Mutex
-	listeners             []transport.Listener
-	transports            map[transport.Transport]struct{}
-	wgMu                  sync.Mutex
-	wg                    sync.WaitGroup
+	cfg                    serverConfig
+	registry               *terminalRegistry
+	storage                *storageStore
+	terminals              map[string]*Terminal
+	events                 *eventBroker
+	closed                 atomic.Bool
+	nextProtocolSessionID  atomic.Uint64
+	lifecycleMu            sync.Mutex
+	protocolAttachmentMu   sync.Mutex
+	protocolAttachments    map[string]protocolAttachment
+	protocolChannelIndex   map[protocolAttachmentKey]string
+	protocolResizeOwners   map[string]string
+	protocolSizeLocks      map[string]bool
+	protocolOwnerEpoch     uint64
+	remoteServiceMu        sync.RWMutex
+	remoteService          RemoteService
+	clientAccessServiceMu  sync.RWMutex
+	clientAccessService    ClientAccessService
+	fileTransferMu         sync.Mutex
+	fileUploads            map[string]*uploadTransferRecord
+	historyFallbackDirMu   sync.Mutex
+	historyFallbackDir     string
+	historyRetentionMu     sync.Mutex
+	historyRetentionCancel context.CancelFunc
+	historyRetentionWG     sync.WaitGroup
+	mu                     sync.Mutex
+	listeners              []transport.Listener
+	transports             map[transport.Transport]struct{}
+	wgMu                   sync.Mutex
+	wg                     sync.WaitGroup
 }
 
 func NewServer(opts ...ServerOption) *Server {
@@ -83,6 +162,7 @@ func NewServer(opts ...ServerOption) *Server {
 		listenerFactory: unixListenerFactory,
 		processFactory:  newPTYProcessFactory(),
 		eventBuffer:     64,
+		historyStorage:  DefaultHistoryStorageConfig(),
 		historyBackpressure: HistoryBackpressureConfig{
 			Mode:        HistoryBackpressureLowLatency,
 			BufferBytes: DefaultHistoryBackpressureBufferBytes,
@@ -103,6 +183,7 @@ func NewServer(opts ...ServerOption) *Server {
 		cfg.processFactory = newPTYProcessFactory()
 	}
 	cfg.historyBackpressure = cfg.historyBackpressure.Normalize()
+	cfg.historyStorage = cfg.historyStorage.normalized()
 	return &Server{
 		cfg:                  cfg,
 		registry:             newTerminalRegistry(),
@@ -201,6 +282,14 @@ func WithHistoryStorageDir(dir string) ServerOption {
 	}
 }
 
+// WithHistoryStorageConfig 配置生产块存储。它不改变 history semantic truth，
+// 只决定物理编码和 oldest-first retention。
+func WithHistoryStorageConfig(storage HistoryStorageConfig) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyStorage = storage.normalized()
+	}
+}
+
 // WithHistoryDisabled 关闭 core-v2 authoritative history owner。
 // domain owner 是 Server/Terminal lifecycle：关闭后 terminal 只维护 native live
 // screen 与 live revision，PTY 写入热路径不会创建 renderer/store mutation，
@@ -257,6 +346,11 @@ func (server *Server) DefaultSize() Size {
 // 未配置时默认引擎会退到 server 级临时目录（见 historyStoreDir）。
 func (server *Server) HistoryStorageDir() string {
 	return server.cfg.historyStorageDir
+}
+
+// HistoryStorageConfig 返回 daemon 当前按 terminal 的物理存储策略。
+func (server *Server) HistoryStorageConfig() HistoryStorageConfig {
+	return server.cfg.historyStorage
 }
 
 // HistoryBackpressureConfig 返回 daemon 当前 history 输出背压配置。
@@ -321,7 +415,7 @@ func (server *Server) newHistoryStore(terminalID string) (history.HistoryStore, 
 	if err != nil {
 		return nil, err
 	}
-	return LineHistoryStoreFactory(dir)(terminalID)
+	return LineHistoryStoreFactoryWithConfig(dir, server.cfg.historyStorage)(terminalID)
 }
 
 // historyStoreDir 返回默认 linehist 引擎的落盘目录。未配置
@@ -344,13 +438,25 @@ func (server *Server) historyStoreDir() (string, error) {
 }
 
 // LineHistoryStoreFactory 返回 R433 linehist（logical-line 文件存储）的
-// history store factory。它是无限历史重做的显式入口：Terminal 识别到
+// history store factory。Terminal 识别到
 // *linehist.Store 后走单一真值链路（tap 事务 EvictedRows 落盘 + 查询时
 // 投影 emulator 当前屏），旧 journal/classifier fanout 被旁路。
 func LineHistoryStoreFactory(dir string) HistoryStoreFactory {
+	return LineHistoryStoreFactoryWithConfig(dir, DefaultHistoryStorageConfig())
+}
+
+// LineHistoryStoreFactoryWithConfig 创建带压缩与按 terminal retention 的生产
+// store factory。旧格式不迁移，首次打开时直接开始新的压缩块文件。
+func LineHistoryStoreFactoryWithConfig(dir string, storage HistoryStorageConfig) HistoryStoreFactory {
+	storage = storage.normalized()
 	return func(terminalID string) (history.HistoryStore, error) {
 		finish := perftrace.Measure("core.linehist.open_store")
-		file, err := linehist.OpenLineFile(dir, terminalID)
+		file, err := linehist.OpenCompressedLineFile(dir, terminalID, linehist.CompressedLineFileOptions{
+			MaxBytes:         storage.MaxBytesPerTerminal,
+			MaxAge:           storage.MaxAge,
+			Compression:      storage.Compression,
+			CompressionLevel: storage.CompressionLevel,
+		})
 		finish(0)
 		if err != nil {
 			return nil, err
@@ -787,6 +893,7 @@ func (server *Server) ListenAndServe(ctx context.Context) error {
 	server.mu.Unlock()
 	server.events.publish(Event{Type: EventServerListening, SocketPath: listener.Addr()})
 	server.cfg.logger.Info("core-v2 server listening", "socket_path", listener.Addr())
+	server.startHistoryRetention()
 	defer server.waitTransports()
 	defer func() {
 		_ = listener.Close()
@@ -850,6 +957,7 @@ func (server *Server) ServeScopedTransportObserved(ctx context.Context, conn tra
 
 func (server *Server) Shutdown(ctx context.Context) error {
 	_ = ctx
+	server.stopHistoryRetention()
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if !server.closed.CompareAndSwap(false, true) {
@@ -884,6 +992,78 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.waitTransports()
 	server.cfg.logger.Info("core-v2 server stopped", "socket_path", server.cfg.socketPath)
 	return nil
+}
+
+func (server *Server) startHistoryRetention() {
+	if server == nil || server.cfg.historyDisabled || server.cfg.historyStorage.MaxAge <= 0 {
+		return
+	}
+	server.historyRetentionMu.Lock()
+	if server.historyRetentionCancel != nil {
+		server.historyRetentionMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	server.historyRetentionCancel = cancel
+	server.historyRetentionWG.Add(1)
+	server.historyRetentionMu.Unlock()
+	interval := server.cfg.historyStorage.MaxAge / 4
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	if interval > time.Hour {
+		interval = time.Hour
+	}
+	go func() {
+		defer server.historyRetentionWG.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := server.pruneActiveHistory(); err != nil {
+					server.cfg.logger.Warn("history retention prune failed", "error", err)
+				}
+			}
+		}
+	}()
+}
+
+func (server *Server) stopHistoryRetention() {
+	if server == nil {
+		return
+	}
+	server.historyRetentionMu.Lock()
+	cancel := server.historyRetentionCancel
+	server.historyRetentionCancel = nil
+	server.historyRetentionMu.Unlock()
+	if cancel != nil {
+		cancel()
+		server.historyRetentionWG.Wait()
+	}
+}
+
+func (server *Server) pruneActiveHistory() error {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	if server.closed.Load() {
+		return nil
+	}
+	server.mu.Lock()
+	terminals := make([]*Terminal, 0, len(server.terminals))
+	for _, terminal := range server.terminals {
+		terminals = append(terminals, terminal)
+	}
+	server.mu.Unlock()
+	var result error
+	for _, terminal := range terminals {
+		if err := terminal.pruneHistoryRetention(); err != nil {
+			result = errors.Join(result, err)
+		}
+	}
+	return result
 }
 
 func (server *Server) removeTerminalHandle(id string) *Terminal {
