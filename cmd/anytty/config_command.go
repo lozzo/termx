@@ -156,8 +156,10 @@ func newConfigSetCommand(configPath *string) *cobra.Command {
 			if err := validateAndWriteConfig(path, document); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tupdated\n", args[0])
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Key", Value: args[0]},
+				cliField{Label: "Status", Value: "updated"},
+			)
 		},
 	}
 }
@@ -177,8 +179,10 @@ func newConfigUnsetCommand(configPath *string) *cobra.Command {
 			if err := validateAndWriteConfig(path, document); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tunset\n", args[0])
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Key", Value: args[0]},
+				cliField{Label: "Status", Value: "unset"},
+			)
 		},
 	}
 }
@@ -198,8 +202,10 @@ func newConfigValidateCommand(configPath *string) *cobra.Command {
 			if _, err := tuiconfig.Parse(data); err != nil {
 				return &cliError{code: 2, message: err.Error(), cause: err}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tvalid\n", path)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Config", Value: path},
+				cliField{Label: "Status", Value: "valid"},
+			)
 		},
 	}
 }

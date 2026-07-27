@@ -441,8 +441,10 @@ func newTerminalMutationCommand(runtime terminalCommandRuntime, use, short strin
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(commandResultEnvelope{SchemaVersion: 1, Kind: kind, Target: ref.String()})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", ref.String(), strings.TrimPrefix(kind, "terminal_"))
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Target", Value: ref.String()},
+				cliField{Label: "Status", Value: strings.TrimPrefix(kind, "terminal_")},
+			)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -479,8 +481,11 @@ func newTerminalRenameCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err := client.TerminalSetMetadata(cmd.Context(), &apipb.TerminalSetMetadataCommand{Terminal: item.GetRef(), Name: strings.TrimSpace(args[1]), Tags: cloneTerminalTags(item.GetTags())}); err != nil {
 				return classifyCLIError(err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\trenamed\n", ref.String())
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Target", Value: ref.String()},
+				cliField{Label: "Name", Value: strings.TrimSpace(args[1])},
+				cliField{Label: "Status", Value: "renamed"},
+			)
 		},
 	}
 }
@@ -533,8 +538,10 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err := client.TerminalSetTags(cmd.Context(), &apipb.TerminalSetTagsCommand{Terminal: item.GetRef(), Tags: tags}); err != nil {
 				return classifyCLIError(err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\ttagged\n", ref.String())
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Target", Value: ref.String()},
+				cliField{Label: "Status", Value: "tags updated"},
+			)
 		},
 	}
 	command.Flags().StringArrayVar(&removeKeys, "remove", nil, "remove a tag key (repeatable)")

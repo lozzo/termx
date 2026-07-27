@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"golang.org/x/term"
 )
 
 const cliColumnGap = 2
@@ -17,6 +19,10 @@ type cliField struct {
 
 // writeCLITable renders human output with terminal-cell-aware columns.
 func writeCLITable(writer io.Writer, header []string, rows [][]string) error {
+	return writeCLITableAtWidth(writer, header, rows, cliTerminalWidth(writer))
+}
+
+func writeCLITableAtWidth(writer io.Writer, header []string, rows [][]string, maxWidth int) error {
 	columnCount := len(header)
 	for _, row := range rows {
 		if len(row) > columnCount {
@@ -43,6 +49,9 @@ func writeCLITable(writer io.Writer, header []string, rows [][]string) error {
 			}
 		}
 	}
+	if len(header) > 0 && len(rows) > 0 && maxWidth > 0 && cliTableWidth(widths) > maxWidth {
+		return writeCLIRecords(writer, lines[0], lines[1:], maxWidth)
+	}
 	for _, line := range lines {
 		var output strings.Builder
 		for column, cell := range line {
@@ -62,6 +71,10 @@ func writeCLITable(writer io.Writer, header []string, rows [][]string) error {
 
 // writeCLIFields aligns labels for compact human-readable detail output.
 func writeCLIFields(writer io.Writer, fields ...cliField) error {
+	return writeCLIFieldsAtWidth(writer, cliTerminalWidth(writer), fields...)
+}
+
+func writeCLIFieldsAtWidth(writer io.Writer, maxWidth int, fields ...cliField) error {
 	width := 0
 	for index := range fields {
 		fields[index].Label = cleanCLICell(fields[index].Label)
@@ -72,11 +85,108 @@ func writeCLIFields(writer io.Writer, fields ...cliField) error {
 	}
 	for _, field := range fields {
 		padding := width - xansi.StringWidth(field.Label) + cliColumnGap
-		if _, err := fmt.Fprintf(writer, "%s%s%s\n", field.Label, strings.Repeat(" ", padding), field.Value); err != nil {
+		prefix := field.Label + strings.Repeat(" ", padding)
+		if maxWidth <= 0 || xansi.StringWidth(prefix)+xansi.StringWidth(field.Value) <= maxWidth {
+			if _, err := fmt.Fprintf(writer, "%s%s\n", prefix, field.Value); err != nil {
+				return err
+			}
+			continue
+		}
+		available := maxWidth - xansi.StringWidth(prefix)
+		if available >= 8 {
+			if err := writeCLIWrappedValue(writer, prefix, field.Value, available); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := fmt.Fprintln(writer, field.Label); err != nil {
+			return err
+		}
+		available = maxWidth - cliColumnGap
+		if available < 1 {
+			available = 1
+		}
+		if err := writeCLIWrappedValue(writer, strings.Repeat(" ", cliColumnGap), field.Value, available); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeCLIFixedRow(writer io.Writer, widths []int, cells ...string) error {
+	var output strings.Builder
+	for column, cell := range cells {
+		cell = cleanCLICell(cell)
+		output.WriteString(cell)
+		if column >= len(cells)-1 {
+			continue
+		}
+		width := 0
+		if column < len(widths) {
+			width = widths[column]
+		}
+		padding := max(width-xansi.StringWidth(cell), 0) + cliColumnGap
+		output.WriteString(strings.Repeat(" ", padding))
+	}
+	output.WriteByte('\n')
+	_, err := io.WriteString(writer, output.String())
+	return err
+}
+
+func writeCLIRecords(writer io.Writer, header []string, rows [][]string, maxWidth int) error {
+	for rowIndex, row := range rows {
+		fields := make([]cliField, 0, len(header))
+		for column, label := range header {
+			fields = append(fields, cliField{Label: label, Value: row[column]})
+		}
+		if err := writeCLIFieldsAtWidth(writer, maxWidth, fields...); err != nil {
+			return err
+		}
+		if rowIndex < len(rows)-1 {
+			if _, err := io.WriteString(writer, "\n"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeCLIWrappedValue(writer io.Writer, prefix, value string, width int) error {
+	lines := strings.Split(xansi.Hardwrap(value, width, false), "\n")
+	indent := strings.Repeat(" ", xansi.StringWidth(prefix))
+	for index, line := range lines {
+		linePrefix := indent
+		if index == 0 {
+			linePrefix = prefix
+		}
+		if _, err := fmt.Fprintf(writer, "%s%s\n", linePrefix, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cliTableWidth(widths []int) int {
+	total := 0
+	for _, width := range widths {
+		total += width
+	}
+	if len(widths) > 1 {
+		total += (len(widths) - 1) * cliColumnGap
+	}
+	return total
+}
+
+func cliTerminalWidth(writer io.Writer) int {
+	file, ok := writer.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return 0
+	}
+	width, _, err := term.GetSize(int(file.Fd()))
+	if err != nil || width < 20 {
+		return 0
+	}
+	return width
 }
 
 func normalizeCLIRow(row []string, columnCount int) []string {

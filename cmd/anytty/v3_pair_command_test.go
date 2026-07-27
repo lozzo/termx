@@ -160,7 +160,11 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "pairing", "anytty-pair.png")
 	output := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--qr-file", path)
-	if !strings.Contains(string(output), "Pairing QR PNG written to") {
+	if strings.Contains(string(output), "\t") ||
+		!strings.Contains(string(output), "Fingerprint") ||
+		!strings.Contains(string(output), "Routes") ||
+		!strings.Contains(string(output), "DETAILS") ||
+		!strings.Contains(string(output), "Pairing QR PNG written to") {
 		t.Fatalf("pair PNG output = %q", output)
 	}
 	info, err := os.Stat(path)

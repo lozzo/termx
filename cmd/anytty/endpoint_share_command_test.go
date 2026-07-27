@@ -79,7 +79,11 @@ func TestEndpointShareCLITransfersConfigOnceAndImportsAtomically(t *testing.T) {
 			t.Fatalf("imported route is not config-only share: %#v", route)
 		}
 	}
-	if !strings.Contains(receiverOutput.String(), "Route direct: direct-webrtc-tcp add") || !strings.Contains(receiverOutput.String(), "config-only") {
+	if strings.Contains(receiverOutput.String(), "\t") ||
+		!strings.Contains(receiverOutput.String(), "ACTION") ||
+		!strings.Contains(receiverOutput.String(), "direct-webrtc-tcp") ||
+		!strings.Contains(receiverOutput.String(), "Status") ||
+		!strings.Contains(receiverOutput.String(), "config only") {
 		t.Fatalf("receiver output=%q", receiverOutput.String())
 	}
 

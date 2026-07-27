@@ -110,7 +110,9 @@ func newEndpointShareReceiveCommand(runtime *endpointCommandRuntime) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			renderEndpointShareDiff(cmd.OutOrStdout(), diff)
+			if err := renderEndpointShareDiff(cmd.OutOrStdout(), diff); err != nil {
+				return err
+			}
 			if !yes {
 				confirmed, err := confirmEndpointShare(cmd)
 				if err != nil {
@@ -131,8 +133,11 @@ func newEndpointShareReceiveCommand(runtime *endpointCommandRuntime) *cobra.Comm
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\timported\tconfig-only\n", importedID)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(importedID)},
+				cliField{Label: "Status", Value: "imported"},
+				cliField{Label: "Access", Value: "config only"},
+			)
 		},
 	}
 	command.Flags().BoolVar(&yes, "yes", false, "confirm the displayed Route and policy diff")
@@ -173,8 +178,15 @@ func endpointShareRandomID() (string, error) {
 }
 
 func renderEndpointShareQR(output io.Writer, uri string, target endpointdomain.Endpoint, addresses []string, expiresAt time.Time) error {
-	fmt.Fprintf(output, "Endpoint: %s\nDevice: %s\nFingerprint: %s\nAddresses: %s\nExpires: %s\n",
-		target.Label, target.DaemonIdentity.DeviceID, target.DaemonIdentity.DeviceFingerprint, strings.Join(addresses, ","), formatTerminalTime(expiresAt.UTC()))
+	if err := writeCLIFields(output,
+		cliField{Label: "Endpoint", Value: target.Label},
+		cliField{Label: "Device", Value: target.DaemonIdentity.DeviceID},
+		cliField{Label: "Fingerprint", Value: target.DaemonIdentity.DeviceFingerprint},
+		cliField{Label: "Addresses", Value: strings.Join(addresses, ", ")},
+		cliField{Label: "Expires", Value: formatTerminalTime(expiresAt.UTC())},
+	); err != nil {
+		return err
+	}
 	code, err := qrcode.New(uri, qrcode.Medium)
 	if err != nil {
 		return err
@@ -200,12 +212,33 @@ func renderEndpointShareQR(output io.Writer, uri string, target endpointdomain.E
 	return nil
 }
 
-func renderEndpointShareDiff(output io.Writer, diff endpointdomain.ShareDiff) {
-	fmt.Fprintf(output, "Endpoint: %s\nDevice: %s\nFingerprint: %s\n", diff.EndpointID, diff.Identity.DeviceID, diff.Identity.DeviceFingerprint)
-	for _, route := range diff.Routes {
-		fmt.Fprintf(output, "Route %s: %s %s\n", route.RouteID, route.Kind, route.Action)
+func renderEndpointShareDiff(output io.Writer, diff endpointdomain.ShareDiff) error {
+	connectMode := "unchanged"
+	if diff.ConnectModeChanged {
+		connectMode = "changed"
 	}
-	fmt.Fprintf(output, "Connect mode changed: %t\nSelection policy changed: %t\nAuthorization: required after config import\n", diff.ConnectModeChanged, diff.SelectionPolicyChanged)
+	selectionPolicy := "unchanged"
+	if diff.SelectionPolicyChanged {
+		selectionPolicy = "changed"
+	}
+	if err := writeCLIFields(output,
+		cliField{Label: "Endpoint", Value: string(diff.EndpointID)},
+		cliField{Label: "Device", Value: diff.Identity.DeviceID},
+		cliField{Label: "Fingerprint", Value: diff.Identity.DeviceFingerprint},
+		cliField{Label: "Connect mode", Value: connectMode},
+		cliField{Label: "Selection policy", Value: selectionPolicy},
+		cliField{Label: "Authorization", Value: "required after config import"},
+	); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(output, "\nRoutes\n"); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(diff.Routes))
+	for _, route := range diff.Routes {
+		rows = append(rows, []string{string(route.RouteID), string(route.Kind), string(route.Action)})
+	}
+	return writeCLITable(output, []string{"ID", "KIND", "ACTION"}, rows)
 }
 
 func confirmEndpointShare(cmd *cobra.Command) (bool, error) {

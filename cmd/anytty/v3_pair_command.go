@@ -378,30 +378,32 @@ func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Tim
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(output, "Device: %s\nFingerprint: %s\nExpires: %s\n",
-		offer.GetDeviceId(), remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey())), formatTerminalTime(expiresAt)); err != nil {
+	if err := writeCLIFields(output,
+		cliField{Label: "Device", Value: offer.GetDeviceId()},
+		cliField{Label: "Fingerprint", Value: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))},
+		cliField{Label: "Expires", Value: formatTerminalTime(expiresAt)},
+	); err != nil {
 		return err
 	}
+	if _, err := io.WriteString(output, "\nRoutes\n"); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(offer.GetRoutes()))
 	for _, route := range offer.GetRoutes() {
 		if direct := route.GetDirectWebrtcTcp(); direct != nil {
-			if _, err = fmt.Fprintf(output, "Route %s: direct signaling=%s ice-tcp=%s\n", route.GetRouteId(), direct.GetSignalingAddress(), direct.GetIceTcpAddress()); err != nil {
-				return err
-			}
+			details := fmt.Sprintf("signaling=%s, ice-tcp=%s", direct.GetSignalingAddress(), direct.GetIceTcpAddress())
+			rows = append(rows, []string{route.GetRouteId(), "direct", details})
 			continue
 		}
 		if managed := route.GetManagedWebrtc(); managed != nil {
-			if _, err = fmt.Fprintf(output, "Route %s: cloud target=%s\n", route.GetRouteId(), managed.GetTargetDeviceId()); err != nil {
-				return err
-			}
+			rows = append(rows, []string{route.GetRouteId(), "cloud", "target=" + managed.GetTargetDeviceId()})
 			continue
 		}
 		if ssh := route.GetSshWebrtcTcp(); ssh != nil {
-			if _, err = fmt.Fprintf(output, "Route %s: ssh %s@%s:%d\n", route.GetRouteId(), ssh.GetUser(), ssh.GetHost(), ssh.GetPort()); err != nil {
-				return err
-			}
+			rows = append(rows, []string{route.GetRouteId(), "ssh", fmt.Sprintf("%s@%s:%d", ssh.GetUser(), ssh.GetHost(), ssh.GetPort())})
 		}
 	}
-	return nil
+	return writeCLITable(output, []string{"ID", "KIND", "DETAILS"}, rows)
 }
 
 func pairRouteViews(bundle *remoteauth.PairingBundle) []pairRouteView {

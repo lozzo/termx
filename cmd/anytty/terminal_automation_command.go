@@ -107,8 +107,11 @@ func newTerminalSendCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(terminalSendEnvelope{1, "terminal_input_sent", target.Ref.String(), len(data)})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tsent\t%d bytes\n", target.Ref.String(), len(data))
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Target", Value: target.Ref.String()},
+				cliField{Label: "Status", Value: "sent"},
+				cliField{Label: "Bytes", Value: strconv.Itoa(len(data))},
+			)
 		},
 	}
 	command.Flags().StringArrayVar(&literals, "literal", nil, "literal UTF-8 text (repeatable)")
@@ -352,8 +355,11 @@ func newTerminalResizeCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tresized\t%dx%d\n", target.Ref.String(), view.Cols, view.Rows)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Target", Value: target.Ref.String()},
+				cliField{Label: "Status", Value: "resized"},
+				cliField{Label: "Size", Value: fmt.Sprintf("%dx%d", view.Cols, view.Rows)},
+			)
 		},
 	}
 	command.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "operation timeout")
@@ -412,8 +418,17 @@ func newTerminalWaitCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", result.Target, result.State)
-			return nil
+			fields := []cliField{
+				{Label: "Target", Value: result.Target},
+				{Label: "State", Value: result.State},
+			}
+			if result.ExitCode != nil {
+				fields = append(fields, cliField{Label: "Exit code", Value: strconv.Itoa(*result.ExitCode)})
+			}
+			if result.Timestamp != "" {
+				fields = append(fields, cliField{Label: "Timestamp", Value: result.Timestamp})
+			}
+			return writeCLIFields(cmd.OutOrStdout(), fields...)
 		},
 	}
 	command.Flags().StringVar(&state, "state", "exited", "created, running, exited, or removed")
@@ -538,6 +553,16 @@ func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return classifyCLIError(err)
 			}
+			narrowHumanOutput := false
+			if output == "human" {
+				width := cliTerminalWidth(cmd.OutOrStdout())
+				narrowHumanOutput = width > 0 && width < 56
+				if !narrowHumanOutput {
+					if err := writeCLIFixedRow(cmd.OutOrStdout(), []int{30, 16}, "TIME", "TYPE", "TARGET"); err != nil {
+						return err
+					}
+				}
+			}
 			written := 0
 			for count == 0 || written < count {
 				select {
@@ -552,8 +577,21 @@ func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
 						if err := json.NewEncoder(cmd.OutOrStdout()).Encode(view); err != nil {
 							return err
 						}
-					} else {
-						fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", view.Timestamp, view.Type, view.Target)
+					} else if narrowHumanOutput {
+						if written > 0 {
+							if _, err := io.WriteString(cmd.OutOrStdout(), "\n"); err != nil {
+								return err
+							}
+						}
+						if err := writeCLIFields(cmd.OutOrStdout(),
+							cliField{Label: "Time", Value: view.Timestamp},
+							cliField{Label: "Type", Value: view.Type},
+							cliField{Label: "Target", Value: view.Target},
+						); err != nil {
+							return err
+						}
+					} else if err := writeCLIFixedRow(cmd.OutOrStdout(), []int{30, 16}, view.Timestamp, view.Type, view.Target); err != nil {
+						return err
 					}
 					written++
 				}

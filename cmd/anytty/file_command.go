@@ -255,8 +255,12 @@ func newFileDownloadCommand(runtime *fileCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tdownloaded\t%d bytes\t%s\n", localPath, view.Size, view.SHA256)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Local path", Value: localPath},
+				cliField{Label: "Status", Value: "downloaded"},
+				cliField{Label: "Size", Value: fmt.Sprintf("%d bytes", view.Size)},
+				cliField{Label: "SHA-256", Value: view.SHA256},
+			)
 		},
 	}
 	command.Flags().BoolVar(&overwrite, "overwrite", false, "replace an existing local file")
@@ -294,8 +298,12 @@ func newFileUploadCommand(runtime *fileCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tuploaded\t%d bytes\t%s\n", result.Path, result.Size, view.SHA256)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Remote path", Value: result.Path},
+				cliField{Label: "Status", Value: "uploaded"},
+				cliField{Label: "Size", Value: fmt.Sprintf("%d bytes", result.Size)},
+				cliField{Label: "SHA-256", Value: view.SHA256},
+			)
 		},
 	}
 	command.Flags().BoolVar(&overwrite, "overwrite", false, "replace an existing remote file")

@@ -289,8 +289,11 @@ func newEndpointAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 				}); err != nil {
 					return err
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\tadded\t%s\n", id, route.ID)
-				return nil
+				return writeCLIFields(cmd.OutOrStdout(),
+					cliField{Label: "Endpoint", Value: string(id)},
+					cliField{Label: "Route", Value: string(route.ID)},
+					cliField{Label: "Status", Value: "added"},
+				)
 			},
 		}
 		bindEndpointPolicyFlags(child, endpointFlags)
@@ -327,8 +330,10 @@ func newEndpointUpdateCommand(runtime *endpointCommandRuntime) *cobra.Command {
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tupdated\n", id)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(id)},
+				cliField{Label: "Status", Value: "updated"},
+			)
 		},
 	}
 	bindEndpointPolicyFlags(command, flags)
@@ -357,8 +362,10 @@ func newEndpointRemoveCommand(runtime *endpointCommandRuntime) *cobra.Command {
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tremoved\n", id)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(id)},
+				cliField{Label: "Status", Value: "removed"},
+			)
 		},
 	}
 }
@@ -388,8 +395,10 @@ func newEndpointToggleCommand(runtime *endpointCommandRuntime, enabled bool) *co
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%sd\n", id, verb)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(id)},
+				cliField{Label: "Status", Value: verb + "d"},
+			)
 		},
 	}
 }
@@ -442,8 +451,10 @@ func newEndpointSetDefaultCommand(runtime *endpointCommandRuntime) *cobra.Comman
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\tdefault\n", id)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(id)},
+				cliField{Label: "Default", Value: "yes"},
+			)
 		},
 	}
 }
@@ -478,8 +489,11 @@ func newEndpointRouteAddCommand(runtime *endpointCommandRuntime) *cobra.Command 
 				}); err != nil {
 					return err
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tadded\n", endpointID, routeID)
-				return nil
+				return writeCLIFields(cmd.OutOrStdout(),
+					cliField{Label: "Endpoint", Value: string(endpointID)},
+					cliField{Label: "Route", Value: string(routeID)},
+					cliField{Label: "Status", Value: "added"},
+				)
 			},
 		}
 		bindRouteEditFlags(child, flags, kind, false)
@@ -511,8 +525,11 @@ func newEndpointRouteUpdateCommand(runtime *endpointCommandRuntime) *cobra.Comma
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tupdated\n", endpointID, routeID)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(endpointID)},
+				cliField{Label: "Route", Value: string(routeID)},
+				cliField{Label: "Status", Value: "updated"},
+			)
 		},
 	}
 	bindRouteEditFlags(command, flags, "", false)
@@ -541,8 +558,11 @@ func newEndpointRouteRemoveCommand(runtime *endpointCommandRuntime) *cobra.Comma
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tremoved\n", endpointID, routeID)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(endpointID)},
+				cliField{Label: "Route", Value: string(routeID)},
+				cliField{Label: "Status", Value: "removed"},
+			)
 		},
 	}
 }
@@ -572,8 +592,11 @@ func newEndpointRouteToggleCommand(runtime *endpointCommandRuntime, enabled bool
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%sd\n", endpointID, routeID, verb)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Endpoint", Value: string(endpointID)},
+				cliField{Label: "Route", Value: string(routeID)},
+				cliField{Label: "Status", Value: verb + "d"},
+			)
 		},
 	}
 }
