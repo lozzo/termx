@@ -2,9 +2,9 @@
 
 ## 1. 文档地位
 
-本文档是当前仓库唯一有效的 Markdown 文档，也是 Muxvia Cloud 后续删除、重构、实现和验收的唯一设计基线。
+本文档保存 Muxvia Cloud 已稳定的产品与技术架构。当前分支的活动范围、切片顺序、测试准入和提交规则由仓库根目录 `workflow.md` 驱动；两者冲突时以 `workflow.md` 为准。
 
-此前的 `workflow.md`、各目录 `AGENTS.md`、README、历史方案、产品说明和迁移计划已经退出，不再具有约束力。后续发现旧代码、旧测试或聊天记录与本文冲突时，以本文为准。需要改变架构时，必须先修改本文，再修改代码。未经明确确认，不再新增第二份 Markdown 设计文档。
+历史方案、旧代码行为和聊天记录不能覆盖当前工作流。需要改变稳定架构时同步修改本文；活动切片的细节先进入 `workflow.md`，验收后再沉淀到本文。
 
 当前工作顺序固定为：
 
@@ -49,7 +49,7 @@ Edge 对外表现为一个节点：只有一个 `edge_id`、一个节点身份�
 - Windows 当前用户 daemon 使用同一二进制的 `daemon start/status/stop/restart` 生命周期；安装包写入 `%LOCALAPPDATA%\\Programs\\Muxvia`，用户 PATH 与登录自启动都属于 HKCU，不要求管理员权限。升级必须先按 runtime record 精确停止旧进程，再原子替换二进制并重新启动。
 - TUI 图标字形由外部 terminal host 渲染，应用不能通过 ANSI 强制切换字体。Windows 安装包必须携带固定版本且校验摘要的 `JetBrainsMono Nerd Font Mono`，按当前用户注册字体，并通过 `%LOCALAPPDATA%\\Microsoft\\Windows Terminal\\Fragments\\Muxvia` 提供独立的 Muxvia profile；不得重写用户现有 `settings.json` 或全局默认 profile。卸载只删除 Muxvia 自有字体注册、字体副本和 fragment。
 - Windows 开发门禁使用仓库 PowerShell 脚本，覆盖 Go 全量测试、Proto 生成、UI/mobile 测试、typecheck、生产构建、三个 Go 二进制构建和安装包 smoke。Android 的 Go/JNI 产物允许在安装了固定 NDK 的 Windows 主机生成。
-- `muxvia-cloud-controller` 与 `muxvia-cloud-edge` 必须在 Windows 编译并通过平台无关单测，但 Cloud 生产服务器、一键 Edge 安装、systemd unit、在线升级与运维证据仍固定为 Linux/amd64。该服务器部署约束不允许污染 Windows 客户端或本地 daemon 的运行路径，也不得把 Windows 二进制展示成可部署的生产 Edge artifact。
+- `muxvia-cloud-controller` 与 `muxvia-cloud-edge` 必须在 Windows 编译并通过平台无关单测，但 Cloud 生产服务器、一键 Edge 安装、systemd unit、人工程序部署与运维证据仍固定为 Linux/amd64。该服务器部署约束不允许污染 Windows 客户端或本地 daemon 的运行路径，也不得把 Windows 二进制展示成可部署的生产 Edge artifact。
 
 ## 3. 系统角色与职责
 
@@ -62,7 +62,7 @@ Controller 是云端持久业务真值和实时目录的组合入口，负责：
 - 账号、登录会话、角色和运营权限。
 - 套餐、订单、支付结果、订阅、Entitlement、周期配额和结算。
 - daemon 归属、注册身份、公钥和撤销状态。
-- Edge 基础配置、域名、端口、区域、容量、证书配置和发布版本。
+- Edge 基础配置、域名、端口、区域、容量和当前证书档案。
 - Edge 候选列表、短期票据和已签名策略的签发。
 - 通过每个 Edge 的单条长连接维护纯内存在线目录。
 - 将 Web 管理操作路由到当前持有目标连接的 Edge。
@@ -396,13 +396,13 @@ Controller 的 PostgreSQL 只保存重启后仍然成立、需要审计或需要
 | 左侧模块 | 能看到什么 | 能做什么 | 真值来源 |
 | --- | --- | --- | --- |
 | 总览 | 在线 Edge、daemon、客户端会话、P2P/Relay 比例、告警、当期用量 | 跳转到异常节点或会话 | DB 聚合 + 内存实时目录 |
-| Edge 管理 | ID、名称、域名/端口、区域、容量、状态、版本、证书、在线数、负载、流量 | 新建安装、编辑配置、启停、升级、查看详情 | 配置来自 DB，在线数据来自内存 |
+| Edge 管理 | ID、名称、域名/端口、区域、容量、状态、版本、证书、在线数、负载、流量 | 新建安装、编辑配置、启停、绑定证书、查看详情 | 配置来自 DB，在线数据来自内存 |
 | 在线 daemon | daemon ID、所属账号、当前 Edge、连接时间、版本、地址摘要、活动会话数 | 查看详情、断开当前连接、进入账号 | 仅内存实时目录 |
 | 实时连接 | session ID、客户端 ID、客户端类型、目标 daemon、P2P/Relay、速率、开始时间 | 断开会话、查看关联对象 | 仅内存实时目录 |
 | 用户与权限 | 账号资料、角色、状态、daemon 数、订阅和用量摘要 | 禁用/恢复、调整运营角色、查看资产 | DB |
 | 套餐与订阅 | 套餐版本、Entitlement、订阅状态、周期、配额 | 创建/发布套餐、变更订阅、查看生效记录 | DB |
 | 订单与交易 | 订单、支付状态、退款、幂等键、审计信息 | 查询、人工处理允许的异常流程 | DB |
-| 证书 | 配置档案、域名、版本、有效期、绑定 Edge、发布进度 | 上传/续期、灰度发布、回滚到仍有效版本 | DB + Edge applied 状态 |
+| 证书 | 档案名称、DNS SAN、指纹、有效期、当前 revision、绑定 Edge、desired/applied 状态 | 上传双文件、替换当前内容、绑定 Edge | DB 元数据 + Controller secret 文件 + Edge applied 状态 |
 | 用量与结算 | 账号/周期/Edge 的累计 Relay 用量、配额、结算批次 | 查询、导出、处理结算异常 | DB |
 | 审计与系统 | 持久管理操作、版本、Controller 状态、Edge 重连事件 | 查询审计、查看系统健康 | DB 审计 + 内存状态 |
 
@@ -513,7 +513,7 @@ cmd/muxvia-cloud-edge/
 5. **R5 客户端直连**：实现 CloudRouteGrant、ClientTicket、信令转发和真实 P2P DataChannel。
 6. **R6 Relay 与用量**：在同一 Edge 内实现 TURN、租约、配额、速率、usage outbox 和幂等结算。
 7. **R7 账号、交易与完整后台**：实现套餐/订单/订阅/Entitlement，并完成中文 App Shell、模块页面和实时控制。
-8. **R8 证书、升级与生产化**：实现证书配置档案、原子更新、版本升级、回滚、监控和安全门禁。
+8. **R8 Edge 证书自动更新**：实现双文件证书档案、Edge 绑定、原子热加载、离线重连收敛和 secret 安全门禁；程序升级另行排期。
 9. **R9 全产品 E2E 与发布**：完成故障、负载、移动端、部署、安全和开源许可证验收后上线。
 
 不得跨切片恢复旧协议作为 fallback。某一切片需要变更本文边界时，先更新本文并说明现实链路和验收依据。
@@ -558,7 +558,7 @@ cmd/muxvia-cloud-edge/
 - 源码和生成代码使用同一 Proto；不存在平行业务 DTO。
 - secret audit、依赖许可证和选定的开源许可证门禁通过。
 - 本地、Direct、SSH、Cloud、P2P、Relay、文件传输、取消、恢复和移动端真实 UI E2E 全部通过。
-- 部署产物、版本、SHA-256、配置、迁移、回滚和线上 smoke test 均有可复现证据。
+- 部署产物、源码提交、SHA-256、配置、迁移和线上 smoke test 均有可复现证据。
 
 ## 17. 当前不做
 
@@ -575,7 +575,6 @@ cmd/muxvia-cloud-edge/
 ## 18. 尚待明确但不阻塞当前删除阶段的事项
 
 - 对外发布采用哪一种开源许可证。
-- 证书首发只支持 ACME/CSR，还是同时支持 KMS 托管的导入私钥。
 - 运营后台第一版是否把“实时连接”开放给普通用户账号，还是只开放给运营角色。
 
 这些参数选择不得改变本文已经确定的领域 owner、持久化边界、控制链路和失败语义。
@@ -616,7 +615,7 @@ cloud/
     commerce/            # 套餐、订单、支付、订阅、Entitlement
     enrollment/          # daemon 注册、DeviceIdentity 和 Edge 候选
     edgeconfig/          # Edge desired config、claim 和版本
-    certificate/         # 证书档案与发布
+    certificate/         # 证书档案、绑定与当前 secret
     directory/           # Controller 纯内存在线目录 actor
     control/             # EdgeControl server、命令 correlation
     usage/               # Relay lease、用量幂等结算
@@ -633,7 +632,7 @@ cloud/
     relay/                # 同进程 STUN/TURN 数据面
     policy/               # 票据、租约、并发和速率执行
     usage/                # 累计计数和唯一磁盘 outbox
-    certificate/          # 本地密钥、证书原子切换
+    certificate/          # 本机 applied 状态与证书原子切换
     runtimeconfig/        # 受签名 desired config
   daemon/                 # daemon enrollment、AgentGateway client
   client/                 # Controller directory/ticket 和 Edge signaling client
@@ -948,11 +947,10 @@ Command:     Created -> Sent -> Acknowledged | Rejected | TimedOut
 | 账号 | `accounts`、`account_sessions`、`account_roles` |
 | daemon | `daemons`、`daemon_enrollment_tokens`、`daemon_revocations` |
 | Edge | `edge_deployments`、`edge_claim_tokens`、`edge_config_versions` |
-| 证书 | `certificate_profiles`、`certificate_versions`、`edge_certificate_bindings` |
+| 证书 | `certificate_profiles`、`edge_certificate_bindings` |
 | 套餐 | `plan_catalog_versions`、`plans`、`plan_prices`、`entitlement_overrides` |
 | 交易 | `orders`、`payment_attempts`、`payment_events`、`subscriptions`、`subscription_adjustments` |
 | 用量 | `usage_periods`、`relay_usage_events`、`relay_usage_aggregates` |
-| 发布 | `release_artifacts`、`release_channels` |
 | 审计 | `operator_audit_events` |
 
 禁止出现 `hub_assignments`、`presence_topology`、`managed_peer_topology`、`connection_snapshots`、`runtime_heads`、`management_commands` 或 `command_outbox`。
@@ -964,7 +962,7 @@ Command:     Created -> Sent -> Acknowledged | Rejected | TimedOut
 - claim/enrollment token 由至少 192 bit 随机值产生，数据库只保存 SHA-256 摘要、过期时间、消费时间和目标 ID。
 - `payment_events(provider, provider_event_id)` 唯一，支付状态机在单事务中幂等推进。
 - `relay_usage_events(edge_id, event_id)` 唯一；重复 batch 返回相同 ACK，不重复增加 aggregate。
-- certificate private key 不进入普通表。表中只保存 secret manager reference、证书链、指纹、域名和版本状态。
+- certificate private key 和证书 PEM 不进入普通表。表中只保存不可猜测的 secret reference、指纹、DNS SAN、有效期和当前 revision；本机 secret 目录与文件权限分别为 `0700`、`0600`。
 - 所有 mutable aggregate 使用显式 revision 做 optimistic concurrency；API 冲突返回 `ABORTED`/HTTP 409，不做 last-write-wins。
 
 ### 25.3 事务规则
@@ -1102,11 +1100,11 @@ Edge 唯一持久 runtime 组件是 `usage.Outbox`。首发使用 `go.etcd.io/bb
 
 ### 27.5 配置与证书热更新
 
-`DesiredConfig` 包含单调 config version、适用 `edge_id`、监听入口、容量、policy 上限、Controller ticket key set、证书 release reference 和生效时间，并由 Controller ConfigSigner 签名。
+`DesiredConfig` 包含单调 config version、适用 `edge_id`、监听入口、容量、policy 上限、Controller ticket key set 和生效时间，并由 Controller ConfigSigner 签名。证书使用独立的 `EdgeCertificateBundle`，不塞入配置签名或通用发布协议。
 
-Edge 先验证签名和 target，再在内存构造 candidate config。可以热更新的限额、key set 和证书原子替换；需要重启的监听变化返回 `restart_required`，由发布流程 drain 后重启。不得把半应用配置标记为 applied。
+Edge 先验证签名和 target，再在内存构造 candidate config。可以热更新的限额和 key set 原子替换；需要重启的监听变化返回 `restart_required`，由人工部署流程处理。不得把半应用配置标记为 applied。
 
-证书 loader 通过原子指针向 TLS handshake 提供当前 certificate。新证书必须先验证私钥匹配、域名、有效期和完整链，再写权限文件、fsync、rename 并切换指针。失败保留旧指针。
+证书 loader 通过原子指针向 TLS handshake 提供当前 certificate。运营人员只上传匹配的 `fullchain.pem` 与 `privkey.pem`；Controller 校验证书链、私钥匹配、DNS SAN 和当前有效期，将 PEM 放入 root-owned secret 目录，并仅通过目标 Edge 的 mTLS `EdgeControl` 下发。Edge 再次校验后把单一 protobuf 状态文件以 `0600` 原子写入、fsync、rename，再切换指针并上报 applied revision。失败保留旧文件、旧指针和旧 applied revision；这是失败保护，不形成历史版本或回滚产品。
 
 ## 28. Controller 应用层技术设计
 
@@ -1237,14 +1235,12 @@ claim 至少 192 bit、10 分钟过期、单次消费。入口日志必须在落
 
 EdgeIdentity、证书和 usage outbox 位于 `/var/lib/muxvia-cloud-edge/`，文件 owner 为专用用户，私钥 `0600`。日志进入 journald/stdout，不把 secret 写入环境 dump。
 
-### 30.3 升级
+### 30.3 Edge 程序部署边界
 
-- Controller 持久化签名 artifact manifest、版本通道和 rollout 状态。
-- Edge 收到 release 后先下载和验签，报告 staged，不立即替换。
-- Controller 对目标 Edge 发 drain，确认新连接停止且达到有界等待后再触发 restart。
-- systemd 启动新版本；新版本只有完成 Controller snapshot 才报告 healthy。
-- 启动失败由 systemd 恢复前一个 `current` symlink，证书和 usage outbox 不回滚。
-- 首发逐节点升级，不做同一 Edge 无中断热替换。
+- 当前不建设 artifact registry、release channel、rollout、在线更新器、drain 编排或自动回滚平台。
+- Edge 二进制继续通过已签名安装产物或人工 SSH/systemd 部署；运营页面只显示 Edge 实际上报的软件版本，不提供升级按钮或目标版本。
+- 程序部署与证书自动更新是两个独立边界。证书只经 `EdgeCertificateBundle` 热加载，不能复用成通用文件发布或进程更新协议。
+- 后续出现真实批量升级需求时单独建立切片，不在证书领域提前扩展。
 
 ### 30.4 Controller 部署
 
@@ -1416,19 +1412,20 @@ R7 通过 `f0c87300` 建立 Proto-first 账号、角色、会话、交易、Subs
 
 2026-07-26 按开发阶段策略完整重建了 `muxvia_staging` schema，并重新执行 `0001` 到 `0004`；最终数据库只包含重建后的系统管理员、当前 Cloud 配置和唯一 CN1 Edge，不保留旧 daemon、Hub/Relay 拓扑、连接、交易或迁移期表。重建前的 Controller 数据库 dump、二进制和 unit/env 备份位于 `/var/backups/muxvia/r7-20260726T141921Z`，Edge 旧运行态备份位于 `/var/backups/muxvia/r7-20260726T142120Z`；它们不进入活动服务或新数据库。
 
-最终在线开发环境的 Controller 位于 `155.94.155.192`，公开入口为 `https://muxvia-controller.omscd.com:18444`，二进制 SHA-256 为 `328d4b30353ae67e7560936dfd5f28f2e7d82107029d95e82c4779da6287ca3a`。唯一 Edge `acc6075f-a28e-4b08-a67c-a419b5709199` 的区域为 `CN1`，入口为 `muxvia-cn1.omscd.com:41102`，容量为 `1000`，二进制 SHA-256 为 `a7da7541af5a8f06ab283f39ecce1e5148f3a0c396fe72a6745a38a895779c5d`。Controller 与 Edge 均为 `active/ready`、`NRestarts=0`，活动 unit 中没有旧 Controller、Hub、Relay 或 Edge 服务。国内 Edge 不再把跨境下载速度当作安装门禁：最终安装先由本地转传同一 artifact，只替换生成脚本中的 artifact 下载步骤，固定 SHA-256、Ed25519 发布签名、CSR、一次性 bootstrap 和 systemd 装配仍由原脚本验证。R8 必须把区域 artifact 分发和 bootstrap 有效期顺序纳入正式升级设计。
+最终在线开发环境的 Controller 位于 `155.94.155.192`，公开入口为 `https://muxvia-controller.omscd.com:18444`，二进制 SHA-256 为 `328d4b30353ae67e7560936dfd5f28f2e7d82107029d95e82c4779da6287ca3a`。唯一 Edge `acc6075f-a28e-4b08-a67c-a419b5709199` 的区域为 `CN1`，入口为 `muxvia-cn1.omscd.com:41102`，容量为 `1000`，二进制 SHA-256 为 `a7da7541af5a8f06ab283f39ecce1e5148f3a0c396fe72a6745a38a895779c5d`。Controller 与 Edge 均为 `active/ready`、`NRestarts=0`，活动 unit 中没有旧 Controller、Hub、Relay 或 Edge 服务。国内 Edge 不再把跨境下载速度当作安装门禁：最终安装先由本地转传同一 artifact，只替换生成脚本中的 artifact 下载步骤，固定 SHA-256、Ed25519 发布签名、CSR、一次性 bootstrap 和 systemd 装配仍由原脚本验证。后续程序批量升级属于独立切片，不再由 R8 承担。
 
 Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel 7 `390x844` 手机验收：桌面固定侧栏逐项进入 11 个管理模块并查看真实在线 CN1 Edge，手机连续打开抽屉进入 4 个模块，关闭后不再遮挡或拦截内容，用户表加载真实系统管理员且查询按钮保持单行。最终线上结果为 2 项通过、2 项按设备项目正常跳过；页面 error、console error、横向页面溢出和服务 crash 门禁均通过。
 
-### 32.11 R8：证书、升级与生产化（当前最早未完成切片）
+### 32.11 R8：Edge 证书上传与自动更新（进行中）
 
-- 完成证书档案、CSR/ACME、灰度发布、原子热加载和回滚。
-- 完成 artifact 签名、Edge drain/upgrade/rollback。
-- 完成结构化日志、指标、secret audit、限流和备份恢复。
+- 运营人员上传匹配的证书链和私钥，Controller 解析非敏感元数据并保存一个当前 revision；不提供 CSR/ACME、历史版本、灰度发布或回滚。
+- 一个档案可以绑定多个 Edge，同一 Edge 只选择一个当前档案。档案替换后在线 Edge 自动更新，离线 Edge 重连后按 desired/applied revision 收敛。
+- Controller secret 文件、PostgreSQL 元数据、mTLS 传输、Edge 二次校验、`0600` 原子状态文件和 TLS loader 分别保持自己的安全边界。
+- Edge 程序升级维持人工 SSH/systemd 部署，运营面只展示实际软件版本；artifact、rollout、在线更新和自动回滚不属于本切片。
 
 2026-07-26 已先完成开发环境的正式域名入口迁移，但 R8 仍为未完成。Muxvia Cloud 主站、Web Controller、JSON API 和公开客户端 gRPC 统一使用 `https://cloud.muxvia.com`，Cloudflare DNS-only A 记录指向海外 Controller `155.94.155.192`；该机保留现有共享 Nginx，在 `443` 终止公开 TLS，并分别反向代理 Web/API 和 `/muxvia.cloud.v1.*` gRPC 到 Controller 原生 `18444` listener。EdgeControl mTLS 继续使用 `155.94.155.192:18443`，不经过公开 Nginx，也不因此重新注册 Edge。国内唯一 Edge 部署在 `114.66.58.243`，继续使用阿里云解析的 `muxvia-cn1.omscd.com:41102`，TURN 使用同机 `3478/udp,tcp`。
 
-`cloud.muxvia.com` 的 Let's Encrypt 证书有效期至 2026-10-24；证书私钥只保存在海外服务器，仓库只保留 Nginx 路由和续期装配。每日 systemd timer 在宿主机运行容器化 Certbot，续期后复制证书到 Nginx 只读挂载目录并执行配置检查和热加载。迁移后 Controller 与 Edge 均完成真实重启并返回 ready、`NRestarts=0`；标准 `443` gRPC 请求实际到达 `DirectoryService`，Playwright 1.62.0 从新域名完成桌面和手机视口真实登录、全部侧栏路由及在线 CN1 Edge 验收，结果为 2 项通过、2 项按项目正常跳过。该入口迁移不等于完成证书档案、Edge 证书自动轮换、灰度升级、回滚、指标、限流或备份恢复，余项仍由 R8 继续完成。
+`cloud.muxvia.com` 的 Let's Encrypt 证书有效期至 2026-10-24；证书私钥只保存在海外服务器，仓库只保留 Nginx 路由和续期装配。每日 systemd timer 在宿主机运行容器化 Certbot，续期后复制证书到 Nginx 只读挂载目录并执行配置检查和热加载。迁移后 Controller 与 Edge 均完成真实重启并返回 ready、`NRestarts=0`；标准 `443` gRPC 请求实际到达 `DirectoryService`，Playwright 1.62.0 从新域名完成桌面和手机视口真实登录、全部侧栏路由及在线 CN1 Edge 验收，结果为 2 项通过、2 项按项目正常跳过。公开主站 Nginx 证书续期与 Edge 证书档案是两个独立 owner；前者不通过 EdgeControl 分发，后者的最终线上证据由本节后续记录补充。
 
 ### 32.12 R9：上线门禁
 
