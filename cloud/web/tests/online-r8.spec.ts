@@ -29,8 +29,13 @@ test.describe('R8 线上证书自动更新', () => {
     await expect(page.getByRole('heading', { name: '证书', exact: true }).last()).toBeVisible()
 
     const existing = page.getByRole('row').filter({ hasText: profileName }).first()
-    const replacing = await existing.count() > 0
+    await expect(existing.or(page.getByText('尚未上传证书档案', { exact: true }))).toBeVisible()
+    const replacing = await existing.isVisible()
+    let expectedRevision = 1
     if (replacing) {
+      const revision = (await existing.innerText()).match(/\br(\d+)\b/)
+      expect(revision).not.toBeNull()
+      expectedRevision = Number(revision?.[1]) + 1
       await existing.getByRole('button', { name: '替换' }).click()
     } else {
       await page.getByRole('button', { name: '上传证书', exact: true }).click()
@@ -49,7 +54,7 @@ test.describe('R8 线上证书自动更新', () => {
     expect(uploaded.ok()).toBe(true)
     expect(await uploaded.text()).not.toMatch(/PRIVATE KEY|certificateChainPem|privateKeyPem/i)
     await expect(dialog).toBeHidden()
-    await expect(page.getByRole('row').filter({ hasText: profileName }).first()).toBeVisible()
+    await expect(page.getByRole('row').filter({ hasText: profileName }).first()).toContainText(`r${expectedRevision}`)
 
     const edgeRow = page.getByRole('cell', { name: edgeEndpoint, exact: true }).locator('..')
     const profileSelect = edgeRow.getByRole('combobox')
@@ -71,7 +76,7 @@ test.describe('R8 线上证书自动更新', () => {
       await page.reload()
       const row = page.getByRole('cell', { name: edgeEndpoint, exact: true }).locator('..')
       return await row.innerText()
-    }, { timeout: 90_000, intervals: [1_000, 2_000, 3_000] }).toMatch(/已应用[\s\S]*r(\d+)\s*\/\s*r\1/)
+    }, { timeout: 90_000, intervals: [1_000, 2_000, 3_000] }).toMatch(new RegExp(`已应用[\\s\\S]*r${expectedRevision}\\s*\\/\\s*r${expectedRevision}`))
 
     const html = await page.locator('body').innerText()
     expect(html).not.toMatch(/BEGIN (?:RSA |EC )?PRIVATE KEY|certificateChainPem|privateKeyPem/i)
