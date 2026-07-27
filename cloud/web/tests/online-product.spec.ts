@@ -83,6 +83,7 @@ async function register(page: Page, identity: ReturnType<typeof uniqueIdentity>)
   await page.getByLabel('邮箱').fill(identity.email)
   await page.getByLabel('密码', { exact: true }).fill(identity.password)
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
+  await expect(page).toHaveURL(/\/app\/overview$/, { timeout: 30_000 })
 }
 
 function uniqueIdentity(project: string) {

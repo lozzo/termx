@@ -15,40 +15,155 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ListOperatorAccounts 分页读取账号 ID，再组装持久商业摘要；不接触 Directory。
+// ListOperatorAccounts 用单条批量查询装配账号持久摘要；不接触纯内存 Directory。
+// 列表只读取页面需要的角色、daemon 数、Subscription、Entitlement 与当期用量，禁止逐账号调用详情聚合形成 N+1。
 func (database *Database) ListOperatorAccounts(ctx context.Context, page *cloudv1.PageRequest, now time.Time) ([]*cloudv1.AccountSummary, string, error) {
 	limit := pageLimit(page)
 	query := strings.TrimSpace(page.GetQuery())
-	rows, err := database.pool.Query(ctx, `SELECT account_id::text FROM accounts WHERE ($1='' OR display_name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%') AND ($2='' OR account_id>$2::uuid) ORDER BY account_id LIMIT $3`, query, page.GetCursor(), limit+1)
+	rows, err := database.pool.Query(ctx, operatorAccountSummarySelect, query, page.GetCursor(), limit+1, now)
 	if err != nil {
 		return nil, "", err
 	}
 	defer rows.Close()
-	ids := make([]string, 0, limit+1)
+	result := make([]*cloudv1.AccountSummary, 0, limit+1)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, "", err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, "", err
-	}
-	next := ""
-	if len(ids) > limit {
-		next = ids[limit-1]
-		ids = ids[:limit]
-	}
-	result := make([]*cloudv1.AccountSummary, 0, len(ids))
-	for _, id := range ids {
-		value, err := database.GetOperatorAccount(ctx, id, now)
+		value, err := scanOperatorAccountSummary(rows, now)
 		if err != nil {
 			return nil, "", err
 		}
 		result = append(result, value)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(result) > limit {
+		next = result[limit-1].GetAccount().GetAccountId()
+		result = result[:limit]
+	}
 	return result, next, nil
+}
+
+const operatorAccountSummarySelect = `WITH selected_accounts AS MATERIALIZED (
+    SELECT a.account_id,a.email,a.display_name,a.state,a.revision,a.created_at,a.updated_at
+      FROM accounts a
+     WHERE ($1='' OR a.display_name ILIKE '%'||$1||'%' OR a.email ILIKE '%'||$1||'%')
+       AND ($2='' OR a.account_id>$2::uuid)
+     ORDER BY a.account_id
+     LIMIT $3
+), role_summary AS (
+    SELECT r.account_id,array_agg(r.role ORDER BY r.role) AS roles
+      FROM account_roles r
+      JOIN selected_accounts a ON a.account_id=r.account_id
+     GROUP BY r.account_id
+), daemon_summary AS (
+    SELECT d.account_id,count(*) AS daemon_count
+      FROM daemons d
+      JOIN selected_accounts a ON a.account_id=d.account_id
+     WHERE d.revoked=false
+     GROUP BY d.account_id
+), current_usage AS (
+    SELECT DISTINCT ON (u.account_id)
+           u.account_id,u.period_start,u.period_end,u.relay_ingress_bytes,u.relay_egress_bytes,u.revision
+      FROM usage_periods u
+      JOIN selected_accounts a ON a.account_id=u.account_id
+     WHERE u.period_start<=$4 AND u.period_end>$4
+     ORDER BY u.account_id,u.period_start DESC
+)
+SELECT a.account_id::text,coalesce(a.email,''),a.display_name,a.state,a.revision,a.created_at,a.updated_at,
+       coalesce(r.roles,ARRAY[]::text[]),coalesce(d.daemon_count,0),
+       s.subscription_id::text,s.plan_id,s.plan_version,coalesce(s.source_order_id::text,''),s.state,
+       s.cancel_at_period_end,s.revision,s.period_start,s.period_end,s.updated_at,
+       p.managed_p2p_enabled,p.managed_p2p_max_concurrency,p.relay_enabled,p.relay_max_concurrency,
+       p.relay_max_bytes_per_period,p.relay_max_bytes_per_lease,p.relay_max_rate_bytes_per_second,
+       p.cloud_daemon_limit,p.allowed_regions,
+       coalesce(u.period_start,s.period_start),coalesce(u.period_end,s.period_end),
+       coalesce(u.relay_ingress_bytes,0),coalesce(u.relay_egress_bytes,0),coalesce(u.revision,0)
+  FROM selected_accounts a
+  JOIN subscriptions s ON s.account_id=a.account_id
+  JOIN plans p ON p.plan_id=s.plan_id AND p.version=s.plan_version
+  LEFT JOIN role_summary r ON r.account_id=a.account_id
+  LEFT JOIN daemon_summary d ON d.account_id=a.account_id
+  LEFT JOIN current_usage u ON u.account_id=a.account_id
+ ORDER BY a.account_id`
+
+func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.AccountSummary, error) {
+	var accountID, email, displayName, accountState string
+	var accountRevision uint64
+	var accountCreatedAt, accountUpdatedAt time.Time
+	var roleNames []string
+	var daemonCount uint64
+	var subscriptionID, planID, sourceOrderID, subscriptionState string
+	var planVersion, subscriptionRevision uint64
+	var cancelAtPeriodEnd bool
+	var periodStart, periodEnd, subscriptionUpdatedAt time.Time
+	var managedP2PEnabled, relayEnabled bool
+	var managedP2PConcurrency, relayConcurrency uint64
+	var relayQuota, relayLease, relayRate, daemonLimit uint64
+	var allowedRegions []string
+	var usageStart, usageEnd time.Time
+	var ingress, egress, usageRevision uint64
+	if err := row.Scan(
+		&accountID, &email, &displayName, &accountState, &accountRevision, &accountCreatedAt, &accountUpdatedAt,
+		&roleNames, &daemonCount,
+		&subscriptionID, &planID, &planVersion, &sourceOrderID, &subscriptionState,
+		&cancelAtPeriodEnd, &subscriptionRevision, &periodStart, &periodEnd, &subscriptionUpdatedAt,
+		&managedP2PEnabled, &managedP2PConcurrency, &relayEnabled, &relayConcurrency,
+		&relayQuota, &relayLease, &relayRate, &daemonLimit, &allowedRegions,
+		&usageStart, &usageEnd, &ingress, &egress, &usageRevision,
+	); err != nil {
+		return nil, err
+	}
+
+	roles := make([]cloudv1.AccountRole, 0, len(roleNames))
+	for _, role := range roleNames {
+		roles = append(roles, parseAccountRole(role))
+	}
+	subscriptionStateValue := parseSubscriptionState(subscriptionState)
+	capability := &cloudv1.CloudCapability{
+		ManagedP2PEnabled:          managedP2PEnabled,
+		ManagedP2PMaxConcurrency:   uint32(managedP2PConcurrency),
+		RelayEnabled:               relayEnabled,
+		RelayMaxConcurrency:        uint32(relayConcurrency),
+		RelayMaxBytesPerPeriod:     relayQuota,
+		RelayMaxBytesPerLease:      relayLease,
+		RelayMaxRateBytesPerSecond: relayRate,
+		CloudDaemonLimit:           uint32(daemonLimit),
+		AllowedRegions:             append([]string(nil), allowedRegions...),
+	}
+	used := ingress + egress
+	remaining := uint64(0)
+	if used < relayQuota {
+		remaining = relayQuota - used
+	}
+	entitlementState := cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE
+	if accountState != "active" || subscriptionStateValue == cloudv1.SubscriptionState_SUBSCRIPTION_STATE_SUSPENDED {
+		entitlementState = cloudv1.EntitlementState_ENTITLEMENT_STATE_SUSPENDED
+	}
+	if !now.Before(periodEnd) || subscriptionStateValue == cloudv1.SubscriptionState_SUBSCRIPTION_STATE_EXPIRED || subscriptionStateValue == cloudv1.SubscriptionState_SUBSCRIPTION_STATE_CANCELED {
+		entitlementState = cloudv1.EntitlementState_ENTITLEMENT_STATE_EXPIRED
+	}
+
+	accountProfile := &cloudv1.AccountProfile{
+		AccountId: accountID, Email: email, DisplayName: displayName, State: parseAccountState(accountState),
+		Revision: accountRevision, CreatedAt: timestamppb.New(accountCreatedAt), UpdatedAt: timestamppb.New(accountUpdatedAt),
+	}
+	subscription := &cloudv1.SubscriptionProjection{
+		SubscriptionId: subscriptionID, AccountId: accountID, PlanId: planID, PlanVersion: planVersion,
+		SourceOrderId: sourceOrderID, State: subscriptionStateValue, CancelAtPeriodEnd: cancelAtPeriodEnd,
+		Revision: subscriptionRevision, PeriodStart: timestamppb.New(periodStart), PeriodEnd: timestamppb.New(periodEnd), UpdatedAt: timestamppb.New(subscriptionUpdatedAt),
+	}
+	entitlement := &cloudv1.EffectiveEntitlement{
+		AccountId: accountID, State: entitlementState, PlanId: planID, PlanVersion: planVersion,
+		SubscriptionId: subscriptionID, Capability: capability, RelayUsedBytes: used, RelayRemainingBytes: remaining,
+		EffectiveFrom: timestamppb.New(periodStart), EffectiveUntil: timestamppb.New(periodEnd), ComputedAt: timestamppb.New(now),
+	}
+	usage := &cloudv1.UsagePeriodProjection{
+		AccountId: accountID, PeriodStart: timestamppb.New(usageStart), PeriodEnd: timestamppb.New(usageEnd),
+		RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: used,
+		QuotaBytes: relayQuota, RemainingBytes: remaining, Revision: usageRevision,
+	}
+	return &cloudv1.AccountSummary{Account: accountProfile, Roles: roles, DaemonCount: daemonCount, Subscription: subscription, Entitlement: entitlement, Usage: usage}, nil
 }
 
 // GetOperatorAccount 返回一个账号的角色、daemon 数、Subscription、Entitlement 和用量。

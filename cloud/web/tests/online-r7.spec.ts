@@ -6,14 +6,15 @@ const password = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD
 
 test.describe('R7 线上运营后台', () => {
   test.skip(!origin || !login || !password, '需要显式提供线上地址和运营账号凭据')
+  test.describe.configure({ timeout: 180_000 })
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/login')
     await page.getByLabel('账号').fill(login ?? '')
     await page.getByLabel('密码', { exact: true }).fill(password ?? '')
     await page.getByRole('button', { name: '登录', exact: true }).click()
-    await expect(page).toHaveURL(/\/app\/overview$/)
-    await expect(page.getByRole('heading', { name: /^你好，/ }).last()).toBeVisible()
+    await expect(page).toHaveURL(/\/app\/overview$/, { timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: /^你好，/ }).last()).toBeVisible({ timeout: 30_000 })
   })
 
   test('桌面端固定侧栏连接所有真实管理模块', async ({ page }, testInfo) => {
@@ -81,6 +82,8 @@ test.describe('R7 线上运营后台', () => {
     }
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+    await page.getByRole('textbox', { name: '账号名称、邮箱或 ID' }).fill(login ?? '')
+    await page.getByRole('button', { name: '查询' }).click()
     const accountRow = page.getByRole('row').filter({ hasText: login ?? '' })
     await expect(accountRow).toBeVisible({ timeout: 30_000 })
     await page.screenshot({ path: testInfo.outputPath('online-r7-mobile-accounts.png'), fullPage: true })
