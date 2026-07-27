@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/cloud/controller/account"
+	"github.com/muxvia/muxvia/cloud/controller/certificate"
 	"github.com/muxvia/muxvia/cloud/controller/commerce"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
@@ -52,6 +53,7 @@ type Config struct {
 	Accounts           *account.Service
 	Commerce           *commerce.Service
 	Operator           *operatorservice.Service
+	Certificates       *certificate.Service
 }
 
 // Server 拥有原生 HTTPS listener 生命周期，不拥有 Edge 配置或实时目录。
@@ -65,7 +67,7 @@ type Server struct {
 // Start 验证 TLS/认证配置、绑定 listener 并启动 HTTPS。
 func Start(config Config) (*Server, error) {
 	config.ListenAddress = strings.TrimSpace(config.ListenAddress)
-	if config.ListenAddress == "" || config.Edges == nil || config.Directory == nil || config.Install == nil || config.Accounts == nil || config.Commerce == nil || config.Operator == nil {
+	if config.ListenAddress == "" || config.Edges == nil || config.Directory == nil || config.Install == nil || config.Accounts == nil || config.Commerce == nil || config.Operator == nil || config.Certificates == nil {
 		return nil, errors.New("HTTP listen and R7 application services are required")
 	}
 	tlsConfig, err := securetransport.NewServerTLSConfig(securetransport.ServerOptions{CertificateFile: config.TLSCertificateFile, PrivateKeyFile: config.TLSPrivateKeyFile})
@@ -107,7 +109,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 // NewHandler 构造可测试的 HTTP adapter；调用方仍必须在生产使用 TLS listener。
 func NewHandler(config Config) (http.Handler, error) {
 	config.PublicOrigin = strings.TrimRight(strings.TrimSpace(config.PublicOrigin), "/")
-	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Operator == nil {
+	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Operator == nil || config.Certificates == nil {
 		return nil, errors.New("HTTP handler and R7 application services are required")
 	}
 	var grpcServer *grpc.Server
@@ -280,7 +282,12 @@ func (handler *handler) listEdges(writer http.ResponseWriter, request *http.Requ
 	}
 	response := &cloudv1.ListEdgesResponse{Edges: make([]*cloudv1.ManagedEdge, 0, len(edges))}
 	for _, edge := range edges {
-		response.Edges = append(response.Edges, projectEdge(edge, runtimeByID[edge.ID]))
+		binding, bindErr := handler.config.Certificates.BindingForEdge(request.Context(), edge.ID)
+		if bindErr != nil {
+			writeError(writer, http.StatusInternalServerError, bindErr)
+			return
+		}
+		response.Edges = append(response.Edges, projectEdge(edge, runtimeByID[edge.ID], binding))
 	}
 	writeProto(writer, http.StatusOK, response)
 }
@@ -296,7 +303,7 @@ func (handler *handler) createEdge(writer http.ResponseWriter, request *http.Req
 		writeError(writer, http.StatusBadRequest, err)
 		return
 	}
-	response := &cloudv1.CreateEdgeResponse{Edge: projectEdge(edge, directory.EdgeProjection{}), InstallCommand: "curl -fsSL " + handler.config.PublicOrigin + "/install/edge/" + claim + " | sudo sh", ClaimExpiresAt: timestamppb.New(expiresAt)}
+	response := &cloudv1.CreateEdgeResponse{Edge: projectEdge(edge, directory.EdgeProjection{}, nil), InstallCommand: "curl -fsSL " + handler.config.PublicOrigin + "/install/edge/" + claim + " | sudo sh", ClaimExpiresAt: timestamppb.New(expiresAt)}
 	writeProto(writer, http.StatusCreated, response)
 }
 
@@ -311,6 +318,10 @@ func (handler *handler) updateEdge(writer http.ResponseWriter, request *http.Req
 		writeError(writer, http.StatusBadRequest, errors.New("Edge path and request IDs differ"))
 		return
 	}
+	if err := handler.config.Certificates.ValidateEdgeEndpoint(request.Context(), input.GetEdgeId(), input.GetPublicEndpoint()); err != nil {
+		writeError(writer, http.StatusBadRequest, err)
+		return
+	}
 	edge, err := handler.config.Edges.UpdateEdge(request.Context(), edgeconfig.UpdateInput{EdgeID: input.GetEdgeId(), ExpectedRevision: input.GetExpectedRevision(), Name: input.GetName(), Region: input.GetRegion(), Capacity: input.GetCapacity(), PublicEndpoint: input.GetPublicEndpoint(), Enabled: input.GetEnabled()})
 	if err != nil {
 		status := http.StatusBadRequest
@@ -321,7 +332,12 @@ func (handler *handler) updateEdge(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	runtimeProjection, _, _ := handler.config.Directory.Edge(request.Context(), edge.ID)
-	writeProto(writer, http.StatusOK, &cloudv1.UpdateEdgeResponse{Edge: projectEdge(edge, runtimeProjection)})
+	binding, err := handler.config.Certificates.BindingForEdge(request.Context(), edge.ID)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, err)
+		return
+	}
+	writeProto(writer, http.StatusOK, &cloudv1.UpdateEdgeResponse{Edge: projectEdge(edge, runtimeProjection, binding)})
 }
 
 func (handler *handler) installScript(writer http.ResponseWriter, request *http.Request) {
@@ -402,8 +418,8 @@ func accountUnaryInterceptor(accounts *account.Service) grpc.UnaryServerIntercep
 	}
 }
 
-func projectEdge(edge edgeconfig.Edge, runtime directory.EdgeProjection) *cloudv1.ManagedEdge {
-	projection := &cloudv1.ManagedEdge{Config: &cloudv1.EdgeDesiredConfig{EdgeId: edge.ID, Version: edge.ConfigVersion, Name: edge.Name, Region: edge.Region, Capacity: edge.Capacity, PublicEndpoint: edge.PublicEndpoint, Enabled: edge.Enabled}, ConfigRevision: edge.Revision, Runtime: &cloudv1.EdgeRuntimeProjection{}}
+func projectEdge(edge edgeconfig.Edge, runtime directory.EdgeProjection, certificate *cloudv1.CertificateBinding) *cloudv1.ManagedEdge {
+	projection := &cloudv1.ManagedEdge{Config: &cloudv1.EdgeDesiredConfig{EdgeId: edge.ID, Version: edge.ConfigVersion, Name: edge.Name, Region: edge.Region, Capacity: edge.Capacity, PublicEndpoint: edge.PublicEndpoint, Enabled: edge.Enabled}, ConfigRevision: edge.Revision, Runtime: &cloudv1.EdgeRuntimeProjection{}, Certificate: certificate}
 	if runtime.EdgeID != "" {
 		projection.Runtime = &cloudv1.EdgeRuntimeProjection{Online: true, BootId: runtime.BootID, ConnectionId: runtime.ConnectionID, SoftwareVersion: runtime.SoftwareVersion, RuntimeRevision: runtime.RuntimeRevision, AgentCount: uint64(runtime.AgentCount), SessionCount: uint64(runtime.SessionCount), RelayAllocationCount: uint64(runtime.RelayAllocationCount), ConnectedAt: timestamppb.New(runtime.ConnectedAt), LastHeartbeat: timestamppb.New(runtime.LastHeartbeat)}
 	}
@@ -411,8 +427,12 @@ func projectEdge(edge edgeconfig.Edge, runtime directory.EdgeProjection) *cloudv
 }
 
 func readProto(request *http.Request, message proto.Message) error {
+	return readProtoLimit(request, message, 1<<20)
+}
+
+func readProtoLimit(request *http.Request, message proto.Message, limit int64) error {
 	defer request.Body.Close()
-	payload, err := io.ReadAll(io.LimitReader(request.Body, 1<<20))
+	payload, err := io.ReadAll(io.LimitReader(request.Body, limit))
 	if err != nil {
 		return err
 	}

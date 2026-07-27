@@ -319,6 +319,41 @@ func (handler *handler) operatorR7(writer http.ResponseWriter, request *http.Req
 		response, err := handler.config.Operator.ListAudit(request.Context(), &cloudv1.ListOperatorAuditRequest{Page: pageRequest(request)})
 		writeServiceResult(writer, response, err)
 		return true
+	case path == "/certificates" && request.Method == http.MethodGet:
+		response, err := handler.config.Operator.ListCertificateProfiles(request.Context(), &cloudv1.ListCertificateProfilesRequest{})
+		writeServiceResult(writer, response, err)
+		return true
+	case path == "/certificates" && request.Method == http.MethodPost:
+		input := &cloudv1.UploadCertificateProfileRequest{}
+		if err := readProtoLimit(request, input, 4<<20); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return true
+		}
+		response, err := handler.config.Operator.UploadCertificateProfile(request.Context(), input)
+		writeServiceResult(writer, response, err)
+		return true
+	case strings.HasPrefix(path, "/certificates/") && request.Method == http.MethodPut:
+		profileID := strings.TrimPrefix(path, "/certificates/")
+		input := &cloudv1.UploadCertificateProfileRequest{CertificateProfileId: profileID}
+		if err := readProtoLimit(request, input, 4<<20); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return true
+		}
+		input.CertificateProfileId = profileID
+		response, err := handler.config.Operator.UploadCertificateProfile(request.Context(), input)
+		writeServiceResult(writer, response, err)
+		return true
+	case strings.HasPrefix(path, "/edges/") && strings.HasSuffix(path, "/certificate") && request.Method == http.MethodPost:
+		edgeID := strings.TrimSuffix(strings.TrimPrefix(path, "/edges/"), "/certificate")
+		input := &cloudv1.BindCertificateProfileRequest{EdgeId: edgeID}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return true
+		}
+		input.EdgeId = edgeID
+		response, err := handler.config.Operator.BindCertificateProfile(request.Context(), input)
+		writeServiceResult(writer, response, err)
+		return true
 	case path == "/events" && request.Method == http.MethodGet:
 		handler.operatorEvents(writer, request)
 		return true

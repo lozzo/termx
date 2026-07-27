@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/cloud/controller/account"
+	"github.com/muxvia/muxvia/cloud/controller/certificate"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
@@ -32,12 +33,13 @@ type Store interface {
 
 // Config 固定 OperatorService 的持久和实时 owner。
 type Config struct {
-	Store      Store
-	Edges      *edgeconfig.Service
-	Enrollment *enrollment.Service
-	Directory  *directory.Directory
-	Control    *control.Service
-	Now        func() time.Time
+	Store        Store
+	Edges        *edgeconfig.Service
+	Enrollment   *enrollment.Service
+	Directory    *directory.Directory
+	Control      *control.Service
+	Certificates *certificate.Service
+	Now          func() time.Time
 }
 
 // Service 是运营 API 应用边界；Web view state 不进入该对象。
@@ -48,13 +50,39 @@ type Service struct {
 
 // New 创建 OperatorService，任一真值 owner 缺失时 fail closed。
 func New(config Config) (*Service, error) {
-	if config.Store == nil || config.Edges == nil || config.Enrollment == nil || config.Directory == nil || config.Control == nil {
+	if config.Store == nil || config.Edges == nil || config.Enrollment == nil || config.Directory == nil || config.Control == nil || config.Certificates == nil {
 		return nil, errors.New("operator stores and runtime owners are required")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
 	return &Service{config: config}, nil
+}
+
+// ListCertificateProfiles 返回当前档案、绑定和真实在线投影，不包含 PEM。
+func (service *Service) ListCertificateProfiles(ctx context.Context, _ *cloudv1.ListCertificateProfilesRequest) (*cloudv1.ListCertificateProfilesResponse, error) {
+	if _, err := requireOperator(ctx, false); err != nil {
+		return nil, err
+	}
+	return service.config.Certificates.ListProfiles(ctx)
+}
+
+// UploadCertificateProfile 要求最近认证，并把双文件 mutation 委托给证书领域。
+func (service *Service) UploadCertificateProfile(ctx context.Context, request *cloudv1.UploadCertificateProfileRequest) (*cloudv1.UploadCertificateProfileResponse, error) {
+	actor, err := requireOperator(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	return service.config.Certificates.UploadProfile(ctx, request, actor.Account.GetAccountId())
+}
+
+// BindCertificateProfile 要求最近认证，并使用 binding revision 避免覆盖并发操作。
+func (service *Service) BindCertificateProfile(ctx context.Context, request *cloudv1.BindCertificateProfileRequest) (*cloudv1.BindCertificateProfileResponse, error) {
+	actor, err := requireOperator(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	return service.config.Certificates.BindProfile(ctx, request, actor.Account.GetAccountId())
 }
 
 // GetOverview 聚合持久用量和当前 Directory，不用数据库构造在线数量。

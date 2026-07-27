@@ -39,10 +39,12 @@ type Config struct {
 	BootID               string
 	SoftwareVersion      string
 	DesiredConfigVersion uint64
+	CertificateProfileID string
 	CertificateVersion   uint64
 	WriterQueueSize      int
 	OpenRuntimeFeed      func(context.Context) (*RuntimeFeed, error)
 	ApplyDesiredConfig   func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
+	ApplyCertificate     func(context.Context, *cloudv1.EdgeCertificateBundle) error
 	CloseDaemon          func(context.Context, string, uint64) error
 	CloseSession         func(context.Context, string, uint64) error
 	Capabilities         []cloudv1.EdgeCapability
@@ -100,7 +102,7 @@ func Open(parent context.Context, config Config) (*Session, error) {
 	if err := stream.Send(edgeEvent(config, connectionID, 1, &cloudv1.EdgeEvent_Hello{Hello: &cloudv1.EdgeHello{
 		EdgeId: config.EdgeID, SoftwareVersion: config.SoftwareVersion,
 		Capabilities:         append([]cloudv1.EdgeCapability(nil), config.Capabilities...),
-		DesiredConfigVersion: config.DesiredConfigVersion, CertificateVersion: config.CertificateVersion,
+		DesiredConfigVersion: config.DesiredConfigVersion, CertificateVersion: config.CertificateVersion, CertificateProfileId: config.CertificateProfileID,
 	}})); err != nil {
 		cancel()
 		_ = connection.Close()
@@ -308,6 +310,21 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 				}
 				desiredApplied = true
 				markReady()
+			case *cloudv1.ControllerCommand_CertificateBundle:
+				result := &cloudv1.CertificateApplied{CertificateProfileId: payload.CertificateBundle.GetCertificateProfileId(), Revision: payload.CertificateBundle.GetRevision()}
+				if config.ApplyCertificate == nil {
+					result.ErrorCode = "CERTIFICATE_APPLY_UNAVAILABLE"
+					result.ErrorMessage = "Edge certificate manager is unavailable"
+				} else if applyErr := config.ApplyCertificate(ctx, payload.CertificateBundle); applyErr != nil {
+					result.ErrorCode = "CERTIFICATE_APPLY_FAILED"
+					result.ErrorMessage = applyErr.Error()
+				} else {
+					result.Applied = true
+				}
+				if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_CertificateApplied{CertificateApplied: result}); err != nil {
+					session.finish(err)
+					return
+				}
 			case *cloudv1.ControllerCommand_RelayLeaseDecision:
 				session.resolveRelayLease(payload.RelayLeaseDecision)
 			case *cloudv1.ControllerCommand_UsageAck:
@@ -526,6 +543,8 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_UsageBatch:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_CommandResult:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_CertificateApplied:
 		event.Payload = typed
 	default:
 		panic("unsupported EdgeEvent payload")

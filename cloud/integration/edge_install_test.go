@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/controller/account"
 	"github.com/muxvia/muxvia/cloud/controller/apihttp"
+	"github.com/muxvia/muxvia/cloud/controller/certificate"
 	"github.com/muxvia/muxvia/cloud/controller/commerce"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
@@ -103,11 +104,22 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edges, Enrollment: enrollmentService, Directory: directoryState, Control: controlService})
+	secretStore, err := certificate.NewFileSecretStore(filepath.Join(temporary, "certificate-secrets"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := apihttp.NewHandler(apihttp.Config{PublicOrigin: "https://controller.example.com:18444", Edges: edges, Directory: directoryState, Install: installer, Enrollment: enrollmentService, Accounts: accounts, Commerce: commercial, Operator: operatorService})
+	certificateService, err := certificate.New(certificate.Config{Store: database, Secrets: secretStore, Edges: edges, Dispatcher: controlService, Online: func(ctx context.Context, edgeID string) (bool, error) {
+		_, found, err := directoryState.Edge(ctx, edgeID)
+		return found, err
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edges, Enrollment: enrollmentService, Directory: directoryState, Control: controlService, Certificates: certificateService})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := apihttp.NewHandler(apihttp.Config{PublicOrigin: "https://controller.example.com:18444", Edges: edges, Directory: directoryState, Install: installer, Enrollment: enrollmentService, Accounts: accounts, Commerce: commercial, Operator: operatorService, Certificates: certificateService})
 	if err != nil {
 		t.Fatal(err)
 	}

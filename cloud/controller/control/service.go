@@ -39,6 +39,8 @@ type Config struct {
 	TicketVerificationKeys []*cloudv1.VerificationKey
 	Directory              *directory.Directory
 	DesiredConfig          func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
+	DesiredCertificate     func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
+	CertificateApplied     func(context.Context, string, *cloudv1.CertificateApplied) error
 	TicketSigningKey       ed25519.PrivateKey
 	TicketSigningKeyID     string
 	RelayLeaseTTL          time.Duration
@@ -49,12 +51,13 @@ type Config struct {
 // Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
 type Service struct {
 	cloudv1.UnimplementedEdgeControlServer
-	config        Config
-	draining      atomic.Bool
-	drain         chan struct{}
-	drainOnce     sync.Once
-	connectionsMu sync.RWMutex
-	connections   map[string]chan externalCommand
+	config          Config
+	draining        atomic.Bool
+	drain           chan struct{}
+	drainOnce       sync.Once
+	connectionsMu   sync.RWMutex
+	connections     map[string]chan externalCommand
+	edgeConnections map[string]string
 }
 
 type externalCommand struct {
@@ -79,7 +82,7 @@ func NewService(config Config) (*Service, error) {
 			return nil, errors.New("R6 Relay policy, usage store, signer, and bounded lease TTL must be configured together")
 		}
 	}
-	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand)}, nil
+	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand), edgeConnections: make(map[string]string)}, nil
 }
 
 // BeginShutdown 拒绝新控制流并通知现有 Connect handler 主动结束。
@@ -141,10 +144,14 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	external := make(chan externalCommand, 64)
 	service.connectionsMu.Lock()
 	service.connections[connectionID] = external
+	service.edgeConnections[certificateEdgeID] = connectionID
 	service.connectionsMu.Unlock()
 	defer func() {
 		service.connectionsMu.Lock()
 		delete(service.connections, connectionID)
+		if service.edgeConnections[certificateEdgeID] == connectionID {
+			delete(service.edgeConnections, certificateEdgeID)
+		}
 		service.connectionsMu.Unlock()
 	}()
 
@@ -164,6 +171,16 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		commandSeq++
 		if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_DesiredConfig{DesiredConfig: desired})); err != nil {
 			return status.Errorf(codes.Unavailable, "send Edge desired config: %v", err)
+		}
+	}
+	if service.config.DesiredCertificate != nil {
+		desired, err := service.config.DesiredCertificate(stream.Context(), certificateEdgeID)
+		// Controller secret 暂时不可读不能中断 Edge 的现有 P2P/Relay；绑定保持 pending，重连后继续收敛。
+		if err == nil && desired != nil && (hello.GetCertificateProfileId() != desired.GetCertificateProfileId() || hello.GetCertificateVersion() != desired.GetRevision()) {
+			commandSeq++
+			if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_CertificateBundle{CertificateBundle: desired})); err != nil {
+				return status.Errorf(codes.Unavailable, "send Edge desired certificate: %v", err)
+			}
 		}
 	}
 	inbound := make(chan receiveResult, 1)
@@ -256,6 +273,11 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 			return nil, errors.New("ConfigApplied version is required")
 		}
 		return nil, nil
+	case *cloudv1.EdgeEvent_CertificateApplied:
+		if service.config.CertificateApplied == nil || payload.CertificateApplied == nil || payload.CertificateApplied.GetCertificateProfileId() == "" || payload.CertificateApplied.GetRevision() == 0 {
+			return nil, errors.New("CertificateApplied is invalid or unavailable")
+		}
+		return nil, service.config.CertificateApplied(ctx, event.GetSenderId(), payload.CertificateApplied)
 	case *cloudv1.EdgeEvent_RelayLeaseRequest:
 		decision, err := service.issueRelayLease(ctx, event, payload.RelayLeaseRequest)
 		if err != nil {
@@ -296,6 +318,8 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_CloseDaemon:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_CloseSession:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_CertificateBundle:
 		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
@@ -360,6 +384,22 @@ func (service *Service) sendExternal(ctx context.Context, connectionID string, p
 	case err := <-request.result:
 		return err
 	}
+}
+
+// PushCertificate 把证书包发送给当前在线的指定 Edge generation。
+// 私钥只进入该 Edge 已认证的 mTLS writer queue，离线时返回 stale 供持久 desired state 等待重连。
+func (service *Service) PushCertificate(ctx context.Context, edgeID string, bundle *cloudv1.EdgeCertificateBundle) error {
+	edgeID = strings.TrimSpace(edgeID)
+	if bundle == nil || edgeID == "" || bundle.GetTargetEdgeId() != edgeID || bundle.GetCertificateProfileId() == "" || bundle.GetRevision() == 0 || len(bundle.GetCertificateChainPem()) == 0 || len(bundle.GetPrivateKeyPem()) == 0 {
+		return errors.New("targeted Edge certificate bundle is required")
+	}
+	service.connectionsMu.RLock()
+	connectionID := service.edgeConnections[edgeID]
+	service.connectionsMu.RUnlock()
+	if connectionID == "" {
+		return directory.ErrStaleConnection
+	}
+	return service.sendExternal(ctx, connectionID, &cloudv1.ControllerCommand_CertificateBundle{CertificateBundle: bundle})
 }
 
 func waitRuntimeCommand(ctx context.Context, waiter <-chan *cloudv1.EdgeCommandResult) cloudv1.RuntimeCommandResult {

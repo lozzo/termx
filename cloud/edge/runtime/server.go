@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/configsignature"
 	"github.com/muxvia/muxvia/cloud/edge/agentgateway"
+	edgecertificate "github.com/muxvia/muxvia/cloud/edge/certificate"
 	"github.com/muxvia/muxvia/cloud/edge/clientgateway"
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
 	"github.com/muxvia/muxvia/cloud/edge/policy"
@@ -38,53 +39,55 @@ import (
 // Config 是 Edge 进程启动所需的本机 bootstrap 配置。
 // 区域、容量、域名和策略不在该结构中，后续由签名 DesiredConfig 拥有。
 type Config struct {
-	ListenAddress              string
-	PublicCertificateFile      string
-	PublicPrivateKeyFile       string
-	ControllerAddress          string
-	ControllerServerName       string
-	ControllerCAFile           string
-	IdentityCertificateFile    string
-	IdentityPrivateKeyFile     string
-	EdgeID                     string
-	BootID                     string
-	SoftwareVersion            string
-	ConfigSigningKeyID         string
-	ConfigSigningPublicKeyFile string
-	DesiredConfigCacheFile     string
-	TURNListenAddress          string
-	TURNPublicEndpoint         string
-	TURNRealm                  string
-	UsageOutboxFile            string
+	ListenAddress               string
+	PublicCertificateFile       string
+	PublicPrivateKeyFile        string
+	ControllerAddress           string
+	ControllerServerName        string
+	ControllerCAFile            string
+	IdentityCertificateFile     string
+	IdentityPrivateKeyFile      string
+	EdgeID                      string
+	BootID                      string
+	SoftwareVersion             string
+	ConfigSigningKeyID          string
+	ConfigSigningPublicKeyFile  string
+	DesiredConfigCacheFile      string
+	ManagedCertificateStateFile string
+	TURNListenAddress           string
+	TURNPublicEndpoint          string
+	TURNRealm                   string
+	UsageOutboxFile             string
 }
 
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
-	config            Config
-	publicTLS         *tls.Config
-	controllerTLS     *tls.Config
-	listener          net.Listener
-	httpServer        *http.Server
-	grpcServer        *grpc.Server
-	grpcHealth        *grpc_health.Server
-	health            *processhealth.State
-	errors            chan error
-	readyChanges      chan struct{}
-	ctx               context.Context
-	cancel            context.CancelFunc
-	waitGroup         sync.WaitGroup
-	shutdownOnce      sync.Once
-	state             *State
-	configPublicKey   ed25519.PublicKey
-	ticketKeysMu      sync.RWMutex
-	ticketKeys        ticket.KeySet
-	credentialDeriver *policy.CredentialDeriver
-	usageOutbox       *usage.Outbox
-	relayServer       *relay.Server
-	controlSessionMu  sync.RWMutex
-	controlSession    *controllerlink.Session
-	usagePumpMu       sync.Mutex
-	usageDegraded     atomic.Bool
+	config             Config
+	publicTLS          *tls.Config
+	controllerTLS      *tls.Config
+	listener           net.Listener
+	httpServer         *http.Server
+	grpcServer         *grpc.Server
+	grpcHealth         *grpc_health.Server
+	health             *processhealth.State
+	errors             chan error
+	readyChanges       chan struct{}
+	ctx                context.Context
+	cancel             context.CancelFunc
+	waitGroup          sync.WaitGroup
+	shutdownOnce       sync.Once
+	state              *State
+	configPublicKey    ed25519.PublicKey
+	certificateManager *edgecertificate.Manager
+	ticketKeysMu       sync.RWMutex
+	ticketKeys         ticket.KeySet
+	credentialDeriver  *policy.CredentialDeriver
+	usageOutbox        *usage.Outbox
+	relayServer        *relay.Server
+	controlSessionMu   sync.RWMutex
+	controlSession     *controllerlink.Session
+	usagePumpMu        sync.Mutex
+	usageDegraded      atomic.Bool
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -94,12 +97,16 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
-	publicTLS, err := securetransport.NewServerTLSConfig(securetransport.ServerOptions{
+	publicTLS, publicCertificateLoader, err := securetransport.NewReloadableServerTLSConfig(securetransport.ServerOptions{
 		CertificateFile: config.PublicCertificateFile,
 		PrivateKeyFile:  config.PublicPrivateKeyFile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load Edge public TLS: %w", err)
+	}
+	certificateManager, err := edgecertificate.New(edgecertificate.Config{EdgeID: config.EdgeID, StateFile: config.ManagedCertificateStateFile}, publicCertificateLoader)
+	if err != nil {
+		return nil, fmt.Errorf("load managed Edge certificate: %w", err)
 	}
 	controllerTLS, err := securetransport.NewClientTLSConfig(securetransport.ClientOptions{
 		CertificateFile: config.IdentityCertificateFile,
@@ -141,8 +148,9 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		config: config, publicTLS: publicTLS, controllerTLS: controllerTLS,
 		listener: listener, grpcServer: grpcServer, grpcHealth: grpcHealth, health: healthState,
 		errors: make(chan error, 1), readyChanges: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
-		state:           state,
-		configPublicKey: configPublicKey,
+		state:              state,
+		configPublicKey:    configPublicKey,
+		certificateManager: certificateManager,
 	}
 	if config.TURNListenAddress != "" {
 		outbox, openErr := usage.Open(config.UsageOutboxFile, 2*time.Second)
@@ -349,16 +357,20 @@ func (runtime *Runtime) runControllerLink() {
 			applyDesiredConfig = runtime.applyDesiredConfig
 		}
 		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
+		capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD)
 		if runtime.relayServer != nil && runtime.usageOutbox != nil && !runtime.RelayDegraded() {
 			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_USAGE_OUTBOX)
 		}
+		certificateProfileID, certificateRevision := runtime.certificateManager.Current()
 		session, err := controllerlink.Open(runtime.ctx, controllerlink.Config{
-			ControllerAddress: runtime.config.ControllerAddress,
-			TLSConfig:         runtime.controllerTLS,
-			EdgeID:            runtime.config.EdgeID,
-			BootID:            runtime.config.BootID,
-			SoftwareVersion:   runtime.config.SoftwareVersion,
-			Capabilities:      capabilities,
+			ControllerAddress:    runtime.config.ControllerAddress,
+			TLSConfig:            runtime.controllerTLS,
+			EdgeID:               runtime.config.EdgeID,
+			BootID:               runtime.config.BootID,
+			SoftwareVersion:      runtime.config.SoftwareVersion,
+			CertificateProfileID: certificateProfileID,
+			CertificateVersion:   certificateRevision,
+			Capabilities:         capabilities,
 			OpenRuntimeFeed: func(ctx context.Context) (*controllerlink.RuntimeFeed, error) {
 				feed, err := runtime.state.OpenFeed(ctx)
 				if err != nil {
@@ -367,6 +379,7 @@ func (runtime *Runtime) runControllerLink() {
 				return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 			},
 			ApplyDesiredConfig: applyDesiredConfig,
+			ApplyCertificate:   runtime.certificateManager.Apply,
 			CloseDaemon:        runtime.state.CloseAgentConnection,
 			CloseSession:       runtime.state.CloseSession,
 		})
@@ -450,6 +463,10 @@ func normalizeConfig(config Config) Config {
 	config.ConfigSigningKeyID = strings.TrimSpace(config.ConfigSigningKeyID)
 	config.ConfigSigningPublicKeyFile = strings.TrimSpace(config.ConfigSigningPublicKeyFile)
 	config.DesiredConfigCacheFile = strings.TrimSpace(config.DesiredConfigCacheFile)
+	config.ManagedCertificateStateFile = strings.TrimSpace(config.ManagedCertificateStateFile)
+	if config.ManagedCertificateStateFile == "" && config.PublicCertificateFile != "" {
+		config.ManagedCertificateStateFile = filepath.Join(filepath.Dir(config.PublicCertificateFile), "managed-certificate.pb")
+	}
 	config.TURNListenAddress = strings.TrimSpace(config.TURNListenAddress)
 	config.TURNPublicEndpoint = strings.TrimSpace(config.TURNPublicEndpoint)
 	config.TURNRealm = strings.TrimSpace(config.TURNRealm)

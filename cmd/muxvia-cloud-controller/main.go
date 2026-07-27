@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/controller/account"
 	"github.com/muxvia/muxvia/cloud/controller/apihttp"
+	"github.com/muxvia/muxvia/cloud/controller/certificate"
 	"github.com/muxvia/muxvia/cloud/controller/commerce"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
@@ -50,6 +51,7 @@ type options struct {
 	publicOrigin         string
 	controllerAddress    string
 	controllerServerName string
+	certificateSecretDir string
 	operatorUsername     string
 	operatorPasswordFile string
 	configSigningKey     string
@@ -155,6 +157,27 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	defer directoryState.Close()
+	secretStore, err := certificate.NewFileSecretStore(config.certificateSecretDir)
+	if err != nil {
+		return fmt.Errorf("open certificate secret store: %w", err)
+	}
+	var service *control.Service
+	certificateService, err := certificate.New(certificate.Config{
+		Store: database, Secrets: secretStore, Edges: edgeService,
+		Dispatcher: certificate.DispatcherFunc(func(ctx context.Context, edgeID string, bundle *cloudv1.EdgeCertificateBundle) error {
+			if service == nil {
+				return errors.New("EdgeControl is not ready")
+			}
+			return service.PushCertificate(ctx, edgeID, bundle)
+		}),
+		Online: func(ctx context.Context, edgeID string) (bool, error) {
+			_, found, err := directoryState.Edge(ctx, edgeID)
+			return found, err
+		},
+	})
+	if err != nil {
+		return err
+	}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Store: database, Edges: edgeService, Directory: directoryState, TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID,
 		Entitlement:       commerceService,
@@ -171,7 +194,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	service, err := control.NewService(control.Config{
+	service, err = control.NewService(control.Config{
 		ControllerID:           config.controllerID,
 		ControllerBootID:       uuid.NewString(),
 		HeartbeatInterval:      config.heartbeatInterval,
@@ -185,6 +208,8 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
 		},
+		DesiredCertificate: certificateService.BundleForEdge,
+		CertificateApplied: certificateService.RecordApplied,
 	})
 	if err != nil {
 		return err
@@ -196,7 +221,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edgeService, Enrollment: enrollmentService, Directory: directoryState, Control: service})
+	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edgeService, Enrollment: enrollmentService, Directory: directoryState, Control: service, Certificates: certificateService})
 	if err != nil {
 		return err
 	}
@@ -210,7 +235,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService, Certificates: certificateService})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()
@@ -257,6 +282,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.publicOrigin, "public-origin", "", "public HTTPS origin for operator and installer")
 	flags.StringVar(&config.controllerAddress, "controller-address", "", "public EdgeControl address returned to Edge")
 	flags.StringVar(&config.controllerServerName, "controller-server-name", "", "EdgeControl TLS server name returned to Edge")
+	flags.StringVar(&config.certificateSecretDir, "certificate-secret-dir", "/var/lib/muxvia-cloud-controller/certificates", "root-owned directory for managed Edge certificate files")
 	flags.StringVar(&config.operatorUsername, "operator-username", "operator", "bootstrap administrator login")
 	flags.StringVar(&config.operatorPasswordFile, "operator-password-file", "", "bootstrap administrator password file")
 	flags.StringVar(&config.configSigningKey, "config-signing-key", "", "Edge desired config Ed25519 private key")

@@ -6,9 +6,12 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 const (
@@ -28,25 +31,95 @@ type ServerOptions struct {
 // NewServerTLSConfig 加载 server 证书并返回最低 TLS 1.3 的不可变装配。
 // 文件不存在、PEM 无效或 Client CA 为空时显式失败。
 func NewServerTLSConfig(options ServerOptions) (*tls.Config, error) {
+	config, _, err := NewReloadableServerTLSConfig(options)
+	return config, err
+}
+
+// ReloadableCertificate 是 server TLS 当前证书的原子内存 owner。
+// Replace 只接受调用方已经完整校验过的不可变 key pair。
+type ReloadableCertificate struct {
+	current atomic.Pointer[tls.Certificate]
+}
+
+// NewReloadableServerTLSConfig 加载初始文件，并把后续新握手绑定到可原子替换的 loader。
+func NewReloadableServerTLSConfig(options ServerOptions) (*tls.Config, *ReloadableCertificate, error) {
 	certificate, err := tls.LoadX509KeyPair(strings.TrimSpace(options.CertificateFile), strings.TrimSpace(options.PrivateKeyFile))
 	if err != nil {
-		return nil, fmt.Errorf("load server certificate: %w", err)
+		return nil, nil, fmt.Errorf("load server certificate: %w", err)
 	}
+	loader := &ReloadableCertificate{}
+	loader.Replace(&certificate)
 	config := &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{certificate},
-		NextProtos:   []string{"h2", "http/1.1"},
+		MinVersion: tls.VersionTLS13,
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			current := loader.current.Load()
+			if current == nil {
+				return nil, errors.New("server certificate is unavailable")
+			}
+			return current, nil
+		},
+		NextProtos: []string{"h2", "http/1.1"},
 	}
 	if strings.TrimSpace(options.ClientCAFile) == "" {
-		return config, nil
+		return config, loader, nil
 	}
 	pool, err := loadCertPool(options.ClientCAFile)
 	if err != nil {
-		return nil, fmt.Errorf("load client CA: %w", err)
+		return nil, nil, fmt.Errorf("load client CA: %w", err)
 	}
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	config.ClientCAs = pool
-	return config, nil
+	return config, loader, nil
+}
+
+// Replace 原子替换后续 TLS 握手使用的证书；调用后不再修改输入对象。
+func (loader *ReloadableCertificate) Replace(certificate *tls.Certificate) {
+	if loader == nil || certificate == nil {
+		return
+	}
+	loader.current.Store(certificate)
+}
+
+// ValidatedServerPair 是一次完整校验后的 server key pair 和叶证书。
+type ValidatedServerPair struct {
+	Certificate *tls.Certificate
+	Leaf        *x509.Certificate
+}
+
+// ValidateServerPair 校验证书链、私钥、DNS SAN、可选公网入口和有效期。
+// now 为零值时只用于恢复本机旧证书，不检查有效期，以便 Edge 仍能连回 Controller 收敛。
+func ValidateServerPair(certificatePEM, privateKeyPEM []byte, publicEndpoint string, now time.Time) (*ValidatedServerPair, error) {
+	pair, err := tls.X509KeyPair(certificatePEM, privateKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("certificate and private key do not match: %w", err)
+	}
+	if len(pair.Certificate) == 0 {
+		return nil, errors.New("certificate chain contains no certificate")
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil, fmt.Errorf("parse leaf certificate: %w", err)
+	}
+	if len(leaf.DNSNames) == 0 {
+		return nil, errors.New("certificate must contain at least one DNS SAN")
+	}
+	if !now.IsZero() {
+		now = now.UTC()
+		if now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) {
+			return nil, errors.New("certificate is not currently valid")
+		}
+	}
+	if endpoint := strings.TrimSpace(publicEndpoint); endpoint != "" {
+		host := endpoint
+		if parsed, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+			host = strings.Trim(parsed, "[]")
+		}
+		if err := leaf.VerifyHostname(host); err != nil {
+			return nil, fmt.Errorf("certificate does not cover public endpoint %q: %w", host, err)
+		}
+	}
+	pair.Leaf = leaf
+	return &ValidatedServerPair{Certificate: &pair, Leaf: leaf}, nil
 }
 
 // ClientOptions 定义 Edge 连接 Controller 时的 mTLS 材料和 TLS server name。

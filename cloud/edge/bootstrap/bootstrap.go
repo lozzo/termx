@@ -50,22 +50,23 @@ type FileConfig struct {
 
 // Resolved 是 bootstrap 完成后提供给 Edge runtime composition 的本机文件路径。
 type Resolved struct {
-	ListenAddress              string
-	ControllerAddress          string
-	ControllerServerName       string
-	EdgeID                     string
-	IdentityCertificateFile    string
-	IdentityPrivateKeyFile     string
-	PublicCertificateFile      string
-	PublicPrivateKeyFile       string
-	ControllerCAFile           string
-	ConfigSigningKeyID         string
-	ConfigSigningPublicKeyFile string
-	DesiredConfigCacheFile     string
-	TURNListenAddress          string
-	TURNPublicEndpoint         string
-	TURNRealm                  string
-	UsageOutboxFile            string
+	ListenAddress               string
+	ControllerAddress           string
+	ControllerServerName        string
+	EdgeID                      string
+	IdentityCertificateFile     string
+	IdentityPrivateKeyFile      string
+	PublicCertificateFile       string
+	PublicPrivateKeyFile        string
+	ControllerCAFile            string
+	ConfigSigningKeyID          string
+	ConfigSigningPublicKeyFile  string
+	DesiredConfigCacheFile      string
+	ManagedCertificateStateFile string
+	TURNListenAddress           string
+	TURNPublicEndpoint          string
+	TURNRealm                   string
+	UsageOutboxFile             string
 }
 
 // Resolve 读取配置；未注册时生成或复用本机私钥并消费一次性 bootstrap token。
@@ -215,7 +216,8 @@ func resolvedPaths(config FileConfig) Resolved {
 		PublicCertificateFile: filepath.Join(config.StateDirectory, "public-cert.pem"), PublicPrivateKeyFile: filepath.Join(config.StateDirectory, "public-key.pem"),
 		ControllerCAFile: filepath.Join(config.StateDirectory, "controller-ca.pem"), ConfigSigningKeyID: config.ConfigKeyID,
 		ConfigSigningPublicKeyFile: filepath.Join(config.StateDirectory, "config-signing-public.key"), DesiredConfigCacheFile: filepath.Join(config.StateDirectory, "desired-config.pb"),
-		TURNListenAddress: config.TURNListenOverride, TURNPublicEndpoint: net.JoinHostPort(publicHost, "3478"), TURNRealm: publicHost, UsageOutboxFile: filepath.Join(config.StateDirectory, "usage-outbox.db"),
+		ManagedCertificateStateFile: filepath.Join(config.StateDirectory, "managed-certificate.pb"),
+		TURNListenAddress:           config.TURNListenOverride, TURNPublicEndpoint: net.JoinHostPort(publicHost, "3478"), TURNRealm: publicHost, UsageOutboxFile: filepath.Join(config.StateDirectory, "usage-outbox.db"),
 	}
 }
 

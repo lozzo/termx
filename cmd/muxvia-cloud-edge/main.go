@@ -22,25 +22,26 @@ import (
 const defaultSoftwareVersion = "development"
 
 type options struct {
-	configFile          string
-	listenAddress       string
-	controllerAddress   string
-	controllerServer    string
-	edgeID              string
-	publicCertificate   string
-	publicPrivateKey    string
-	identityCertificate string
-	identityPrivateKey  string
-	controllerCA        string
-	softwareVersion     string
-	shutdownTimeout     time.Duration
-	configSigningKeyID  string
-	configSigningPublic string
-	desiredConfigCache  string
-	turnListen          string
-	turnPublicEndpoint  string
-	turnRealm           string
-	usageOutbox         string
+	configFile              string
+	listenAddress           string
+	controllerAddress       string
+	controllerServer        string
+	edgeID                  string
+	publicCertificate       string
+	publicPrivateKey        string
+	identityCertificate     string
+	identityPrivateKey      string
+	controllerCA            string
+	softwareVersion         string
+	shutdownTimeout         time.Duration
+	configSigningKeyID      string
+	configSigningPublic     string
+	desiredConfigCache      string
+	managedCertificateState string
+	turnListen              string
+	turnPublicEndpoint      string
+	turnRealm               string
+	usageOutbox             string
 }
 
 func main() {
@@ -78,6 +79,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		config.configSigningKeyID = resolved.ConfigSigningKeyID
 		config.configSigningPublic = resolved.ConfigSigningPublicKeyFile
 		config.desiredConfigCache = resolved.DesiredConfigCacheFile
+		config.managedCertificateState = resolved.ManagedCertificateStateFile
 		config.turnListen = resolved.TURNListenAddress
 		config.turnPublicEndpoint = resolved.TURNPublicEndpoint
 		config.turnRealm = resolved.TURNRealm
@@ -90,24 +92,25 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		return errors.New("shutdown timeout must be positive")
 	}
 	runtime, err := edgeruntime.Start(ctx, edgeruntime.Config{
-		ListenAddress:              config.listenAddress,
-		PublicCertificateFile:      config.publicCertificate,
-		PublicPrivateKeyFile:       config.publicPrivateKey,
-		ControllerAddress:          config.controllerAddress,
-		ControllerServerName:       config.controllerServer,
-		ControllerCAFile:           config.controllerCA,
-		IdentityCertificateFile:    config.identityCertificate,
-		IdentityPrivateKeyFile:     config.identityPrivateKey,
-		EdgeID:                     config.edgeID,
-		BootID:                     uuid.NewString(),
-		SoftwareVersion:            config.softwareVersion,
-		ConfigSigningKeyID:         config.configSigningKeyID,
-		ConfigSigningPublicKeyFile: config.configSigningPublic,
-		DesiredConfigCacheFile:     config.desiredConfigCache,
-		TURNListenAddress:          config.turnListen,
-		TURNPublicEndpoint:         config.turnPublicEndpoint,
-		TURNRealm:                  config.turnRealm,
-		UsageOutboxFile:            config.usageOutbox,
+		ListenAddress:               config.listenAddress,
+		PublicCertificateFile:       config.publicCertificate,
+		PublicPrivateKeyFile:        config.publicPrivateKey,
+		ControllerAddress:           config.controllerAddress,
+		ControllerServerName:        config.controllerServer,
+		ControllerCAFile:            config.controllerCA,
+		IdentityCertificateFile:     config.identityCertificate,
+		IdentityPrivateKeyFile:      config.identityPrivateKey,
+		EdgeID:                      config.edgeID,
+		BootID:                      uuid.NewString(),
+		SoftwareVersion:             config.softwareVersion,
+		ConfigSigningKeyID:          config.configSigningKeyID,
+		ConfigSigningPublicKeyFile:  config.configSigningPublic,
+		DesiredConfigCacheFile:      config.desiredConfigCache,
+		ManagedCertificateStateFile: config.managedCertificateState,
+		TURNListenAddress:           config.turnListen,
+		TURNPublicEndpoint:          config.turnPublicEndpoint,
+		TURNRealm:                   config.turnRealm,
+		UsageOutboxFile:             config.usageOutbox,
 	})
 	if err != nil {
 		return err
@@ -151,6 +154,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.turnPublicEndpoint, "turn-public-endpoint", "", "generated public TURN host and port")
 	flags.StringVar(&config.turnRealm, "turn-realm", "", "generated TURN authentication realm")
 	flags.StringVar(&config.usageOutbox, "usage-outbox", "", "durable unacknowledged Relay usage outbox")
+	flags.StringVar(&config.managedCertificateState, "managed-certificate-state", "", "atomic Edge managed certificate state file")
 	if err := flags.Parse(arguments); err != nil {
 		return options{}, fmt.Errorf("parse Edge flags: %w", err)
 	}
