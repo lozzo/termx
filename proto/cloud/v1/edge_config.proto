@@ -15,8 +15,6 @@ message EdgeDesiredConfig {
   uint64 capacity = 5;
   string public_endpoint = 6;
   bool enabled = 7;
-  string certificate_profile_id = 8;
-  string release_channel = 9;
 }
 
 // SignedEdgeDesiredConfig 使用独立签名域保护配置，Edge 只持有公开验签密钥。
@@ -55,8 +53,6 @@ message CreateEdgeRequest {
   string region = 2;
   uint64 capacity = 3;
   string public_endpoint = 4;
-  string certificate_profile_id = 5;
-  string release_channel = 6;
 }
 
 message CreateEdgeResponse {
@@ -73,8 +69,6 @@ message UpdateEdgeRequest {
   uint64 capacity = 5;
   string public_endpoint = 6;
   bool enabled = 7;
-  string certificate_profile_id = 8;
-  string release_channel = 9;
 }
 
 message UpdateEdgeResponse { ManagedEdge edge = 1; }
