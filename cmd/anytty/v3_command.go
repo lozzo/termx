@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	apilayer "github.com/anytty/anytty/api_layer"
 	corev2 "github.com/anytty/anytty/core"
@@ -78,6 +79,16 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 		socketPath := resolveV3Socket(*socket)
 		applyDaemonRuntimeTuning(logger)
 		historyBackpressure := daemonHistoryBackpressureConfig(logger)
+		runtimeConfig, err := loadV3TUIConfig(*configPath)
+		if err != nil {
+			return err
+		}
+		historyStorage := corev2.HistoryStorageConfig{
+			MaxBytesPerTerminal: int64(runtimeConfig.Daemon.History.MaxSizeMB) << 20,
+			MaxAge:              time.Duration(runtimeConfig.Daemon.History.MaxAgeDays) * 24 * time.Hour,
+			Compression:         runtimeConfig.Daemon.History.Compression,
+			CompressionLevel:    runtimeConfig.Daemon.History.CompressionLevel,
+		}
 		historyDir := resolveV3HistoryStorageDir()
 		clientAccess, err := loadV3ClientAccessRuntime(socketPath)
 		if err != nil {
@@ -90,8 +101,20 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 		}
 		defer releaseRecord()
 		accessService := v3ClientAccessService{identity: clientAccess.Identity, store: clientAccess.Store}
-		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
 		historyEnabled := !envBool("ANYTTY_HISTORY_DISABLE")
+		if historyEnabled {
+			removed, err := corev2.DeleteObsoleteCompactHistory(resolveV3ObsoleteCompactHistoryDir())
+			if err != nil {
+				return fmt.Errorf("discard obsolete compact history: %w", err)
+			}
+			if removed > 0 {
+				logger.Info("discarded obsolete compact history", "files", removed)
+			}
+			if err := corev2.PrepareHistoryStorage(historyDir, historyStorage); err != nil {
+				return fmt.Errorf("prepare history storage: %w", err)
+			}
+		}
+		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryStorageConfig(historyStorage), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
 		if !historyEnabled {
 			historyDir = ""
 			opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
@@ -127,7 +150,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 		defer func() {
 			_ = srv.Shutdown(context.Background())
 		}()
-		logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir, "history_enabled", historyEnabled)
+		logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir, "history_enabled", historyEnabled, "history_max_bytes_per_terminal", historyStorage.MaxBytesPerTerminal, "history_max_age", historyStorage.MaxAge, "history_compression", historyStorage.Compression, "history_compression_level", historyStorage.CompressionLevel)
 		err = srv.ListenAndServe(ctx)
 		writeHeapProfile("exit")
 		if err != nil {

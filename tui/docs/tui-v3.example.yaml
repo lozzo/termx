@@ -16,6 +16,25 @@
 # 示例：version: 1
 version: 1
 
+# daemon 控制本机 AnyTTY daemon 的运行策略，不属于 TUI 展示偏好。
+# history 旧格式不会迁移；升级后的首次 daemon 启动会直接删除旧 history 文件。
+daemon:
+  history:
+    # 每个 terminal 的历史文件物理上限，单位 MiB。超限时淘汰最旧压缩块。
+    # 默认值：512。设为 0 表示不设上限。
+    max_size_mb: 512
+
+    # 自动删除早于指定天数的历史块。默认值：0，表示不按天数删除。
+    max_age_days: 0
+
+    # 历史块编码。s2 偏向最低 CPU；zstd 偏向更高压缩率；none 只使用紧凑编码。
+    # 可选值：zstd、s2、none。默认值：zstd。
+    compression: zstd
+
+    # 压缩档位。fast CPU 最低；balanced 平衡吞吐与体积；best 优先压缩率。
+    # 可选值：fast、balanced、best。默认值：fast。none 下此项不生效。
+    compression_level: fast
+
 # tui 是当前 TUI 客户端的用户偏好配置根节点。
 # 它只控制当前客户端的视觉、交互和快捷键，不保存 workspace/tab/pane 布局，不保存 terminal lifecycle。
 tui:

@@ -58,3 +58,7 @@ func v3StatePathPolicy() string {
 func resolveV3HistoryStorageDir() string {
 	return resolveStateFilePath("history-v2")
 }
+
+func resolveV3ObsoleteCompactHistoryDir() string {
+	return resolveStateFilePath("core-v2-history")
+}

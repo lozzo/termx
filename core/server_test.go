@@ -40,6 +40,21 @@ func TestServerOptions(t *testing.T) {
 	if got := server.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureLowLatency || got.BufferBytes != DefaultHistoryBackpressureBufferBytes {
 		t.Fatalf("unexpected default history backpressure %#v", got)
 	}
+	if got := server.HistoryStorageConfig(); got.MaxBytesPerTerminal != DefaultHistoryMaxBytesPerTerminal || got.Compression != HistoryCompressionZstd || got.CompressionLevel != HistoryCompressionLevelFast {
+		t.Fatalf("unexpected default history storage config %#v", got)
+	}
+}
+
+func TestServerHistoryStorageConfigOption(t *testing.T) {
+	server := NewServer(WithHistoryStorageConfig(HistoryStorageConfig{
+		MaxBytesPerTerminal: 64 << 20,
+		MaxAge:              14 * 24 * time.Hour,
+		Compression:         HistoryCompressionS2,
+		CompressionLevel:    HistoryCompressionLevelBest,
+	}))
+	if got := server.HistoryStorageConfig(); got.MaxBytesPerTerminal != 64<<20 || got.MaxAge != 14*24*time.Hour || got.Compression != HistoryCompressionS2 || got.CompressionLevel != HistoryCompressionLevelBest {
+		t.Fatalf("unexpected history storage config %#v", got)
+	}
 }
 
 func TestR446ServerHistoryBackpressureConfigOption(t *testing.T) {

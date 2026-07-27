@@ -49,6 +49,12 @@ func TestParseDocumentedConfigExample(t *testing.T) {
 func TestParseConfigOverridesScalars(t *testing.T) {
 	cfg, err := Parse([]byte(`
 version: 1
+daemon:
+  history:
+    max_size_mb: 96
+    max_age_days: 14
+    compression: s2
+    compression_level: balanced
 tui:
   profile: work
   theme:
@@ -137,6 +143,9 @@ tui:
 	}
 	if cfg.Profile != "work" || cfg.Theme.Palette != "builtin" || cfg.Theme.Primary != "#d65cff" || cfg.Theme.Secondary != "#66e3ff" {
 		t.Fatalf("theme/profile overrides not applied: %#v", cfg)
+	}
+	if cfg.Daemon.History.MaxSizeMB != 96 || cfg.Daemon.History.MaxAgeDays != 14 || cfg.Daemon.History.Compression != "s2" || cfg.Daemon.History.CompressionLevel != "balanced" {
+		t.Fatalf("daemon history overrides not applied: %#v", cfg.Daemon.History)
 	}
 	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabCreateTemplate, "{{create_icon}}") || !strings.Contains(cfg.Chrome.WorkspaceTemplate, "{{workspace | truncate 8}}") || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") || cfg.Chrome.PaneTitleTemplate != "{{terminal}}@{{endpoint}}" {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
@@ -248,6 +257,23 @@ func TestParseRejectsUnknownFieldAndBadValues(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown section") {
 		t.Fatalf("expected unknown shortcut scene error, got %v", err)
 	}
+
+	_, err = Parse([]byte("daemon:\n  history:\n    max_size_mb: -1\n"))
+	if err == nil || !strings.Contains(err.Error(), "max_size_mb") {
+		t.Fatalf("expected negative history size error, got %v", err)
+	}
+	_, err = Parse([]byte("daemon:\n  history:\n    max_age_days: -1\n"))
+	if err == nil || !strings.Contains(err.Error(), "max_age_days") {
+		t.Fatalf("expected negative history age error, got %v", err)
+	}
+	_, err = Parse([]byte("daemon:\n  history:\n    compression: gzip\n"))
+	if err == nil || !strings.Contains(err.Error(), "compression") {
+		t.Fatalf("expected history compression error, got %v", err)
+	}
+	_, err = Parse([]byte("daemon:\n  history:\n    compression_level: maximum\n"))
+	if err == nil || !strings.Contains(err.Error(), "compression_level") {
+		t.Fatalf("expected history compression level error, got %v", err)
+	}
 }
 
 func TestLoadUsesMissingDefaultPathButFailsExplicitMissingPath(t *testing.T) {
@@ -273,6 +299,10 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	env := map[string]string{
+		"ANYTTY_HISTORY_MAX_SIZE_MB":                  "128",
+		"ANYTTY_HISTORY_MAX_AGE_DAYS":                 "30",
+		"ANYTTY_HISTORY_COMPRESSION":                  "none",
+		"ANYTTY_HISTORY_COMPRESSION_LEVEL":            "best",
 		"ANYTTY_TUI_THEME_PRIMARY":                    "#010203",
 		"ANYTTY_TUI_THEME_PALETTE":                    "builtin",
 		"ANYTTY_TUI_CHROME_HEADER":                    "false",
@@ -286,6 +316,10 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("load with env overrides: %v", err)
 	}
 	if cfg.Theme.Primary != "#010203" ||
+		cfg.Daemon.History.MaxSizeMB != 128 ||
+		cfg.Daemon.History.MaxAgeDays != 30 ||
+		cfg.Daemon.History.Compression != "none" ||
+		cfg.Daemon.History.CompressionLevel != "best" ||
 		cfg.Theme.Palette != "builtin" ||
 		cfg.Chrome.Header ||
 		cfg.Chrome.TabCreateTemplate != "{{create_icon}}" ||

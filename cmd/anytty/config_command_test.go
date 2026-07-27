@@ -18,6 +18,10 @@ func TestConfigCommandsAtomicallyUseRuntimeParser(t *testing.T) {
 	path := filepath.Join(configHome, "anytty", "tui-v3.yaml")
 
 	runConfigCommand(t, nil, "config", "set", "tui.theme.mode", "light")
+	runConfigCommand(t, nil, "config", "set", "daemon.history.max_size_mb", "256")
+	runConfigCommand(t, nil, "config", "set", "daemon.history.max_age_days", "14")
+	runConfigCommand(t, nil, "config", "set", "daemon.history.compression", "s2")
+	runConfigCommand(t, nil, "config", "set", "daemon.history.compression_level", "balanced")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -30,8 +34,24 @@ func TestConfigCommandsAtomicallyUseRuntimeParser(t *testing.T) {
 	if strings.TrimSpace(getOutput) != "light" {
 		t.Fatalf("config get = %q", getOutput)
 	}
+	maxOutput := runConfigCommand(t, nil, "config", "get", "daemon.history.max_size_mb")
+	if strings.TrimSpace(maxOutput) != "256" {
+		t.Fatalf("history max config get = %q", maxOutput)
+	}
+	ageOutput := runConfigCommand(t, nil, "config", "get", "daemon.history.max_age_days")
+	if strings.TrimSpace(ageOutput) != "14" {
+		t.Fatalf("history max age config get = %q", ageOutput)
+	}
+	algorithmOutput := runConfigCommand(t, nil, "config", "get", "daemon.history.compression")
+	if strings.TrimSpace(algorithmOutput) != "s2" {
+		t.Fatalf("history compression config get = %q", algorithmOutput)
+	}
+	levelOutput := runConfigCommand(t, nil, "config", "get", "daemon.history.compression_level")
+	if strings.TrimSpace(levelOutput) != "balanced" {
+		t.Fatalf("history compression level config get = %q", levelOutput)
+	}
 	effective := runConfigCommand(t, nil, "config", "show", "--effective")
-	if !strings.Contains(effective, `"Mode": "light"`) {
+	if !strings.Contains(effective, `"Mode": "light"`) || !strings.Contains(effective, `"MaxSizeMB": 256`) {
 		t.Fatalf("effective config did not use updated runtime value: %s", effective)
 	}
 	runConfigCommand(t, nil, "config", "validate")
