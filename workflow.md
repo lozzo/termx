@@ -13,12 +13,12 @@
 | BRAND001-BRAND005 | 已完成 | Muxvia 品牌与发布身份迁移 | 历史提交与现有构建门禁 |
 | R1-R6 | 已完成 | Cloud 契约、Controller/Edge、注册、P2P、Relay、用量纵向链路 | 现有集成测试、在线部署与 `ARCHITECTURE.md` 记录 |
 | R7 | 已完成但产品验收已并入 CLOUDP007 | 账号、交易、中文运营 API 和管理模块 | 现有账号/交易集成测试与运营路由 Playwright；不能据此宣称普通用户产品完成 |
-| CLOUDP007 | 进行中 | Development 全产品 E2E | 本文“CLOUDP007 完成条件”全部满足，双 Agent 审查 PASS |
+| CLOUDP007 | 已完成 | Development 全产品 E2E | `f11ef1f6` 已推送并在线部署；Web 三视口、最终 ARM64 APK 全 Route、真实 PostgreSQL 与双 Agent 审查全部 PASS |
 | R8 | 待开始 | Edge 证书档案、证书轮换、升级、回滚和生产运维收口 | CLOUDP007 完成后启动 |
 | R9 | 待开始 | 上线门禁与正式发布 | R8 完成后启动 |
 | WEB001 | 延后 | 浏览器 Web/WASM terminal 产品 | 仅用户明确解冻后启动 |
 
-当前最早未完成切片是 `CLOUDP007`，不得跳到 R8、R9 或 WEB001。
+当前最早未完成切片是 `R8`；本轮尚未启动 R8，不得跳到 R9 或 WEB001。
 
 ## CLOUDP007 产品范围
 
