@@ -70,22 +70,23 @@ type AccessStoreOptions struct {
 // AccessStore 是 owning daemon 的 PairingTicket 摘要、客户端 key 绑定、grant claims、delivery receipt 摘要与撤销唯一持久真值。
 // 一个 state 目录只允许一个进程 owner；普通 capability 验证只读内存且不写磁盘，低频 mutation 才批量 compact 并原子替换签名 state。
 type AccessStore struct {
-	mu                       sync.RWMutex
-	pairingClaimsMu          sync.Mutex
-	path                     string
-	identity                 Identity
-	tickets                  map[string]storedPairingTicket
-	grants                   map[string]storedAccessGrant
-	pairingClaims            map[[sha256.Size]byte]storedPairingClaim
-	now                      func() time.Time
-	random                   io.Reader
-	owner                    *filelock.Lock
-	writeFile                func(string, []byte) error
-	closed                   bool
-	accessProjectionRevision uint64
-	changes                  chan struct{}
-	managedRouteGrantIssuer  func(ed25519.PublicKey, uint32, time.Time) ([]byte, error)
-	clientGrants             map[string]map[string]struct{}
+	mu                        sync.RWMutex
+	pairingClaimsMu           sync.Mutex
+	path                      string
+	identity                  Identity
+	tickets                   map[string]storedPairingTicket
+	grants                    map[string]storedAccessGrant
+	pairingClaims             map[[sha256.Size]byte]storedPairingClaim
+	now                       func() time.Time
+	random                    io.Reader
+	owner                     *filelock.Lock
+	writeFile                 func(string, []byte) error
+	closed                    bool
+	accessProjectionRevision  uint64
+	changes                   chan struct{}
+	managedRouteGrantIssuer   func(ed25519.PublicKey, uint32, time.Time) ([]byte, error)
+	managedPairingGrantIssuer func([]byte, time.Time, time.Time) ([]byte, error)
+	clientGrants              map[string]map[string]struct{}
 }
 
 // AccessSnapshot 是不取得 daemon mutation owner lock 的只读撤销快照。
@@ -195,6 +196,24 @@ func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.P
 	return nil
 }
 
+// ConfigureManagedPairingGrantIssuer 安装 Cloud bootstrap grant issuer。
+// issuer 只接收 claim 摘要和时间窗，不能读取或返回 128-bit claim 本体。
+func (store *AccessStore) ConfigureManagedPairingGrantIssuer(issuer func([]byte, time.Time, time.Time) ([]byte, error)) error {
+	if store == nil || issuer == nil {
+		return errors.New("managed pairing grant issuer is required")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.ensureOpenLocked(); err != nil {
+		return err
+	}
+	if store.managedPairingGrantIssuer != nil {
+		return errors.New("managed pairing grant issuer is already configured")
+	}
+	store.managedPairingGrantIssuer = issuer
+	return nil
+}
+
 // AccessProjectionRevision 返回 grant 管理投影的持久单调 revision。
 // pairing ticket 本身不改变该 revision；grant 新增、撤销或 retention 清理才推进。
 func (store *AccessStore) AccessProjectionRevision() uint64 {
@@ -298,12 +317,19 @@ func (store *AccessStore) IssuePairingBundle(options PairingIssueOptions) (*Pair
 	if err != nil {
 		return nil, PairingTicketClaims{}, err
 	}
+	if err := store.persistPairingBundleLocked(payload, claims, options.Now.UTC()); err != nil {
+		return nil, PairingTicketClaims{}, err
+	}
+	return bundle, claims, nil
+}
+
+func (store *AccessStore) persistPairingBundleLocked(payload []byte, claims PairingTicketClaims, now time.Time) error {
 	if _, exists := store.tickets[claims.TicketID]; exists {
-		return nil, PairingTicketClaims{}, fmt.Errorf("pairing ticket id collision")
+		return fmt.Errorf("pairing ticket id collision")
 	}
 	oldTickets, oldGrants := cloneTicketRecords(store.tickets), cloneGrantRecords(store.grants)
 	oldRevision := store.accessProjectionRevision
-	if store.compactLocked(options.Now.UTC()) {
+	if store.compactLocked(now.UTC()) {
 		store.accessProjectionRevision++
 	}
 	store.tickets[claims.TicketID] = storedPairingTicket{Claims: claims, TicketDigest: payloadDigest(payload)}
@@ -311,12 +337,12 @@ func (store *AccessStore) IssuePairingBundle(options PairingIssueOptions) (*Pair
 		if !privateFileWritePublished(err) {
 			store.tickets, store.grants, store.accessProjectionRevision = oldTickets, oldGrants, oldRevision
 		}
-		return nil, PairingTicketClaims{}, err
+		return err
 	}
 	if store.accessProjectionRevision != oldRevision {
 		store.notifyAccessChangedLocked()
 	}
-	return bundle, claims, nil
+	return nil
 }
 
 // RedeemPairingBundle 原子消费 canonical bootstrap、绑定 client public key、签发 CapabilityGrant v2 并保存稳定结果摘要。

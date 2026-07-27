@@ -6,7 +6,7 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { ClientProduct } from "./runtime_pb";
+import type { ClientProduct, CloudClientAccessMode } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/ticket.proto.
  */
 export const file_cloud_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD211eHZpYS5jbG91ZC52MSKjAgoRQWdlbnRUaWNrZXRDbGFpbXMSEQoJdGlja2V0X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEg8KB2VkZ2VfaWQYBCABKAkSEQoJZGV2aWNlX2lkGAUgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAYgASgMEjYKDGNhcGFiaWxpdGllcxgHIAMoDjIgLm11eHZpYS5jbG91ZC52MS5BZ2VudENhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChRBZ2VudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4ubXV4dmlhLmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJyChVDbGllbnRSb3V0ZVByb29mSW5wdXQSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhEKCWNoYWxsZW5nZRgCIAEoDBIcChRncmFudF9wYXlsb2FkX3NoYTI1NhgDIAEoDBISCgpyZXF1ZXN0X2lkGAQgASgJItYCChJDbGllbnRUaWNrZXRDbGFpbXMSEQoJdGlja2V0X2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHZWRnZV9pZBgDIAEoCRIRCglkYWVtb25faWQYBCABKAkSEQoJY2xpZW50X2lkGAUgASgJEhkKEWNsaWVudF9wdWJsaWNfa2V5GAYgASgMEi8KB3Byb2R1Y3QYByABKA4yHi5tdXh2aWEuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBI3Cgxyb3V0ZV9wb2xpY3kYCCABKA4yIS5tdXh2aWEuY2xvdWQudjEuQ2xvdWRSb3V0ZVBvbGljeRItCglpc3N1ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wImYKFUNsaWVudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEgoKc2Vzc2lvbl9pZBgCIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YAyABKAQqUwoPQWdlbnRDYXBhYmlsaXR5EiAKHEFHRU5UX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIeChpBR0VOVF9DQVBBQklMSVRZX1NJR05BTElORxABKnwKEENsb3VkUm91dGVQb2xpY3kSIgoeQ0xPVURfUk9VVEVfUE9MSUNZX1VOU1BFQ0lGSUVEEAASHwobQ0xPVURfUk9VVEVfUE9MSUNZX1AyUF9PTkxZEAESIwofQ0xPVURfUk9VVEVfUE9MSUNZX1AyUF9PUl9SRUxBWRACQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
+  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD211eHZpYS5jbG91ZC52MSKjAgoRQWdlbnRUaWNrZXRDbGFpbXMSEQoJdGlja2V0X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEg8KB2VkZ2VfaWQYBCABKAkSEQoJZGV2aWNlX2lkGAUgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAYgASgMEjYKDGNhcGFiaWxpdGllcxgHIAMoDjIgLm11eHZpYS5jbG91ZC52MS5BZ2VudENhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChRBZ2VudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4ubXV4dmlhLmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLOAQoXUGFpcmluZ1JvdXRlR3JhbnRDbGFpbXMSEAoIZ3JhbnRfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIcChRwYWlyaW5nX2NsYWltX3NoYTI1NhgEIAEoDBItCglpc3N1ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInIKFUNsaWVudFJvdXRlUHJvb2ZJbnB1dBIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEhwKFGdyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkigQEKFlBhaXJpbmdSb3V0ZVByb29mSW5wdXQSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhEKCWNoYWxsZW5nZRgCIAEoDBIqCiJwYWlyaW5nX3JvdXRlX2dyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkisQMKEkNsaWVudFRpY2tldENsYWltcxIRCgl0aWNrZXRfaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIPCgdlZGdlX2lkGAMgASgJEhEKCWRhZW1vbl9pZBgEIAEoCRIRCgljbGllbnRfaWQYBSABKAkSGQoRY2xpZW50X3B1YmxpY19rZXkYBiABKAwSLwoHcHJvZHVjdBgHIAEoDjIeLm11eHZpYS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EjcKDHJvdXRlX3BvbGljeRgIIAEoDjIhLm11eHZpYS5jbG91ZC52MS5DbG91ZFJvdXRlUG9saWN5Ei0KCWlzc3VlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASOwoLYWNjZXNzX21vZGUYCyABKA4yJi5tdXh2aWEuY2xvdWQudjEuQ2xvdWRDbGllbnRBY2Nlc3NNb2RlEhwKFHBhaXJpbmdfY2xhaW1fc2hhMjU2GAwgASgMImYKFUNsaWVudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEgoKc2Vzc2lvbl9pZBgCIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YAyABKAQqUwoPQWdlbnRDYXBhYmlsaXR5EiAKHEFHRU5UX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIeChpBR0VOVF9DQVBBQklMSVRZX1NJR05BTElORxABKnwKEENsb3VkUm91dGVQb2xpY3kSIgoeQ0xPVURfUk9VVEVfUE9MSUNZX1VOU1BFQ0lGSUVEEAASHwobQ0xPVURfUk9VVEVfUE9MSUNZX1AyUF9PTkxZEAESIwofQ0xPVURfUk9VVEVfUE9MSUNZX1AyUF9PUl9SRUxBWRACQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
 
 /**
  * AgentTicketClaims 把一次 daemon 到 Edge 的连接绑定到持久身份和短有效期。
@@ -155,6 +155,51 @@ export const CloudRouteGrantClaimsSchema: GenMessage<CloudRouteGrantClaims> = /*
   messageDesc(file_cloud_v1_ticket, 2);
 
 /**
+ * PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
+ * pairing_claim_sha256 不足以兑换 claim，Cloud 不接收 128-bit claim 本体。
+ *
+ * @generated from message muxvia.cloud.v1.PairingRouteGrantClaims
+ */
+export type PairingRouteGrantClaims = Message<"muxvia.cloud.v1.PairingRouteGrantClaims"> & {
+  /**
+   * @generated from field: string grant_id = 1;
+   */
+  grantId: string;
+
+  /**
+   * @generated from field: string daemon_id = 2;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: bytes pairing_claim_sha256 = 4;
+   */
+  pairingClaimSha256: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp issued_at = 5;
+   */
+  issuedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.PairingRouteGrantClaims.
+ * Use `create(PairingRouteGrantClaimsSchema)` to create a new message.
+ */
+export const PairingRouteGrantClaimsSchema: GenMessage<PairingRouteGrantClaims> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_ticket, 3);
+
+/**
  * ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
  *
  * @generated from message muxvia.cloud.v1.ClientRouteProofInput
@@ -186,7 +231,42 @@ export type ClientRouteProofInput = Message<"muxvia.cloud.v1.ClientRouteProofInp
  * Use `create(ClientRouteProofInputSchema)` to create a new message.
  */
 export const ClientRouteProofInputSchema: GenMessage<ClientRouteProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 3);
+  messageDesc(file_cloud_v1_ticket, 4);
+
+/**
+ * PairingRouteProofInput 证明首次配对请求持有即将绑定到 claim 的 ClientAccessIdentity。
+ * Controller 只看到 daemon 签名 bootstrap grant 的摘要；真正的 claim 仍只在端到端 DataChannel 内由 daemon 消费。
+ *
+ * @generated from message muxvia.cloud.v1.PairingRouteProofInput
+ */
+export type PairingRouteProofInput = Message<"muxvia.cloud.v1.PairingRouteProofInput"> & {
+  /**
+   * @generated from field: string challenge_id = 1;
+   */
+  challengeId: string;
+
+  /**
+   * @generated from field: bytes challenge = 2;
+   */
+  challenge: Uint8Array;
+
+  /**
+   * @generated from field: bytes pairing_route_grant_payload_sha256 = 3;
+   */
+  pairingRouteGrantPayloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: string request_id = 4;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.PairingRouteProofInput.
+ * Use `create(PairingRouteProofInputSchema)` to create a new message.
+ */
+export const PairingRouteProofInputSchema: GenMessage<PairingRouteProofInput> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_ticket, 5);
 
 /**
  * ClientTicketClaims 是 Controller 对单个在线 Edge 信令 attempt 的两分钟准入票据。
@@ -243,6 +323,16 @@ export type ClientTicketClaims = Message<"muxvia.cloud.v1.ClientTicketClaims"> &
    * @generated from field: google.protobuf.Timestamp expires_at = 10;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: muxvia.cloud.v1.CloudClientAccessMode access_mode = 11;
+   */
+  accessMode: CloudClientAccessMode;
+
+  /**
+   * @generated from field: bytes pairing_claim_sha256 = 12;
+   */
+  pairingClaimSha256: Uint8Array;
 };
 
 /**
@@ -250,7 +340,7 @@ export type ClientTicketClaims = Message<"muxvia.cloud.v1.ClientTicketClaims"> &
  * Use `create(ClientTicketClaimsSchema)` to create a new message.
  */
 export const ClientTicketClaimsSchema: GenMessage<ClientTicketClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 4);
+  messageDesc(file_cloud_v1_ticket, 6);
 
 /**
  * ClientHelloProofInput 把 ClientAccessIdentity proof 绑定到票据和当前 attempt generation。
@@ -279,7 +369,7 @@ export type ClientHelloProofInput = Message<"muxvia.cloud.v1.ClientHelloProofInp
  * Use `create(ClientHelloProofInputSchema)` to create a new message.
  */
 export const ClientHelloProofInputSchema: GenMessage<ClientHelloProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 5);
+  messageDesc(file_cloud_v1_ticket, 7);
 
 /**
  * AgentCapability 是 AgentTicket 冻结的 Edge 侧准入能力，不表达 terminal 权限。

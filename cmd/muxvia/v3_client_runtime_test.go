@@ -7,6 +7,28 @@ import (
 	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
 )
 
+func TestCLICloudClientUsesOfficialControllerByDefault(t *testing.T) {
+	t.Setenv("MUXVIA_CLOUD_CONTROLLER_ADDRESS", "")
+	t.Setenv("MUXVIA_CLOUD_CONTROLLER_SERVER_NAME", "")
+	t.Setenv("MUXVIA_CLOUD_CONTROLLER_CA", "")
+	client, err := cliCloudClientFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client == nil {
+		t.Fatal("official Muxvia Cloud client was disabled without environment overrides")
+	}
+}
+
+func TestCLICloudClientRejectsPartialOverride(t *testing.T) {
+	t.Setenv("MUXVIA_CLOUD_CONTROLLER_ADDRESS", "controller.example.com:443")
+	t.Setenv("MUXVIA_CLOUD_CONTROLLER_SERVER_NAME", "")
+	t.Setenv("MUXVIA_CLOUD_CONTROLLER_CA", "")
+	if _, err := cliCloudClientFromEnvironment(); err == nil {
+		t.Fatal("partial Cloud Controller override was accepted")
+	}
+}
+
 func TestCLIRoutePlanEnvironmentRequiresCapabilityAndSSHCredentials(t *testing.T) {
 	target := clientendpoint.Endpoint{
 		ID: "studio", Label: "Studio", LabelSource: clientendpoint.SourceUser, ConnectMode: clientendpoint.ConnectOnDemand, Enabled: true,

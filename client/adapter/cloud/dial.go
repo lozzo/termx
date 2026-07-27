@@ -20,7 +20,6 @@ import (
 	"github.com/muxvia/muxvia/proto/apipb"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"github.com/muxvia/muxvia/proto/wire"
-	"github.com/muxvia/muxvia/shared/transport/datachannel"
 )
 
 const defaultClientName = "muxvia-go-cloud"
@@ -64,74 +63,19 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if err != nil {
 		return nil, err
 	}
-	preference, icePolicy, err := relayPreference(request.Route().RelayMode)
+	opened, err := openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
 	if err != nil {
 		return nil, err
 	}
-	var peer port.WebRTCPeer
-	closePeer := func() {
-		if peer != nil {
-			_ = peer.Close()
-		}
-	}
-	dialer.report(clientruntime.EndpointPhaseConnecting)
-	signalSession, err := dialer.Cloud.Exchange(ctx, resolved, signaling.ClientIdentity(), signaling, dialer.Product, uint64(request.Stamp().Generation), preference, func(ctx context.Context, ready *cloudv1.ClientReady) (string, error) {
-		peerConfig := port.WebRTCConfig{Policy: icePolicy}
-		if relay := ready.GetRelay(); relay != nil {
-			peerConfig.Servers = append(peerConfig.Servers, port.ICEServer{URLs: append([]string(nil), relay.GetUrls()...), Username: relay.GetUsername(), Credential: relay.GetCredential()})
-		}
-		if icePolicy == port.ICETransportRelayOnly && len(peerConfig.Servers) == 0 {
-			return "", errors.New("Cloud Relay-only attempt did not receive TURN material")
-		}
-		var openErr error
-		peer, openErr = dialer.Peers.OpenCloudPeer(ctx, peerConfig)
-		if openErr != nil {
-			return "", fmt.Errorf("create Cloud WebRTC peer: %w", openErr)
-		}
-		if peer.Channel() == nil {
-			closePeer()
-			return "", errors.New("Cloud WebRTC peer has no protocol DataChannel")
-		}
-		return peer.CreateOffer(ctx)
-	})
+	fingerprint, err := opened.RemoteCertificateFingerprint()
 	if err != nil {
-		closePeer()
-		return nil, err
-	}
-	closeAttempt := func() {
-		_ = signalSession.Close()
-		closePeer()
-	}
-	answer := signalSession.Answer()
-	candidates := make([]port.ICECandidate, 0, len(answer.GetCandidates()))
-	for _, candidate := range answer.GetCandidates() {
-		if candidate != nil {
-			candidates = append(candidates, port.ICECandidate{Candidate: candidate.GetCandidate(), SDPMid: candidate.GetSdpMid(), SDPMLineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment()})
-		}
-	}
-	if err := peer.ApplyAnswer(ctx, answer.GetAnswerSdp(), candidates); err != nil {
-		closeAttempt()
-		return nil, fmt.Errorf("apply Cloud WebRTC answer: %w", err)
-	}
-	if err := peer.WaitReady(ctx); err != nil {
-		closeAttempt()
-		return nil, fmt.Errorf("wait Cloud WebRTC DataChannel: %w", err)
-	}
-	observedPath := peer.ObservedPath()
-	if observedPath != endpoint.PathDirect && observedPath != endpoint.PathSingleRelay || icePolicy == port.ICETransportRelayOnly && observedPath != endpoint.PathSingleRelay {
-		closeAttempt()
-		return nil, fmt.Errorf("Cloud connector established a path that violates Relay policy: %q", observedPath)
-	}
-	fingerprint, err := peer.RemoteCertificateFingerprint()
-	if err != nil {
-		closeAttempt()
+		_ = opened.Close()
 		return nil, err
 	}
 	dialer.report(clientruntime.EndpointPhaseAuthorizing)
-	connection := datachannel.New(peer.Channel())
+	connection := opened.Transport()
 	if _, err := prepared.Authenticate(ctx, connection, fingerprint); err != nil {
-		_ = connection.Close()
-		closeAttempt()
+		_ = opened.Close()
 		return nil, fmt.Errorf("authenticate Cloud DataChannel: %w", err)
 	}
 	protocolClient := internalprotocol.NewClient(connection)
@@ -141,21 +85,22 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	}
 	if err := protocolClient.Hello(ctx, internalprotocol.Hello{Version: wire.Version, Client: clientName}); err != nil {
 		_ = protocolClient.Close()
-		closeAttempt()
+		_ = opened.Close()
 		return nil, fmt.Errorf("Cloud protocol Hello: %w", err)
 	}
-	application, err := protocoladapter.NewApplicationClientWithObservedPath(protocolClient, request.Stamp(), string(observedPath))
+	application, err := protocoladapter.NewApplicationClientWithObservedPath(protocolClient, request.Stamp(), string(opened.ObservedPath()))
 	if err != nil {
 		_ = protocolClient.Close()
-		closeAttempt()
+		_ = opened.Close()
 		return nil, err
 	}
 	if err := application.MarkReady(clientruntime.ReadyPeerSessionEvidence{Identity: request.DaemonIdentity(), IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
 		_ = application.Close()
-		closeAttempt()
+		_ = opened.Close()
 		return nil, err
 	}
 	dialer.report(clientruntime.EndpointPhaseReady)
+	peer, signalSession := opened.Release()
 	return newSession(application, peer, signalSession), nil
 }
 

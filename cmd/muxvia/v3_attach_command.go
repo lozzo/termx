@@ -79,6 +79,11 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		return err
 	}
 	defer closeClients()
+	endpointApplications, err := newV3EndpointApplicationRouter(cfg.EndpointID, client)
+	if err != nil {
+		return err
+	}
+	defer endpointApplications.Close()
 
 	host := newV3TerminalHost()
 	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
@@ -95,11 +100,12 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 	surfaceID := newV3RuntimeSurfaceID()
 	runtime := newV3InteractiveRuntimeFromClientRuntime(cfg.TerminalID, cols, rows, client, host, logger, v3InteractiveRuntimeOptions{
-		InitialEndpointID:  cfg.EndpointID,
-		RuntimeSurfaceID:   surfaceID,
-		TUIConfig:          cfg.TUIConfig,
-		ConnectionRegistry: cfg.ConnectionRegistry,
-		EndpointContext:    ctx,
+		InitialEndpointID:    cfg.EndpointID,
+		RuntimeSurfaceID:     surfaceID,
+		TUIConfig:            cfg.TUIConfig,
+		ConnectionRegistry:   cfg.ConnectionRegistry,
+		EndpointContext:      ctx,
+		EndpointApplications: endpointApplications,
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		EndpointID:   cfg.EndpointID,
@@ -135,6 +141,7 @@ type v3InteractiveRuntimeOptions struct {
 	TUIConfig                state.TUIConfigStore
 	ConnectionRegistry       endpointdomain.Registry
 	EndpointContext          context.Context
+	EndpointApplications     v3EndpointApplicationServices
 }
 
 func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocoladapter.ApplicationClient, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {

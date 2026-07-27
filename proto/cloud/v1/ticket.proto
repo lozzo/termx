@@ -53,11 +53,31 @@ message CloudRouteGrantClaims {
   google.protobuf.Timestamp expires_at = 6;
 }
 
+// PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
+// pairing_claim_sha256 不足以兑换 claim，Cloud 不接收 128-bit claim 本体。
+message PairingRouteGrantClaims {
+  string grant_id = 1;
+  string daemon_id = 2;
+  string device_id = 3;
+  bytes pairing_claim_sha256 = 4;
+  google.protobuf.Timestamp issued_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
 // ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
 message ClientRouteProofInput {
   string challenge_id = 1;
   bytes challenge = 2;
   bytes grant_payload_sha256 = 3;
+  string request_id = 4;
+}
+
+// PairingRouteProofInput 证明首次配对请求持有即将绑定到 claim 的 ClientAccessIdentity。
+// Controller 只看到 daemon 签名 bootstrap grant 的摘要；真正的 claim 仍只在端到端 DataChannel 内由 daemon 消费。
+message PairingRouteProofInput {
+  string challenge_id = 1;
+  bytes challenge = 2;
+  bytes pairing_route_grant_payload_sha256 = 3;
   string request_id = 4;
 }
 
@@ -73,6 +93,8 @@ message ClientTicketClaims {
   CloudRoutePolicy route_policy = 8;
   google.protobuf.Timestamp issued_at = 9;
   google.protobuf.Timestamp expires_at = 10;
+  CloudClientAccessMode access_mode = 11;
+  bytes pairing_claim_sha256 = 12;
 }
 
 // ClientHelloProofInput 把 ClientAccessIdentity proof 绑定到票据和当前 attempt generation。

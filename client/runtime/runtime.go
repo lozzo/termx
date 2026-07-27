@@ -64,6 +64,32 @@ func (runtime *ClientRuntime) EnsureSession(ctx context.Context, request Connect
 	return runtime.owner.EnsurePlanned(ctx, snapshot.Endpoint, request.RouteOverride, request.Intent, snapshot.ConfigKey, snapshot.Environment, runtime.clock, runtime.dialers)
 }
 
+// AcquireSession 为一个 application consumer 获取 endpoint-scoped 共享 lease。
+// 同 Endpoint、同 config key 的 ready winner 会被复用；Close 只释放当前 consumer，
+// 不会提前关闭仍被其它 TUI/CLI consumer 使用的连接。
+func (runtime *ClientRuntime) AcquireSession(ctx context.Context, request ConnectRequest) (ApplicationReadyPeerSession, error) {
+	if runtime == nil {
+		return nil, runtimeError(ErrorUnavailable, "client runtime is unavailable", nil)
+	}
+	if ctx == nil {
+		return nil, runtimeError(ErrorInvalidRequest, "connect context is required", nil)
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	runtime.owner.publishEndpointEvent(EndpointEvent{EndpointID: request.EndpointID, Phase: EndpointPhaseResolving})
+	snapshot, err := runtime.source.Snapshot(ctx, request.EndpointID)
+	if err != nil {
+		resolvedErr := sourceRuntimeError(err)
+		runtime.owner.publishEndpointEvent(EndpointEvent{EndpointID: request.EndpointID, Phase: EndpointPhaseOffline, ErrorCode: CodeOf(resolvedErr), Message: errorMessage(resolvedErr)})
+		return nil, resolvedErr
+	}
+	if snapshot.Endpoint.ID != request.EndpointID || snapshot.ConfigKey == "" {
+		return nil, runtimeError(ErrorInvalidRequest, "endpoint plan snapshot does not match connect request", nil)
+	}
+	return runtime.owner.AcquirePlanned(ctx, snapshot.Endpoint, request.RouteOverride, request.Intent, snapshot.ConfigKey, snapshot.Environment, runtime.clock, runtime.dialers)
+}
+
 // Disconnect 按完整 generation stamp 释放当前 winner；stale request 不能关闭后续 session。
 func (runtime *ClientRuntime) Disconnect(ctx context.Context, request DisconnectRequest) error {
 	if runtime == nil {
@@ -101,6 +127,7 @@ func (runtime *ClientRuntime) Close() error {
 }
 
 var _ Runtime = (*ClientRuntime)(nil)
+var _ ApplicationRuntime = (*ClientRuntime)(nil)
 
 func sourceRuntimeError(err error) error {
 	var value *Error

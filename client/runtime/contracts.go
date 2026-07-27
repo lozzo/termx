@@ -134,6 +134,13 @@ type Runtime interface {
 	WatchEndpoint(context.Context, endpoint.EndpointID) (<-chan EndpointEvent, error)
 }
 
+// ApplicationRuntime 为需要执行 endpoint-scoped Proto API 的 adapter 提供独立 consumer lease。
+// 返回值仍由 SessionOwner 持有 generation 真值；调用方只持有共享 lease，并在不再使用时 Close。
+type ApplicationRuntime interface {
+	Runtime
+	AcquireSession(context.Context, ConnectRequest) (ApplicationReadyPeerSession, error)
+}
+
 // AttemptRequest 是 planner 产生、runtime 交给单 route adapter 的不可变 attempt 描述。
 // Target 与 Route 只返回克隆值；adapter 不能修改 registry，也不能选择其它 route。
 type AttemptRequest struct {

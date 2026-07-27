@@ -119,6 +119,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var qrOutputPath string
 	var rawOutput bool
 	var textOutput bool
+	var commandOutput bool
 	var label string
 	var terminalID string
 	var ticketTTL time.Duration
@@ -142,13 +143,13 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			socketPath := resolveV3Socket(*socket)
 			selectedOutputs := 0
-			for _, selected := range []bool{rawOutput, textOutput, strings.TrimSpace(outputPath) != "", strings.TrimSpace(qrOutputPath) != ""} {
+			for _, selected := range []bool{rawOutput, textOutput, commandOutput, strings.TrimSpace(outputPath) != "", strings.TrimSpace(qrOutputPath) != ""} {
 				if selected {
 					selectedOutputs++
 				}
 			}
 			if selectedOutputs > 1 {
-				return usageCLIError("pair create --raw, --text, --out, and --qr-file are mutually exclusive")
+				return usageCLIError("pair create --raw, --text, --command, --out, and --qr-file are mutually exclusive")
 			}
 			client, err := dialOrStartV3ClientContext(cmd.Context(), socketPath, resolveV3LogFilePath(*logFile), nil)
 			if err != nil {
@@ -205,6 +206,9 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), portablePayload)
 				return err
 			}
+			if commandOutput {
+				return renderV3PairingCommand(cmd.OutOrStdout(), payload)
+			}
 			if strings.TrimSpace(qrOutputPath) != "" {
 				png, pngErr := renderV3PairingPNG(portablePayload)
 				if pngErr != nil {
@@ -221,7 +225,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			if strings.TrimSpace(outputPath) == "" {
 				if !v3PairOutputIsTerminal(cmd.OutOrStdout()) {
-					return usageCLIError("pair create requires an interactive terminal; use --text, --qr-file FILE, --raw, or --out FILE")
+					return usageCLIError("pair create requires an interactive terminal; use --command, --text, --qr-file FILE, --raw, or --out FILE")
 				}
 				return renderV3PairingQR(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC())
 			}
@@ -239,6 +243,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().StringVar(&qrOutputPath, "qr-file", "", "write a square pairing QR PNG to an owner-only file")
 	command.Flags().BoolVar(&rawOutput, "raw", false, "write the one-time pairing bundle to stdout for explicit owner scripting")
 	command.Flags().BoolVar(&textOutput, "text", false, "write the portable pairing URI to stdout for copying")
+	command.Flags().BoolVar(&commandOutput, "command", false, "write a copyable one-command pairing import")
 	command.Flags().StringVar(&label, "label", "", "daemon display label (defaults to this host name)")
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
@@ -336,6 +341,19 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 
 func v3PairingBootstrapURI(payload []byte) string {
 	return remoteauth.EncodePairingClaimCode(payload)
+}
+
+func renderV3PairingCommand(output io.Writer, payload []byte) error {
+	offer, err := remoteauth.ParsePairingClaimOffer(payload, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(output, "muxvia pair import --id %s %s\n", shellQuotePairingArgument(offer.GetDeviceId()), shellQuotePairingArgument(v3PairingBootstrapURI(payload)))
+	return err
+}
+
+func shellQuotePairingArgument(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 // renderV3PairingPNG 生成带 quiet zone 的正方形位图，供无法完整显示终端二维码时离线展示。
@@ -437,12 +455,17 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 			bundle, _, bundleErr := remoteauth.ParsePairingBundleForExchange(payload)
 			claimMode := bundleErr != nil
 			var identity endpointdomain.DaemonIdentity
+			var pairingCandidate endpointdomain.EndpointCandidate
 			if claimMode {
 				offer, claimErr := remoteauth.ParsePairingClaimOfferForExchange(payload)
 				if claimErr != nil {
 					return bundleErr
 				}
 				identity = endpointdomain.DaemonIdentity{DeviceID: offer.GetDeviceId(), DeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))}
+				pairingCandidate, err = remoteauth.PairingClaimEndpointCandidate(offer)
+				if err != nil {
+					return err
+				}
 			} else {
 				identity = endpointdomain.DaemonIdentity{DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint()}
 			}
@@ -483,6 +506,31 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 					remoteauth.BindGrantOptions{AllowScopeExpansion: allowScopeExpansion},
 					func(clientIdentity remoteauth.ClientAccessIdentity) (remoteauth.PairingExchangeResult, error) {
 						resolvedPairingSocket := strings.TrimSpace(pairingSocket)
+						pairingRequest := remoteauth.ClientPairingRequest{
+							ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.DeviceFingerprint,
+							Identity: clientIdentity, ClientLabel: strings.TrimSpace(clientLabel), ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI),
+						}
+						if pairingRequest.ClientLabel == "" {
+							pairingRequest.ClientLabel = "muxvia-cli"
+							if hostname, hostnameErr := v3PairHostname(); hostnameErr == nil && strings.TrimSpace(hostname) != "" {
+								pairingRequest.ClientLabel = "muxvia-cli@" + strings.TrimSpace(hostname)
+							}
+						}
+						if claimMode {
+							pairingRequest.PairingClaimOffer = payload
+							signer, signerErr := remoteauth.NewPrivateClientAccessSigner(clientIdentity)
+							if signerErr != nil {
+								return remoteauth.PairingExchangeResult{}, signerErr
+							}
+							pairingRequest.Signer = signer
+							if resolvedPairingSocket == "" {
+								result, redeemErr := redeemV3RemotePairing(cmd.Context(), actualID, grantRef, pairingCandidate, pairingRequest)
+								exchangedBundle = append([]byte(nil), result.Bundle...)
+								return result, redeemErr
+							}
+						} else {
+							pairingRequest.PairingBundle = payload
+						}
 						if resolvedPairingSocket == "" {
 							localSocket := resolveV3Socket(*socket)
 							client, startErr := dialOrStartV3ClientContext(cmd.Context(), localSocket, resolveV3LogFilePath(*logFile), nil)
@@ -501,22 +549,7 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 							return remoteauth.PairingExchangeResult{}, fmt.Errorf("connect PairingExchange socket: %w", dialErr)
 						}
 						defer pairingTransport.Close()
-						labelForClient := strings.TrimSpace(clientLabel)
-						if labelForClient == "" {
-							labelForClient = "muxvia-cli"
-							if hostname, hostnameErr := v3PairHostname(); hostnameErr == nil && strings.TrimSpace(hostname) != "" {
-								labelForClient = "muxvia-cli@" + strings.TrimSpace(hostname)
-							}
-						}
-						pairingRequest := remoteauth.ClientPairingRequest{
-							ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.DeviceFingerprint,
-							Identity: clientIdentity, ClientLabel: labelForClient, ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI), ChannelBinding: binding,
-						}
-						if claimMode {
-							pairingRequest.PairingClaimOffer = payload
-						} else {
-							pairingRequest.PairingBundle = payload
-						}
+						pairingRequest.ChannelBinding = binding
 						result, redeemErr := (remoteauth.ClientPairingHandshake{}).Redeem(cmd.Context(), pairingTransport, pairingRequest)
 						exchangedBundle = append([]byte(nil), result.Bundle...)
 						return result, redeemErr
@@ -665,6 +698,9 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if decoded, inline, err := decodeInlineV3Pairing(strings.TrimSpace(path)); inline {
+		return decoded, err
+	}
 	var reader io.Reader
 	var file *os.File
 	if strings.TrimSpace(path) == "-" {
@@ -686,24 +722,35 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 		clear(payload)
 		return nil, fmt.Errorf("pairing bundle size is invalid")
 	}
-	if text := strings.TrimSpace(string(payload)); strings.HasPrefix(text, pairingBootstrapURIPrefix) {
-		decoded, decodeErr := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, pairingBootstrapURIPrefix))
+	if decoded, inline, decodeErr := decodeInlineV3Pairing(strings.TrimSpace(string(payload))); inline {
 		clear(payload)
-		if decodeErr != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {
+		if decodeErr != nil {
 			clear(decoded)
-			return nil, fmt.Errorf("pairing bootstrap URI payload is invalid")
-		}
-		payload = decoded
-	} else if strings.HasPrefix(text, remoteauth.PairingClaimCodePrefix) {
-		decoded, decodeErr := remoteauth.DecodePairingClaimCode(text)
-		clear(payload)
-		if decodeErr != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {
-			clear(decoded)
-			return nil, fmt.Errorf("pairing claim code is invalid")
+			return nil, decodeErr
 		}
 		payload = decoded
 	}
 	return payload, nil
+}
+
+func decodeInlineV3Pairing(text string) ([]byte, bool, error) {
+	if strings.HasPrefix(text, pairingBootstrapURIPrefix) {
+		decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, pairingBootstrapURIPrefix))
+		if err != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {
+			clear(decoded)
+			return nil, true, fmt.Errorf("pairing bootstrap URI payload is invalid")
+		}
+		return decoded, true, nil
+	}
+	if strings.HasPrefix(text, remoteauth.PairingClaimCodePrefix) {
+		decoded, err := remoteauth.DecodePairingClaimCode(text)
+		if err != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {
+			clear(decoded)
+			return nil, true, fmt.Errorf("pairing claim code is invalid")
+		}
+		return decoded, true, nil
+	}
+	return nil, false, nil
 }
 
 func v3PairingGrantRef(endpointID endpointdomain.EndpointID, deviceID string) string {

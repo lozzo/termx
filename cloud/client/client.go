@@ -3,7 +3,10 @@
 package client
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -126,6 +129,81 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	}
 	if resolved.GetClientTicket() == nil || resolved.GetEdge() == nil {
 		return nil, errors.New("Cloud route response is incomplete")
+	}
+	return resolved, nil
+}
+
+// ResolvePairing 使用短期 claim offer 和待绑定的 ClientAccessIdentity 获取 pairing-only ClientTicket。
+func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []byte, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct) (*cloudv1.ResolveClientRouteResponse, error) {
+	if client == nil || signer == nil || len(pairingClaimOffer) == 0 || identity.ValidatePublic() != nil || product < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || product > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+		return nil, errors.New("Cloud pairing route input is incomplete")
+	}
+	offer, err := remoteauth.ParsePairingClaimOfferForExchange(pairingClaimOffer)
+	if err != nil {
+		return nil, err
+	}
+	var grant *cloudv1.SignedEnvelope
+	for _, route := range offer.GetRoutes() {
+		managed := route.GetManagedWebrtc()
+		if managed == nil || len(managed.GetBootstrapGrant()) == 0 {
+			continue
+		}
+		candidate := &cloudv1.SignedEnvelope{}
+		if err := proto.Unmarshal(managed.GetBootstrapGrant(), candidate); err != nil {
+			return nil, errors.New("Cloud pairing bootstrap grant is invalid")
+		}
+		grant = candidate
+		break
+	}
+	if grant == nil {
+		return nil, errors.New("pairing claim offer has no Cloud bootstrap grant")
+	}
+	unverified := &cloudv1.PairingRouteGrantClaims{}
+	if err := proto.Unmarshal(grant.GetPayload(), unverified); err != nil {
+		return nil, errors.New("Cloud pairing bootstrap grant payload is invalid")
+	}
+	verifiedGrant, err := ticket.VerifyPairingRouteGrant(grant, ed25519.PublicKey(offer.GetDevicePublicKey()), unverified.GetDaemonId(), client.config.Now().UTC())
+	if err != nil || verifiedGrant.GetDeviceId() != offer.GetDeviceId() {
+		return nil, errors.New("Cloud pairing bootstrap grant does not match the invited device")
+	}
+	digest := sha256.Sum256(offer.GetClaim())
+	if !bytes.Equal(verifiedGrant.GetPairingClaimSha256(), digest[:]) {
+		return nil, errors.New("Cloud pairing bootstrap grant does not match the invited claim")
+	}
+	connection, err := client.dial(client.config.ControllerAddress, client.config.ControllerServerName, client.config.ControllerCAPEM)
+	if err != nil {
+		return nil, err
+	}
+	defer connection.Close()
+	directory := cloudv1.NewDirectoryServiceClient(connection)
+	challenge, err := directory.BeginPairingRoute(ctx, &cloudv1.BeginPairingRouteRequest{
+		PairingRouteGrant: proto.Clone(grant).(*cloudv1.SignedEnvelope), ClientPublicKey: append([]byte(nil), identity.PublicKey...), Product: product,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("begin Cloud pairing route resolution: %w", err)
+	}
+	requestID := uuid.NewString()
+	canonical, err := ticket.PairingRouteProofBytes(challenge.GetChallengeId(), challenge.GetChallenge(), grant, requestID)
+	if err != nil {
+		return nil, err
+	}
+	proof, err := signer.Sign(ctx, canonical)
+	if err != nil {
+		return nil, fmt.Errorf("sign Cloud pairing route challenge: %w", err)
+	}
+	resolved, err := directory.ResolveClientRoute(ctx, &cloudv1.ResolveClientRouteRequest{ChallengeId: challenge.GetChallengeId(), RequestId: requestID, ClientProof: proof})
+	if err != nil {
+		return nil, fmt.Errorf("resolve Cloud pairing route: %w", err)
+	}
+	if resolved.GetClientTicket() == nil || resolved.GetEdge() == nil {
+		return nil, errors.New("Cloud pairing route response is incomplete")
+	}
+	claims := &cloudv1.ClientTicketClaims{}
+	if err := proto.Unmarshal(resolved.GetClientTicket().GetPayload(), claims); err != nil {
+		return nil, errors.New("Cloud pairing ClientTicket payload is invalid")
+	}
+	if claims.GetAccessMode() != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING || !bytes.Equal(claims.GetPairingClaimSha256(), digest[:]) || !bytes.Equal(claims.GetClientPublicKey(), identity.PublicKey) || claims.GetProduct() != product {
+		return nil, errors.New("Cloud pairing ClientTicket does not match the requested claim")
 	}
 	return resolved, nil
 }

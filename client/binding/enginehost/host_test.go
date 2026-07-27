@@ -6,8 +6,11 @@ import (
 	"testing"
 
 	"github.com/muxvia/muxvia/client/adapter/direct"
+	"github.com/muxvia/muxvia/client/binding"
 	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 )
@@ -65,7 +68,7 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 	}
 }
 
-func TestPairingClaimRoutesExcludeCloudFromInitialExchange(t *testing.T) {
+func TestPairingClaimRoutesRequireCloudBootstrapDependencies(t *testing.T) {
 	direct := endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true}
 	cloud := endpoint.AccessRoute{ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true}
 	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{direct, cloud}}
@@ -75,6 +78,14 @@ func TestPairingClaimRoutesExcludeCloudFromInitialExchange(t *testing.T) {
 	}
 	if _, err := pairingClaimRoutes(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{{ID: direct.ID, Kind: direct.Kind}}}, Options{DirectPeers: fakeDirectPeerFactory{}}); err == nil {
 		t.Fatal("disabled pairing route was accepted")
+	}
+	broker := binding.NewPlatformBroker()
+	defer broker.Close()
+	routes, err = pairingClaimRoutes(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud}}, Options{
+		Broker: broker, DirectPeers: fakeCloudPairingPeerFactory{}, CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
+	})
+	if err != nil || len(routes) != 1 || routes[0].ID != cloud.ID {
+		t.Fatalf("Cloud bootstrap pairing routes = %#v err=%v", routes, err)
 	}
 }
 
@@ -114,3 +125,9 @@ func TestRoutePlanEnvironmentDisablesCloudWithoutAConnector(t *testing.T) {
 }
 
 type fakeDirectPeerFactory struct{ direct.PeerFactory }
+
+type fakeCloudPairingPeerFactory struct{ fakeDirectPeerFactory }
+
+func (fakeCloudPairingPeerFactory) OpenCloudPeer(context.Context, port.WebRTCConfig) (port.WebRTCPeer, error) {
+	return nil, nil
+}

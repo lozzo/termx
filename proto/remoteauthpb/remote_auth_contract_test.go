@@ -66,6 +66,12 @@ func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T
 			t.Fatalf("PairingRouteSeed.%s field = %v, want number %d", name, field, number)
 		}
 	}
+	managedSeed := (&PairingManagedRouteSeed{}).ProtoReflect().Descriptor()
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"target_device_id": 1, "bootstrap_grant": 2} {
+		if field := managedSeed.Fields().ByName(name); field == nil || field.Number() != number {
+			t.Fatalf("PairingManagedRouteSeed.%s field = %v, want number %d", name, field, number)
+		}
+	}
 	for _, forbidden := range []protoreflect.Name{"pairing_ticket", "grant", "scope", "terminal_id", "client_public_key"} {
 		if offer.Fields().ByName(forbidden) != nil {
 			t.Fatalf("PairingClaimOfferV1 leaked authorization field %s", forbidden)

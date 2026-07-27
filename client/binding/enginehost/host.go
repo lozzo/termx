@@ -263,6 +263,11 @@ func pairingClaimRoutes(candidate endpoint.EndpointCandidate, options Options) (
 			if options.DirectPeers != nil && options.SSHCredentials != nil {
 				routes = append(routes, route)
 			}
+		case endpoint.RouteManagedWebRTC:
+			_, cloudPeers := options.DirectPeers.(cloudadapter.PeerFactory)
+			if cloudPeers && options.Broker != nil && validCloudProduct(options.CloudProduct) {
+				routes = append(routes, route)
+			}
 		}
 	}
 	if len(routes) == 0 {
@@ -291,6 +296,18 @@ func (host *Host) redeemPairingRace(ctx context.Context, attempts []clientruntim
 				paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(raceContext, attempt, request)
 			case endpoint.RouteSSHWebRTCTCP:
 				paired, err = (&sshadapter.PairingConnector{Peers: host.options.DirectPeers, Credentials: host.options.SSHCredentials, Now: host.options.Now}).Redeem(raceContext, attempt, request)
+			case endpoint.RouteManagedWebRTC:
+				cloudPeers, ok := host.options.DirectPeers.(cloudadapter.PeerFactory)
+				if !ok {
+					err = fmt.Errorf("Cloud pairing peer factory is unavailable")
+					break
+				}
+				protocolClient, resolveErr := (platformCloudProfiles{broker: host.options.Broker}).Resolve(raceContext, attempt.Route().AccountProfileRef)
+				if resolveErr != nil {
+					err = resolveErr
+					break
+				}
+				paired, err = (&cloudadapter.PairingConnector{Peers: cloudPeers, Cloud: protocolClient, Product: host.options.CloudProduct, Now: host.options.Now}).Redeem(raceContext, attempt, request)
 			default:
 				err = fmt.Errorf("pairing Route %q is unsupported", attempt.Route().Kind)
 			}

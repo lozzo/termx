@@ -36,6 +36,12 @@ type RelayBroker interface {
 	RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error)
 }
 
+// RelaySessionCloser 在信令 stream 结束时释放同 session 的 TURN reservation/allocation。
+// 它是 RelayBroker 的可选能力，未启用 Relay 的 Edge 不需要提供。
+type RelaySessionCloser interface {
+	CloseRelaySession(context.Context, string) error
+}
+
 // Config 提供 Edge identity、动态 Controller ticket key set 和信令 deadline。
 type Config struct {
 	EdgeID           string
@@ -83,7 +89,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	generation := helloEvent.GetHello().GetAttemptGeneration()
 	sessionContext, cancelSession := context.WithCancel(stream.Context())
 	defer cancelSession()
-	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Product: claims.GetProduct(), Generation: generation}
+	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Product: claims.GetProduct(), Generation: generation, AccessMode: claims.GetAccessMode()}
 	if err := service.config.Runtime.UpsertSession(sessionContext, summary); err != nil {
 		return status.Errorf(codes.Aborted, "publish client session: %v", err)
 	}
@@ -94,11 +100,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 			return status.Errorf(codes.Aborted, "register client session owner: %v", err)
 		}
 	}
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = service.config.Runtime.RemoveSession(cleanup, sessionID, generation)
-	}()
+	defer service.cleanupSession(sessionID, generation)
 	if err := service.authorizeClient(sessionContext, claims, sessionID); err != nil {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
@@ -143,6 +145,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	offer := offerEvent.GetOffer()
 	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Offer{Offer: &cloudv1.AgentOffer{
 		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), OfferSdp: offer.GetOfferSdp(), Candidates: cloneCandidates(offer.GetCandidates()), Relay: cloneRelay(relay),
+		AccessMode: claims.GetAccessMode(), PairingClaimSha256: append([]byte(nil), claims.GetPairingClaimSha256()...),
 	}}}
 	if err := service.config.Runtime.SendAgentCommand(sessionContext, claims.GetDaemonId(), agentGeneration, command); err != nil {
 		return status.Error(codes.FailedPrecondition, "target daemon signaling stream changed")
@@ -178,6 +181,17 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 }
 
+func (service *Service) cleanupSession(sessionID string, generation uint64) {
+	if closer, ok := service.config.Relay.(RelaySessionCloser); ok {
+		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = closer.CloseRelaySession(cleanup, sessionID)
+		cancel()
+	}
+	cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = service.config.Runtime.RemoveSession(cleanup, sessionID, generation)
+}
+
 func receiveClientSignal(ctx context.Context, stream cloudv1.ClientGateway_ConnectServer) (*cloudv1.ClientSignal, error) {
 	type result struct {
 		signal *cloudv1.ClientSignal
@@ -206,6 +220,7 @@ func (service *Service) authorizeClient(ctx context.Context, claims *cloudv1.Cli
 	}()
 	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Authorize{Authorize: &cloudv1.AgentAuthorize{
 		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), Product: claims.GetProduct(),
+		AccessMode: claims.GetAccessMode(), PairingClaimSha256: append([]byte(nil), claims.GetPairingClaimSha256()...),
 	}}}
 	if err := service.config.Runtime.SendAgentCommand(ctx, claims.GetDaemonId(), agentGeneration, command); err != nil {
 		return errors.New("target daemon authorization stream changed")

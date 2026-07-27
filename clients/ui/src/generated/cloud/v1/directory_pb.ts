@@ -8,13 +8,15 @@ import type { SignedEnvelope } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
 import type { CandidateEdge, IdentityChallengeSchema } from "./enrollment_pb";
 import { file_cloud_v1_enrollment } from "./enrollment_pb";
+import type { ClientProduct } from "./runtime_pb";
+import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file cloud/v1/directory.proto.
  */
 export const file_cloud_v1_directory: GenFile = /*@__PURE__*/
-  fileDesc("ChhjbG91ZC92MS9kaXJlY3RvcnkucHJvdG8SD211eHZpYS5jbG91ZC52MSJVChdCZWdpbkNsaWVudFJvdXRlUmVxdWVzdBI6ChFjbG91ZF9yb3V0ZV9ncmFudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZSJbChlSZXNvbHZlQ2xpZW50Um91dGVSZXF1ZXN0EhQKDGNoYWxsZW5nZV9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhQKDGNsaWVudF9wcm9vZhgDIAEoDCKCAQoaUmVzb2x2ZUNsaWVudFJvdXRlUmVzcG9uc2USNgoNY2xpZW50X3RpY2tldBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZRIsCgRlZGdlGAIgASgLMh4ubXV4dmlhLmNsb3VkLnYxLkNhbmRpZGF0ZUVkZ2Uy4wEKEERpcmVjdG9yeVNlcnZpY2USYAoQQmVnaW5DbGllbnRSb3V0ZRIoLm11eHZpYS5jbG91ZC52MS5CZWdpbkNsaWVudFJvdXRlUmVxdWVzdBoiLm11eHZpYS5jbG91ZC52MS5JZGVudGl0eUNoYWxsZW5nZRJtChJSZXNvbHZlQ2xpZW50Um91dGUSKi5tdXh2aWEuY2xvdWQudjEuUmVzb2x2ZUNsaWVudFJvdXRlUmVxdWVzdBorLm11eHZpYS5jbG91ZC52MS5SZXNvbHZlQ2xpZW50Um91dGVSZXNwb25zZUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_cloud_v1_enrollment]);
+  fileDesc("ChhjbG91ZC92MS9kaXJlY3RvcnkucHJvdG8SD211eHZpYS5jbG91ZC52MSJVChdCZWdpbkNsaWVudFJvdXRlUmVxdWVzdBI6ChFjbG91ZF9yb3V0ZV9ncmFudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZSKkAQoYQmVnaW5QYWlyaW5nUm91dGVSZXF1ZXN0EjwKE3BhaXJpbmdfcm91dGVfZ3JhbnQYASABKAsyHy5tdXh2aWEuY2xvdWQudjEuU2lnbmVkRW52ZWxvcGUSGQoRY2xpZW50X3B1YmxpY19rZXkYAiABKAwSLwoHcHJvZHVjdBgDIAEoDjIeLm11eHZpYS5jbG91ZC52MS5DbGllbnRQcm9kdWN0IlsKGVJlc29sdmVDbGllbnRSb3V0ZVJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSFAoMY2xpZW50X3Byb29mGAMgASgMIoIBChpSZXNvbHZlQ2xpZW50Um91dGVSZXNwb25zZRI2Cg1jbGllbnRfdGlja2V0GAEgASgLMh8ubXV4dmlhLmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEiwKBGVkZ2UYAiABKAsyHi5tdXh2aWEuY2xvdWQudjEuQ2FuZGlkYXRlRWRnZTLHAgoQRGlyZWN0b3J5U2VydmljZRJgChBCZWdpbkNsaWVudFJvdXRlEigubXV4dmlhLmNsb3VkLnYxLkJlZ2luQ2xpZW50Um91dGVSZXF1ZXN0GiIubXV4dmlhLmNsb3VkLnYxLklkZW50aXR5Q2hhbGxlbmdlEmIKEUJlZ2luUGFpcmluZ1JvdXRlEikubXV4dmlhLmNsb3VkLnYxLkJlZ2luUGFpcmluZ1JvdXRlUmVxdWVzdBoiLm11eHZpYS5jbG91ZC52MS5JZGVudGl0eUNoYWxsZW5nZRJtChJSZXNvbHZlQ2xpZW50Um91dGUSKi5tdXh2aWEuY2xvdWQudjEuUmVzb2x2ZUNsaWVudFJvdXRlUmVxdWVzdBorLm11eHZpYS5jbG91ZC52MS5SZXNvbHZlQ2xpZW50Um91dGVSZXNwb25zZUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_cloud_v1_enrollment, file_cloud_v1_runtime]);
 
 /**
  * BeginClientRouteRequest 只提交 DeviceIdentity 签名的发现 grant；Controller 不接收 terminal capability。
@@ -34,6 +36,36 @@ export type BeginClientRouteRequest = Message<"muxvia.cloud.v1.BeginClientRouteR
  */
 export const BeginClientRouteRequestSchema: GenMessage<BeginClientRouteRequest> = /*@__PURE__*/
   messageDesc(file_cloud_v1_directory, 0);
+
+/**
+ * BeginPairingRouteRequest 只为持有 daemon 签名 bootstrap grant 的未授权客户端建立 pairing-only signaling。
+ * Controller 只接收 claim 摘要，不接收二维码中的 128-bit claim 本体。
+ *
+ * @generated from message muxvia.cloud.v1.BeginPairingRouteRequest
+ */
+export type BeginPairingRouteRequest = Message<"muxvia.cloud.v1.BeginPairingRouteRequest"> & {
+  /**
+   * @generated from field: muxvia.cloud.v1.SignedEnvelope pairing_route_grant = 1;
+   */
+  pairingRouteGrant?: SignedEnvelope | undefined;
+
+  /**
+   * @generated from field: bytes client_public_key = 2;
+   */
+  clientPublicKey: Uint8Array;
+
+  /**
+   * @generated from field: muxvia.cloud.v1.ClientProduct product = 3;
+   */
+  product: ClientProduct;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.BeginPairingRouteRequest.
+ * Use `create(BeginPairingRouteRequestSchema)` to create a new message.
+ */
+export const BeginPairingRouteRequestSchema: GenMessage<BeginPairingRouteRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_directory, 1);
 
 /**
  * @generated from message muxvia.cloud.v1.ResolveClientRouteRequest
@@ -60,7 +92,7 @@ export type ResolveClientRouteRequest = Message<"muxvia.cloud.v1.ResolveClientRo
  * Use `create(ResolveClientRouteRequestSchema)` to create a new message.
  */
 export const ResolveClientRouteRequestSchema: GenMessage<ResolveClientRouteRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_directory, 1);
+  messageDesc(file_cloud_v1_directory, 2);
 
 /**
  * @generated from message muxvia.cloud.v1.ResolveClientRouteResponse
@@ -82,7 +114,7 @@ export type ResolveClientRouteResponse = Message<"muxvia.cloud.v1.ResolveClientR
  * Use `create(ResolveClientRouteResponseSchema)` to create a new message.
  */
 export const ResolveClientRouteResponseSchema: GenMessage<ResolveClientRouteResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_directory, 2);
+  messageDesc(file_cloud_v1_directory, 3);
 
 /**
  * DirectoryService 是客户端解析实时 daemon Presence 和获取短期 ClientTicket 的唯一公共 API。
@@ -96,6 +128,14 @@ export const DirectoryService: GenService<{
   beginClientRoute: {
     methodKind: "unary";
     input: typeof BeginClientRouteRequestSchema;
+    output: typeof IdentityChallengeSchema;
+  },
+  /**
+   * @generated from rpc muxvia.cloud.v1.DirectoryService.BeginPairingRoute
+   */
+  beginPairingRoute: {
+    methodKind: "unary";
+    input: typeof BeginPairingRouteRequestSchema;
     output: typeof IdentityChallengeSchema;
   },
   /**

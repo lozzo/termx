@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"image/png"
 	"io"
@@ -177,6 +178,34 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestPairCreateCommandEmitsDirectlyImportableInlineClaim(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	socket := filepath.Join(runtimeDir, "daemon.sock")
+	commandOutput := strings.TrimSpace(string(executePairCommand(t, nil, "--socket", socket, "pair", "create", "--command")))
+	if !strings.HasPrefix(commandOutput, "muxvia pair import --id '") {
+		t.Fatalf("pair command output = %q", commandOutput)
+	}
+	match := regexp.MustCompile(`MXP1-[A-Za-z0-9_-]+`).FindString(commandOutput)
+	if match == "" {
+		t.Fatalf("pair command has no inline claim: %q", commandOutput)
+	}
+	payload, err := readV3PairingBundle(context.Background(), nil, match)
+	if err != nil {
+		t.Fatalf("read inline claim: %v", err)
+	}
+	offer, err := remoteauth.ParsePairingClaimOffer(payload, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("parse inline claim: %v", err)
+	}
+	if !strings.Contains(commandOutput, "--id '"+offer.GetDeviceId()+"'") {
+		t.Fatalf("pair command does not bind the advertised device ID: %q", commandOutput)
+	}
+	legacyURI := pairingBootstrapURIPrefix + base64.RawURLEncoding.EncodeToString(payload)
+	if decoded, err := readV3PairingBundle(context.Background(), nil, legacyURI); err != nil || !bytes.Equal(decoded, payload) {
+		t.Fatalf("read bootstrap URI: equal=%v err=%v", bytes.Equal(decoded, payload), err)
+	}
+}
+
 func TestPairCreateRejectsSmallTerminalBeforeWritingPartialQR(t *testing.T) {
 	runtimeDir, _, _ := configurePairCommandTest(t)
 	previousTerminal := v3PairOutputIsTerminal
@@ -207,6 +236,10 @@ func TestPairCreateRejectsConflictingOutputModes(t *testing.T) {
 	err := executePairCommandError(nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--text", "--qr-file", filepath.Join(t.TempDir(), "pair.png"))
 	if cliExitCode(err) != 2 {
 		t.Fatalf("conflicting output mode error = %v code=%d", err, cliExitCode(err))
+	}
+	err = executePairCommandError(nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--command", "--text")
+	if cliExitCode(err) != 2 {
+		t.Fatalf("command/text output mode error = %v code=%d", err, cliExitCode(err))
 	}
 }
 
@@ -531,7 +564,7 @@ func TestPairCreateRejectsPipeWithoutExplicitOutputAndRemoteTerminalScope(t *tes
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
 	command.SetArgs([]string{"--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create"})
-	if err := command.Execute(); cliExitCode(err) != 2 || !strings.Contains(err.Error(), "use --text") {
+	if err := command.Execute(); cliExitCode(err) != 2 || !strings.Contains(err.Error(), "--text") {
 		t.Fatalf("non-terminal create error = %v", err)
 	}
 }

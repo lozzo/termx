@@ -81,6 +81,57 @@ func (ClientProduct) EnumDescriptor() ([]byte, []int) {
 	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{0}
 }
 
+// CloudClientAccessMode 区分普通 capability signaling 与只允许首次配对的 bootstrap signaling。
+// PAIRING 只负责建立 PairingExchange DataChannel，不能表达 terminal 权限。
+type CloudClientAccessMode int32
+
+const (
+	CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED CloudClientAccessMode = 0
+	CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY  CloudClientAccessMode = 1
+	CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING     CloudClientAccessMode = 2
+)
+
+// Enum value maps for CloudClientAccessMode.
+var (
+	CloudClientAccessMode_name = map[int32]string{
+		0: "CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED",
+		1: "CLOUD_CLIENT_ACCESS_MODE_CAPABILITY",
+		2: "CLOUD_CLIENT_ACCESS_MODE_PAIRING",
+	}
+	CloudClientAccessMode_value = map[string]int32{
+		"CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED": 0,
+		"CLOUD_CLIENT_ACCESS_MODE_CAPABILITY":  1,
+		"CLOUD_CLIENT_ACCESS_MODE_PAIRING":     2,
+	}
+)
+
+func (x CloudClientAccessMode) Enum() *CloudClientAccessMode {
+	p := new(CloudClientAccessMode)
+	*p = x
+	return p
+}
+
+func (x CloudClientAccessMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CloudClientAccessMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloud_v1_runtime_proto_enumTypes[1].Descriptor()
+}
+
+func (CloudClientAccessMode) Type() protoreflect.EnumType {
+	return &file_cloud_v1_runtime_proto_enumTypes[1]
+}
+
+func (x CloudClientAccessMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CloudClientAccessMode.Descriptor instead.
+func (CloudClientAccessMode) EnumDescriptor() ([]byte, []int) {
+	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{1}
+}
+
 // AgentPresence 是 Edge 内存中一个已认证 daemon 连接的实时投影。
 // R2 只由测试事件生成；R4 才由真实 AgentGateway 写入。
 type AgentPresence struct {
@@ -185,6 +236,7 @@ type ClientSessionSummary struct {
 	ClientId      string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	Product       ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
 	Generation    uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
+	AccessMode    CloudClientAccessMode  `protobuf:"varint,7,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -259,6 +311,13 @@ func (x *ClientSessionSummary) GetGeneration() uint64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *ClientSessionSummary) GetAccessMode() CloudClientAccessMode {
+	if x != nil {
+		return x.AccessMode
+	}
+	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
 }
 
 // RelayAllocationSummary 是 Edge 内存 runtime 的脱敏 allocation 投影。
@@ -766,7 +825,7 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"generation\x18\x05 \x01(\x04R\n" +
 	"generation\x12\x1b\n" +
 	"\tticket_id\x18\x06 \x01(\tR\bticketId\x12D\n" +
-	"\x10ticket_issued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0eticketIssuedAt\"\xe8\x01\n" +
+	"\x10ticket_issued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0eticketIssuedAt\"\xb1\x02\n" +
 	"\x14ClientSessionSummary\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -777,7 +836,9 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\aproduct\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x06 \x01(\x04R\n" +
-	"generation\"\xf8\x02\n" +
+	"generation\x12G\n" +
+	"\vaccess_mode\x18\a \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"accessMode\"\xf8\x02\n" +
 	"\x16RelayAllocationSummary\x12#\n" +
 	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x12\x1d\n" +
 	"\n" +
@@ -830,7 +891,11 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\x12CLIENT_PRODUCT_CLI\x10\x02\x12\x1a\n" +
 	"\x16CLIENT_PRODUCT_ANDROID\x10\x03\x12\x16\n" +
 	"\x12CLIENT_PRODUCT_IOS\x10\x04\x12\x1e\n" +
-	"\x1aCLIENT_PRODUCT_DESKTOP_GUI\x10\x05B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x1aCLIENT_PRODUCT_DESKTOP_GUI\x10\x05*\x90\x01\n" +
+	"\x15CloudClientAccessMode\x12(\n" +
+	"$CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED\x10\x00\x12'\n" +
+	"#CLOUD_CLIENT_ACCESS_MODE_CAPABILITY\x10\x01\x12$\n" +
+	" CLOUD_CLIENT_ACCESS_MODE_PAIRING\x10\x02B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_runtime_proto_rawDescOnce sync.Once
@@ -844,40 +909,42 @@ func file_cloud_v1_runtime_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_runtime_proto_rawDescData
 }
 
-var file_cloud_v1_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_cloud_v1_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_cloud_v1_runtime_proto_goTypes = []any{
 	(ClientProduct)(0),             // 0: muxvia.cloud.v1.ClientProduct
-	(*AgentPresence)(nil),          // 1: muxvia.cloud.v1.AgentPresence
-	(*ClientSessionSummary)(nil),   // 2: muxvia.cloud.v1.ClientSessionSummary
-	(*RelayAllocationSummary)(nil), // 3: muxvia.cloud.v1.RelayAllocationSummary
-	(*RuntimeSnapshot)(nil),        // 4: muxvia.cloud.v1.RuntimeSnapshot
-	(*AgentRemoved)(nil),           // 5: muxvia.cloud.v1.AgentRemoved
-	(*ClientSessionRemoved)(nil),   // 6: muxvia.cloud.v1.ClientSessionRemoved
-	(*RelayAllocationRemoved)(nil), // 7: muxvia.cloud.v1.RelayAllocationRemoved
-	(*RuntimeDelta)(nil),           // 8: muxvia.cloud.v1.RuntimeDelta
-	(*timestamppb.Timestamp)(nil),  // 9: google.protobuf.Timestamp
-	(RelayTransport)(0),            // 10: muxvia.cloud.v1.RelayTransport
+	(CloudClientAccessMode)(0),     // 1: muxvia.cloud.v1.CloudClientAccessMode
+	(*AgentPresence)(nil),          // 2: muxvia.cloud.v1.AgentPresence
+	(*ClientSessionSummary)(nil),   // 3: muxvia.cloud.v1.ClientSessionSummary
+	(*RelayAllocationSummary)(nil), // 4: muxvia.cloud.v1.RelayAllocationSummary
+	(*RuntimeSnapshot)(nil),        // 5: muxvia.cloud.v1.RuntimeSnapshot
+	(*AgentRemoved)(nil),           // 6: muxvia.cloud.v1.AgentRemoved
+	(*ClientSessionRemoved)(nil),   // 7: muxvia.cloud.v1.ClientSessionRemoved
+	(*RelayAllocationRemoved)(nil), // 8: muxvia.cloud.v1.RelayAllocationRemoved
+	(*RuntimeDelta)(nil),           // 9: muxvia.cloud.v1.RuntimeDelta
+	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
+	(RelayTransport)(0),            // 11: muxvia.cloud.v1.RelayTransport
 }
 var file_cloud_v1_runtime_proto_depIdxs = []int32{
-	9,  // 0: muxvia.cloud.v1.AgentPresence.ticket_issued_at:type_name -> google.protobuf.Timestamp
+	10, // 0: muxvia.cloud.v1.AgentPresence.ticket_issued_at:type_name -> google.protobuf.Timestamp
 	0,  // 1: muxvia.cloud.v1.ClientSessionSummary.product:type_name -> muxvia.cloud.v1.ClientProduct
-	10, // 2: muxvia.cloud.v1.RelayAllocationSummary.transport:type_name -> muxvia.cloud.v1.RelayTransport
-	9,  // 3: muxvia.cloud.v1.RelayAllocationSummary.started_at:type_name -> google.protobuf.Timestamp
-	1,  // 4: muxvia.cloud.v1.RuntimeSnapshot.agents:type_name -> muxvia.cloud.v1.AgentPresence
-	2,  // 5: muxvia.cloud.v1.RuntimeSnapshot.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	3,  // 6: muxvia.cloud.v1.RuntimeSnapshot.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
-	1,  // 7: muxvia.cloud.v1.RuntimeDelta.agent_upserted:type_name -> muxvia.cloud.v1.AgentPresence
-	5,  // 8: muxvia.cloud.v1.RuntimeDelta.agent_removed:type_name -> muxvia.cloud.v1.AgentRemoved
-	2,  // 9: muxvia.cloud.v1.RuntimeDelta.session_upserted:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	6,  // 10: muxvia.cloud.v1.RuntimeDelta.session_removed:type_name -> muxvia.cloud.v1.ClientSessionRemoved
-	3,  // 11: muxvia.cloud.v1.RuntimeDelta.allocation_upserted:type_name -> muxvia.cloud.v1.RelayAllocationSummary
-	7,  // 12: muxvia.cloud.v1.RuntimeDelta.allocation_removed:type_name -> muxvia.cloud.v1.RelayAllocationRemoved
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	1,  // 2: muxvia.cloud.v1.ClientSessionSummary.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
+	11, // 3: muxvia.cloud.v1.RelayAllocationSummary.transport:type_name -> muxvia.cloud.v1.RelayTransport
+	10, // 4: muxvia.cloud.v1.RelayAllocationSummary.started_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: muxvia.cloud.v1.RuntimeSnapshot.agents:type_name -> muxvia.cloud.v1.AgentPresence
+	3,  // 6: muxvia.cloud.v1.RuntimeSnapshot.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
+	4,  // 7: muxvia.cloud.v1.RuntimeSnapshot.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
+	2,  // 8: muxvia.cloud.v1.RuntimeDelta.agent_upserted:type_name -> muxvia.cloud.v1.AgentPresence
+	6,  // 9: muxvia.cloud.v1.RuntimeDelta.agent_removed:type_name -> muxvia.cloud.v1.AgentRemoved
+	3,  // 10: muxvia.cloud.v1.RuntimeDelta.session_upserted:type_name -> muxvia.cloud.v1.ClientSessionSummary
+	7,  // 11: muxvia.cloud.v1.RuntimeDelta.session_removed:type_name -> muxvia.cloud.v1.ClientSessionRemoved
+	4,  // 12: muxvia.cloud.v1.RuntimeDelta.allocation_upserted:type_name -> muxvia.cloud.v1.RelayAllocationSummary
+	8,  // 13: muxvia.cloud.v1.RuntimeDelta.allocation_removed:type_name -> muxvia.cloud.v1.RelayAllocationRemoved
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_runtime_proto_init() }
@@ -899,7 +966,7 @@ func file_cloud_v1_runtime_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_runtime_proto_rawDesc), len(file_cloud_v1_runtime_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,

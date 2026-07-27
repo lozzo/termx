@@ -84,6 +84,47 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	}
 }
 
+func TestPairingRouteGrantCarriesOnlyClaimDigestAndBindsClientProof(t *testing.T) {
+	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := remoteauth.NewIdentity("device-pairing-route", daemonPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	claimDigest := bytes.Repeat([]byte{0x71}, 32)
+	grant, err := ticket.SignPairingRouteGrant(identity, &cloudv1.PairingRouteGrantClaims{
+		GrantId: "pairing-route", DaemonId: "daemon-pairing", DeviceId: identity.DeviceID, PairingClaimSha256: claimDigest,
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := ticket.VerifyPairingRouteGrant(grant, identity.PublicKey, "daemon-pairing", now)
+	if err != nil || !bytes.Equal(claims.GetPairingClaimSha256(), claimDigest) {
+		t.Fatalf("verified PairingRouteGrant=%v err=%v", claims, err)
+	}
+	canonical, err := ticket.PairingRouteProofBytes("pairing-challenge", bytes.Repeat([]byte{0x72}, 32), grant, "pairing-request")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := ed25519.Sign(clientPrivateKey, canonical)
+	if err := ticket.VerifyClientRouteProof(clientPublicKey, proof, canonical); err != nil {
+		t.Fatal(err)
+	}
+	tampered := proto.Clone(grant).(*cloudv1.SignedEnvelope)
+	tampered.Payload[0] ^= 0xff
+	if _, err := ticket.VerifyPairingRouteGrant(tampered, identity.PublicKey, "daemon-pairing", now); err == nil {
+		t.Fatal("tampered PairingRouteGrant was accepted")
+	}
+}
+
 func TestClientTicketBindsP2PEdgeAndHelloGeneration(t *testing.T) {
 	controllerPublicKey, controllerPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -97,7 +138,7 @@ func TestClientTicketBindsP2PEdgeAndHelloGeneration(t *testing.T) {
 	claims := &cloudv1.ClientTicketClaims{
 		TicketId: "client-ticket-r5", AccountId: "account-r5", EdgeId: "edge-r5", DaemonId: "daemon-r5", ClientId: remoteauth.Fingerprint(clientPublicKey),
 		ClientPublicKey: clientPublicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_TUI, RoutePolicy: cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(2 * time.Minute)),
+		AccessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(2 * time.Minute)),
 	}
 	envelope, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, claims)
 	if err != nil {
@@ -125,6 +166,21 @@ func TestClientTicketBindsP2PEdgeAndHelloGeneration(t *testing.T) {
 	tooLong.ExpiresAt = timestamppb.New(now.Add(2*time.Minute + time.Nanosecond))
 	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, tooLong); err == nil {
 		t.Fatal("ClientTicket accepted a lifetime longer than two minutes")
+	}
+	pairing := proto.Clone(claims).(*cloudv1.ClientTicketClaims)
+	pairing.AccessMode = cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING
+	pairing.PairingClaimSha256 = bytes.Repeat([]byte{0x51}, 32)
+	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, pairing); err != nil {
+		t.Fatalf("pairing ClientTicket rejected: %v", err)
+	}
+	badCapability := proto.Clone(claims).(*cloudv1.ClientTicketClaims)
+	badCapability.PairingClaimSha256 = bytes.Repeat([]byte{0x52}, 32)
+	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, badCapability); err == nil {
+		t.Fatal("capability ClientTicket accepted pairing state")
+	}
+	pairing.PairingClaimSha256 = nil
+	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, pairing); err == nil {
+		t.Fatal("pairing ClientTicket accepted an empty claim digest")
 	}
 }
 

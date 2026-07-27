@@ -565,6 +565,14 @@ func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.
 	return material, nil
 }
 
+// CloseRelaySession 把 ClientGateway session 生命周期绑定到同进程 TURN allocations。
+func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string) error {
+	if runtime == nil || runtime.relayServer == nil {
+		return nil
+	}
+	return runtime.relayServer.CloseSessionAllocations(ctx, sessionID)
+}
+
 func (runtime *Runtime) setControlSession(session *controllerlink.Session) {
 	runtime.controlSessionMu.Lock()
 	runtime.controlSession = session

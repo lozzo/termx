@@ -26,6 +26,8 @@ message AgentOffer {
   string offer_sdp = 5;
   repeated CloudICECandidate candidates = 6;
   RelayICEConfig relay = 7;
+  CloudClientAccessMode access_mode = 8;
+  bytes pairing_claim_sha256 = 9;
 }
 
 // AgentAuthorize 要求 owning daemon 在产生 TURN credential 前按本地 AccessStore 预检客户端。
@@ -35,6 +37,8 @@ message AgentAuthorize {
   uint64 agent_generation = 3;
   bytes client_public_key = 4;
   ClientProduct product = 5;
+  CloudClientAccessMode access_mode = 6;
+  bytes pairing_claim_sha256 = 7;
 }
 
 message AgentAuthorizationResult {

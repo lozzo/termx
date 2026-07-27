@@ -127,16 +127,18 @@ func (x *AgentHeartbeat) GetGeneration() uint64 {
 }
 
 type AgentOffer struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	CorrelationId   string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	SessionId       string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	AgentGeneration uint64                 `protobuf:"varint,3,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
-	ClientPublicKey []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	OfferSdp        string                 `protobuf:"bytes,5,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
-	Candidates      []*CloudICECandidate   `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
-	Relay           *RelayICEConfig        `protobuf:"bytes,7,opt,name=relay,proto3" json:"relay,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationId      string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	SessionId          string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentGeneration    uint64                 `protobuf:"varint,3,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
+	ClientPublicKey    []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	OfferSdp           string                 `protobuf:"bytes,5,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
+	Candidates         []*CloudICECandidate   `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
+	Relay              *RelayICEConfig        `protobuf:"bytes,7,opt,name=relay,proto3" json:"relay,omitempty"`
+	AccessMode         CloudClientAccessMode  `protobuf:"varint,8,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	PairingClaimSha256 []byte                 `protobuf:"bytes,9,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AgentOffer) Reset() {
@@ -218,16 +220,32 @@ func (x *AgentOffer) GetRelay() *RelayICEConfig {
 	return nil
 }
 
+func (x *AgentOffer) GetAccessMode() CloudClientAccessMode {
+	if x != nil {
+		return x.AccessMode
+	}
+	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
+}
+
+func (x *AgentOffer) GetPairingClaimSha256() []byte {
+	if x != nil {
+		return x.PairingClaimSha256
+	}
+	return nil
+}
+
 // AgentAuthorize 要求 owning daemon 在产生 TURN credential 前按本地 AccessStore 预检客户端。
 type AgentAuthorize struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	CorrelationId   string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	SessionId       string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	AgentGeneration uint64                 `protobuf:"varint,3,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
-	ClientPublicKey []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	Product         ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationId      string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	SessionId          string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentGeneration    uint64                 `protobuf:"varint,3,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
+	ClientPublicKey    []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	Product            ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	AccessMode         CloudClientAccessMode  `protobuf:"varint,6,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	PairingClaimSha256 []byte                 `protobuf:"bytes,7,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AgentAuthorize) Reset() {
@@ -293,6 +311,20 @@ func (x *AgentAuthorize) GetProduct() ClientProduct {
 		return x.Product
 	}
 	return ClientProduct_CLIENT_PRODUCT_UNSPECIFIED
+}
+
+func (x *AgentAuthorize) GetAccessMode() CloudClientAccessMode {
+	if x != nil {
+		return x.AccessMode
+	}
+	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
+}
+
+func (x *AgentAuthorize) GetPairingClaimSha256() []byte {
+	if x != nil {
+		return x.PairingClaimSha256
+	}
+	return nil
 }
 
 type AgentAuthorizationResult struct {
@@ -912,7 +944,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\x0eAgentHeartbeat\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
-	"generation\"\xc1\x02\n" +
+	"generation\"\xbc\x03\n" +
 	"\n" +
 	"AgentOffer\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
@@ -924,14 +956,20 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"candidates\x18\x06 \x03(\v2\".muxvia.cloud.v1.CloudICECandidateR\n" +
 	"candidates\x125\n" +
-	"\x05relay\x18\a \x01(\v2\x1f.muxvia.cloud.v1.RelayICEConfigR\x05relay\"\xe7\x01\n" +
+	"\x05relay\x18\a \x01(\v2\x1f.muxvia.cloud.v1.RelayICEConfigR\x05relay\x12G\n" +
+	"\vaccess_mode\x18\b \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"accessMode\x120\n" +
+	"\x14pairing_claim_sha256\x18\t \x01(\fR\x12pairingClaimSha256\"\xe2\x02\n" +
 	"\x0eAgentAuthorize\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12)\n" +
 	"\x10agent_generation\x18\x03 \x01(\x04R\x0fagentGeneration\x12*\n" +
 	"\x11client_public_key\x18\x04 \x01(\fR\x0fclientPublicKey\x128\n" +
-	"\aproduct\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\"\xae\x01\n" +
+	"\aproduct\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12G\n" +
+	"\vaccess_mode\x18\x06 \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"accessMode\x120\n" +
+	"\x14pairing_claim_sha256\x18\a \x01(\fR\x12pairingClaimSha256\"\xae\x01\n" +
 	"\x18AgentAuthorizationResult\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
 	"\n" +
@@ -1023,34 +1061,37 @@ var file_cloud_v1_agent_gateway_proto_goTypes = []any{
 	(*SignedEnvelope)(nil),           // 10: muxvia.cloud.v1.SignedEnvelope
 	(*CloudICECandidate)(nil),        // 11: muxvia.cloud.v1.CloudICECandidate
 	(*RelayICEConfig)(nil),           // 12: muxvia.cloud.v1.RelayICEConfig
-	(ClientProduct)(0),               // 13: muxvia.cloud.v1.ClientProduct
-	(*HeartbeatPolicy)(nil),          // 14: muxvia.cloud.v1.HeartbeatPolicy
-	(*timestamppb.Timestamp)(nil),    // 15: google.protobuf.Timestamp
+	(CloudClientAccessMode)(0),       // 13: muxvia.cloud.v1.CloudClientAccessMode
+	(ClientProduct)(0),               // 14: muxvia.cloud.v1.ClientProduct
+	(*HeartbeatPolicy)(nil),          // 15: muxvia.cloud.v1.HeartbeatPolicy
+	(*timestamppb.Timestamp)(nil),    // 16: google.protobuf.Timestamp
 }
 var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
 	10, // 0: muxvia.cloud.v1.AgentHello.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
 	11, // 1: muxvia.cloud.v1.AgentOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
 	12, // 2: muxvia.cloud.v1.AgentOffer.relay:type_name -> muxvia.cloud.v1.RelayICEConfig
-	13, // 3: muxvia.cloud.v1.AgentAuthorize.product:type_name -> muxvia.cloud.v1.ClientProduct
-	11, // 4: muxvia.cloud.v1.AgentAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	14, // 5: muxvia.cloud.v1.AgentReady.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
-	15, // 6: muxvia.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
-	0,  // 7: muxvia.cloud.v1.AgentEvent.hello:type_name -> muxvia.cloud.v1.AgentHello
-	1,  // 8: muxvia.cloud.v1.AgentEvent.heartbeat:type_name -> muxvia.cloud.v1.AgentHeartbeat
-	5,  // 9: muxvia.cloud.v1.AgentEvent.answer:type_name -> muxvia.cloud.v1.AgentAnswer
-	6,  // 10: muxvia.cloud.v1.AgentEvent.rejected:type_name -> muxvia.cloud.v1.AgentSignalRejected
-	4,  // 11: muxvia.cloud.v1.AgentEvent.authorization:type_name -> muxvia.cloud.v1.AgentAuthorizationResult
-	15, // 12: muxvia.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
-	7,  // 13: muxvia.cloud.v1.EdgeCommand.ready:type_name -> muxvia.cloud.v1.AgentReady
-	2,  // 14: muxvia.cloud.v1.EdgeCommand.offer:type_name -> muxvia.cloud.v1.AgentOffer
-	3,  // 15: muxvia.cloud.v1.EdgeCommand.authorize:type_name -> muxvia.cloud.v1.AgentAuthorize
-	8,  // 16: muxvia.cloud.v1.AgentGateway.Connect:input_type -> muxvia.cloud.v1.AgentEvent
-	9,  // 17: muxvia.cloud.v1.AgentGateway.Connect:output_type -> muxvia.cloud.v1.EdgeCommand
-	17, // [17:18] is the sub-list for method output_type
-	16, // [16:17] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	13, // 3: muxvia.cloud.v1.AgentOffer.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
+	14, // 4: muxvia.cloud.v1.AgentAuthorize.product:type_name -> muxvia.cloud.v1.ClientProduct
+	13, // 5: muxvia.cloud.v1.AgentAuthorize.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
+	11, // 6: muxvia.cloud.v1.AgentAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
+	15, // 7: muxvia.cloud.v1.AgentReady.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
+	16, // 8: muxvia.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
+	0,  // 9: muxvia.cloud.v1.AgentEvent.hello:type_name -> muxvia.cloud.v1.AgentHello
+	1,  // 10: muxvia.cloud.v1.AgentEvent.heartbeat:type_name -> muxvia.cloud.v1.AgentHeartbeat
+	5,  // 11: muxvia.cloud.v1.AgentEvent.answer:type_name -> muxvia.cloud.v1.AgentAnswer
+	6,  // 12: muxvia.cloud.v1.AgentEvent.rejected:type_name -> muxvia.cloud.v1.AgentSignalRejected
+	4,  // 13: muxvia.cloud.v1.AgentEvent.authorization:type_name -> muxvia.cloud.v1.AgentAuthorizationResult
+	16, // 14: muxvia.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
+	7,  // 15: muxvia.cloud.v1.EdgeCommand.ready:type_name -> muxvia.cloud.v1.AgentReady
+	2,  // 16: muxvia.cloud.v1.EdgeCommand.offer:type_name -> muxvia.cloud.v1.AgentOffer
+	3,  // 17: muxvia.cloud.v1.EdgeCommand.authorize:type_name -> muxvia.cloud.v1.AgentAuthorize
+	8,  // 18: muxvia.cloud.v1.AgentGateway.Connect:input_type -> muxvia.cloud.v1.AgentEvent
+	9,  // 19: muxvia.cloud.v1.AgentGateway.Connect:output_type -> muxvia.cloud.v1.EdgeCommand
+	19, // [19:20] is the sub-list for method output_type
+	18, // [18:19] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_agent_gateway_proto_init() }

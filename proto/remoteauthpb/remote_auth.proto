@@ -438,9 +438,11 @@ message PairingDirectRouteSeed {
   string server_name = 3;
 }
 
-// PairingManagedRouteSeed 只标识 Cloud signaling 中的 owning daemon；账号和 token 仍来自客户端本地 Cloud session。
+// PairingManagedRouteSeed 标识 Cloud signaling 中的 owning daemon，并携带 daemon 签名的短期 bootstrap grant。
+// grant 只包含 claim 摘要；128-bit claim 本体仍只在端到端 PairingExchange 内发送。
 message PairingManagedRouteSeed {
   string target_device_id = 1;
+  bytes bootstrap_grant = 2;
 }
 
 // PairingSSHRouteSeed 只携带建立首个 SSH tunnel pairing peer 所需的公开连接信息。

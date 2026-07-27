@@ -384,6 +384,92 @@ func (x *CloudRouteGrantClaims) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
+// pairing_claim_sha256 不足以兑换 claim，Cloud 不接收 128-bit claim 本体。
+type PairingRouteGrantClaims struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	GrantId            string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	DaemonId           string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	DeviceId           string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	PairingClaimSha256 []byte                 `protobuf:"bytes,4,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
+	IssuedAt           *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PairingRouteGrantClaims) Reset() {
+	*x = PairingRouteGrantClaims{}
+	mi := &file_cloud_v1_ticket_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingRouteGrantClaims) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingRouteGrantClaims) ProtoMessage() {}
+
+func (x *PairingRouteGrantClaims) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_ticket_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingRouteGrantClaims.ProtoReflect.Descriptor instead.
+func (*PairingRouteGrantClaims) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PairingRouteGrantClaims) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *PairingRouteGrantClaims) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *PairingRouteGrantClaims) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *PairingRouteGrantClaims) GetPairingClaimSha256() []byte {
+	if x != nil {
+		return x.PairingClaimSha256
+	}
+	return nil
+}
+
+func (x *PairingRouteGrantClaims) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *PairingRouteGrantClaims) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 // ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
 type ClientRouteProofInput struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -397,7 +483,7 @@ type ClientRouteProofInput struct {
 
 func (x *ClientRouteProofInput) Reset() {
 	*x = ClientRouteProofInput{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[3]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -409,7 +495,7 @@ func (x *ClientRouteProofInput) String() string {
 func (*ClientRouteProofInput) ProtoMessage() {}
 
 func (x *ClientRouteProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[3]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -422,7 +508,7 @@ func (x *ClientRouteProofInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientRouteProofInput.ProtoReflect.Descriptor instead.
 func (*ClientRouteProofInput) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{3}
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ClientRouteProofInput) GetChallengeId() string {
@@ -453,26 +539,98 @@ func (x *ClientRouteProofInput) GetRequestId() string {
 	return ""
 }
 
+// PairingRouteProofInput 证明首次配对请求持有即将绑定到 claim 的 ClientAccessIdentity。
+// Controller 只看到 daemon 签名 bootstrap grant 的摘要；真正的 claim 仍只在端到端 DataChannel 内由 daemon 消费。
+type PairingRouteProofInput struct {
+	state                          protoimpl.MessageState `protogen:"open.v1"`
+	ChallengeId                    string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
+	Challenge                      []byte                 `protobuf:"bytes,2,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	PairingRouteGrantPayloadSha256 []byte                 `protobuf:"bytes,3,opt,name=pairing_route_grant_payload_sha256,json=pairingRouteGrantPayloadSha256,proto3" json:"pairing_route_grant_payload_sha256,omitempty"`
+	RequestId                      string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields                  protoimpl.UnknownFields
+	sizeCache                      protoimpl.SizeCache
+}
+
+func (x *PairingRouteProofInput) Reset() {
+	*x = PairingRouteProofInput{}
+	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingRouteProofInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingRouteProofInput) ProtoMessage() {}
+
+func (x *PairingRouteProofInput) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingRouteProofInput.ProtoReflect.Descriptor instead.
+func (*PairingRouteProofInput) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PairingRouteProofInput) GetChallengeId() string {
+	if x != nil {
+		return x.ChallengeId
+	}
+	return ""
+}
+
+func (x *PairingRouteProofInput) GetChallenge() []byte {
+	if x != nil {
+		return x.Challenge
+	}
+	return nil
+}
+
+func (x *PairingRouteProofInput) GetPairingRouteGrantPayloadSha256() []byte {
+	if x != nil {
+		return x.PairingRouteGrantPayloadSha256
+	}
+	return nil
+}
+
+func (x *PairingRouteProofInput) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 // ClientTicketClaims 是 Controller 对单个在线 Edge 信令 attempt 的两分钟准入票据。
 type ClientTicketClaims struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	TicketId        string                 `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	AccountId       string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	EdgeId          string                 `protobuf:"bytes,3,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	DaemonId        string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	ClientId        string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ClientPublicKey []byte                 `protobuf:"bytes,6,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	Product         ClientProduct          `protobuf:"varint,7,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
-	RoutePolicy     CloudRoutePolicy       `protobuf:"varint,8,opt,name=route_policy,json=routePolicy,proto3,enum=muxvia.cloud.v1.CloudRoutePolicy" json:"route_policy,omitempty"`
-	IssuedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
-	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	TicketId           string                 `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
+	AccountId          string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	EdgeId             string                 `protobuf:"bytes,3,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	DaemonId           string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	ClientId           string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientPublicKey    []byte                 `protobuf:"bytes,6,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	Product            ClientProduct          `protobuf:"varint,7,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	RoutePolicy        CloudRoutePolicy       `protobuf:"varint,8,opt,name=route_policy,json=routePolicy,proto3,enum=muxvia.cloud.v1.CloudRoutePolicy" json:"route_policy,omitempty"`
+	IssuedAt           *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	AccessMode         CloudClientAccessMode  `protobuf:"varint,11,opt,name=access_mode,json=accessMode,proto3,enum=muxvia.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
+	PairingClaimSha256 []byte                 `protobuf:"bytes,12,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ClientTicketClaims) Reset() {
 	*x = ClientTicketClaims{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -484,7 +642,7 @@ func (x *ClientTicketClaims) String() string {
 func (*ClientTicketClaims) ProtoMessage() {}
 
 func (x *ClientTicketClaims) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -497,7 +655,7 @@ func (x *ClientTicketClaims) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientTicketClaims.ProtoReflect.Descriptor instead.
 func (*ClientTicketClaims) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ClientTicketClaims) GetTicketId() string {
@@ -570,6 +728,20 @@ func (x *ClientTicketClaims) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *ClientTicketClaims) GetAccessMode() CloudClientAccessMode {
+	if x != nil {
+		return x.AccessMode
+	}
+	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
+}
+
+func (x *ClientTicketClaims) GetPairingClaimSha256() []byte {
+	if x != nil {
+		return x.PairingClaimSha256
+	}
+	return nil
+}
+
 // ClientHelloProofInput 把 ClientAccessIdentity proof 绑定到票据和当前 attempt generation。
 type ClientHelloProofInput struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -582,7 +754,7 @@ type ClientHelloProofInput struct {
 
 func (x *ClientHelloProofInput) Reset() {
 	*x = ClientHelloProofInput{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +766,7 @@ func (x *ClientHelloProofInput) String() string {
 func (*ClientHelloProofInput) ProtoMessage() {}
 
 func (x *ClientHelloProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +779,7 @@ func (x *ClientHelloProofInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientHelloProofInput.ProtoReflect.Descriptor instead.
 func (*ClientHelloProofInput) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ClientHelloProofInput) GetTicketPayloadSha256() []byte {
@@ -660,13 +832,27 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\aproduct\x18\x04 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x127\n" +
 	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x94\x02\n" +
+	"\x17PairingRouteGrantClaims\x12\x19\n" +
+	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12\x1b\n" +
+	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x120\n" +
+	"\x14pairing_claim_sha256\x18\x04 \x01(\fR\x12pairingClaimSha256\x127\n" +
+	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa9\x01\n" +
 	"\x15ClientRouteProofInput\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x120\n" +
 	"\x14grant_payload_sha256\x18\x03 \x01(\fR\x12grantPayloadSha256\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x04 \x01(\tR\trequestId\"\xc3\x03\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\"\xc4\x01\n" +
+	"\x16PairingRouteProofInput\x12!\n" +
+	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
+	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12J\n" +
+	"\"pairing_route_grant_payload_sha256\x18\x03 \x01(\fR\x1epairingRouteGrantPayloadSha256\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\"\xbe\x04\n" +
 	"\x12ClientTicketClaims\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x1d\n" +
 	"\n" +
@@ -680,7 +866,10 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\tissued_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x99\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12G\n" +
+	"\vaccess_mode\x18\v \x01(\x0e2&.muxvia.cloud.v1.CloudClientAccessModeR\n" +
+	"accessMode\x120\n" +
+	"\x14pairing_claim_sha256\x18\f \x01(\fR\x12pairingClaimSha256\"\x99\x01\n" +
 	"\x15ClientHelloProofInput\x122\n" +
 	"\x15ticket_payload_sha256\x18\x01 \x01(\fR\x13ticketPayloadSha256\x12\x1d\n" +
 	"\n" +
@@ -707,35 +896,41 @@ func file_cloud_v1_ticket_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_ticket_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloud_v1_ticket_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_cloud_v1_ticket_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_cloud_v1_ticket_proto_goTypes = []any{
-	(AgentCapability)(0),          // 0: muxvia.cloud.v1.AgentCapability
-	(CloudRoutePolicy)(0),         // 1: muxvia.cloud.v1.CloudRoutePolicy
-	(*AgentTicketClaims)(nil),     // 2: muxvia.cloud.v1.AgentTicketClaims
-	(*AgentHelloProofInput)(nil),  // 3: muxvia.cloud.v1.AgentHelloProofInput
-	(*CloudRouteGrantClaims)(nil), // 4: muxvia.cloud.v1.CloudRouteGrantClaims
-	(*ClientRouteProofInput)(nil), // 5: muxvia.cloud.v1.ClientRouteProofInput
-	(*ClientTicketClaims)(nil),    // 6: muxvia.cloud.v1.ClientTicketClaims
-	(*ClientHelloProofInput)(nil), // 7: muxvia.cloud.v1.ClientHelloProofInput
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
-	(ClientProduct)(0),            // 9: muxvia.cloud.v1.ClientProduct
+	(AgentCapability)(0),            // 0: muxvia.cloud.v1.AgentCapability
+	(CloudRoutePolicy)(0),           // 1: muxvia.cloud.v1.CloudRoutePolicy
+	(*AgentTicketClaims)(nil),       // 2: muxvia.cloud.v1.AgentTicketClaims
+	(*AgentHelloProofInput)(nil),    // 3: muxvia.cloud.v1.AgentHelloProofInput
+	(*CloudRouteGrantClaims)(nil),   // 4: muxvia.cloud.v1.CloudRouteGrantClaims
+	(*PairingRouteGrantClaims)(nil), // 5: muxvia.cloud.v1.PairingRouteGrantClaims
+	(*ClientRouteProofInput)(nil),   // 6: muxvia.cloud.v1.ClientRouteProofInput
+	(*PairingRouteProofInput)(nil),  // 7: muxvia.cloud.v1.PairingRouteProofInput
+	(*ClientTicketClaims)(nil),      // 8: muxvia.cloud.v1.ClientTicketClaims
+	(*ClientHelloProofInput)(nil),   // 9: muxvia.cloud.v1.ClientHelloProofInput
+	(*timestamppb.Timestamp)(nil),   // 10: google.protobuf.Timestamp
+	(ClientProduct)(0),              // 11: muxvia.cloud.v1.ClientProduct
+	(CloudClientAccessMode)(0),      // 12: muxvia.cloud.v1.CloudClientAccessMode
 }
 var file_cloud_v1_ticket_proto_depIdxs = []int32{
 	0,  // 0: muxvia.cloud.v1.AgentTicketClaims.capabilities:type_name -> muxvia.cloud.v1.AgentCapability
-	8,  // 1: muxvia.cloud.v1.AgentTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
-	8,  // 2: muxvia.cloud.v1.AgentTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 3: muxvia.cloud.v1.CloudRouteGrantClaims.product:type_name -> muxvia.cloud.v1.ClientProduct
-	8,  // 4: muxvia.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
-	8,  // 5: muxvia.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 6: muxvia.cloud.v1.ClientTicketClaims.product:type_name -> muxvia.cloud.v1.ClientProduct
-	1,  // 7: muxvia.cloud.v1.ClientTicketClaims.route_policy:type_name -> muxvia.cloud.v1.CloudRoutePolicy
-	8,  // 8: muxvia.cloud.v1.ClientTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
-	8,  // 9: muxvia.cloud.v1.ClientTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	10, // 1: muxvia.cloud.v1.AgentTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 2: muxvia.cloud.v1.AgentTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
+	11, // 3: muxvia.cloud.v1.CloudRouteGrantClaims.product:type_name -> muxvia.cloud.v1.ClientProduct
+	10, // 4: muxvia.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 5: muxvia.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 6: muxvia.cloud.v1.PairingRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 7: muxvia.cloud.v1.PairingRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
+	11, // 8: muxvia.cloud.v1.ClientTicketClaims.product:type_name -> muxvia.cloud.v1.ClientProduct
+	1,  // 9: muxvia.cloud.v1.ClientTicketClaims.route_policy:type_name -> muxvia.cloud.v1.CloudRoutePolicy
+	10, // 10: muxvia.cloud.v1.ClientTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
+	10, // 11: muxvia.cloud.v1.ClientTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
+	12, // 12: muxvia.cloud.v1.ClientTicketClaims.access_mode:type_name -> muxvia.cloud.v1.CloudClientAccessMode
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_ticket_proto_init() }
@@ -750,7 +945,7 @@ func file_cloud_v1_ticket_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_ticket_proto_rawDesc), len(file_cloud_v1_ticket_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

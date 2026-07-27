@@ -39,8 +39,8 @@ func TestV3PairingRoutesRejectFieldsWithoutExplicitRoute(t *testing.T) {
 	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"direct://lan?unknown=value"}}); err == nil {
 		t.Fatal("unknown URI query was accepted")
 	}
-	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"cloud"}}); err == nil {
-		t.Fatal("Cloud-only Route was accepted without an initial pairing path")
+	if routes, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"cloud"}}); err != nil || len(routes) != 1 || routes[0].GetManagedWebrtc() == nil {
+		t.Fatalf("Cloud-only pairing route = %#v err=%v", routes, err)
 	}
 	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"direct"}, SSHHost: "ignored"}); err == nil {
 		t.Fatal("out-of-scope SSH fields were silently ignored")

@@ -67,8 +67,9 @@ type pendingReservation struct {
 }
 
 type activeAllocation struct {
-	id   string
-	conn *trackedPacketConn
+	id        string
+	sessionID string
+	conn      *trackedPacketConn
 }
 
 // Start 在同一端口启动 UDP/TCP STUN/TURN listener；公网域名可以与 gRPC 相同。
@@ -161,6 +162,57 @@ func (server *Server) Close() error {
 	return nil
 }
 
+// CloseSessionAllocations 释放 ClientGateway session 申请中的 reservation 和已激活 allocation。
+// TURN Refresh(lifetime=0) 仍由标准客户端路径处理；本方法保证客户端进程突然退出时，
+// Edge 的并发配额和 usage truth 不必等待 TURN allocation 自然超时。
+func (server *Server) CloseSessionAllocations(ctx context.Context, sessionID string) error {
+	if server == nil {
+		return nil
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if ctx == nil || sessionID == "" {
+		return errors.New("Relay session cleanup requires context and session ID")
+	}
+	server.mu.Lock()
+	pending := make([]pendingReservation, 0)
+	for key, reservation := range server.pending {
+		if reservation.admission.SessionID == sessionID {
+			pending = append(pending, reservation)
+			delete(server.pending, key)
+		}
+	}
+	active := make([]activeAllocation, 0)
+	for key, allocation := range server.active {
+		if allocation.sessionID == sessionID {
+			active = append(active, allocation)
+			delete(server.active, key)
+		}
+	}
+	server.mu.Unlock()
+
+	var cleanupErrors []error
+	for _, reservation := range pending {
+		if err := server.runtime.CancelRelayAllocationReservation(ctx, reservation.id); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("cancel Relay reservation %s: %w", reservation.id, err))
+		}
+	}
+	for _, allocation := range active {
+		if allocation.conn != nil {
+			if err := allocation.conn.Close(); err != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("close Relay allocation %s socket: %w", allocation.id, err))
+			}
+		}
+		if err := server.settleAllocation(ctx, allocation); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+		}
+	}
+	err := errors.Join(cleanupErrors...)
+	if err != nil {
+		server.fail(fmt.Errorf("clean up Relay session %s: %w", sessionID, err))
+	}
+	return err
+}
+
 func (server *Server) reserve(username string, source net.Addr) bool {
 	if server.degraded.Load() || source == nil {
 		return false
@@ -206,7 +258,7 @@ func (server *Server) allocationCreated(source, destination net.Addr, protocol, 
 	allocationID := uuid.NewString()
 	key := allocationKey(source, destination, protocol)
 	if reserved && connection != nil {
-		server.active[key] = activeAllocation{id: allocationID, conn: connection}
+		server.active[key] = activeAllocation{id: allocationID, sessionID: reservation.admission.SessionID, conn: connection}
 	}
 	server.mu.Unlock()
 	if !reserved || connection == nil {
@@ -235,16 +287,26 @@ func (server *Server) allocationDeleted(source, destination net.Addr, protocol, 
 	if !exists {
 		return
 	}
-	ingress, egress := allocation.conn.counts()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	event, err := server.runtime.CloseRelayAllocation(ctx, allocation.id, ingress, egress, server.now().UTC())
-	if err == nil {
-		err = server.outbox.Put(event)
-	}
-	if err != nil {
+	if err := server.settleAllocation(ctx, allocation); err != nil {
 		server.fail(fmt.Errorf("settle Relay allocation: %w", err))
 	}
+}
+
+func (server *Server) settleAllocation(ctx context.Context, allocation activeAllocation) error {
+	if allocation.conn == nil {
+		return fmt.Errorf("settle Relay allocation %s: missing relay socket", allocation.id)
+	}
+	ingress, egress := allocation.conn.counts()
+	event, err := server.runtime.CloseRelayAllocation(ctx, allocation.id, ingress, egress, server.now().UTC())
+	if err != nil {
+		return fmt.Errorf("settle Relay allocation %s: %w", allocation.id, err)
+	}
+	if err := server.outbox.Put(event); err != nil {
+		return fmt.Errorf("persist Relay allocation %s usage: %w", allocation.id, err)
+	}
+	return nil
 }
 
 func (server *Server) fail(err error) {

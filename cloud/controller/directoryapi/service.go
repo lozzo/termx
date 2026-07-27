@@ -26,12 +26,17 @@ import (
 )
 
 type challengeState struct {
-	challenge []byte
-	expires   time.Time
-	grant     *cloudv1.SignedEnvelope
-	claims    *cloudv1.CloudRouteGrantClaims
-	daemon    enrollment.Daemon
-	location  directory.ObjectLocation
+	challenge          []byte
+	expires            time.Time
+	grant              *cloudv1.SignedEnvelope
+	claims             *cloudv1.CloudRouteGrantClaims
+	pairingGrant       *cloudv1.SignedEnvelope
+	pairingClaimDigest []byte
+	clientPublicKey    ed25519.PublicKey
+	product            cloudv1.ClientProduct
+	accessMode         cloudv1.CloudClientAccessMode
+	daemon             enrollment.Daemon
+	location           directory.ObjectLocation
 }
 
 // Config 固定客户端解析所需的持久身份、纯内存目录、Edge desired state 与 Controller TicketSigner。
@@ -101,7 +106,49 @@ func (service *Service) BeginClientRoute(ctx context.Context, request *cloudv1.B
 	id := uuid.NewString()
 	service.mu.Lock()
 	service.compactLocked(now)
-	service.challenges[id] = challengeState{challenge: challenge, expires: now.Add(service.config.ChallengeTTL), grant: proto.Clone(grant).(*cloudv1.SignedEnvelope), claims: proto.Clone(claims).(*cloudv1.CloudRouteGrantClaims), daemon: daemon, location: location}
+	service.challenges[id] = challengeState{challenge: challenge, expires: now.Add(service.config.ChallengeTTL), grant: proto.Clone(grant).(*cloudv1.SignedEnvelope), claims: proto.Clone(claims).(*cloudv1.CloudRouteGrantClaims), clientPublicKey: append(ed25519.PublicKey(nil), claims.GetClientPublicKey()...), product: claims.GetProduct(), accessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY, daemon: daemon, location: location}
+	service.mu.Unlock()
+	return &cloudv1.IdentityChallenge{ChallengeId: id, Challenge: append([]byte(nil), challenge...), ExpiresAt: timestamppb.New(now.Add(service.config.ChallengeTTL))}, nil
+}
+
+// BeginPairingRoute 使用 daemon 签名的短期 bootstrap grant 定位 owning daemon，并把未授权客户端限制在 pairing-only signaling。
+func (service *Service) BeginPairingRoute(ctx context.Context, request *cloudv1.BeginPairingRouteRequest) (*cloudv1.IdentityChallenge, error) {
+	if request == nil || len(request.GetClientPublicKey()) != ed25519.PublicKeySize || request.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || request.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+		return nil, status.Error(codes.InvalidArgument, "pairing route client identity is invalid")
+	}
+	grant := request.GetPairingRouteGrant()
+	if grant == nil {
+		return nil, status.Error(codes.InvalidArgument, "PairingRouteGrant is required")
+	}
+	unverified := &cloudv1.PairingRouteGrantClaims{}
+	if err := proto.Unmarshal(grant.GetPayload(), unverified); err != nil || strings.TrimSpace(unverified.GetDaemonId()) == "" {
+		return nil, status.Error(codes.Unauthenticated, "PairingRouteGrant payload is invalid")
+	}
+	daemon, err := service.config.Store.GetDaemon(ctx, strings.TrimSpace(unverified.GetDaemonId()))
+	if err != nil || daemon.Revoked {
+		return nil, status.Error(codes.NotFound, "daemon is unavailable")
+	}
+	claims, err := ticket.VerifyPairingRouteGrant(grant, daemon.DevicePublicKey, daemon.ID, service.now())
+	if err != nil || claims.GetDeviceId() != daemon.DeviceID {
+		return nil, status.Error(codes.Unauthenticated, "PairingRouteGrant is invalid")
+	}
+	location, found, err := service.config.Directory.LocateDaemon(ctx, daemon.ID)
+	if err != nil || !found {
+		return nil, status.Error(codes.Unavailable, "daemon is offline")
+	}
+	challenge := make([]byte, remoteauth.DeviceIdentityChallengeBytes)
+	if _, err := rand.Read(challenge); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	now := service.now()
+	id := uuid.NewString()
+	service.mu.Lock()
+	service.compactLocked(now)
+	service.challenges[id] = challengeState{
+		challenge: challenge, expires: now.Add(service.config.ChallengeTTL), pairingGrant: proto.Clone(grant).(*cloudv1.SignedEnvelope), pairingClaimDigest: append([]byte(nil), claims.GetPairingClaimSha256()...),
+		clientPublicKey: append(ed25519.PublicKey(nil), request.GetClientPublicKey()...), product: request.GetProduct(), accessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING,
+		daemon: daemon, location: location,
+	}
 	service.mu.Unlock()
 	return &cloudv1.IdentityChallenge{ChallengeId: id, Challenge: append([]byte(nil), challenge...), ExpiresAt: timestamppb.New(now.Add(service.config.ChallengeTTL))}, nil
 }
@@ -115,8 +162,16 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	canonical, err := ticket.ClientRouteProofBytes(request.GetChallengeId(), state.challenge, state.grant, request.GetRequestId())
-	if err != nil || ticket.VerifyClientRouteProof(state.claims.GetClientPublicKey(), request.GetClientProof(), canonical) != nil {
+	var canonical []byte
+	switch state.accessMode {
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
+		canonical, err = ticket.ClientRouteProofBytes(request.GetChallengeId(), state.challenge, state.grant, request.GetRequestId())
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
+		canonical, err = ticket.PairingRouteProofBytes(request.GetChallengeId(), state.challenge, state.pairingGrant, request.GetRequestId())
+	default:
+		err = errors.New("client route challenge mode is invalid")
+	}
+	if err != nil || ticket.VerifyClientRouteProof(state.clientPublicKey, request.GetClientProof(), canonical) != nil {
 		return nil, status.Error(codes.Unauthenticated, "client route proof is invalid")
 	}
 	current, found, locateErr := service.config.Directory.LocateDaemon(ctx, state.daemon.ID)
@@ -132,15 +187,15 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
 	}
 	now := service.now()
-	clientID := remoteauth.Fingerprint(ed25519.PublicKey(state.claims.GetClientPublicKey()))
+	clientID := remoteauth.Fingerprint(state.clientPublicKey)
 	routePolicy := cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY
 	if entitlement.GetCapability().GetRelayEnabled() && entitlement.GetRelayRemainingBytes() > 0 {
 		routePolicy = cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY
 	}
 	claims := &cloudv1.ClientTicketClaims{
 		TicketId: uuid.NewString(), AccountId: state.daemon.AccountID, EdgeId: current.EdgeID, DaemonId: state.daemon.ID, ClientId: clientID,
-		ClientPublicKey: append([]byte(nil), state.claims.GetClientPublicKey()...), Product: state.claims.GetProduct(), RoutePolicy: routePolicy,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.ClientTicketTTL)),
+		ClientPublicKey: append([]byte(nil), state.clientPublicKey...), Product: state.product, RoutePolicy: routePolicy, AccessMode: state.accessMode,
+		PairingClaimSha256: append([]byte(nil), state.pairingClaimDigest...), IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.ClientTicketTTL)),
 	}
 	signed, err := ticket.SignClientTicket(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -19,6 +20,15 @@ import (
 	"github.com/muxvia/muxvia/tui/state"
 	"github.com/spf13/cobra"
 )
+
+type v3EndpointApplicationServices interface {
+	tuiport.TerminalService
+	tuiport.PathService
+	tuiport.CoreClient
+	tuiport.NativeScreenSource
+	tuiport.LiveInvalidationSource
+	Close() error
+}
 
 func runAttachCommandWithClientRuntime(cmd *cobra.Command, endpointID, terminalID, socket, logFile, configPath string) error {
 	if !isInteractiveTerminal() {
@@ -72,10 +82,18 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	terminalAdapter := tuiprotocol.ProtocolTerminalServiceAdapter{Client: terminalClient, Application: application}
 	coreAdapter := tuiprotocol.ProtocolCoreClientAdapter{Application: application}
 	pathAdapter, _ := tuiprotocol.NewProtocolPathServiceAdapter(application)
+	var terminalService tuiport.TerminalService = terminalAdapter
+	var coreService tuiport.CoreClient = coreAdapter
+	var pathService tuiport.PathService = pathAdapter
+	if opts.EndpointApplications != nil {
+		terminalService = opts.EndpointApplications
+		coreService = opts.EndpointApplications
+		pathService = opts.EndpointApplications
+	}
 	var endpointEvents tuiport.EndpointEventSource
 	var endpointConnections tuiport.EndpointConnectionService
 	if client != nil && client.ConnectionRuntime() != nil {
-		endpointEvents = clientruntimeadapter.EndpointEventSource{Runtime: client.ConnectionRuntime(), EndpointID: endpointID}
+		endpointEvents = clientruntimeadapter.EndpointEventSource{Runtime: client.ConnectionRuntime(), EndpointID: endpointID, EndpointIDs: registryEndpointIDs(opts.ConnectionRegistry)}
 		if planRuntime, ok := client.ConnectionRuntime().(clientruntimeadapter.EndpointPlanSnapshotSource); ok {
 			endpointConnections = clientruntimeadapter.EndpointConnectionControl{Runtime: planRuntime}
 		}
@@ -110,10 +128,23 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	}
 	return app.NewInteractiveRuntimeWithStorage(
 		initial, host, app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminalAdapter, Path: pathAdapter, EndpointEvents: endpointEvents, EndpointConnections: endpointConnections, Logger: logger},
-		app.CopyModeDeps{Core: coreAdapter, Clipboard: &systemadapter.ClipboardService{}, Terminal: terminalAdapter, Logger: logger, Rows: rows},
+		app.LiveDeps{Terminal: terminalService, Path: pathService, EndpointEvents: endpointEvents, EndpointConnections: endpointConnections, Logger: logger},
+		app.CopyModeDeps{Core: coreService, Clipboard: &systemadapter.ClipboardService{}, Terminal: terminalService, Logger: logger, Rows: rows},
 		workbench, clipboard,
 	)
+}
+
+func newV3EndpointApplicationRouter(endpointID state.EndpointID, client *clientprotocol.ApplicationClient) (v3EndpointApplicationServices, error) {
+	return clientruntimeadapter.NewEndpointApplicationRouter(endpointID, client)
+}
+
+func registryEndpointIDs(registry endpointdomain.Registry) []state.EndpointID {
+	result := make([]state.EndpointID, 0, len(registry.Endpoints))
+	for endpointID := range registry.Endpoints {
+		result = append(result, state.EndpointID(endpointID))
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func openV3AttachProtocolClientsWithClientRuntime(ctx context.Context, cfg v3AttachConfig, logPath string, _ *slog.Logger) (*clientprotocol.ApplicationClient, func(), error) {

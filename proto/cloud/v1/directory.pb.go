@@ -66,6 +66,68 @@ func (x *BeginClientRouteRequest) GetCloudRouteGrant() *SignedEnvelope {
 	return nil
 }
 
+// BeginPairingRouteRequest 只为持有 daemon 签名 bootstrap grant 的未授权客户端建立 pairing-only signaling。
+// Controller 只接收 claim 摘要，不接收二维码中的 128-bit claim 本体。
+type BeginPairingRouteRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PairingRouteGrant *SignedEnvelope        `protobuf:"bytes,1,opt,name=pairing_route_grant,json=pairingRouteGrant,proto3" json:"pairing_route_grant,omitempty"`
+	ClientPublicKey   []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	Product           ClientProduct          `protobuf:"varint,3,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *BeginPairingRouteRequest) Reset() {
+	*x = BeginPairingRouteRequest{}
+	mi := &file_cloud_v1_directory_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginPairingRouteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginPairingRouteRequest) ProtoMessage() {}
+
+func (x *BeginPairingRouteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_directory_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginPairingRouteRequest.ProtoReflect.Descriptor instead.
+func (*BeginPairingRouteRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_directory_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BeginPairingRouteRequest) GetPairingRouteGrant() *SignedEnvelope {
+	if x != nil {
+		return x.PairingRouteGrant
+	}
+	return nil
+}
+
+func (x *BeginPairingRouteRequest) GetClientPublicKey() []byte {
+	if x != nil {
+		return x.ClientPublicKey
+	}
+	return nil
+}
+
+func (x *BeginPairingRouteRequest) GetProduct() ClientProduct {
+	if x != nil {
+		return x.Product
+	}
+	return ClientProduct_CLIENT_PRODUCT_UNSPECIFIED
+}
+
 type ResolveClientRouteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ChallengeId   string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
@@ -77,7 +139,7 @@ type ResolveClientRouteRequest struct {
 
 func (x *ResolveClientRouteRequest) Reset() {
 	*x = ResolveClientRouteRequest{}
-	mi := &file_cloud_v1_directory_proto_msgTypes[1]
+	mi := &file_cloud_v1_directory_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -89,7 +151,7 @@ func (x *ResolveClientRouteRequest) String() string {
 func (*ResolveClientRouteRequest) ProtoMessage() {}
 
 func (x *ResolveClientRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_directory_proto_msgTypes[1]
+	mi := &file_cloud_v1_directory_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -102,7 +164,7 @@ func (x *ResolveClientRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveClientRouteRequest.ProtoReflect.Descriptor instead.
 func (*ResolveClientRouteRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_directory_proto_rawDescGZIP(), []int{1}
+	return file_cloud_v1_directory_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ResolveClientRouteRequest) GetChallengeId() string {
@@ -136,7 +198,7 @@ type ResolveClientRouteResponse struct {
 
 func (x *ResolveClientRouteResponse) Reset() {
 	*x = ResolveClientRouteResponse{}
-	mi := &file_cloud_v1_directory_proto_msgTypes[2]
+	mi := &file_cloud_v1_directory_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -148,7 +210,7 @@ func (x *ResolveClientRouteResponse) String() string {
 func (*ResolveClientRouteResponse) ProtoMessage() {}
 
 func (x *ResolveClientRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_directory_proto_msgTypes[2]
+	mi := &file_cloud_v1_directory_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -161,7 +223,7 @@ func (x *ResolveClientRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveClientRouteResponse.ProtoReflect.Descriptor instead.
 func (*ResolveClientRouteResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_directory_proto_rawDescGZIP(), []int{2}
+	return file_cloud_v1_directory_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ResolveClientRouteResponse) GetClientTicket() *SignedEnvelope {
@@ -182,9 +244,13 @@ var File_cloud_v1_directory_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_directory_proto_rawDesc = "" +
 	"\n" +
-	"\x18cloud/v1/directory.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x19cloud/v1/enrollment.proto\"f\n" +
+	"\x18cloud/v1/directory.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x19cloud/v1/enrollment.proto\x1a\x16cloud/v1/runtime.proto\"f\n" +
 	"\x17BeginClientRouteRequest\x12K\n" +
-	"\x11cloud_route_grant\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\x0fcloudRouteGrant\"\x80\x01\n" +
+	"\x11cloud_route_grant\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\x0fcloudRouteGrant\"\xd1\x01\n" +
+	"\x18BeginPairingRouteRequest\x12O\n" +
+	"\x13pairing_route_grant\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\x11pairingRouteGrant\x12*\n" +
+	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x128\n" +
+	"\aproduct\x18\x03 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\"\x80\x01\n" +
 	"\x19ResolveClientRouteRequest\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1d\n" +
 	"\n" +
@@ -192,9 +258,10 @@ const file_cloud_v1_directory_proto_rawDesc = "" +
 	"\fclient_proof\x18\x03 \x01(\fR\vclientProof\"\x96\x01\n" +
 	"\x1aResolveClientRouteResponse\x12D\n" +
 	"\rclient_ticket\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\fclientTicket\x122\n" +
-	"\x04edge\x18\x02 \x01(\v2\x1e.muxvia.cloud.v1.CandidateEdgeR\x04edge2\xe3\x01\n" +
+	"\x04edge\x18\x02 \x01(\v2\x1e.muxvia.cloud.v1.CandidateEdgeR\x04edge2\xc7\x02\n" +
 	"\x10DirectoryService\x12`\n" +
-	"\x10BeginClientRoute\x12(.muxvia.cloud.v1.BeginClientRouteRequest\x1a\".muxvia.cloud.v1.IdentityChallenge\x12m\n" +
+	"\x10BeginClientRoute\x12(.muxvia.cloud.v1.BeginClientRouteRequest\x1a\".muxvia.cloud.v1.IdentityChallenge\x12b\n" +
+	"\x11BeginPairingRoute\x12).muxvia.cloud.v1.BeginPairingRouteRequest\x1a\".muxvia.cloud.v1.IdentityChallenge\x12m\n" +
 	"\x12ResolveClientRoute\x12*.muxvia.cloud.v1.ResolveClientRouteRequest\x1a+.muxvia.cloud.v1.ResolveClientRouteResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
@@ -209,28 +276,34 @@ func file_cloud_v1_directory_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_directory_proto_rawDescData
 }
 
-var file_cloud_v1_directory_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_cloud_v1_directory_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_cloud_v1_directory_proto_goTypes = []any{
 	(*BeginClientRouteRequest)(nil),    // 0: muxvia.cloud.v1.BeginClientRouteRequest
-	(*ResolveClientRouteRequest)(nil),  // 1: muxvia.cloud.v1.ResolveClientRouteRequest
-	(*ResolveClientRouteResponse)(nil), // 2: muxvia.cloud.v1.ResolveClientRouteResponse
-	(*SignedEnvelope)(nil),             // 3: muxvia.cloud.v1.SignedEnvelope
-	(*CandidateEdge)(nil),              // 4: muxvia.cloud.v1.CandidateEdge
-	(*IdentityChallenge)(nil),          // 5: muxvia.cloud.v1.IdentityChallenge
+	(*BeginPairingRouteRequest)(nil),   // 1: muxvia.cloud.v1.BeginPairingRouteRequest
+	(*ResolveClientRouteRequest)(nil),  // 2: muxvia.cloud.v1.ResolveClientRouteRequest
+	(*ResolveClientRouteResponse)(nil), // 3: muxvia.cloud.v1.ResolveClientRouteResponse
+	(*SignedEnvelope)(nil),             // 4: muxvia.cloud.v1.SignedEnvelope
+	(ClientProduct)(0),                 // 5: muxvia.cloud.v1.ClientProduct
+	(*CandidateEdge)(nil),              // 6: muxvia.cloud.v1.CandidateEdge
+	(*IdentityChallenge)(nil),          // 7: muxvia.cloud.v1.IdentityChallenge
 }
 var file_cloud_v1_directory_proto_depIdxs = []int32{
-	3, // 0: muxvia.cloud.v1.BeginClientRouteRequest.cloud_route_grant:type_name -> muxvia.cloud.v1.SignedEnvelope
-	3, // 1: muxvia.cloud.v1.ResolveClientRouteResponse.client_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
-	4, // 2: muxvia.cloud.v1.ResolveClientRouteResponse.edge:type_name -> muxvia.cloud.v1.CandidateEdge
-	0, // 3: muxvia.cloud.v1.DirectoryService.BeginClientRoute:input_type -> muxvia.cloud.v1.BeginClientRouteRequest
-	1, // 4: muxvia.cloud.v1.DirectoryService.ResolveClientRoute:input_type -> muxvia.cloud.v1.ResolveClientRouteRequest
-	5, // 5: muxvia.cloud.v1.DirectoryService.BeginClientRoute:output_type -> muxvia.cloud.v1.IdentityChallenge
-	2, // 6: muxvia.cloud.v1.DirectoryService.ResolveClientRoute:output_type -> muxvia.cloud.v1.ResolveClientRouteResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: muxvia.cloud.v1.BeginClientRouteRequest.cloud_route_grant:type_name -> muxvia.cloud.v1.SignedEnvelope
+	4, // 1: muxvia.cloud.v1.BeginPairingRouteRequest.pairing_route_grant:type_name -> muxvia.cloud.v1.SignedEnvelope
+	5, // 2: muxvia.cloud.v1.BeginPairingRouteRequest.product:type_name -> muxvia.cloud.v1.ClientProduct
+	4, // 3: muxvia.cloud.v1.ResolveClientRouteResponse.client_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
+	6, // 4: muxvia.cloud.v1.ResolveClientRouteResponse.edge:type_name -> muxvia.cloud.v1.CandidateEdge
+	0, // 5: muxvia.cloud.v1.DirectoryService.BeginClientRoute:input_type -> muxvia.cloud.v1.BeginClientRouteRequest
+	1, // 6: muxvia.cloud.v1.DirectoryService.BeginPairingRoute:input_type -> muxvia.cloud.v1.BeginPairingRouteRequest
+	2, // 7: muxvia.cloud.v1.DirectoryService.ResolveClientRoute:input_type -> muxvia.cloud.v1.ResolveClientRouteRequest
+	7, // 8: muxvia.cloud.v1.DirectoryService.BeginClientRoute:output_type -> muxvia.cloud.v1.IdentityChallenge
+	7, // 9: muxvia.cloud.v1.DirectoryService.BeginPairingRoute:output_type -> muxvia.cloud.v1.IdentityChallenge
+	3, // 10: muxvia.cloud.v1.DirectoryService.ResolveClientRoute:output_type -> muxvia.cloud.v1.ResolveClientRouteResponse
+	8, // [8:11] is the sub-list for method output_type
+	5, // [5:8] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_directory_proto_init() }
@@ -240,13 +313,14 @@ func file_cloud_v1_directory_proto_init() {
 	}
 	file_cloud_v1_common_proto_init()
 	file_cloud_v1_enrollment_proto_init()
+	file_cloud_v1_runtime_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_directory_proto_rawDesc), len(file_cloud_v1_directory_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

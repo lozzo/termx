@@ -27,7 +27,7 @@ type v3PairRouteFlags struct {
 }
 
 // v3PairingRoutes 把普通 flags 与严格 URI 收敛成唯一 generated Route contract。
-// 未指定 Route 时只签入 Direct；Cloud 需要与一个可执行的 Direct/SSH 首次配对入口同时出现。
+// 未指定 Route 时只签入 Direct；显式 Cloud Route 可以作为首次配对 bootstrap。
 func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfigV1, error) {
 	specs := append([]string(nil), flags.Routes...)
 	if len(specs) == 0 {
@@ -85,15 +85,6 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 			return nil, err
 		}
 		routes = append(routes, route)
-	}
-	if hasCloud {
-		hasPairingRoute := false
-		for _, route := range routes {
-			hasPairingRoute = hasPairingRoute || route.GetDirectWebrtcTcp() != nil || route.GetSshWebrtcTcp() != nil
-		}
-		if !hasPairingRoute {
-			return nil, fmt.Errorf("Cloud Route requires a Direct or SSH Route for the initial pairing exchange")
-		}
 	}
 	if len(routes) > 4 {
 		return nil, fmt.Errorf("pair create accepts at most four Routes")

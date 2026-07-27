@@ -88,7 +88,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	identityStore := r5EnrollmentStore{daemon: daemonRecord}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Entitlement: testEntitlementReader{},
-		Store: identityStore, Edges: edges, Directory: directoryState, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
+		Store:       identityStore, Edges: edges, Directory: directoryState, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
 		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
 	})
 	if err != nil {
@@ -96,7 +96,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	}
 	directoryService, err := directoryapi.NewService(directoryapi.Config{
 		Entitlement: testEntitlementReader{},
-		Store: identityStore, Directory: directoryState, Edges: edges, EdgeCACertificate: edgeCAPEM,
+		Store:       identityStore, Directory: directoryState, Edges: edges, EdgeCACertificate: edgeCAPEM,
 		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
 	})
 	if err != nil {
@@ -133,6 +133,19 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 			IssuedAt: timestamppb.New(now.UTC()), ExpiresAt: timestamppb.New(now.UTC().Add(7 * 24 * time.Hour)),
 		}
 		signed, signErr := ticket.SignCloudRouteGrant(daemonIdentity, claims)
+		if signErr != nil {
+			return nil, signErr
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(signed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := accessStore.ConfigureManagedPairingGrantIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, error) {
+		claims := &cloudv1.PairingRouteGrantClaims{
+			GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, DeviceId: daemonIdentity.DeviceID, PairingClaimSha256: append([]byte(nil), claimDigest...),
+			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()),
+		}
+		signed, signErr := ticket.SignPairingRouteGrant(daemonIdentity, claims)
 		if signErr != nil {
 			return nil, signErr
 		}
@@ -182,6 +195,23 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	pairedCredential := pairR5CloudCredential(t, accessStore, daemonIdentity, cloudNetwork, loopbackAPI)
+	pairedDialer := &cloudadapter.Dialer{
+		Peers: pionadapter.Factory{PeerConnections: loopbackAPI.NewPeerConnection}, Cloud: cloudNetwork, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: pairedCredential}},
+	}
+	pairedContext, cancelPaired := context.WithTimeout(context.Background(), 45*time.Second)
+	pairedReady, err := pairedDialer.Connect(pairedContext, r5CloudAttempt(t, daemonIdentity, pairedCredential.EndpointID, 80))
+	if err != nil {
+		cancelPaired()
+		t.Fatalf("connect with credential issued through Cloud pairing: %v", err)
+	}
+	cancelPaired()
+	if err := pairedReady.Close(); err != nil {
+		t.Fatalf("close post-pairing Cloud session: %v", err)
+	}
+	eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 0 })
+
 	products := []cloudv1.ClientProduct{cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, cloudv1.ClientProduct_CLIENT_PRODUCT_TUI}
 	var revokedCredential remoteauth.ClientAccessCredential
 	var revokedGrantID string
@@ -230,6 +260,87 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		t.Fatalf("revoked Cloud client error = %v, want daemon precheck rejection", err)
 	}
 	eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 0 })
+}
+
+func pairR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonIdentity remoteauth.Identity, network *cloudclient.Client, api *pionwebrtc.API) remoteauth.ClientAccessCredential {
+	t.Helper()
+	const endpointID = "cloud-r5-paired"
+	issued, err := store.IssuePairingClaim(remoteauth.PairingIssueOptions{
+		Scope: remoteauth.FullDaemonScope(), TicketTTL: time.Minute, GrantLifetime: time.Hour,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{
+			SchemaVersion: 1, RouteId: "cloud", Enabled: true,
+			Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{TargetDeviceId: daemonIdentity.DeviceID, RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := remoteauth.PairingClaimEndpointCandidate(issued.Offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity(endpointID, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := remoteauth.NewPrivateClientAccessSigner(clientIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := candidate.Routes[0]
+	route.CredentialRef = "credential:" + endpointID
+	route.RelayMode = endpoint.RelayDirect
+	target := endpoint.Endpoint{
+		ID: endpointID, DaemonIdentity: candidate.Identity,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{route.ID: route},
+	}
+	attempt, err := clientruntime.NewAttemptRequest(target, route.ID, 70, clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairContext, cancelPair := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancelPair()
+	paired, err := (&cloudadapter.PairingConnector{
+		Peers: pionadapter.Factory{PeerConnections: api.NewPeerConnection}, Cloud: network, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, Now: time.Now,
+	}).Redeem(pairContext, attempt, remoteauth.ClientPairingRequest{
+		ExpectedDeviceID: daemonIdentity.DeviceID, ExpectedDeviceFingerprint: daemonIdentity.Fingerprint,
+		PairingClaimOffer: issued.OfferPayload, Identity: clientIdentity, Signer: signer, ClientLabel: "cloud-pairing-e2e", ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI),
+	})
+	if err != nil {
+		t.Fatalf("pair through Cloud bootstrap: %v", err)
+	}
+	if paired.Grant == "" || len(paired.CloudRouteGrant) == 0 || len(paired.Bundle) == 0 || !store.AllowsClientPublicKey(clientIdentity.PublicKey, time.Now().UTC()) {
+		t.Fatalf("Cloud pairing result is incomplete: %#v", paired)
+	}
+	intruderIdentity, err := remoteauth.GenerateClientAccessIdentity("cloud-r5-intruder", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intruderSigner, err := remoteauth.NewPrivateClientAccessSigner(intruderIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intruderRoute := route
+	intruderRoute.CredentialRef = "credential:cloud-r5-intruder"
+	intruderTarget := endpoint.Endpoint{ID: "cloud-r5-intruder", DaemonIdentity: candidate.Identity, Routes: map[endpoint.RouteID]endpoint.AccessRoute{intruderRoute.ID: intruderRoute}}
+	intruderAttempt, err := clientruntime.NewAttemptRequest(intruderTarget, intruderRoute.ID, 71, clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intruderContext, cancelIntruder := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelIntruder()
+	_, err = (&cloudadapter.PairingConnector{
+		Peers: pionadapter.Factory{PeerConnections: api.NewPeerConnection}, Cloud: network, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, Now: time.Now,
+	}).Redeem(intruderContext, intruderAttempt, remoteauth.ClientPairingRequest{
+		ExpectedDeviceID: daemonIdentity.DeviceID, ExpectedDeviceFingerprint: daemonIdentity.Fingerprint,
+		PairingClaimOffer: issued.OfferPayload, Identity: intruderIdentity, Signer: intruderSigner, ClientLabel: "cloud-pairing-intruder", ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI),
+	})
+	if err == nil || !strings.Contains(err.Error(), "PAIRING_CLAIM_INVALID") {
+		t.Fatalf("bound Cloud pairing claim admitted another client: %v", err)
+	}
+	return remoteauth.ClientAccessCredential{
+		Version: 1, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant, UpdatedAt: time.Now().UTC(),
+	}
 }
 
 func issueR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonIdentity remoteauth.Identity, endpointID string, product cloudv1.ClientProduct) (remoteauth.ClientAccessCredential, string) {

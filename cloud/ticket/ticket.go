@@ -15,13 +15,15 @@ import (
 )
 
 const (
-	agentTicketDomain      = "muxvia.cloud.agent-ticket.v1\x00"
-	agentProofDomain       = "muxvia.cloud.agent-hello-proof.v1\x00"
-	cloudRouteGrantDomain  = "muxvia.cloud.route-grant.v1\x00"
-	clientTicketDomain     = "muxvia.cloud.client-ticket.v1\x00"
-	clientRouteProofDomain = "muxvia.cloud.client-route-proof.v1\x00"
-	clientHelloProofDomain = "muxvia.cloud.client-hello-proof.v1\x00"
-	relayLeaseDomain       = "muxvia.cloud.relay-lease.v1\x00"
+	agentTicketDomain       = "muxvia.cloud.agent-ticket.v1\x00"
+	agentProofDomain        = "muxvia.cloud.agent-hello-proof.v1\x00"
+	cloudRouteGrantDomain   = "muxvia.cloud.route-grant.v1\x00"
+	pairingRouteGrantDomain = "muxvia.cloud.pairing-route-grant.v1\x00"
+	clientTicketDomain      = "muxvia.cloud.client-ticket.v1\x00"
+	clientRouteProofDomain  = "muxvia.cloud.client-route-proof.v1\x00"
+	pairingRouteProofDomain = "muxvia.cloud.pairing-route-proof.v1\x00"
+	clientHelloProofDomain  = "muxvia.cloud.client-hello-proof.v1\x00"
+	relayLeaseDomain        = "muxvia.cloud.relay-lease.v1\x00"
 )
 
 // KeySet 是 Edge 当前从 EdgeWelcome 获得的只读 Controller 票据公钥集合。
@@ -146,6 +148,41 @@ func VerifyCloudRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed2
 	return claims, nil
 }
 
+// SignPairingRouteGrant 使用 daemon DeviceIdentity 签发不包含 claim 本体的 Cloud bootstrap grant。
+func SignPairingRouteGrant(identity remoteauth.Identity, claims *cloudv1.PairingRouteGrantClaims) (*cloudv1.SignedEnvelope, error) {
+	if err := identity.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validatePairingRouteGrant(claims, time.Time{}); err != nil {
+		return nil, err
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.SignedEnvelope{KeyId: identity.Fingerprint, Payload: payload, Signature: ed25519.Sign(identity.PrivateKey, signingBytes(pairingRouteGrantDomain, payload))}, nil
+}
+
+// VerifyPairingRouteGrant 使用 Controller 持久化的 daemon identity 验证 bootstrap grant。
+func VerifyPairingRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed25519.PublicKey, expectedDaemonID string, now time.Time) (*cloudv1.PairingRouteGrantClaims, error) {
+	if envelope == nil || len(daemonPublicKey) != ed25519.PublicKeySize || len(envelope.GetSignature()) != ed25519.SignatureSize ||
+		strings.TrimSpace(envelope.GetKeyId()) != remoteauth.Fingerprint(daemonPublicKey) ||
+		!ed25519.Verify(daemonPublicKey, signingBytes(pairingRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature()) {
+		return nil, errors.New("PairingRouteGrant signature is invalid")
+	}
+	claims := &cloudv1.PairingRouteGrantClaims{}
+	if err := proto.Unmarshal(envelope.GetPayload(), claims); err != nil {
+		return nil, errors.New("PairingRouteGrant payload is invalid")
+	}
+	if err := validatePairingRouteGrant(claims, now); err != nil {
+		return nil, err
+	}
+	if claims.GetDaemonId() != strings.TrimSpace(expectedDaemonID) {
+		return nil, errors.New("PairingRouteGrant targets another daemon")
+	}
+	return claims, nil
+}
+
 // ClientRouteProofBytes 返回 ClientAccessIdentity 对 Controller challenge 的 canonical 签名输入。
 func ClientRouteProofBytes(challengeID string, challenge []byte, grant *cloudv1.SignedEnvelope, requestID string) ([]byte, error) {
 	if strings.TrimSpace(challengeID) == "" || len(challenge) == 0 || grant == nil || strings.TrimSpace(requestID) == "" {
@@ -167,6 +204,21 @@ func VerifyClientRouteProof(publicKey []byte, signature []byte, canonical []byte
 		return errors.New("client route proof is invalid")
 	}
 	return nil
+}
+
+// PairingRouteProofBytes 把客户端 proof 绑定到短期 pairing offer 与本次 Controller challenge。
+func PairingRouteProofBytes(challengeID string, challenge []byte, grant *cloudv1.SignedEnvelope, requestID string) ([]byte, error) {
+	if strings.TrimSpace(challengeID) == "" || len(challenge) == 0 || grant == nil || strings.TrimSpace(requestID) == "" {
+		return nil, errors.New("pairing route proof input is incomplete")
+	}
+	digest := sha256.Sum256(grant.GetPayload())
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.PairingRouteProofInput{
+		ChallengeId: strings.TrimSpace(challengeID), Challenge: append([]byte(nil), challenge...), PairingRouteGrantPayloadSha256: digest[:], RequestId: strings.TrimSpace(requestID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return signingBytes(pairingRouteProofDomain, payload), nil
 }
 
 // SignClientTicket 使用 Controller TicketSigner 签发只绑定一次 P2P 信令 attempt 的短票据。
@@ -315,6 +367,17 @@ func validateCloudRouteGrant(claims *cloudv1.CloudRouteGrantClaims, now time.Tim
 	return nil
 }
 
+func validatePairingRouteGrant(claims *cloudv1.PairingRouteGrantClaims, now time.Time) error {
+	if claims == nil || strings.TrimSpace(claims.GetGrantId()) == "" || strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetDeviceId()) == "" || len(claims.GetPairingClaimSha256()) != sha256.Size ||
+		claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 24*time.Hour {
+		return errors.New("PairingRouteGrant claims are incomplete")
+	}
+	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(30*time.Second)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-30*time.Second))) {
+		return errors.New("PairingRouteGrant is outside its validity window")
+	}
+	return nil
+}
+
 func validateClientTicket(claims *cloudv1.ClientTicketClaims, now time.Time, skew time.Duration) error {
 	if claims == nil || strings.TrimSpace(claims.GetTicketId()) == "" || strings.TrimSpace(claims.GetAccountId()) == "" || strings.TrimSpace(claims.GetEdgeId()) == "" ||
 		strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetClientId()) == "" || len(claims.GetClientPublicKey()) != ed25519.PublicKeySize ||
@@ -322,6 +385,18 @@ func validateClientTicket(claims *cloudv1.ClientTicketClaims, now time.Time, ske
 		(claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY && claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY) ||
 		claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 2*time.Minute {
 		return errors.New("ClientTicket claims are incomplete")
+	}
+	switch claims.GetAccessMode() {
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
+		if len(claims.GetPairingClaimSha256()) != 0 {
+			return errors.New("capability ClientTicket contains pairing state")
+		}
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
+		if len(claims.GetPairingClaimSha256()) != sha256.Size {
+			return errors.New("pairing ClientTicket claim digest is invalid")
+		}
+	default:
+		return errors.New("ClientTicket access mode is invalid")
 	}
 	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-skew))) {
 		return errors.New("ClientTicket is outside its validity window")

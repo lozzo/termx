@@ -17,6 +17,14 @@ enum ClientProduct {
   CLIENT_PRODUCT_DESKTOP_GUI = 5;
 }
 
+// CloudClientAccessMode 区分普通 capability signaling 与只允许首次配对的 bootstrap signaling。
+// PAIRING 只负责建立 PairingExchange DataChannel，不能表达 terminal 权限。
+enum CloudClientAccessMode {
+  CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED = 0;
+  CLOUD_CLIENT_ACCESS_MODE_CAPABILITY = 1;
+  CLOUD_CLIENT_ACCESS_MODE_PAIRING = 2;
+}
+
 // AgentPresence 是 Edge 内存中一个已认证 daemon 连接的实时投影。
 // R2 只由测试事件生成；R4 才由真实 AgentGateway 写入。
 message AgentPresence {
@@ -38,6 +46,7 @@ message ClientSessionSummary {
   string client_id = 4;
   ClientProduct product = 5;
   uint64 generation = 6;
+  CloudClientAccessMode access_mode = 7;
 }
 
 // RelayAllocationSummary 是 Edge 内存 runtime 的脱敏 allocation 投影。

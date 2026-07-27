@@ -58,14 +58,21 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	if store == nil {
 		return PairingClaimIssueResult{}, fmt.Errorf("client access store is nil")
 	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.ensureOpenLocked(); err != nil {
+		return PairingClaimIssueResult{}, err
+	}
 	if len(options.Routes) == 0 {
 		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires at least one Direct, SSH, or Cloud pairing Route", ErrPairingClaimMalformed)
 	}
-	randomSource := options.Random
-	if randomSource == nil {
-		randomSource = store.random
+	if options.Now.IsZero() {
+		options.Now = store.now().UTC()
 	}
-	claim, digest, err := store.reservePairingClaim(randomSource)
+	if options.Random == nil {
+		options.Random = store.random
+	}
+	claim, digest, err := store.reservePairingClaim(options.Random)
 	if err != nil {
 		return PairingClaimIssueResult{}, err
 	}
@@ -79,7 +86,7 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 		store.pairingClaimsMu.Unlock()
 	}()
 
-	bundle, claims, err := store.IssuePairingBundle(options)
+	bundle, claims, err := issuePairingBundle(store.identity, options)
 	if err != nil {
 		return PairingClaimIssueResult{}, err
 	}
@@ -91,6 +98,24 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	if len(seeds) == 0 {
 		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires at least one Direct, SSH, or Cloud pairing Route", ErrPairingClaimMalformed)
 	}
+	managedPairingIssuer := store.managedPairingGrantIssuer
+	for _, seed := range seeds {
+		managed := seed.GetManagedWebrtc()
+		if managed == nil {
+			continue
+		}
+		if managedPairingIssuer == nil {
+			return PairingClaimIssueResult{}, errors.New("managed pairing grant issuer is unavailable")
+		}
+		grant, grantErr := managedPairingIssuer(append([]byte(nil), digest[:]...), claims.ExpiresAt, claims.IssuedAt)
+		if grantErr != nil {
+			return PairingClaimIssueResult{}, fmt.Errorf("issue managed pairing grant: %w", grantErr)
+		}
+		if len(grant) == 0 {
+			return PairingClaimIssueResult{}, errors.New("managed pairing grant issuer returned an empty grant")
+		}
+		managed.BootstrapGrant = append([]byte(nil), grant...)
+	}
 	offer := &remoteauthpb.PairingClaimOfferV1{
 		SchemaVersion:     PairingClaimOfferVersion,
 		Claim:             append([]byte(nil), claim...),
@@ -101,6 +126,9 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	}
 	offerPayload, err := EncodePairingClaimOffer(offer)
 	if err != nil {
+		return PairingClaimIssueResult{}, err
+	}
+	if err := store.persistPairingBundleLocked(bundlePayload, claims, options.Now.UTC()); err != nil {
 		return PairingClaimIssueResult{}, err
 	}
 	store.pairingClaimsMu.Lock()
@@ -169,6 +197,33 @@ func (store *AccessStore) ResolvePairingClaimForExchange(payload []byte, clientP
 		return nil, ErrPairingTicketExpired
 	}
 	return append([]byte(nil), record.BundlePayload...), nil
+}
+
+// AllowsPairingClaimDigest 是 Cloud signaling 的只读 precheck。
+// 它只证明 daemon 当前仍持有该 claim；真正的消费、客户端 proof 和 grant 签发仍由 PairingExchange 完成。
+func (store *AccessStore) AllowsPairingClaimDigest(digest []byte, clientPublicKey ed25519.PublicKey, now time.Time) bool {
+	if store == nil || len(digest) != sha256.Size || len(clientPublicKey) != ed25519.PublicKeySize || !store.Available() {
+		return false
+	}
+	if now.IsZero() {
+		now = store.now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	var key [sha256.Size]byte
+	copy(key[:], digest)
+	subject := Fingerprint(clientPublicKey)
+	store.pairingClaimsMu.Lock()
+	defer store.pairingClaimsMu.Unlock()
+	store.compactPairingClaimsLocked(now)
+	record, ok := store.pairingClaims[key]
+	if !ok || len(record.BundlePayload) == 0 || record.ExpiresAt.IsZero() {
+		return false
+	}
+	if record.SubjectKeyFingerprint != "" {
+		return record.SubjectKeyFingerprint == subject && now.Before(record.ExpiresAt.Add(defaultDeliveryGrace))
+	}
+	return !now.After(record.ExpiresAt)
 }
 
 // RedeemPairingClaim 复用 AccessStore 的 PairingTicket 原子消费事务，并在成功后把内存 claim 固定到同一客户端 key。
@@ -287,7 +342,7 @@ func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1, now time
 				return ErrPairingClaimMalformed
 			}
 		case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
-			if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) {
+			if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) || len(route.ManagedWebrtc.GetBootstrapGrant()) == 0 {
 				return ErrPairingClaimMalformed
 			}
 		case *remoteauthpb.PairingRouteSeed_SshWebrtcTcp:

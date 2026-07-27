@@ -3403,10 +3403,12 @@ func (x *PairingDirectRouteSeed) GetServerName() string {
 	return ""
 }
 
-// PairingManagedRouteSeed 只标识 Cloud signaling 中的 owning daemon；账号和 token 仍来自客户端本地 Cloud session。
+// PairingManagedRouteSeed 标识 Cloud signaling 中的 owning daemon，并携带 daemon 签名的短期 bootstrap grant。
+// grant 只包含 claim 摘要；128-bit claim 本体仍只在端到端 PairingExchange 内发送。
 type PairingManagedRouteSeed struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TargetDeviceId string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	BootstrapGrant []byte                 `protobuf:"bytes,2,opt,name=bootstrap_grant,json=bootstrapGrant,proto3" json:"bootstrap_grant,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -3446,6 +3448,13 @@ func (x *PairingManagedRouteSeed) GetTargetDeviceId() string {
 		return x.TargetDeviceId
 	}
 	return ""
+}
+
+func (x *PairingManagedRouteSeed) GetBootstrapGrant() []byte {
+	if x != nil {
+		return x.BootstrapGrant
+	}
+	return nil
 }
 
 // PairingSSHRouteSeed 只携带建立首个 SSH tunnel pairing peer 所需的公开连接信息。
@@ -5345,9 +5354,10 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11signaling_address\x18\x01 \x01(\tR\x10signalingAddress\x12&\n" +
 	"\x0fice_tcp_address\x18\x02 \x01(\tR\riceTcpAddress\x12\x1f\n" +
 	"\vserver_name\x18\x03 \x01(\tR\n" +
-	"serverName\"C\n" +
+	"serverName\"l\n" +
 	"\x17PairingManagedRouteSeed\x12(\n" +
-	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\"\xeb\x02\n" +
+	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12'\n" +
+	"\x0fbootstrap_grant\x18\x02 \x01(\fR\x0ebootstrapGrant\"\xeb\x02\n" +
 	"\x13PairingSSHRouteSeed\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x12\n" +

@@ -61,6 +61,19 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 	}); err != nil {
 		return nil, err
 	}
+	if err := accessStore.ConfigureManagedPairingGrantIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, error) {
+		claims := &cloudv1.PairingRouteGrantClaims{
+			GrantId: uuid.NewString(), DaemonId: record.DaemonID, DeviceId: identity.DeviceID, PairingClaimSha256: append([]byte(nil), claimDigest...),
+			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()),
+		}
+		envelope, err := ticket.SignPairingRouteGrant(identity, claims)
+		if err != nil {
+			return nil, err
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+	}); err != nil {
+		return nil, err
+	}
 	answerer := webrtc.Answerer{
 		Handler:        remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore},
 		OnSessionStart: onSessionStart,
@@ -267,10 +280,10 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 				failures <- errors.New("Edge client authorization command is invalid")
 				return
 			}
-			allowed := runtime.config.AccessStore.AllowsClientPublicKey(ed25519.PublicKey(authorize.GetClientPublicKey()), time.Now().UTC())
+			allowed := runtime.allowsCloudAccess(authorize.GetClientPublicKey(), authorize.GetAccessMode(), authorize.GetPairingClaimSha256(), time.Now().UTC())
 			result := &cloudv1.AgentAuthorizationResult{CorrelationId: authorize.GetCorrelationId(), SessionId: authorize.GetSessionId(), Authorized: allowed}
 			if !allowed {
-				result.Code, result.Message = "CLIENT_REVOKED", "client access is not active"
+				result.Code, result.Message = cloudAccessRejection(authorize.GetAccessMode())
 			}
 			response = &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Authorization{Authorization: result}}
 		case command.GetOffer() != nil:
@@ -299,8 +312,9 @@ func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOff
 	reject := func(code, message string) *cloudv1.AgentEvent {
 		return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Rejected{Rejected: &cloudv1.AgentSignalRejected{CorrelationId: offer.GetCorrelationId(), SessionId: offer.GetSessionId(), Code: code, Message: message}}}
 	}
-	if !runtime.config.AccessStore.AllowsClientPublicKey(ed25519.PublicKey(offer.GetClientPublicKey()), time.Now().UTC()) {
-		return reject("CLIENT_REVOKED", "client access is not active")
+	if !runtime.allowsCloudAccess(offer.GetClientPublicKey(), offer.GetAccessMode(), offer.GetPairingClaimSha256(), time.Now().UTC()) {
+		code, message := cloudAccessRejection(offer.GetAccessMode())
+		return reject(code, message)
 	}
 	candidates := make([]webrtc.ICECandidate, 0, len(offer.GetCandidates()))
 	for _, candidate := range offer.GetCandidates() {
@@ -324,6 +338,28 @@ func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOff
 		wireCandidates = append(wireCandidates, &cloudv1.CloudICECandidate{Candidate: candidate.Candidate, SdpMid: candidate.SDPMid, SdpMlineIndex: candidate.SDPMLineIndex, UsernameFragment: candidate.UsernameFragment})
 	}
 	return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Answer{Answer: &cloudv1.AgentAnswer{CorrelationId: offer.GetCorrelationId(), SessionId: offer.GetSessionId(), AnswerSdp: answer.SDP, Candidates: wireCandidates}}}
+}
+
+func (runtime *Runtime) allowsCloudAccess(clientPublicKey []byte, mode cloudv1.CloudClientAccessMode, pairingClaimDigest []byte, now time.Time) bool {
+	if runtime == nil || runtime.config.AccessStore == nil || len(clientPublicKey) != ed25519.PublicKeySize {
+		return false
+	}
+	publicKey := ed25519.PublicKey(clientPublicKey)
+	switch mode {
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
+		return len(pairingClaimDigest) == 0 && runtime.config.AccessStore.AllowsClientPublicKey(publicKey, now)
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
+		return runtime.config.AccessStore.AllowsPairingClaimDigest(pairingClaimDigest, publicKey, now)
+	default:
+		return false
+	}
+}
+
+func cloudAccessRejection(mode cloudv1.CloudClientAccessMode) (string, string) {
+	if mode == cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY {
+		return "CLIENT_REVOKED", "client access is not active"
+	}
+	return "PAIRING_CLAIM_INVALID", "pairing claim is not active"
 }
 
 func selectCandidate(ctx context.Context, candidates []*cloudv1.CandidateEdge) (*cloudv1.CandidateEdge, error) {
