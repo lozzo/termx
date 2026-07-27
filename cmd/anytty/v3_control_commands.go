@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	clientendpoint "github.com/anytty/anytty/client/endpoint"
 	"github.com/anytty/anytty/proto/apipb"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -96,11 +96,17 @@ func v3LsCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			logger.Info("listed core-v2 terminals", "count", len(list.Terminals))
+			rows := make([][]string, 0, len(list.Terminals))
 			for _, item := range list.Terminals {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%dx%d\n",
-					item.GetRef().GetTerminalId(), item.GetName(), strings.Join(item.GetCommand(), " "), terminalStateString(item.GetState()), item.GetSize().GetCols(), item.GetSize().GetRows())
+				rows = append(rows, []string{
+					item.GetRef().GetTerminalId(),
+					item.GetName(),
+					terminalStateString(item.GetState()),
+					fmt.Sprintf("%dx%d", item.GetSize().GetCols(), item.GetSize().GetRows()),
+					strings.Join(item.GetCommand(), " "),
+				})
 			}
-			return nil
+			return writeCLITable(cmd.OutOrStdout(), []string{"ID", "NAME", "STATE", "SIZE", "COMMAND"}, rows)
 		},
 	}
 }

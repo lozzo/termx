@@ -49,8 +49,11 @@ func v3AccessIdentityCommand(socket *string, logFile *string) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\nFingerprint: %s\nPublic key: %s\n", view.DeviceID, view.DeviceFingerprint, view.DevicePublicKey)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Device", Value: view.DeviceID},
+				cliField{Label: "Fingerprint", Value: view.DeviceFingerprint},
+				cliField{Label: "Public key", Value: view.DevicePublicKey},
+			)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -83,15 +86,15 @@ func v3AccessListCommand(socket *string, logFile *string) *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), "No client access grants")
 				return nil
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "GRANT\tCLIENT\tSUBJECT\tEXPIRES\tSTATE")
+			rows := make([][]string, 0, len(result.GetRecords()))
 			for _, record := range result.GetRecords() {
 				state := "active"
 				if record.GetRevokedAtUnixNano() != 0 {
 					state = "revoked"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", record.GetGrantId(), record.GetClientLabel(), record.GetSubjectKeyFingerprint(), formatTerminalTime(time.Unix(0, record.GetExpiresAtUnixNano()).UTC()), state)
+				rows = append(rows, []string{record.GetGrantId(), record.GetClientLabel(), state, formatTerminalTime(time.Unix(0, record.GetExpiresAtUnixNano()).UTC()), record.GetSubjectKeyFingerprint()})
 			}
-			return nil
+			return writeCLITable(cmd.OutOrStdout(), []string{"GRANT", "CLIENT", "STATE", "EXPIRES", "SUBJECT"}, rows)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")

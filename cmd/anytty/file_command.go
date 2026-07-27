@@ -159,11 +159,11 @@ func newFileListCommand(runtime *fileCommandRuntime) *cobra.Command {
 					NextCursor    string          `json:"next_cursor,omitempty"`
 				}{1, "file_list", string(endpoint.ID), path, entries, next})
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "TYPE\tSIZE\tMODIFIED\tNAME")
+			rows := make([][]string, 0, len(entries))
 			for _, entry := range entries {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%d\t%s\t%s\n", entry.Type, entry.Size, entry.ModifiedAt, entry.Name)
+				rows = append(rows, []string{entry.Type, fmt.Sprintf("%d", entry.Size), entry.ModifiedAt, entry.Name})
 			}
-			return nil
+			return writeCLITable(cmd.OutOrStdout(), []string{"TYPE", "SIZE", "MODIFIED", "NAME"}, rows)
 		},
 	}
 	command.Flags().StringVar(&cursor, "cursor", "", "daemon-issued pagination cursor")
@@ -198,8 +198,13 @@ func newFileStatCommand(runtime *fileCommandRuntime) *cobra.Command {
 					Item          fileEntryView `json:"item"`
 				}{1, "file_stat", string(endpoint.ID), view})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Path: %s\nType: %s\nSize: %d\nMode: %04o\nModified: %s\n", view.Path, view.Type, view.Size, view.Mode, view.ModifiedAt)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Path", Value: view.Path},
+				cliField{Label: "Type", Value: view.Type},
+				cliField{Label: "Size", Value: fmt.Sprintf("%d bytes", view.Size)},
+				cliField{Label: "Mode", Value: fmt.Sprintf("%04o", view.Mode)},
+				cliField{Label: "Modified", Value: view.ModifiedAt},
+			)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -424,12 +429,16 @@ func writeFileOperationResults(cmd *cobra.Command, endpointID endpointdomain.End
 			return err
 		}
 	} else {
+		rows := make([][]string, 0, len(views))
 		for _, view := range views {
 			status := "ok"
 			if !view.Success {
 				status = view.ErrorCode + ": " + view.Error
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", view.Path, view.TargetPath, status)
+			rows = append(rows, []string{view.Path, view.TargetPath, status})
+		}
+		if err := writeCLITable(cmd.OutOrStdout(), []string{"PATH", "TARGET", "STATUS"}, rows); err != nil {
+			return err
 		}
 	}
 	if failures > 0 {

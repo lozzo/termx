@@ -52,8 +52,12 @@ func newConfigPathsCommand(configPath, socket, logFile *string) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "config\t%s\nsocket\t%s\nlog\t%s\nhistory\t%s\n", view.Config, view.Socket, view.Log, view.History)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Config", Value: view.Config},
+				cliField{Label: "Socket", Value: view.Socket},
+				cliField{Label: "Log", Value: view.Log},
+				cliField{Label: "History", Value: view.History},
+			)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")

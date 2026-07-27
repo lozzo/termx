@@ -106,8 +106,12 @@ func v3PairInspectCommand() *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\nFingerprint: %s\nTicket ID: %s\nExpires: %s\n", view.DeviceID, view.DeviceFingerprint, view.TicketID, view.ExpiresAt)
-			return nil
+			return writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "Device", Value: view.DeviceID},
+				cliField{Label: "Fingerprint", Value: view.DeviceFingerprint},
+				cliField{Label: "Ticket ID", Value: view.TicketID},
+				cliField{Label: "Expires", Value: view.ExpiresAt},
+			)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print redacted machine-readable JSON")

@@ -601,22 +601,26 @@ func terminalStateString(value apipb.TerminalState) string {
 }
 
 func writeTerminalTable(writer io.Writer, views []terminalView, noHeader bool) error {
-	if !noHeader {
-		if _, err := fmt.Fprintln(writer, "TARGET\tNAME\tSTATE\tSIZE\tCOMMAND"); err != nil {
-			return err
-		}
-	}
+	rows := make([][]string, 0, len(views))
 	for _, view := range views {
-		if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%dx%d\t%s\n", view.Target, view.Name, view.State, view.Cols, view.Rows, strings.Join(view.Command, " ")); err != nil {
-			return err
-		}
+		rows = append(rows, []string{view.Target, view.Name, view.State, fmt.Sprintf("%dx%d", view.Cols, view.Rows), strings.Join(view.Command, " ")})
 	}
-	return nil
+	var header []string
+	if !noHeader {
+		header = []string{"TARGET", "NAME", "STATE", "SIZE", "COMMAND"}
+	}
+	return writeCLITable(writer, header, rows)
 }
 
 func writeTerminalDetail(writer io.Writer, view terminalView) error {
-	_, err := fmt.Fprintf(writer, "Target: %s\nName: %s\nState: %s\nCommand: %s\nCWD: %s\nSize: %dx%d\n", view.Target, view.Name, view.State, strings.Join(view.Command, " "), view.CWD, view.Cols, view.Rows)
-	return err
+	return writeCLIFields(writer,
+		cliField{Label: "Target", Value: view.Target},
+		cliField{Label: "Name", Value: view.Name},
+		cliField{Label: "State", Value: view.State},
+		cliField{Label: "Command", Value: strings.Join(view.Command, " ")},
+		cliField{Label: "CWD", Value: view.CWD},
+		cliField{Label: "Size", Value: fmt.Sprintf("%dx%d", view.Cols, view.Rows)},
+	)
 }
 
 func terminalMatchesTags(item *apipb.TerminalInfo, filters []string) bool {

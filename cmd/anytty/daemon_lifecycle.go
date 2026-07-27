@@ -333,12 +333,15 @@ func newDaemonStatusCommand(socket, logFile, configPath *string) *cobra.Command 
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(status)
 			}
+			fields := []cliField{{Label: "State", Value: status.State}}
 			if status.PID > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Daemon %s (pid %d)\nSocket: %s\nLog: %s\n", status.State, status.PID, status.SocketPath, status.LogPath)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Daemon %s\nSocket: %s\nLog: %s\n", status.State, status.SocketPath, status.LogPath)
+				fields = append(fields, cliField{Label: "PID", Value: fmt.Sprintf("%d", status.PID)})
 			}
-			return nil
+			fields = append(fields,
+				cliField{Label: "Socket", Value: status.SocketPath},
+				cliField{Label: "Log", Value: status.LogPath},
+			)
+			return writeCLIFields(cmd.OutOrStdout(), fields...)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -423,7 +426,14 @@ func newDaemonDoctorCommand(socket, logFile, configPath *string) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "state\t%s\nsocket\t%s\nrecord\t%s\nlog\t%s\n", status.State, status.SocketPath, daemonRecordPath(status.SocketPath), status.LogPath)
+			if err := writeCLIFields(cmd.OutOrStdout(),
+				cliField{Label: "State", Value: status.State},
+				cliField{Label: "Socket", Value: status.SocketPath},
+				cliField{Label: "Record", Value: daemonRecordPath(status.SocketPath)},
+				cliField{Label: "Log", Value: status.LogPath},
+			); err != nil {
+				return err
+			}
 			if status.State != "running" {
 				return &cliError{code: 6, message: "daemon is not running"}
 			}

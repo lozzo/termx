@@ -80,6 +80,10 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 			t.Fatalf("endpoint list missing %s: %s", expected, listing)
 		}
 	}
+	humanListing := run("endpoint", "list")
+	if strings.Contains(humanListing, "\t") || !strings.Contains(humanListing, "STATUS") || !strings.Contains(humanListing, "DEFAULT") || !strings.Contains(humanListing, "West build host") {
+		t.Fatalf("endpoint human list is not aligned table output:\n%s", humanListing)
+	}
 	shown := run("endpoint", "show", "west", "--json")
 	if !strings.Contains(shown, `"label":"West build host"`) || !strings.Contains(shown, `"credential_ref":"ssh:west"`) {
 		t.Fatalf("unexpected endpoint show: %s", shown)

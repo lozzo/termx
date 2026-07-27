@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -156,15 +157,23 @@ func newEndpointListCommand(runtime *endpointCommandRuntime) *cobra.Command {
 					Items         []endpointView `json:"items"`
 				}{2, "endpoint_list", views})
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "ID\tLABEL\tROUTES\tENABLED\tDEFAULT")
+			rows := make([][]string, 0, len(views))
 			for _, view := range views {
 				kinds := make([]string, 0, len(view.Routes))
 				for _, route := range view.Routes {
 					kinds = append(kinds, route.ID+":"+route.Kind)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%t\t%t\n", view.ID, view.Label, strings.Join(kinds, ","), view.Enabled, view.Default)
+				status := "disabled"
+				if view.Enabled {
+					status = "enabled"
+				}
+				isDefault := "-"
+				if view.Default {
+					isDefault = "yes"
+				}
+				rows = append(rows, []string{view.ID, view.Label, status, isDefault, strings.Join(kinds, ", ")})
 			}
-			return nil
+			return writeCLITable(cmd.OutOrStdout(), []string{"ID", "LABEL", "STATUS", "DEFAULT", "ROUTES"}, rows)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -192,14 +201,38 @@ func newEndpointShowCommand(runtime *endpointCommandRuntime) *cobra.Command {
 					Item          endpointView `json:"item"`
 				}{2, "endpoint", view})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "ID: %s\nLabel: %s\nEnabled: %t\nDefault: %t\nConnect mode: %s\n", view.ID, view.Label, view.Enabled, view.Default, view.ConnectMode)
+			fields := []cliField{
+				{Label: "ID", Value: view.ID},
+				{Label: "Label", Value: view.Label},
+				{Label: "Status", Value: map[bool]string{true: "enabled", false: "disabled"}[view.Enabled]},
+				{Label: "Default", Value: map[bool]string{true: "yes", false: "no"}[view.Default]},
+				{Label: "Connect mode", Value: view.ConnectMode},
+			}
 			if view.DeviceFingerprint != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\nFingerprint: %s\n", view.DeviceID, view.DeviceFingerprint)
+				fields = append(fields, cliField{Label: "Device", Value: view.DeviceID}, cliField{Label: "Fingerprint", Value: view.DeviceFingerprint})
 			}
+			if err := writeCLIFields(cmd.OutOrStdout(), fields...); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "\nRoutes")
+			routeRows := make([][]string, 0, len(view.Routes))
 			for _, route := range view.Routes {
-				fmt.Fprintf(cmd.OutOrStdout(), "Route %s: %s enabled=%t manual_only=%t\n", route.ID, route.Kind, route.Enabled, route.ManualOnly)
+				status := "disabled"
+				if route.Enabled {
+					status = "enabled"
+				}
+				mode := "automatic"
+				if route.ManualOnly {
+					mode = "manual"
+				}
+				priority := "full race"
+				if route.Priority != nil {
+					priority = strconv.Itoa(*route.Priority)
+				}
+				relay := strings.Trim(strings.Join([]string{route.RelayMode, route.RelayTransport}, "/"), "/")
+				routeRows = append(routeRows, []string{route.ID, route.Kind, status, mode, priority, relay})
 			}
-			return nil
+			return writeCLITable(cmd.OutOrStdout(), []string{"ID", "KIND", "STATUS", "MODE", "PRIORITY", "RELAY"}, routeRows)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -574,8 +607,7 @@ func newEndpointTestCommand(runtime *endpointCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			printEndpointTestView(cmd, view)
-			return nil
+			return printEndpointTestView(cmd, view)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
@@ -604,28 +636,38 @@ func endpointTestViewFromSnapshot(id endpointdomain.EndpointID, route endpointdo
 	return view
 }
 
-func printEndpointTestView(cmd *cobra.Command, view endpointTestView) {
-	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Endpoint: %s\nState: %s\nRoute: %s (%s)\n", view.ID, view.State, view.RouteID, view.RouteKind)
+func printEndpointTestView(cmd *cobra.Command, view endpointTestView) error {
+	fields := []cliField{
+		{Label: "Endpoint", Value: view.ID},
+		{Label: "State", Value: view.State},
+		{Label: "Route", Value: fmt.Sprintf("%s (%s)", view.RouteID, view.RouteKind)},
+	}
 	if view.ObservedPath != "" {
-		fmt.Fprintf(out, "Path: %s\n", view.ObservedPath)
+		fields = append(fields, cliField{Label: "Path", Value: view.ObservedPath})
 	}
 	if !view.SnapshotAvailable {
-		fmt.Fprintln(out, "Network snapshot: unavailable")
-		return
+		fields = append(fields, cliField{Label: "Network snapshot", Value: "unavailable"})
+		return writeCLIFields(cmd.OutOrStdout(), fields...)
 	}
-	fmt.Fprintf(out, "Local: %s\nRemote: %s\n", formatCLIEndpoint(view.LocalIP, view.LocalPort), formatCLIEndpoint(view.RemoteIP, view.RemotePort))
+	fields = append(fields,
+		cliField{Label: "Local", Value: formatCLIEndpoint(view.LocalIP, view.LocalPort)},
+		cliField{Label: "Remote", Value: formatCLIEndpoint(view.RemoteIP, view.RemotePort)},
+	)
 	if view.RoundTripMillis > 0 {
-		fmt.Fprintf(out, "RTT: %.1f ms\n", view.RoundTripMillis)
+		fields = append(fields, cliField{Label: "RTT", Value: fmt.Sprintf("%.1f ms", view.RoundTripMillis)})
 	}
-	fmt.Fprintf(out, "Candidates: %s / %s\nICE transport: %s / %s\n", emptyCLIValue(view.LocalCandidateType), emptyCLIValue(view.RemoteCandidateType), emptyCLIValue(view.LocalProtocol), emptyCLIValue(view.RemoteProtocol))
+	fields = append(fields,
+		cliField{Label: "Candidates", Value: fmt.Sprintf("%s / %s", emptyCLIValue(view.LocalCandidateType), emptyCLIValue(view.RemoteCandidateType))},
+		cliField{Label: "ICE transport", Value: fmt.Sprintf("%s / %s", emptyCLIValue(view.LocalProtocol), emptyCLIValue(view.RemoteProtocol))},
+	)
 	if view.RelayTransport != "" {
-		fmt.Fprintf(out, "Relay transport: %s\n", view.RelayTransport)
+		fields = append(fields, cliField{Label: "Relay transport", Value: view.RelayTransport})
 	}
 	if view.NetworkClass != "" {
-		fmt.Fprintf(out, "Network: %s\n", view.NetworkClass)
+		fields = append(fields, cliField{Label: "Network", Value: view.NetworkClass})
 	}
-	fmt.Fprintf(out, "Traffic: %d sent / %d received bytes\n", view.BytesSent, view.BytesReceived)
+	fields = append(fields, cliField{Label: "Traffic", Value: fmt.Sprintf("%d sent / %d received bytes", view.BytesSent, view.BytesReceived)})
+	return writeCLIFields(cmd.OutOrStdout(), fields...)
 }
 
 func formatCLIEndpoint(address string, port uint16) string {
@@ -784,8 +826,12 @@ func writeEndpointPolicy(cmd *cobra.Command, view endpointPolicyView, jsonOutput
 	if jsonOutput {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Endpoint: %s\nRoute: %s\nCloud path: %s\nRelay transport: %s\n", view.EndpointID, view.Route, view.CloudPath, view.RelayTransport)
-	return nil
+	return writeCLIFields(cmd.OutOrStdout(),
+		cliField{Label: "Endpoint", Value: view.EndpointID},
+		cliField{Label: "Route", Value: view.Route},
+		cliField{Label: "Cloud path", Value: view.CloudPath},
+		cliField{Label: "Relay transport", Value: view.RelayTransport},
+	)
 }
 
 func bindEndpointPolicyFlags(command *cobra.Command, flags *endpointEditFlags) {
