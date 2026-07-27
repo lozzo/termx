@@ -7,7 +7,7 @@ const password = readCredential()
 const certificateFile = process.env.MUXVIA_CLOUD_ONLINE_EDGE_CERTIFICATE_FILE
 const privateKeyFile = process.env.MUXVIA_CLOUD_ONLINE_EDGE_PRIVATE_KEY_FILE
 const profileName = process.env.MUXVIA_CLOUD_ONLINE_CERTIFICATE_PROFILE ?? 'CN1 Edge 公网证书'
-const edgeName = process.env.MUXVIA_CLOUD_ONLINE_EDGE_NAME ?? 'CN1 Edge'
+const edgeEndpoint = process.env.MUXVIA_CLOUD_ONLINE_EDGE_ENDPOINT ?? 'muxvia-cn1.omscd.com:41102'
 
 test.describe('R8 线上证书自动更新', () => {
   test.skip(
@@ -46,10 +46,10 @@ test.describe('R8 线上证书自动更新', () => {
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('row').filter({ hasText: profileName }).first()).toBeVisible()
 
-    const profileSelect = page.getByLabel(`${edgeName} 的证书档案`)
+    const edgeRow = page.getByRole('cell', { name: edgeEndpoint, exact: true }).locator('..')
+    const profileSelect = edgeRow.getByRole('combobox')
     await expect(profileSelect).toBeVisible()
     await profileSelect.selectOption({ label: profileName })
-    const edgeRow = page.getByRole('row').filter({ hasText: edgeName }).last()
     const save = edgeRow.getByRole('button', { name: '保存', exact: true })
     if (await save.isEnabled()) {
       const bindResponse = page.waitForResponse((response) => {
@@ -64,7 +64,7 @@ test.describe('R8 线上证书自动更新', () => {
 
     await expect.poll(async () => {
       await page.reload()
-      const row = page.getByRole('row').filter({ hasText: edgeName }).last()
+      const row = page.getByRole('cell', { name: edgeEndpoint, exact: true }).locator('..')
       return await row.innerText()
     }, { timeout: 90_000, intervals: [1_000, 2_000, 3_000] }).toMatch(/已应用[\s\S]*r(\d+)\s*\/\s*r\1/)
 
