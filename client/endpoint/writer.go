@@ -50,6 +50,7 @@ func Encode(registry Registry) ([]byte, error) {
 		if endpoint.SelectionPolicy.HedgeDelayConfigured {
 			value.Selection.HedgeDelay = fmt.Sprintf("%dms", endpoint.SelectionPolicy.HedgeDelay/time.Millisecond)
 		}
+		value.Selection.RoutePreference = string(endpoint.SelectionPolicy.RoutePreference)
 		for _, route := range endpoint.RouteList() {
 			routeEnabled := route.Enabled
 			var credentialDescriptor *credentialDescriptorDocument
@@ -68,7 +69,8 @@ func Encode(registry Registry) ([]byte, error) {
 				RemoteSignalingAddress: route.RemoteSignalingAddress, RemoteICETCPAddress: route.RemoteICETCPAddress,
 				SignalingAddresses: append([]string(nil), route.SignalingAddresses...), ICETCPAddresses: append([]string(nil), route.ICETCPAddresses...),
 				AdvertisedAddresses: append([]string(nil), route.AdvertisedAddresses...), ServerName: route.ServerName,
-				TargetDeviceID: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef, RelayMode: string(route.RelayMode),
+				TargetDeviceID: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef,
+				RelayMode: string(route.RelayMode), RelayTransport: string(route.RelayTransport),
 			}
 		}
 		document.Endpoints[string(endpoint.ID)] = value

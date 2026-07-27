@@ -12,6 +12,7 @@ import (
 	"time"
 
 	endpointdomain "github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/internal/protocol"
 	"github.com/anytty/anytty/proto/apipb"
@@ -83,6 +84,20 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	if !strings.Contains(shown, `"label":"West build host"`) || !strings.Contains(shown, `"credential_ref":"ssh:west"`) {
 		t.Fatalf("unexpected endpoint show: %s", shown)
 	}
+	policy := run("endpoint", "policy", "set", "studio", "--route", "cloud", "--cloud-path", "relay", "--relay-transport", "tcp", "--json")
+	for _, expected := range []string{`"route":"cloud"`, `"cloud_path":"relay"`, `"relay_transport":"tcp"`} {
+		if !strings.Contains(policy, expected) {
+			t.Fatalf("endpoint policy output missing %s: %s", expected, policy)
+		}
+	}
+	shownPolicy := run("endpoint", "policy", "show", "studio", "--json")
+	if shownPolicy != policy {
+		t.Fatalf("persisted policy changed after reload: set=%s show=%s", policy, shownPolicy)
+	}
+	run("endpoint", "update", "studio", "--hedge-delay", "750ms")
+	if afterUpdate := run("endpoint", "policy", "show", "studio", "--json"); afterUpdate != policy {
+		t.Fatalf("unrelated endpoint update reset connection policy: set=%s show=%s", policy, afterUpdate)
+	}
 
 	run("endpoint", "disable", "west")
 	registry, err := endpointdomain.Load("")
@@ -109,6 +124,22 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	registryPath := filepath.Join(configHome, "anytty", endpointdomain.DefaultFileName)
 	if !securefs.IsPrivateFile(registryPath, info) {
 		t.Fatalf("registry permissions are not private: %v", info.Mode())
+	}
+}
+
+func TestEndpointTestViewIncludesSelectedPairAddresses(t *testing.T) {
+	sampledAt := time.Date(2026, 7, 27, 12, 0, 0, 123, time.UTC)
+	view := endpointTestViewFromSnapshot("studio", endpointdomain.AccessRoute{ID: "cloud", Kind: endpointdomain.RouteManagedWebRTC}, "single_relay", "only_viable", clientruntime.ConnectionSnapshot{
+		ObservedPath: "direct", SampledAt: sampledAt, RoundTrip: 42*time.Millisecond + 500*time.Microsecond,
+		LocalAddress: "192.0.2.10", RemoteAddress: "2001:db8::20", LocalPort: 41000, RemotePort: 41121,
+		LocalCandidateType: "srflx", RemoteCandidateType: "relay", LocalProtocol: "udp", RemoteProtocol: "udp", RelayTransport: "tcp",
+		BytesSent: 10, BytesReceived: 20, Connected: true,
+	}, true)
+	if !view.SnapshotAvailable || view.ObservedPath != "direct" || view.LocalIP != "192.0.2.10" || view.RemoteIP != "2001:db8::20" || view.RoundTripMillis != 42.5 {
+		t.Fatalf("endpoint test view = %#v", view)
+	}
+	if got := formatCLIEndpoint(view.RemoteIP, view.RemotePort); got != "[2001:db8::20]:41121" {
+		t.Fatalf("formatted remote endpoint = %q", got)
 	}
 }
 

@@ -65,29 +65,9 @@ func (host *Host) ApplyConnectionPolicy(ctx context.Context, request *bindingpb.
 		host.registryMu.Unlock()
 		return nil, err
 	}
-	target, ok := current.Endpoints[id]
-	if !ok {
-		host.registryMu.Unlock()
-		return nil, fmt.Errorf("endpoint %q does not exist", id)
-	}
-	next, err := cloneRegistry(current)
-	if err != nil {
-		host.registryMu.Unlock()
-		return nil, err
-	}
-	target = next.Endpoints[id]
-	target.SelectionPolicy.RoutePreference = preference
-	// Relay 策略属于 Endpoint 的 managed Route 真值；UI 只提交意图，不能在重连时保留第二份 override。
-	for routeID, route := range target.Routes {
-		if route.Kind != endpoint.RouteManagedWebRTC {
-			continue
-		}
-		route.RelayMode = relayMode
-		route.RelayTransport = relayTransport
-		target.Routes[routeID] = route
-	}
-	next.Endpoints[id] = target
-	next, err = next.Normalize()
+	next, err := endpoint.SetConnectionPolicy(current, id, endpoint.ConnectionPolicy{
+		RoutePreference: preference, CloudRelayMode: relayMode, RelayTransport: relayTransport,
+	})
 	if err == nil {
 		_, err = host.storeRegistryLocked(ctx, next, nil)
 	}
@@ -95,7 +75,7 @@ func (host *Host) ApplyConnectionPolicy(ctx context.Context, request *bindingpb.
 	if err != nil {
 		return nil, err
 	}
-	state, err := host.connectionPolicyState(ctx, target)
+	state, err := host.connectionPolicyState(ctx, next.Endpoints[id])
 	if err != nil {
 		return nil, err
 	}

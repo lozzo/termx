@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	endpointdomain "github.com/anytty/anytty/client/endpoint"
 	actiondomain "github.com/anytty/anytty/tui/action"
@@ -388,6 +389,7 @@ func connectionsDetailLines(item state.EndpointItem, ok bool, width int) []Line 
 	if width < 30 {
 		routeHeader = "ROUTES"
 	}
+	snapshot := item.ConnectionSnapshot
 	lines := []Line{
 		terminalManagerHeaderLine("CURRENT CONNECTION"),
 		value("Status", string(item.DisplayStatus())),
@@ -395,15 +397,44 @@ func connectionsDetailLines(item state.EndpointItem, ok bool, width int) []Line 
 		value("Path", item.ObservedPath),
 		value("Generation", generation),
 		value("Reason", item.RouteSelectionReason),
-		{},
-		terminalManagerHeaderLine("NEXT CONNECTION POLICY"),
-		value("Preference", preference),
-		terminalManagerHeaderLine(routeHeader),
 	}
+	if local := candidateEndpoint(snapshot.LocalAddress, snapshot.LocalPort); local != "" {
+		lines = append(lines, value("Local", local))
+	}
+	if remote := candidateEndpoint(snapshot.RemoteAddress, snapshot.RemotePort); remote != "" {
+		lines = append(lines, value("Remote", remote))
+	}
+	if snapshot.RoundTrip > 0 {
+		lines = append(lines, value("RTT", fmt.Sprintf("%.1f ms", float64(snapshot.RoundTrip)/float64(time.Millisecond))))
+	}
+	if candidates := strings.Trim(strings.Join([]string{snapshot.LocalCandidateType, snapshot.RemoteCandidateType}, " / "), " / "); candidates != "" {
+		lines = append(lines, value("Candidates", candidates))
+	}
+	if protocols := strings.Trim(strings.Join([]string{snapshot.LocalProtocol, snapshot.RemoteProtocol}, " / "), " / "); protocols != "" {
+		lines = append(lines, value("ICE", protocols))
+	}
+	if snapshot.RelayTransport != "" {
+		lines = append(lines, value("Relay", snapshot.RelayTransport))
+	}
+	if snapshot.NetworkClass != "" {
+		lines = append(lines, value("Network", snapshot.NetworkClass))
+	}
+	lines = append(lines, Line{}, terminalManagerHeaderLine("NEXT CONNECTION POLICY"), value("Preference", preference), terminalManagerHeaderLine(routeHeader))
 	for _, route := range item.Routes {
 		lines = append(lines, connectionsRouteLines(route, width)...)
 	}
 	return lines
+}
+
+func candidateEndpoint(address string, port uint16) string {
+	address = strings.TrimSpace(address)
+	if address == "" || port == 0 {
+		return address
+	}
+	if strings.Contains(address, ":") {
+		return fmt.Sprintf("[%s]:%d", address, port)
+	}
+	return fmt.Sprintf("%s:%d", address, port)
 }
 
 func connectionsRouteLines(route state.EndpointRouteItem, width int) []Line {

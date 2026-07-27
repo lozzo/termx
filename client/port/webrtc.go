@@ -71,14 +71,14 @@ type WebRTCPeer interface {
 	RemoteCertificateFingerprint() (string, error)
 	// ObservedPath 返回当前 selected candidate pair 的 direct/single-relay 投影。
 	ObservedPath() endpoint.Path
-	// Snapshot 返回不含地址和身份信息的质量计数；无稳定 candidate pair 时返回 false。
+	// Snapshot 返回当前 selected candidate pair 的地址与质量计数；无稳定 candidate pair 时返回 false。
 	Snapshot(time.Time) (WebRTCPeerSnapshot, bool)
 	// Close 幂等释放 peer、ICE、DTLS、SCTP 和 DataChannel 平台资源。
 	Close() error
 }
 
 // WebRTCPeerSnapshot 是质量观测读取的平台网络计数快照。
-// 它不包含 IP、hostname、SDP、credential、endpoint label 或 terminal identity；计数回退表示底层 candidate pair 已换代。
+// 它只包含 selected pair 的 IP/port，不包含 SDP、credential、endpoint label 或 terminal identity；计数回退表示底层 candidate pair 已换代。
 type WebRTCPeerSnapshot struct {
 	PairID              string
 	Path                endpoint.Path
@@ -92,6 +92,10 @@ type WebRTCPeerSnapshot struct {
 	Connected           bool
 	LocalCandidateType  string
 	RemoteCandidateType string
+	LocalAddress        string
+	RemoteAddress       string
+	LocalPort           uint16
+	RemotePort          uint16
 	LocalProtocol       string
 	RemoteProtocol      string
 	RelayProtocol       string

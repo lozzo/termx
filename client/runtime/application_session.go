@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ConnectionSnapshot 是同一 ReadyPeerSession 的脱敏即时网络投影。
+// ConnectionSnapshot 是同一 ReadyPeerSession 的即时网络投影。
 // Route/generation 来自 runtime；candidate/RTT 来自实际 peer stats，未知字段必须保持空值而不是推断。
 type ConnectionSnapshot struct {
 	RouteID             endpoint.RouteID
@@ -23,6 +23,10 @@ type ConnectionSnapshot struct {
 	RoundTrip           time.Duration
 	LocalCandidateType  string
 	RemoteCandidateType string
+	LocalAddress        string
+	RemoteAddress       string
+	LocalPort           uint16
+	RemotePort          uint16
 	LocalProtocol       string
 	RemoteProtocol      string
 	RelayTransport      string

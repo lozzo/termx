@@ -3,6 +3,7 @@ package render
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anytty/anytty/client/endpoint"
 	"github.com/anytty/anytty/tui/state"
@@ -35,6 +36,28 @@ func TestConnectionsOverlayProjectsActualRouteGenerationAndPriorityAtNarrowWidth
 			if !strings.Contains(text, want) {
 				t.Fatalf("%d-column frame missing %q:\n%s", cols, want, text)
 			}
+		}
+	}
+}
+
+func TestConnectionsOverlayShowsSelectedPairAddressesAndRTT(t *testing.T) {
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 36},
+		Shell:    state.DefaultShell().OpenConnections(),
+		Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{
+			ID: "studio", Label: "Studio", Enabled: true, Status: state.EndpointStatusConnected,
+			ActiveRouteID: "cloud", ConnectionGeneration: 12, ObservedPath: "direct",
+			ConnectionSnapshot: state.EndpointConnectionSnapshot{
+				RoundTrip:    42*time.Millisecond + 500*time.Microsecond,
+				LocalAddress: "192.0.2.10", LocalPort: 41000, RemoteAddress: "2001:db8::20", RemotePort: 41121,
+				LocalCandidateType: "srflx", RemoteCandidateType: "host", LocalProtocol: "udp", RemoteProtocol: "udp",
+			},
+		}),
+	}
+	text := frameText(NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root)))
+	for _, want := range []string{"192.0.2.10:41000", "[2001:db8::20]:41121", "42.5 ms", "srflx / host", "udp / udp"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("connections frame missing %q:\n%s", want, text)
 		}
 	}
 }

@@ -95,7 +95,11 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	if client != nil && client.ConnectionRuntime() != nil {
 		endpointEvents = clientruntimeadapter.EndpointEventSource{Runtime: client.ConnectionRuntime(), EndpointID: endpointID, EndpointIDs: registryEndpointIDs(opts.ConnectionRegistry)}
 		if planRuntime, ok := client.ConnectionRuntime().(clientruntimeadapter.EndpointPlanSnapshotSource); ok {
-			endpointConnections = clientruntimeadapter.EndpointConnectionControl{Runtime: planRuntime}
+			control := clientruntimeadapter.EndpointConnectionControl{Runtime: planRuntime}
+			if diagnostics, ok := opts.EndpointApplications.(clientruntimeadapter.EndpointConnectionSnapshotSource); ok {
+				control.Diagnostics = diagnostics
+			}
+			endpointConnections = control
 		}
 	}
 

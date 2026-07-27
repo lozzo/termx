@@ -554,15 +554,15 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}
-		if after.Purpose == "connections.priority" {
-			request, err := routePriorityRequestFromPrompt(root, after)
+		if after.Purpose == "connections.settings" {
+			request, err := connectionSettingsRequestFromPrompt(root, after)
 			if err != nil {
 				shell = root.Shell.EnsureDefaults()
 				prompt := shell.Overlay.Prompt
 				prompt.Submitted = false
 				prompt.LastResult = err.Error()
 				shell.Overlay.Prompt = prompt
-				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "Route priority", Body: err.Error()})
+				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "Connection settings", Body: err.Error()})
 				return root.Advance(), nil
 			}
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}

@@ -259,9 +259,18 @@ func (peer *webRTCPeer) Snapshot(at time.Time) (port.WebRTCPeerSnapshot, bool) {
 		LossEvents:         saturatingAdd(pair.RetransmissionsSent, uint64(pair.PacketsDiscardedOnSend)),
 		Connected:          peer.peer.ConnectionState() == pionwebrtc.PeerConnectionStateConnected,
 		LocalCandidateType: strings.ToLower(local.CandidateType.String()), RemoteCandidateType: strings.ToLower(remote.CandidateType.String()),
+		LocalAddress: strings.TrimSpace(local.IP), RemoteAddress: strings.TrimSpace(remote.IP),
+		LocalPort: candidatePort(local.Port), RemotePort: candidatePort(remote.Port),
 		LocalProtocol: strings.ToLower(strings.TrimSpace(local.Protocol)), RemoteProtocol: strings.ToLower(strings.TrimSpace(remote.Protocol)),
 		RelayProtocol: strings.ToLower(strings.TrimSpace(local.RelayProtocol)),
 	}, true
+}
+
+func candidatePort(port int32) uint16 {
+	if port <= 0 || port > 65535 {
+		return 0
+	}
+	return uint16(port)
 }
 
 func (peer *webRTCPeer) Close() error {

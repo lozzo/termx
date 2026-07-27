@@ -209,10 +209,11 @@ func TestSaveRoundTripV2AndFileMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "anytty", "endpoints.yaml")
 	priority := 10
 	endpoint := NewManagedEndpoint("studio", "Studio", DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}, "device-studio", "grant:studio", RelayDirect, ConnectOnDemand)
-	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: 1500 * time.Millisecond, HedgeDelayConfigured: true}
+	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: 1500 * time.Millisecond, HedgeDelayConfigured: true, RoutePreference: RoutePreferenceManagedCloud}
 	endpoint.Routes["lan"] = AccessRoute{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, Priority: &priority, Source: SourceBootstrap, CredentialRef: "grant:studio", SignalingAddresses: []string{"studio.local:41120"}, ICETCPAddresses: []string{"studio.local:41120"}}
 	cloud := endpoint.Routes["cloud"]
 	cloud.Priority = intPointer(20)
+	cloud.RelayTransport = RelayTransportTCP
 	endpoint.Routes["cloud"] = cloud
 	registry := Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": endpoint}}
 	if err := Save(path, registry); err != nil {

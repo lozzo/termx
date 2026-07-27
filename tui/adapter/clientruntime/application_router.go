@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	clientprotocol "github.com/anytty/anytty/client/adapter/protocol"
 	clientendpoint "github.com/anytty/anytty/client/endpoint"
@@ -129,6 +130,26 @@ func applicationClientReady(client *clientprotocol.ApplicationClient) bool {
 	default:
 		return true
 	}
+}
+
+// ConnectionSnapshot samples a cached ready session; it deliberately does not call application and cannot dial.
+func (router *EndpointApplicationRouter) ConnectionSnapshot(ctx context.Context, endpointID state.EndpointID) (clientruntime.ConnectionSnapshot, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return clientruntime.ConnectionSnapshot{}, false, err
+	}
+	endpointID = state.NormalizeEndpointID(endpointID)
+	router.mu.Lock()
+	if router.closed {
+		router.mu.Unlock()
+		return clientruntime.ConnectionSnapshot{}, false, fmt.Errorf("endpoint application router is closed")
+	}
+	cached, ok := router.clients[endpointID]
+	router.mu.Unlock()
+	if !ok || !applicationClientReady(cached.client) {
+		return clientruntime.ConnectionSnapshot{}, false, nil
+	}
+	snapshot, valid := cached.client.ConnectionSnapshot(time.Now().UTC())
+	return snapshot, valid, nil
 }
 
 func (router *EndpointApplicationRouter) terminal(ctx context.Context, endpointID state.EndpointID) (protocoladapter.ProtocolTerminalServiceAdapter, error) {
@@ -362,3 +383,4 @@ var _ port.NativeScreenSource = (*EndpointApplicationRouter)(nil)
 var _ port.LiveInvalidationSource = (*EndpointApplicationRouter)(nil)
 var _ port.PathService = (*EndpointApplicationRouter)(nil)
 var _ port.CoreClient = (*EndpointApplicationRouter)(nil)
+var _ EndpointConnectionSnapshotSource = (*EndpointApplicationRouter)(nil)

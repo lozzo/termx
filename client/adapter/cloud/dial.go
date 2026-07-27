@@ -148,7 +148,7 @@ func (session *Session) ExecuteApplicationTerminal(ctx context.Context, command 
 	return session.ApplicationSession.ExecuteTerminal(ctx, command)
 }
 
-// ConnectionSnapshot 返回 P2P selected pair 的脱敏网络计数。
+// ConnectionSnapshot 返回 P2P selected pair 的地址与网络计数。
 func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.ConnectionSnapshot, bool) {
 	if session == nil || session.ApplicationClient == nil {
 		return clientruntime.ConnectionSnapshot{}, false
@@ -157,6 +157,8 @@ func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.Connecti
 	if snapshot, ok := session.peer.Snapshot(at); ok {
 		result.SampledAt, result.RoundTrip = snapshot.At, snapshot.RoundTrip
 		result.LocalCandidateType, result.RemoteCandidateType = snapshot.LocalCandidateType, snapshot.RemoteCandidateType
+		result.LocalAddress, result.RemoteAddress = snapshot.LocalAddress, snapshot.RemoteAddress
+		result.LocalPort, result.RemotePort = snapshot.LocalPort, snapshot.RemotePort
 		result.LocalProtocol, result.RemoteProtocol, result.RelayTransport = snapshot.LocalProtocol, snapshot.RemoteProtocol, snapshot.RelayProtocol
 		result.NetworkClass, result.BytesSent, result.BytesReceived = snapshot.NetworkClass, snapshot.BytesSent, snapshot.BytesRecv
 		result.PacketsSent, result.LossEvents, result.Connected = snapshot.PacketsSent, snapshot.LossEvents, snapshot.Connected

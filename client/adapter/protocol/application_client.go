@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/anytty/anytty/client/endpoint"
 	clientruntime "github.com/anytty/anytty/client/runtime"
@@ -157,6 +158,18 @@ func (client *ApplicationClient) ObservedPath() string {
 		return ""
 	}
 	return client.path
+}
+
+// ConnectionSnapshot samples the selected pair owned by this exact ready-session generation.
+func (client *ApplicationClient) ConnectionSnapshot(at time.Time) (clientruntime.ConnectionSnapshot, bool) {
+	if client == nil {
+		return clientruntime.ConnectionSnapshot{}, false
+	}
+	provider, ok := client.ready.(clientruntime.ConnectionSnapshotProvider)
+	if !ok {
+		return clientruntime.ConnectionSnapshot{}, false
+	}
+	return provider.ConnectionSnapshot(at)
 }
 
 // Readiness 返回 adapter 在 session 发布前冻结的 identity、authorization 与 Hello 证据。
@@ -310,5 +323,6 @@ func (client *ApplicationClient) Close() error {
 }
 
 var _ clientruntime.ApplicationReadyPeerSession = (*ApplicationClient)(nil)
+var _ clientruntime.ConnectionSnapshotProvider = (*ApplicationClient)(nil)
 var _ clientruntime.ApplicationAttachmentSession = (*ApplicationClient)(nil)
 var _ clientruntime.ResourceStreamSession = (*ApplicationClient)(nil)

@@ -37,6 +37,52 @@ type RouteAvailabilityRequest struct {
 	AvailableCredentialRefs []string
 }
 
+// ConnectionPolicy 是允许客户端调整的稳定选路子集；它只作用于下一代 session。
+type ConnectionPolicy struct {
+	RoutePreference RoutePreference
+	CloudRelayMode  RelayMode
+	RelayTransport  RelayTransport
+}
+
+// SetConnectionPolicy 在 registry 深拷贝中原子更新 Endpoint 选路偏好和全部 managed Route 的 Relay 约束。
+func SetConnectionPolicy(registry Registry, endpointID EndpointID, policy ConnectionPolicy) (Registry, error) {
+	switch policy.RoutePreference {
+	case RoutePreferenceAuto, RoutePreferenceDirect, RoutePreferenceSSH, RoutePreferenceManagedCloud:
+	default:
+		return Registry{}, connectionError(ErrorConfig, "unknown route preference %q", policy.RoutePreference)
+	}
+	switch policy.CloudRelayMode {
+	case RelayAuto, RelayDirect, RelayOnly, RelaySmart:
+	default:
+		return Registry{}, connectionError(ErrorConfig, "unknown Cloud relay mode %q", policy.CloudRelayMode)
+	}
+	switch policy.RelayTransport {
+	case RelayTransportAuto, RelayTransportUDP, RelayTransportTCP:
+	default:
+		return Registry{}, connectionError(ErrorConfig, "unknown Relay transport %q", policy.RelayTransport)
+	}
+	next, err := registry.Normalize()
+	if err != nil {
+		return Registry{}, err
+	}
+	target, ok := next.Endpoints[normalizeEndpointID(endpointID)]
+	if !ok {
+		return Registry{}, connectionError(ErrorConfig, "endpoint %q does not exist", endpointID)
+	}
+	target.SelectionPolicy.RoutePreference = policy.RoutePreference
+	for routeID, route := range target.Routes {
+		if route.Kind != RouteManagedWebRTC {
+			continue
+		}
+		route.RelayMode = policy.CloudRelayMode
+		route.RelayTransport = policy.RelayTransport
+		route.PolicySource = SourceUser
+		target.Routes[routeID] = route
+	}
+	next.Endpoints[target.ID] = target
+	return next.Normalize()
+}
+
 // EvaluateRouteAvailability 使用与 RouteSelectionPlanner 相同的 route kind 和 credential 规则生成稳定投影。
 // 该函数不 dial、不读取 secure store、不访问 Cloud；调用方必须先提供当前 generation 的能力索引。
 func EvaluateRouteAvailability(request RouteAvailabilityRequest) ([]RouteAvailability, error) {
