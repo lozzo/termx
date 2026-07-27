@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 )
 
@@ -34,7 +36,8 @@ func (database *Database) CreateDaemonEnrollment(ctx context.Context, accountID,
 	return accountID, nil
 }
 
-// ConsumeDaemonEnrollment 原子消费注册 token 并创建唯一 DeviceIdentity。
+// ConsumeDaemonEnrollment 原子消费注册 token，并让同一 DeviceIdentity 的后一次 enrollment 接管原 daemon。
+// 重复注册保留 daemon_id/created_at，清除 revoked，并更新账号、名称和 revision；相同 device_id 不能更换公钥。
 func (database *Database) ConsumeDaemonEnrollment(ctx context.Context, digest []byte, deviceID, fingerprint string, publicKey ed25519.PublicKey, now time.Time) (enrollment.Daemon, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
@@ -49,12 +52,32 @@ func (database *Database) ConsumeDaemonEnrollment(ctx context.Context, digest []
 		return enrollment.Daemon{}, err
 	}
 	daemonID := uuid.NewString()
-	if _, err := tx.Exec(ctx, `INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,revoked,revision,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,false,1,$7,$7)`, daemonID, accountID, daemonName, deviceID, []byte(publicKey), fingerprint, now); err != nil {
+	var resolvedDaemonID string
+	err = tx.QueryRow(ctx, `
+INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,revoked,revision,created_at,updated_at)
+VALUES($1,$2,$3,$4,$5,$6,false,1,$7,$7)
+ON CONFLICT (device_id) DO UPDATE SET
+  account_id=EXCLUDED.account_id,
+  display_name=EXCLUDED.display_name,
+  revoked=false,
+  revision=daemons.revision+1,
+  updated_at=EXCLUDED.updated_at
+WHERE daemons.device_public_key=EXCLUDED.device_public_key
+  AND daemons.device_fingerprint=EXCLUDED.device_fingerprint
+RETURNING daemon_id::text`, daemonID, accountID, daemonName, deviceID, []byte(publicKey), fingerprint, now).Scan(&resolvedDaemonID)
+	if err != nil {
+		var postgresError *pgconn.PgError
+		if errors.Is(err, pgx.ErrNoRows) || errors.As(err, &postgresError) && postgresError.Code == "23505" {
+			return enrollment.Daemon{}, enrollment.ErrDaemonIdentityConflict
+		}
 		return enrollment.Daemon{}, err
 	}
-	daemon, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, daemonID))
+	daemon, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, resolvedDaemonID))
 	if err != nil {
 		return enrollment.Daemon{}, err
+	}
+	if daemon.DeviceID != deviceID || daemon.DeviceFingerprint != fingerprint || !bytes.Equal(daemon.DevicePublicKey, publicKey) {
+		return enrollment.Daemon{}, enrollment.ErrDaemonIdentityConflict
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return enrollment.Daemon{}, err

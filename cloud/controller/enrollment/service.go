@@ -28,6 +28,8 @@ import (
 var (
 	// ErrEnrollmentInvalid 表示一次性注册 code 已失效、过期或被消费。
 	ErrEnrollmentInvalid = errors.New("daemon enrollment code is invalid")
+	// ErrDaemonIdentityConflict 表示 device ID 或 fingerprint 已属于另一把 DeviceIdentity 公钥。
+	ErrDaemonIdentityConflict = errors.New("daemon DeviceIdentity conflicts with an existing device")
 	// ErrDaemonUnavailable 表示 daemon 不存在、已撤销或当前没有可用 Edge。
 	ErrDaemonUnavailable = errors.New("daemon is unavailable")
 )
