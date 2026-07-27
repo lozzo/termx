@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 
 const origin = process.env.MUXVIA_CLOUD_ONLINE_ORIGIN
 const login = process.env.MUXVIA_CLOUD_ONLINE_LOGIN
-const password = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD
+const password = readCredential()
 
 test.describe('R7 线上运营后台', () => {
   test.skip(!origin || !login || !password, '需要显式提供线上地址和运营账号凭据')
@@ -96,4 +97,11 @@ function captureErrors(page: Page): string[] {
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('pageerror', (error) => errors.push(error.message))
   return errors
+}
+
+function readCredential(): string {
+  const inline = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD
+  if (inline) return inline
+  const file = process.env.MUXVIA_CLOUD_ONLINE_PASSWORD_FILE
+  return file ? readFileSync(file, 'utf8').trim() : ''
 }
