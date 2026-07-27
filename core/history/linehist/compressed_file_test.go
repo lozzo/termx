@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,144 @@ func TestCompressedLineFileRoundTripReopenAndCompress(t *testing.T) {
 	last, err := reopened.Lines(len(lines)-1, len(lines))
 	if err != nil || len(last) != 1 || !strings.Contains(LineText(last[0]), "07999") {
 		t.Fatalf("recovered last line = %#v, err=%v", last, err)
+	}
+}
+
+func TestCompressedLineFileRoundTripPreservesLineMetadata(t *testing.T) {
+	file, err := OpenCompressedLineFile(t.TempDir(), "metadata", CompressedLineFileOptions{Compression: compressionNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	want := []Line{
+		{
+			Runs: []Run{
+				{Text: "plain "},
+				{Text: "styled", Style: history.CellStyle{FG: "1", BG: "2", Bold: true, Italic: true, Underline: true, Blink: true, Reverse: true, Strikethrough: true}},
+				{Text: "link", LinkURL: "https://example.com", LinkParams: "id=9"},
+			},
+			HardEnd: true,
+		},
+		{HardEnd: true},
+		{Runs: []Run{{Text: "chunk"}}, HardEnd: false},
+		{Runs: []Run{{Text: "你好世界"}}, HardEnd: true},
+	}
+	if err := file.AppendLines(want); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := file.Lines(0, file.LineCount())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata round trip = %#v, want %#v", got, want)
+	}
+}
+
+func TestCompressedLineFileTruncatesPartialTailOnReopen(t *testing.T) {
+	dir := t.TempDir()
+	file, err := OpenCompressedLineFile(dir, "partial-tail", CompressedLineFileOptions{Compression: compressionNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.AppendLines([]Line{
+		{Runs: []Run{{Text: "one"}}, HardEnd: true},
+		{Runs: []Run{{Text: "two"}}, HardEnd: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.AppendBoundary(); err != nil {
+		t.Fatal(err)
+	}
+	path := file.Path()
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	validInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial := makeCompressedBlockHeader(compressedBlockKindLines, compressedBlockCodecRaw, 1, 32, 32, 0, time.Now().Unix())[:10]
+	tail, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tail.Write(partial); err != nil {
+		_ = tail.Close()
+		t.Fatal(err)
+	}
+	if err := tail.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenCompressedLineFile(dir, "partial-tail", CompressedLineFileOptions{Compression: compressionNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if reopened.LineCount() != 2 {
+		t.Fatalf("recovered line count = %d, want 2", reopened.LineCount())
+	}
+	recoveredInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recoveredInfo.Size() != validInfo.Size() {
+		t.Fatalf("recovered file size = %d, want %d", recoveredInfo.Size(), validInfo.Size())
+	}
+	if err := reopened.AppendLines([]Line{{Runs: []Run{{Text: "three"}}, HardEnd: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	last, err := reopened.Lines(2, 3)
+	if err != nil || len(last) != 1 || LineText(last[0]) != "three" {
+		t.Fatalf("append after recovery = %#v, err=%v", last, err)
+	}
+}
+
+func TestCompressedLineFileDetectsCorruptBlockPayload(t *testing.T) {
+	dir := t.TempDir()
+	file, err := OpenCompressedLineFile(dir, "corrupt", CompressedLineFileOptions{Compression: compressionNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.AppendLines([]Line{{Runs: []Run{{Text: "checksum payload"}}, HardEnd: true}}); err != nil {
+		t.Fatal(err)
+	}
+	path := file.Path()
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.OpenFile(path, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value [1]byte
+	if _, err := payload.ReadAt(value[:], compressedBlockHeaderSize); err != nil {
+		_ = payload.Close()
+		t.Fatal(err)
+	}
+	value[0] ^= 0xff
+	if _, err := payload.WriteAt(value[:], compressedBlockHeaderSize); err != nil {
+		_ = payload.Close()
+		t.Fatal(err)
+	}
+	if err := payload.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenCompressedLineFile(dir, "corrupt", CompressedLineFileOptions{Compression: compressionNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.Lines(0, 1); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("corrupt block read error = %v", err)
 	}
 }
 
@@ -311,19 +450,22 @@ func TestCompressedLineFilePrunesBlocksOlderThanMaxAge(t *testing.T) {
 	}
 }
 
-func TestCompressedLineFileDiscardsOldFormatWithoutMigration(t *testing.T) {
-	dir := t.TempDir()
-	legacy, err := OpenLineFile(dir, "no-compat")
+func writeNonCurrentHistoryFile(t *testing.T, dir string, terminalID string, payload string) string {
+	t.Helper()
+	path, err := lineFilePath(dir, terminalID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := legacy.AppendLines([]Line{{Runs: []Run{{Text: "must-not-migrate"}}, HardEnd: true}}); err != nil {
+	legacyHeader := []byte{0x4c, 0x4c, 0x58, 0x54, 0x01, 0x00}
+	if err := os.WriteFile(path, append(legacyHeader, payload...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	path := legacy.Path()
-	if err := legacy.Close(); err != nil {
-		t.Fatal(err)
-	}
+	return path
+}
+
+func TestCompressedLineFileDiscardsNonCurrentFormatWithoutMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := writeNonCurrentHistoryFile(t, dir, "no-compat", "must-not-migrate")
 	base := strings.TrimSuffix(path, ".logical-lines.bin")
 	obsolete := []string{
 		path + ".idx",
@@ -379,17 +521,7 @@ func TestCompressedLineFileDiscardsOtherBlockVersionsWithoutCompatibility(t *tes
 
 func TestPrepareDirectoryDiscardsInactiveOldHistoryAndBoundsCurrentFiles(t *testing.T) {
 	dir := t.TempDir()
-	legacy, err := OpenLineFile(dir, "inactive-old")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := legacy.AppendLines([]Line{{Runs: []Run{{Text: "old"}}, HardEnd: true}}); err != nil {
-		t.Fatal(err)
-	}
-	legacyPath := legacy.Path()
-	if err := legacy.Close(); err != nil {
-		t.Fatal(err)
-	}
+	legacyPath := writeNonCurrentHistoryFile(t, dir, "inactive-old", "old")
 	orphan := filepath.Join(dir, "inactive-orphan.history-lines.bin")
 	if err := os.WriteFile(orphan, []byte("old orphan"), 0o600); err != nil {
 		t.Fatal(err)

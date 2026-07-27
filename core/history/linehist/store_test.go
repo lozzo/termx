@@ -21,12 +21,18 @@ type storeHarness struct {
 	gate   sync.Mutex
 }
 
+func openTestLineStorage(t testing.TB, dir string, terminalID string) *CompressedLineFile {
+	t.Helper()
+	file, err := OpenCompressedLineFile(dir, terminalID, CompressedLineFileOptions{Compression: compressionNone})
+	if err != nil {
+		t.Fatalf("open compressed line file: %v", err)
+	}
+	return file
+}
+
 func newStoreHarness(t *testing.T, cols int, rows int) *storeHarness {
 	t.Helper()
-	file, err := OpenLineFile(t.TempDir(), "term-store")
-	if err != nil {
-		t.Fatalf("open line file: %v", err)
-	}
+	file := openTestLineStorage(t, t.TempDir(), "term-store")
 	harness := &storeHarness{
 		t:      t,
 		source: vterm.NewSemanticSource(cols, rows, 0, nil),

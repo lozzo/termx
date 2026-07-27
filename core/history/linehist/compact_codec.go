@@ -3,7 +3,11 @@ package linehist
 import (
 	"encoding/binary"
 	"errors"
+
+	"github.com/anytty/anytty/core/history"
 )
+
+const compactLineFlagHardEnd uint8 = 1 << 0
 
 func encodeCompactLines(lines []Line) []byte {
 	payload := make([]byte, 0, compactLinesEncodedSize(lines))
@@ -11,7 +15,7 @@ func encodeCompactLines(lines []Line) []byte {
 	for _, line := range lines {
 		var flags byte
 		if line.HardEnd {
-			flags = lineFileFlagHardEnd
+			flags = compactLineFlagHardEnd
 		}
 		payload = append(payload, flags)
 		payload = binary.AppendUvarint(payload, uint64(len(line.Runs)))
@@ -19,7 +23,7 @@ func encodeCompactLines(lines []Line) []byte {
 			payload = appendCompactString(payload, run.Text)
 			payload = appendCompactString(payload, run.Style.FG)
 			payload = appendCompactString(payload, run.Style.BG)
-			payload = append(payload, lineFileStyleFlags(run.Style))
+			payload = append(payload, compactStyleFlags(run.Style))
 			payload = appendCompactString(payload, run.LinkURL)
 			payload = appendCompactString(payload, run.LinkParams)
 		}
@@ -41,7 +45,7 @@ func decodeCompactLines(payload []byte) ([]Line, error) {
 		if len(payload) == 0 {
 			return nil, errors.New("truncated compact history line")
 		}
-		line := Line{HardEnd: payload[0]&lineFileFlagHardEnd != 0}
+		line := Line{HardEnd: payload[0]&compactLineFlagHardEnd != 0}
 		payload = payload[1:]
 		runCount, size := binary.Uvarint(payload)
 		if size <= 0 {
@@ -67,7 +71,7 @@ func decodeCompactLines(payload []byte) ([]Line, error) {
 			if len(payload) == 0 {
 				return nil, errors.New("truncated compact history style")
 			}
-			applyLineFileStyleFlags(&run.Style, payload[0])
+			applyCompactStyleFlags(&run.Style, payload[0])
 			payload = payload[1:]
 			if run.LinkURL, payload, err = takeCompactString(payload); err != nil {
 				return nil, err
@@ -128,4 +132,36 @@ func uvarintSize(value uint64) int {
 		size++
 	}
 	return size
+}
+
+func compactStyleFlags(style history.CellStyle) uint8 {
+	var flags uint8
+	if style.Bold {
+		flags |= 1 << 0
+	}
+	if style.Italic {
+		flags |= 1 << 1
+	}
+	if style.Underline {
+		flags |= 1 << 2
+	}
+	if style.Blink {
+		flags |= 1 << 3
+	}
+	if style.Reverse {
+		flags |= 1 << 4
+	}
+	if style.Strikethrough {
+		flags |= 1 << 5
+	}
+	return flags
+}
+
+func applyCompactStyleFlags(style *history.CellStyle, flags uint8) {
+	style.Bold = flags&(1<<0) != 0
+	style.Italic = flags&(1<<1) != 0
+	style.Underline = flags&(1<<2) != 0
+	style.Blink = flags&(1<<3) != 0
+	style.Reverse = flags&(1<<4) != 0
+	style.Strikethrough = flags&(1<<5) != 0
 }

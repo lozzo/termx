@@ -743,3 +743,13 @@ func cloneLine(line Line) Line {
 	result.Runs = append([]Run(nil), line.Runs...)
 	return result
 }
+
+func clampLineIndex(value int, low int, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}
