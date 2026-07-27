@@ -256,6 +256,14 @@
 .xterm-wrapper .xterm-screen canvas {
   max-width: 100%;
 }
+.anytty-terminal-frame-hold {
+  position: absolute;
+  z-index: 50;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  background: var(--anytty-bg);
+}
 .xterm-helper-textarea {
   caret-color: transparent !important;
   opacity: 0 !important;

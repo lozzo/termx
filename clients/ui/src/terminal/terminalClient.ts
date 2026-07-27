@@ -29,6 +29,7 @@ export interface TerminalSnapshotPayload {
     revision: number
     prependedRows: number
     loadedRows: number
+    operation?: 'replace' | 'prepend'
     committedTotalRows?: number
     logicalTotalRows?: number
     historyGeneration?: number
@@ -44,6 +45,7 @@ export interface TerminalScrollbackPage {
   limit: number
   rows: number
   replay: string
+  operation?: 'replace' | 'prepend'
   committedTotalRows?: number
   logicalTotalRows?: number
   historyGeneration?: number
@@ -56,6 +58,7 @@ export interface TerminalScrollbackPage {
 export interface TerminalScrollbackLoadResult {
   loadedRows: number
   totalRows: number
+  operation?: 'replace' | 'prepend'
   committedTotalRows?: number
   logicalTotalRows?: number
   historyGeneration?: number
@@ -109,7 +112,13 @@ export interface TerminalProtocolSession {
   openTerminal(terminalId: string): Promise<TerminalProtocolChannel>
   getConnectionInfo(): Promise<ConnectionInfo>
   subscribeTerminal(terminalId: string, handler: (event: TerminalProtocolEvent) => void): () => void
-  loadScrollback(terminalId: string, offset: number, limit: number, alternate?: boolean): Promise<TerminalScrollbackPage>
+  loadScrollback(
+    terminalId: string,
+    offset: number,
+    limit: number,
+    alternate?: boolean,
+    options?: { signal?: AbortSignal },
+  ): Promise<TerminalScrollbackPage>
   closeTerminalChannel(terminalId: string): void
   markSyncLost?(terminalId: string, reason?: string): void
   requestResizeOwner?(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl>
@@ -221,11 +230,16 @@ export class TerminalClient {
     return control
   }
 
-  loadScrollback(offset: number, limit: number, alternate = false): Promise<TerminalScrollbackPage> {
+  loadScrollback(
+    offset: number,
+    limit: number,
+    alternate = false,
+    options?: { signal?: AbortSignal },
+  ): Promise<TerminalScrollbackPage> {
     if (!this.session || !this.terminalId) {
       return Promise.reject(new Error('terminal client is not connected'))
     }
-    return this.session.loadScrollback(this.terminalId, offset, limit, alternate)
+    return this.session.loadScrollback(this.terminalId, offset, limit, alternate, options)
   }
 
   markSyncLost(reason?: string): void {

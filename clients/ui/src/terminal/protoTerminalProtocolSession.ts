@@ -4,8 +4,6 @@ import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import {
-  HistoryWindowCommandSchema,
-  HistoryWindowMode,
   LiveScreenGetCommandSchema,
   CursorShape,
   type CellStyle,
@@ -37,6 +35,9 @@ import type {
   TerminalScrollbackPage,
   TerminalSnapshotPayload,
 } from './terminalClient'
+import { coreV2HistoryRowsANSI } from './coreV2HistoryANSI'
+import { createCoreV2HistorySource } from './coreV2HistorySource'
+import { CoreV2ScrollbackPager } from './coreV2ScrollbackPager'
 
 type ProtoAttachment = {
   handle: AttachmentHandle
@@ -55,8 +56,10 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   private readonly liveRevisions = new Map<string, bigint>()
   private readonly inputTails = new Map<string, Promise<void>>()
   private readonly eventSubscriptionReady
+  private readonly scrollbackPager: CoreV2ScrollbackPager
 
   constructor(private readonly session: ProtoClientSession) {
+    this.scrollbackPager = new CoreV2ScrollbackPager(createCoreV2HistorySource(session, session.stamp.endpointId))
     this.eventSubscriptionReady = openProtoEventSubscription(session, create(EventSubscribeCommandSchema, {
       types: [ApplicationEventType.TERMINAL_LIVE_INVALIDATED, ApplicationEventType.TERMINAL_LIFECYCLE],
     }), (event) => {
@@ -116,33 +119,40 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     }
   }
 
-  async loadScrollback(terminalId: string, offset: number, limit: number, alternate = false): Promise<TerminalScrollbackPage> {
-    if (alternate) return { beforeOffset: offset, limit, rows: 0, replay: '', hasMore: false, alternate: true }
-    const result = await this.session.execute(command('historyWindow', create(HistoryWindowCommandSchema, {
-      terminal: this.terminalRef(terminalId),
-      mode: offset > 0 ? HistoryWindowMode.OLDER : HistoryWindowMode.LATEST,
+  async loadScrollback(
+    terminalId: string,
+    offset: number,
+    limit: number,
+    alternate = false,
+    options?: { signal?: AbortSignal },
+  ): Promise<TerminalScrollbackPage> {
+    if (alternate) return { beforeOffset: offset, limit, rows: 0, replay: '', operation: 'replace', hasMore: false, alternate: true }
+    const cols = this.terminalSizes.get(terminalId)?.cols ?? 80
+    const page = await this.scrollbackPager.load({
+      terminalId,
+      offset,
+      limit,
+      cols,
+      ...(options?.signal ? { signal: options.signal } : {}),
+    })
+    return {
       beforeOffset: offset,
       limit,
-      cols: this.terminalSizes.get(terminalId)?.cols ?? 80,
-    })))
-    if (result.result.case !== 'historyWindow') throw new Error('history window returned no result')
-    const window = result.result.value
-    return {
-      beforeOffset: window.beforeOffset,
-      limit,
-      rows: window.loadedRows,
-      replay: rowsANSI(window.rows.map((row) => row.row).filter((row): row is ScreenRow => row !== undefined), window.size?.cols ?? this.terminalSizes.get(terminalId)?.cols ?? 80),
-      committedTotalRows: window.totalRows,
-      logicalTotalRows: window.logicalTotal,
-      historyGeneration: Number(window.historyGeneration),
-      firstRowId: Number(window.firstRowId),
-      lastRowId: Number(window.lastRowId),
-      hasMore: window.hasMore,
+      rows: page.loadedRows,
+      replay: coreV2HistoryRowsANSI(page.rows, cols),
+      operation: page.operation,
+      committedTotalRows: page.committedTotalRows,
+      logicalTotalRows: page.logicalTotalRows,
+      historyGeneration: Number(page.historyGeneration),
+      ...(page.firstRowId ? { firstRowId: Number(page.firstRowId) } : {}),
+      ...(page.lastRowId ? { lastRowId: Number(page.lastRowId) } : {}),
+      hasMore: page.hasMore,
       alternate: false,
     }
   }
 
   closeTerminalChannel(terminalId: string): void {
+    this.scrollbackPager.forget(terminalId)
     const attachment = this.attachments.get(terminalId)
     if (!attachment) return
     this.attachments.delete(terminalId)
@@ -347,7 +357,7 @@ function cursorANSI(screen: NativeScreenResult): string {
 
 function terminalInfoView(info: TerminalInfo): Record<string, unknown> {
   return {
-    terminal_id: info.ref?.terminalId ?? '', name: info.name, command: info.command, tags: info.tags,
+    terminal_id: info.ref?.terminalId ?? '', machine_id: info.ref?.endpointId ?? '', name: info.name, command: info.command, tags: info.tags,
     state: info.state === TerminalState.RUNNING ? 'running' : info.state === TerminalState.EXITED ? 'exited' : info.state === TerminalState.REMOVED ? 'removed' : 'created', cwd: info.cwd, live_cwd: info.liveCwd,
     created_at_unix_nano: info.createdAtUnixNano, exit_code: info.exitCode, exited_at_unix_nano: info.exitedAtUnixNano,
   }

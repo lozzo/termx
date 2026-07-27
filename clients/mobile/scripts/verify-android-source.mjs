@@ -66,7 +66,14 @@ for (const fragment of ['android.permission.ACCESS_NETWORK_STATE', 'android.perm
   if (!manifestText.includes(fragment)) fail(`manifest lost required fragment: ${fragment}`)
 }
 const gradleText = readFileSync(buildGradle, 'utf8')
-for (const fragment of ["apply plugin: 'kotlin-android'", '// anytty NativeConnection dependencies', 'shrinkResources true', "main.proto.srcDir '../../../../proto'"]) {
+for (const fragment of [
+  "apply plugin: 'kotlin-android'",
+  '// anytty NativeConnection dependencies',
+  'shrinkResources true',
+  "main.proto.srcDir '../../../../proto'",
+  "'cloud.anytty.com:443'",
+  "'cloud.anytty.com'",
+]) {
   if (!gradleText.includes(fragment)) fail(`Gradle configuration lost required fragment: ${fragment}`)
 }
 const capacitorConfigText = readFileSync(capacitorConfig, 'utf8')

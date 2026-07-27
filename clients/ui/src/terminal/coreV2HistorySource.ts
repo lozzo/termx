@@ -4,6 +4,7 @@ import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import {
   HistoryCopyCommandSchema,
   HistoryCursorSchema,
+  HistoryReleaseCommandSchema,
   HistoryRangeSchema,
   HistoryWindowCommandSchema,
   HistoryWindowMode,
@@ -16,13 +17,18 @@ import {
   coreV2HistoryWindowFromAPI,
   coreV2HistoryWindowRequestToParams,
   type CoreV2HistoryCopyRequest,
+  type CoreV2HistoryReleaseRequest,
   type CoreV2HistoryWindow,
   type CoreV2HistoryWindowRequest,
 } from './coreV2TerminalProtocol'
 
 export interface CoreV2HistorySource {
-  window(request: CoreV2HistoryWindowRequest): Promise<CoreV2HistoryWindow>
-  copy(request: CoreV2HistoryCopyRequest): Promise<string>
+  window(request: CoreV2HistoryWindowRequest, options?: { signal?: AbortSignal }): Promise<CoreV2HistoryWindow>
+  copy(request: CoreV2HistoryCopyRequest, options?: { signal?: AbortSignal }): Promise<string>
+  release?(
+    request: CoreV2HistoryReleaseRequest & { generation?: string | number | bigint | undefined },
+    options?: { signal?: AbortSignal },
+  ): Promise<void>
 }
 
 export function createCoreV2HistorySource(
@@ -55,20 +61,41 @@ function createProtoHistorySource(session: ProtoClientSession, machineId: string
     }) : undefined,
   })
   return {
-    async window(request) {
+    async window(request, options) {
       const command = windowCommand(request)
-      const result = await session.execute(create(CommandEnvelopeSchema, { command: { case: 'historyWindow', value: command } }))
+      const result = await session.execute(
+        create(CommandEnvelopeSchema, { command: { case: 'historyWindow', value: command } }),
+        options,
+      )
       if (result.result.case !== 'historyWindow') throw new Error('history window returned no result')
       return coreV2HistoryWindowFromAPI(result.result.value)
     },
-    async copy(request) {
+    async copy(request, options) {
       const command = create(HistoryCopyCommandSchema, {
         terminal: terminal(request.terminalId),
         window: windowCommand({ ...request, mode: 'range', limit: 1 }),
       })
-      const result = await session.execute(create(CommandEnvelopeSchema, { command: { case: 'historyCopy', value: command } }))
+      const result = await session.execute(
+        create(CommandEnvelopeSchema, { command: { case: 'historyCopy', value: command } }),
+        options,
+      )
       if (result.result.case !== 'historyCopy') throw new Error('history copy returned no result')
       return result.result.value.text
+    },
+    async release(request, options) {
+      await session.execute(
+        create(CommandEnvelopeSchema, {
+          command: {
+            case: 'historyRelease',
+            value: create(HistoryReleaseCommandSchema, {
+              terminal: terminal(request.terminalId),
+              token: request.token,
+              historyGeneration: BigInt(request.generation ?? 0),
+            }),
+          },
+        }),
+        options,
+      )
     },
   }
 }
@@ -81,23 +108,4 @@ function protoHistoryMode(mode: CoreV2HistoryWindowRequest['mode']): HistoryWind
     case 'oldest': return HistoryWindowMode.OLDEST
     case 'range': return HistoryWindowMode.LATEST
   }
-}
-
-function historyCopyTextFromAPI(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value instanceof Uint8Array) return new TextDecoder().decode(value)
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('history.copy response must be text')
-  }
-  const record = value as Record<string, unknown>
-  if (typeof record.text === 'string') return record.text
-  const bytes = record.bytes
-  if (bytes instanceof Uint8Array) return new TextDecoder().decode(bytes)
-  if (ArrayBuffer.isView(bytes)) {
-    return new TextDecoder().decode(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
-  }
-  if (Array.isArray(bytes) && bytes.every((item) => typeof item === 'number')) {
-    return new TextDecoder().decode(new Uint8Array(bytes))
-  }
-  throw new Error('history.copy response must include text or bytes')
 }

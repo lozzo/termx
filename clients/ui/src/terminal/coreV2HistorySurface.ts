@@ -527,6 +527,7 @@ function cloneRow(row: CoreV2HistoryRow, index: number): CoreV2HistoryRow {
   return {
     ...row,
     index,
+    tailFillStyle: row.tailFillStyle ? { ...row.tailFillStyle } : undefined,
     cells: row.cells.map((cell) => ({
       ...cell,
       style: cell.style ? { ...cell.style } : undefined,

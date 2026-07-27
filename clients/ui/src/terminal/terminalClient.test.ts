@@ -107,6 +107,24 @@ describe('TerminalClient', () => {
     })
   })
 
+  it('forwards scrollback cancellation to the active protocol session', async () => {
+    const session = createMockTerminalProtocolSession()
+    const callbacks = callbacksForTest()
+    const client = new TerminalClient(callbacks)
+    const controller = new AbortController()
+    client.connect('terminal-1', session)
+    await vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledTimes(1))
+
+    await client.loadScrollback(0, 50, false, { signal: controller.signal })
+
+    expect(session.scrollbackRequests).toEqual([{
+      terminalId: 'terminal-1',
+      offset: 0,
+      limit: 50,
+      signal: controller.signal,
+    }])
+  })
+
   it('ignores stale async terminal opens after switching to another terminal', async () => {
     const session = new DeferredTerminalProtocolSession()
     const callbacks = callbacksForTest()
@@ -159,7 +177,7 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   readonly openedTerminalIds: string[] = []
   readonly openedLabels: string[] = []
   readonly closedTerminalIds: string[] = []
-  readonly scrollbackRequests: Array<{ terminalId: string; offset: number; limit: number }> = []
+  readonly scrollbackRequests: Array<{ terminalId: string; offset: number; limit: number; signal?: AbortSignal }> = []
   private readonly channels = new Map<string, MockTerminalProtocolChannel>()
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
 
@@ -195,8 +213,14 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
     this.channels.get(terminalId)?.close()
   }
 
-  async loadScrollback(terminalId: string, offset: number, limit: number) {
-    this.scrollbackRequests.push({ terminalId, offset, limit })
+  async loadScrollback(
+    terminalId: string,
+    offset: number,
+    limit: number,
+    _alternate?: boolean,
+    options?: { signal?: AbortSignal },
+  ) {
+    this.scrollbackRequests.push({ terminalId, offset, limit, ...(options?.signal ? { signal: options.signal } : {}) })
     return {
       beforeOffset: offset,
       limit,

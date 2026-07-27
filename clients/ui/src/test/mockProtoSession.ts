@@ -11,6 +11,7 @@ export type ProtoCommandHandler = (command: CommandEnvelope) => ResultEnvelope |
 /** MockProtoSession 让 UI 测试经过 JNI/WASM 生产路径共用的 generated Proto session contract。 */
 export class MockProtoSession implements ProtoClientSession {
   readonly commands: CommandEnvelope[] = []
+  readonly executeSignals: Array<AbortSignal | undefined> = []
   readonly openedResources: ResourceHandle[] = []
   readonly stamp
   private alive = true
@@ -24,10 +25,28 @@ export class MockProtoSession implements ProtoClientSession {
     this.stamp = create(EndpointSessionStampSchema, { endpointId, generation: 1n, sessionId: 'test-session' })
   }
 
-  async execute(command: CommandEnvelope): Promise<ResultEnvelope> {
+  async execute(command: CommandEnvelope, options?: { signal?: AbortSignal }): Promise<ResultEnvelope> {
     if (!this.alive) throw new Error('mock Proto session is closed')
     this.commands.push(command)
-    return await this.handler(command)
+    this.executeSignals.push(options?.signal)
+    const result = Promise.resolve(this.handler(command))
+    const signal = options?.signal
+    if (!signal) return await result
+    if (signal.aborted) throw abortReason(signal)
+    return await new Promise<ResultEnvelope>((resolve, reject) => {
+      const abort = () => reject(abortReason(signal))
+      signal.addEventListener('abort', abort, { once: true })
+      void result.then(
+        (value) => {
+          signal.removeEventListener('abort', abort)
+          resolve(value)
+        },
+        (error) => {
+          signal.removeEventListener('abort', abort)
+          reject(error)
+        },
+      )
+    })
   }
 
   subscribeEvents(handler: (event: EventEnvelope) => void): ProtoClientSubscription {
@@ -47,6 +66,10 @@ export class MockProtoSession implements ProtoClientSession {
   isAlive(): boolean { return this.alive }
 
   async close(): Promise<void> { this.alive = false }
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
 }
 
 /** MockProtoResourceStream 模拟 binding 的 opaque resource stream，只记录 framing payload。 */

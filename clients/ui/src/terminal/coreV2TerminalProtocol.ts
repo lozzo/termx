@@ -85,6 +85,7 @@ export interface CoreV2HistoryCell {
 export interface CoreV2HistoryRow {
   index: number
   cells: CoreV2HistoryCell[]
+  tailFillStyle?: CoreV2HistoryCellStyle | undefined
   kind?: string | undefined
   wrapped?: boolean | undefined
   ownership?: string | undefined
@@ -222,10 +223,12 @@ export function coreV2HistoryWindowFromAPI(value: unknown): CoreV2HistoryWindow 
   const cols = numberValue(asRecord(record.size).cols)
   const rows = numberValue(asRecord(record.size).rows)
   const renderRows = recordArray(record.rows).map((row, index) => historyRowFromAPI(row, index, record))
+  const terminal = asRecord(record.terminal)
+  const cursor = historyCursorFromAPI(record)
   return {
-    terminalId: stringValue(record.terminal_id ?? record.terminalId),
+    terminalId: stringValue(record.terminal_id ?? record.terminalId ?? terminal.terminal_id ?? terminal.terminalId),
     token: stringValue(record.token),
-    op: historyWindowOp(stringValue(record.op)),
+    op: historyWindowOp(record.op ?? record.operation),
     cols,
     rows,
     renderRows,
@@ -241,12 +244,7 @@ export function coreV2HistoryWindowFromAPI(value: unknown): CoreV2HistoryWindow 
     lastRowId: optionalID(record.last_row_id ?? record.lastRowId),
     firstLineId: optionalID(record.first_line_id ?? record.firstLineId),
     lastLineId: optionalID(record.last_line_id ?? record.lastLineId),
-    cursor: booleanValue(record.cursor_valid ?? record.cursorValid)
-      ? {
-          lineId: idString(record.cursor_before_line_id ?? record.cursorBeforeLineId),
-          rowInLine: numberValue(record.cursor_before_row_in_line ?? record.cursorBeforeRowInLine),
-        }
-      : undefined,
+    cursor,
     timestampUnixMs: unixNanoToMs(record.timestamp_unix_nano ?? record.timestampUnixNano),
   }
 }
@@ -298,15 +296,19 @@ function assertHistoryWindowRequest(request: CoreV2HistoryWindowRequest): void {
 function historyRowFromAPI(row: Record<string, unknown>, index: number, owner: Record<string, unknown>): CoreV2HistoryRow {
   const rowLineIds = arrayValue(owner.row_logical_line_ids ?? owner.rowLogicalLineIds)
   const rowInLine = arrayValue(owner.row_in_line ?? owner.rowInLine)
+  const screenRow = asRecord(row.row)
+  const payload = Object.keys(screenRow).length > 0 ? screenRow : row
+  const logicalLineId = optionalID(row.logical_line_id ?? row.logicalLineId ?? rowLineIds[index])
   return {
     index,
-    cells: recordArray(row.cells).map(historyCellFromAPI),
+    cells: recordArray(payload.cells).map(historyCellFromAPI),
+    tailFillStyle: historyStyleFromAPI(payload.tail_fill ?? payload.tailFill),
     kind: optionalString(row.kind ?? row.row_kind ?? row.rowKind),
     wrapped: optionalBool(row.wrapped),
-    ownership: optionalString(arrayValue(owner.row_ownership ?? owner.rowOwnership)[index]),
+    ownership: historyOwnership(row.ownership ?? arrayValue(owner.row_ownership ?? owner.rowOwnership)[index]),
     timestampUnixMs: unixNanoToMs(arrayValue(owner.row_timestamps_unix_nano ?? owner.rowTimestampsUnixNano)[index] ?? row.timestamp_unix_nano ?? row.timestampUnixNano),
-    logicalLineId: optionalID(rowLineIds[index]),
-    rowInLine: optionalNumber(rowInLine[index]),
+    logicalLineId,
+    rowInLine: optionalNumber(row.row_in_line ?? row.rowInLine ?? rowInLine[index]),
   }
 }
 
@@ -315,22 +317,26 @@ function historyCellFromAPI(cell: Record<string, unknown>): CoreV2HistoryCell {
   return {
     text: stringValue(cell.content ?? cell.r ?? cell.text),
     width: numberValue(cell.width ?? cell.w) || 1,
-    style: cleanStyle({
-      fg: optionalString(styleRecord.fg),
-      bg: optionalString(styleRecord.bg),
-      bold: optionalBool(styleRecord.bold ?? styleRecord.b),
-      italic: optionalBool(styleRecord.italic ?? styleRecord.i),
-      underline: optionalBool(styleRecord.underline ?? styleRecord.u),
-      blink: optionalBool(styleRecord.blink),
-      reverse: optionalBool(styleRecord.reverse),
-      strikethrough: optionalBool(styleRecord.strikethrough),
-    }),
+    style: historyStyleFromAPI(styleRecord),
     linkUrl: optionalString(cell.link_url ?? cell.linkUrl),
     linkParams: optionalString(cell.link_params ?? cell.linkParams),
   }
 }
 
 function historyLinesFromAPI(record: Record<string, unknown>): CoreV2HistoryLineSpan[] {
+  const generatedLines = recordArray(record.lines)
+  if (generatedLines.length > 0) {
+    return generatedLines.map((line) => ({
+      startRow: numberValue(line.start_row ?? line.startRow),
+      endRow: numberValue(line.end_row ?? line.endRow),
+      rowKind: optionalString(line.row_kind ?? line.rowKind),
+      logicalLineId: idString(line.logical_line_id ?? line.logicalLineId),
+      timestampStartUnixMs: unixNanoToMs(line.timestamp_start_unix_nano ?? line.timestampStartUnixNano),
+      timestampEndUnixMs: unixNanoToMs(line.timestamp_end_unix_nano ?? line.timestampEndUnixNano),
+      clippedBefore: booleanValue(line.clipped_before ?? line.clippedBefore),
+      clippedAfter: booleanValue(line.clipped_after ?? line.clippedAfter),
+    }))
+  }
   const starts = arrayValue(record.line_start_rows ?? record.lineStartRows)
   const ends = arrayValue(record.line_end_rows ?? record.lineEndRows)
   const kinds = arrayValue(record.line_row_kinds ?? record.lineRowKinds)
@@ -377,8 +383,56 @@ function eventTypeName(protocolType: number): CoreV2TerminalProtocolEvent['type'
   }
 }
 
-function historyWindowOp(value: string): CoreV2HistoryWindowOp {
+function historyCursorFromAPI(record: Record<string, unknown>): CoreV2HistoryCursor | undefined {
+  const generated = asRecord(record.cursor)
+  if (Object.keys(generated).length > 0) {
+    const lineId = idString(generated.line_id ?? generated.lineId)
+    if (lineId && lineId !== '0') {
+      return {
+        lineId,
+        rowInLine: numberValue(generated.row_in_line ?? generated.rowInLine),
+      }
+    }
+  }
+  if (!booleanValue(record.cursor_valid ?? record.cursorValid)) return undefined
+  const lineId = idString(record.cursor_before_line_id ?? record.cursorBeforeLineId)
+  if (!lineId || lineId === '0') return undefined
+  return {
+    lineId,
+    rowInLine: numberValue(record.cursor_before_row_in_line ?? record.cursorBeforeRowInLine),
+  }
+}
+
+function historyStyleFromAPI(value: unknown): CoreV2HistoryCellStyle | undefined {
+  const style = asRecord(value)
+  return cleanStyle({
+    fg: optionalString(style.fg ?? style.foreground),
+    bg: optionalString(style.bg ?? style.background),
+    bold: optionalBool(style.bold ?? style.b),
+    italic: optionalBool(style.italic ?? style.i),
+    underline: optionalBool(style.underline ?? style.u),
+    blink: optionalBool(style.blink),
+    reverse: optionalBool(style.reverse),
+    strikethrough: optionalBool(style.strikethrough),
+  })
+}
+
+function historyOwnership(value: unknown): string | undefined {
+  if (typeof value === 'string') return value || undefined
+  if (typeof value !== 'number') return undefined
+  switch (value) {
+    case 1: return 'persisted'
+    case 2: return 'live_tail_reclaimed'
+    case 3: return 'live_tail_live'
+    case 4: return 'screen'
+    default: return undefined
+  }
+}
+
+function historyWindowOp(value: unknown): CoreV2HistoryWindowOp {
   if (value === 'prepend' || value === 'append' || value === 'replace') return value
+  if (value === 2 || value === 'HISTORY_WINDOW_OPERATION_PREPEND') return 'prepend'
+  if (value === 3 || value === 'HISTORY_WINDOW_OPERATION_APPEND') return 'append'
   return 'replace'
 }
 
@@ -451,8 +505,9 @@ function numberValue(value: unknown): number {
 }
 
 function optionalNumber(value: unknown): number | undefined {
-  const number = numberValue(value)
-  return Number.isFinite(number) ? number : undefined
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
+  if (typeof value === 'bigint') return Number(value)
+  return undefined
 }
 
 function booleanValue(value: unknown): boolean {

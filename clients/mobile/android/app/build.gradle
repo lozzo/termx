@@ -3,9 +3,9 @@ apply plugin: 'kotlin-android'
 apply plugin: 'com.google.protobuf'
 
 def anyttyBuildString = { value -> '"' + value.toString().replace('\\', '\\\\').replace('"', '\\"') + '"' }
-def anyttyCloudControllerAddress = project.findProperty('anyttyCloudControllerAddress') ?: ''
-def anyttyCloudControllerServerName = project.findProperty('anyttyCloudControllerServerName') ?: ''
-def anyttyCloudControllerCAPEMBase64 = project.findProperty('anyttyCloudControllerCAPEMBase64') ?: ''
+def anyttyCloudControllerAddress = project.findProperty('anyttyCloudControllerAddress') ?: System.getenv('ANYTTY_CLOUD_CONTROLLER_ADDRESS') ?: 'cloud.anytty.com:443'
+def anyttyCloudControllerServerName = project.findProperty('anyttyCloudControllerServerName') ?: System.getenv('ANYTTY_CLOUD_CONTROLLER_SERVER_NAME') ?: 'cloud.anytty.com'
+def anyttyCloudControllerCAPEMBase64 = project.findProperty('anyttyCloudControllerCAPEMBase64') ?: System.getenv('ANYTTY_CLOUD_CONTROLLER_CA_PEM_BASE64') ?: ''
 
 android {
     namespace = "com.anytty.app"
