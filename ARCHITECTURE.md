@@ -1427,6 +1427,12 @@ Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel
 
 `cloud.muxvia.com` 的 Let's Encrypt 证书有效期至 2026-10-24；证书私钥只保存在海外服务器，仓库只保留 Nginx 路由和续期装配。每日 systemd timer 在宿主机运行容器化 Certbot，续期后复制证书到 Nginx 只读挂载目录并执行配置检查和热加载。迁移后 Controller 与 Edge 均完成真实重启并返回 ready、`NRestarts=0`；标准 `443` gRPC 请求实际到达 `DirectoryService`，Playwright 1.62.0 从新域名完成桌面和手机视口真实登录、全部侧栏路由及在线 CN1 Edge 验收，结果为 2 项通过、2 项按项目正常跳过。公开主站 Nginx 证书续期与 Edge 证书档案是两个独立 owner；前者不通过 EdgeControl 分发，后者的最终线上证据由本节后续记录补充。
 
+2026-07-27 的 R8 在线开发部署使用已推送源码提交 `c2fea7af`。Controller `155.94.155.192` 的 Linux/amd64 二进制 SHA-256 为 `d64036606ddc300c8cc39ffa7d6ab503a6058df1b47b5957aea132002cfa67c7`，Edge `114.66.58.243` 的二进制 SHA-256 为 `c562f12b6902c783585dfaf0b90d00f854535f5a5c88b04b4944fa7f937495d5`；程序继续由人工 SSH/systemd 部署，没有引入 release、rollout、更新器或回滚 API。Controller 执行 PostgreSQL migration `0005` 后，`muxvia_staging` migration 范围为 `1-5`；`StateDirectory=muxvia-cloud-controller` 创建的 `/var/lib/muxvia-cloud-controller` 及证书引用目录均为 `0700 muxvia:muxvia`，当前两个 secret 文件均为 `0600 muxvia:muxvia`。部署前二进制和 unit 分别保存在 `/var/backups/muxvia/r8-c2fea7af-controller` 与 `/var/backups/muxvia/r8-c2fea7af-edge`，不进入活动运行路径。
+
+运营人员通过 `https://cloud.muxvia.com/app/admin/certificates` 上传人工签发的 `fullchain.pem` 与 `privkey.pem`，并把档案绑定到 `muxvia-cn1.omscd.com:41102`。最终 PostgreSQL 中只有一个 `CN1 Edge 公网证书` 档案，指纹为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`，档案 `revision=2`，绑定 `desired_revision=2`、`applied_revision=2` 且最近错误为空；数据库 data dump、Controller journal 和 Edge journal 中的私钥 PEM 标记数均为 0。Edge 的 `/var/lib/muxvia-cloud-edge/managed-certificate.pb` 为 `0600 muxvia-edge:muxvia-edge`，SHA-256 为 `322377e6174873a1b29a92df0bd16b6ae568e90c28fa8a4cfb1e6b08f580834c`。公网 TLS 握手实际返回相同新证书指纹，有效期为 2026-07-27 至 2026-09-25；Edge 重启前后状态文件摘要和握手指纹不变。
+
+本地 Playwright 三视口回归为 24 项通过、18 项按线上条件跳过；线上 R7/R8 联合回归为 4 项通过、5 项按项目跳过，严格 revision 用例另外证明已绑定档案从 revision 1 自动替换并收敛到 `r2 / r2`。随后分别重启 Edge 和 Controller，二者都恢复 `active/ready`、`NRestarts=0`，Controller 重启后的桌面 Playwright 再次确认 CN1 Edge 在线和全部运营模块可访问。线上测试修正提交最终收敛到 `6e83b6a4`，只改变验收定位和 revision 断言，不改变已部署二进制或 Web 静态资源。
+
 ### 32.12 R9：上线门禁
 
 - 完成第 16 节全部 E2E、故障注入、负载、Android 和部署证据。
