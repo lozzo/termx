@@ -20,7 +20,12 @@ test.describe('R8 线上证书自动更新', () => {
     test.skip(testInfo.project.name !== 'desktop-chromium')
     const errors = captureErrors(page)
     await loginOperator(page)
+    const loaded = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/operator/certificates' && response.request().method() === 'GET'
+    })
     await page.goto('/app/admin/certificates')
+    expect((await loaded).ok()).toBe(true)
     await expect(page.getByRole('heading', { name: '证书', exact: true }).last()).toBeVisible()
 
     const existing = page.getByRole('row').filter({ hasText: profileName }).first()
