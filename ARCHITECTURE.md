@@ -1416,7 +1416,7 @@ R7 通过 `f0c87300` 建立 Proto-first 账号、角色、会话、交易、Subs
 
 Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel 7 `390x844` 手机验收：桌面固定侧栏逐项进入 11 个管理模块并查看真实在线 CN1 Edge，手机连续打开抽屉进入 4 个模块，关闭后不再遮挡或拦截内容，用户表加载真实系统管理员且查询按钮保持单行。最终线上结果为 2 项通过、2 项按设备项目正常跳过；页面 error、console error、横向页面溢出和服务 crash 门禁均通过。
 
-### 32.11 R8：Edge 证书上传与自动更新（进行中）
+### 32.11 R8：Edge 证书上传与自动更新（已完成）
 
 - 运营人员上传匹配的证书链和私钥，Controller 解析非敏感元数据并保存一个当前 revision；不提供 CSR/ACME、历史版本、灰度发布或回滚。
 - 一个档案可以绑定多个 Edge，同一 Edge 只选择一个当前档案。档案替换后在线 Edge 自动更新，离线 Edge 重连后按 desired/applied revision 收敛。
@@ -1432,6 +1432,12 @@ Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel
 运营人员通过 `https://cloud.muxvia.com/app/admin/certificates` 上传人工签发的 `fullchain.pem` 与 `privkey.pem`，并把档案绑定到 `muxvia-cn1.omscd.com:41102`。最终 PostgreSQL 中只有一个 `CN1 Edge 公网证书` 档案，指纹为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`，档案 `revision=2`，绑定 `desired_revision=2`、`applied_revision=2` 且最近错误为空；数据库 data dump、Controller journal 和 Edge journal 中的私钥 PEM 标记数均为 0。Edge 的 `/var/lib/muxvia-cloud-edge/managed-certificate.pb` 为 `0600 muxvia-edge:muxvia-edge`，SHA-256 为 `322377e6174873a1b29a92df0bd16b6ae568e90c28fa8a4cfb1e6b08f580834c`。公网 TLS 握手实际返回相同新证书指纹，有效期为 2026-07-27 至 2026-09-25；Edge 重启前后状态文件摘要和握手指纹不变。
 
 本地 Playwright 三视口回归为 24 项通过、18 项按线上条件跳过；线上 R7/R8 联合回归为 4 项通过、5 项按项目跳过，严格 revision 用例另外证明已绑定档案从 revision 1 自动替换并收敛到 `r2 / r2`。随后分别重启 Edge 和 Controller，二者都恢复 `active/ready`、`NRestarts=0`，Controller 重启后的桌面 Playwright 再次确认 CN1 Edge 在线和全部运营模块可访问。线上测试修正提交最终收敛到 `6e83b6a4`，只改变验收定位和 revision 断言，不改变已部署二进制或 Web 静态资源。
+
+双 Agent 终审进一步发现并关闭了三类真实竞态：丢失 `CertificateApplied` 后由认证 Hello 幂等修复 applied；绑定事务在同一事务内锁定并核对 Edge、档案和 binding revision；证书 mutation 只向 Edge writer 发送刷新通知，由 writer 在分配 command sequence 时重新读取 PostgreSQL 当前 desired，避免同档案替换或跨档案重绑的迟到通知下发旧 bundle。Edge 本机同时拒绝同档案降序 revision，完整证书链逐张解析；架构 reviewer 与代码 reviewer 最终均为 PASS。
+
+2026-07-27 的 R8 最终修复与部署对应已推送提交 `1ddf231f`。Controller `155.94.155.192` 二进制 SHA-256 为 `199361c7a553e70382caca7e90861769219c570f0393bd153e6ad32b8dd234c1`，其安装入口提供的 Edge artifact 与国内 Edge `114.66.58.243` 在用二进制 SHA-256 均为 `598a8d7f57f8f54db84f20902f759517618445b92b6e3a5adedb237d96d39de3`；备份分别位于 `/var/backups/muxvia/r8-1ddf231f-controller` 和 `/var/backups/muxvia/r8-1ddf231f-edge`。两个 systemd unit 重启后均为 `active/ready`、`NRestarts=0`。
+
+线上 Playwright 在桌面、平板和手机项目完成运营后台回归，结果为 3 项通过、3 项按视口预期跳过；R8 严格用例另有 1 项通过，把同一档案从 revision 2 替换并自动收敛到 `desired_revision=3 / applied_revision=3`。Edge managed state SHA-256 更新为 `3bdd6f335f47eb3d4119b26d7bb345c6468fe5b160c2e342b6a402f973098b86`，文件仍为 `0600 muxvia-edge:muxvia-edge`；公网 TLS 指纹仍为 `48D20A103D7503CCCE0263717CD040BB0C3482AE5A91B9AC218F85F466B5B683`。数据库 dump、Controller journal 和 Edge journal 的私钥标记计数均为 0，Controller secret 目录与文件权限仍分别为 `0700`、`0600`。
 
 ### 32.12 R9：上线门禁
 

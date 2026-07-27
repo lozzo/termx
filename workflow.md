@@ -14,11 +14,11 @@
 | R1-R6 | 已完成 | Cloud 契约、Controller/Edge、注册、P2P、Relay、用量纵向链路 | 现有集成测试、在线部署与 `ARCHITECTURE.md` 记录 |
 | R7 | 已完成但产品验收已并入 CLOUDP007 | 账号、交易、中文运营 API 和管理模块 | 现有账号/交易集成测试与运营路由 Playwright；不能据此宣称普通用户产品完成 |
 | CLOUDP007 | 已完成 | Development 全产品 E2E | `f11ef1f6` 已推送并在线部署；Web 三视口、最终 ARM64 APK 全 Route、真实 PostgreSQL 与双 Agent 审查全部 PASS |
-| R8 | 进行中 | Edge 证书上传、档案绑定和自动更新 | 当前活动切片，按下述最小纵向链路实现和验收 |
+| R8 | 已完成 | Edge 证书上传、档案绑定和自动更新 | `1ddf231f` 已推送并在线部署；真实 PostgreSQL、TLS 热切换、Playwright 与双 Agent 审查均 PASS |
 | R9 | 待开始 | 上线门禁与正式发布 | R8 完成后启动 |
 | WEB001 | 延后 | 浏览器 Web/WASM terminal 产品 | 仅用户明确解冻后启动 |
 
-当前最早未完成切片是 `R8`；本轮只执行 R8，不得跳到 R9 或 WEB001。
+当前最早未完成切片是 `R9`，状态仍为待开始；R8 已关闭，不得继续向证书领域增加 release/rollout 能力。R9 开始前必须先把上线门禁拆成可执行切片，WEB001 继续冻结。
 
 ## R8 产品范围
 
