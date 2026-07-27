@@ -1104,7 +1104,7 @@ Edge 唯一持久 runtime 组件是 `usage.Outbox`。首发使用 `go.etcd.io/bb
 
 Edge 先验证签名和 target，再在内存构造 candidate config。可以热更新的限额和 key set 原子替换；需要重启的监听变化返回 `restart_required`，由人工部署流程处理。不得把半应用配置标记为 applied。
 
-证书 loader 通过原子指针向 TLS handshake 提供当前 certificate。运营人员只上传匹配的 `fullchain.pem` 与 `privkey.pem`；Controller 校验证书链、私钥匹配、DNS SAN 和当前有效期，将 PEM 放入 root-owned secret 目录，并仅通过目标 Edge 的 mTLS `EdgeControl` 下发。Edge 再次校验后把单一 protobuf 状态文件以 `0600` 原子写入、fsync、rename，再切换指针并上报 applied revision。失败保留旧文件、旧指针和旧 applied revision；这是失败保护，不形成历史版本或回滚产品。
+证书 loader 通过原子指针向 TLS handshake 提供当前 certificate。运营人员只上传匹配的 `fullchain.pem` 与 `privkey.pem`；Controller 校验证书链、私钥匹配、DNS SAN 和当前有效期，将 PEM 放入仅 Controller 服务用户可访问的 `0700` secret 目录，并仅通过目标 Edge 的 mTLS `EdgeControl` 下发。Edge 再次校验后把单一 protobuf 状态文件以 `0600` 原子写入、fsync、rename，再切换指针并上报 applied revision。失败保留旧文件、旧指针和旧 applied revision；这是失败保护，不形成历史版本或回滚产品。
 
 ## 28. Controller 应用层技术设计
 

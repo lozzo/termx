@@ -282,7 +282,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.publicOrigin, "public-origin", "", "public HTTPS origin for operator and installer")
 	flags.StringVar(&config.controllerAddress, "controller-address", "", "public EdgeControl address returned to Edge")
 	flags.StringVar(&config.controllerServerName, "controller-server-name", "", "EdgeControl TLS server name returned to Edge")
-	flags.StringVar(&config.certificateSecretDir, "certificate-secret-dir", "/var/lib/muxvia-cloud-controller/certificates", "root-owned directory for managed Edge certificate files")
+	flags.StringVar(&config.certificateSecretDir, "certificate-secret-dir", "/var/lib/muxvia-cloud-controller/certificates", "restricted Controller service directory for managed Edge certificate files")
 	flags.StringVar(&config.operatorUsername, "operator-username", "operator", "bootstrap administrator login")
 	flags.StringVar(&config.operatorPasswordFile, "operator-password-file", "", "bootstrap administrator password file")
 	flags.StringVar(&config.configSigningKey, "config-signing-key", "", "Edge desired config Ed25519 private key")

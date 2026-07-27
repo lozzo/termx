@@ -14,7 +14,7 @@ const (
 	privateKeyFile  = "privkey.pem"
 )
 
-// FileSecretStore 在 Controller 本机 root-owned 目录保存当前证书材料。
+// FileSecretStore 在 Controller 本机仅服务用户可访问的目录保存当前证书材料。
 // 每次 Put 都创建不可猜测的新引用，数据库提交后才由业务层淘汰旧引用。
 type FileSecretStore struct {
 	root string
