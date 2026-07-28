@@ -27,7 +27,6 @@ import type {
   RemoteRuntimeFetch,
   RemoteRuntimeStorage,
   RtcConnectOptions,
-  RtcConnectionStateSnapshot,
   RtcEvent,
   RtcSubscription,
   TerminalInventoryEvents,
@@ -675,20 +674,16 @@ function createNativeMachineRuntime(
       }
     },
     async listTerminals(options) {
-      emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Connecting through native runtime...')
       const session = await sessionManager.get({
         forceRelay: options?.forceRelay,
         onStatus: options?.onStatus,
         onConnectionState: options?.onConnectionState,
       })
-    const relayInUse = session.connection?.localCandidateType === AnyTTYClientBinding.ConnectionCandidateType.RELAY
-      emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Fetching terminals...', relayInUse)
       try {
         const response = await session.execute(create(AnyTTYApiApplication.CommandEnvelopeSchema, {
           command: { case: 'terminalList', value: create(AnyTTYApiTerminal.TerminalListCommandSchema) },
         }))
         if (response.result.case !== 'terminalList') throw new Error('terminal list returned no result')
-        emitNativeRuntimeConnectionState(options, machine.id, 'connected', 'Connected', relayInUse)
         return normalizeTerminalInventory({
           machine_id: machine.id,
           terminals: response.result.value.terminals.map((terminal) => ({
@@ -752,7 +747,12 @@ function createNativeMachineRuntime(
       },
     },
     inventoryEvents: createNativeInventoryEvents(machine.id, sessionManager),
+    listConnectionState: sessionManager.connectionState,
     fileTransfer: createFileTransferContext(machine.id, transferStore),
+    async disconnect() {
+      await sessionManager.reset()
+      await connector.release?.(machine.id)
+    },
     dispose: () => {
       if (shared.sessionManagers.get(machine.id)?.manager === sessionManager) {
         shared.sessionManagers.delete(machine.id)
@@ -853,22 +853,6 @@ function createNativeInventoryEvents(
       }
     },
   }
-}
-
-function emitNativeRuntimeConnectionState(
-  options: Pick<RtcConnectOptions, 'onStatus' | 'onConnectionState'> | undefined,
-  machineId: string,
-  phase: RtcConnectionStateSnapshot['phase'],
-  statusText: string,
-  relayInUse = false,
-): void {
-  options?.onStatus?.(statusText)
-  options?.onConnectionState?.({
-    machineId,
-    phase,
-    statusText,
-  relayInUse,
-  })
 }
 
 function firstNonEmpty(values: readonly (string | undefined)[]): string | undefined {

@@ -1,6 +1,7 @@
-import type { ConnectionPolicy, ConnectionPolicyState, ProtoClientSession, ProtoClientSubscription, ProtoResourceStream, RtcConnectOptions } from '@anytty/ui'
+import type { ConnectionInfo, ConnectionPolicy, ConnectionPolicyState, MachineConnectionSnapshot, ProtoClientSession, ProtoClientSubscription, ProtoResourceStream, RtcConnectOptions, RtcConnectionStateSnapshot } from '@anytty/ui'
 import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
 import type { EndpointSessionStamp, ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
+import { ConnectionCandidateType, ConnectionObservedPath, ConnectionRouteKind } from '../../ui/src/generated/bindingpb/client_binding_pb'
 
 // Android 总窗口覆盖 route planning、signaling/answer、ICE、鉴权和 Hello；
 // Go peer 仍用独立 deadline 约束 answer 之后的 ICE/DataChannel，不能由 UI 提前截断。
@@ -27,11 +28,24 @@ export class NativeSessionManager {
   private pending: Promise<ProtoClientSession> | null = null
   private pendingController: AbortController | null = null
   private epoch = 0
+  private reconnectAttempt = 0
+  private snapshot: MachineConnectionSnapshot
+  private readonly stateListeners = new Set<() => void>()
+
+  readonly connectionState = {
+    getSnapshot: (): MachineConnectionSnapshot => this.snapshot,
+    subscribe: (listener: () => void): (() => void) => {
+      this.stateListeners.add(listener)
+      return () => this.stateListeners.delete(listener)
+    },
+  }
 
   constructor(
     private readonly machineId: string,
     private readonly connector: NativeSessionConnector,
-  ) {}
+  ) {
+    this.snapshot = idleMachineConnectionSnapshot(machineId)
+  }
 
   /** machineID 仅供 generation owner 释放同一 Endpoint 的 connector 资源。 */
   machineID(): string { return this.machineId }
@@ -55,6 +69,7 @@ export class NativeSessionManager {
     this.session = null
     this.pending = null
     this.pendingController = null
+    this.publish(idleMachineConnectionSnapshot(this.machineId, this.reconnectAttempt))
     pendingController?.abort(new Error('native session generation changed while connecting'))
     // native generation owner 已经关闭旧 engine；close 只做幂等清理，不能等待已经失联的 bridge。
     void session?.close().catch(() => undefined)
@@ -71,37 +86,186 @@ export class NativeSessionManager {
   }
 
   private async acquire(options?: RtcConnectOptions): Promise<ProtoClientSession> {
-    if (this.session?.isAlive()) return new NativeSessionLease(this.session)
-    if (this.session) {
-      await this.session.close().catch(() => undefined)
-      this.session = null
-    }
-    if (!this.pending) {
-      const epoch = this.epoch
-      // 底层 connect 属于 manager，而不是任一 UI lease；单个 consumer 只能取消自己的等待。
-      // manager-owned signal 同时约束完整 binding operation，并在 generation reset 时主动释放旧 Go attempt。
-      const controller = new AbortController()
-      this.pendingController = controller
-      const timeout = globalThis.setTimeout(() => controller.abort(new Error('client session timed out')), NATIVE_SESSION_READY_TIMEOUT_MS)
-      const connectOptions = { ...options, signal: controller.signal }
-      const pending = this.connector.connect({ machineId: this.machineId }, connectOptions).then(async (opened) => {
-        if (epoch !== this.epoch) {
-          await opened.close().catch(() => undefined)
-          throw new Error('native session generation changed while connecting')
+    const stopForwarding = this.forwardState(options)
+    try {
+      if (this.session?.isAlive()) {
+        this.publish(connectedMachineConnectionSnapshot(this.machineId, this.session, this.snapshot.forceRelay, this.reconnectAttempt))
+        return new NativeSessionLease(this.session)
+      }
+      if (this.session) {
+        await this.session.close().catch(() => undefined)
+        this.session = null
+      }
+      if (!this.pending) {
+        const epoch = this.epoch
+        this.reconnectAttempt += 1
+        this.publish({
+          machineId: this.machineId,
+          phase: 'connecting',
+          statusText: 'Connecting...',
+          connectionInfo: null,
+          forceRelay: options?.forceRelay === true,
+          relayInUse: options?.forceRelay === true,
+          reconnectAttempt: this.reconnectAttempt,
+          error: null,
+        })
+        // 底层 connect 属于 manager，而不是任一 UI lease；单个 consumer 只能取消自己的等待。
+        // manager-owned signal 同时约束完整 binding operation，并在 generation reset 时主动释放旧 Go attempt。
+        const controller = new AbortController()
+        this.pendingController = controller
+        const timeout = globalThis.setTimeout(() => controller.abort(new Error('client session timed out')), NATIVE_SESSION_READY_TIMEOUT_MS)
+        const connectOptions: RtcConnectOptions = {
+          forceRelay: options?.forceRelay,
+          signal: controller.signal,
+          onStatus: (status) => {
+            if (epoch !== this.epoch) return
+            this.publish({ ...this.snapshot, statusText: status })
+          },
+          onConnectionState: (snapshot) => {
+            if (epoch !== this.epoch) return
+            this.publish(connectionStateSnapshot(this.machineId, snapshot, options?.forceRelay === true, this.reconnectAttempt))
+          },
         }
-        this.session = opened
-        return opened
-      })
-      this.pending = pending
-      void pending.finally(() => {
-        globalThis.clearTimeout(timeout)
-        if (this.pendingController === controller) this.pendingController = null
-        if (this.pending === pending) this.pending = null
-      }).catch(() => undefined)
+        const pending = this.connector.connect({ machineId: this.machineId }, connectOptions).then(async (opened) => {
+          if (epoch !== this.epoch) {
+            await opened.close().catch(() => undefined)
+            throw new Error('native session generation changed while connecting')
+          }
+          this.session = opened
+          this.publish(connectedMachineConnectionSnapshot(this.machineId, opened, options?.forceRelay === true, this.reconnectAttempt))
+          return opened
+        }).catch((error: unknown) => {
+          if (epoch === this.epoch) {
+            this.publish({
+              machineId: this.machineId,
+              phase: 'failed',
+              statusText: error instanceof Error ? error.message : 'Connection failed',
+              connectionInfo: null,
+              forceRelay: options?.forceRelay === true,
+              relayInUse: options?.forceRelay === true,
+              reconnectAttempt: this.reconnectAttempt,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+          throw error
+        })
+        this.pending = pending
+        void pending.finally(() => {
+          globalThis.clearTimeout(timeout)
+          if (this.pendingController === controller) this.pendingController = null
+          if (this.pending === pending) this.pending = null
+        }).catch(() => undefined)
+      }
+      const opened = await awaitSessionLease(this.pending, options?.signal)
+      if (!opened.isAlive()) throw new Error('Go client session is unavailable')
+      return new NativeSessionLease(opened)
+    } finally {
+      stopForwarding()
     }
-    const opened = await awaitSessionLease(this.pending, options?.signal)
-    if (!opened.isAlive()) throw new Error('Go client session is unavailable')
-    return new NativeSessionLease(opened)
+  }
+
+  private forwardState(options: RtcConnectOptions | undefined): () => void {
+    if (!options?.onConnectionState && !options?.onStatus) return () => {}
+    const forward = () => {
+      const snapshot = this.snapshot
+      options.onStatus?.(snapshot.statusText)
+      options.onConnectionState?.({
+        machineId: snapshot.machineId,
+        phase: snapshot.phase,
+        ...(snapshot.connectionInfo?.path ? { path: snapshot.connectionInfo.path } : {}),
+        ...(snapshot.connectionInfo?.observedPath ? { observedPath: snapshot.connectionInfo.observedPath } : {}),
+        ...(snapshot.connectionInfo?.routeSelectionReason ? { routeSelectionReason: snapshot.connectionInfo.routeSelectionReason } : {}),
+        statusText: snapshot.statusText,
+        relayInUse: snapshot.relayInUse,
+        ...(snapshot.error ? { failReason: snapshot.error } : {}),
+      })
+    }
+    if (this.snapshot.phase !== 'idle') forward()
+    this.stateListeners.add(forward)
+    return () => this.stateListeners.delete(forward)
+  }
+
+  private publish(snapshot: MachineConnectionSnapshot): void {
+    this.snapshot = snapshot
+    for (const listener of this.stateListeners) listener()
+  }
+}
+
+function idleMachineConnectionSnapshot(machineId: string, reconnectAttempt = 0): MachineConnectionSnapshot {
+  return {
+    machineId,
+    phase: 'idle',
+    statusText: 'Ready',
+    connectionInfo: null,
+    forceRelay: false,
+    relayInUse: false,
+    reconnectAttempt,
+    error: null,
+  }
+}
+
+function connectionStateSnapshot(
+  machineId: string,
+  snapshot: RtcConnectionStateSnapshot,
+  forceRelay: boolean,
+  reconnectAttempt: number,
+): MachineConnectionSnapshot {
+  return {
+    machineId,
+    phase: snapshot.phase,
+    statusText: snapshot.statusText,
+    connectionInfo: null,
+    forceRelay,
+    relayInUse: snapshot.relayInUse,
+    reconnectAttempt,
+    error: snapshot.phase === 'failed' ? snapshot.failReason || snapshot.statusText : null,
+  }
+}
+
+function connectedMachineConnectionSnapshot(
+  machineId: string,
+  session: ProtoClientSession,
+  forceRelay: boolean,
+  reconnectAttempt: number,
+): MachineConnectionSnapshot {
+  const connection = session.connection
+  const observedPath = connection?.observedPath === ConnectionObservedPath.DIRECT
+    ? 'direct'
+    : connection?.observedPath === ConnectionObservedPath.SINGLE_RELAY
+      ? 'single_relay'
+      : undefined
+  const routeKind: ConnectionInfo['routeKind'] = connection?.routeKind === ConnectionRouteKind.DIRECT
+    ? 'direct'
+    : connection?.routeKind === ConnectionRouteKind.SSH
+      ? 'ssh'
+      : connection?.routeKind === ConnectionRouteKind.CLOUD
+        ? 'cloud'
+        : connection?.routeKind === ConnectionRouteKind.LOCAL
+          ? 'local'
+          : undefined
+  const relayInUse = observedPath === 'single_relay' ||
+    connection?.localCandidateType === ConnectionCandidateType.RELAY ||
+    connection?.remoteCandidateType === ConnectionCandidateType.RELAY
+  const connectionInfo: ConnectionInfo = {
+    path: routeKind === 'cloud' ? 'hub' : 'local',
+    ...(connection?.routeId || session.stamp.routeId ? { routeId: connection?.routeId || session.stamp.routeId } : {}),
+    ...(routeKind ? { routeKind } : {}),
+    ...(observedPath ? { observedPath } : {}),
+    connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
+    machineId,
+    relayInUse,
+    type: relayInUse ? 'relay' : observedPath === 'direct' ? 'p2p' : 'unknown',
+    generation: session.stamp.generation,
+  }
+  return {
+    machineId,
+    phase: 'connected',
+    statusText: 'Connected',
+    connectionInfo,
+    forceRelay,
+    relayInUse,
+    reconnectAttempt,
+    error: null,
   }
 }
 

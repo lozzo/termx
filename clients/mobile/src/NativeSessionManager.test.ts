@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '@anytty/ui'
 import { EndpointSessionStampSchema, type ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
 import { CommandEnvelopeSchema, type CommandEnvelope, type EventEnvelope, type ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
-import { ConnectionSnapshotSchema } from '../../ui/src/generated/bindingpb/client_binding_pb'
+import { ConnectionCandidateType, ConnectionObservedPath, ConnectionRouteKind, ConnectionSnapshotSchema, type ConnectionSnapshot } from '../../ui/src/generated/bindingpb/client_binding_pb'
 import { NativeSessionManager } from './NativeSessionManager'
 
 describe('NativeSessionManager', () => {
@@ -40,6 +40,56 @@ describe('NativeSessionManager', () => {
     expect(connect).toHaveBeenCalledTimes(1)
     expect(reopenedTerminal.isAlive()).toBe(true)
     expect(session.close).not.toHaveBeenCalled()
+  })
+
+  it('projects a pooled relay connection until it is explicitly reset', async () => {
+    const session = fakeSession(1n, create(ConnectionSnapshotSchema, {
+      routeId: 'cloud-primary',
+      routeKind: ConnectionRouteKind.CLOUD,
+      observedPath: ConnectionObservedPath.SINGLE_RELAY,
+      localCandidateType: ConnectionCandidateType.RELAY,
+      connected: true,
+    }))
+    const manager = new NativeSessionManager('daemon-a', { connect: vi.fn(async () => session) })
+    const listener = vi.fn()
+    manager.connectionState.subscribe(listener)
+
+    const workspace = await manager.lease()
+    await workspace.close()
+
+    expect(manager.connectionState.getSnapshot()).toMatchObject({
+      phase: 'connected',
+      relayInUse: true,
+      connectionInfo: { path: 'hub', observedPath: 'single_relay' },
+    })
+    expect(session.close).not.toHaveBeenCalled()
+
+    await manager.reset()
+
+    expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'idle', relayInUse: false })
+    expect(session.close).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalled()
+  })
+
+  it('does not report a reconnect phase when a new UI lease reuses the pooled session', async () => {
+    const session = fakeSession(1n, create(ConnectionSnapshotSchema, {
+      routeId: 'direct-primary',
+      routeKind: ConnectionRouteKind.DIRECT,
+      observedPath: ConnectionObservedPath.DIRECT,
+      connected: true,
+    }))
+    const connect = vi.fn(async () => session)
+    const manager = new NativeSessionManager('daemon-a', { connect })
+    const initial = await manager.get()
+    await initial.close()
+    const phases: string[] = []
+
+    const reopened = await manager.get({ onConnectionState: (snapshot) => phases.push(snapshot.phase) })
+
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(reopened.isAlive()).toBe(true)
+    expect(phases.length).toBeGreaterThan(0)
+    expect(phases.every((phase) => phase === 'connected')).toBe(true)
   })
 
   it('opens a fresh Go session after the owned session becomes stale', async () => {
@@ -148,10 +198,11 @@ describe('NativeSessionManager', () => {
   })
 })
 
-function fakeSession(generation = 1n): ProtoClientSession & { markDead(): void } {
+function fakeSession(generation = 1n, connection?: ConnectionSnapshot): ProtoClientSession & { markDead(): void } {
   let alive = true
   return {
     stamp: create(EndpointSessionStampSchema, { endpointId: 'daemon-a', routeId: 'direct', generation }),
+    ...(connection ? { connection } : {}),
     execute: vi.fn(async (_command: CommandEnvelope) => ({} as ResultEnvelope)),
     subscribeEvents: vi.fn((_handler: (event: EventEnvelope) => void): ProtoClientSubscription => ({ close() {} })),
     openResourceStream: vi.fn(async (_resource: ResourceHandle): Promise<ProtoResourceStream> => { throw new Error('unused') }),
