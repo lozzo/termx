@@ -201,6 +201,13 @@ type ShellClosePaneIfTerminalRefMsg struct {
 
 func (ShellClosePaneIfTerminalRefMsg) isMsg() {}
 
+type ShellCloseFloatingIfTerminalRefMsg struct {
+	FloatingID  string
+	ExpectedRef state.TerminalRef
+}
+
+func (ShellCloseFloatingIfTerminalRefMsg) isMsg() {}
+
 type ShellFloatingCommandMsg struct {
 	Command state.FloatingCommand
 }
@@ -307,6 +314,9 @@ func NewShellReducer() Reducer {
 					}
 				}
 			}
+			if next, effects, handled := reduceActiveSurfaceShortcut(root, msg.Invocation); handled {
+				return rearmInteractionModeTimeout(next, effects)
+			}
 			intent, ok := shortcutIntentForInvocation(msg.Invocation, input.InputEvent{})
 			if !ok {
 				return root, nil
@@ -348,6 +358,8 @@ func NewShellReducer() Reducer {
 			return reducePaneCommand(root, msg.Command)
 		case ShellClosePaneIfTerminalRefMsg:
 			return reduceClosePaneIfTerminalRef(root, msg)
+		case ShellCloseFloatingIfTerminalRefMsg:
+			return reduceCloseFloatingIfTerminalRef(root, msg)
 		case ShellFloatingCommandMsg:
 			return reduceFloatingCommand(root, msg.Command)
 		case ShellWorkbenchCommandMsg:
@@ -364,6 +376,13 @@ func reduceClosePaneIfTerminalRef(root state.Root, msg ShellClosePaneIfTerminalR
 		return root, nil
 	}
 	return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: msg.PaneID}, Source: state.PaneCommandSourceKeyboard})
+}
+
+func reduceCloseFloatingIfTerminalRef(root state.Root, msg ShellCloseFloatingIfTerminalRefMsg) (state.Root, []Effect) {
+	if !floatingStillOwnsTerminalRef(root, msg.FloatingID, msg.ExpectedRef) {
+		return root, nil
+	}
+	return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.FloatingID, Source: state.PaneCommandSourceKeyboard})
 }
 
 func ownerConfirmClearEffect(seq uint64) Effect {
@@ -1377,9 +1396,9 @@ func terminalPoolTargetForOverlay(root state.Root) terminalPoolTarget {
 
 func terminalPoolTargetForActive(root state.Root) terminalPoolTarget {
 	shell := root.Shell.EnsureDefaults()
-	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
-		if target, ok := terminalPoolTargetForID(shell, activeFloatingID); ok {
-			target.ViewID = root.TerminalViews.FloatingViewID(activeFloatingID)
+	if active, ok := shell.ActiveSurfaceTarget(); ok && active.Floating {
+		if target, ok := terminalPoolTargetForID(shell, active.FloatingID); ok {
+			target.ViewID = root.TerminalViews.FloatingViewID(active.FloatingID)
 			return target
 		}
 	}
@@ -1802,7 +1821,7 @@ func addFloatingCommandToast(shell state.ShellStore, command state.FloatingComma
 
 func shouldSuppressFloatingCommandSuccessToast(command state.FloatingCommand) bool {
 	switch command.Action {
-	case state.FloatingCommandFocusRaise, state.FloatingCommandDeactivate, state.FloatingCommandMove, state.FloatingCommandResize, state.FloatingCommandRefreshAutoFit:
+	case state.FloatingCommandFocusRaise, state.FloatingCommandDeactivate, state.FloatingCommandMove, state.FloatingCommandPosition, state.FloatingCommandResize, state.FloatingCommandRefreshAutoFit:
 		return true
 	default:
 		return false

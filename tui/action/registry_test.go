@@ -52,6 +52,13 @@ func TestRegistryCanonicalizesKnownAliases(t *testing.T) {
 	}
 }
 
+func TestDestructiveTabActionUsesKillLabel(t *testing.T) {
+	spec, ok := SpecByID("tab.kill")
+	if !ok || spec.DefaultLabel != "KILL" {
+		t.Fatalf("tab.kill must be distinguished from non-destructive tab.close: %#v ok=%v", spec, ok)
+	}
+}
+
 func TestParameterizedInvocationUsesBaseIDAndTypedParam(t *testing.T) {
 	invocation, spec, err := ParseInvocation("tab.jump.3")
 	if err != nil {

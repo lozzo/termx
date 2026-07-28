@@ -36,7 +36,8 @@ func openResolvedCloudPeer(
 	product cloudv1.ClientProduct,
 	report func(clientruntime.EndpointPhase),
 ) (*openedCloudPeer, error) {
-	preference, icePolicy, err := relayPreference(request.Route().RelayMode)
+	route := request.Route()
+	preference, icePolicy, err := relayPreference(route.RelayMode)
 	if err != nil {
 		return nil, err
 	}
@@ -52,9 +53,15 @@ func openResolvedCloudPeer(
 	signalSession, err := cloud.Exchange(ctx, resolved, identity, signer, product, uint64(request.Stamp().Generation), preference, func(ctx context.Context, ready *cloudv1.ClientReady) (string, error) {
 		peerConfig := port.WebRTCConfig{Policy: icePolicy}
 		if relay := ready.GetRelay(); relay != nil {
-			peerConfig.Servers = append(peerConfig.Servers, port.ICEServer{URLs: append([]string(nil), relay.GetUrls()...), Username: relay.GetUsername(), Credential: relay.GetCredential()})
+			urls, filterErr := filterManagedICEURLs(relay.GetUrls(), route.RelayTransport)
+			if filterErr != nil {
+				return "", filterErr
+			}
+			if len(urls) > 0 {
+				peerConfig.Servers = append(peerConfig.Servers, port.ICEServer{URLs: urls, Username: relay.GetUsername(), Credential: relay.GetCredential()})
+			}
 		}
-		if icePolicy == port.ICETransportRelayOnly && len(peerConfig.Servers) == 0 {
+		if icePolicy == port.ICETransportRelayOnly && !hasManagedTURNServer(peerConfig.Servers) {
 			return "", errors.New("Cloud Relay-only attempt did not receive TURN material")
 		}
 		peer, err = peers.OpenCloudPeer(ctx, peerConfig)

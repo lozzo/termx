@@ -9,6 +9,8 @@ import { useBinaryPreviewUrl } from './useBinaryPreviewUrl'
 import { useTranslation } from 'react-i18next'
 import '../../i18n'
 
+const maxFallbackVideoBytes = 32 * 1024 * 1024
+
 export function BinaryVideoPreview({ preview }: { preview: FilePreviewResponse }) {
   const { t } = useTranslation()
   const src = useBinaryPreviewUrl(preview.contentBase64, preview.mimeType)
@@ -30,6 +32,8 @@ export function StreamedVideoPreview({
 
   useEffect(() => {
     let cancelled = false
+    let objectUrl: string | null = null
+    const controller = new AbortController()
     rangeSourceRef.current?.revoke()
     rangeSourceRef.current = null
     setRangeUrl(undefined)
@@ -38,18 +42,33 @@ export function StreamedVideoPreview({
       mimeType: preview.mimeType,
       size: preview.size,
       streamPreview,
-    }).then((result) => {
+    }).then(async (result) => {
       if (cancelled) {
         result?.revoke()
         return
       }
-      rangeSourceRef.current = result
-      setRangeUrl(result?.url ?? null)
+      if (result) {
+        rangeSourceRef.current = result
+        setRangeUrl(result.url)
+        return
+      }
+      if (preview.size > maxFallbackVideoBytes) {
+        setRangeUrl(null)
+        return
+      }
+      const streamed = await streamPreview(preview.path, preview.mimeType, { signal: controller.signal })
+      if (cancelled) return
+      objectUrl = URL.createObjectURL(streamed.blob)
+      setRangeUrl(objectUrl)
+    }).catch(() => {
+      if (!cancelled && !controller.signal.aborted) setRangeUrl(null)
     })
     return () => {
       cancelled = true
+      controller.abort()
       rangeSourceRef.current?.revoke()
       rangeSourceRef.current = null
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [preview.mimeType, preview.path, preview.size, streamPreview])
 

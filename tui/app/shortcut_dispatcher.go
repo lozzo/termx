@@ -111,7 +111,7 @@ func buildActionHandlerRegistry() map[actiondomain.ID]actionHandler {
 		"workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom", "workbench_tree.close",
 		"clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close",
 		"floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close",
-		"prompt.submit", "prompt.cancel", "help.close",
+		"prompt.submit", "prompt.cancel", "help.previous", "help.next", "help.page_up", "help.page_down", "help.first", "help.last", "help.close",
 	} {
 		register(id, func(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
 			return input.Intent{Kind: input.IntentAppAction, Event: event, Invocation: invocation}, true

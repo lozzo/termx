@@ -25,6 +25,8 @@ const (
 	ApplicationCapabilityResourceLifecycle ApplicationCapability = iota + 1
 	// ApplicationCapabilityTerminalLifecycle 表示 terminal lifecycle 与 metadata 操作。
 	ApplicationCapabilityTerminalLifecycle
+	// ApplicationCapabilityTerminalInventory 表示按 connection scope 过滤的 terminal inventory 查询。
+	ApplicationCapabilityTerminalInventory
 	// ApplicationCapabilityTerminalAttachment 表示 attachment、input 与 resize 操作。
 	ApplicationCapabilityTerminalAttachment
 	// ApplicationCapabilityPathQuery 表示 daemon 文件系统 path 查询。
@@ -201,7 +203,7 @@ type ApplicationSessionPort interface {
 	ApplicationTerminalDefaults(context.Context) (TerminalDefaults, error)
 	// ApplicationTerminalCreate 把 core record 交给 terminal lifecycle owner。
 	ApplicationTerminalCreate(context.Context, TerminalRecord) (TerminalInfo, error)
-	// ApplicationTerminalList 返回当前 daemon 的 terminal inventory。
+	// ApplicationTerminalList 返回按当前 connection scope 过滤的 terminal inventory。
 	ApplicationTerminalList(context.Context) ([]TerminalInfo, error)
 	// ApplicationTerminalGet 返回单个 daemon-local terminal snapshot。
 	ApplicationTerminalGet(context.Context, string) (TerminalInfo, error)

@@ -52,7 +52,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, "  main") || !frameContains(cases["workbench-live"].Lines, "▎ 1 main ") || !frameContains(cases["workbench-live"].Lines, render.HeaderTabCreateText) || !frameContains(cases["workbench-live"].Lines, "[Ctrl] • [P] PANE") || !frameContains(cases["workbench-live"].Lines, "[G] GLOBAL") || !frameContains(cases["workbench-live"].Lines, "ws:main") {
+	if !frameContains(cases["workbench-live"].Lines, "  main") || !frameContains(cases["workbench-live"].Lines, "▎ 1 main ") || !frameContains(cases["workbench-live"].Lines, render.HeaderTabCreateText) || !frameContains(cases["workbench-live"].Lines, "[Ctrl+P] PANE") || !frameContains(cases["workbench-live"].Lines, "[Ctrl+G] GLOBAL") || !frameContains(cases["workbench-live"].Lines, "ws:main") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;8;8;13m") {
@@ -129,8 +129,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["help-overlay"].Lines, "Help") ||
 		!frameContains(cases["help-overlay"].Lines, "Most used") ||
-		!frameContains(cases["help-overlay"].Lines, "Floating") ||
-		!frameContains(cases["help-overlay"].Lines, "Terminal Manager") {
+		!frameContains(cases["help-overlay"].Lines, "[Ctrl+P]") ||
+		!frameContains(cases["help-overlay"].Lines, "[PgDn] PAGE") {
 		t.Fatalf("help overlay smoke missing help content: %#v", cases["help-overlay"].Lines)
 	}
 	if !frameContains(cases["tab-workspace"].Lines, " remote ") ||
@@ -224,7 +224,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1"}
+	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl+P] PANE", "[Ctrl+G] GLOBAL", "[PgUp] COPY", "ws:main float:1"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)
@@ -235,7 +235,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "HIST metrics unavailable"},
 		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "WORKBENCH", "DETAIL", "VIEWS"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
-		"help-overlay":        {"┌─ help", "● open", "Esc", "Most used", "Terminal Manager"},
+		"help-overlay":        {"┌─ help", "● open", "Esc", "Most used", "[Ctrl+P]"},
 	}
 	for name, markers := range requiredOverlays {
 		frame := cases[name]

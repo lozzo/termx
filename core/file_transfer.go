@@ -17,10 +17,12 @@ import (
 
 	"github.com/anytty/anytty/internal/protocol"
 	"github.com/anytty/anytty/proto/wire"
+	"github.com/anytty/anytty/shared/transport"
 )
 
 const fileTransferChunkBytes = 64 << 10
-const fileTransferWindowBytes = 256 << 10
+const fileTransferWindowBytes = 1 << 20
+const fileTransferOutboundQueueTarget = 256 << 10
 const fileUploadResumeTTL = 15 * time.Minute
 
 type fileTransferDirection uint8
@@ -129,7 +131,7 @@ func (session *protocolSession) runFileDownload(ctx context.Context, transfer *s
 		if err != nil {
 			return
 		}
-		if err := session.sendFrame(transfer.channel, wire.TypeFileData, payload); err != nil {
+		if err := session.sendBulkFileFrame(ctx, transfer.channel, wire.TypeFileData, payload); err != nil {
 			return
 		}
 		transfer.offset += int64(n)
@@ -142,8 +144,25 @@ func (session *protocolSession) runFileDownload(ctx context.Context, transfer *s
 	}
 	payload, err := protocol.EncodeFileTransferFinish(protocol.FileTransferFinish{Size: transfer.size, SHA256: digest})
 	if err == nil {
-		_ = session.sendFrame(transfer.channel, wire.TypeFileFinish, payload)
+		_ = session.sendBulkFileFrame(ctx, transfer.channel, wire.TypeFileFinish, payload)
 	}
+}
+
+func (session *protocolSession) sendBulkFileFrame(ctx context.Context, channel uint16, typ uint8, payload []byte) error {
+	if reporter, ok := session.conn.(transport.OutboundBufferReporter); ok {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for reporter.OutboundBufferedAmount() > fileTransferOutboundQueueTarget {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-session.conn.Done():
+				return io.EOF
+			case <-ticker.C:
+			}
+		}
+	}
+	return session.sendFrame(channel, typ, payload)
 }
 
 func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (FileTransfer, error) {

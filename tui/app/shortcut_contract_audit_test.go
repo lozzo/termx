@@ -25,9 +25,9 @@ import (
 	"github.com/anytty/anytty/tui/state"
 )
 
-const shortcutArtifactBaselineSHA256 = "dc3355c5d876522d2a3a505005787e14e73d56d4358888cd968eaf054c6b1494"
+const shortcutArtifactBaselineSHA256 = "0885316cd1c697c89a4bb49631575eef3b260bb31b3ddd0f8ac2a40bc6cfb443"
 const shortcutCompositeSemanticBaselineSHA256 = "553d3ddff7f48b615488146e870a27be9d6198ca9e63d7dfce669d25e7e53dc8"
-const shortcutRenderStringBaselineSHA256 = "bdf95ca1ca4b727e64e787268e147cf55f528a12e585e92763a2dc284941afba"
+const shortcutRenderStringBaselineSHA256 = "8520489609f7b3d9c6029016a5db01aaa60f9d716573c4a2724945891e46da8a"
 
 type shortcutDebtManifest struct {
 	SchemaVersion int                    `json:"schema_version"`
@@ -126,7 +126,7 @@ func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 // scene 合法且能进入 app handler；任一新增 binding 若落在未注册或未处理路径都会失败。
 func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 	manifest := readShortcutDebtManifest(t, shortcutAuditRepoRoot(t))
-	wantInventory := shortcutAuditInventory{DefaultEntries: 206, RoutedBindings: 167, ShortcutSpecs: 163, RenderProjections: 34}
+	wantInventory := shortcutAuditInventory{DefaultEntries: 212, RoutedBindings: 167, ShortcutSpecs: 169, RenderProjections: 34}
 	if manifest.Inventory != wantInventory {
 		t.Fatalf("shortcut manifest inventory changed without updating the independent guard: got=%#v want=%#v", manifest.Inventory, wantInventory)
 	}

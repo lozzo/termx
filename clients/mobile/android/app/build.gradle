@@ -71,6 +71,7 @@ tasks.register("buildAnyTTYClientNative", Exec) {
     inputs.files(
         fileTree('../../../../client'),
         fileTree('../../../../api_layer'),
+        fileTree('../../../../cloud'),
         fileTree('../../../../core'),
         fileTree('../../../../internal/protocol'),
         fileTree('../../../../remote'),

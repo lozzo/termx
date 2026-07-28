@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 
 	"github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/proto/wire"
@@ -55,6 +56,12 @@ func (session *protocolSession) AcquireApplication(ctx context.Context, admissio
 		}
 		return nil, ErrApplicationForbidden
 	}
+	if admission.Capability == ApplicationCapabilityTerminalInventory {
+		if scope.TerminalID == "" {
+			return nil, ErrApplicationForbidden
+		}
+		return protocolAdmissionLease{}, nil
+	}
 	if admission.Capability == ApplicationCapabilityResourceLifecycle && admission.ResourceKind == ApplicationResourceKindSubscription {
 		subscription, ok := session.eventSubscriptionForToken(admission.ResourceToken)
 		if !ok || subscription.filter.TerminalID != scope.TerminalID {
@@ -80,6 +87,7 @@ func applicationCapabilitySupported(capability ApplicationCapability) bool {
 	switch capability {
 	case ApplicationCapabilityResourceLifecycle,
 		ApplicationCapabilityTerminalLifecycle,
+		ApplicationCapabilityTerminalInventory,
 		ApplicationCapabilityTerminalAttachment,
 		ApplicationCapabilityPathQuery,
 		ApplicationCapabilityHistory,
@@ -157,9 +165,23 @@ func (session *protocolSession) ApplicationTerminalCreate(_ context.Context, rec
 	return session.server.RegisterTerminal(record)
 }
 
-// ApplicationTerminalList 返回当前 owning daemon 的 terminal inventory。
+// ApplicationTerminalList 返回当前 connection scope 可见的 terminal inventory。
 func (session *protocolSession) ApplicationTerminalList(context.Context) ([]TerminalInfo, error) {
-	return session.server.ListTerminals(), nil
+	scope := session.scope.normalized()
+	if scope.AllowDaemon {
+		return session.server.ListTerminals(), nil
+	}
+	if scope.MachineEventsOnly || scope.TerminalID == "" {
+		return nil, ErrApplicationForbidden
+	}
+	terminal, err := session.server.GetTerminal(scope.TerminalID)
+	if errors.Is(err, ErrTerminalNotFound) {
+		return []TerminalInfo{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []TerminalInfo{terminal}, nil
 }
 
 // ApplicationTerminalGet 返回单个 daemon-local terminal lifecycle snapshot。

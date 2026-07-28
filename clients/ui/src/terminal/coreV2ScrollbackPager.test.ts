@@ -51,6 +51,21 @@ describe('CoreV2ScrollbackPager', () => {
     expect(source.releases).toEqual([{ terminalId: 'terminal-1', token: 'token-1', generation: '1' }])
   })
 
+  it('starts a new frozen generation when the local viewport columns change', async () => {
+    const source = new MockSource([
+      window({ lineId: '10', token: 'wide-token', generation: '1', hasMore: true }),
+      window({ lineId: '20', token: 'narrow-token', generation: '2', hasMore: true }),
+    ])
+    const pager = new CoreV2ScrollbackPager(source)
+
+    await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 1, cols: 80 })
+    const resized = await pager.load({ terminalId: 'terminal-1', offset: 1, limit: 1, cols: 50 })
+
+    expect(resized.operation).toBe('replace')
+    expect(source.requests[1]).toEqual(expect.objectContaining({ mode: 'latest', cols: 50 }))
+    expect(source.releases).toEqual([{ terminalId: 'terminal-1', token: 'wide-token', generation: '1' }])
+  })
+
   it('serializes structured history styles and tail fill into replay ANSI', () => {
     const replay = coreV2HistoryRowsANSI([{
       index: 0,

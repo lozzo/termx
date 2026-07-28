@@ -115,6 +115,8 @@ func (executor *applicationTestExecutor) Execute(ctx context.Context, command *a
 func applicationTestAdmission(command *apipb.CommandEnvelope) ApplicationAdmission {
 	admission := ApplicationAdmission{Capability: ApplicationCapabilityTerminalLifecycle}
 	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_TerminalList:
+		admission.Capability = ApplicationCapabilityTerminalInventory
 	case *apipb.CommandEnvelope_TerminalGet:
 		admission.TerminalID = value.TerminalGet.GetTerminal().GetTerminalId()
 	case *apipb.CommandEnvelope_TerminalRestart:

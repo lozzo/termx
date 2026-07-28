@@ -186,6 +186,7 @@ type TerminalPoolKillRequestMsg struct {
 	EndpointID     state.EndpointID
 	TerminalID     string
 	PaneID         string
+	FloatingID     string
 	CloseOnSuccess bool
 }
 
@@ -195,6 +196,7 @@ type TerminalPoolKillResultMsg struct {
 	EndpointID     state.EndpointID
 	TerminalID     string
 	PaneID         string
+	FloatingID     string
 	CloseOnSuccess bool
 	Err            error
 }
@@ -974,7 +976,7 @@ func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestM
 	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		err := deps.Terminal.Kill(ctx, port.TerminalKillRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID})
-		return TerminalPoolKillResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, PaneID: msg.PaneID, CloseOnSuccess: msg.CloseOnSuccess, Err: err}
+		return TerminalPoolKillResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, PaneID: msg.PaneID, FloatingID: msg.FloatingID, CloseOnSuccess: msg.CloseOnSuccess, Err: err}
 	}}}
 }
 
@@ -994,6 +996,10 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
 			return ShellClosePaneIfTerminalRefMsg{PaneID: msg.PaneID, ExpectedRef: ref}
 		}})
+	} else if msg.CloseOnSuccess && floatingStillOwnsTerminalRef(root, msg.FloatingID, ref) {
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return ShellCloseFloatingIfTerminalRefMsg{FloatingID: msg.FloatingID, ExpectedRef: ref}
+		}})
 	}
 	return root.Advance(), effects
 }
@@ -1003,6 +1009,17 @@ func paneStillOwnsTerminalRef(root state.Root, paneID string, ref state.Terminal
 		return false
 	}
 	binding, ok := root.TerminalViews.PaneBinding(paneID)
+	return ok && binding.TerminalRef().Equal(ref)
+}
+
+func floatingStillOwnsTerminalRef(root state.Root, floatingID string, ref state.TerminalRef) bool {
+	if floatingID == "" || ref.Empty() {
+		return false
+	}
+	if _, ok := root.Shell.FloatingByID(floatingID); !ok {
+		return false
+	}
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
 	return ok && binding.TerminalRef().Equal(ref)
 }
 

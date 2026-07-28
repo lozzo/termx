@@ -1101,7 +1101,7 @@ func v3VisualTargetPlain() string {
 		"│······································································································│···································│",
 		"│······································································································│···································│",
 		"└──────────────────────────────────────────────────────────────────────────────────────────────────────┘───────────────────────────────────┘",
-		"[Ctrl] • [P] PANE • [R] RESIZE • [G] GLOBAL • [O] FLOAT • [T] TAB • [W] WORKSPACE • [F] PICKER • [V] COPY • [PgUp] COPY      ws:main float:1",
+		"[Ctrl+P] PANE • [Ctrl+R] RESIZE • [Ctrl+G] GLOBAL • [Ctrl+O] FLOAT • [Ctrl+T] TAB • [PgUp] COPY                 ws:main float:1 terminals:1",
 	}
 	return normalizeVisualText(strings.Join(lines, "\n"), 140, 40)
 }
@@ -1344,15 +1344,12 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 
 	fill(39, 1, 103, visualStyleAccent)
 	fill(39, 104, width, visualStyleMuted)
-	fillBracketToken(40, "[Ctrl]", 0, visualStyleAccent)
-	fillBracketToken(40, "[P]", 0, visualStyleAccent)
-	fillBracketToken(40, "[R]", 0, visualStyleWarn)
-	fillBracketToken(40, "[T]", 0, visualStyleStatus)
-	fillBracketToken(40, "[W]", 0, visualStyleSuccess)
-	fillBracketToken(40, "[O]", 0, visualStyleUnknown)
-	fillBracketToken(40, "[V]", 0, visualStyleUnknown)
-	fillBracketToken(40, "[F]", 0, visualStyleUnknown)
-	fillBracketToken(40, "[G]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[Ctrl+P]", 0, visualStyleAccent)
+	fillBracketToken(40, "[Ctrl+R]", 0, visualStyleWarn)
+	fillBracketToken(40, "[Ctrl+G]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[Ctrl+O]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[Ctrl+T]", 0, visualStyleStatus)
+	fillBracketToken(40, "[PgUp]", 0, visualStyleUnknown)
 	fillRangesForSubstrings(40, visualStyleAccent, " float:1")
 	fillRangesForSubstrings(40, visualStyleMuted, " PANE", " RESIZE", " TAB", " WORKSPACE", " FLOAT", " COPY", " PICKER", " GLOBAL", " • ", " ws:main", " terminals:1")
 	return styleMap
@@ -1529,7 +1526,7 @@ func visualStyleExpectations() []visualStyleExpectation {
 		{Name: "floating-inner-accent", Row: 10, Col: 106, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "right-pane-border-muted", Row: 10, Col: 140, Glyph: "│", MustHave: []string{"2", "38;2;184;177;196"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "footer-no-bg", Row: 40, Col: 1, Glyph: "[", MustHave: []string{"38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
-		{Name: "footer-float-accent", Row: 40, Col: 134, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "footer-float-accent", Row: 40, Col: 121, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
 	}
 }
 

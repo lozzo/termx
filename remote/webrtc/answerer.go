@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/anytty/anytty/shared/transport"
 	"github.com/anytty/anytty/shared/transport/datachannel"
@@ -12,6 +13,11 @@ import (
 )
 
 const protocolChannelLabel = "protocol"
+
+const (
+	directGatherTimeout = 3 * time.Second
+	cloudGatherTimeout  = 5 * time.Second
+)
 
 // ICECandidate 是 remote WebRTC primitive 的中性信令字段。
 // 它不包含 Cloud 票据、Presence、Route 策略或 terminal 授权。
@@ -113,10 +119,12 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	sessionCtx, cancel := context.WithCancel(ctx)
 	var candidateMu sync.Mutex
 	candidates := make([]ICECandidate, 0, 4)
+	gathering := NewICEGatheringWaiter(false, len(iceServers) == 0, ICEGatheringCloudGrace)
 	peer.OnICECandidate(func(candidate *pion.ICECandidate) {
 		if candidate == nil {
 			return
 		}
+		gathering.Observe(candidate)
 		json := candidate.ToJSON()
 		wire := ICECandidate{Candidate: json.Candidate}
 		if json.SDPMid != nil {
@@ -194,12 +202,14 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		closePeer()
 		return nil, fmt.Errorf("set remote daemon answer: %w", err)
 	}
-	select {
-	case <-ctx.Done():
+	timeout := directGatherTimeout
+	if len(iceServers) > 0 {
+		timeout = cloudGatherTimeout
+	}
+	if err := gathering.Wait(ctx, gatherComplete, timeout); err != nil {
 		cancel()
 		closePeer()
-		return nil, ctx.Err()
-	case <-gatherComplete:
+		return nil, err
 	}
 	description := peer.LocalDescription()
 	if description == nil || strings.TrimSpace(description.SDP) == "" {

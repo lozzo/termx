@@ -22,6 +22,8 @@ import (
 const (
 	protocolChannelLabel = "protocol"
 	peerReadyTimeout     = 15 * time.Second
+	directGatherTimeout  = 3 * time.Second
+	cloudGatherTimeout   = 8 * time.Second
 )
 
 // Factory 创建当前 native 进程使用的 Pion PeerConnection。
@@ -50,7 +52,7 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 		}
 		peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection
 	}
-	return openPeer(peerFactory, pionwebrtc.Configuration{})
+	return openPeer(peerFactory, pionwebrtc.Configuration{}, false, true, directGatherTimeout, remotewebrtc.ICEGatheringDirectGrace)
 }
 
 // OpenCloudPeer 创建允许 ICE-UDP host/srflx candidate 的 native Pion peer。
@@ -74,10 +76,22 @@ func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig
 	if config.Policy == port.ICETransportRelayOnly {
 		configuration.ICETransportPolicy = pionwebrtc.ICETransportPolicyRelay
 	}
-	return openPeer(peerFactory, configuration)
+	return openPeer(
+		peerFactory,
+		configuration,
+		config.Policy == port.ICETransportRelayOnly,
+		false,
+		cloudGatherTimeout,
+		remotewebrtc.ICEGatheringCloudGrace,
+	)
 }
 
-func openPeer(peerFactory remotewebrtc.PeerConnectionFactory, configuration pionwebrtc.Configuration) (port.WebRTCPeer, error) {
+func openPeer(
+	peerFactory remotewebrtc.PeerConnectionFactory,
+	configuration pionwebrtc.Configuration,
+	waitForRelayCandidate, allowEmptyCandidates bool,
+	gatherTimeout, gatheringGrace time.Duration,
+) (port.WebRTCPeer, error) {
 	peer, err := peerFactory(configuration)
 	if err != nil {
 		return nil, err
@@ -94,6 +108,8 @@ func openPeer(peerFactory remotewebrtc.PeerConnectionFactory, configuration pion
 	value := &webRTCPeer{
 		peer: peer, channel: channelAdapter, ready: ready, channelClosed: closed,
 		connectionFailed: connectionFailed, readyTimeout: peerReadyTimeout,
+		waitForRelayCandidate: waitForRelayCandidate, allowEmptyCandidates: allowEmptyCandidates,
+		gatherTimeout: gatherTimeout, gatheringGrace: gatheringGrace,
 	}
 	channel.OnOpen(func() { value.readyOnce.Do(func() { close(ready) }) })
 	channelAdapter.SetCloseHandler(func() { value.channelClosedOnce.Do(func() { close(closed) }) })
@@ -115,6 +131,10 @@ type webRTCPeer struct {
 	connectionFailed      chan error
 	connectionFailureOnce sync.Once
 	readyTimeout          time.Duration
+	waitForRelayCandidate bool
+	allowEmptyCandidates  bool
+	gatherTimeout         time.Duration
+	gatheringGrace        time.Duration
 	closeOnce             sync.Once
 	closeErr              error
 }
@@ -152,13 +172,13 @@ func (peer *webRTCPeer) CreateOffer(ctx context.Context) (string, error) {
 		return "", err
 	}
 	gatherComplete := pionwebrtc.GatheringCompletePromise(peer.peer)
+	gathering := remotewebrtc.NewICEGatheringWaiter(peer.waitForRelayCandidate, peer.allowEmptyCandidates, peer.gatheringGrace)
+	peer.peer.OnICECandidate(gathering.Observe)
 	if err := peer.peer.SetLocalDescription(offer); err != nil {
 		return "", err
 	}
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-gatherComplete:
+	if err := gathering.Wait(ctx, gatherComplete, peer.gatherTimeout); err != nil {
+		return "", err
 	}
 	description := peer.peer.LocalDescription()
 	if description == nil || strings.TrimSpace(description.SDP) == "" {

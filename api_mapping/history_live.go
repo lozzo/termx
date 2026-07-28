@@ -266,10 +266,19 @@ func historyLineToProto(line history.HistoryLineSpan, rows []history.HistoryRow)
 
 func historyCellsToProto(cells []history.Cell) *apipb.ScreenRow {
 	row := &apipb.ScreenRow{}
-	for _, cell := range cells {
+	for index, cell := range cells {
+		if last := lastScreenCell(row); last != nil && historyCellsShareRun(cells[index-1], cell) {
+			last.Content += cell.Text
+			last.Width += int32(cell.Width)
+			continue
+		}
 		row.Cells = append(row.Cells, &apipb.ScreenCell{Content: cell.Text, Width: int32(cell.Width), Style: historyStyleToProto(cell.Style), LinkUrl: cell.LinkURL, LinkParams: cell.LinkParams})
 	}
 	return row
+}
+
+func historyCellsShareRun(left, right history.Cell) bool {
+	return left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
 }
 
 func historyStyleToProto(style history.CellStyle) *apipb.CellStyle {
@@ -288,10 +297,26 @@ func historyRowOwnershipToProto(row history.HistoryRow) apipb.RowOwnership {
 
 func vtermRowToProto(cells []vterm.Cell) *apipb.ScreenRow {
 	row := &apipb.ScreenRow{}
-	for _, cell := range cells {
+	for index, cell := range cells {
+		if last := lastScreenCell(row); last != nil && vtermCellsShareRun(cells[index-1], cell) {
+			last.Content += cell.Content
+			last.Width += int32(cell.Width)
+			continue
+		}
 		row.Cells = append(row.Cells, &apipb.ScreenCell{Content: cell.Content, Width: int32(cell.Width), Style: vtermStyleToProto(cell.Style), LinkUrl: cell.LinkURL, LinkParams: cell.LinkParams})
 	}
 	return row
+}
+
+func lastScreenCell(row *apipb.ScreenRow) *apipb.ScreenCell {
+	if row == nil || len(row.Cells) == 0 {
+		return nil
+	}
+	return row.Cells[len(row.Cells)-1]
+}
+
+func vtermCellsShareRun(left, right vterm.Cell) bool {
+	return left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
 }
 
 func vtermStyleToProto(style vterm.CellStyle) *apipb.CellStyle {

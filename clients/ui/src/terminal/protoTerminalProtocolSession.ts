@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf'
-import type { ProtoClientSession } from '../core/protoClientSession'
+import type { ProtoClientSession, ProtoClientSubscription } from '../core/protoClientSession'
 import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
@@ -44,6 +44,13 @@ type ProtoAttachment = {
   channel: ProtoTerminalChannel
 }
 
+type LiveScreenRefreshState = {
+  pending: boolean
+  minimumRevision: bigint
+  reason: TerminalSnapshotPayload['refreshReason']
+  completion?: Promise<void>
+}
+
 /** createProtoTerminalProtocolSession projects generated apipb into the existing UI-only TerminalClient contract. */
 export function createProtoTerminalProtocolSession(session: ProtoClientSession): TerminalProtocolSession {
   return new ProtoTerminalProtocolSession(session)
@@ -55,12 +62,19 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   private readonly terminalSizes = new Map<string, TerminalInputSize>()
   private readonly liveRevisions = new Map<string, bigint>()
   private readonly inputTails = new Map<string, Promise<void>>()
-  private readonly eventSubscriptionReady
+  private readonly eventSubscriptions = new Map<string, Promise<ProtoClientSubscription>>()
+  private readonly liveScreenRefreshes = new Map<string, LiveScreenRefreshState>()
   private readonly scrollbackPager: CoreV2ScrollbackPager
 
   constructor(private readonly session: ProtoClientSession) {
     this.scrollbackPager = new CoreV2ScrollbackPager(createCoreV2HistorySource(session, session.stamp.endpointId))
-    this.eventSubscriptionReady = openProtoEventSubscription(session, create(EventSubscribeCommandSchema, {
+  }
+
+  private eventSubscription(terminalId: string): Promise<ProtoClientSubscription> {
+    const existing = this.eventSubscriptions.get(terminalId)
+    if (existing) return existing
+    const opening = openProtoEventSubscription(this.session, create(EventSubscribeCommandSchema, {
+      terminal: this.terminalRef(terminalId),
       types: [ApplicationEventType.TERMINAL_LIVE_INVALIDATED, ApplicationEventType.TERMINAL_LIFECYCLE],
     }), (event) => {
       if (event.event.case === 'liveInvalidated' && event.event.value.terminal?.terminalId) {
@@ -75,10 +89,22 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
         }
       }
     })
+    this.eventSubscriptions.set(terminalId, opening)
+    void opening.catch(() => {
+      if (this.eventSubscriptions.get(terminalId) === opening) this.eventSubscriptions.delete(terminalId)
+    })
+    return opening
+  }
+
+  private closeEventSubscription(terminalId: string): void {
+    const opening = this.eventSubscriptions.get(terminalId)
+    if (!opening) return
+    this.eventSubscriptions.delete(terminalId)
+    void opening.then((subscription) => subscription.close()).catch(() => undefined)
   }
 
   async openTerminal(terminalId: string): Promise<TerminalProtocolChannel> {
-    await this.eventSubscriptionReady
+    await this.eventSubscription(terminalId)
     const existing = this.attachments.get(terminalId)
     if (existing) return existing.channel
     const terminal = this.terminalRef(terminalId)
@@ -96,7 +122,7 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     const channel = new ProtoTerminalChannel(this, terminalId)
     this.attachments.set(terminalId, { handle: result.result.value.attachment, channel })
     this.publish(terminalId, { type: 'resizeControl', control: resizeControlView(result.result.value.resizeControl) })
-    await Promise.all([this.publishTerminalInfo(terminalId), this.publishLiveScreen(terminalId, 'open')])
+    await Promise.all([this.publishTerminalInfo(terminalId), this.enqueueLiveScreenRefresh(terminalId, 'open').completion])
     return channel
   }
 
@@ -124,10 +150,11 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     offset: number,
     limit: number,
     alternate = false,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; cols?: number },
   ): Promise<TerminalScrollbackPage> {
     if (alternate) return { beforeOffset: offset, limit, rows: 0, replay: '', operation: 'replace', hasMore: false, alternate: true }
-    const cols = this.terminalSizes.get(terminalId)?.cols ?? 80
+    const requestedCols = Math.trunc(options?.cols ?? 0)
+    const cols = requestedCols > 0 ? requestedCols : this.terminalSizes.get(terminalId)?.cols ?? 80
     const page = await this.scrollbackPager.load({
       terminalId,
       offset,
@@ -151,8 +178,14 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     }
   }
 
+  resetScrollback(terminalId: string): void {
+    this.scrollbackPager.forget(terminalId)
+  }
+
   closeTerminalChannel(terminalId: string): void {
     this.scrollbackPager.forget(terminalId)
+    this.closeEventSubscription(terminalId)
+    this.liveScreenRefreshes.delete(terminalId)
     const attachment = this.attachments.get(terminalId)
     if (!attachment) return
     this.attachments.delete(terminalId)
@@ -167,12 +200,49 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   }
 
   private refreshLiveScreen(terminalId: string, reason: TerminalSnapshotPayload['refreshReason'], minimumRevision = 0n): void {
-    // live screen refresh 属于当前 Proto session；bridge/generation 切换时旧请求必须被消费，
-    // 存活 session 的真实失败则通过 terminal channel closed 交给现有恢复状态机。
-    void this.publishLiveScreen(terminalId, reason, minimumRevision).catch((error) => {
+    const refresh = this.enqueueLiveScreenRefresh(terminalId, reason, minimumRevision)
+    if (!refresh.started) return
+    void refresh.completion.catch((error) => {
       if (!this.session.isAlive()) return
+      if (!this.attachments.has(terminalId)) return
       this.publish(terminalId, { type: 'closed', reason: errorMessage(error) })
     })
+  }
+
+  private enqueueLiveScreenRefresh(
+    terminalId: string,
+    reason: TerminalSnapshotPayload['refreshReason'],
+    minimumRevision = 0n,
+  ): { completion: Promise<void>; started: boolean } {
+    const existing = this.liveScreenRefreshes.get(terminalId)
+    if (existing) {
+      existing.pending = true
+      if (minimumRevision > existing.minimumRevision) existing.minimumRevision = minimumRevision
+      existing.reason = reason
+      return { completion: existing.completion!, started: false }
+    }
+    const state: LiveScreenRefreshState = { pending: true, minimumRevision, reason }
+    this.liveScreenRefreshes.set(terminalId, state)
+    const completion = this.drainLiveScreenRefresh(terminalId, state)
+    state.completion = completion
+    return { completion, started: true }
+  }
+
+  private async drainLiveScreenRefresh(terminalId: string, state: LiveScreenRefreshState): Promise<void> {
+    try {
+      while (this.liveScreenRefreshes.get(terminalId) === state && state.pending) {
+        state.pending = false
+        const screen = await this.requestLiveScreen(terminalId)
+        if (!screen || this.liveScreenRefreshes.get(terminalId) !== state) return
+        if (screen.liveRevision < state.minimumRevision) {
+          state.pending = true
+          continue
+        }
+        this.commitLiveScreen(terminalId, screen, state.reason)
+      }
+    } finally {
+      if (this.liveScreenRefreshes.get(terminalId) === state) this.liveScreenRefreshes.delete(terminalId)
+    }
   }
 
   requestResizeOwner(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl> {
@@ -239,14 +309,20 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     }
   }
 
-  private async publishLiveScreen(terminalId: string, reason: TerminalSnapshotPayload['refreshReason'], minimumRevision = 0n): Promise<void> {
-    if (!this.attachments.has(terminalId)) return
+  private async requestLiveScreen(terminalId: string): Promise<NativeScreenResult | undefined> {
+    const attachment = this.attachments.get(terminalId)
+    if (!attachment) return undefined
     const result = await this.session.execute(command('liveScreenGet', create(LiveScreenGetCommandSchema, { terminal: this.terminalRef(terminalId) })))
     if (result.result.case !== 'liveScreen') throw new Error('live screen returned no result')
-    if (result.result.value.liveRevision < minimumRevision || result.result.value.liveRevision < (this.liveRevisions.get(terminalId) ?? 0n)) return
-    this.liveRevisions.set(terminalId, result.result.value.liveRevision)
-    this.rememberSize(terminalId, result.result.value.size)
-    this.publish(terminalId, { type: 'snapshot', snapshot: screenSnapshot(result.result.value, reason) })
+    if (this.attachments.get(terminalId) !== attachment) return undefined
+    return result.result.value
+  }
+
+  private commitLiveScreen(terminalId: string, screen: NativeScreenResult, reason: TerminalSnapshotPayload['refreshReason']): void {
+    if (screen.liveRevision < (this.liveRevisions.get(terminalId) ?? 0n)) return
+    this.liveRevisions.set(terminalId, screen.liveRevision)
+    this.rememberSize(terminalId, screen.size)
+    this.publish(terminalId, { type: 'snapshot', snapshot: screenSnapshot(screen, reason) })
   }
 
   private rememberSize(terminalId: string, size: { cols: number; rows: number } | undefined): void {
@@ -339,7 +415,11 @@ function styleANSI(style: CellStyle | undefined): string {
 function colorANSI(value: string, foreground: boolean): string {
   const token = value.trim()
   if (!token) return ''
-  if (/^\d{1,3}$/.test(token)) return `${foreground ? 38 : 48};5;${Number(token)}`
+  const indexed = /^(?:(?:ansi|idx):)?(\d{1,3})$/i.exec(token)
+  if (indexed) {
+    const index = Math.min(255, Number(indexed[1]))
+    return `${foreground ? 38 : 48};5;${index}`
+  }
   const rgb = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token)
   if (!rgb) return ''
   return `${foreground ? 38 : 48};2;${parseInt(rgb[1]!, 16)};${parseInt(rgb[2]!, 16)};${parseInt(rgb[3]!, 16)}`

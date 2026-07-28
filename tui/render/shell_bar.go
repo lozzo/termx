@@ -84,17 +84,31 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 	if mode == "" {
 		mode = "live"
 	}
+	floatingPositionMode := mode == "resize" && strings.HasPrefix(footer.ActiveTarget, "float:")
 	available := footerActionAvailableWidth(footer, width)
 	left := []barSegment{}
-	if modeBadge := footerModeBadgeSegments(footer, mode); len(modeBadge) > 0 {
+	if modeBadge := footerModeBadgeSegments(footer, mode); len(modeBadge) > 0 && (!floatingPositionMode || width >= 72) {
 		left = append(left, modeBadge...)
 	}
 	if len(footer.ActionTokens) > 0 {
 		actions := footer.ActionTokens
-		actions = footerActionTokensVisibleForWidth(actions, mode, width)
+		if !floatingPositionMode {
+			actions = footerActionTokensVisibleForWidth(actions, mode, width)
+		} else if width < 72 {
+			actions = footerActionKeysOnly(actions)
+		}
 		left = appendFooterActionSegments(left, actions, available, footerKeyTemplateForFooter(footer), footer.ActionTemplate, footer.ActionSeparator)
 	}
 	return left
+}
+
+func footerActionKeysOnly(actions []FooterActionVM) []FooterActionVM {
+	out := append([]FooterActionVM(nil), actions...)
+	for index := range out {
+		out[index].Icon = ""
+		out[index].Label = ""
+	}
+	return out
 }
 
 func footerActionTokensVisibleForWidth(actions []FooterActionVM, mode string, width int) []FooterActionVM {
@@ -120,7 +134,7 @@ func footerSummaryReservedWidth(footer FooterVM, width int) int {
 	if footerHintIsCritical(footer) {
 		return barSegmentsWidth(segments)
 	}
-	if width >= 134 {
+	if footer.Mode != "" && footer.Mode != "live" && footer.Mode != "normal" {
 		return 0
 	}
 	if width >= 120 {
@@ -366,7 +380,6 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 	}
 	separator := footerActionSep(width, separatorText)
 	selected := selectFooterActionTokens(actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate)
-	ctrlPrefixShown := false
 	for _, action := range selected {
 		key := strings.TrimSpace(action.Key)
 		keyText := footerActionKeyText(key, keyTemplate)
@@ -394,22 +407,8 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 			}
 			return segment.withAction(actionID).withInvocation(invocation)
 		}
-		// footer 延续 tuiv2 状态栏语义：组合键拆成相邻 key token，但共享同一个 action 命中区。
 		if keyText == "" {
 			// key 模板为空时只展示 icon/label，仍保留 action hit region。
-		} else if keyText == key {
-			if letter, ok := footerCtrlLetter(key); ok {
-				if ctrlPrefixShown {
-					segments = appendFooterBracketTokenSegmentsWithInvocation(segments, "["+letter+"]", style, actionID, invocation)
-				} else {
-					segments = appendFooterBracketTokenSegmentsWithInvocation(segments, "[Ctrl]", StyleFooterAccent, actionID, invocation)
-					segments = append(segments, withAction(footerSep()))
-					ctrlPrefixShown = true
-					segments = appendFooterBracketTokenSegmentsWithInvocation(segments, "["+letter+"]", style, actionID, invocation)
-				}
-			} else {
-				segments = appendFooterKeySegmentsWithInvocation(segments, keyText, style, actionID, invocation)
-			}
 		} else {
 			segments = appendFooterKeySegmentsWithInvocation(segments, keyText, style, actionID, invocation)
 		}
@@ -484,9 +483,8 @@ func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidt
 	selected := make([]FooterActionVM, 0, len(actions))
 	used := 0
 	truncated := false
-	ctrlPrefixShown := false
 	for _, action := range actions {
-		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate, actionTemplate)
+		tokenWidth := footerActionTokenDisplayWidthForSelection(action, keyTemplate, actionTemplate)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -503,9 +501,6 @@ func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidt
 		}
 		selected = append(selected, action)
 		used += tokenWidth
-		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
-			ctrlPrefixShown = true
-		}
 	}
 	if !truncated || len(selected) == len(actions) {
 		return selected
@@ -528,9 +523,8 @@ func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidt
 
 func footerSelectedActionWidth(actions []FooterActionVM, separatorWidth int, keyTemplate string, actionTemplate string) int {
 	width := 0
-	ctrlPrefixShown := false
 	for _, action := range actions {
-		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate, actionTemplate)
+		tokenWidth := footerActionTokenDisplayWidthForSelection(action, keyTemplate, actionTemplate)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -538,35 +532,23 @@ func footerSelectedActionWidth(actions []FooterActionVM, separatorWidth int, key
 			width += separatorWidth
 		}
 		width += tokenWidth
-		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
-			ctrlPrefixShown = true
-		}
 	}
 	return width
 }
 
 func footerTailActionWidth(selected []FooterActionVM, tail FooterActionVM, separatorWidth int, keyTemplate string, actionTemplate string) int {
-	width := footerActionTokenDisplayWidthForSelection(tail, footerSelectionHasCtrlPrefix(selected, keyTemplate), keyTemplate, actionTemplate)
+	width := footerActionTokenDisplayWidthForSelection(tail, keyTemplate, actionTemplate)
 	if width > 0 && len(selected) > 0 {
 		width += separatorWidth
 	}
 	return width
 }
 
-func footerSelectionHasCtrlPrefix(actions []FooterActionVM, keyTemplate string) bool {
-	for _, action := range actions {
-		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
-			return true
-		}
-	}
-	return false
-}
-
 func footerActionTokenDisplayWidth(action FooterActionVM) int {
-	return footerActionTokenDisplayWidthForSelection(action, false, defaultFooterKeyTemplate, defaultFooterActionTemplate)
+	return footerActionTokenDisplayWidthForSelection(action, defaultFooterKeyTemplate, defaultFooterActionTemplate)
 }
 
-func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool, keyTemplate string, actionTemplate string) int {
+func footerActionTokenDisplayWidthForSelection(action FooterActionVM, keyTemplate string, actionTemplate string) int {
 	keyText := footerActionKeyText(action.Key, keyTemplate)
 	decor := footerActionDecorText(action, actionTemplate)
 	if keyText == "" && decor == "" {
@@ -574,22 +556,12 @@ func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefix
 	}
 	width := 0
 	if keyText != "" {
-		width += DisplayWidth(formatFooterKeyTokenForSelection(keyText, ctrlPrefixShown && keyText == strings.TrimSpace(action.Key)))
+		width += DisplayWidth(formatFooterKeyToken(keyText))
 	}
 	if decor != "" {
 		width += 1 + DisplayWidth(decor)
 	}
 	return width
-}
-
-func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
-	if letter, ok := footerCtrlLetter(key); ok {
-		if ctrlPrefixShown {
-			return "[" + letter + "]"
-		}
-		return "[Ctrl] • [" + letter + "]"
-	}
-	return formatFooterKeyToken(key)
 }
 
 func footerTailActionToken(actions []FooterActionVM) FooterActionVM {
@@ -628,22 +600,9 @@ func formatFooterKeyToken(key string) string {
 func formatFooterKeySegments(key string) []string {
 	key = strings.TrimSpace(key)
 	if strings.HasPrefix(key, "^") && len(key) > 1 {
-		return []string{"[Ctrl]", "[" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"}
+		return []string{"[Ctrl+" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"}
 	}
 	return []string{"[" + key + "]"}
-}
-
-func footerCtrlLetter(key string) (string, bool) {
-	key = strings.TrimSpace(key)
-	if !strings.HasPrefix(key, "^") || len(key) <= 1 {
-		return "", false
-	}
-	return strings.ToUpper(strings.TrimPrefix(key, "^")), true
-}
-
-func footerActionHasCtrlPrefix(key string) bool {
-	_, ok := footerCtrlLetter(key)
-	return ok
 }
 
 func footerActionKeyStyle(key string, label string) StyleToken {
@@ -778,7 +737,9 @@ func footerSep() barSegment {
 }
 
 func footerActionSep(width int, separatorText string) barSegment {
-	_ = width
+	if width < 56 {
+		return barText(" ", StyleFooterMuted, 1)
+	}
 	if separatorText = strings.TrimSpace(separatorText); separatorText != "" {
 		return barText(" "+separatorText+" ", StyleFooterMuted, 1)
 	}

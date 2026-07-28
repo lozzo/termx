@@ -6,6 +6,7 @@ import (
 	"time"
 
 	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
 	"github.com/anytty/anytty/tui/state"
 )
 
@@ -103,7 +104,14 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) FooterVM {
 	shell = shell.ReadonlyDefaults()
 	mode := footerMode(root, shell)
-	hint := content.Status
+	summary := globalSummary(root, shell)
+	if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayHelp {
+		summary = ""
+	}
+	hint := ""
+	if target, ok := shell.ActiveSurfaceTarget(); ok && !target.Floating {
+		hint = content.Status
+	}
 	if hint == "" {
 		hint = activeViewLiveStatus(root, shell)
 	}
@@ -131,7 +139,7 @@ func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) F
 		KeylockOnTemplate:                footerConfig.Templates.KeylockOn,
 		KeylockOffTemplate:               footerConfig.Templates.KeylockOff,
 		ActiveTarget:                     activeTargetSummary(shell, root),
-		GlobalSummary:                    globalSummary(root, shell),
+		GlobalSummary:                    summary,
 		FloatingSummaryOpen:              len(shell.ActiveFloatings()) > 0,
 	}
 }
@@ -171,12 +179,15 @@ func footerKeyTemplateForConfig(cfg state.TUIConfigStore) string {
 }
 
 func activeViewLiveStatus(root state.Root, shell state.ShellStore) string {
+	target, ok := shell.ActiveSurfaceTarget()
+	if !ok {
+		return ""
+	}
 	var binding state.TerminalViewBinding
-	var ok bool
-	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
-		binding, ok = root.TerminalViews.FloatingBinding(activeFloatingID)
+	if target.Floating {
+		binding, ok = root.TerminalViews.FloatingBinding(target.FloatingID)
 	} else {
-		binding, ok = root.TerminalViews.PaneBinding(shell.ActivePaneID)
+		binding, ok = root.TerminalViews.PaneBinding(target.PaneID)
 	}
 	if !ok || binding.TerminalID == "" {
 		return ""
@@ -256,7 +267,81 @@ func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellS
 			out = append(out, token)
 		}
 	}
+	if target, ok := shell.ActiveSurfaceTarget(); ok && target.Floating && mode == string(state.InteractionModeResize) {
+		return floatingResizeFooterActions(out)
+	}
 	return out
+}
+
+func floatingResizeFooterActions(actions []FooterActionVM) []FooterActionVM {
+	out := make([]FooterActionVM, 0, 7)
+	moveKeys := ""
+	var move FooterActionVM
+	for _, id := range []actiondomain.ID{"resize.left", "resize.up", "resize.right", "resize.down"} {
+		if action, ok := footerActionForID(actions, id); ok {
+			if moveKeys == "" {
+				move = action
+			}
+			moveKeys += primaryFooterShortcutKey(action.Key)
+		}
+	}
+	if moveKeys != "" {
+		move.Key = moveKeys
+		move.Label = "MOVE"
+		move.ActionID = "floating.position"
+		move.Invocation = actiondomain.Invocation{}
+		move.Click = ClickHintOnly
+		out = append(out, move)
+	} else if action, ok := footerActionForID(actions, "resize.pan_left"); ok {
+		action.Key = compactFooterShortcutKeys(action.Key)
+		action.Label = "MOVE"
+		action.ActionID = "floating.position"
+		action.Invocation = actiondomain.Invocation{}
+		action.Click = ClickHintOnly
+		out = append(out, action)
+	}
+	for _, spec := range []struct {
+		id      actiondomain.ID
+		compact bool
+	}{
+		{id: "resize.align_left", compact: true},
+		{id: "resize.center", compact: true},
+		{id: "panel.take_owner"},
+		{id: "panel.size_lock"},
+		{id: "resize.layout_reset"},
+		{id: "shortcut.exit"},
+	} {
+		action, ok := footerActionForID(actions, spec.id)
+		if !ok {
+			continue
+		}
+		if spec.compact {
+			action.Key = compactFooterShortcutKeys(action.Key)
+		}
+		out = append(out, action)
+	}
+	return out
+}
+
+func footerActionForID(actions []FooterActionVM, id actiondomain.ID) (FooterActionVM, bool) {
+	for _, action := range actions {
+		if action.Invocation.ID == id || action.ActionID == id.String() {
+			return action, true
+		}
+	}
+	return FooterActionVM{}, false
+}
+
+func primaryFooterShortcutKey(key string) string {
+	key = strings.TrimSpace(key)
+	if before, _, ok := strings.Cut(key, "/"); ok {
+		return before
+	}
+	return key
+}
+
+func compactFooterShortcutKeys(key string) string {
+	return strings.ReplaceAll(strings.TrimSpace(key), "/", "")
 }
 
 // 中文说明：这里仅过滤可见 footer token；reducer 仍负责最终语义校验和错误反馈。
@@ -268,16 +353,39 @@ func footerActionAvailable(action FooterActionVM, mode string, root state.Root, 
 	if actionID == "" {
 		return true
 	}
+	activeTarget, hasActiveTarget := shell.ActiveSurfaceTarget()
 	switch actionID {
 	case "panel.close":
+		if hasActiveTarget && activeTarget.Floating {
+			return true
+		}
 		return activeTabPaneCount(shell) > 1
 	case "panel.detach":
-		binding, ok := root.TerminalViews.PaneBinding(shell.ActivePaneID)
+		if !hasActiveTarget {
+			return false
+		}
+		var binding state.TerminalViewBinding
+		var ok bool
+		if activeTarget.Floating {
+			binding, ok = root.TerminalViews.FloatingBinding(activeTarget.FloatingID)
+		} else {
+			binding, ok = root.TerminalViews.PaneBinding(activeTarget.PaneID)
+		}
 		return ok && binding.TerminalID != ""
 	case "panel.focus_next", "panel.focus_prev":
-		return activeTabPaneCount(shell) > 1
-	case "panel.balance", "resize.left", "resize.left_large", "resize.right", "resize.right_large", "resize.up", "resize.up_large", "resize.down", "resize.down_large":
-		return activeTabPaneCount(shell) > 1
+		return hasActiveTarget && !activeTarget.Floating && activeTabPaneCount(shell) > 1
+	case "panel.split_right", "panel.split_down", "panel.toggle_zoom", "panel.presentation_card", "panel.presentation_split_line":
+		return hasActiveTarget && !activeTarget.Floating
+	case "panel.balance":
+		return hasActiveTarget && !activeTarget.Floating && activeTabPaneCount(shell) > 1
+	case "resize.left", "resize.left_large", "resize.right", "resize.right_large", "resize.up", "resize.up_large", "resize.down", "resize.down_large":
+		return hasActiveTarget && (activeTarget.Floating || activeTabPaneCount(shell) > 1)
+	case "resize.pan_left", "resize.pan_right", "resize.pan_up", "resize.pan_down",
+		"resize.align_left", "resize.align_right", "resize.align_top", "resize.align_bottom",
+		"resize.center", "resize.center_x", "resize.center_y", "resize.layout_reset":
+		return hasActiveTarget
+	case "resize.layout_toggle":
+		return hasActiveTarget && !activeTarget.Floating
 	case "tab.previous", "tab.next", "tab.close", "tab.kill":
 		return activeWorkspaceTabCount(shell) > 1
 	case "workspace.previous", "workspace.next", "workspace.delete":
@@ -295,6 +403,11 @@ func footerActionAvailable(action FooterActionVM, mode string, root state.Root, 
 		return len(root.TerminalPool.Items) > 0
 	case "clipboard_history.paste", "clipboard_history.edit", "clipboard_history.delete":
 		return len(state.ClipboardHistoryItems(root)) > 0
+	case "help.previous", "help.page_up", "help.first":
+		return shell.Overlay.Kind == state.OverlayHelp && shell.Overlay.SelectedIndex > 0
+	case "help.next", "help.page_down", "help.last":
+		itemCount := len(input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation))
+		return shell.Overlay.Kind == state.OverlayHelp && shell.Overlay.SelectedIndex < itemCount-1
 	default:
 		return true
 	}
@@ -317,16 +430,36 @@ func activeTabPaneCount(shell state.ShellStore) int {
 }
 
 func activeTargetSummary(shell state.ShellStore, root state.Root) string {
-	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
-	paneTitle := shell.ActivePaneID
-	if ok && pane.Title != "" {
-		paneTitle = pane.Title
+	target, ok := shell.ActiveSurfaceTarget()
+	if !ok {
+		return ""
 	}
-	terminalState := terminalStateSummary(root, pane)
+	prefix := "pane:"
+	pane := state.PaneState{ID: target.PaneID}
+	terminalState := ""
+	if target.Floating {
+		prefix = "float:"
+		if floating, found := shell.FloatingByID(target.FloatingID); found {
+			pane = floating.Pane
+			if floating.Title != "" {
+				pane.Title = floating.Title
+			}
+		}
+		terminalState = floatingTerminalStateSummary(root, target.FloatingID)
+	} else {
+		if activePane, found := shell.Pane(state.PaneCommandTarget{PaneID: target.PaneID}); found {
+			pane = activePane
+		}
+		terminalState = terminalStateSummary(root, pane)
+	}
+	title := pane.ID
+	if pane.Title != "" {
+		title = pane.Title
+	}
 	if terminalState == "" {
-		return "pane:" + paneTitle
+		return prefix + title
 	}
-	return "pane:" + paneTitle + " " + terminalState
+	return prefix + title + " " + terminalState
 }
 
 func globalSummary(root state.Root, shell state.ShellStore) string {
@@ -389,6 +522,15 @@ func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
 
 func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	binding, hasBinding := root.TerminalViews.PaneBinding(pane.ID)
+	return terminalBindingStateSummary(root, binding, hasBinding, copyModeBelongsToPane(root, pane.ID))
+}
+
+func floatingTerminalStateSummary(root state.Root, floatingID string) string {
+	binding, hasBinding := root.TerminalViews.FloatingBinding(floatingID)
+	return terminalBindingStateSummary(root, binding, hasBinding, copyModeBelongsToFloating(root, floatingID))
+}
+
+func terminalBindingStateSummary(root state.Root, binding state.TerminalViewBinding, hasBinding bool, copyMode bool) string {
 	surface := state.TerminalSurfaceStore{}
 	session := state.TerminalSessionStore{}
 	if hasBinding && binding.TerminalID != "" {
@@ -398,7 +540,7 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	switch {
 	case session.LastError != "" || surface.Err != "":
 		return "error"
-	case copyModeBelongsToPane(root, pane.ID):
+	case copyMode:
 		return "copy"
 	case session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited:
 		return "exited"

@@ -557,16 +557,16 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if strings.HasPrefix(footer, "└") || strings.HasSuffix(footer, "┘") {
 		t.Fatalf("bottom bar should be a product bar, not an outer wireframe, got %#v", footer)
 	}
-	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "PANE • [R] RESIZE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "terminals:1") {
+	if !strings.Contains(footer, "[Ctrl+P] PANE") || !strings.Contains(footer, "PANE • [Ctrl+R] RESIZE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "terminals:1") {
 		t.Fatalf("bottom bar should contain target wireframe action/summary tokens, got %#v", footer)
 	}
-	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl+P]") || strings.Contains(footer, "»") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
+	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl] •") || strings.Contains(footer, "»") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
 		t.Fatalf("bottom bar should use status-bar metadata slots, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[:1], "  main", StyleHeaderWorkspace) ||
 		!styledLinesContainText(frame.StyledLines[:1], HeaderTabCreateText, StyleHeaderCreate) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "Ctrl", StyleFooterAccent) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "Ctrl+P", StyleFooterKeyPane) ||
 		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "PANE", StyleFooterMuted) {
 		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
@@ -635,7 +635,7 @@ func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
 	}})
 	frame := result.Frame()
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[G] GLOBAL") || !strings.Contains(footer, "ws:main float:1") {
+	if !strings.Contains(footer, "[Ctrl+G] GLOBAL") || !strings.Contains(footer, "ws:main float:1") {
 		t.Fatalf("wide footer should keep full action strip and summary, got %#v", footer)
 	}
 	if strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;8;8;13m") {
@@ -662,7 +662,7 @@ func TestFrameworkRendersFullFooterSummaryAtVisualCompareWidth(t *testing.T) {
 	}})
 	frame := result.Frame()
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl]") || !strings.Contains(footer, "[P] PANE") || !strings.Contains(footer, "[G]") {
+	if !strings.Contains(footer, "[Ctrl+P] PANE") || !strings.Contains(footer, "[Ctrl+G] GLOBAL") {
 		t.Fatalf("120-col footer should keep shortcut strip endpoints, got %#v", footer)
 	}
 	if !strings.Contains(footer, "ws:main float:1 terminals:1") {
@@ -798,7 +798,7 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 		t.Fatalf("header should render structured tab slots, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "[w] CLOSE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") {
+	if !strings.Contains(footer, "[Ctrl+P] PANE") || !strings.Contains(footer, "[w] CLOSE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") {
 		t.Fatalf("footer should render structured action tokens, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "w", StyleFooterKeyPicker) {
@@ -839,7 +839,7 @@ func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
 		t.Fatalf("clipboard history modal must keep shortcuts out of content, got %#v", lines)
 	}
 	footer := lines[len(lines)-1]
-	for _, token := range []string{"[enter] PASTE", "[Ctrl] • [N] NEW", "[E] EDIT", "[X] DELETE"} {
+	for _, token := range []string{"[enter] PASTE", "[Ctrl+N] NEW", "[Ctrl+E] EDIT", "[Ctrl+X] DELETE"} {
 		if !strings.Contains(footer, token) {
 			t.Fatalf("clipboard history shortcuts should come from shortcut catalog, missing %q from %q", token, footer)
 		}

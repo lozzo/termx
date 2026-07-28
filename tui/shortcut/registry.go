@@ -148,7 +148,8 @@ func buildPolicies() map[actiondomain.ID]BindingPolicy {
 	visible([]SceneID{SceneClipboardHistory}, false, "clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close")
 	visible([]SceneID{SceneFloatingOverview}, false, "floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close")
 	visible([]SceneID{ScenePrompt}, false, "prompt.submit", "prompt.cancel")
-	visible([]SceneID{SceneHelp}, false, "help.close")
+	visible([]SceneID{SceneHelp}, false, "help.previous", "help.next", "help.page_up", "help.page_down")
+	helpOnly(SceneHelp, "help.first", "help.last", "help.close")
 	return out
 }
 

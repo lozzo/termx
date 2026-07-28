@@ -37,6 +37,7 @@ export interface TerminalSnapshotPayload {
     lastRowId?: number
     hasMore: boolean
     alternate?: boolean
+    prefetched?: boolean
   }
 }
 
@@ -66,6 +67,7 @@ export interface TerminalScrollbackLoadResult {
   lastRowId?: number
   hasMore: boolean
   alternate: boolean
+  prefetched?: boolean
 }
 
 export type TerminalInfoPayload = Record<string, unknown>
@@ -117,8 +119,9 @@ export interface TerminalProtocolSession {
     offset: number,
     limit: number,
     alternate?: boolean,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; cols?: number },
   ): Promise<TerminalScrollbackPage>
+  resetScrollback?(terminalId: string): void
   closeTerminalChannel(terminalId: string): void
   markSyncLost?(terminalId: string, reason?: string): void
   requestResizeOwner?(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl>
@@ -234,12 +237,17 @@ export class TerminalClient {
     offset: number,
     limit: number,
     alternate = false,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; cols?: number },
   ): Promise<TerminalScrollbackPage> {
     if (!this.session || !this.terminalId) {
       return Promise.reject(new Error('terminal client is not connected'))
     }
     return this.session.loadScrollback(this.terminalId, offset, limit, alternate, options)
+  }
+
+  resetScrollback(): void {
+    if (!this.session || !this.terminalId) return
+    this.session.resetScrollback?.(this.terminalId)
   }
 
   markSyncLost(reason?: string): void {

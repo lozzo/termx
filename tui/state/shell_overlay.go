@@ -222,6 +222,37 @@ func (store ShellStore) OpenHelp(section string) ShellStore {
 	return store
 }
 
+func (store ShellStore) MoveHelpSelection(delta int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayHelp || !store.Overlay.Open || itemCount <= 0 {
+		return store
+	}
+	next := store.Overlay.SelectedIndex + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= itemCount {
+		next = itemCount - 1
+	}
+	store.Overlay.SelectedIndex = next
+	return store
+}
+
+func (store ShellStore) SetHelpSelection(index int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayHelp || !store.Overlay.Open || itemCount <= 0 {
+		return store
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= itemCount {
+		index = itemCount - 1
+	}
+	store.Overlay.SelectedIndex = index
+	return store
+}
+
 func (store ShellStore) SetTerminalPickerQuery(query string) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open {

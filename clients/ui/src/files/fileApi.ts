@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf'
 import type { ProtoClientSession, ProtoResourceStream } from '../core/protoClientSession'
 import type { ResourceHandle } from '../generated/apipb/common_pb'
 import { ResourceStreamFrameType } from '../generated/bindingpb/client_binding_pb'
-import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
+import { CommandEnvelopeSchema, ReleaseResourceCommandSchema } from '../generated/apipb/application_pb'
 import {
   FileCopyCommandSchema,
   FileDeleteCommandSchema,
@@ -242,64 +242,88 @@ async function readProtoFileTransferStream(
   options: FilePreviewStreamOptions,
 ): Promise<FilePreviewStreamResult> {
   if (init.chunk_size <= 0 || init.window_bytes <= 0) throw new Error('file stream returned invalid flow-control limits')
+  const requestedLength = options.length === undefined
+    ? undefined
+    : Number.isFinite(options.length) ? Math.max(0, Math.floor(options.length)) : 0
+  if (requestedLength === 0) throw new Error('file preview range length must be positive')
+  const targetEnd = requestedLength === undefined ? init.size : Math.min(init.size, init.offset + requestedLength)
   return await new Promise<FilePreviewStreamResult>((resolve, reject) => {
     const chunks: Uint8Array[] = []
-    let receivedSize = init.offset
+    let wireOffset = init.offset
+    let receivedSize = 0
     let bytesSinceAck = 0
     let settled = false
+    let subscription: { close(): void } | null = null
+    let closeSubscription: { close(): void } | null = null
+    const cleanup = () => {
+      subscription?.close()
+      closeSubscription?.close()
+      options.signal?.removeEventListener('abort', abortListener)
+    }
     const finish = (result: FilePreviewStreamResult) => {
       if (settled) return
       settled = true
-      subscription.close()
-      options.signal?.removeEventListener('abort', abortListener)
+      cleanup()
       resolve(result)
     }
     const fail = (error: unknown) => {
       if (settled) return
       settled = true
-      subscription.close()
-      options.signal?.removeEventListener('abort', abortListener)
+      cleanup()
       reject(error)
+    }
+    const finishRange = () => {
+      const blobParts = chunks.map((chunk) => chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer)
+      finish({ blob: new Blob(blobParts, { type: mimeType.trim() || 'application/octet-stream' }), receivedSize, offset: init.offset, totalSize: init.size })
     }
     const abortListener = () => {
       void stream.close().catch(() => undefined)
       fail(abortError())
     }
-    const subscription = stream.subscribe((type, payload) => {
+    subscription = stream.subscribe((type, payload) => {
       if (settled) return
       if (type === ResourceStreamFrameType.FILE_DATA) {
         const data = decodeFileTransferDataPayload(payload)
-        if (data.offset !== receivedSize || data.data.byteLength === 0 || data.data.byteLength > init.chunk_size) {
+        if (data.offset !== wireOffset || data.data.byteLength === 0 || data.data.byteLength > init.chunk_size) {
           fail(new Error('file stream offset or chunk is invalid'))
           return
         }
-        chunks.push(data.data)
-        receivedSize += data.data.byteLength
+        wireOffset += data.data.byteLength
         bytesSinceAck += data.data.byteLength
-        const chunk = data.data.buffer.slice(data.data.byteOffset, data.data.byteOffset + data.data.byteLength) as ArrayBuffer
+        const retainedLength = Math.max(0, Math.min(data.data.byteLength, targetEnd - data.offset))
+        if (retainedLength > 0) chunks.push(data.data.subarray(0, retainedLength))
+        receivedSize += retainedLength
+        const chunk = data.data.buffer.slice(data.data.byteOffset, data.data.byteOffset + retainedLength) as ArrayBuffer
         options.onChunk?.({ chunk, receivedSize, totalSize: init.size })
         options.onProgress?.({ receivedSize, totalSize: init.size })
+        if (requestedLength !== undefined && wireOffset >= targetEnd) {
+          finishRange()
+          return
+        }
         if (bytesSinceAck >= init.window_bytes) {
           const credit = bytesSinceAck
           bytesSinceAck = 0
-          void stream.send(ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset: receivedSize, windowBytes: credit })).catch(fail)
+          void stream.send(ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset: wireOffset, windowBytes: credit })).catch(fail)
         }
         return
       }
       if (type === ResourceStreamFrameType.FILE_FINISH) {
         const declared = decodeFileTransferFinishPayload(payload)
-        if (declared.size !== init.size || receivedSize !== init.size) {
+        if (declared.size !== init.size || wireOffset !== init.size || init.offset + receivedSize !== targetEnd) {
           fail(new Error('file stream completed with the wrong size'))
           return
         }
-        void verifyFileDigest(chunks, declared.sha256).then(() => {
-          const blobParts = chunks.map((chunk) => chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer)
-          finish({ blob: new Blob(blobParts, { type: mimeType.trim() || 'application/octet-stream' }), receivedSize, offset: init.offset, totalSize: init.size })
-        }).catch(fail)
+        if (init.offset === 0 && receivedSize === init.size) {
+          cleanup()
+          void verifyFileDigest(chunks, declared.sha256).then(finishRange).catch(fail)
+        } else {
+          finishRange()
+        }
         return
       }
       if (type === ResourceStreamFrameType.ERROR) fail(new Error(decodeFileStreamErrorPayload(payload)))
     })
+    closeSubscription = stream.subscribeClosed(fail)
     options.signal?.addEventListener('abort', abortListener, { once: true })
     if (options.signal?.aborted) abortListener()
   })
@@ -324,16 +348,29 @@ function protoOperationPath(result: FileOperationResult): { path: string } {
 export function createFilePreviewSource(session: ProtoClientSession): FilePreviewSource {
   const api = createFileApi(session)
   return {
-    preview: api.preview,
+    async preview(path: string, maxSize?: number) {
+      if (maxSize !== undefined) return await api.preview(path, maxSize)
+      const probe = await api.preview(path, 64 << 10)
+      if (probe.category === 'text' && probe.previewLimit) return await api.preview(path)
+      return probe
+    },
     async stream(path: string, mimeType: string, options: FilePreviewStreamOptions = {}) {
-      const init = await api.downloadOpen(path)
-      throwIfAborted(options.signal)
-      if (!init.resource) throw new Error('file download returned no resource handle')
-      const stream = await session.openResourceStream(init.resource)
+      const requestedOffset = options.offset ?? 0
+      const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.floor(requestedOffset)) : 0
+      const init = await api.downloadOpen(path, offset)
+      const resource = init.resource
+      if (!resource) throw new Error('file download returned no resource handle')
+      let stream: ProtoResourceStream | null = null
       try {
+        throwIfAborted(options.signal)
+        if (init.offset !== offset) throw new Error('file preview range offset was not accepted')
+        stream = await session.openResourceStream(resource, options.signal ? { signal: options.signal } : undefined)
         return await readProtoFileTransferStream(stream, init, mimeType, options)
       } finally {
-        await stream.close()
+        await stream?.close().catch(() => undefined)
+        await session.execute(create(CommandEnvelopeSchema, {
+          command: { case: 'releaseResource', value: create(ReleaseResourceCommandSchema, { resource }) },
+        })).catch(() => undefined)
       }
     },
   }

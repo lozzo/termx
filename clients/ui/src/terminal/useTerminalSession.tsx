@@ -12,6 +12,7 @@ import {
   type TerminalProtocolSession,
   type TerminalResizeControl,
   type TerminalScrollbackLoadResult,
+  type TerminalScrollbackPage,
   type TerminalSnapshotPayload,
 } from './terminalClient'
 import { createProtoTerminalProtocolSession } from './protoTerminalProtocolSession'
@@ -53,7 +54,10 @@ export interface UseTerminalSessionResult {
   sendResize(cols: number, rows: number): boolean
   requestResizeOwner(size?: { cols: number; rows: number }): Promise<TerminalResizeControl>
   releaseResizeOwner(): Promise<TerminalResizeControl>
-  loadScrollback(limit?: number, alternate?: boolean): Promise<TerminalScrollbackLoadResult>
+  loadScrollback(limit?: number, alternate?: boolean, cols?: number): Promise<TerminalScrollbackLoadResult>
+  prefetchScrollback(limit?: number, alternate?: boolean, cols?: number): Promise<boolean>
+  freezeScrollback(): void
+  resumeLiveScrollback(): string
   markSyncLost(reason?: string): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
   reattach(session: TerminalSession, options?: { forceTerminalChannel?: boolean }): void
@@ -61,6 +65,23 @@ export interface UseTerminalSessionResult {
 }
 
 type TerminalSession = ProtoClientSession
+
+interface ScrollbackPrefetchEntry {
+  key: string
+  revision: number
+  page: TerminalScrollbackPage
+}
+
+interface ScrollbackPrefetchPending {
+  key: string
+  revision: number
+  controller: AbortController
+  promise: Promise<TerminalScrollbackPage | null>
+}
+
+function scrollbackPrefetchKey(limit: number, alternate: boolean, cols?: number): string {
+  return `${alternate ? 'alternate' : 'normal'}:${Math.max(0, Math.trunc(cols ?? 0))}:${Math.max(0, Math.trunc(limit))}`
+}
 
 export function useTerminalSession(options: UseTerminalSessionOptions): UseTerminalSessionResult {
   const [snapshot, dispatch] = useReducer(reduceConnectionMessage, undefined, initialConnectionSnapshot)
@@ -78,6 +99,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const loadingScrollbackRef = useRef(false)
   const scrollbackAbortControllerRef = useRef<AbortController | null>(null)
   const hasMoreScrollbackRef = useRef(true)
+  const scrollbackFrozenRef = useRef(false)
+  const liveHistoryRevisionRef = useRef(0)
+  const scrollbackPrefetchRef = useRef<ScrollbackPrefetchEntry | null>(null)
+  const scrollbackPrefetchPendingRef = useRef<ScrollbackPrefetchPending | null>(null)
   const activeScrollbackModeRef = useRef<'normal' | 'alternate'>('normal')
   const recoveringInputRef = useRef(false)
   const terminalRecoveryPromiseRef = useRef<Promise<boolean> | null>(null)
@@ -88,7 +113,6 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const onOutputRef = useRef<((text: string) => void) | undefined>(options.onOutput)
   const terminalTextRef = useRef('')
   const terminalContentTextRef = useRef('')
-  const terminalScreenRowsRef = useRef(0)
   const terminalTextPublishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const outputStatsRef = useRef({
     chunks: 0,
@@ -211,6 +235,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       try {
         scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal channel reconnecting', 'AbortError'))
         scrollbackAbortControllerRef.current = null
+        scrollbackPrefetchPendingRef.current?.controller.abort(new DOMException('Terminal channel reconnecting', 'AbortError'))
+        scrollbackPrefetchPendingRef.current = null
+        scrollbackPrefetchRef.current = null
         dispatch({
           type: 'terminal.channelClosed',
           machineId: options.machineId,
@@ -313,9 +340,26 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }
   }, [clearPendingRecoveryInput, recoverTerminalChannel, rememberRecoveryInput])
 
+  const invalidateLiveScrollbackPrefetch = useCallback((reason: 'output' | 'snapshot') => {
+    liveHistoryRevisionRef.current += 1
+    const cached = scrollbackPrefetchRef.current
+    const pending = scrollbackPrefetchPendingRef.current
+    if (!cached && !pending) return
+    scrollbackPrefetchRef.current = null
+    pending?.controller.abort(new DOMException('Terminal live content changed', 'AbortError'))
+    clientRef.current?.resetScrollback()
+    logSession('scrollback_prefetch_invalidated', {
+      level: 'debug',
+      details: { reason, cached: cached !== null, pending: pending !== null },
+    })
+  }, [logSession])
+
   const callbacks = useMemo<TerminalClientCallbacks>(() => ({
     onOutput: (data) => {
-      hasMoreScrollbackRef.current = true
+      if (!scrollbackFrozenRef.current) {
+        hasMoreScrollbackRef.current = true
+        invalidateLiveScrollbackPrefetch('output')
+      }
       const decoded = textDecoderRef.current.decode(data)
       const stats = outputStatsRef.current
       stats.chunks += 1
@@ -333,12 +377,11 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         })
       }
       onOutputRef.current?.(decoded)
-      if (loadedScrollbackRowsRef.current > 0) {
-        // The frozen window predates this output. The next history gesture must
-        // establish a new latest boundary and replace the retained prefix.
-        loadedScrollbackRowsRef.current = 0
-      }
       terminalContentTextRef.current = appendTerminalText(terminalContentTextRef.current, decoded)
+      if (scrollbackFrozenRef.current) {
+        maybeLogOutputStats(terminalContentTextRef.current.length)
+        return
+      }
       const current = terminalTextRef.current
       const next = appendTerminalText(current, decoded)
       const expectedLength = current.length + decoded.length
@@ -350,10 +393,16 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       scheduleTerminalTextPublish()
     },
     onSnapshot: (nextSnapshot) => {
-      const canPreserveHistory = !nextSnapshot.alternateScreen && activeScrollbackModeRef.current === 'normal' && scrollbackPrefixTextRef.current !== ''
+      if (!scrollbackFrozenRef.current) invalidateLiveScrollbackPrefetch('snapshot')
+      const canPreserveHistory = scrollbackFrozenRef.current &&
+        !nextSnapshot.alternateScreen &&
+        activeScrollbackModeRef.current === 'normal' &&
+        scrollbackPrefixTextRef.current !== ''
       const nextText = nextSnapshot.replay ?? nextSnapshot.text
       const screenText = nextSnapshot.replay ?? nextSnapshot.screenReplay ?? nextSnapshot.screenText
-      setTerminalSnapshot(nextSnapshot)
+      setTerminalSnapshot((current) => canPreserveHistory && current?.history
+        ? { ...nextSnapshot, history: current.history }
+        : nextSnapshot)
       logSession('snapshot_received', {
         details: {
           textChars: nextSnapshot.text.length,
@@ -366,16 +415,15 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           alternateScreen: nextSnapshot.alternateScreen === true,
         },
       })
-      loadedScrollbackRowsRef.current = 0
       terminalContentTextRef.current = screenText ?? nextText
-      terminalScreenRowsRef.current = nextSnapshot.rows
       if (!canPreserveHistory) {
+        loadedScrollbackRowsRef.current = 0
         scrollbackPrefixTextRef.current = ''
         activeScrollbackModeRef.current = nextSnapshot.alternateScreen ? 'alternate' : 'normal'
+        hasMoreScrollbackRef.current = true
       }
-      hasMoreScrollbackRef.current = true
-      terminalTextRef.current = canPreserveHistory && screenText !== undefined
-        ? joinHistoryAndSnapshotText(scrollbackPrefixTextRef.current, screenText, nextSnapshot.rows)
+      terminalTextRef.current = canPreserveHistory
+        ? scrollbackPrefixTextRef.current
         : nextText
       publishTerminalTextNow()
     },
@@ -419,7 +467,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         void recoverTerminalChannel(reason, { forceTerminalChannel: true })
       }
     },
-  }), [clearPendingRecoveryInput, logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, recoverTerminalChannel, scheduleTerminalTextPublish])
+  }), [clearPendingRecoveryInput, invalidateLiveScrollbackPrefetch, logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, recoverTerminalChannel, scheduleTerminalTextPublish])
 
   useEffect(() => {
     sessionRef.current = options.session
@@ -431,7 +479,6 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clearTerminalTextPublishTimer()
     terminalTextRef.current = ''
     terminalContentTextRef.current = ''
-    terminalScreenRowsRef.current = 0
     setTerminalSnapshot(null)
     setTerminalText('')
     setTerminalInfo(null)
@@ -442,7 +489,12 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     loadingScrollbackRef.current = false
     scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal session replaced', 'AbortError'))
     scrollbackAbortControllerRef.current = null
+    scrollbackPrefetchPendingRef.current?.controller.abort(new DOMException('Terminal session replaced', 'AbortError'))
+    scrollbackPrefetchPendingRef.current = null
+    scrollbackPrefetchRef.current = null
     hasMoreScrollbackRef.current = true
+    scrollbackFrozenRef.current = false
+    liveHistoryRevisionRef.current = 0
     activeScrollbackModeRef.current = 'normal'
     recoveringInputRef.current = false
     terminalRecoveryPromiseRef.current = null
@@ -492,6 +544,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       cancelled = true
       scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal session closed', 'AbortError'))
       scrollbackAbortControllerRef.current = null
+      scrollbackPrefetchPendingRef.current?.controller.abort(new DOMException('Terminal session closed', 'AbortError'))
+      scrollbackPrefetchPendingRef.current = null
+      scrollbackPrefetchRef.current = null
+      scrollbackFrozenRef.current = false
       logSession('unmount', {
         level: 'info',
         details: {
@@ -535,7 +591,160 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clientRef.current?.markSyncLost(reason)
   }, [])
 
-  const loadScrollback = useCallback(async (limit = 100, alternate = false): Promise<TerminalScrollbackLoadResult> => {
+  const prefetchScrollback = useCallback(async (limit = 100, alternate = false, cols?: number): Promise<boolean> => {
+    const normalizedLimit = Math.max(0, Math.trunc(limit))
+    const normalizedCols = Math.max(0, Math.trunc(cols ?? 0))
+    if (normalizedLimit <= 0 || alternate || normalizedCols <= 0) return false
+    if (scrollbackFrozenRef.current || loadingScrollbackRef.current) return false
+    const client = clientRef.current
+    if (!client) return false
+
+    const key = scrollbackPrefetchKey(normalizedLimit, alternate, normalizedCols)
+    const revision = liveHistoryRevisionRef.current
+    const cached = scrollbackPrefetchRef.current
+    if (cached?.key === key && cached.revision === revision) return true
+    const existing = scrollbackPrefetchPendingRef.current
+    if (existing?.key === key && existing.revision === revision) {
+      return (await existing.promise) !== null
+    }
+
+    if (cached || existing) {
+      scrollbackPrefetchRef.current = null
+      existing?.controller.abort(new DOMException('Terminal history prefetch parameters changed', 'AbortError'))
+      client.resetScrollback()
+      if (existing) await existing.promise
+    }
+    if (
+      scrollbackFrozenRef.current ||
+      loadingScrollbackRef.current ||
+      liveHistoryRevisionRef.current !== revision ||
+      clientRef.current !== client
+    ) return false
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => {
+      controller.abort(new Error(`Terminal history prefetch timed out after ${scrollbackLoadTimeoutMs}ms`))
+    }, scrollbackLoadTimeoutMs)
+    const startedAt = terminalNow()
+    logSession('scrollback_prefetch_start', {
+      details: { limit: normalizedLimit, cols: normalizedCols, revision },
+    })
+
+    let pending!: ScrollbackPrefetchPending
+    const promise = (async (): Promise<TerminalScrollbackPage | null> => {
+      try {
+        const page = await client.loadScrollback(0, normalizedLimit, false, {
+          signal: controller.signal,
+          cols: normalizedCols,
+        })
+        if (
+          controller.signal.aborted ||
+          liveHistoryRevisionRef.current !== revision ||
+          clientRef.current !== client
+        ) {
+          client.resetScrollback()
+          return null
+        }
+        scrollbackPrefetchRef.current = { key, revision, page }
+        logSession('scrollback_prefetch_success', {
+          details: {
+            elapsedMs: Math.round(terminalNow() - startedAt),
+            rows: page.rows,
+            hasMore: page.hasMore,
+            replayChars: page.replay.length,
+            cols: normalizedCols,
+            revision,
+          },
+        })
+        return page
+      } catch (error) {
+        client.resetScrollback()
+        if (!controller.signal.aborted) {
+          logSession('scrollback_prefetch_failed', {
+            level: 'debug',
+            details: {
+              elapsedMs: Math.round(terminalNow() - startedAt),
+              reason: error instanceof Error ? error.message : String(error),
+            },
+          })
+        }
+        return null
+      } finally {
+        clearTimeout(timeout)
+        if (scrollbackPrefetchPendingRef.current === pending) {
+          scrollbackPrefetchPendingRef.current = null
+        }
+      }
+    })()
+    pending = { key, revision, controller, promise }
+    scrollbackPrefetchPendingRef.current = pending
+    return (await promise) !== null
+  }, [logSession])
+
+  const consumePrefetchedScrollback = useCallback(async (limit: number, alternate: boolean, cols?: number): Promise<TerminalScrollbackPage | null> => {
+    const key = scrollbackPrefetchKey(limit, alternate, cols)
+    const revision = liveHistoryRevisionRef.current
+    let cached = scrollbackPrefetchRef.current
+    if (cached?.key === key && cached.revision === revision) {
+      scrollbackPrefetchRef.current = null
+      logSession('scrollback_prefetch_consumed', {
+        details: { rows: cached.page.rows, cols, revision },
+      })
+      return cached.page
+    }
+
+    const pending = scrollbackPrefetchPendingRef.current
+    if (pending?.key === key && pending.revision === revision) {
+      await pending.promise
+      cached = scrollbackPrefetchRef.current
+      if (cached?.key === key && cached.revision === revision) {
+        scrollbackPrefetchRef.current = null
+        logSession('scrollback_prefetch_consumed', {
+          details: { rows: cached.page.rows, cols, revision, waited: true },
+        })
+        return cached.page
+      }
+      return null
+    }
+
+    if (cached || pending) {
+      scrollbackPrefetchRef.current = null
+      pending?.controller.abort(new DOMException('Terminal history prefetch no longer matches', 'AbortError'))
+      clientRef.current?.resetScrollback()
+      if (pending) await pending.promise
+    }
+    return null
+  }, [logSession])
+
+  const freezeScrollback = useCallback(() => {
+    scrollbackFrozenRef.current = true
+  }, [])
+
+  const resumeLiveScrollback = useCallback(() => {
+    scrollbackFrozenRef.current = false
+    scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal history view resumed live output', 'AbortError'))
+    scrollbackAbortControllerRef.current = null
+    scrollbackPrefetchPendingRef.current?.controller.abort(new DOMException('Terminal history view resumed live output', 'AbortError'))
+    scrollbackPrefetchPendingRef.current = null
+    scrollbackPrefetchRef.current = null
+    clientRef.current?.resetScrollback()
+    scrollbackPrefixTextRef.current = ''
+    loadedScrollbackRowsRef.current = 0
+    hasMoreScrollbackRef.current = true
+    activeScrollbackModeRef.current = 'normal'
+    const liveText = terminalContentTextRef.current
+    terminalTextRef.current = liveText
+    setTerminalSnapshot((current) => {
+      if (!current?.history) return current
+      const { history: _history, ...liveSnapshot } = current
+      return liveSnapshot
+    })
+    publishTerminalTextNow()
+    return liveText
+  }, [publishTerminalTextNow])
+
+  const loadScrollback = useCallback(async (limit = 100, alternate = false, cols?: number): Promise<TerminalScrollbackLoadResult> => {
+    scrollbackFrozenRef.current = true
     const mode: 'normal' | 'alternate' = alternate ? 'alternate' : 'normal'
     if (activeScrollbackModeRef.current !== mode) {
       activeScrollbackModeRef.current = mode
@@ -561,25 +770,38 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       }
     }
     loadingScrollbackRef.current = true
-    const controller = new AbortController()
-    scrollbackAbortControllerRef.current = controller
-    const timeout = setTimeout(() => {
-      controller.abort(new Error(`Terminal history request timed out after ${scrollbackLoadTimeoutMs}ms`))
-    }, scrollbackLoadTimeoutMs)
+    const normalizedLimit = Math.max(0, Math.trunc(limit))
+    const normalizedCols = Math.max(0, Math.trunc(cols ?? 0))
+    let controller: AbortController | null = null
+    let timeout: ReturnType<typeof setTimeout> | null = null
+    let prefetched = false
     const startedAt = terminalNow()
     logSession('scrollback_load_start', {
       details: {
         offset: loadedScrollbackRowsRef.current,
-        limit,
+        limit: normalizedLimit,
+        cols: normalizedCols || undefined,
       },
     })
     try {
-      const page = await client.loadScrollback(
-        loadedScrollbackRowsRef.current,
-        limit,
-        alternate,
-        { signal: controller.signal },
-      )
+      let page = loadedScrollbackRowsRef.current === 0
+        ? await consumePrefetchedScrollback(normalizedLimit, alternate, normalizedCols || undefined)
+        : null
+      if (page) {
+        prefetched = true
+      } else {
+        controller = new AbortController()
+        scrollbackAbortControllerRef.current = controller
+        timeout = setTimeout(() => {
+          controller?.abort(new Error(`Terminal history request timed out after ${scrollbackLoadTimeoutMs}ms`))
+        }, scrollbackLoadTimeoutMs)
+        page = await client.loadScrollback(
+          loadedScrollbackRowsRef.current,
+          normalizedLimit,
+          alternate,
+          { signal: controller.signal, ...(normalizedCols > 0 ? { cols: normalizedCols } : {}) },
+        )
+      }
       const historyMetadata = scrollbackResultMetadata(page)
       const loadedRows = page.rows
       const operation = page.operation ?? (loadedScrollbackRowsRef.current === 0 ? 'replace' : 'prepend')
@@ -601,6 +823,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
               ...historyMetadata,
               hasMore: false,
               alternate: page.alternate,
+              prefetched,
             },
           } : current)
           publishTerminalTextNow()
@@ -609,8 +832,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           details: {
             elapsedMs: Math.round(terminalNow() - startedAt),
             offset: loadedScrollbackRowsRef.current,
-            limit,
+            limit: normalizedLimit,
             ...historyMetadata,
+            prefetched,
           },
         })
         return {
@@ -620,6 +844,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           ...historyMetadata,
           hasMore: false,
           alternate: page.alternate,
+          prefetched,
         }
       }
       loadedScrollbackRowsRef.current = operation === 'replace'
@@ -642,13 +867,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           ...historyMetadata,
           hasMore: page.hasMore,
           alternate: page.alternate,
+          prefetched,
         },
       } : current)
-      terminalTextRef.current = joinHistoryAndSnapshotText(
-        scrollbackPrefixTextRef.current,
-        terminalContentTextRef.current,
-        terminalScreenRowsRef.current,
-      )
+      terminalTextRef.current = scrollbackPrefixTextRef.current
       publishTerminalTextNow()
       logSession('scrollback_load_success', {
         details: {
@@ -659,6 +881,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           ...historyMetadata,
           hasMore: page.hasMore,
           prefixChars: prefix.length,
+          prefetched,
         },
       })
       return {
@@ -668,26 +891,27 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         ...historyMetadata,
         hasMore: page.hasMore,
         alternate: page.alternate,
+        prefetched,
       }
     } catch (error) {
       logSession('scrollback_load_failed', {
-        level: controller.signal.aborted ? 'warn' : 'error',
+        level: controller?.signal.aborted ? 'warn' : 'error',
         details: {
           elapsedMs: Math.round(terminalNow() - startedAt),
           offset: loadedScrollbackRowsRef.current,
-          limit,
+          limit: normalizedLimit,
           reason: error instanceof Error ? error.message : String(error),
         },
       })
       throw error
     } finally {
-      clearTimeout(timeout)
-      if (scrollbackAbortControllerRef.current === controller) {
+      if (timeout !== null) clearTimeout(timeout)
+      if (controller && scrollbackAbortControllerRef.current === controller) {
         scrollbackAbortControllerRef.current = null
       }
       loadingScrollbackRef.current = false
     }
-  }, [logSession, publishTerminalTextNow])
+  }, [consumePrefetchedScrollback, logSession, publishTerminalTextNow])
 
   const handleAppResume = useCallback((resumeKind: 'quick' | 'cold' | 'frozen') => {
     dispatch({ type: 'app.resume', resumeKind })
@@ -713,6 +937,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     requestResizeOwner,
     releaseResizeOwner,
     loadScrollback,
+    prefetchScrollback,
+    freezeScrollback,
+    resumeLiveScrollback,
     markSyncLost,
     handleAppResume,
     reattach,
@@ -725,20 +952,6 @@ export type TerminalSessionMessage = ConnectionMessage
 function prependTerminalText(prefix: string, current: string): string {
   if (!prefix) return current
   return trimTerminalTextPreservingPrefix(prefix, current, '\r\n')
-}
-
-function joinTerminalText(prefix: string, current: string): string {
-  if (!prefix) return current
-  if (!current) return prefix
-  return `${prefix}\r\n${current}`
-}
-
-function joinHistoryAndSnapshotText(prefix: string, current: string, rows: number): string {
-  if (!prefix) return current
-  if (!current) return prefix
-  const spacerRows = Math.max(0, rows - 1)
-  const spacer = spacerRows > 0 ? `\r\n${'\n'.repeat(spacerRows)}` : '\r\n'
-  return trimTerminalTextPreservingPrefix(prefix, current, spacer)
 }
 
 function trimTerminalTextPreservingPrefix(prefix: string, current: string, separator: string): string {

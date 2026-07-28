@@ -38,6 +38,7 @@ export interface TransferInfo {
   savedUri?: string | undefined
   uploadResumeToken?: Uint8Array | undefined
   remoteModifiedAtUnixNano?: bigint | undefined
+  pausedByUser?: boolean | undefined
 }
 
 export interface FileTransferStoreSnapshot {
@@ -76,22 +77,40 @@ export class NativeFileTransferStore {
   private readonly pendingDismissals = new Set<string>()
   private readonly resumeTransitions = new Map<string, Promise<void>>()
   private readonly transitionEpochs = new Map<string, number>()
+  private readonly progressSamples = new Map<string, { at: number; bytes: number; speed: number; notifiedAt: number }>()
+  private readonly storage: Storage | null
   private resolver: NativeTransferSessionResolver | null = null
   private version = 0
   private cachedVersion = -1
   private cachedSnapshot: FileTransferStoreSnapshot | null = null
   private readonly cachedMachineSnapshots = new Map<string, FileTransferStoreSnapshot>()
 
+  constructor(storage: Storage | null = transferStorage()) {
+    this.storage = storage
+    this.transfers = loadPersistedTransfers(storage)
+  }
+
   setSessionResolver(resolver: NativeTransferSessionResolver | null): void { this.resolver = resolver }
 
-  startDownload(machineId: string, fileName: string, fileSize: number, filePath: string, _offset = 0): void {
+  startDownload(machineId: string, fileName: string, fileSize: number, filePath: string, offset = 0): void {
+    const existing = this.transfers.find((item) => item.direction === 'download' && item.machineId === machineId && item.filePath === filePath && item.totalSize === fileSize && item.status !== 'completed' && item.status !== 'cancelled')
+    if (existing) {
+      if (existing.status === 'pending' || existing.status === 'transferring') return
+      this.update(existing.id, { name: fileName, transferredSize: Math.max(existing.transferredSize, offset), pausedByUser: false, error: undefined })
+      void this.resumeTransfer(existing.id)
+      return
+    }
     const id = transferID('download', machineId, filePath)
     this.advanceTransition(id)
-    this.upsert({ id, machineId, name: fileName, direction: 'download', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), filePath })
+    this.upsert({ id, machineId, name: fileName, direction: 'download', totalSize: fileSize, transferredSize: offset, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), filePath, pausedByUser: false })
     void this.runDownload(id).catch((error) => this.fail(id, error))
   }
 
   async getDownloadResumeOffset(machineId?: string, filePath?: string, fileSize?: number): Promise<number> {
+    if (Capacitor.isNativePlatform() && machineId && filePath && typeof fileSize === 'number') {
+      const result = await NativeFilePicker.getDownloadResumeOffset({ machineId, remotePath: filePath, totalSize: fileSize })
+      return Math.max(0, Math.min(fileSize, result.offset))
+    }
     const transfer = this.transfers.find((item) => item.direction === 'download' && item.machineId === machineId && item.filePath === filePath && item.totalSize === fileSize)
     return transfer && this.downloadChunks.has(transfer.id) ? transfer.transferredSize : 0
   }
@@ -99,7 +118,7 @@ export class NativeFileTransferStore {
   startUpload(machineId: string, contentUri: string, fileName: string, fileSize: number, targetDir: string): void {
     const id = transferID('upload', machineId, `${targetDir}/${fileName}`)
     this.advanceTransition(id)
-    this.upsert({ id, machineId, name: fileName, direction: 'upload', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), localUri: contentUri, targetDir })
+    this.upsert({ id, machineId, name: fileName, direction: 'upload', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), localUri: contentUri, targetDir, pausedByUser: false })
     void this.runUpload(id).catch((error) => this.fail(id, error))
   }
 
@@ -119,15 +138,22 @@ export class NativeFileTransferStore {
       this.pendingTeardowns.delete(id)
     }
     this.downloadChunks.delete(id)
-    if (cleanup) {
-      void cleanup.then(
+    const transfer = this.transfers.find((item) => item.id === id)
+    const discardPartial = Capacitor.isNativePlatform() && transfer?.direction === 'download' && transfer.machineId && transfer.filePath
+      ? () => NativeFilePicker.discardDownloadPartial({ machineId: transfer.machineId!, remotePath: transfer.filePath!, totalSize: transfer.totalSize }).then(() => undefined, () => undefined)
+      : null
+    const cancellation = cleanup
+      ? cleanup.then(async () => { await discardPartial?.() })
+      : discardPartial?.() ?? null
+    if (cancellation) {
+      void cancellation.then(
         () => this.update(id, { status: 'cancelled', error: undefined, updatedAt: Date.now(), bytesPerSecond: 0 }),
         (error) => this.fail(id, error),
       )
     } else {
       this.update(id, { status: 'cancelled', updatedAt: Date.now(), bytesPerSecond: 0 })
     }
-    return cleanup
+    return cancellation
   }
 
   pauseTransfer(id: string): void {
@@ -135,7 +161,7 @@ export class NativeFileTransferStore {
     const task = this.active.get(id)
     task?.cancel.abort()
     if (task) void this.closeTask(id, task).catch((error) => this.fail(id, error))
-    this.update(id, { status: 'paused', updatedAt: Date.now(), bytesPerSecond: 0 })
+    this.update(id, { status: 'paused', pausedByUser: true, updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
   async resumeTransfer(id: string): Promise<void> {
@@ -162,7 +188,7 @@ export class NativeFileTransferStore {
       transfer = this.transfers.find((item) => item.id === id)
       if (!transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
       this.advanceTransition(id)
-      this.update(id, { status: 'pending', error: undefined, updatedAt: Date.now() })
+      this.update(id, { status: 'pending', pausedByUser: false, error: undefined, updatedAt: Date.now() })
       if (transfer.direction === 'download') await this.runDownload(id)
       else await this.runUpload(id)
     } catch (error) {
@@ -172,9 +198,27 @@ export class NativeFileTransferStore {
   }
 
   async resumeAllTransfers(machineId?: string): Promise<void> {
-    for (const transfer of [...this.transfers]) {
-      if ((!machineId || transfer.machineId === machineId) && canResume(transfer.status)) await this.resumeTransfer(transfer.id)
+    const transfers = this.transfers.filter((transfer) => (!machineId || transfer.machineId === machineId) && canResume(transfer.status))
+    await Promise.allSettled(transfers.map((transfer) => this.resumeTransfer(transfer.id)))
+  }
+
+  async suspendForRuntimeReset(): Promise<void> {
+    const teardowns: Promise<void>[] = []
+    for (const [id, task] of this.active) {
+      this.advanceTransition(id)
+      task.cancel.abort()
+      const transfer = this.transfers.find((item) => item.id === id)
+      if (transfer?.status === 'pending' || transfer?.status === 'transferring') {
+        this.update(id, { status: 'failed', pausedByUser: false, error: 'Connection changed; transfer will resume', updatedAt: Date.now(), bytesPerSecond: 0 })
+      }
+      teardowns.push(this.closeTask(id, task))
     }
+    await Promise.allSettled(teardowns)
+  }
+
+  async resumeInterruptedTransfers(machineId?: string): Promise<void> {
+    const transfers = this.transfers.filter((transfer) => (!machineId || transfer.machineId === machineId) && !transfer.pausedByUser && canResume(transfer.status))
+    await Promise.allSettled(transfers.map((transfer) => this.resumeTransfer(transfer.id)))
   }
 
   dismissTransfer(id: string): void {
@@ -211,25 +255,62 @@ export class NativeFileTransferStore {
 
   private async runDownload(id: string): Promise<void> {
     const transfer = this.requiredTransfer(id, 'download')
+    if (!transfer.machineId) throw new Error('download machine is missing')
     const task = this.beginAttempt(id)
     try {
       const session = await this.session(transfer.machineId, task.cancel.signal)
       task.session = session
       this.assertCurrentAttempt(id, task)
-      const chunks = this.downloadChunks.get(id) ?? []
-      const bufferedBytes = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
-      const resumeOffset = bufferedBytes === transfer.transferredSize ? bufferedBytes : 0
-      if (resumeOffset === 0) this.downloadChunks.set(id, [])
-      const opened = await session.execute(command('fileDownloadOpen', create(AnyTTYApiFile.FileDownloadOpenCommandSchema, {
-        path: transfer.filePath ?? '', offset: BigInt(resumeOffset),
-        expectedSize: transfer.remoteModifiedAtUnixNano ? BigInt(transfer.totalSize) : 0n,
-        expectedModifiedAtUnixNano: transfer.remoteModifiedAtUnixNano ?? 0n,
+      let resumeOffset = 0
+      if (Capacitor.isNativePlatform()) {
+        const persisted = await NativeFilePicker.getDownloadResumeOffset({
+          machineId: transfer.machineId,
+          remotePath: transfer.filePath ?? '',
+          totalSize: transfer.totalSize,
+        })
+        resumeOffset = persisted.offset
+        if (resumeOffset > 0 && !transfer.remoteModifiedAtUnixNano) {
+          await NativeFilePicker.discardDownloadPartial({
+            machineId: transfer.machineId,
+            remotePath: transfer.filePath ?? '',
+            totalSize: transfer.totalSize,
+          })
+          resumeOffset = 0
+        }
+      } else {
+        const chunks = this.downloadChunks.get(id) ?? []
+        const bufferedBytes = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+        resumeOffset = bufferedBytes === transfer.transferredSize ? bufferedBytes : 0
+        if (resumeOffset === 0) this.downloadChunks.set(id, [])
+      }
+      const openDownload = (offset: number, validateSource: boolean) => session.execute(command('fileDownloadOpen', create(AnyTTYApiFile.FileDownloadOpenCommandSchema, {
+        path: transfer.filePath ?? '', offset: BigInt(offset),
+        expectedSize: validateSource ? BigInt(transfer.totalSize) : 0n,
+        expectedModifiedAtUnixNano: validateSource ? transfer.remoteModifiedAtUnixNano ?? 0n : 0n,
       })), { signal: task.cancel.signal })
+      let opened
+      try {
+        opened = await openDownload(resumeOffset, resumeOffset > 0 && transfer.remoteModifiedAtUnixNano !== undefined)
+      } catch (error) {
+        if (!Capacitor.isNativePlatform() || resumeOffset === 0 || !isStaleDownloadError(error)) throw error
+        await NativeFilePicker.discardDownloadPartial({
+          machineId: transfer.machineId,
+          remotePath: transfer.filePath ?? '',
+          totalSize: transfer.totalSize,
+        })
+        resumeOffset = 0
+        this.update(id, { transferredSize: 0, remoteModifiedAtUnixNano: undefined, updatedAt: Date.now() })
+        opened = await openDownload(0, false)
+      }
       if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('download returned no transfer resource')
       const remote = opened.result.value.transfer
       if (Number(remote.offset) !== resumeOffset) {
         if (Number(remote.offset) !== 0) throw new Error('download resume offset was not accepted')
-        this.downloadChunks.set(id, [])
+        if (Capacitor.isNativePlatform()) {
+          await NativeFilePicker.discardDownloadPartial({ machineId: transfer.machineId, remotePath: transfer.filePath ?? '', totalSize: transfer.totalSize })
+        } else {
+          this.downloadChunks.set(id, [])
+        }
       }
       const resource = remote.resource
       if (!resource) throw new Error('download returned no resource handle')
@@ -247,21 +328,30 @@ export class NativeFileTransferStore {
         status: 'transferring', totalSize: Number(remote.size), transferredSize: Number(remote.offset),
         remoteModifiedAtUnixNano: remote.modifiedAtUnixNano, updatedAt: Date.now(),
       })
-      const retained = this.downloadChunks.get(id) ?? []
-      const blob = await receiveDownload(stream, remote, retained, task.cancel.signal, (received) => this.progress(id, received))
-      this.assertCurrentAttempt(id, task)
       if (Capacitor.isNativePlatform()) {
-        const saved = await NativeFilePicker.saveFile({
-          name: transfer.name,
-          mimeType: blob.type || 'application/octet-stream',
-          dataBase64: await blobBase64(blob),
-        })
-        if (saved.bytes !== blob.size) throw new Error('Android download persistence size mismatch')
+        const saved = await receiveNativeDownload(
+          stream,
+          remote,
+          {
+            machineId: transfer.machineId,
+            remotePath: transfer.filePath ?? '',
+            totalSize: Number(remote.size),
+            name: transfer.name,
+            mimeType: 'application/octet-stream',
+          },
+          task.cancel.signal,
+          (received) => this.progress(id, received),
+        )
+        this.assertCurrentAttempt(id, task)
+        if (saved.bytes !== Number(remote.size)) throw new Error('Android download persistence size mismatch')
         this.update(id, {
           status: 'completed', transferredSize: Number(remote.size), savedUri: saved.uri, savedPath: saved.path,
           updatedAt: Date.now(), bytesPerSecond: 0,
         })
       } else {
+        const retained = this.downloadChunks.get(id) ?? []
+        const blob = await receiveDownload(stream, remote, retained, task.cancel.signal, (received) => this.progress(id, received))
+        this.assertCurrentAttempt(id, task)
         const url = URL.createObjectURL(blob)
         const anchor = document.createElement('a')
         anchor.href = url
@@ -309,12 +399,16 @@ export class NativeFileTransferStore {
         status: 'transferring', transferredSize: Number(remote.offset),
         uploadResumeToken: remote.resume?.opaqueToken.slice(), updatedAt: Date.now(),
       })
-      const response = await fetch(Capacitor.convertFileSrc(transfer.localUri), { signal: task.cancel.signal })
-      this.assertCurrentAttempt(id, task)
-      if (!response.ok) throw new Error(`local upload file could not be read (${response.status})`)
-      const blob = await response.blob()
-      this.assertCurrentAttempt(id, task)
-      await sendUpload(stream, remote, blob, task.cancel.signal, (sent) => this.progress(id, sent))
+      if (Capacitor.isNativePlatform()) {
+        await sendNativeUpload(stream, remote, transfer.localUri, task.cancel.signal, (sent) => this.progress(id, sent))
+      } else {
+        const response = await fetch(Capacitor.convertFileSrc(transfer.localUri), { signal: task.cancel.signal })
+        this.assertCurrentAttempt(id, task)
+        if (!response.ok) throw new Error(`local upload file could not be read (${response.status})`)
+        const blob = await response.blob()
+        this.assertCurrentAttempt(id, task)
+        await sendUpload(stream, remote, blob, task.cancel.signal, (sent) => this.progress(id, sent))
+      }
       this.assertCurrentAttempt(id, task)
       this.update(id, { status: 'completed', transferredSize: transfer.totalSize, savedPath: target, updatedAt: Date.now(), bytesPerSecond: 0 })
     } finally {
@@ -467,6 +561,7 @@ export class NativeFileTransferStore {
     if (!cancellation.confirmed) throw cancellation.error ?? new Error('remote file transfer cancellation was not confirmed')
     this.failedCleanupOwners.delete(id)
     this.detachedCleanupOwners.delete(id)
+    this.progressSamples.delete(id)
     await task.stream?.close().catch(() => undefined)
 	await task.session?.close().catch(() => undefined)
   }
@@ -503,6 +598,7 @@ export class NativeFileTransferStore {
     this.pendingTeardowns.delete(id)
     this.failedCleanupOwners.delete(id)
     this.detachedCleanupOwners.delete(id)
+    this.progressSamples.delete(id)
     this.notify()
   }
 
@@ -561,16 +657,34 @@ export class NativeFileTransferStore {
 
   private progress(id: string, transferredSize: number): void {
     const current = this.transfers.find((item) => item.id === id)
+    if (!current) return
     const now = Date.now()
-    const elapsed = Math.max(1, now - (current?.updatedAt ?? now))
-    const speed = Math.max(0, transferredSize - (current?.transferredSize ?? 0)) * 1000 / elapsed
-    this.update(id, { transferredSize, bytesPerSecond: speed, updatedAt: now })
+    const previous = this.progressSamples.get(id) ?? {
+      at: current.updatedAt ?? now,
+      bytes: current.transferredSize,
+      speed: current.bytesPerSecond ?? 0,
+      notifiedAt: current.updatedAt ?? 0,
+    }
+    const elapsed = now - previous.at
+    let speed = previous.speed
+    let sampleAt = previous.at
+    let sampleBytes = previous.bytes
+    if (elapsed >= 200) {
+      const instant = Math.max(0, transferredSize - previous.bytes) * 1000 / elapsed
+      speed = previous.speed > 0 ? previous.speed * 0.7 + instant * 0.3 : instant
+      sampleAt = now
+      sampleBytes = transferredSize
+    }
+    const shouldNotify = now - previous.notifiedAt >= 200 || transferredSize >= current.totalSize
+    this.progressSamples.set(id, { at: sampleAt, bytes: sampleBytes, speed, notifiedAt: shouldNotify ? now : previous.notifiedAt })
+    this.update(id, { transferredSize, bytesPerSecond: speed, updatedAt: now }, shouldNotify)
   }
 
   private fail(id: string, error: unknown): void {
     if (error instanceof DOMException && error.name === 'AbortError') return
-    if (this.transfers.find((item) => item.id === id)?.status === 'cancelled' && !this.failedCleanupOwners.has(id)) return
-    this.update(id, { status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: Date.now(), bytesPerSecond: 0 })
+    const current = this.transfers.find((item) => item.id === id)
+    if (current?.status === 'cancelled' && !this.failedCleanupOwners.has(id)) return
+    this.update(id, { status: 'failed', pausedByUser: current?.pausedByUser === true, error: error instanceof Error ? error.message : String(error), updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
   private upsert(info: TransferInfo): void {
@@ -579,29 +693,213 @@ export class NativeFileTransferStore {
     this.notify()
   }
 
-  private update(id: string, patch: Partial<TransferInfo>): void {
+  private update(id: string, patch: Partial<TransferInfo>, notify = true): void {
     this.transfers = this.transfers.map((item) => item.id === id ? { ...item, ...patch } : item)
-    this.notify()
+    if (notify) this.notify()
   }
 
   private notify(): void {
     this.version += 1
     this.cachedSnapshot = null
     this.cachedMachineSnapshots.clear()
+    persistTransfers(this.storage, this.transfers)
     for (const listener of this.listeners) listener()
   }
 }
 
-async function blobBase64(blob: Blob): Promise<string> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('download file encoding failed'))
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.readAsDataURL(blob)
+type NativeSavedDownload = { uri: string; path: string; bytes: number; sha256: string }
+
+const transferStorageKey = 'anytty.file-transfers.v2'
+
+function transferStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function loadPersistedTransfers(storage: Storage | null): TransferInfo[] {
+  if (!storage) return []
+  try {
+    const value = JSON.parse(storage.getItem(transferStorageKey) ?? '[]') as Array<Record<string, unknown>>
+    if (!Array.isArray(value)) return []
+    return value.flatMap((item): TransferInfo[] => {
+      if (typeof item.id !== 'string' || typeof item.name !== 'string' || (item.direction !== 'download' && item.direction !== 'upload')) return []
+      if (typeof item.totalSize !== 'number' || typeof item.transferredSize !== 'number' || typeof item.startedAt !== 'number') return []
+      const storedStatus = isTransferStatus(item.status) ? item.status : 'failed'
+      const interrupted = storedStatus === 'pending' || storedStatus === 'transferring'
+      return [{
+        id: item.id,
+        machineId: typeof item.machineId === 'string' ? item.machineId : undefined,
+        name: item.name,
+        direction: item.direction,
+        totalSize: item.totalSize,
+        transferredSize: item.transferredSize,
+        status: interrupted ? 'failed' : storedStatus,
+        startedAt: item.startedAt,
+        updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : item.startedAt,
+        bytesPerSecond: 0,
+        error: interrupted ? 'Transfer was interrupted and can be resumed' : typeof item.error === 'string' ? item.error : undefined,
+        filePath: typeof item.filePath === 'string' ? item.filePath : undefined,
+        localUri: typeof item.localUri === 'string' ? item.localUri : undefined,
+        targetDir: typeof item.targetDir === 'string' ? item.targetDir : undefined,
+        savedPath: typeof item.savedPath === 'string' ? item.savedPath : undefined,
+        savedUri: typeof item.savedUri === 'string' ? item.savedUri : undefined,
+        uploadResumeToken: typeof item.uploadResumeToken === 'string' ? base64Bytes(item.uploadResumeToken) : undefined,
+        remoteModifiedAtUnixNano: typeof item.remoteModifiedAtUnixNano === 'string' ? BigInt(item.remoteModifiedAtUnixNano) : undefined,
+        pausedByUser: interrupted ? false : item.pausedByUser === true,
+      }]
+    })
+  } catch {
+    return []
+  }
+}
+
+function isTransferStatus(value: unknown): value is TransferStatus {
+  return value === 'pending' || value === 'transferring' || value === 'paused' || value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'missing'
+}
+
+function isStaleDownloadError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase()
+  return message.includes('stale download source') || message.includes('invalid download offset')
+}
+
+function persistTransfers(storage: Storage | null, transfers: TransferInfo[]): void {
+  if (!storage) return
+  try {
+    storage.setItem(transferStorageKey, JSON.stringify(transfers.map((transfer) => ({
+      ...transfer,
+      uploadResumeToken: transfer.uploadResumeToken ? bytesBase64(transfer.uploadResumeToken) : undefined,
+      remoteModifiedAtUnixNano: transfer.remoteModifiedAtUnixNano?.toString(),
+    }))))
+  } catch {
+    // A full/disabled WebView storage must not break an active transfer.
+  }
+}
+
+async function receiveNativeDownload(
+  stream: ProtoResourceStream,
+  transfer: AnyTTYApiFile.FileTransferHandle,
+  target: { machineId: string; remotePath: string; totalSize: number; name: string; mimeType: string },
+  signal: AbortSignal,
+  progress: (bytes: number) => void,
+): Promise<NativeSavedDownload> {
+  let offset = Number(transfer.offset)
+  let persistedOffset = offset
+  let credit = 0
+  let pending: Uint8Array[] = []
+  let settled = false
+  let acceptingFrames = true
+  let chain = Promise.resolve()
+
+  return await new Promise<NativeSavedDownload>((resolve, reject) => {
+    let subscription: { close(): void } | null = null
+    let closeSubscription: { close(): void } | null = null
+    const detachStream = () => {
+      subscription?.close()
+      closeSubscription?.close()
+      subscription = null
+      closeSubscription = null
+    }
+    const cleanup = () => {
+      acceptingFrames = false
+      detachStream()
+      signal.removeEventListener('abort', abort)
+    }
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+    const succeed = (saved: NativeSavedDownload) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(saved)
+    }
+    const abort = () => {
+      if (settled || !acceptingFrames) return
+      acceptingFrames = false
+      detachStream()
+      signal.removeEventListener('abort', abort)
+      const error = new DOMException('Aborted', 'AbortError')
+      void chain.then(() => fail(error), () => fail(error))
+    }
+    const flush = async (acknowledge: boolean) => {
+      if (pending.length === 0) return
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      const bytes = concatBytes(pending)
+      pending = []
+      const windowBytes = credit
+      credit = 0
+      const result = await NativeFilePicker.appendDownloadPartial({
+        machineId: target.machineId,
+        remotePath: target.remotePath,
+        totalSize: target.totalSize,
+        offset: persistedOffset,
+        dataBase64: bytesBase64(bytes),
+      })
+      const expectedOffset = persistedOffset + bytes.byteLength
+      if (result.offset !== expectedOffset) throw new Error('Android download partial offset mismatch')
+      persistedOffset = result.offset
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      progress(persistedOffset)
+      if (acknowledge && windowBytes > 0) {
+        await stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset: persistedOffset, windowBytes }))
+      }
+    }
+    const enqueue = (operation: () => Promise<void>) => {
+      chain = chain.then(operation)
+      void chain.catch(fail)
+    }
+
+    signal.addEventListener('abort', abort, { once: true })
+    subscription = stream.subscribe((type, payload) => {
+      if (settled || !acceptingFrames) return
+      const retainedPayload = payload.slice()
+      if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH) {
+        acceptingFrames = false
+        detachStream()
+        signal.removeEventListener('abort', abort)
+      }
+      enqueue(async () => {
+        if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_DATA) {
+          const data = decodeFileTransferDataPayload(retainedPayload)
+          if (data.offset !== offset || data.data.byteLength === 0 || data.data.byteLength > transfer.chunkBytes) throw new Error('download chunk is invalid')
+          pending.push(data.data)
+          offset += data.data.byteLength
+          credit += data.data.byteLength
+          if (credit >= Number(transfer.windowBytes)) await flush(true)
+          return
+        }
+        if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH) {
+          const finish = decodeFileTransferFinishPayload(retainedPayload)
+          if (finish.size !== Number(transfer.size) || offset !== finish.size) throw new Error('download completed with the wrong size')
+          await flush(false)
+          const saved = await NativeFilePicker.commitDownloadPartial({
+            machineId: target.machineId,
+            remotePath: target.remotePath,
+            totalSize: target.totalSize,
+            name: target.name,
+            mimeType: target.mimeType,
+            sha256Base64: bytesBase64(finish.sha256),
+          })
+          succeed(saved)
+          return
+        }
+        if (type === AnyTTYClientBinding.ResourceStreamFrameType.ERROR) {
+          throw new Error(decodeFileStreamErrorPayload(retainedPayload))
+        }
+      })
+    })
+    if (!acceptingFrames) subscription.close()
+    closeSubscription = stream.subscribeClosed((error) => {
+      if (acceptingFrames) fail(error)
+    })
+    if (!acceptingFrames) closeSubscription.close()
   })
-  const separator = dataUrl.indexOf(',')
-  if (separator < 0) throw new Error('download file encoding failed')
-  return dataUrl.slice(separator + 1)
 }
 
 async function receiveDownload(
@@ -667,6 +965,66 @@ async function sendUpload(
   signal: AbortSignal,
   progress: (bytes: number) => void,
 ): Promise<void> {
+  const source: UploadSource = {
+    size: blob.size,
+    async read(offset, length) { return new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()) },
+    async digest() { return new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())) },
+    async close() {},
+  }
+  await sendUploadSource(stream, transfer, source, signal, progress)
+}
+
+async function sendNativeUpload(
+  stream: ProtoResourceStream,
+  transfer: AnyTTYApiFile.FileTransferHandle,
+  contentUri: string,
+  signal: AbortSignal,
+  progress: (bytes: number) => void,
+): Promise<void> {
+  const opened = await NativeFilePicker.openUploadSource({
+    contentUri,
+    offset: Number(transfer.offset),
+    totalSize: Number(transfer.size),
+  })
+  if (opened.offset !== Number(transfer.offset)) {
+    await NativeFilePicker.closeUploadSource({ handle: opened.handle }).catch(() => undefined)
+    throw new Error('Android upload source offset mismatch')
+  }
+  let finished = false
+  const source: UploadSource = {
+    size: Number(transfer.size),
+    async read(offset, length) {
+      const result = await NativeFilePicker.readUploadSource({ handle: opened.handle, length })
+      const data = base64Bytes(result.dataBase64)
+      if (result.offset !== offset + data.byteLength || data.byteLength === 0) throw new Error('Android upload source returned an invalid chunk')
+      return data
+    },
+    async digest() {
+      const result = await NativeFilePicker.finishUploadSource({ handle: opened.handle })
+      finished = true
+      return base64Bytes(result.sha256Base64)
+    },
+    async close() {
+      if (!finished) await NativeFilePicker.closeUploadSource({ handle: opened.handle }).catch(() => undefined)
+    },
+  }
+  await sendUploadSource(stream, transfer, source, signal, progress)
+}
+
+type UploadSource = {
+  size: number
+  read(offset: number, length: number): Promise<Uint8Array>
+  digest(): Promise<Uint8Array>
+  close(): Promise<void>
+}
+
+async function sendUploadSource(
+  stream: ProtoResourceStream,
+  transfer: AnyTTYApiFile.FileTransferHandle,
+  source: UploadSource,
+  signal: AbortSignal,
+  progress: (bytes: number) => void,
+): Promise<void> {
   let offset = Number(transfer.offset)
   let acknowledgedOffset = offset
   let credit = Number(transfer.windowBytes)
@@ -697,7 +1055,7 @@ async function sendUpload(
       wake = null
     } else if (type === AnyTTYClientBinding.ResourceStreamFrameType.FILE_RESULT) {
       const completed = decodeFileTransferResultPayload(payload)
-      if (completed.size !== blob.size) {
+      if (completed.size !== source.size) {
         fail(new Error('upload completed with the wrong size'))
         return
       }
@@ -710,27 +1068,55 @@ async function sendUpload(
   const abort = () => fail(new DOMException('Aborted', 'AbortError'))
   signal.addEventListener('abort', abort, { once: true })
   try {
-    while (offset < blob.size) {
+    while (offset < source.size) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
       if (terminalError) throw terminalError
       if (credit <= 0) await new Promise<void>((resolve) => { wake = resolve })
       if (terminalError) throw terminalError
-      const length = Math.min(transfer.chunkBytes, credit, blob.size - offset)
-      const data = new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer())
+      const length = Math.min(transfer.chunkBytes, credit, source.size - offset)
+      const data = await source.read(offset, length)
+      if (data.byteLength !== length) throw new Error('upload source returned the wrong chunk length')
       const chunkOffset = offset
       offset += data.byteLength
       credit -= data.byteLength
       await stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_DATA, encodeFileTransferDataPayload({ offset: chunkOffset, data }))
       progress(offset)
     }
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))
-    await stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH, encodeFileTransferFinishPayload({ size: blob.size, sha256: digest }))
+    const digest = await source.digest()
+    await stream.send(AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH, encodeFileTransferFinishPayload({ size: source.size, sha256: digest }))
     await result
   } finally {
     subscription.close()
     closeSubscription.close()
     signal.removeEventListener('abort', abort)
+    await source.close()
   }
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+  const result = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return result
+}
+
+function bytesBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let offset = 0; offset < bytes.byteLength; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.byteLength, offset + 0x8000)))
+  }
+  return btoa(binary)
+}
+
+function base64Bytes(value: string): Uint8Array {
+  const binary = atob(value)
+  const result = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) result[index] = binary.charCodeAt(index)
+  return result
 }
 
 async function verifyBlobDigest(blob: Blob, expected: Uint8Array): Promise<void> {

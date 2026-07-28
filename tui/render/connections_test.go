@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/tui/input"
 	"github.com/anytty/anytty/tui/state"
 )
 
@@ -72,8 +73,15 @@ func TestConnectionsEntryIsDiscoverableInNarrowSystemFooterAndHelp(t *testing.T)
 		t.Fatalf("56-column system footer hides Connections entry:\n%s", text)
 	}
 	root.Shell = state.DefaultShell().OpenHelp("most-used")
+	entries := input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation)
+	for index, entry := range entries {
+		if entry.ActionID == "system.open_connections" {
+			root.Shell = root.Shell.SetHelpSelection(index, len(entries))
+			break
+		}
+	}
 	help := plainLines(NewRenderVMBuilder().Build(root).Shell.Overlay.Content.Lines)
-	if !strings.Contains(help, "Connections") || !strings.Contains(help, "e CONNECTIONS") {
+	if !strings.Contains(help, "Shell") || !strings.Contains(help, "[e]") || !strings.Contains(help, "CONNECTIONS") {
 		t.Fatalf("help does not expose Connections entry: %q", help)
 	}
 }

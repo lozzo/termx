@@ -108,10 +108,14 @@ func NewUIInputReducer() Reducer {
 			Shortcuts:      root.Config.Shortcuts,
 		})
 		if intent.Kind == input.IntentShortcutAction {
+			invocation := intent.Invocation
 			var ok bool
 			intent, ok = shortcutIntentForInvocation(intent.Invocation, intent.Event)
 			if !ok {
 				return root, []Effect{handledEffect{}}
+			}
+			if next, effects, handled := reduceActiveSurfaceShortcut(root, invocation); handled {
+				return finishInteractionModeAfterIntent(next, effects, intent)
 			}
 		}
 		switch intent.Kind {

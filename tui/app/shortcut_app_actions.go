@@ -4,6 +4,7 @@ import (
 	"context"
 
 	actiondomain "github.com/anytty/anytty/tui/action"
+	"github.com/anytty/anytty/tui/input"
 	"github.com/anytty/anytty/tui/state"
 )
 
@@ -41,6 +42,23 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 		}}}
 	case "terminal_picker.close", "terminal_pool.close", "connections.close", "workbench_tree.close", "clipboard_history.close", "floating_overview.close", "help.close":
 		root.Shell = root.Shell.CloseOverlay()
+		return root.Advance(), []Effect{handledEffect{}}
+	case "help.previous", "help.next", "help.page_up", "help.page_down", "help.first", "help.last":
+		itemCount := len(input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation))
+		switch invocation.ID {
+		case "help.previous":
+			root.Shell = root.Shell.MoveHelpSelection(-1, itemCount)
+		case "help.next":
+			root.Shell = root.Shell.MoveHelpSelection(1, itemCount)
+		case "help.page_up":
+			root.Shell = root.Shell.MoveHelpSelection(-8, itemCount)
+		case "help.page_down":
+			root.Shell = root.Shell.MoveHelpSelection(8, itemCount)
+		case "help.first":
+			root.Shell = root.Shell.SetHelpSelection(0, itemCount)
+		case "help.last":
+			root.Shell = root.Shell.SetHelpSelection(itemCount-1, itemCount)
+		}
 		return root.Advance(), []Effect{handledEffect{}}
 	case "terminal_pool.attach":
 		items := state.TerminalPoolPageItems(root)

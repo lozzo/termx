@@ -1,4 +1,5 @@
 export interface TerminalFrameHold {
+  setTransform(value: string): void
   releaseAfterPaint(): void
   remove(): void
 }
@@ -7,7 +8,9 @@ export interface TerminalFrameHold {
 export function holdTerminalFrame(container: HTMLElement, screen: HTMLElement): TerminalFrameHold | null {
   if (!screen.isConnected || !container.isConnected) return null
 
-  const containerRect = container.getBoundingClientRect()
+  const xterm = screen.closest('.xterm') as HTMLElement | null
+  const host = xterm && container.contains(xterm) ? xterm : container
+  const hostRect = host.getBoundingClientRect()
   const screenRect = screen.getBoundingClientRect()
   const width = screenRect.width || screen.clientWidth
   const height = screenRect.height || screen.clientHeight
@@ -19,8 +22,8 @@ export function holdTerminalFrame(container: HTMLElement, screen: HTMLElement): 
   overlay.className = 'anytty-terminal-frame-hold'
   overlay.dataset.anyttyTerminalFrameHold = 'true'
   overlay.setAttribute('aria-hidden', 'true')
-  overlay.style.left = `${screenRect.left - containerRect.left}px`
-  overlay.style.top = `${screenRect.top - containerRect.top}px`
+  overlay.style.left = `${screenRect.left - hostRect.left}px`
+  overlay.style.top = `${screenRect.top - hostRect.top}px`
   overlay.style.width = `${width}px`
   overlay.style.height = `${height}px`
 
@@ -33,7 +36,8 @@ export function holdTerminalFrame(container: HTMLElement, screen: HTMLElement): 
   clone.style.margin = '0'
   copyCanvasFrames(screen, clone)
   overlay.append(clone)
-  container.append(overlay)
+  // Keep the clone under .xterm so xterm.css still positions its canvas layers absolutely.
+  host.append(overlay)
 
   let removed = false
   const remove = () => {
@@ -43,6 +47,9 @@ export function holdTerminalFrame(container: HTMLElement, screen: HTMLElement): 
   }
   return {
     remove,
+    setTransform(value) {
+      if (!removed) overlay.style.transform = value
+    },
     releaseAfterPaint() {
       if (removed) return
       const view = container.ownerDocument.defaultView

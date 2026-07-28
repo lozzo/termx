@@ -99,6 +99,7 @@ type protocolSession struct {
 	attachments        map[uint16]protocolAttachment
 	attachmentTokens   map[string]uint16
 	eventSubscriptions map[uint64]applicationEventSubscription
+	rawPTYStreams      map[uint16]*protocolRawPTYStream
 	nextEventSub       uint64
 	requests           sync.WaitGroup
 	fileMu             sync.Mutex
@@ -221,6 +222,7 @@ func newProtocolSessionObserved(server *Server, conn transport.Transport, scope 
 		fileChannels:       make(map[uint16]*sessionFileTransfer),
 		fileIDs:            make(map[string]uint16),
 		eventSubscriptions: make(map[uint64]applicationEventSubscription),
+		rawPTYStreams:      make(map[uint16]*protocolRawPTYStream),
 		lifecycleObserver:  observer,
 	}
 	// 中文说明：application executor 与当前连接 session 同寿命；具体 API Layer 装配由 composition root 注入。
@@ -391,6 +393,12 @@ func (session *protocolSession) handleStreamFrame(ctx context.Context, channel u
 	}
 	switch typ {
 	case wire.TypeBootstrapDone:
+		return session.startRawPTYStream(ctx, attachment)
+	case wire.TypeClosed:
+		if len(payload) != 0 {
+			return fmt.Errorf("terminal attachment stream close payload must be empty")
+		}
+		session.stopRawPTYStream(attachment.Channel)
 		return nil
 	default:
 		return fmt.Errorf("unsupported stream frame type %d", typ)
@@ -795,6 +803,9 @@ func (session *protocolSession) updateProtocolAttachmentControl(attachment proto
 func (session *protocolSession) unregisterProtocolAttachments(detached []protocolAttachment) {
 	if len(detached) == 0 {
 		return
+	}
+	for _, attachment := range detached {
+		session.stopRawPTYStream(attachment.Channel)
 	}
 	session.server.protocolAttachmentMu.Lock()
 	defer session.server.protocolAttachmentMu.Unlock()

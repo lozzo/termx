@@ -28,8 +28,12 @@ func TestServeScopedTransportRestrictsGeneratedTerminalCommands(t *testing.T) {
 	if _, err := application.TerminalGet(context.Background(), &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-2"}}); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("cross-terminal get error = %v", err)
 	}
-	if _, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{}); err == nil || !strings.Contains(err.Error(), "forbidden") {
-		t.Fatalf("scoped list error = %v", err)
+	listed, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.GetTerminals()) != 1 || listed.GetTerminals()[0].GetRef().GetTerminalId() != "term-1" {
+		t.Fatalf("scoped list = %#v", listed.GetTerminals())
 	}
 }
 

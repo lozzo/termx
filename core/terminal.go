@@ -43,6 +43,9 @@ type Terminal struct {
 	queueMu             sync.Mutex
 	liveQ               *terminalLiveIngestQueue
 	historyTapQ         *terminalLiveIngestQueue
+	rawPTYMu            sync.Mutex
+	rawPTYProcess       TerminalProcess
+	rawPTY              *rawPTYBroadcaster
 	events              *eventBroker
 	update              func(TerminalInfo)
 }
@@ -57,6 +60,8 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		historyEnabled:      historyEnabled,
 		historyBackpressure: historyBackpressure.Normalize(),
 		logger:              logger,
+		rawPTYProcess:       process,
+		rawPTY:              newRawPTYBroadcaster(),
 	}
 	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
 		OnResponse: terminal.handleLiveSurfaceResponse,
@@ -159,7 +164,9 @@ func (terminal *Terminal) IngestOutput(output string) error {
 		return ErrTerminalExited
 	}
 	info := terminal.info.Clone()
+	process := terminal.process
 	terminal.mu.Unlock()
+	terminal.publishRawPTYOutput(process, []byte(output))
 
 	revision, err := terminal.applyLiveOutput(output)
 	if err != nil {
@@ -273,9 +280,12 @@ func (terminal *Terminal) closeWithReason() error {
 	}
 	terminal.syncInfo(info)
 	if process == nil {
+		terminal.finishRawPTYProcess(nil, -1)
 		return nil
 	}
-	return process.Close()
+	err := process.Close()
+	terminal.finishRawPTYProcess(process, -1)
+	return err
 }
 
 func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) error {
@@ -304,6 +314,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.info.ExitedAt = time.Time{}
 	info = terminal.info.Clone()
 	terminal.mu.Unlock()
+	terminal.replaceRawPTYProcess(process, -1)
 	_ = oldInfo
 	terminal.queueMu.Lock()
 	terminal.liveQ = nil
@@ -521,6 +532,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 			if len(chunk) == 0 {
 				continue
 			}
+			terminal.publishRawPTYOutput(process, chunk)
 			text := string(chunk)
 			liveQueue.Enqueue(text)
 			if historyTapQueue != nil {
@@ -735,12 +747,74 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	terminal.info.ExitedAt = time.Now().UTC()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
+	terminal.finishRawPTYProcess(process, code)
 	if terminal.historyEnabled {
 		terminal.forceCloseHistory()
 	}
 	terminal.appendExitMarker(info)
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
+}
+
+func (terminal *Terminal) subscribeRawPTY(ctx context.Context) *rawPTYSubscription {
+	if terminal == nil {
+		subscription := newRawPTYSubscription()
+		subscription.close(nil, 0, nil)
+		return subscription
+	}
+	terminal.rawPTYMu.Lock()
+	broadcaster := terminal.rawPTY
+	terminal.rawPTYMu.Unlock()
+	if broadcaster == nil {
+		subscription := newRawPTYSubscription()
+		subscription.close(nil, 0, nil)
+		return subscription
+	}
+	return broadcaster.subscribe(ctx)
+}
+
+func (terminal *Terminal) publishRawPTYOutput(process TerminalProcess, raw []byte) {
+	if terminal == nil || len(raw) == 0 {
+		return
+	}
+	terminal.rawPTYMu.Lock()
+	if terminal.rawPTYProcess != process {
+		terminal.rawPTYMu.Unlock()
+		return
+	}
+	broadcaster := terminal.rawPTY
+	terminal.rawPTYMu.Unlock()
+	broadcaster.publish(raw)
+}
+
+func (terminal *Terminal) replaceRawPTYProcess(process TerminalProcess, previousExitCode int) {
+	if terminal == nil {
+		return
+	}
+	terminal.rawPTYMu.Lock()
+	previous := terminal.rawPTY
+	terminal.rawPTYProcess = process
+	terminal.rawPTY = newRawPTYBroadcaster()
+	terminal.rawPTYMu.Unlock()
+	if previous != nil {
+		previous.close(&previousExitCode)
+	}
+}
+
+func (terminal *Terminal) finishRawPTYProcess(process TerminalProcess, exitCode int) {
+	if terminal == nil {
+		return
+	}
+	terminal.rawPTYMu.Lock()
+	if process != nil && terminal.rawPTYProcess != process {
+		terminal.rawPTYMu.Unlock()
+		return
+	}
+	broadcaster := terminal.rawPTY
+	terminal.rawPTYMu.Unlock()
+	if broadcaster != nil {
+		broadcaster.close(&exitCode)
+	}
 }
 
 func (terminal *Terminal) appendExitMarker(info TerminalInfo) {

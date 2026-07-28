@@ -89,7 +89,7 @@ export function AnyTTYApp() {
     }
   }, [endpointRegistry, networkRuntime])
   useEffect(() => { void refreshRegistry().catch(() => undefined) }, [refreshRegistry])
-  useAppResumeSync(refreshRegistry, nativeAppRuntime.resetGeneration)
+  useAppResumeSync(refreshRegistry, nativeAppRuntime.resetGeneration, nativeAppRuntime.resumeInterruptedTransfers)
   const externalPairingAdapter = useMemo(
     () => createNativeExternalPairingAdapter(endpointRegistry),
     [endpointRegistry],
@@ -295,6 +295,7 @@ let nativeGenerationReplacement: Promise<void> = Promise.resolve()
 function replaceNativeGeneration(
   refreshRegistry: (client?: GoBindingClient) => Promise<void>,
   resetRuntime: () => Promise<void>,
+  resumeInterruptedTransfers: () => void,
   reloadRegistry: boolean,
 ): Promise<void> {
   const replacement = nativeGenerationReplacement.catch(() => undefined).then(async () => {
@@ -308,7 +309,7 @@ function replaceNativeGeneration(
     // 网络切换不会修改 Endpoint registry；此时重读 registry 会让恢复依赖刚启动 engine 的
     // 额外 operation。只有 WebView 前后台恢复才重新读取 Go-owned 持久投影。
     if (reloadRegistry) await refreshRegistry(currentClient)
-    document.dispatchEvent(new Event('anytty:resume'))
+    resumeInterruptedTransfers()
   })
   nativeGenerationReplacement = replacement
   return replacement
@@ -318,6 +319,7 @@ function replaceNativeGeneration(
 function useAppResumeSync(
   refreshRegistry: (client?: GoBindingClient) => Promise<void>,
   resetRuntime: () => Promise<void>,
+  resumeInterruptedTransfers: () => void,
 ): void {
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
@@ -327,7 +329,7 @@ function useAppResumeSync(
       }
     void NativeConnection.handleForegroundResume().then(async () => {
     // Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
-    await replaceNativeGeneration(refreshRegistry, resetRuntime, true)
+    await replaceNativeGeneration(refreshRegistry, resetRuntime, resumeInterruptedTransfers, true)
     }).then(
     () => finishNativeForeground(),
     (failure) => {
@@ -338,7 +340,7 @@ function useAppResumeSync(
     })
     const generationPromise = NativeConnection.addListener('generationChanged', () => {
       markNativeBackground()
-      void replaceNativeGeneration(refreshRegistry, resetRuntime, false).then(
+      void replaceNativeGeneration(refreshRegistry, resetRuntime, resumeInterruptedTransfers, false).then(
         () => finishNativeForeground(),
         (failure) => {
           reportNativeGenerationFailure(failure)
@@ -350,7 +352,7 @@ function useAppResumeSync(
       void promise.then((sub) => sub.remove())
       void generationPromise.then((sub) => sub.remove())
     }
-  }, [refreshRegistry, resetRuntime])
+  }, [refreshRegistry, resetRuntime, resumeInterruptedTransfers])
 }
 
 function useAndroidBackButton(): void {
@@ -588,16 +590,22 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
   createMachineRuntime: MachineRuntimeFactory
   fileTransfer: FileTransferContext
   resetGeneration: () => Promise<void>
+  resumeInterruptedTransfers: () => void
 } {
   const transferStore = new NativeFileTransferStore()
   const sessionManagers = new Map<string, NativeSessionEntry>()
+  const autoResumeMachines = new Set<string>()
   transferStore.setSessionResolver(async (machineId, signal) => {
     return await sessionManagers.get(machineId)?.manager.get({ signal }) ?? null
   })
 
   return {
     fileTransfer: createFileTransferContext(undefined, transferStore),
+    resumeInterruptedTransfers() {
+      void transferStore.resumeInterruptedTransfers()
+    },
     async resetGeneration() {
+      await transferStore.suspendForRuntimeReset()
       await Promise.all([...sessionManagers.values()].map(async (entry) => {
         await entry.manager.reset()
         await entry.connector.release?.(entry.manager.machineID())
@@ -607,6 +615,7 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
       return createNativeMachineRuntime(input.machine, input.storage, endpointRegistry, {
         sessionManagers,
         transferStore,
+        autoResumeMachines,
       })
     },
   }
@@ -619,6 +628,7 @@ function createNativeMachineRuntime(
   shared: {
     sessionManagers: Map<string, NativeSessionEntry>
     transferStore: NativeFileTransferStore
+    autoResumeMachines: Set<string>
   },
 ): MachineRuntime {
   const machineStore = createMachineStore({ storage })
@@ -642,6 +652,10 @@ function createNativeMachineRuntime(
   const sessionManager = entry.manager
   const connector = entry.connector
   const transferStore = shared.transferStore
+  if (!shared.autoResumeMachines.has(machine.id)) {
+    shared.autoResumeMachines.add(machine.id)
+    queueMicrotask(() => { void transferStore.resumeInterruptedTransfers(machine.id) })
+  }
 
   const api: MachineWorkspaceProps['api'] = {
     async getStatus(): Promise<LocalStatus> {

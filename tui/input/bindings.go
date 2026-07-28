@@ -82,6 +82,25 @@ func ShortcutEntriesForScene(shortcuts state.TUIShortcutConfig, sceneName string
 	return out
 }
 
+// ShortcutEntriesForHelp returns the actual configurable bindings exposed by Help.
+// Keeping this filter beside the canonical input catalog lets rendering and navigation
+// use the same ordered item set.
+func ShortcutEntriesForHelp(shortcuts state.TUIShortcutConfig, keyboardDisambiguation bool) []ShortcutEntry {
+	entries := ShortcutEntriesForConfig(shortcuts)
+	out := make([]ShortcutEntry, 0, len(entries))
+	for _, entry := range entries {
+		policy, _, _, ok := shortcut.PolicyForSource(entry.ActionID)
+		if !ok || policy.Help != shortcut.VisibilityVisible {
+			continue
+		}
+		if ShortcutKeyRequiresEnhancedKeyboard(entry.Key) && !keyboardDisambiguation {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
 // ShortcutEntryForEvent 按 route 同源的 key matcher 查找某个 scene 下的 action。
 // overlay reducer 用它把提示 catalog 直接作为键盘动作表，避免 overlay 另写一套快捷键。
 func ShortcutEntryForEvent(shortcuts state.TUIShortcutConfig, sceneName string, event InputEvent) (ShortcutEntry, bool) {

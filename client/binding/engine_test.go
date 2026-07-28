@@ -1,6 +1,7 @@
 package binding
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -764,6 +765,56 @@ func TestEngineResourceStreamUsesProtoFramesAndOpaqueHandle(t *testing.T) {
 	}
 	if err := engine.Release(streamHandle); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEngineTerminalAttachmentStreamExposesRawPTYFrames(t *testing.T) {
+	session := newBindingSession()
+	stream := newBindingResourceStream()
+	session.resourceStream = stream
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	requestPayload, err := proto.Marshal(&bindingpb.OpenResourceStreamRequest{Resource: &apipb.ResourceHandle{
+		OpaqueToken: []byte{0, 7, 1}, Kind: apipb.ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamHandle, err := engine.OpenResourceStream(sessionHandle, requestPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw := []byte{0x00, 0xff, 0x1b, '[', 'm'}
+	stream.frames <- bindingResourceFrame{typ: wire.TypePTYOutput, payload: raw}
+	rawEvent := nextBindingEvent(t, engine).GetResourceStreamFrame()
+	if rawEvent.GetStreamHandle() != streamHandle || rawEvent.GetType() != bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT || !bytes.Equal(rawEvent.GetPayload(), raw) {
+		t.Fatalf("raw PTY binding event = %#v", rawEvent)
+	}
+
+	stream.frames <- bindingResourceFrame{typ: wire.TypeSyncLost, payload: wire.EncodeSyncLostPayload(4096)}
+	syncEvent := nextBindingEvent(t, engine).GetResourceStreamFrame()
+	var syncLost bindingpb.PTYStreamSyncLost
+	if syncEvent.GetType() != bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST || proto.Unmarshal(syncEvent.GetPayload(), &syncLost) != nil || syncLost.GetDroppedBytes() != 4096 {
+		t.Fatalf("raw PTY sync-lost binding event = %#v payload=%#v", syncEvent, &syncLost)
+	}
+
+	stream.frames <- bindingResourceFrame{typ: wire.TypeClosed, payload: wire.EncodeClosedPayload(23)}
+	closedEvent := nextBindingEvent(t, engine).GetResourceStreamFrame()
+	var closed bindingpb.PTYStreamClosed
+	if closedEvent.GetType() != bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED || proto.Unmarshal(closedEvent.GetPayload(), &closed) != nil || closed.GetExitCode() != 23 {
+		t.Fatalf("raw PTY closed binding event = %#v payload=%#v", closedEvent, &closed)
+	}
+
+	outbound, _ := proto.Marshal(&bindingpb.ResourceStreamFrame{
+		StreamHandle: streamHandle, Type: bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT, Payload: raw,
+	})
+	if err := engine.SendResourceStreamFrame(streamHandle, outbound); err == nil {
+		t.Fatal("binding accepted outbound PTY output; input must use TerminalInputCommand")
 	}
 }
 

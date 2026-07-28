@@ -85,6 +85,12 @@ const (
 	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT      ResourceStreamFrameType = 4
 	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_ERROR            ResourceStreamFrameType = 5
 	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO ResourceStreamFrameType = 6
+	// PTY_OUTPUT payload 是未经文本解码或 ANSI 解析的原始 PTY bytes。
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT ResourceStreamFrameType = 7
+	// PTY_SYNC_LOST payload 是 serialized PTYStreamSyncLost；收到后必须丢弃本地解析状态。
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST ResourceStreamFrameType = 8
+	// PTY_CLOSED payload 是 serialized PTYStreamClosed。
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED ResourceStreamFrameType = 9
 )
 
 // Enum value maps for ResourceStreamFrameType.
@@ -97,6 +103,9 @@ var (
 		4: "RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT",
 		5: "RESOURCE_STREAM_FRAME_TYPE_ERROR",
 		6: "RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO",
+		7: "RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT",
+		8: "RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST",
+		9: "RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED",
 	}
 	ResourceStreamFrameType_value = map[string]int32{
 		"RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED":      0,
@@ -106,6 +115,9 @@ var (
 		"RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT":      4,
 		"RESOURCE_STREAM_FRAME_TYPE_ERROR":            5,
 		"RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO": 6,
+		"RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT":       7,
+		"RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST":    8,
+		"RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED":       9,
 	}
 )
 
@@ -4828,6 +4840,94 @@ func (*PlatformResponse_SshCredentialSign) isPlatformResponse_Response() {}
 
 func (*PlatformResponse_CloudProfile) isPlatformResponse_Response() {}
 
+type PTYStreamSyncLost struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DroppedBytes  uint64                 `protobuf:"varint,1,opt,name=dropped_bytes,json=droppedBytes,proto3" json:"dropped_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PTYStreamSyncLost) Reset() {
+	*x = PTYStreamSyncLost{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PTYStreamSyncLost) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PTYStreamSyncLost) ProtoMessage() {}
+
+func (x *PTYStreamSyncLost) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PTYStreamSyncLost.ProtoReflect.Descriptor instead.
+func (*PTYStreamSyncLost) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *PTYStreamSyncLost) GetDroppedBytes() uint64 {
+	if x != nil {
+		return x.DroppedBytes
+	}
+	return 0
+}
+
+type PTYStreamClosed struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExitCode      int32                  `protobuf:"varint,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PTYStreamClosed) Reset() {
+	*x = PTYStreamClosed{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PTYStreamClosed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PTYStreamClosed) ProtoMessage() {}
+
+func (x *PTYStreamClosed) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PTYStreamClosed.ProtoReflect.Descriptor instead.
+func (*PTYStreamClosed) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *PTYStreamClosed) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
 var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
@@ -5190,12 +5290,16 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x13ssh_credential_sign\x18\x0e \x01(\v23.anytty.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSign\x12S\n" +
 	"\rcloud_profile\x18\x0f \x01(\v2,.anytty.client.binding.v1.CloudProfileRecordH\x00R\fcloudProfileB\n" +
 	"\n" +
-	"\bresponseJ\x04\b\x14\x10\x1bJ\x04\b\x1e\x10#*\x88\x01\n" +
+	"\bresponseJ\x04\b\x14\x10\x1bJ\x04\b\x1e\x10#\"8\n" +
+	"\x11PTYStreamSyncLost\x12#\n" +
+	"\rdropped_bytes\x18\x01 \x01(\x04R\fdroppedBytes\".\n" +
+	"\x0fPTYStreamClosed\x12\x1b\n" +
+	"\texit_code\x18\x01 \x01(\x05R\bexitCode*\x88\x01\n" +
 	"\rConnectIntent\x12\x1e\n" +
 	"\x1aCONNECT_INTENT_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aCONNECT_INTENT_INTERACTIVE\x10\x01\x12\x1d\n" +
 	"\x19CONNECT_INTENT_BACKGROUND\x10\x02\x12\x18\n" +
-	"\x14CONNECT_INTENT_PROBE\x10\x03*\xc7\x02\n" +
+	"\x14CONNECT_INTENT_PROBE\x10\x03*\xcb\x03\n" +
 	"\x17ResourceStreamFrameType\x12*\n" +
 	"&RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED\x10\x00\x12(\n" +
 	"$RESOURCE_STREAM_FRAME_TYPE_FILE_DATA\x10\x01\x12'\n" +
@@ -5203,7 +5307,10 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH\x10\x03\x12*\n" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT\x10\x04\x12$\n" +
 	" RESOURCE_STREAM_FRAME_TYPE_ERROR\x10\x05\x12/\n" +
-	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06*\xea\x01\n" +
+	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06\x12)\n" +
+	"%RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT\x10\a\x12,\n" +
+	"(RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST\x10\b\x12)\n" +
+	"%RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED\x10\t*\xea\x01\n" +
 	"\x13ConnectionRouteKind\x12%\n" +
 	"!CONNECTION_ROUTE_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCONNECTION_ROUTE_KIND_LOCAL\x10\x01\x12 \n" +
@@ -5246,7 +5353,7 @@ func file_bindingpb_client_binding_proto_rawDescGZIP() []byte {
 }
 
 var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
+var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
 var file_bindingpb_client_binding_proto_goTypes = []any{
 	(ConnectIntent)(0),                                // 0: anytty.client.binding.v1.ConnectIntent
 	(ResourceStreamFrameType)(0),                      // 1: anytty.client.binding.v1.ResourceStreamFrameType
@@ -5313,18 +5420,20 @@ var file_bindingpb_client_binding_proto_goTypes = []any{
 	(*PlatformEvent)(nil),                             // 62: anytty.client.binding.v1.PlatformEvent
 	(*PlatformRequest)(nil),                           // 63: anytty.client.binding.v1.PlatformRequest
 	(*PlatformResponse)(nil),                          // 64: anytty.client.binding.v1.PlatformResponse
-	(remoteauthpb.EndpointRoutePreference)(0),         // 65: anytty.remote.auth.v1.EndpointRoutePreference
-	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 66: anytty.remote.auth.v1.ManagedWebRTCRelayMode
-	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 67: anytty.remote.auth.v1.ManagedWebRTCRelayTransport
-	(*apipb.ApiError)(nil),                            // 68: anytty.api.v1.ApiError
-	(*remoteauthpb.EndpointConfigV1)(nil),             // 69: anytty.remote.auth.v1.EndpointConfigV1
-	(*remoteauthpb.EndpointRegistryV1)(nil),           // 70: anytty.remote.auth.v1.EndpointRegistryV1
-	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 71: anytty.remote.auth.v1.EndpointDaemonIdentity
-	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 72: anytty.remote.auth.v1.EndpointCredentialDescriptor
-	(*apipb.EndpointSessionStamp)(nil),                // 73: anytty.api.v1.EndpointSessionStamp
-	(*apipb.ResultEnvelope)(nil),                      // 74: anytty.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),                       // 75: anytty.api.v1.EventEnvelope
-	(*apipb.ResourceHandle)(nil),                      // 76: anytty.api.v1.ResourceHandle
+	(*PTYStreamSyncLost)(nil),                         // 65: anytty.client.binding.v1.PTYStreamSyncLost
+	(*PTYStreamClosed)(nil),                           // 66: anytty.client.binding.v1.PTYStreamClosed
+	(remoteauthpb.EndpointRoutePreference)(0),         // 67: anytty.remote.auth.v1.EndpointRoutePreference
+	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 68: anytty.remote.auth.v1.ManagedWebRTCRelayMode
+	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 69: anytty.remote.auth.v1.ManagedWebRTCRelayTransport
+	(*apipb.ApiError)(nil),                            // 70: anytty.api.v1.ApiError
+	(*remoteauthpb.EndpointConfigV1)(nil),             // 71: anytty.remote.auth.v1.EndpointConfigV1
+	(*remoteauthpb.EndpointRegistryV1)(nil),           // 72: anytty.remote.auth.v1.EndpointRegistryV1
+	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 73: anytty.remote.auth.v1.EndpointDaemonIdentity
+	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 74: anytty.remote.auth.v1.EndpointCredentialDescriptor
+	(*apipb.EndpointSessionStamp)(nil),                // 75: anytty.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                      // 76: anytty.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                       // 77: anytty.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                      // 78: anytty.api.v1.ResourceHandle
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
 	2,   // 0: anytty.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> anytty.client.binding.v1.ConnectionRouteKind
@@ -5334,44 +5443,44 @@ var file_bindingpb_client_binding_proto_depIdxs = []int32{
 	5,   // 4: anytty.client.binding.v1.ConnectionSnapshot.local_protocol:type_name -> anytty.client.binding.v1.ConnectionTransport
 	5,   // 5: anytty.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> anytty.client.binding.v1.ConnectionTransport
 	5,   // 6: anytty.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> anytty.client.binding.v1.ConnectionTransport
-	65,  // 7: anytty.client.binding.v1.ConnectionPolicy.route_preference:type_name -> anytty.remote.auth.v1.EndpointRoutePreference
-	66,  // 8: anytty.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> anytty.remote.auth.v1.ManagedWebRTCRelayMode
-	67,  // 9: anytty.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> anytty.remote.auth.v1.ManagedWebRTCRelayTransport
+	67,  // 7: anytty.client.binding.v1.ConnectionPolicy.route_preference:type_name -> anytty.remote.auth.v1.EndpointRoutePreference
+	68,  // 8: anytty.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> anytty.remote.auth.v1.ManagedWebRTCRelayMode
+	69,  // 9: anytty.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> anytty.remote.auth.v1.ManagedWebRTCRelayTransport
 	2,   // 10: anytty.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> anytty.client.binding.v1.ConnectionRouteKind
 	6,   // 11: anytty.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> anytty.client.binding.v1.ConnectionPolicyAvailabilityReason
 	8,   // 12: anytty.client.binding.v1.ConnectionPolicyState.policy:type_name -> anytty.client.binding.v1.ConnectionPolicy
 	9,   // 13: anytty.client.binding.v1.ConnectionPolicyState.routes:type_name -> anytty.client.binding.v1.ConnectionPolicyRouteAvailability
 	10,  // 14: anytty.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> anytty.client.binding.v1.ConnectionPolicyState
-	68,  // 15: anytty.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 15: anytty.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> anytty.api.v1.ApiError
 	8,   // 16: anytty.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> anytty.client.binding.v1.ConnectionPolicy
 	10,  // 17: anytty.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> anytty.client.binding.v1.ConnectionPolicyState
-	68,  // 18: anytty.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 18: anytty.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> anytty.api.v1.ApiError
 	7,   // 19: anytty.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> anytty.client.binding.v1.ConnectionSnapshot
-	68,  // 20: anytty.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 20: anytty.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> anytty.api.v1.ApiError
 	0,   // 21: anytty.client.binding.v1.OpenSessionRequest.intent:type_name -> anytty.client.binding.v1.ConnectIntent
-	69,  // 22: anytty.client.binding.v1.ImportPairingResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
-	68,  // 23: anytty.client.binding.v1.ImportPairingResult.error:type_name -> anytty.api.v1.ApiError
-	70,  // 24: anytty.client.binding.v1.ImportPairingResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
-	68,  // 25: anytty.client.binding.v1.DeleteCredentialResult.error:type_name -> anytty.api.v1.ApiError
-	70,  // 26: anytty.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
-	68,  // 27: anytty.client.binding.v1.EndpointRegistryGetResult.error:type_name -> anytty.api.v1.ApiError
-	69,  // 28: anytty.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
-	69,  // 29: anytty.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
-	70,  // 30: anytty.client.binding.v1.EndpointUpsertResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
-	68,  // 31: anytty.client.binding.v1.EndpointUpsertResult.error:type_name -> anytty.api.v1.ApiError
-	70,  // 32: anytty.client.binding.v1.EndpointDeleteResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
-	68,  // 33: anytty.client.binding.v1.EndpointDeleteResult.error:type_name -> anytty.api.v1.ApiError
-	71,  // 34: anytty.client.binding.v1.EndpointSharePreview.identity:type_name -> anytty.remote.auth.v1.EndpointDaemonIdentity
+	71,  // 22: anytty.client.binding.v1.ImportPairingResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	70,  // 23: anytty.client.binding.v1.ImportPairingResult.error:type_name -> anytty.api.v1.ApiError
+	72,  // 24: anytty.client.binding.v1.ImportPairingResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	70,  // 25: anytty.client.binding.v1.DeleteCredentialResult.error:type_name -> anytty.api.v1.ApiError
+	72,  // 26: anytty.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	70,  // 27: anytty.client.binding.v1.EndpointRegistryGetResult.error:type_name -> anytty.api.v1.ApiError
+	71,  // 28: anytty.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	71,  // 29: anytty.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	72,  // 30: anytty.client.binding.v1.EndpointUpsertResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	70,  // 31: anytty.client.binding.v1.EndpointUpsertResult.error:type_name -> anytty.api.v1.ApiError
+	72,  // 32: anytty.client.binding.v1.EndpointDeleteResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	70,  // 33: anytty.client.binding.v1.EndpointDeleteResult.error:type_name -> anytty.api.v1.ApiError
+	73,  // 34: anytty.client.binding.v1.EndpointSharePreview.identity:type_name -> anytty.remote.auth.v1.EndpointDaemonIdentity
 	29,  // 35: anytty.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> anytty.client.binding.v1.EndpointShareRouteDiff
-	72,  // 36: anytty.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> anytty.remote.auth.v1.EndpointCredentialDescriptor
+	74,  // 36: anytty.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> anytty.remote.auth.v1.EndpointCredentialDescriptor
 	30,  // 37: anytty.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> anytty.client.binding.v1.EndpointSharePreview
-	68,  // 38: anytty.client.binding.v1.EndpointShareReceiveResult.error:type_name -> anytty.api.v1.ApiError
-	69,  // 39: anytty.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
-	70,  // 40: anytty.client.binding.v1.EndpointShareCommitResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
-	68,  // 41: anytty.client.binding.v1.EndpointShareCommitResult.error:type_name -> anytty.api.v1.ApiError
-	69,  // 42: anytty.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
-	70,  // 43: anytty.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
-	68,  // 44: anytty.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> anytty.api.v1.ApiError
+	70,  // 38: anytty.client.binding.v1.EndpointShareReceiveResult.error:type_name -> anytty.api.v1.ApiError
+	71,  // 39: anytty.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	72,  // 40: anytty.client.binding.v1.EndpointShareCommitResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	70,  // 41: anytty.client.binding.v1.EndpointShareCommitResult.error:type_name -> anytty.api.v1.ApiError
+	71,  // 42: anytty.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> anytty.remote.auth.v1.EndpointConfigV1
+	72,  // 43: anytty.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> anytty.remote.auth.v1.EndpointRegistryV1
+	70,  // 44: anytty.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> anytty.api.v1.ApiError
 	18,  // 45: anytty.client.binding.v1.EngineCommand.import_pairing:type_name -> anytty.client.binding.v1.ImportPairingRequest
 	20,  // 46: anytty.client.binding.v1.EngineCommand.delete_credential:type_name -> anytty.client.binding.v1.DeleteCredentialRequest
 	22,  // 47: anytty.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> anytty.client.binding.v1.EndpointRegistryGetRequest
@@ -5383,17 +5492,17 @@ var file_bindingpb_client_binding_proto_depIdxs = []int32{
 	11,  // 53: anytty.client.binding.v1.EngineCommand.connection_policy_get:type_name -> anytty.client.binding.v1.ConnectionPolicyGetRequest
 	13,  // 54: anytty.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> anytty.client.binding.v1.ConnectionPolicyApplyRequest
 	15,  // 55: anytty.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> anytty.client.binding.v1.ConnectionSnapshotGetRequest
-	73,  // 56: anytty.client.binding.v1.OpenSessionResult.session:type_name -> anytty.api.v1.EndpointSessionStamp
-	68,  // 57: anytty.client.binding.v1.OpenSessionResult.error:type_name -> anytty.api.v1.ApiError
+	75,  // 56: anytty.client.binding.v1.OpenSessionResult.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	70,  // 57: anytty.client.binding.v1.OpenSessionResult.error:type_name -> anytty.api.v1.ApiError
 	7,   // 58: anytty.client.binding.v1.OpenSessionResult.connection:type_name -> anytty.client.binding.v1.ConnectionSnapshot
-	74,  // 59: anytty.client.binding.v1.ExecuteResult.result:type_name -> anytty.api.v1.ResultEnvelope
-	68,  // 60: anytty.client.binding.v1.ExecuteResult.error:type_name -> anytty.api.v1.ApiError
-	75,  // 61: anytty.client.binding.v1.ApplicationEvent.event:type_name -> anytty.api.v1.EventEnvelope
-	76,  // 62: anytty.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> anytty.api.v1.ResourceHandle
+	76,  // 59: anytty.client.binding.v1.ExecuteResult.result:type_name -> anytty.api.v1.ResultEnvelope
+	70,  // 60: anytty.client.binding.v1.ExecuteResult.error:type_name -> anytty.api.v1.ApiError
+	77,  // 61: anytty.client.binding.v1.ApplicationEvent.event:type_name -> anytty.api.v1.EventEnvelope
+	78,  // 62: anytty.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> anytty.api.v1.ResourceHandle
 	1,   // 63: anytty.client.binding.v1.ResourceStreamFrame.type:type_name -> anytty.client.binding.v1.ResourceStreamFrameType
-	68,  // 64: anytty.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> anytty.api.v1.ApiError
-	73,  // 65: anytty.client.binding.v1.SessionClosedEvent.session:type_name -> anytty.api.v1.EndpointSessionStamp
-	68,  // 66: anytty.client.binding.v1.SessionClosedEvent.error:type_name -> anytty.api.v1.ApiError
+	70,  // 64: anytty.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> anytty.api.v1.ApiError
+	75,  // 65: anytty.client.binding.v1.SessionClosedEvent.session:type_name -> anytty.api.v1.EndpointSessionStamp
+	70,  // 66: anytty.client.binding.v1.SessionClosedEvent.error:type_name -> anytty.api.v1.ApiError
 	37,  // 67: anytty.client.binding.v1.EventEnvelope.open_session:type_name -> anytty.client.binding.v1.OpenSessionResult
 	38,  // 68: anytty.client.binding.v1.EventEnvelope.execute:type_name -> anytty.client.binding.v1.ExecuteResult
 	39,  // 69: anytty.client.binding.v1.EventEnvelope.application:type_name -> anytty.client.binding.v1.ApplicationEvent
@@ -5422,7 +5531,7 @@ var file_bindingpb_client_binding_proto_depIdxs = []int32{
 	57,  // 92: anytty.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> anytty.client.binding.v1.SSHCredentialSignRequest
 	55,  // 93: anytty.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> anytty.client.binding.v1.SSHCredentialDeleteRequest
 	52,  // 94: anytty.client.binding.v1.PlatformRequest.cloud_profile_resolve:type_name -> anytty.client.binding.v1.CloudProfileResolveRequest
-	68,  // 95: anytty.client.binding.v1.PlatformResponse.error:type_name -> anytty.api.v1.ApiError
+	70,  // 95: anytty.client.binding.v1.PlatformResponse.error:type_name -> anytty.api.v1.ApiError
 	49,  // 96: anytty.client.binding.v1.PlatformResponse.credential:type_name -> anytty.client.binding.v1.CredentialRecord
 	51,  // 97: anytty.client.binding.v1.PlatformResponse.credential_sign:type_name -> anytty.client.binding.v1.CredentialSignResponse
 	61,  // 98: anytty.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> anytty.client.binding.v1.EndpointRegistryLoaded
@@ -5500,7 +5609,7 @@ func file_bindingpb_client_binding_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bindingpb_client_binding_proto_rawDesc), len(file_bindingpb_client_binding_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   58,
+			NumMessages:   60,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

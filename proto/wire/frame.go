@@ -9,8 +9,9 @@ import (
 
 const (
 	// Version 是 control protobuf method 合同的代际边界。
-	// FILE003 增加文件 transfer channel frame 后，新客户端不能继续连缺少流控语义的旧 daemon。
-	Version      = 5
+	// PTYRAW001 增加 attachment raw PTY output stream 后，新客户端不能继续连
+	// 缺少 ready/显式 sync-lost 语义的旧 daemon。
+	Version      = 6
 	MaxFrameSize = 4 << 20
 
 	TypeHello          uint8 = 0x00
@@ -30,6 +31,7 @@ const (
 	TypeClosed         uint8 = 0x17
 	TypeHistoryRequest uint8 = 0x18
 	TypeHistoryReplay  uint8 = 0x19
+	TypePTYOutput      uint8 = 0x1a
 	TypeFileData       uint8 = 0x21
 	TypeFileAck        uint8 = 0x22
 	TypeFileFinish     uint8 = 0x23

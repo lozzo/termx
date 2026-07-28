@@ -59,8 +59,8 @@ func TestDefaultShortcutActionsReachObservableOwnerBoundary(t *testing.T) {
 			assertDefaultActionServiceOwner(t, invocation, execution)
 		})
 	}
-	if len(seen) != 149 {
-		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=149", len(seen))
+	if len(seen) != 155 {
+		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=155", len(seen))
 	}
 }
 
@@ -632,8 +632,8 @@ func defaultActionExecutionRoot(t *testing.T, id actiondomain.ID) state.Root {
 		root.Shell = root.Shell.OpenFloatingOverview()
 	case id == "prompt.submit":
 		root.Shell = root.Shell.OpenPrompt(state.PromptState{Purpose: "action.command", Value: "system.clear_toasts"})
-	case id == "help.close":
-		root.Shell = root.Shell.OpenHelp("most-used")
+	case strings.HasPrefix(string(id), "help."):
+		root.Shell = root.Shell.OpenHelp("most-used").SetHelpSelection(10, len(input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation)))
 	}
 
 	if strings.HasPrefix(string(id), "copy.") || id == "menu.copy" {

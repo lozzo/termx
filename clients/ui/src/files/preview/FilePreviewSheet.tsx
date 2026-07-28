@@ -5,7 +5,7 @@ import { hapticSelection } from '../../platform/haptics'
 import type { FilePreviewResponse, FilePreviewStreamOptions, FilePreviewStreamResult } from '../fileApi'
 import { basename, formatBytes, isMarkdownFile } from '../fileUtils'
 import { BinaryVideoPreview, StreamedVideoPreview } from './VideoPreview'
-import { ImagePreview } from './ImagePreview'
+import { ImagePreview, StreamedImagePreview } from './ImagePreview'
 import { MarkdownPreview, TextPreview } from './TextPreview'
 import { ModelPreview, canPreviewModelFile } from './ModelPreview'
 import { PreviewNotice } from './PreviewNotice'
@@ -87,6 +87,9 @@ function PreviewContent({
   const { t } = useTranslation()
   if (preview.category === 'image' && preview.contentBase64) {
     return <ImagePreview preview={preview} />
+  }
+  if (preview.category === 'image') {
+    return <StreamedImagePreview preview={preview} streamPreview={streamPreview} />
   }
   if (preview.category === 'video' && preview.contentBase64) {
     return <BinaryVideoPreview preview={preview} />

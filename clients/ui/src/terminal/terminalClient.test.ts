@@ -94,9 +94,9 @@ describe('TerminalClient', () => {
     client.connect('terminal-1', session)
     await vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledTimes(1))
 
-    const page = await client.loadScrollback(100, 50)
+    const page = await client.loadScrollback(100, 50, false, { cols: 51 })
 
-    expect(session.scrollbackRequests).toEqual([{ terminalId: 'terminal-1', offset: 100, limit: 50 }])
+    expect(session.scrollbackRequests).toEqual([{ terminalId: 'terminal-1', offset: 100, limit: 50, cols: 51 }])
     expect(page).toMatchObject({
       beforeOffset: 100,
       limit: 50,
@@ -177,7 +177,7 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   readonly openedTerminalIds: string[] = []
   readonly openedLabels: string[] = []
   readonly closedTerminalIds: string[] = []
-  readonly scrollbackRequests: Array<{ terminalId: string; offset: number; limit: number; signal?: AbortSignal }> = []
+  readonly scrollbackRequests: Array<{ terminalId: string; offset: number; limit: number; signal?: AbortSignal; cols?: number }> = []
   private readonly channels = new Map<string, MockTerminalProtocolChannel>()
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
 
@@ -218,9 +218,15 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
     offset: number,
     limit: number,
     _alternate?: boolean,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; cols?: number },
   ) {
-    this.scrollbackRequests.push({ terminalId, offset, limit, ...(options?.signal ? { signal: options.signal } : {}) })
+    this.scrollbackRequests.push({
+      terminalId,
+      offset,
+      limit,
+      ...(options?.signal ? { signal: options.signal } : {}),
+      ...(options?.cols ? { cols: options.cols } : {}),
+    })
     return {
       beforeOffset: offset,
       limit,

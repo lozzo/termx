@@ -392,7 +392,7 @@ func TestMeasureLayoutAddsVisibleFooterActionHitRegions(t *testing.T) {
 	plan := MeasureLayout(shell, Rect{W: 160, H: 20})
 	paneRegion := hitRegionByAction(t, plan.HitRegions, "menu.panel")
 	pickerRegion := hitRegionByAction(t, plan.HitRegions, "menu.terminal_picker")
-	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl] • [P] PANE") {
+	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl+P] PANE") {
 		t.Fatalf("unexpected footer pane action region %#v footer=%#v", paneRegion, plan.Footer)
 	}
 	if pickerRegion.Kind != HitRegionContentAction || pickerRegion.Rect.Y != paneRegion.Rect.Y || pickerRegion.Rect.X <= paneRegion.Rect.X {

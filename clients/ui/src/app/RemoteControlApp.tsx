@@ -525,7 +525,6 @@ export function RemoteControlApp({
 
   const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
     if (!storage) return
-    void externalPairingAdapter?.forget(machineId)
     dropMachineRuntime(machineId)
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))

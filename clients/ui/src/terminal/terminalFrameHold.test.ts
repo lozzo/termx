@@ -9,18 +9,28 @@ describe('holdTerminalFrame', () => {
       return frames.length
     })
     const container = document.createElement('div')
+    const xterm = document.createElement('div')
+    xterm.className = 'xterm'
     const screen = document.createElement('div')
     screen.className = 'xterm-screen'
     screen.textContent = 'stable output'
-    container.append(screen)
+    xterm.append(screen)
+    container.append(xterm)
     document.body.append(container)
     vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 320, 200))
-    vi.spyOn(screen, 'getBoundingClientRect').mockReturnValue(rect(8, 12, 300, 160))
+    vi.spyOn(xterm, 'getBoundingClientRect').mockReturnValue(rect(4, 5, 312, 180))
+    vi.spyOn(screen, 'getBoundingClientRect').mockReturnValue(rect(12, 17, 300, 160))
 
     const hold = holdTerminalFrame(container, screen)
 
     expect(hold).not.toBeNull()
-    expect(container.querySelector('[data-anytty-terminal-frame-hold]')?.textContent).toBe('stable output')
+    const overlay = container.querySelector('[data-anytty-terminal-frame-hold]') as HTMLElement | null
+    expect(overlay?.parentElement).toBe(xterm)
+    expect(overlay?.style.left).toBe('8px')
+    expect(overlay?.style.top).toBe('12px')
+    expect(overlay?.textContent).toBe('stable output')
+    hold?.setTransform('translateY(12px)')
+    expect((container.querySelector('[data-anytty-terminal-frame-hold]') as HTMLElement | null)?.style.transform).toBe('translateY(12px)')
     hold?.releaseAfterPaint()
     frames.shift()?.(0)
     expect(container.querySelector('[data-anytty-terminal-frame-hold]')).not.toBeNull()

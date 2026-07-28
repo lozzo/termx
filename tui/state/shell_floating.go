@@ -24,6 +24,8 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 		return store.summonFloating(command)
 	case FloatingCommandMove:
 		return store.moveFloating(command)
+	case FloatingCommandPosition:
+		return store.positionFloating(command)
 	case FloatingCommandResize:
 		return store.resizeFloating(command)
 	case FloatingCommandToggleAll, FloatingCommandShowAll, FloatingCommandCollapseAll, FloatingCommandFit, FloatingCommandToggleAutoFit, FloatingCommandRefreshAutoFit:
@@ -59,6 +61,18 @@ func (store ShellStore) BindFloatingTerminal(id string, terminalID string) Shell
 	activeID := floatings[index].ID
 	floatings[index].Z = store.nextFloatingZ() + 1
 	return store.withActiveTabFloatings(floatings, activeID).EnsureDefaults()
+}
+
+func (store ShellStore) DetachFloatingTerminal(id string) ShellStore {
+	store = store.EnsureDefaults()
+	index := store.floatingIndexOrActive(id)
+	if index < 0 {
+		return store
+	}
+	floatings := cloneFloatings(store.activeFloatings())
+	floatings[index].Pane.TerminalID = ""
+	floatings[index].Pane.Kind = PaneEmpty
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).EnsureDefaults()
 }
 
 func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {

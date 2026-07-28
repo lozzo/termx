@@ -111,8 +111,8 @@ func terminalViewContentRect(root state.Root, fallbackViewport render.Rect, bind
 
 func activeTerminalViewBinding(root state.Root) (state.TerminalViewBinding, bool) {
 	shell := root.Shell.ReadonlyDefaults()
-	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
-		if binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID); ok {
+	if target, ok := shell.ActiveSurfaceTarget(); ok && target.Floating {
+		if binding, ok := root.TerminalViews.FloatingBinding(target.FloatingID); ok {
 			return binding, true
 		}
 	}

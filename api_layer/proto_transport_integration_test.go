@@ -91,6 +91,46 @@ func TestGeneratedMachineEventsScopeAllowsOnlyLifecycleSubscription(t *testing.T
 	}
 }
 
+func TestGeneratedTerminalScopeListsOnlyAuthorizedTerminal(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	owner, _, closeOwner := newProtoTransportClient(t, server, nil, 1)
+	defer closeOwner()
+	createProtoTestTerminal(t, owner, "term-scoped-visible")
+	createProtoTestTerminal(t, owner, "term-scoped-hidden")
+
+	scope := corev2.TransportScope{PrincipalID: "terminal-client", TerminalID: "term-scoped-visible"}
+	application, _, closeApplication := newProtoTransportClient(t, server, &scope, 2)
+	defer closeApplication()
+	listed, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.GetTerminals()) != 1 || listed.GetTerminals()[0].GetRef().GetTerminalId() != "term-scoped-visible" {
+		t.Fatalf("terminal-scoped list = %#v", listed.GetTerminals())
+	}
+	if _, _, err := application.EventSubscribe(context.Background(), &apipb.EventSubscribeCommand{
+		Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED},
+	}); clientruntime.CodeOf(err) != clientruntime.ErrorAuthorization {
+		t.Fatalf("unfiltered terminal-scoped subscription error = %v", err)
+	}
+	if _, _, err := application.EventSubscribe(context.Background(), &apipb.EventSubscribeCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-scoped-visible"},
+		Types:    []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED},
+	}); err != nil {
+		t.Fatalf("filtered terminal-scoped subscription failed: %v", err)
+	}
+	if _, err := application.TerminalAttach(context.Background(), &apipb.TerminalAttachCommand{
+		Terminal:     &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-scoped-visible"},
+		Mode:         apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR,
+		ResizePolicy: apipb.ResizePolicy_RESIZE_POLICY_OWNER,
+		SurfaceId:    "terminal-scoped-surface",
+		ViewId:       "terminal-scoped-view",
+	}); err != nil {
+		t.Fatalf("terminal-scoped attach failed: %v", err)
+	}
+}
+
 func TestGeneratedFileUploadSeparatesActiveAndResumeTokenNamespaces(t *testing.T) {
 	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
 	defer func() { _ = server.Shutdown(context.Background()) }()

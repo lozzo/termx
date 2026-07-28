@@ -2,9 +2,9 @@
   "schema_version": 1,
   "stage": "KS016",
   "inventory": {
-    "default_entries": 206,
+    "default_entries": 212,
     "routed_bindings": 167,
-    "shortcut_specs": 163,
+    "shortcut_specs": 169,
     "render_projections": 34
   },
   "artifacts": {
@@ -251,18 +251,6 @@
         "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"
       },
       {
-        "signature": "tui/render/shell_bar.go#appendFooterActionSegments",
-        "count": 1,
-        "classification": "shortcut-key-token-formatting",
-        "digest": "3754d502706f1d1496de8bf83135adda1cfb484b247eddd578af5ac31b1e35f3"
-      },
-      {
-        "signature": "tui/render/shell_bar.go#footerCtrlLetter",
-        "count": 2,
-        "classification": "shortcut-key-token-formatting",
-        "digest": "e28a2ca9448356fb76e953c996ce94193f54f2df4bf3cac06b75dc95aa993da6"
-      },
-      {
         "signature": "tui/render/shell_bar.go#footerTailActionToken",
         "count": 1,
         "classification": "global-back-navigation",
@@ -272,13 +260,7 @@
         "signature": "tui/render/shell_bar.go#formatFooterKeySegments",
         "count": 3,
         "classification": "shortcut-key-token-formatting",
-        "digest": "354463bff3d3866090f1b9afbd383ec3fa52797e585e1afb0c4d40fd53976a31"
-      },
-      {
-        "signature": "tui/render/shell_bar.go#formatFooterKeyTokenForSelection",
-        "count": 1,
-        "classification": "shortcut-key-token-formatting",
-        "digest": "1fdc2d47678b12131b213162b4dcca6c89821b2c4a14b7553fe8849231e47358"
+        "digest": "9a4161653db8f6d73ecf0eef54c03060539550b8bfeba42c373bf140472c3e49"
       },
       {
         "signature": "tui/render/vm.go#footerActionCatalogForRoot",
@@ -451,7 +433,7 @@
         {
           "path": "tui/render/shell_bar.go",
           "anchors": [
-            "func footerActionHasCtrlPrefix(key string) bool"
+            "func formatFooterKeySegments(key string) []string"
           ]
         }
       ]

@@ -125,7 +125,7 @@ var defaultLabels = map[string]string{
 	"tab.previous":                   "PREV",
 	"tab.rename":                     "RENAME",
 	"tab.close":                      "CLOSE",
-	"tab.kill":                       "CLOSE",
+	"tab.kill":                       "KILL",
 	"workspace.create":               "NEW",
 	"workspace.next":                 "NEXT",
 	"workspace.previous":             "PREV",
@@ -145,6 +145,12 @@ var defaultLabels = map[string]string{
 	"floating_overview.open":         "OPEN",
 	"floating_overview.show_all":     "SHOW ALL",
 	"floating_overview.collapse_all": "COLLAPSE ALL",
+	"help.previous":                  "PREV",
+	"help.next":                      "NEXT",
+	"help.page_up":                   "PAGE",
+	"help.page_down":                 "PAGE",
+	"help.first":                     "FIRST",
+	"help.last":                      "LAST",
 	"clipboard_history.paste":        "PASTE",
 	"clipboard_history.new":          "NEW",
 	"clipboard_history.edit":         "EDIT",
@@ -217,7 +223,7 @@ func buildSpecs() map[string]Spec {
 	addFixed("workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom", "workbench_tree.close")
 	addFixed("clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close")
 	addFixed("floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close")
-	addFixed("prompt.submit", "prompt.cancel", "help.close")
+	addFixed("prompt.submit", "prompt.cancel", "help.previous", "help.next", "help.page_up", "help.page_down", "help.first", "help.last", "help.close")
 	for _, id := range surfaceOnlyActionIDs {
 		add(Spec{ID: id})
 	}

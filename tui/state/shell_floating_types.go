@@ -28,6 +28,7 @@ const (
 	FloatingCommandToggleCollapse FloatingCommandAction = "floating.toggle-collapse"
 	FloatingCommandSummon         FloatingCommandAction = "floating.summon"
 	FloatingCommandMove           FloatingCommandAction = "floating.move"
+	FloatingCommandPosition       FloatingCommandAction = "floating.position"
 	FloatingCommandResize         FloatingCommandAction = "floating.resize"
 	FloatingCommandToggleAll      FloatingCommandAction = "floating.toggle-all"
 	FloatingCommandShowAll        FloatingCommandAction = "floating.show-all"
@@ -38,21 +39,23 @@ const (
 )
 
 type FloatingCommand struct {
-	Action   FloatingCommandAction
-	TargetID string
-	Pane     PaneState
-	Title    string
-	Rect     FloatingRect
-	DeltaX   int
-	DeltaY   int
-	DeltaW   int
-	DeltaH   int
-	Index    int
-	BoundsW  int
-	BoundsH  int
-	Source   PaneCommandSource
-	FitCols  int
-	FitRows  int
+	Action    FloatingCommandAction
+	TargetID  string
+	Pane      PaneState
+	Title     string
+	Rect      FloatingRect
+	DeltaX    int
+	DeltaY    int
+	DeltaW    int
+	DeltaH    int
+	PositionX string
+	PositionY string
+	Index     int
+	BoundsW   int
+	BoundsH   int
+	Source    PaneCommandSource
+	FitCols   int
+	FitRows   int
 }
 
 type FloatingCommandStatus string

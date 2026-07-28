@@ -73,6 +73,33 @@ func TestTerminalAutomationLocalDataPlane(t *testing.T) {
 	}
 }
 
+func TestTerminalStreamRoutesThroughOwningEndpoint(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	socketPath, client, closeServer := startCLIEndpointServer(t)
+	defer closeServer()
+	const endpointID = endpointdomain.EndpointID("west")
+	if err := endpointdomain.Save("", endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion, Default: endpointID,
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			endpointID: testLocalEndpoint(endpointID, "West", socketPath, endpointdomain.ConnectAuto, true),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "raw-endpoint", Name: "raw-endpoint", Command: testAutomationCommand(),
+		Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	output := executeTerminalCLI(t, strings.NewReader("endpoint-stream\n"),
+		"--timeout", "5s", "terminal", "stream", "west:raw-endpoint", "--stdin")
+	if !strings.Contains(output, "GOT:endpoint-stream") {
+		t.Fatalf("endpoint raw PTY stream did not contain process output: %q", output)
+	}
+}
+
 func TestTerminalEventsWritesStableNDJSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	socketPath, client, closeServer := startCLIEndpointServer(t)

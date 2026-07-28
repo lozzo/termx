@@ -56,9 +56,9 @@ class GoClientBridgeServer(
         }
         try {
             handleRequest(conn, bytes)
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             val requestId = if (bytes.size >= 9) ByteBuffer.wrap(bytes, 1, 8).order(ByteOrder.BIG_ENDIAN).long else 0L
-            sendError(conn, requestId, "native binding request failed")
+            sendError(conn, requestId, error.message ?: "native binding request failed")
         }
     }
 

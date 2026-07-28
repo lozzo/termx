@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/tui/input"
 	"github.com/anytty/anytty/tui/state"
 )
 
@@ -529,7 +530,7 @@ func TestRenderVMBuilderAppliesResizeShortcutConfig(t *testing.T) {
 		!strings.Contains(footerLine, "[l] RESIZE RIGHT") ||
 		!strings.Contains(footerLine, "[m] MIDDLE") ||
 		!strings.Contains(footerLine, "[r] RESET") ||
-		!strings.Contains(footerLine, "[G] GLOBAL") {
+		!strings.Contains(footerLine, "[Ctrl+G] GLOBAL") {
 		t.Fatalf("resize footer render should include configured resize actions, got %#v", footerLine)
 	}
 }
@@ -926,7 +927,7 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderUsesSharedCtrlPrefixInLiveFooter(t *testing.T) {
+func TestRenderVMBuilderRendersCompleteCtrlChordsInLiveFooter(t *testing.T) {
 	root := state.Root{
 		Shell:    state.DefaultShell(),
 		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
@@ -934,11 +935,31 @@ func TestRenderVMBuilderUsesSharedCtrlPrefixInLiveFooter(t *testing.T) {
 
 	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
 	footerLine := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footerLine, "[Ctrl] • [P]") || !strings.Contains(footerLine, "[R] RESIZE") {
+	if !strings.Contains(footerLine, "[Ctrl+P] PANE") || !strings.Contains(footerLine, "[Ctrl+R] RESIZE") {
 		t.Fatalf("live footer must show ctrl-r resize shortcut, got %q", footerLine)
 	}
-	if strings.Contains(footerLine, "[^R]") {
-		t.Fatalf("live footer must not repeat caret after shared ctrl prefix, got %q", footerLine)
+	if strings.Contains(footerLine, "[Ctrl] •") || strings.Contains(footerLine, "[^R]") {
+		t.Fatalf("live footer must render each ctrl chord as one unambiguous token, got %q", footerLine)
+	}
+}
+
+func TestRenderVMBuilderKeepsHelpNavigationCompleteAtDefaultWidth(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell().OpenHelp("most-used"),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+	}
+	entries := input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation)
+	root.Shell = root.Shell.SetHelpSelection(10, len(entries))
+
+	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
+	footerLine := frame.Lines[len(frame.Lines)-1]
+	for _, want := range []string{"[↑] PREV", "[↓] NEXT", "[PgUp] PAGE", "[PgDn] PAGE", "[Esc] BACK"} {
+		if !strings.Contains(footerLine, want) {
+			t.Fatalf("help footer must keep %q at default width, got %q", want, footerLine)
+		}
+	}
+	if strings.Contains(footerLine, "ws:") {
+		t.Fatalf("help footer must reserve its row for navigation, got %q", footerLine)
 	}
 }
 
@@ -958,7 +979,7 @@ func TestRenderVMBuilderKeepsTerminalPoolRestartShortcutVisibleAtDefaultWidth(t 
 
 	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
 	rendered := strings.Join(frame.Lines, "\n")
-	if !strings.Contains(rendered, "[R] RESTART") {
+	if !strings.Contains(rendered, "[Ctrl+R] RESTART") {
 		t.Fatalf("terminal pool page must keep restart action visible, got %#v", frame.Lines)
 	}
 }
@@ -1833,7 +1854,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 		t.Fatalf("unexpected product header %#v", header)
 	}
 	footer := vm.Shell.Footer
-	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" ||
+	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "float:浮窗" ||
 		containsFooterAction(footer.ActionTokens, "v", "split", "") ||
 		!strings.Contains(footer.GlobalSummary, "ws:main") || !strings.Contains(footer.GlobalSummary, "float:1") || !strings.Contains(footer.GlobalSummary, "terminals:1") {
 		t.Fatalf("unexpected product footer %#v", footer)
@@ -3801,23 +3822,33 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 		t.Fatalf("expected cursor on workdir field before suggestion rows, got %#v", content.Cursor)
 	}
 
-	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}).Shell.Overlay.Content
+	helpRoot := state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}
+	content = NewRenderVMBuilder().Build(helpRoot).Shell.Overlay.Content
 	helpPlain := plainLines(content.Lines)
 	if content.Kind != ContentHelp ||
 		!strings.Contains(content.Lines[0].PlainString(), "Help") ||
 		!strings.Contains(helpPlain, "Most used") ||
-		!strings.Contains(helpPlain, "Shell") ||
-		!strings.Contains(helpPlain, "Tab / Workspace") ||
-		!strings.Contains(helpPlain, "Terminal Manager") ||
-		!strings.Contains(helpPlain, "Connections") ||
-		!strings.Contains(helpPlain, "Display / Copy") ||
+		!strings.Contains(helpPlain, "[Ctrl+P]") ||
+		!strings.Contains(helpPlain, "[Ctrl+R]") ||
+		strings.Contains(helpPlain, "[Ctrl] •") ||
 		!contentHasAction(content, "help.close") {
 		t.Fatalf("expected help content, got %#v", content)
 	}
-	for _, forbidden := range []string{"close toast", "clear toasts", "center", "collapse"} {
-		if strings.Contains(helpPlain, forbidden) {
-			t.Fatalf("help must only show wired actions, found %q in %q", forbidden, helpPlain)
+	helpWidth, helpHeight := helpContentDimensions(helpRoot)
+	if len(content.Lines) > helpHeight {
+		t.Fatalf("help page must fit its content viewport: lines=%d height=%d", len(content.Lines), helpHeight)
+	}
+	for _, line := range content.Lines {
+		if line.Width() > helpWidth {
+			t.Fatalf("help row must fit without horizontal clipping: width=%d limit=%d row=%q", line.Width(), helpWidth, line.PlainString())
 		}
+	}
+	entries := input.ShortcutEntriesForHelp(helpRoot.Config.Shortcuts, helpRoot.HostCapabilities.KeyboardDisambiguation)
+	helpRoot.Shell = helpRoot.Shell.SetHelpSelection(len(entries)-1, len(entries))
+	lastPage := plainLines(NewRenderVMBuilder().Build(helpRoot).Shell.Overlay.Content.Lines)
+	if !strings.Contains(lastPage, fmt.Sprintf("shortcuts %d/%d", len(entries), len(entries))) ||
+		!strings.Contains(lastPage, "[enter]") || !strings.Contains(lastPage, "Close Help") {
+		t.Fatalf("help navigation must expose the final configured binding, got %q", lastPage)
 	}
 	if content.Cursor.Visible {
 		t.Fatalf("help overlay should not show input cursor, got %#v", content.Cursor)

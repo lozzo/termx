@@ -229,6 +229,12 @@ var defaultBindings = []DefaultBinding{
 
 	{Scene: "prompt", Key: "enter", Action: "prompt.submit"},
 
+	{Scene: "help", Key: "up", Action: "help.previous"},
+	{Scene: "help", Key: "down", Action: "help.next"},
+	{Scene: "help", Key: "page-up", Action: "help.page_up"},
+	{Scene: "help", Key: "page-down", Action: "help.page_down"},
+	{Scene: "help", Key: "home", Action: "help.first"},
+	{Scene: "help", Key: "end", Action: "help.last"},
 	{Scene: "help", Key: "enter", Action: "help.close"},
 }
 

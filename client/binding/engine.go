@@ -14,6 +14,7 @@ import (
 	clientruntime "github.com/anytty/anytty/client/runtime"
 	"github.com/anytty/anytty/proto/apipb"
 	"github.com/anytty/anytty/proto/bindingpb"
+	"github.com/anytty/anytty/proto/wire"
 	"github.com/anytty/anytty/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
@@ -132,6 +133,11 @@ func (engine *Engine) OpenResourceStream(sessionHandle uint64, payload []byte) (
 	}
 	if request.GetInitialUploadOffset() < 0 {
 		return 0, fmt.Errorf("initial upload offset must not be negative")
+	}
+	if request.GetResource().GetKind() == apipb.ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT {
+		if request.GetInitialUploadOffset() != 0 {
+			return 0, fmt.Errorf("terminal attachment stream does not accept an upload offset")
+		}
 	}
 	session, err := engine.activeSession(sessionHandle)
 	if err != nil {
@@ -522,6 +528,11 @@ func (engine *Engine) forwardResourceStream(handle uint64, stream clientruntime.
 			terminalError = err
 			return
 		}
+		payload, err = bindingPayloadForWireFrame(typ, payload)
+		if err != nil {
+			terminalError = err
+			return
+		}
 		engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ResourceStreamFrame{ResourceStreamFrame: &bindingpb.ResourceStreamFrame{
 			StreamHandle: handle, Type: bindingType, Payload: append([]byte(nil), payload...),
 		}}})
@@ -894,22 +905,34 @@ func (engine *Engine) validateStreamSendLocked(handle uint64, record *streamReco
 func bindingFrameTypeToWire(typ bindingpb.ResourceStreamFrameType, outbound bool) (uint8, error) {
 	switch typ {
 	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA:
-		return 0x21, nil
+		return wire.TypeFileData, nil
 	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_ACK:
-		return 0x22, nil
+		return wire.TypeFileAck, nil
 	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH:
-		return 0x23, nil
+		return wire.TypeFileFinish, nil
 	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT:
 		if !outbound {
-			return 0x24, nil
+			return wire.TypeFileResult, nil
 		}
 	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_ERROR:
 		if !outbound {
-			return 0x04, nil
+			return wire.TypeError, nil
 		}
 	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO:
 		if outbound {
-			return 0x23, nil
+			return wire.TypeFileFinish, nil
+		}
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT:
+		if !outbound {
+			return wire.TypePTYOutput, nil
+		}
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST:
+		if !outbound {
+			return wire.TypeSyncLost, nil
+		}
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED:
+		if !outbound {
+			return wire.TypeClosed, nil
 		}
 	}
 	return 0, fmt.Errorf("resource stream frame type is unsupported")
@@ -922,6 +945,9 @@ func wireFrameTypeToBinding(typ uint8) (bindingpb.ResourceStreamFrameType, error
 		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH,
 		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT,
 		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_ERROR,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED,
 	} {
 		wireType, _ := bindingFrameTypeToWire(candidate, false)
 		if wireType == typ {
@@ -929,6 +955,25 @@ func wireFrameTypeToBinding(typ uint8) (bindingpb.ResourceStreamFrameType, error
 		}
 	}
 	return bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED, fmt.Errorf("resource stream received unsupported frame type %d", typ)
+}
+
+func bindingPayloadForWireFrame(typ uint8, payload []byte) ([]byte, error) {
+	switch typ {
+	case wire.TypeSyncLost:
+		droppedBytes, err := wire.DecodeSyncLostPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(&bindingpb.PTYStreamSyncLost{DroppedBytes: droppedBytes})
+	case wire.TypeClosed:
+		exitCode, err := wire.DecodeClosedPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(&bindingpb.PTYStreamClosed{ExitCode: int32(exitCode)})
+	default:
+		return append([]byte(nil), payload...), nil
+	}
 }
 
 func (engine *Engine) emit(event *bindingpb.EventEnvelope) {

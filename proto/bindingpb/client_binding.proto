@@ -23,6 +23,12 @@ enum ResourceStreamFrameType {
   RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT = 4;
   RESOURCE_STREAM_FRAME_TYPE_ERROR = 5;
   RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO = 6;
+  // PTY_OUTPUT payload 是未经文本解码或 ANSI 解析的原始 PTY bytes。
+  RESOURCE_STREAM_FRAME_TYPE_PTY_OUTPUT = 7;
+  // PTY_SYNC_LOST payload 是 serialized PTYStreamSyncLost；收到后必须丢弃本地解析状态。
+  RESOURCE_STREAM_FRAME_TYPE_PTY_SYNC_LOST = 8;
+  // PTY_CLOSED payload 是 serialized PTYStreamClosed。
+  RESOURCE_STREAM_FRAME_TYPE_PTY_CLOSED = 9;
 }
 
 // ConnectionRouteKind 是 ReadySession 实际获胜的持久 Route kind 投影。
@@ -500,3 +506,7 @@ message PlatformResponse {
   }
 	reserved 20 to 26, 30 to 34;
 }
+
+message PTYStreamSyncLost { uint64 dropped_bytes = 1; }
+
+message PTYStreamClosed { int32 exit_code = 1; }

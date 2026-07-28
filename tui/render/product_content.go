@@ -1004,29 +1004,144 @@ func promptFieldCursorDisplayWidth(field state.PromptFieldState) int {
 }
 
 func buildHelpContent(root state.Root) ContentVM {
-	lines := []Line{pageTitleLine("Help", "core workflows")}
-	for _, group := range helpActionGroups(root) {
-		if line, ok := helpActionGroupLine(group); ok {
-			lines = append(lines, line)
-		}
+	entries := input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation)
+	contentWidth, contentHeight := helpContentDimensions(root)
+	shell := root.Shell.ReadonlyDefaults()
+	selected := shell.Overlay.SelectedIndex
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= len(entries) && len(entries) > 0 {
+		selected = len(entries) - 1
+	}
+	showClose := shortcutSceneHasAction(root.Config.Shortcuts, "help", "help.close")
+	renderClose := showClose && contentHeight > 1
+	visibleRows := maxInt(0, contentHeight-1)
+	if renderClose {
+		visibleRows = maxInt(0, visibleRows-1)
+	}
+	start, end := helpShortcutWindow(selected, len(entries), visibleRows)
+	subtitle := fmt.Sprintf("shortcuts %d/%d", selected+1, len(entries))
+	if len(entries) == 0 {
+		subtitle = "no configured shortcuts"
+	}
+	lines := []Line{pageTitleLine("Help", subtitle)}
+	for index := start; index < end; index++ {
+		lines = append(lines, helpShortcutLine(entries[index], index == selected, contentWidth, root.Config))
+	}
+	if len(entries) == 0 && len(lines) < contentHeight {
+		lines = append(lines, NewLine("No shortcuts are available in the active catalog."))
+	}
+	status := fmt.Sprintf("help: shortcuts %d-%d of %d", start+1, end, len(entries))
+	if len(entries) == 0 {
+		status = "help: no configured shortcuts"
 	}
 	content := ContentVM{
 		Kind:   ContentHelp,
 		Lines:  lines,
-		Status: "help: core workflows",
+		Status: status,
 		Cursor: Cursor{Visible: false},
 	}
-	if shortcutSceneHasAction(root.Config.Shortcuts, "help", "help.close") {
-		content.Lines = append(content.Lines, contentActionLine("close", "Close Help"))
+	if renderClose {
+		closeKey := shortcutSceneActionKey(root.Config.Shortcuts, "help", "help.close")
+		content.Lines = append(content.Lines, contentActionLine(closeKey, "Close Help"))
 		content.HitRegions = []HitRegion{{
 			Kind:       HitRegionContentAction,
-			Rect:       Rect{Y: len(content.Lines) - 1, W: contentActionWidth, H: 1},
+			Rect:       Rect{Y: len(content.Lines) - 1, W: content.Lines[len(content.Lines)-1].Width(), H: 1},
 			ActionID:   ActionHelpClose.String(),
 			Invocation: invocationForProjection(ActionHelpClose),
 			TargetMode: HitTargetExplicit,
 		}}
 	}
 	return content
+}
+
+func shortcutSceneActionKey(shortcuts state.TUIShortcutConfig, scene string, actionID string) string {
+	for _, entry := range input.ShortcutEntriesForScene(shortcuts, scene) {
+		if entry.ActionID == actionID {
+			if entry.KeyLabel != "" {
+				return entry.KeyLabel
+			}
+			return input.ShortcutKeyDisplay(entry.Key)
+		}
+	}
+	return ""
+}
+
+func helpContentDimensions(root state.Root) (int, int) {
+	viewport := viewportRect(root.Viewport)
+	viewport.W = normalizeViewportDimension(viewport.W, defaultWidth)
+	viewport.H = normalizeViewportDimension(viewport.H, defaultHeight)
+	shell := root.Shell.ReadonlyDefaults()
+	body := viewport
+	if shell.HeaderVisible && body.H > 0 {
+		body.H--
+	}
+	if shell.FooterVisible && body.H > 0 {
+		body.H--
+	}
+	overlay := measurePageOverlay(body)
+	content := measureOverlayContentRect(OverlayVM{Content: ContentVM{Kind: ContentHelp}}, overlay)
+	return maxInt(1, content.W), maxInt(1, content.H)
+}
+
+func helpShortcutWindow(selected int, itemCount int, visibleRows int) (int, int) {
+	if itemCount <= 0 || visibleRows <= 0 {
+		return 0, 0
+	}
+	visibleRows = minInt(visibleRows, itemCount)
+	start := selected - visibleRows/2
+	if start < 0 {
+		start = 0
+	}
+	if start+visibleRows > itemCount {
+		start = itemCount - visibleRows
+	}
+	return start, start + visibleRows
+}
+
+func helpShortcutLine(entry input.ShortcutEntry, selected bool, width int, cfg state.TUIConfigStore) Line {
+	action, ok := shortcutActionFromShortcutEntry(entry, cfg, true)
+	if !ok {
+		return Line{}
+	}
+	marker := "  "
+	markerStyle := StyleMuted
+	if selected {
+		marker = "> "
+		markerStyle = StyleAccent
+	}
+	sceneWidth := 20
+	keyWidth := 14
+	if width < 56 {
+		sceneWidth = 14
+		keyWidth = 12
+	}
+	if width < 38 {
+		sceneWidth = 9
+		keyWidth = 10
+	}
+	labelWidth := maxInt(1, width-DisplayWidth(marker)-sceneWidth-keyWidth)
+	return Line{Cells: []Cell{
+		styledCell(marker, markerStyle),
+		styledCell(PadRightCells(helpSceneLabel(entry.Scene), sceneWidth), StyleMuted),
+		styledCell(PadRightCells(formatFooterKeyToken(action.Key), keyWidth), action.Style),
+		styledCell(TruncateCells(action.Label, labelWidth), StyleForeground),
+	}}
+}
+
+func helpSceneLabel(scene string) string {
+	labels := map[string]string{
+		"global": "Most used", "panel": "Pane", "resize": "Resize", "system": "Shell",
+		"floating": "Floating", "tab": "Tab", "workspace": "Workspace", "copy": "Display / Copy",
+		"terminal_picker": "Terminal Picker", "terminal_pool": "Terminal Manager", "connections": "Connections",
+		"workbench_tree": "Workbench Tree", "clipboard_history": "Clipboard History",
+		"floating_overview": "Floating Overview", "prompt": "Prompt", "help": "Help",
+	}
+	if label := labels[shortcutCatalogScene(scene)]; label != "" {
+		return label
+	}
+	return scene
 }
 
 func shortcutSceneHasAction(shortcuts state.TUIShortcutConfig, scene string, actionID string) bool {
@@ -1036,82 +1151,6 @@ func shortcutSceneHasAction(shortcuts state.TUIShortcutConfig, scene string, act
 		}
 	}
 	return false
-}
-
-// Help 只展示当前已接线的 action 或明确存在的键盘入口，避免继续把产品愿景文案画成可用功能。
-type helpActionGroup struct {
-	Label   string
-	Items   []FooterActionVM
-	Details []string
-}
-
-func helpActionGroups(root state.Root) []helpActionGroup {
-	connectionActions := helpActionCatalogFromShortcuts(string(state.OverlayConnections), root)
-	connectionActions = append(helpActionCatalogForIDs("global", root, "menu.connections"), connectionActions...)
-	return []helpActionGroup{
-		// Help 是产品导航页；toast 清理这类维护动作不放到主说明里。
-		{Label: "Most used", Items: helpActionCatalogFromShortcuts("live", root)},
-		{Label: "Shell", Items: helpActionCatalogFromShortcuts("global", root)},
-		{Label: "Pane", Items: helpActionCatalogFromShortcuts("pane", root)},
-		{Label: "Resize", Items: helpActionCatalogFromShortcuts("resize", root)},
-		{Label: "Tab / Workspace", Items: append(helpActionCatalogFromShortcuts("tab", root), helpActionCatalogFromShortcuts("workspace", root)...)},
-		{Label: "Floating", Items: helpActionCatalogFromShortcuts("floating", root)},
-		{Label: "Terminal Picker", Items: helpActionCatalogFromShortcuts(string(state.OverlayTerminalPicker), root), Details: []string{"search"}},
-		{Label: "Terminal Manager", Items: helpActionCatalogFromShortcuts(string(state.OverlayTerminalPool), root), Details: []string{"search"}},
-		{Label: "Connections", Items: connectionActions},
-		{Label: "Workbench Tree", Items: helpActionCatalogFromShortcuts(string(state.OverlayWorkbenchTree), root), Details: []string{"search"}},
-		{Label: "Prompt / Help", Items: append(helpActionCatalogFromShortcuts(string(state.OverlayPrompt), root), helpActionCatalogFromShortcuts(string(state.OverlayHelp), root)...)},
-		{Label: "Display / Copy", Items: append(helpActionCatalogFromShortcuts("copy", root), helpActionCatalogFromShortcuts(string(state.OverlayClipboardHistory), root)...), Details: []string{"authoritative HistoryWindow"}},
-	}
-}
-
-func helpActionCatalogForIDs(scene string, root state.Root, actionIDs ...string) []FooterActionVM {
-	wanted := make(map[string]struct{}, len(actionIDs))
-	for _, actionID := range actionIDs {
-		wanted[actionID] = struct{}{}
-	}
-	items := helpActionCatalogFromShortcuts(scene, root)
-	filtered := make([]FooterActionVM, 0, len(items))
-	for _, item := range items {
-		if _, ok := wanted[item.ActionID]; ok {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
-func helpActionGroupLine(group helpActionGroup) (Line, bool) {
-	labels := make([]string, 0, len(group.Items)+len(group.Details))
-	for _, item := range group.Items {
-		if label, ok := helpActionLabel(item); ok {
-			labels = append(labels, label)
-		}
-	}
-	labels = append(labels, group.Details...)
-	if len(labels) == 0 {
-		return Line{}, false
-	}
-	return helpTopicLine(group.Label, strings.Join(labels, " / ")), true
-}
-
-func helpActionLabel(action FooterActionVM) (string, bool) {
-	key := strings.TrimSpace(action.Key)
-	label := strings.TrimSpace(action.Label)
-	if label == "" {
-		if spec, ok := actiondomain.SpecByID(actiondomain.ID(action.ActionID)); ok {
-			label = strings.TrimSpace(spec.DefaultLabel)
-		}
-	}
-	if key == "" && label == "" {
-		return "", false
-	}
-	if key == "" {
-		return label, true
-	}
-	if label == "" {
-		return key, true
-	}
-	return key + " " + label, true
 }
 
 func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
@@ -3562,14 +3601,6 @@ func formFieldLine(label string, value string, filled bool) Line {
 	return Line{Cells: []Cell{
 		styledCell(strings.ToUpper(label)+" ", StyleMuted),
 		styledCell(value, style),
-	}}
-}
-
-func helpTopicLine(label string, value string) Line {
-	return Line{Cells: []Cell{
-		tokenCell(label, StyleAccent),
-		NewCell(" "),
-		NewCell(value),
 	}}
 }
 

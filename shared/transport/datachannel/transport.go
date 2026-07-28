@@ -106,6 +106,14 @@ func (transport *Transport) Send(frame []byte) error {
 	return transport.channel.Send(append([]byte(nil), frame...))
 }
 
+// OutboundBufferedAmount 返回 DataChannel 尚未发出的字节数，供上层批量流量主动预留控制帧空间。
+func (transport *Transport) OutboundBufferedAmount() uint64 {
+	if transport == nil || transport.channel == nil {
+		return 0
+	}
+	return transport.channel.BufferedAmount()
+}
+
 // Drain 等待已经成功交给 DataChannel 的 outbound message 被底层发送完毕。
 // 它只用于 pairing 等“发送最终响应后必须关闭 transport”的协议边界；普通 session 关闭仍走 Close，不能因 drain 阻塞 teardown。
 func (transport *Transport) Drain(ctx context.Context) error {

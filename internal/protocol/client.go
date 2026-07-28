@@ -53,13 +53,16 @@ type StreamFrame struct {
 }
 
 type clientStream struct {
-	mu         sync.Mutex
-	cond       *sync.Cond
-	ch         chan StreamFrame
-	done       chan struct{}
-	queue      []StreamFrame
-	queueLimit int
-	closed     bool
+	mu              sync.Mutex
+	cond            *sync.Cond
+	ch              chan StreamFrame
+	done            chan struct{}
+	queue           []StreamFrame
+	queueLimit      int
+	closed          bool
+	rawOverflow     bool
+	rawSyncLostSent bool
+	rawDroppedBytes uint64
 }
 
 func newClientStream() *clientStream {
@@ -94,8 +97,33 @@ func (s *clientStream) send(frame StreamFrame) {
 	if s.closed {
 		return
 	}
+	if s.rawOverflow {
+		if frame.Type == wire.TypePTYOutput {
+			s.addRawDroppedBytesLocked(len(frame.Payload))
+		}
+		return
+	}
+	if len(s.queue) >= s.queueLimit && frame.Type == wire.TypePTYOutput {
+		s.rawOverflow = true
+		s.addRawDroppedBytesLocked(len(frame.Payload))
+		s.cond.Signal()
+		return
+	}
 	s.enqueueFrameLocked(frame)
 	s.cond.Signal()
+}
+
+func (s *clientStream) addRawDroppedBytesLocked(count int) {
+	const maxSyncLostBytes = uint64(^uint32(0))
+	if count <= 0 || s.rawDroppedBytes >= maxSyncLostBytes {
+		return
+	}
+	next := uint64(count)
+	if next > maxSyncLostBytes-s.rawDroppedBytes {
+		s.rawDroppedBytes = maxSyncLostBytes
+		return
+	}
+	s.rawDroppedBytes += next
 }
 
 func (s *clientStream) close() {
@@ -137,6 +165,15 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 			s.queue[last] = StreamFrame{}
 			s.queue = s.queue[:last]
 			return frame, true
+		}
+		if s.rawOverflow && !s.rawSyncLostSent {
+			s.rawSyncLostSent = true
+			return StreamFrame{Type: wire.TypeSyncLost, Payload: wire.EncodeSyncLostPayload(s.rawDroppedBytes)}, true
+		}
+		if s.rawSyncLostSent {
+			s.closed = true
+			close(s.done)
+			return StreamFrame{}, false
 		}
 		if s.closed {
 			return StreamFrame{}, false
@@ -430,14 +467,41 @@ func (c *Client) SendFileFrame(channel uint16, typ uint8, payload []byte) error 
 	return c.send(frame)
 }
 
+// SendAttachmentReady 启动已绑定 attachment channel 的实时输出。
+// ready 之前 daemon 不发送 PTY bytes，避免 attach result 与本地 stream consumer 建立之间出现竞态。
+func (c *Client) SendAttachmentReady(channel uint16) error {
+	if channel == 0 {
+		return fmt.Errorf("attachment channel is required")
+	}
+	frame, err := wire.EncodeFrame(channel, wire.TypeBootstrapDone, nil)
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
+// SendAttachmentStreamClose 停止 attachment channel 的实时 PTY 输出，但不释放
+// attachment resource；调用方之后可以在同一 resource 上重新打开输出流。
+func (c *Client) SendAttachmentStreamClose(channel uint16) error {
+	if channel == 0 {
+		return fmt.Errorf("attachment channel is required")
+	}
+	frame, err := wire.EncodeFrame(channel, wire.TypeClosed, nil)
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
 func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 	c.mu.Lock()
 	stream := c.streams[channel]
 	if stream == nil {
 		if _, dropped := c.dropped[channel]; dropped {
-			c.mu.Unlock()
-			idle := make(chan StreamFrame)
-			return idle, func() {}
+			// attachment raw stream 在 process exit 后可以用同一个 attachment
+			// resource 重新打开；ready 握手保证丢弃旧 channel 尾帧后不会漏掉新输出。
+			delete(c.dropped, channel)
+			delete(c.reused, channel)
 		}
 		stream = newClientStream()
 		c.streams[channel] = stream

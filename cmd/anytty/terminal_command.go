@@ -31,6 +31,7 @@ type terminalProtocolClient interface {
 	TerminalAttach(context.Context, *apipb.TerminalAttachCommand) (*apipb.TerminalAttachResult, error)
 	TerminalDetach(context.Context, *apipb.TerminalDetachCommand) error
 	TerminalInput(context.Context, *apipb.TerminalInputCommand) error
+	OpenResourceStream(*apipb.ResourceHandle) (clientruntime.ResourceStream, error)
 	TerminalResize(context.Context, *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error)
 	HistoryWindow(context.Context, *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error)
 	HistoryCopy(context.Context, *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error)
@@ -117,6 +118,7 @@ func newTerminalCommand(runtime terminalCommandRuntime) *cobra.Command {
 		newTerminalRenameCommand(runtime),
 		newTerminalTagCommand(runtime),
 		newTerminalSendCommand(runtime),
+		newTerminalStreamCommand(runtime),
 		newTerminalCaptureCommand(runtime),
 		newTerminalResizeCommand(runtime),
 		newTerminalWaitCommand(runtime),

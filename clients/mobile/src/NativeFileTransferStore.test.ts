@@ -1,14 +1,190 @@
 import { create, toBinary } from '@bufbuild/protobuf'
+import { Capacitor } from '@capacitor/core'
 import type { ProtoClientSession, ProtoResourceStream } from '../../ui/src/core/protoClientSession'
-import { decodeFileTransferDataPayload, encodeFileTransferAckPayload } from '../../ui/src/files/fileStreamProtocol'
+import { decodeFileTransferDataPayload, encodeFileTransferAckPayload, encodeFileTransferDataPayload, encodeFileTransferFinishPayload } from '../../ui/src/files/fileStreamProtocol'
 import * as AnyTTYApiApplication from '../../ui/src/generated/apipb/application_pb'
 import * as AnyTTYApiCommon from '../../ui/src/generated/apipb/common_pb'
 import * as AnyTTYApiFile from '../../ui/src/generated/apipb/file_pb'
 import * as AnyTTYClientBinding from '../../ui/src/generated/bindingpb/client_binding_pb'
 import { ErrorEnvelopeSchema, FileTransferResultSchema, ProtocolErrorSchema } from '../../ui/src/generated/wirepb/terminal_pb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import NativeFilePicker from './plugins/nativeFilePicker'
+
+vi.mock('./plugins/nativeFilePicker', () => ({
+  default: {
+    getDownloadResumeOffset: vi.fn(),
+    appendDownloadPartial: vi.fn(),
+    commitDownloadPartial: vi.fn(),
+    discardDownloadPartial: vi.fn(),
+    openUploadSource: vi.fn(),
+    readUploadSource: vi.fn(),
+    finishUploadSource: vi.fn(),
+    closeUploadSource: vi.fn(),
+    pickFiles: vi.fn(),
+    saveFile: vi.fn(),
+  },
+}))
 
 describe('NativeFileTransferStore', () => {
+  it('persists a user-paused download and keeps the supplied resume offset', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const storage = memoryStorage()
+    const first = new NativeFileTransferStore(storage)
+    first.startDownload('machine-a', 'archive.bin', 4096, '/tmp/archive.bin', 1024)
+    await waitFor(() => first.getSnapshot().transfers[0]?.status === 'failed')
+    const id = first.getSnapshot().transfers[0]!.id
+    first.pauseTransfer(id)
+
+    const restored = new NativeFileTransferStore(storage).getSnapshot().transfers[0]
+    expect(restored).toMatchObject({
+      id,
+      machineId: 'machine-a',
+      filePath: '/tmp/archive.bin',
+      totalSize: 4096,
+      transferredSize: 1024,
+      status: 'paused',
+      pausedByUser: true,
+    })
+  })
+
+  it('commits a native download after FILE_FINISH even when the resource stream closes immediately', async () => {
+    vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true)
+    vi.mocked(NativeFilePicker.getDownloadResumeOffset).mockResolvedValue({ offset: 0 })
+    vi.mocked(NativeFilePicker.appendDownloadPartial).mockResolvedValue({ offset: 4 })
+    const commit = deferred<{ uri: string, path: string, bytes: number, sha256: string }>()
+    vi.mocked(NativeFilePicker.commitDownloadPartial).mockImplementation(async () => await commit.promise)
+
+    let frameListener: ((type: number, payload: Uint8Array) => void) | undefined
+    let closeListener: ((error: Error) => void) | undefined
+    const stream: ProtoResourceStream = {
+      handle: 1n,
+      send: async () => undefined,
+      subscribe: (listener) => { frameListener = listener; return { close() {} } },
+      subscribeClosed: (listener) => { closeListener = listener; return { close() {} } },
+      close: async () => undefined,
+    }
+    const stamp = create(AnyTTYApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
+    const resource = create(AnyTTYApiCommon.ResourceHandleSchema, {
+      kind: AnyTTYApiCommon.ResourceKind.FILE_TRANSFER,
+      opaqueToken: new Uint8Array([1]),
+      session: stamp,
+    })
+    const session: ProtoClientSession = {
+      stamp,
+      isAlive: () => true,
+      close: async () => undefined,
+      subscribeEvents: () => ({ close() {} }),
+      openResourceStream: async () => stream,
+      execute: async (envelope) => {
+        if (envelope.command.case === 'fileDownloadOpen') {
+          return create(AnyTTYApiApplication.ResultEnvelopeSchema, {
+            result: {
+              case: 'fileTransferOpen',
+              value: create(AnyTTYApiFile.FileTransferOpenResultSchema, {
+                transfer: create(AnyTTYApiFile.FileTransferHandleSchema, {
+                  resource,
+                  size: 4n,
+                  chunkBytes: 4,
+                  windowBytes: 4n,
+                  modifiedAtUnixNano: 1n,
+                }),
+              }),
+            },
+          })
+        }
+        if (envelope.command.case === 'releaseResource') return create(AnyTTYApiApplication.ResultEnvelopeSchema)
+        throw new Error(`unexpected command ${envelope.command.case}`)
+      },
+    }
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const store = new NativeFileTransferStore(null)
+    store.setSessionResolver(async () => session)
+    store.startDownload('studio', 'demo.bin', 4, '/tmp/demo.bin')
+    await waitFor(() => frameListener !== undefined && closeListener !== undefined)
+
+    frameListener!(AnyTTYClientBinding.ResourceStreamFrameType.FILE_DATA, encodeFileTransferDataPayload({ offset: 0, data: new Uint8Array([1, 2, 3, 4]) }))
+    frameListener!(AnyTTYClientBinding.ResourceStreamFrameType.FILE_FINISH, encodeFileTransferFinishPayload({ size: 4, sha256: new Uint8Array(32) }))
+    closeListener!(new Error('resource stream closed'))
+    await waitFor(() => vi.mocked(NativeFilePicker.commitDownloadPartial).mock.calls.length === 1)
+    commit.resolve({ uri: 'content://download', path: 'Downloads/AnyTTY/demo.bin', bytes: 4, sha256: '00' })
+
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'completed')
+    expect(store.getSnapshot().transfers[0]?.savedPath).toBe('Downloads/AnyTTY/demo.bin')
+  })
+
+  it('discards a stale native partial and reopens the download from zero', async () => {
+    vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true)
+    vi.mocked(NativeFilePicker.getDownloadResumeOffset).mockResolvedValue({ offset: 2 })
+    vi.mocked(NativeFilePicker.discardDownloadPartial).mockResolvedValue({ discarded: true })
+    const storage = memoryStorage()
+    storage.setItem('anytty.file-transfers.v2', JSON.stringify([{
+      id: 'restored-download',
+      machineId: 'studio',
+      name: 'demo.bin',
+      direction: 'download',
+      totalSize: 4,
+      transferredSize: 2,
+      status: 'failed',
+      startedAt: 1,
+      updatedAt: 1,
+      filePath: '/tmp/demo.bin',
+      remoteModifiedAtUnixNano: '1',
+    }]))
+    const openOffsets: bigint[] = []
+    const stamp = create(AnyTTYApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
+    const resource = create(AnyTTYApiCommon.ResourceHandleSchema, {
+      kind: AnyTTYApiCommon.ResourceKind.FILE_TRANSFER,
+      opaqueToken: new Uint8Array([2]),
+      session: stamp,
+    })
+    const stream: ProtoResourceStream = {
+      handle: 1n,
+      send: async () => undefined,
+      subscribe: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
+      close: async () => undefined,
+    }
+    const session: ProtoClientSession = {
+      stamp,
+      isAlive: () => true,
+      close: async () => undefined,
+      subscribeEvents: () => ({ close() {} }),
+      openResourceStream: async () => stream,
+      execute: async (envelope) => {
+        if (envelope.command.case === 'fileDownloadOpen') {
+          openOffsets.push(envelope.command.value.offset)
+          if (openOffsets.length === 1) throw new Error('stale download source')
+          return create(AnyTTYApiApplication.ResultEnvelopeSchema, {
+            result: {
+              case: 'fileTransferOpen',
+              value: create(AnyTTYApiFile.FileTransferOpenResultSchema, {
+                transfer: create(AnyTTYApiFile.FileTransferHandleSchema, {
+                  resource,
+                  size: 4n,
+                  chunkBytes: 4,
+                  windowBytes: 4n,
+                  modifiedAtUnixNano: 2n,
+                }),
+              }),
+            },
+          })
+        }
+        if (envelope.command.case === 'releaseResource') return create(AnyTTYApiApplication.ResultEnvelopeSchema)
+        throw new Error(`unexpected command ${envelope.command.case}`)
+      },
+    }
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const store = new NativeFileTransferStore(storage)
+    store.setSessionResolver(async () => session)
+    store.startDownload('studio', 'demo.bin', 4, '/tmp/demo.bin', 2)
+
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'transferring')
+    expect(openOffsets).toEqual([2n, 0n])
+    expect(NativeFilePicker.discardDownloadPartial).toHaveBeenCalledOnce()
+    store.pauseTransfer('restored-download')
+  })
+
   it('keeps machine snapshots stable until transfer state changes', async () => {
     vi.stubGlobal('self', globalThis)
     const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
@@ -46,6 +222,21 @@ describe('NativeFileTransferStore', () => {
     await Promise.all([firstResume, duplicateResume])
     expect(harness.openCommands).toHaveLength(2)
     expect(harness.openCommands[1]?.resume?.opaqueToken).toEqual(harness.resumeToken)
+  })
+
+  it('keeps a user pause when a runtime reset overlaps detach cleanup', async () => {
+    const detach = deferred<void>()
+    const detachStarted = deferred<void>()
+    const harness = await createPausedUpload(async () => {
+      detachStarted.resolve()
+      await detach.promise
+    })
+    await detachStarted.promise
+    const reset = harness.store.suspendForRuntimeReset()
+    expect(harness.store.getSnapshot().transfers[0]).toMatchObject({ status: 'paused', pausedByUser: true })
+    detach.resolve()
+    await reset
+    expect(harness.store.getSnapshot().transfers[0]).toMatchObject({ status: 'paused', pausedByUser: true })
   })
 
   it('keeps a failed detach fence and does not reopen on resume', async () => {
@@ -681,6 +872,18 @@ function deferred<T>() {
     reject = rejectPromise
   })
   return { promise, resolve, reject }
+}
+
+function memoryStorage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    get length() { return values.size },
+    clear() { values.clear() },
+    getItem(key) { return values.get(key) ?? null },
+    key(index) { return [...values.keys()][index] ?? null },
+    removeItem(key) { values.delete(key) },
+    setItem(key, value) { values.set(key, value) },
+  }
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

@@ -28,6 +28,11 @@ func reduceCanonicalSurfaceAction(root state.Root, msg ShellShortcutActionMsg) (
 			return root, nil, true
 		}
 	}
+	if target.Floating {
+		if next, effects, handled := reduceFloatingPanelSurfaceAction(root, msg, target); handled {
+			return next, effects, true
+		}
+	}
 	switch msg.Invocation.ID {
 	case actiondomain.ActionPanelFocus:
 		if target.PaneID == "" {
@@ -39,8 +44,38 @@ func reduceCanonicalSurfaceAction(root state.Root, msg ShellShortcutActionMsg) (
 		if target.PaneID == "" {
 			return root, nil, true
 		}
-		next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: target.PaneID}, Source: state.PaneCommandSourceMouse})
+		next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: target.PaneID}, Source: shortcutSurfaceCommandSource(msg)})
 		return next, effects, true
+	case "panel.detach":
+		next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneDetach, Target: state.PaneCommandTarget{PaneID: target.PaneID}, Source: shortcutSurfaceCommandSource(msg)})
+		return next, effects, true
+	case "panel.reconnect":
+		ref := terminalRefForSurface(root, target.PaneID, false)
+		if ref.Empty() {
+			next, effects := shortcutUnavailable(root, "pane.reconnect", "terminal unavailable")
+			return next, effects, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolReconnectRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: target.PaneID, LocalError: true}
+		}}}, true
+	case "panel.restart":
+		ref := terminalRefForSurface(root, target.PaneID, false)
+		if ref.Empty() {
+			next, effects := shortcutUnavailable(root, "terminal.restart", "no active terminal")
+			return next, effects, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolRestartRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
+		}}}, true
+	case "panel.kill", "panel.kill_and_close":
+		ref := terminalRefForSurface(root, target.PaneID, false)
+		if ref.Empty() {
+			next, effects := shortcutUnavailable(root, "pane.kill", "terminal unavailable")
+			return next, effects, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, PaneID: target.PaneID, CloseOnSuccess: msg.Invocation.ID == "panel.kill_and_close"}
+		}}}, true
 	case "panel.split_down", "panel.split_right":
 		if target.PaneID == "" {
 			return root, nil, true
@@ -172,6 +207,168 @@ func reduceCanonicalSurfaceAction(root state.Root, msg ShellShortcutActionMsg) (
 	}
 }
 
+func reduceActiveSurfaceShortcut(root state.Root, invocation actiondomain.Invocation) (state.Root, []Effect, bool) {
+	if !activeSurfaceShortcutAction(invocation.ID) {
+		return root, nil, false
+	}
+	target, ok := root.Shell.ActiveSurfaceTarget()
+	if !ok || !target.Floating {
+		return root, nil, false
+	}
+	return reduceCanonicalSurfaceAction(root, ShellShortcutActionMsg{
+		Invocation: invocation,
+		Surface: &ShortcutSurfaceContext{
+			PaneID:   target.PaneID,
+			Floating: true,
+			Row:      -1,
+		},
+	})
+}
+
+func activeSurfaceShortcutAction(id actiondomain.ID) bool {
+	switch id {
+	case "panel.close", "panel.detach", "panel.reconnect", "panel.restart", "panel.take_owner", "panel.size_lock",
+		"panel.split_right", "panel.split_down", "panel.kill", "panel.kill_and_close", "panel.toggle_zoom",
+		"panel.balance", "panel.presentation_card", "panel.presentation_split_line", "panel.focus_next", "panel.focus_prev",
+		"resize.left", "resize.right", "resize.up", "resize.down", "resize.left_large", "resize.right_large", "resize.up_large", "resize.down_large",
+		"resize.pan_left", "resize.pan_right", "resize.pan_up", "resize.pan_down",
+		"resize.align_left", "resize.align_right", "resize.align_top", "resize.align_bottom",
+		"resize.center", "resize.center_x", "resize.center_y", "resize.layout_toggle", "resize.layout_reset":
+		return true
+	default:
+		return false
+	}
+}
+
+func reduceFloatingPanelSurfaceAction(root state.Root, msg ShellShortcutActionMsg, target ShortcutSurfaceContext) (state.Root, []Effect, bool) {
+	if !activeSurfaceShortcutAction(msg.Invocation.ID) {
+		return root, nil, false
+	}
+	floatingID := floatingTargetIDForSurface(root, target.PaneID, true)
+	if floatingID == "" {
+		return root, nil, true
+	}
+	switch msg.Invocation.ID {
+	case "panel.close":
+		next, effects := reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingID, Source: shortcutSurfaceCommandSource(msg)})
+		return next, effects, true
+	case "panel.detach":
+		next, effects := reduceFloatingDetach(root, floatingID)
+		return next, effects, true
+	case "panel.reconnect":
+		ref := terminalRefForSurface(root, target.PaneID, true)
+		if ref.Empty() {
+			next, effects := shortcutUnavailable(root, "pane.reconnect", "terminal unavailable")
+			return next, effects, true
+		}
+		poolTarget := terminalPoolTargetForSurface(root, target.PaneID, true)
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolReconnectRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: poolTarget.PaneID, TargetFloatingID: poolTarget.FloatingID, LocalError: true}
+		}}}, true
+	case "panel.restart":
+		ref := terminalRefForSurface(root, target.PaneID, true)
+		if ref.Empty() {
+			next, effects := shortcutUnavailable(root, "terminal.restart", "no active terminal")
+			return next, effects, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolRestartRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
+		}}}, true
+	case "panel.take_owner":
+		if msg.Surface != nil && msg.Surface.ExplicitTarget {
+			next, effects := requestFloatingResizeOwnerWithConfirm(root, floatingID)
+			return next, effects, true
+		}
+		next, effects := requestFloatingResizeOwner(root, floatingID)
+		return next, append([]Effect{handledEffect{}}, effects...), true
+	case "panel.size_lock":
+		root = focusCanonicalSurfaceTarget(root, msg)
+		return root, []Effect{handledEffect{}, terminalSizeLockToggleEffect()}, true
+	case "panel.kill", "panel.kill_and_close":
+		ref := terminalRefForSurface(root, target.PaneID, true)
+		if ref.Empty() {
+			next, effects := shortcutUnavailable(root, "pane.kill", "terminal unavailable")
+			return next, effects, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, FloatingID: floatingID, CloseOnSuccess: msg.Invocation.ID == "panel.kill_and_close"}
+		}}}, true
+	default:
+		if command, ok := floatingPositionCommandForResizeAction(root, msg.Invocation.ID, floatingID); ok {
+			next, effects := reduceFloatingCommand(root, command)
+			return next, append([]Effect{handledEffect{}}, effects...), true
+		}
+		next, effects := shortcutUnavailable(root, msg.Invocation.ID.String(), "not available for active floating")
+		return next, effects, true
+	}
+}
+
+func floatingPositionCommandForResizeAction(root state.Root, id actiondomain.ID, floatingID string) (state.FloatingCommand, bool) {
+	command := state.FloatingCommand{
+		TargetID: floatingID,
+		Source:   state.PaneCommandSourceKeyboard,
+		BoundsW:  root.Viewport.Cols,
+		BoundsH:  root.Viewport.Rows,
+	}
+	switch id {
+	case "resize.left", "resize.pan_left":
+		command.Action, command.DeltaX = state.FloatingCommandMove, -2
+	case "resize.right", "resize.pan_right":
+		command.Action, command.DeltaX = state.FloatingCommandMove, 2
+	case "resize.up", "resize.pan_up":
+		command.Action, command.DeltaY = state.FloatingCommandMove, -1
+	case "resize.down", "resize.pan_down":
+		command.Action, command.DeltaY = state.FloatingCommandMove, 1
+	case "resize.left_large":
+		command.Action, command.DeltaX = state.FloatingCommandMove, -6
+	case "resize.right_large":
+		command.Action, command.DeltaX = state.FloatingCommandMove, 6
+	case "resize.up_large":
+		command.Action, command.DeltaY = state.FloatingCommandMove, -3
+	case "resize.down_large":
+		command.Action, command.DeltaY = state.FloatingCommandMove, 3
+	case "resize.align_left":
+		command.Action, command.PositionX = state.FloatingCommandPosition, state.TerminalViewAlignStart
+	case "resize.align_right":
+		command.Action, command.PositionX = state.FloatingCommandPosition, state.TerminalViewAlignEnd
+	case "resize.align_top":
+		command.Action, command.PositionY = state.FloatingCommandPosition, state.TerminalViewAlignStart
+	case "resize.align_bottom":
+		command.Action, command.PositionY = state.FloatingCommandPosition, state.TerminalViewAlignEnd
+	case "resize.center", "resize.layout_reset":
+		command.Action = state.FloatingCommandCenter
+	case "resize.center_x":
+		command.Action, command.PositionX = state.FloatingCommandPosition, state.TerminalViewAlignCenter
+	case "resize.center_y":
+		command.Action, command.PositionY = state.FloatingCommandPosition, state.TerminalViewAlignCenter
+	default:
+		return state.FloatingCommand{}, false
+	}
+	return command, true
+}
+
+func reduceFloatingDetach(root state.Root, floatingID string) (state.Root, []Effect) {
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
+	if !ok || binding.TerminalID == "" {
+		return shortcutUnavailable(root, "pane.detach", "terminal unavailable")
+	}
+	effects := workbenchPersistEffects(string(state.WorkbenchCommandPaneDetach))
+	if request, ok := terminalDetachRequestFromBinding(binding); ok {
+		effects = append(effects, terminalDetachEffect(request))
+	}
+	root = root.WithoutCopyHistorySession(binding.ViewID)
+	root.TerminalViews = root.TerminalViews.DetachFloating(floatingID)
+	root.Shell = root.Shell.DetachFloatingTerminal(floatingID).AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(state.WorkbenchCommandPaneDetach), Body: floatingID})
+	return root.Advance(), append([]Effect{handledEffect{}}, effects...)
+}
+
+func shortcutSurfaceCommandSource(msg ShellShortcutActionMsg) state.PaneCommandSource {
+	if msg.Surface != nil && msg.Surface.ExplicitTarget {
+		return state.PaneCommandSourceMouse
+	}
+	return state.PaneCommandSourceKeyboard
+}
+
 func surfaceActionRowValid(root state.Root, id actiondomain.ID, row int) bool {
 	switch id {
 	case actiondomain.ActionTerminalPoolSelect:
@@ -213,7 +410,12 @@ func surfaceActionRequiresRow(id actiondomain.ID) bool {
 func surfaceActionRequiresPaneTarget(id actiondomain.ID) bool {
 	switch id {
 	case actiondomain.ActionPanelFocus,
-		"panel.close", "panel.split_down", "panel.split_right", "panel.toggle_zoom", "panel.take_owner", "panel.size_lock",
+		"panel.close", "panel.detach", "panel.reconnect", "panel.restart", "panel.split_down", "panel.split_right", "panel.kill", "panel.kill_and_close", "panel.toggle_zoom", "panel.take_owner", "panel.size_lock",
+		"panel.balance", "panel.presentation_card", "panel.presentation_split_line", "panel.focus_next", "panel.focus_prev",
+		"resize.left", "resize.right", "resize.up", "resize.down", "resize.left_large", "resize.right_large", "resize.up_large", "resize.down_large",
+		"resize.pan_left", "resize.pan_right", "resize.pan_up", "resize.pan_down",
+		"resize.align_left", "resize.align_right", "resize.align_top", "resize.align_bottom",
+		"resize.center", "resize.center_x", "resize.center_y", "resize.layout_toggle", "resize.layout_reset",
 		actiondomain.ActionTabSelect, "tab.close",
 		actiondomain.ActionEmptyClose,
 		actiondomain.ActionExitedRestart, actiondomain.ActionExitedReconnect, actiondomain.ActionExitedClose,

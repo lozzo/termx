@@ -132,6 +132,44 @@ func TestBackNavigationClosesOverlayWithoutConfiguredShortcut(t *testing.T) {
 	}
 }
 
+func TestHelpShortcutNavigationUsesConfiguredCatalogActions(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell:    state.DefaultShell().OpenHelp("most-used"),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+	}
+	itemCount := len(input.ShortcutEntriesForHelp(root.Config.Shortcuts, root.HostCapabilities.KeyboardDisambiguation))
+	apply := func(key input.Key) {
+		t.Helper()
+		next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: key}})
+		if len(effects) == 0 {
+			t.Fatalf("help navigation %s must be handled", key)
+		}
+		root = next
+	}
+
+	apply(input.KeyDown)
+	if got := root.Shell.EnsureDefaults().Overlay.SelectedIndex; got != 1 {
+		t.Fatalf("help down selected=%d want=1", got)
+	}
+	apply(input.KeyPageDn)
+	if got := root.Shell.EnsureDefaults().Overlay.SelectedIndex; got != 9 {
+		t.Fatalf("help page-down selected=%d want=9", got)
+	}
+	apply(input.KeyHome)
+	if got := root.Shell.EnsureDefaults().Overlay.SelectedIndex; got != 0 {
+		t.Fatalf("help home selected=%d want=0", got)
+	}
+	apply(input.KeyEnd)
+	if got := root.Shell.EnsureDefaults().Overlay.SelectedIndex; got != itemCount-1 {
+		t.Fatalf("help end selected=%d want=%d", got, itemCount-1)
+	}
+	apply(input.KeyUp)
+	if got := root.Shell.EnsureDefaults().Overlay.SelectedIndex; got != itemCount-2 {
+		t.Fatalf("help up selected=%d want=%d", got, itemCount-2)
+	}
+}
+
 func TestUIInputReducerTerminalPoolEmptyShortcutSceneRemovesDefaultActions(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{
@@ -2600,7 +2638,7 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		t.Fatalf("expected help overlay, shell=%#v", runtime.State().Shell)
 	}
 	frame = lastFrame(t, host.Frames())
-	if !frameContains(frame, "Help") || !frameContains(frame, "core workflows") || !frameContains(frame, "Shell") || !frameContains(frame, "Terminal Manager") || !frameContains(frame, "Workbench Tree") || frameContains(frame, "clear toasts") {
+	if !frameContains(frame, "Help") || !frameContains(frame, "shortcuts 1/") || !frameContains(frame, "Most used") || !frameContains(frame, "[Ctrl+P]") || !frameContains(frame, "[Ctrl+R]") || frameContains(frame, "[Ctrl] •") {
 		t.Fatalf("expected help content, got %#v", frame.Lines)
 	}
 	closeRegion := frameActionHitRegion(t, frame, "help.close", "")
@@ -4026,7 +4064,7 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	}
 
 	shellReducer := NewShellReducer()
-	next, _ = shellReducer(next, shortcutTestMessage("resize.center", "", false, 0))
+	next, _ = shellReducer(next, shortcutActiveTargetTestMessage("resize.center"))
 	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
 	if binding.Layout.Mode != state.TerminalViewLayoutCenter || binding.Layout.AlignX != state.TerminalViewAlignCenter || binding.Layout.AlignY != state.TerminalViewAlignCenter {
 		t.Fatalf("footer center should use same layout command path, got %#v", binding.Layout)

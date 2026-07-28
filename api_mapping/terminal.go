@@ -334,6 +334,8 @@ func ApplicationAdmissionFromCommand(command *apipb.CommandEnvelope, capability 
 		return admission
 	}
 	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_TerminalList:
+		admission.Capability = corev2.ApplicationCapabilityTerminalInventory
 	case *apipb.CommandEnvelope_TerminalGet:
 		admission.TerminalID = value.TerminalGet.GetTerminal().GetTerminalId()
 	case *apipb.CommandEnvelope_TerminalRestart:

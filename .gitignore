@@ -8,5 +8,10 @@
 /node_modules/
 /cloud/web/node_modules/
 /private/archive/**/.build/
+/anytty
+/muxvia
+/test-results/
+/clients/mobile/test-results/
+/剪贴板 *.png
 Screenshot_*.jpg
 *-debug-*.zip

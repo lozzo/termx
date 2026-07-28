@@ -14,6 +14,12 @@ type Transport interface {
 	Done() <-chan struct{}
 }
 
+// OutboundBufferReporter 是支持底层发送队列观测的可选能力。批量传输可以据此主动让出队列空间，
+// 但控制协议不能依赖该值判断传输是否成功。
+type OutboundBufferReporter interface {
+	OutboundBufferedAmount() uint64
+}
+
 type Listener interface {
 	Accept(ctx context.Context) (Transport, error)
 	Close() error
