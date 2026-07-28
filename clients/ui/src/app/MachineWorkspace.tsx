@@ -944,9 +944,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     document.addEventListener('anytty:resume', handleResume)
     document.addEventListener('anytty:binding-closed', handleResume)
+    document.addEventListener('anytty:session-invalidated', handleResume)
     return () => {
       document.removeEventListener('anytty:resume', handleResume)
       document.removeEventListener('anytty:binding-closed', handleResume)
+      document.removeEventListener('anytty:session-invalidated', handleResume)
     }
   }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
@@ -3197,7 +3199,7 @@ function normalizeTerminalDirectory(path: string | undefined): string {
       return ''
     }
   }
-  if (!trimmed.startsWith('/')) return ''
+  if (!trimmed.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(trimmed) && !/^\\\\[^\\]+\\[^\\]+/.test(trimmed)) return ''
   return normalizeFilePath(trimmed)
 }
 

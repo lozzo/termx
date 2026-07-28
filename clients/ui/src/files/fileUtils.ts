@@ -2,7 +2,7 @@ import type { FileEntry } from './fileApi'
 import { extension as modelExtension } from './modelFileTypes'
 
 export function basename(path: string): string {
-  const normalized = path.replace(/\/+$/, '')
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
   const index = normalized.lastIndexOf('/')
   return index >= 0 ? normalized.slice(index + 1) : normalized
 }
@@ -12,20 +12,27 @@ export function extension(name: string): string {
 }
 
 export function joinPath(base: string, name: string): string {
-  if (!base || base === '/') return `/${name}`
-  return `${base.replace(/\/+$/, '')}/${name}`
+  const normalizedBase = normalizeFilePath(base)
+  const child = name.replace(/\\/g, '/').replace(/^\/+/, '')
+  if (normalizedBase === '/') return `/${child}`
+  return `${normalizedBase.replace(/\/+$/, '')}/${child}`
 }
 
 export function normalizeFilePath(path: string): string {
-  const trimmed = path.trim()
-  if (!trimmed || trimmed === '/') return '/'
-  return trimmed.replace(/\/+$/, '') || '/'
+  const normalized = path.trim().replace(/\\/g, '/')
+  if (!normalized || normalized === '/') return '/'
+  if (/^[A-Za-z]:\/+$/i.test(normalized)) return `${normalized.slice(0, 2)}/`
+  return normalized.replace(/\/+$/, '') || '/'
 }
 
 export function parentPath(path: string): string {
   const normalized = normalizeFilePath(path)
   if (normalized === '/') return '/'
+  if (/^[A-Za-z]:\/$/i.test(normalized)) return normalized
+  const uncRoot = normalized.match(/^(\/\/[^/]+\/[^/]+)(?:\/|$)/)?.[1]
+  if (uncRoot === normalized) return normalized
   const index = normalized.lastIndexOf('/')
+  if (index === 2 && /^[A-Za-z]:/i.test(normalized)) return `${normalized.slice(0, 2)}/`
   if (index <= 0) return '/'
   return normalized.slice(0, index)
 }

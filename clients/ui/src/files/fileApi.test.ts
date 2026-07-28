@@ -13,6 +13,20 @@ import { create as createMessage, toBinary } from '@bufbuild/protobuf'
 import { FileTransferFinishSchema } from '../generated/wirepb/terminal_pb'
 
 describe('createFileApi generated Proto API', () => {
+  it('preserves Windows absolute paths across command and result normalization', async () => {
+    const session = new MockProtoSession('machine-windows', (command) => {
+      expect(command.command.case).toBe('fileList')
+      if (command.command.case !== 'fileList') throw new Error('unexpected command')
+      expect(command.command.value.path).toBe('C:/Users/Ada')
+      return protoResult('fileList', create(FileListResultSchema, { path: 'C:\\Users\\Ada' }))
+    })
+
+    await expect(createFileApi(session).listDir('C:\\Users\\Ada\\')).resolves.toMatchObject({
+      path: 'C:/Users/Ada',
+      parent: 'C:/Users',
+    })
+  })
+
   it('routes list, stat, and preview through typed commands', async () => {
     const file = create(FileEntrySchema, { path: '/README.md', name: 'README.md', type: FileEntryType.FILE, size: 8n })
     const session = new MockProtoSession('machine-local', (command) => {
