@@ -34,6 +34,7 @@ import (
 	grpc_health "google.golang.org/grpc/health"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Config 是 Edge 进程启动所需的本机 bootstrap 配置。
@@ -195,8 +196,8 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	}
 	cloudv1.RegisterAgentGatewayServer(grpcServer, agentService)
 	clientService, err := clientgateway.NewService(clientgateway.Config{
-		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state, VerificationKeys: runtime.currentTicketKeys,
-		Ready: runtime.Ready, SignalTimeout: 20 * time.Second, Relay: runtime.relayBroker(),
+		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state,
+		SignalTimeout: 20 * time.Second, Relay: runtime.relayBroker(),
 	})
 	if err != nil {
 		_ = listener.Close()
@@ -530,7 +531,7 @@ func (runtime *Runtime) relayBroker() clientgateway.RelayBroker {
 	return runtime
 }
 
-// RequestRelayLease 经当前 ready EdgeControl 申请、验签并登记 session-specific TURN credential。
+// RequestRelayLease 优先使用 Controller 最新决策；控制流离线时使用 AgentTicket 冻结的 Relay 委托。
 func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error) {
 	if request == nil || strings.TrimSpace(request.GetRenewLeaseId()) != "" {
 		return nil, errors.New("initial RelayLease request must not contain a renewal identity")
@@ -567,9 +568,25 @@ func (runtime *Runtime) RenewRelayLease(ctx context.Context, request *cloudv1.Re
 }
 
 func (runtime *Runtime) requestRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
-	if runtime == nil || !runtime.Ready() || runtime.credentialDeriver == nil || runtime.RelayDegraded() {
+	if runtime == nil || runtime.credentialDeriver == nil || runtime.RelayDegraded() {
 		return nil, errors.New("Edge Relay control is unavailable")
 	}
+	if request == nil || strings.TrimSpace(request.GetSessionId()) == "" || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetDaemonId()) == "" || strings.TrimSpace(request.GetClientId()) == "" {
+		return nil, errors.New("Relay lease request is incomplete")
+	}
+	if runtime.Ready() {
+		claims, err := runtime.requestControllerRelayLeaseClaims(ctx, request)
+		if err == nil {
+			return claims, nil
+		}
+		if runtime.Ready() {
+			return nil, err
+		}
+	}
+	return runtime.issueDelegatedRelayLeaseClaims(ctx, request)
+}
+
+func (runtime *Runtime) requestControllerRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
 	runtime.controlSessionMu.RLock()
 	session := runtime.controlSession
 	runtime.controlSessionMu.RUnlock()
@@ -589,6 +606,38 @@ func (runtime *Runtime) requestRelayLeaseClaims(ctx context.Context, request *cl
 	}
 	if claims.GetAccountId() != request.GetAccountId() || claims.GetDaemonId() != request.GetDaemonId() || claims.GetClientId() != request.GetClientId() {
 		return nil, errors.New("RelayLease identity does not match the accepted client session")
+	}
+	return claims, nil
+}
+
+func (runtime *Runtime) issueDelegatedRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
+	agent, err := runtime.state.AuthenticatedAgentClaims(ctx, request.GetDaemonId())
+	if err != nil || agent == nil || agent.GetAccountId() != request.GetAccountId() || agent.GetEdgeId() != runtime.config.EdgeID ||
+		agent.GetExpiresAt() == nil || agent.GetExpiresAt().CheckValid() != nil {
+		return nil, errors.New("authenticated daemon Relay delegation is unavailable")
+	}
+	delegation := agent.GetRelayDelegation()
+	if delegation == nil || delegation.GetMaxBytesPerLease() == 0 || delegation.GetMaxRateBytesPerSecond() == 0 || delegation.GetMaxConcurrentAllocations() == 0 {
+		return nil, errors.New("authenticated daemon is not delegated Relay access")
+	}
+	now := time.Now().UTC()
+	expiresAt := now.Add(5 * time.Minute)
+	if ticketExpiry := agent.GetExpiresAt().AsTime(); ticketExpiry.Before(expiresAt) {
+		expiresAt = ticketExpiry
+	}
+	if !expiresAt.After(now) {
+		return nil, errors.New("authenticated daemon Relay delegation has expired")
+	}
+	leaseID := strings.TrimSpace(request.GetRenewLeaseId())
+	if leaseID == "" {
+		leaseID = uuid.NewString()
+	} else if _, err := uuid.Parse(leaseID); err != nil {
+		return nil, errors.New("delegated RelayLease renewal identity is invalid")
+	}
+	claims := &cloudv1.RelayLeaseClaims{
+		LeaseId: leaseID, AccountId: request.GetAccountId(), EdgeId: runtime.config.EdgeID, DaemonId: request.GetDaemonId(), ClientId: request.GetClientId(), SessionId: request.GetSessionId(),
+		MaxBytes: delegation.GetMaxBytesPerLease(), MaxRateBytesPerSecond: delegation.GetMaxRateBytesPerSecond(), MaxConcurrentAllocations: delegation.GetMaxConcurrentAllocations(),
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(expiresAt),
 	}
 	return claims, nil
 }

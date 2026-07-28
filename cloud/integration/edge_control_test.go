@@ -149,7 +149,8 @@ func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.
 	t.Cleanup(state.Close)
 	daemonClosed := make(chan struct{}, 1)
 	agent := &cloudv1.AgentPresence{DaemonId: "daemon-command-1", AccountId: "account-command-1", BootId: "daemon-boot-command", ConnectionId: "agent-command", TicketId: "ticket-command", TicketIssuedAt: timestamppb.Now()}
-	generation, err := state.AttachAgent(context.Background(), agent, func(*cloudv1.EdgeCommand) bool { return true }, func() { daemonClosed <- struct{}{} })
+	agentClaims := &cloudv1.AgentTicketClaims{DaemonId: agent.GetDaemonId(), AccountId: agent.GetAccountId(), EdgeId: testEdgeID, DevicePublicKey: make([]byte, ed25519.PublicKeySize)}
+	generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, agentClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { daemonClosed <- struct{}{} })
 	if err != nil {
 		t.Fatal(err)
 	}

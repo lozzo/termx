@@ -68,12 +68,12 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 			apply(&options)
 		}
 	}
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, now time.Time) ([]byte, error) {
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, error) {
 		clientProduct := cloudv1.ClientProduct(product)
 		if clientProduct == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || clientProduct > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
 			return nil, errors.New("CloudRouteGrant client product is invalid")
 		}
-		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: record.DaemonID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: clientProduct, IssuedAt: timestamppb.New(now.UTC()), ExpiresAt: timestamppb.New(now.UTC().Add(7 * 24 * time.Hour))}
+		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: record.DaemonID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: clientProduct, IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC())}
 		envelope, err := ticket.SignCloudRouteGrant(identity, claims)
 		if err != nil {
 			return nil, err

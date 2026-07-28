@@ -63,7 +63,7 @@ Controller 是云端持久业务真值和实时目录的组合入口，负责：
 - 套餐、订单、支付结果、订阅、Entitlement、周期配额和结算。
 - daemon 归属、注册身份、公钥和撤销状态。
 - Edge 基础配置、域名、端口、区域、容量和当前证书档案。
-- Edge 候选列表、短期票据和已签名策略的签发。
+- Edge 候选列表、AgentTicket、RelayLease 和已签名策略的签发。
 - 通过每个 Edge 的单条长连接维护纯内存在线目录。
 - 将 Web 管理操作路由到当前持有目标连接的 Edge。
 - 接收用量批次并幂等结算。
@@ -79,12 +79,12 @@ Edge 负责：
 
 - 向 Controller 建立一条主动发起的双向 gRPC 控制流。
 - 接受 daemon 长连接，验证短期 AgentTicket，并维护 daemon Presence。
-- 接受客户端 Cloud Route 信令连接，验证短期 ClientTicket。
+- 接受客户端 Cloud Route 信令连接，使用当前 AgentGateway 已认证的 daemon 公钥验证 RouteGrant 和客户端 proof。
 - 在客户端和 daemon 之间转发 WebRTC offer、answer 和 ICE candidate。
 - 提供 STUN/TURN 能力；直连失败时承载 Relay 数据面。
 - 执行并发连接数、速率、Relay 字节和租约有效期限制。
 - 向 Controller 汇报在线摘要、拓扑变化、控制结果和累计用量。
-- 在 Controller 暂时不可用时，让已建立且仍在租约内的连接继续工作。
+- 在 Controller 暂时不可用时，继续接受缓存 locator 的新 P2P 会话，并在 AgentTicket 委托上限内接受新 Relay 会话。
 
 Edge 的在线拓扑是纯内存状态。Edge 磁盘只允许保存节点私钥/证书和“尚未被 Controller 确认”的 usage outbox，不允许保存 daemon 分配、连接快照或可恢复的在线状态。
 
@@ -293,15 +293,14 @@ Controller 的 PostgreSQL 只保存重启后仍然成立、需要审计或需要
 
 ### 9.2 建立连接
 
-1. 客户端向 Controller 查询目标 daemon。
-2. Controller 从内存目录定位当前 Edge；若不存在，立即返回离线，不查询数据库中的旧映射。
-3. Controller 校验账号状态、订阅、Entitlement 和云服务配额，签发短期 ClientTicket。
-4. 客户端连接目标 Edge，Edge 离线验证票据。
-5. Edge 通过已有 daemon stream 转发 offer、answer 和 ICE candidate。
-6. 客户端与 daemon 优先建立 P2P WebRTC DataChannel。
-7. 直连失败且 Entitlement 允许时，双方使用同一个 Edge 的 TURN Relay。
-8. DTLS channel binding 完成后，daemon 在 DataChannel 内验证 CapabilityGrant，然后才开放 terminal/file API。
-9. Edge 向 Controller 上报连接者 ID、客户端类型、目标 daemon、连接路径、会话状态和用量摘要；这些只进入内存目录。
+1. 客户端优先从 secure credential 读取上次认证成功的 Edge locator，直接连接该 Edge。
+2. locator 缺失、Edge 不可达或 Edge 明确表示 daemon 已迁移时，客户端才向 Controller 查询实时位置并替换缓存。
+3. Edge 从当前 AgentGateway 保存的已认证 daemon identity 验证 daemon 签名的 CloudRouteGrant，再验证 ClientAccessIdentity 对本次 session 的 proof。
+4. Edge 让 owning daemon 用本地 AccessStore 对客户端做最终预检，然后转发 offer、answer 和 ICE candidate。
+5. 客户端与 daemon 优先建立 P2P WebRTC DataChannel。
+6. 需要 Relay 时，Controller 在线则使用最新 Entitlement；Controller 离线则使用 AgentTicket 中冻结的 Relay 委托，Edge 将用量写入 durable outbox。
+7. DTLS channel binding 完成后，daemon 在 DataChannel 内验证 CapabilityGrant，然后才开放 terminal/file API。
+8. Edge 向 Controller 上报连接者 ID、客户端类型、目标 daemon、连接路径、会话状态和用量摘要；Controller 离线时内存投影可丢弃，用量不得丢失。
 
 ## 10. 管理操作控制流
 
@@ -510,7 +509,7 @@ cmd/anytty-cloud-edge/
 2. **R2 Edge 控制流**：实现两个内存 actor、`EdgeControl.Connect`、generation、全量快照、增量事件和 Controller Directory。
 3. **R3 Edge 配置与安装**：实现 Edge desired config、claim、EdgeIdentity、mTLS、curl installer 和真实 Edge 管理最小页面。
 4. **R4 daemon 接入**：实现 enrollment、候选 Edge、AgentTicket、探测选择、`AgentGateway.Connect`、Presence 和重连。
-5. **R5 客户端直连**：实现 CloudRouteGrant、ClientTicket、信令转发和真实 P2P DataChannel。
+5. **R5 客户端直连**：实现 daemon 签名 CloudRouteGrant、Edge 离线准入、信令转发和真实 P2P DataChannel。
 6. **R6 Relay 与用量**：在同一 Edge 内实现 TURN、租约、配额、速率、usage outbox 和幂等结算。
 7. **R7 账号、交易与完整后台**：实现套餐/订单/订阅/Entitlement，并完成中文 App Shell、模块页面和实时控制。
 8. **R8 Edge 证书自动更新**：实现双文件证书档案、Edge 绑定、原子热加载、离线重连收敛和 secret 安全门禁；程序升级另行排期。
@@ -797,7 +796,7 @@ service ClientGateway {
 }
 ```
 
-客户端第一条消息必须是 `ClientHello`，携带 ClientTicket、ClientAccessIdentity proof、客户端产品类型、版本和当前 attempt generation。Edge 返回 `ClientReady` 后，客户端才用返回的 session-specific ICE/TURN material 创建 offer。
+客户端第一条消息必须是 `ClientHello`，携带 daemon 签名的 RouteGrant、ClientAccessIdentity 公钥和 proof、客户端产品类型、版本和当前 attempt generation。Edge 返回 `ClientReady` 后，客户端才用返回的 session-specific ICE/TURN material 创建 offer。
 
 后续 payload 只允许 offer、answer、ICE candidate、信令接受/拒绝、路径建立摘要和关闭。信令流不能承载 terminal command、文件内容或 CapabilityGrant。
 
@@ -807,7 +806,7 @@ Controller unary gRPC 至少分为：
 
 - `AccountService`：注册、登录、刷新、登出、当前账号。
 - `EnrollmentService`：daemon enrollment、DeviceIdentity challenge、Edge 候选和 AgentTicket。
-- `DirectoryService`：验证 CloudRouteGrant、解析 daemon、签发 ClientTicket。
+- `DirectoryService`：仅在 locator 缺失或失效时验证 CloudRouteGrant 并解析 daemon 的当前 Edge。
 - `CommerceService`：套餐、订单、订阅、Entitlement 和账号用量。
 - `OperatorService`：Edge 配置、证书、账号、交易、实时目录和控制命令。
 - `InstallService`：claim token 交换、artifact manifest 和 Edge CSR 注册。
@@ -832,7 +831,7 @@ daemon 完成 enrollment 后，不保存长期 bearer token。它每次向 Contr
 
 首发默认 AgentTicket 有效期 10 分钟，Edge 允许 30 秒时钟偏差。票据过期只阻止新建/重建 AgentGateway，不主动切断已经通过 heartbeat 保持的当前连接；持续禁用通过 desired policy push 和短 lease 收敛。
 
-### 23.3 CloudRouteGrant 与 ClientTicket
+### 23.3 CloudRouteGrant 与 Edge 离线准入
 
 账号外客户端不能把 terminal CapabilityGrant 发给 Controller。为解决 Cloud 发现和信令准入，daemon 在配对时额外签发一个 **CloudRouteGrant**：
 
@@ -841,13 +840,13 @@ daemon 完成 enrollment 后，不保存长期 bearer token。它每次向 Contr
 - 只授权“查询该 daemon 并尝试建立信令”，不包含 terminal ID、scope、命令或文件权限。
 - 由 daemon 和客户端保存，Controller 不持久化。
 
-客户端请求解析时同时提交 CloudRouteGrant 和 ClientAccessIdentity 对本次 nonce 的签名。Controller 用持久化的 daemon 公钥验证 grant，用 grant 内客户端公钥验证请求，再检查 daemon owner 的订阅和实时 Presence，签发有效期 2 分钟、绑定目标 Edge/daemon/client/产品类型/route policy 的 ClientTicket。
+首次发现或 locator 失效时，客户端向 Controller 同时提交 CloudRouteGrant 和 ClientAccessIdentity 对本次 nonce 的签名。Controller 用持久化的 daemon 公钥验证 grant、检查实时 Presence，只返回当前 Edge locator，不参与后续准入。客户端把 locator 与 grant 保存在同一个平台 secure credential 中。
 
-CloudRouteGrant 被本地撤销后，旧 grant 在过期前理论上仍能发起少量信令，所以 Edge 必须先让 daemon 根据本地 AccessStore 接受客户端身份，之后才申请 Relay lease。被撤销客户端拿不到 terminal DataChannel 授权，也不能在 daemon 拒绝后消耗 Relay 配额。CloudRouteGrant 首发默认最长 7 天，客户端在已授权 DataChannel 内滚动更新。
+每次连接时，Edge 使用当前 AgentGateway 已认证的 DeviceIdentity 公钥验证 CloudRouteGrant 和单次 client proof，并让 daemon 根据本地 AccessStore 做最终授权，之后才创建 Relay lease。被撤销客户端拿不到 terminal DataChannel 授权，也不能在 daemon 拒绝后消耗 Relay 配额。CloudRouteGrant 与同次配对签发的 CapabilityGrant 同时到期，不需要中途访问 Controller 更新。
 
 ### 23.4 RelayLease
 
-RelayLease 由 Controller 签名，绑定 account、Edge、daemon、client、managed session、最大字节、最大速率、有效期和唯一 lease ID。首发默认 5 分钟，可在原会话内续租。Edge 离线验证并执行，不能扩大限制。
+RelayLease 绑定 account、Edge、daemon、client、managed session、最大字节、最大速率、有效期和唯一 lease ID。Controller 在线时由 Controller 根据最新 Entitlement 签发；控制流离线时 Edge 只能从当前 AgentTicket 的签名 Relay 委托收缩生成。首发默认 5 分钟，可在原会话内续租，Edge 不能扩大限制。
 
 ### 23.5 初始运行参数
 
@@ -859,8 +858,7 @@ RelayLease 由 Controller 签名，绑定 account、Edge、daemon、client、man
 | daemon heartbeat | 15 秒 | 连续 45 秒无有效消息关闭 Agent connection |
 | Controller Edge grace | 10 秒 | grace 后整体删除该 connection generation |
 | AgentTicket | 10 分钟 | 过期不能新建连接 |
-| ClientTicket | 2 分钟 | 过期不能新建信令 session |
-| CloudRouteGrant | 最长 7 天 | 过期必须经已授权 daemon 更新 |
+| CloudRouteGrant | 与 CapabilityGrant 一致，最长 365 天 | 到期后重新配对授权 |
 | RelayLease | 5 分钟 | 未续租时停止继续转发并结算累计值 |
 | 实时控制命令 | 10 秒 | 超时返回 unknown/timeout，不持久重试 |
 | SSE runtime event | 30 秒 keepalive | 客户端断线后重新拉当前 projection |
@@ -1025,9 +1023,9 @@ client/runtime AttemptRequest
         |
 client/adapter/cloud Connector
         |
-cloud/client ControllerClient + EdgeClient
+cloud/client cached EdgeClient + discovery-only ControllerClient
         |
-resolve -> ClientTicket -> ClientGateway -> WebRTC
+cached locator -> ClientGateway -> WebRTC
         |
 DTLS-bound remote auth -> protocol Hello
         |
@@ -1038,10 +1036,11 @@ Endpoint registry 中 Cloud Route 只保存：
 
 - 目标 daemon 的稳定身份 pin。
 - CloudRouteGrant 的 secure credential reference。
+- 上次完整认证成功的 Edge locator；仅作为可失效的位置缓存。
 - route preference，例如 auto、direct-only、relay-only。
 - 可选的 Controller profile reference。
 
-不能保存当前 Edge 地址、ClientTicket、TURN credential、session ID 或上次 connection generation。Edge 地址每次从 Controller 内存目录解析，票据和 TURN credential 只存在于当前 attempt。
+不能保存 TURN credential、session ID 或上次 connection generation。Edge locator 可以保存在平台 secure credential，但只有在 locator 缺失、目标 Edge 不可达或 Edge 明确返回 daemon 已迁移时才能回源 Controller；新 locator 只有在端到端认证和 protocol Hello 全部成功后才能替换旧值。
 
 Cloud adapter 不能自行与 Direct/SSH 竞速，也不能失败后偷偷切换 route；仍由现有 planner 和 `SessionOwner` 决定 race/fallback。Cloud attempt 成功的条件保持不变：daemon identity、CapabilityGrant authorization 和 protocol Hello 全部完成后才能返回 `ReadyPeerSession`。
 
@@ -1131,7 +1130,7 @@ active plan version
   = EffectiveEntitlement
 ```
 
-Controller 在签发 AgentTicket、ClientTicket 和 RelayLease 时计算并冻结必要限制。Edge 不读取订单表，也不理解支付 provider 状态；它只验证签名并执行票据里的限制。
+Controller 在签发 AgentTicket 和 RelayLease 时计算并冻结必要限制。AgentTicket 同时携带当前 daemon 连接的 Relay 离线委托；Edge 不读取订单表，也不理解支付 provider 状态，只能在签名上限内执行并持久记录离线用量。
 
 Entitlement 不是永久缓存。Controller 可以在进程内做短 TTL read-through cache，但数据库 mutation 提交后必须按 account ID 失效。缓存缺失或数据库故障时拒绝新收费能力，不能使用硬编码免费额度 fallback。
 
@@ -1380,11 +1379,11 @@ R4 通过 `e5cfc600` 建立了 Proto-first EnrollmentService、一次性 DeviceI
 
 ### 32.8 R5：客户端 P2P 纵向（已完成）
 
-- 实现 CloudRouteGrant、ClientTicket、ClientGateway 和 `client/adapter/cloud`。
+- 实现 CloudRouteGrant、ClientGateway 和 `client/adapter/cloud`。
 - TUI/CLI 从左到右完成 resolve、offer/answer、P2P DataChannel、remote auth、protocol Hello、terminal 输入输出。
 - Android 通过同一 Go engine 完成真实 UI 连接，不允许平台层替代信令。
 
-R5 通过 `0316f725` 建立了 Proto-first Directory/ClientGateway、Controller 签发与 Edge 离线校验 ClientTicket、daemon 真实 Pion answer/revocation、客户端 resolve -> ticket -> P2P -> 端到端认证 -> protocol Hello 链路，以及 Android Cloud Route 的同一 Go engine 装配；`4417cc51` 修正了可移植配对路由。最终收口补齐了 Go Endpoint registry 对 managed Cloud preference 的双向持久化映射，以及 ConnectionSnapshot 的 Cloud route kind 投影，防止已建立 Cloud 连接在 UI 中显示为未知路由。
+R5 当前使用 Proto-first Directory/ClientGateway、daemon 签名 RouteGrant、Edge 基于当前 AgentGateway identity 的离线准入、daemon 真实 Pion answer/revocation，以及客户端 cached locator -> P2P -> 端到端认证 -> protocol Hello 链路。Android 与 CLI/TUI 复用同一个 Go engine，平台 secure store 原子保存 identity、grant 和 Edge locator；Go Endpoint registry 只保存 opaque credential ref 和 managed Cloud preference。
 
 2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `5e9e6ec85200d08e1bce5154d59f94537e09e9c80cfb60c8eae6e774ca37e3c1`，Edge `cn1.edge.anytty.com:41102` SHA-256 为 `bf093903650ce35643f3e1aa7f5c2ecfc5a5c58776ed08a1a511de12aca4d90a`，Linux daemon CLI SHA-256 为 `ad5da5ba18bf57902a71adcd2c3fb571aed14ff33435893ce186e01f62726492`，三个 systemd 服务均为 active 且 `NRestarts=0`。CLI 通过公网 Controller resolve 和 Edge ClientGateway 建立 host/host UDP P2P DataChannel，在远端 `/bin/cat` 终端完成 `anytty-r5-online-cli` 输入输出。
 

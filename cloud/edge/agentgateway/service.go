@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -25,7 +25,7 @@ const ProtocolVersion uint32 = 1
 
 // Runtime 是 Edge 唯一 State actor 暴露给 AgentGateway 的窄连接边界。
 type Runtime interface {
-	AttachAgent(context.Context, *cloudv1.AgentPresence, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error)
+	AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.AgentTicketClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error)
 	DetachAgent(context.Context, string, uint64) error
 	ResolveAgentSignal(context.Context, string, uint64, *cloudv1.AgentEvent) error
 }
@@ -78,7 +78,7 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 		DaemonId: claims.GetDaemonId(), AccountId: claims.GetAccountId(), BootId: event.GetBootId(), ConnectionId: event.GetConnectionId(),
 		TicketId: claims.GetTicketId(), TicketIssuedAt: claims.GetIssuedAt(),
 	}
-	generation, err := service.config.Runtime.AttachAgent(connectionCtx, presence, writer.trySend, writer.close)
+	generation, err := service.config.Runtime.AttachAuthenticatedAgent(connectionCtx, presence, claims, writer.trySend, writer.close)
 	if err != nil {
 		writer.close()
 		return status.Errorf(codes.Aborted, "attach Agent generation: %v", err)

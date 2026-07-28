@@ -15,19 +15,17 @@ import (
 )
 
 const (
-	agentTicketDomain           = "anytty.cloud.agent-ticket.v1\x00"
-	agentProofDomain            = "anytty.cloud.agent-hello-proof.v1\x00"
-	cloudRouteGrantDomain       = "anytty.cloud.route-grant.v1\x00"
-	legacyCloudRouteGrantDomain = "muxvia.cloud.route-grant.v1\x00"
-	pairingRouteGrantDomain     = "anytty.cloud.pairing-route-grant.v1\x00"
-	clientTicketDomain          = "anytty.cloud.client-ticket.v1\x00"
-	clientRouteProofDomain      = "anytty.cloud.client-route-proof.v1\x00"
-	pairingRouteProofDomain     = "anytty.cloud.pairing-route-proof.v1\x00"
-	clientHelloProofDomain      = "anytty.cloud.client-hello-proof.v1\x00"
-	relayLeaseDomain            = "anytty.cloud.relay-lease.v1\x00"
+	agentTicketDomain          = "anytty.cloud.agent-ticket.v1\x00"
+	agentProofDomain           = "anytty.cloud.agent-hello-proof.v1\x00"
+	cloudRouteGrantDomain      = "anytty.cloud.route-grant.v1\x00"
+	pairingRouteGrantDomain    = "anytty.cloud.pairing-route-grant.v1\x00"
+	clientRouteProofDomain     = "anytty.cloud.client-route-proof.v1\x00"
+	pairingRouteProofDomain    = "anytty.cloud.pairing-route-proof.v1\x00"
+	cloudRouteHelloProofDomain = "anytty.cloud.route-hello-proof.v1\x00"
+	relayLeaseDomain           = "anytty.cloud.relay-lease.v1\x00"
 )
 
-// KeySet 是 Edge 当前从 EdgeWelcome 获得的只读 Controller 票据公钥集合。
+// KeySet 是 Edge 当前从 EdgeWelcome 获得的 AgentTicket/RelayLease 公钥集合。
 type KeySet map[string]ed25519.PublicKey
 
 // FromVerificationKeys 严格解析 Ed25519 公钥集合；重复 key_id 和未知算法都会失败。
@@ -135,11 +133,7 @@ func VerifyCloudRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed2
 		strings.TrimSpace(envelope.GetKeyId()) != remoteauth.Fingerprint(daemonPublicKey) {
 		return nil, errors.New("CloudRouteGrant signature is invalid")
 	}
-	validSignature := ed25519.Verify(daemonPublicKey, signingBytes(cloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature())
-	if !validSignature {
-		validSignature = ed25519.Verify(daemonPublicKey, signingBytes(legacyCloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature())
-	}
-	if !validSignature {
+	if !ed25519.Verify(daemonPublicKey, signingBytes(cloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature()) {
 		return nil, errors.New("CloudRouteGrant signature is invalid")
 	}
 	claims := &cloudv1.CloudRouteGrantClaims{}
@@ -228,43 +222,6 @@ func PairingRouteProofBytes(challengeID string, challenge []byte, grant *cloudv1
 	return signingBytes(pairingRouteProofDomain, payload), nil
 }
 
-// SignClientTicket 使用 Controller TicketSigner 签发只绑定一次 P2P 信令 attempt 的短票据。
-func SignClientTicket(keyID string, privateKey ed25519.PrivateKey, claims *cloudv1.ClientTicketClaims) (*cloudv1.SignedEnvelope, error) {
-	if strings.TrimSpace(keyID) == "" || len(privateKey) != ed25519.PrivateKeySize {
-		return nil, errors.New("ClientTicket signer is invalid")
-	}
-	if err := validateClientTicket(claims, time.Time{}, 0); err != nil {
-		return nil, err
-	}
-	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
-	if err != nil {
-		return nil, err
-	}
-	return &cloudv1.SignedEnvelope{KeyId: strings.TrimSpace(keyID), Payload: payload, Signature: ed25519.Sign(privateKey, signingBytes(clientTicketDomain, payload))}, nil
-}
-
-// VerifyClientTicket 由 Edge 离线校验 Controller 签名、目标 Edge、P2P policy 和有效期。
-func VerifyClientTicket(envelope *cloudv1.SignedEnvelope, keys KeySet, edgeID string, now time.Time, skew time.Duration) (*cloudv1.ClientTicketClaims, error) {
-	if envelope == nil || len(envelope.GetSignature()) != ed25519.SignatureSize {
-		return nil, errors.New("ClientTicket envelope is invalid")
-	}
-	publicKey := keys[strings.TrimSpace(envelope.GetKeyId())]
-	if len(publicKey) != ed25519.PublicKeySize || !ed25519.Verify(publicKey, signingBytes(clientTicketDomain, envelope.GetPayload()), envelope.GetSignature()) {
-		return nil, errors.New("ClientTicket signature is invalid")
-	}
-	claims := &cloudv1.ClientTicketClaims{}
-	if err := proto.Unmarshal(envelope.GetPayload(), claims); err != nil {
-		return nil, errors.New("ClientTicket payload is invalid")
-	}
-	if err := validateClientTicket(claims, now, skew); err != nil {
-		return nil, err
-	}
-	if claims.GetEdgeId() != strings.TrimSpace(edgeID) {
-		return nil, errors.New("ClientTicket targets another Edge")
-	}
-	return claims, nil
-}
-
 // SignRelayLease 使用 Controller TicketSigner 签发绑定精确 managed session 的短租约。
 // max bytes、rate、并发和期限必须已经由 Controller 的商业策略冻结。
 func SignRelayLease(keyID string, privateKey ed25519.PrivateKey, claims *cloudv1.RelayLeaseClaims) (*cloudv1.SignedEnvelope, error) {
@@ -304,27 +261,29 @@ func VerifyRelayLease(envelope *cloudv1.SignedEnvelope, keys KeySet, edgeID, ses
 	return claims, nil
 }
 
-// ClientHelloProofBytes 把 Edge stream 的 session/generation 与短票据绑定到客户端签名。
-func ClientHelloProofBytes(ticketEnvelope *cloudv1.SignedEnvelope, sessionID string, attemptGeneration uint64) ([]byte, error) {
-	if ticketEnvelope == nil || strings.TrimSpace(sessionID) == "" || attemptGeneration == 0 {
-		return nil, errors.New("ClientHello proof input is incomplete")
+// CloudRouteHelloProofBytes 把可复用 Route grant 绑定到目标 Edge 和当前单次连接。
+func CloudRouteHelloProofBytes(routeGrant *cloudv1.SignedEnvelope, edgeID, sessionID string, attemptGeneration uint64) ([]byte, error) {
+	if routeGrant == nil || strings.TrimSpace(edgeID) == "" || strings.TrimSpace(sessionID) == "" || attemptGeneration == 0 {
+		return nil, errors.New("Cloud Route hello proof input is incomplete")
 	}
-	digest := sha256.Sum256(ticketEnvelope.GetPayload())
-	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.ClientHelloProofInput{TicketPayloadSha256: digest[:], SessionId: strings.TrimSpace(sessionID), AttemptGeneration: attemptGeneration})
+	digest := sha256.Sum256(routeGrant.GetPayload())
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.CloudRouteHelloProofInput{
+		RouteGrantPayloadSha256: digest[:], EdgeId: strings.TrimSpace(edgeID), SessionId: strings.TrimSpace(sessionID), AttemptGeneration: attemptGeneration,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return signingBytes(clientHelloProofDomain, payload), nil
+	return signingBytes(cloudRouteHelloProofDomain, payload), nil
 }
 
-// VerifyClientHelloProof 证明 ClientGateway stream 持有票据内 ClientAccessIdentity 私钥。
-func VerifyClientHelloProof(publicKey, proof []byte, ticketEnvelope *cloudv1.SignedEnvelope, sessionID string, attemptGeneration uint64) error {
-	canonical, err := ClientHelloProofBytes(ticketEnvelope, sessionID, attemptGeneration)
+// VerifyCloudRouteHelloProof 证明直连 Edge 的客户端持有 Route grant 绑定的 ClientAccessIdentity 私钥。
+func VerifyCloudRouteHelloProof(publicKey, proof []byte, routeGrant *cloudv1.SignedEnvelope, edgeID, sessionID string, attemptGeneration uint64) error {
+	canonical, err := CloudRouteHelloProofBytes(routeGrant, edgeID, sessionID, attemptGeneration)
 	if err != nil {
 		return err
 	}
 	if len(publicKey) != ed25519.PublicKeySize || len(proof) != ed25519.SignatureSize || !ed25519.Verify(ed25519.PublicKey(publicKey), canonical, proof) {
-		return errors.New("ClientHello proof is invalid")
+		return errors.New("Cloud Route hello proof is invalid")
 	}
 	return nil
 }
@@ -353,6 +312,9 @@ func validateAgentClaims(claims *cloudv1.AgentTicketClaims, now time.Time, skew 
 	if len(claims.GetCapabilities()) == 0 {
 		return errors.New("AgentTicket has no capability")
 	}
+	if relay := claims.GetRelayDelegation(); relay != nil && (relay.GetMaxBytesPerLease() == 0 || relay.GetMaxRateBytesPerSecond() == 0 || relay.GetMaxConcurrentAllocations() == 0) {
+		return errors.New("AgentTicket Relay delegation is incomplete")
+	}
 	if !now.IsZero() {
 		now = now.UTC()
 		if claims.GetIssuedAt().AsTime().After(now.Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.Add(-skew)) {
@@ -365,7 +327,7 @@ func validateAgentClaims(claims *cloudv1.AgentTicketClaims, now time.Time, skew 
 func validateCloudRouteGrant(claims *cloudv1.CloudRouteGrantClaims, now time.Time) error {
 	if claims == nil || strings.TrimSpace(claims.GetGrantId()) == "" || strings.TrimSpace(claims.GetDaemonId()) == "" || len(claims.GetClientPublicKey()) != ed25519.PublicKeySize ||
 		claims.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || claims.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI || claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil ||
-		!claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 7*24*time.Hour {
+		!claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 365*24*time.Hour {
 		return errors.New("CloudRouteGrant claims are incomplete")
 	}
 	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(30*time.Second)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-30*time.Second))) {
@@ -381,32 +343,6 @@ func validatePairingRouteGrant(claims *cloudv1.PairingRouteGrantClaims, now time
 	}
 	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(30*time.Second)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-30*time.Second))) {
 		return errors.New("PairingRouteGrant is outside its validity window")
-	}
-	return nil
-}
-
-func validateClientTicket(claims *cloudv1.ClientTicketClaims, now time.Time, skew time.Duration) error {
-	if claims == nil || strings.TrimSpace(claims.GetTicketId()) == "" || strings.TrimSpace(claims.GetAccountId()) == "" || strings.TrimSpace(claims.GetEdgeId()) == "" ||
-		strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetClientId()) == "" || len(claims.GetClientPublicKey()) != ed25519.PublicKeySize ||
-		claims.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || claims.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI ||
-		(claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY && claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY) ||
-		claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 2*time.Minute {
-		return errors.New("ClientTicket claims are incomplete")
-	}
-	switch claims.GetAccessMode() {
-	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
-		if len(claims.GetPairingClaimSha256()) != 0 {
-			return errors.New("capability ClientTicket contains pairing state")
-		}
-	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
-		if len(claims.GetPairingClaimSha256()) != sha256.Size {
-			return errors.New("pairing ClientTicket claim digest is invalid")
-		}
-	default:
-		return errors.New("ClientTicket access mode is invalid")
-	}
-	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-skew))) {
-		return errors.New("ClientTicket is outside its validity window")
 	}
 	return nil
 }

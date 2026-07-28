@@ -83,6 +83,10 @@ func (source cliCredentialSource) ResolveClientSigner(_ context.Context, endpoin
 	return remoteauth.NewPrivateClientAccessSigner(identity)
 }
 
+func (source cliCredentialSource) UpdateCloudEdgeLocator(ctx context.Context, endpointID, reference string, locator []byte) error {
+	return source.store.UpdateCloudEdgeLocator(ctx, reference, endpointID, locator)
+}
+
 func (source cliCredentialSource) Available(ctx context.Context, endpointID, reference string) bool {
 	credential, err := source.store.ResolveContext(ctx, strings.TrimSpace(reference))
 	return err == nil && credential.EndpointID == endpointID && credential.Ready()

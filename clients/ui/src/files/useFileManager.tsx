@@ -13,6 +13,7 @@ import type { ConnectionInfo } from '../core/transport'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { anyttyI18n } from '../i18n'
 import { createPathBookmarkApi, type PathBookmark } from './pathBookmarks'
+import { joinPath, normalizeFilePath, parentPath } from './fileUtils'
 
 export type FileSortField = 'name' | 'modified' | 'size' | 'type'
 export type FileSortDirection = 'asc' | 'desc'
@@ -501,11 +502,6 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   }
 }
 
-function joinPath(base: string, name: string): string {
-  if (!base || base === '/') return `/${name.replace(/^\/+/, '')}`
-  return `${base.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`
-}
-
 function sortFileEntries(entries: FileEntry[], sortState: FileSortState): FileEntry[] {
   return entries
     .map((entry, index) => ({ entry, index }))
@@ -566,13 +562,6 @@ function fileExtension(name: string): string {
   return dot >= 0 ? base.slice(dot + 1) : ''
 }
 
-function parentPath(path: string): string {
-  const normalized = path.replace(/\/+$/, '')
-  const index = normalized.lastIndexOf('/')
-  if (index <= 0) return '/'
-  return normalized.slice(0, index)
-}
-
 async function listDirWithParentFallback(
   fileApi: FileApi,
   path: string,
@@ -595,9 +584,7 @@ async function listDirWithParentFallback(
 }
 
 function normalizeAbsolutePath(path: string): string {
-  const trimmed = path.trim()
-  if (!trimmed || trimmed === '/') return '/'
-  return trimmed.replace(/\/+$/, '') || '/'
+  return normalizeFilePath(path)
 }
 
 function basename(path: string): string {

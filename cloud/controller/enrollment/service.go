@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -84,6 +84,7 @@ type challengeState struct {
 	publicKey             ed25519.PublicKey
 	daemon                Daemon
 	edge                  edgeconfig.Edge
+	relayDelegation       *cloudv1.AgentRelayDelegation
 }
 
 // Service 是 EnrollmentService gRPC 实现，也是运营管理页创建 code/列 daemon 的 application owner。
@@ -233,7 +234,7 @@ func (service *Service) BeginAgentTicket(ctx context.Context, request *cloudv1.B
 	if _, found, locateErr := service.config.Directory.Edge(ctx, edge.ID); locateErr != nil || !found {
 		return nil, status.Error(codes.FailedPrecondition, "selected Edge is offline")
 	}
-	return service.newChallenge(challengeState{kind: challengeAgentTicket, daemon: daemon, edge: edge, deviceID: daemon.DeviceID, fingerprint: daemon.DeviceFingerprint, publicKey: daemon.DevicePublicKey})
+	return service.newChallenge(challengeState{kind: challengeAgentTicket, daemon: daemon, edge: edge, deviceID: daemon.DeviceID, fingerprint: daemon.DeviceFingerprint, publicKey: daemon.DevicePublicKey, relayDelegation: agentRelayDelegation(entitlement)})
 }
 
 // IssueAgentTicket 验证 daemon proof 后签发默认十分钟短票据，不保存票据或 Edge assignment。
@@ -249,7 +250,7 @@ func (service *Service) IssueAgentTicket(ctx context.Context, request *cloudv1.I
 		return nil, status.Error(codes.FailedPrecondition, "selected Edge is offline")
 	}
 	now := service.now()
-	claims := &cloudv1.AgentTicketClaims{TicketId: uuid.NewString(), DaemonId: state.daemon.ID, AccountId: state.daemon.AccountID, EdgeId: state.edge.ID, DeviceId: state.daemon.DeviceID, DevicePublicKey: append([]byte(nil), state.daemon.DevicePublicKey...), Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.AgentTicketTTL))}
+	claims := &cloudv1.AgentTicketClaims{TicketId: uuid.NewString(), DaemonId: state.daemon.ID, AccountId: state.daemon.AccountID, EdgeId: state.edge.ID, DeviceId: state.daemon.DeviceID, DevicePublicKey: append([]byte(nil), state.daemon.DevicePublicKey...), Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.AgentTicketTTL)), RelayDelegation: state.relayDelegation}
 	signed, err := ticket.SignAgentTicket(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -259,6 +260,21 @@ func (service *Service) IssueAgentTicket(ctx context.Context, request *cloudv1.I
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 	return &cloudv1.IssueAgentTicketResponse{AgentTicket: signed, Edge: candidate}, nil
+}
+
+func agentRelayDelegation(entitlement *cloudv1.EffectiveEntitlement) *cloudv1.AgentRelayDelegation {
+	capability := entitlement.GetCapability()
+	if entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || capability == nil || !capability.GetRelayEnabled() {
+		return nil
+	}
+	maxBytes := capability.GetRelayMaxBytesPerLease()
+	if remaining := entitlement.GetRelayRemainingBytes(); remaining < maxBytes {
+		maxBytes = remaining
+	}
+	if maxBytes == 0 || capability.GetRelayMaxRateBytesPerSecond() == 0 || capability.GetRelayMaxConcurrency() == 0 {
+		return nil
+	}
+	return &cloudv1.AgentRelayDelegation{MaxBytesPerLease: maxBytes, MaxRateBytesPerSecond: capability.GetRelayMaxRateBytesPerSecond(), MaxConcurrentAllocations: capability.GetRelayMaxConcurrency()}
 }
 
 func (service *Service) candidates(ctx context.Context, region string) ([]*cloudv1.CandidateEdge, error) {

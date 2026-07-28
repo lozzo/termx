@@ -18,12 +18,15 @@ message CloudICECandidate {
 }
 
 message ClientHello {
-  SignedEnvelope client_ticket = 1;
-  bytes client_proof = 2;
-  ClientProduct product = 3;
-  string software_version = 4;
-  uint64 attempt_generation = 5;
-  RelayPreference relay_preference = 6;
+  // route_grant 是 owning daemon 签发的 capability 或 pairing RouteGrant；Controller 不签客户端准入票。
+  SignedEnvelope route_grant = 1;
+  bytes client_public_key = 2;
+  bytes client_proof = 3;
+  ClientProduct product = 4;
+  string software_version = 5;
+  uint64 attempt_generation = 6;
+  RelayPreference relay_preference = 7;
+  CloudClientAccessMode access_mode = 8;
 }
 
 message ClientReady {

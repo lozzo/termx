@@ -6,7 +6,7 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { SignedEnvelope } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
-import type { ClientProduct } from "./runtime_pb";
+import type { ClientProduct, CloudClientAccessMode } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { RelayICEConfig, RelayPreference } from "./usage_pb";
 import { file_cloud_v1_usage } from "./usage_pb";
@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/client_gateway.proto.
  */
 export const file_cloud_v1_client_gateway: GenFile = /*@__PURE__*/
-  fileDesc("Ch1jbG91ZC92MS9jbGllbnRfZ2F0ZXdheS5wcm90bxIPYW55dHR5LmNsb3VkLnYxImsKEUNsb3VkSUNFQ2FuZGlkYXRlEhEKCWNhbmRpZGF0ZRgBIAEoCRIPCgdzZHBfbWlkGAIgASgJEhcKD3NkcF9tbGluZV9pbmRleBgDIAEoDRIZChF1c2VybmFtZV9mcmFnbWVudBgEIAEoCSL+AQoLQ2xpZW50SGVsbG8SNgoNY2xpZW50X3RpY2tldBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZRIUCgxjbGllbnRfcHJvb2YYAiABKAwSLwoHcHJvZHVjdBgDIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EhgKEHNvZnR3YXJlX3ZlcnNpb24YBCABKAkSGgoSYXR0ZW1wdF9nZW5lcmF0aW9uGAUgASgEEjoKEHJlbGF5X3ByZWZlcmVuY2UYBiABKA4yIC5hbnl0dHkuY2xvdWQudjEuUmVsYXlQcmVmZXJlbmNlImUKC0NsaWVudFJlYWR5EhIKCnNlc3Npb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIuCgVyZWxheRgDIAEoCzIfLmFueXR0eS5jbG91ZC52MS5SZWxheUlDRUNvbmZpZyJsCgtDbGllbnRPZmZlchISCgpzZXNzaW9uX2lkGAEgASgJEhEKCW9mZmVyX3NkcBgCIAEoCRI2CgpjYW5kaWRhdGVzGAMgAygLMiIuYW55dHR5LmNsb3VkLnYxLkNsb3VkSUNFQ2FuZGlkYXRlImwKCkVkZ2VBbnN3ZXISEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgphbnN3ZXJfc2RwGAIgASgJEjYKCmNhbmRpZGF0ZXMYAyADKAsyIi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRJQ0VDYW5kaWRhdGUiQwoOU2lnbmFsUmVqZWN0ZWQSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRjb2RlGAIgASgJEg8KB21lc3NhZ2UYAyABKAkioQIKDENsaWVudFNpZ25hbBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KBWhlbGxvGBQgASgLMhwuYW55dHR5LmNsb3VkLnYxLkNsaWVudEhlbGxvSAASLQoFb2ZmZXIYFSABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50T2ZmZXJIAEIJCgdwYXlsb2FkItQCCgpFZGdlU2lnbmFsEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoFcmVhZHkYFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UmVhZHlIABItCgZhbnN3ZXIYFSABKAsyGy5hbnl0dHkuY2xvdWQudjEuRWRnZUFuc3dlckgAEjMKCHJlamVjdGVkGBYgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25hbFJlamVjdGVkSABCCQoHcGF5bG9hZDJaCg1DbGllbnRHYXRld2F5EkkKB0Nvbm5lY3QSHS5hbnl0dHkuY2xvdWQudjEuQ2xpZW50U2lnbmFsGhsuYW55dHR5LmNsb3VkLnYxLkVkZ2VTaWduYWwoATABQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
+  fileDesc("Ch1jbG91ZC92MS9jbGllbnRfZ2F0ZXdheS5wcm90bxIPYW55dHR5LmNsb3VkLnYxImsKEUNsb3VkSUNFQ2FuZGlkYXRlEhEKCWNhbmRpZGF0ZRgBIAEoCRIPCgdzZHBfbWlkGAIgASgJEhcKD3NkcF9tbGluZV9pbmRleBgDIAEoDRIZChF1c2VybmFtZV9mcmFnbWVudBgEIAEoCSLUAgoLQ2xpZW50SGVsbG8SNAoLcm91dGVfZ3JhbnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmVkRW52ZWxvcGUSGQoRY2xpZW50X3B1YmxpY19rZXkYAiABKAwSFAoMY2xpZW50X3Byb29mGAMgASgMEi8KB3Byb2R1Y3QYBCABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBIYChBzb2Z0d2FyZV92ZXJzaW9uGAUgASgJEhoKEmF0dGVtcHRfZ2VuZXJhdGlvbhgGIAEoBBI6ChByZWxheV9wcmVmZXJlbmNlGAcgASgOMiAuYW55dHR5LmNsb3VkLnYxLlJlbGF5UHJlZmVyZW5jZRI7CgthY2Nlc3NfbW9kZRgIIAEoDjImLmFueXR0eS5jbG91ZC52MS5DbG91ZENsaWVudEFjY2Vzc01vZGUiZQoLQ2xpZW50UmVhZHkSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEi4KBXJlbGF5GAMgASgLMh8uYW55dHR5LmNsb3VkLnYxLlJlbGF5SUNFQ29uZmlnImwKC0NsaWVudE9mZmVyEhIKCnNlc3Npb25faWQYASABKAkSEQoJb2ZmZXJfc2RwGAIgASgJEjYKCmNhbmRpZGF0ZXMYAyADKAsyIi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRJQ0VDYW5kaWRhdGUibAoKRWRnZUFuc3dlchISCgpzZXNzaW9uX2lkGAEgASgJEhIKCmFuc3dlcl9zZHAYAiABKAkSNgoKY2FuZGlkYXRlcxgDIAMoCzIiLmFueXR0eS5jbG91ZC52MS5DbG91ZElDRUNhbmRpZGF0ZSJDCg5TaWduYWxSZWplY3RlZBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCSKhAgoMQ2xpZW50U2lnbmFsEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoFaGVsbG8YFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50SGVsbG9IABItCgVvZmZlchgVIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRPZmZlckgAQgkKB3BheWxvYWQi1AIKCkVkZ2VTaWduYWwSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgVyZWFkeRgUIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRSZWFkeUgAEi0KBmFuc3dlchgVIAEoCzIbLmFueXR0eS5jbG91ZC52MS5FZGdlQW5zd2VySAASMwoIcmVqZWN0ZWQYFiABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmFsUmVqZWN0ZWRIAEIJCgdwYXlsb2FkMloKDUNsaWVudEdhdGV3YXkSSQoHQ29ubmVjdBIdLmFueXR0eS5jbG91ZC52MS5DbGllbnRTaWduYWwaGy5hbnl0dHkuY2xvdWQudjEuRWRnZVNpZ25hbCgBMAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
 
 /**
  * CloudICECandidate 是 Cloud 信令的中性 candidate；不携带授权或 terminal 数据。
@@ -59,34 +59,46 @@ export const CloudICECandidateSchema: GenMessage<CloudICECandidate> = /*@__PURE_
  */
 export type ClientHello = Message<"anytty.cloud.v1.ClientHello"> & {
   /**
-   * @generated from field: anytty.cloud.v1.SignedEnvelope client_ticket = 1;
+   * route_grant 是 owning daemon 签发的 capability 或 pairing RouteGrant；Controller 不签客户端准入票。
+   *
+   * @generated from field: anytty.cloud.v1.SignedEnvelope route_grant = 1;
    */
-  clientTicket?: SignedEnvelope | undefined;
+  routeGrant?: SignedEnvelope | undefined;
 
   /**
-   * @generated from field: bytes client_proof = 2;
+   * @generated from field: bytes client_public_key = 2;
+   */
+  clientPublicKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes client_proof = 3;
    */
   clientProof: Uint8Array;
 
   /**
-   * @generated from field: anytty.cloud.v1.ClientProduct product = 3;
+   * @generated from field: anytty.cloud.v1.ClientProduct product = 4;
    */
   product: ClientProduct;
 
   /**
-   * @generated from field: string software_version = 4;
+   * @generated from field: string software_version = 5;
    */
   softwareVersion: string;
 
   /**
-   * @generated from field: uint64 attempt_generation = 5;
+   * @generated from field: uint64 attempt_generation = 6;
    */
   attemptGeneration: bigint;
 
   /**
-   * @generated from field: anytty.cloud.v1.RelayPreference relay_preference = 6;
+   * @generated from field: anytty.cloud.v1.RelayPreference relay_preference = 7;
    */
   relayPreference: RelayPreference;
+
+  /**
+   * @generated from field: anytty.cloud.v1.CloudClientAccessMode access_mode = 8;
+   */
+  accessMode: CloudClientAccessMode;
 };
 
 /**

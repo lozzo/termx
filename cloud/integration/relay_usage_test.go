@@ -123,12 +123,12 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	directoryService, err := directoryapi.NewService(directoryapi.Config{
 		Entitlement: testEntitlementReader{},
 		Store:       identityStore, Directory: controllerDirectory, Edges: edges, EdgeCACertificate: edgeCAPEM,
-		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
+		ChallengeTTL: time.Minute,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicControllerAddress := startR5PublicController(t, certificates, enrollmentService, directoryService)
+	publicControllerAddress, _ := startR5PublicController(t, certificates, enrollmentService, directoryService)
 
 	turnAddress := freeTURNAddress(t)
 	outboxPath := filepath.Join(t.TempDir(), "usage-outbox.db")
@@ -160,8 +160,8 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	defer accessStore.Close()
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, now time.Time) ([]byte, error) {
-		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: cloudv1.ClientProduct(product), IssuedAt: timestamppb.New(now.UTC()), ExpiresAt: timestamppb.New(now.UTC().Add(7 * 24 * time.Hour))}
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, error) {
+		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: cloudv1.ClientProduct(product), IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC())}
 		signed, signErr := ticket.SignCloudRouteGrant(daemonIdentity, claims)
 		if signErr != nil {
 			return nil, signErr
@@ -229,9 +229,10 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		}
 		return loopbackAPI.NewPeerConnection(configuration)
 	}
+	credentialSource := &r5CredentialSource{credential: credential}
 	dialer := &cloudadapter.Dialer{
 		Peers: pionadapter.Factory{PeerConnections: relayClientFactory}, Cloud: cloudNetwork, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
-		Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: credential}},
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentialSource},
 	}
 	connectContext, cancelConnect := context.WithTimeout(context.Background(), 90*time.Second)
 	ready, err := dialer.Connect(connectContext, r6AutoAttempt(t, daemonIdentity, credential.EndpointID, 1))
@@ -254,6 +255,20 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	eventually(t, 5*time.Second, func() bool { return !edgeRuntime.Ready() })
 	assertR5TerminalIO(t, session, credential.EndpointID, "r6-relay-controller-down")
 	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	offlineContext, cancelOffline := context.WithTimeout(context.Background(), 90*time.Second)
+	offlineReady, err := dialer.Connect(offlineContext, r6AutoAttempt(t, daemonIdentity, credential.EndpointID, 2))
+	cancelOffline()
+	if err != nil {
+		t.Fatalf("create new Cloud Relay session while Controller is offline: %v", err)
+	}
+	offlineSession := offlineReady.(*cloudadapter.Session)
+	assertR5TerminalIO(t, offlineSession, credential.EndpointID, "r6-new-relay-controller-down")
+	if snapshot, ok := offlineSession.ConnectionSnapshot(time.Now().UTC()); !ok || snapshot.ObservedPath != string(endpoint.PathSingleRelay) {
+		t.Fatalf("offline delegated Relay selected path = %+v ok=%v", snapshot, ok)
+	}
+	if err := offlineSession.Close(); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, 5*time.Second, func() bool {

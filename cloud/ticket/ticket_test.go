@@ -20,14 +20,18 @@ func TestAgentTicketBindsEdgeAndRejectsTamper(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	claims := &cloudv1.AgentTicketClaims{TicketId: "ticket", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute))}
+	claims := &cloudv1.AgentTicketClaims{TicketId: "ticket", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), RelayDelegation: &cloudv1.AgentRelayDelegation{MaxBytesPerLease: 1024, MaxRateBytesPerSecond: 512, MaxConcurrentAllocations: 2}}
 	envelope, err := ticket.SignAgentTicket("key", privateKey, claims)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keys := ticket.KeySet{"key": publicKey}
-	if _, err := ticket.VerifyAgentTicket(envelope, keys, "edge-a", now, 30*time.Second); err != nil {
+	verified, err := ticket.VerifyAgentTicket(envelope, keys, "edge-a", now, 30*time.Second)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if verified.GetRelayDelegation().GetMaxBytesPerLease() != 1024 {
+		t.Fatalf("AgentTicket Relay delegation = %v", verified.GetRelayDelegation())
 	}
 	if _, err := ticket.VerifyAgentTicket(envelope, keys, "edge-b", now, 30*time.Second); err == nil {
 		t.Fatal("ticket accepted on another Edge")
@@ -54,7 +58,7 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	now := time.Now().UTC()
 	grant, err := ticket.SignCloudRouteGrant(daemonIdentity, &cloudv1.CloudRouteGrantClaims{
 		GrantId: "grant-r5", DaemonId: "daemon-r5", ClientPublicKey: clientPublicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(7 * 24 * time.Hour)),
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(90 * 24 * time.Hour)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,32 +81,21 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	if err := ticket.VerifyClientRouteProof(daemonIdentity.PublicKey, proof, canonical); err == nil {
 		t.Fatal("Cloud route proof accepted another client key")
 	}
+	helloCanonical, err := ticket.CloudRouteHelloProofBytes(grant, "edge-r5", "session-r5", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helloProof := ed25519.Sign(clientPrivateKey, helloCanonical)
+	if err := ticket.VerifyCloudRouteHelloProof(clientPublicKey, helloProof, grant, "edge-r5", "session-r5", 7); err != nil {
+		t.Fatal(err)
+	}
+	if err := ticket.VerifyCloudRouteHelloProof(clientPublicKey, helloProof, grant, "edge-other", "session-r5", 7); err == nil {
+		t.Fatal("Cloud Route hello proof accepted another Edge")
+	}
 	tampered := proto.Clone(grant).(*cloudv1.SignedEnvelope)
 	tampered.KeyId = "another-device-fingerprint"
 	if _, err := ticket.VerifyCloudRouteGrant(tampered, daemonIdentity.PublicKey, "daemon-r5", now); err == nil {
 		t.Fatal("CloudRouteGrant accepted a mismatched DeviceIdentity key ID")
-	}
-}
-
-func TestCloudRouteGrantAcceptsMuxviaSignatureDuringBrandMigration(t *testing.T) {
-	_, daemonPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
-	daemonIdentity, _ := remoteauth.NewIdentity("device-legacy", daemonPrivateKey)
-	clientPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
-	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
-	claims := &cloudv1.CloudRouteGrantClaims{
-		GrantId: "grant-legacy", DaemonId: "daemon-legacy", ClientPublicKey: clientPublicKey,
-		Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(7 * 24 * time.Hour)),
-	}
-	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacySigningBytes := append([]byte("muxvia.cloud.route-grant.v1\x00"), payload...)
-	grant := &cloudv1.SignedEnvelope{
-		KeyId: daemonIdentity.Fingerprint, Payload: payload, Signature: ed25519.Sign(daemonPrivateKey, legacySigningBytes),
-	}
-	if _, err := ticket.VerifyCloudRouteGrant(grant, daemonIdentity.PublicKey, "daemon-legacy", now); err != nil {
-		t.Fatalf("legacy muxvia CloudRouteGrant rejected during migration: %v", err)
 	}
 }
 
@@ -144,65 +137,6 @@ func TestPairingRouteGrantCarriesOnlyClaimDigestAndBindsClientProof(t *testing.T
 	tampered.Payload[0] ^= 0xff
 	if _, err := ticket.VerifyPairingRouteGrant(tampered, identity.PublicKey, "daemon-pairing", now); err == nil {
 		t.Fatal("tampered PairingRouteGrant was accepted")
-	}
-}
-
-func TestClientTicketBindsP2PEdgeAndHelloGeneration(t *testing.T) {
-	controllerPublicKey, controllerPrivateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	claims := &cloudv1.ClientTicketClaims{
-		TicketId: "client-ticket-r5", AccountId: "account-r5", EdgeId: "edge-r5", DaemonId: "daemon-r5", ClientId: remoteauth.Fingerprint(clientPublicKey),
-		ClientPublicKey: clientPublicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_TUI, RoutePolicy: cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY,
-		AccessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(2 * time.Minute)),
-	}
-	envelope, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, claims)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys := ticket.KeySet{"controller-r5": controllerPublicKey}
-	if _, err := ticket.VerifyClientTicket(envelope, keys, "edge-r5", now, 30*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ticket.VerifyClientTicket(envelope, keys, "edge-other", now, 30*time.Second); err == nil {
-		t.Fatal("ClientTicket accepted another Edge")
-	}
-	canonical, err := ticket.ClientHelloProofBytes(envelope, "session-r5", 7)
-	if err != nil {
-		t.Fatal(err)
-	}
-	proof := ed25519.Sign(clientPrivateKey, canonical)
-	if err := ticket.VerifyClientHelloProof(clientPublicKey, proof, envelope, "session-r5", 7); err != nil {
-		t.Fatal(err)
-	}
-	if err := ticket.VerifyClientHelloProof(clientPublicKey, proof, envelope, "session-r5", 8); err == nil {
-		t.Fatal("ClientHello proof accepted another attempt generation")
-	}
-	tooLong := proto.Clone(claims).(*cloudv1.ClientTicketClaims)
-	tooLong.ExpiresAt = timestamppb.New(now.Add(2*time.Minute + time.Nanosecond))
-	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, tooLong); err == nil {
-		t.Fatal("ClientTicket accepted a lifetime longer than two minutes")
-	}
-	pairing := proto.Clone(claims).(*cloudv1.ClientTicketClaims)
-	pairing.AccessMode = cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING
-	pairing.PairingClaimSha256 = bytes.Repeat([]byte{0x51}, 32)
-	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, pairing); err != nil {
-		t.Fatalf("pairing ClientTicket rejected: %v", err)
-	}
-	badCapability := proto.Clone(claims).(*cloudv1.ClientTicketClaims)
-	badCapability.PairingClaimSha256 = bytes.Repeat([]byte{0x52}, 32)
-	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, badCapability); err == nil {
-		t.Fatal("capability ClientTicket accepted pairing state")
-	}
-	pairing.PairingClaimSha256 = nil
-	if _, err := ticket.SignClientTicket("controller-r5", controllerPrivateKey, pairing); err == nil {
-		t.Fatal("pairing ClientTicket accepted an empty claim digest")
 	}
 }
 

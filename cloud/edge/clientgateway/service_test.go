@@ -43,6 +43,9 @@ func (*cleanupRuntime) CancelAgentSignal(context.Context, string) error { return
 func (*cleanupRuntime) SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error {
 	return nil
 }
+func (*cleanupRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloudv1.AgentTicketClaims, error) {
+	return nil, nil
+}
 
 type cleanupRelay struct{ order *[]string }
 

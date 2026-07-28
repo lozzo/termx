@@ -39,7 +39,7 @@ type Dialer struct {
 	Phase         func(clientruntime.EndpointPhase)
 }
 
-// Connect 依次完成 grant resolve、ClientGateway、P2P、DTLS capability auth、protocol Hello，并返回同一 session contract。
+// Connect 优先复用 secure credential 中的 Edge locator；只有 locator 缺失或失效才查询 Controller。
 func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
 	if dialer == nil || dialer.Peers == nil || dialer.Cloud == nil || dialer.Authorization == nil || dialer.Product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED {
 		return nil, errors.New("Cloud connector dependencies are incomplete")
@@ -59,13 +59,25 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		return nil, errors.New("Cloud route credential is missing its signed discovery grant")
 	}
 	dialer.report(clientruntime.EndpointPhaseSignaling)
-	resolved, err := dialer.Cloud.Resolve(ctx, signaling.CloudRouteGrant(), signaling)
-	if err != nil {
-		return nil, err
+	resolved, cachedErr := cloudclient.NewCachedCapabilityRoute(signaling.CloudEdgeLocator(), signaling.CloudRouteGrant())
+	discovered := false
+	var opened *openedCloudPeer
+	if cachedErr == nil {
+		opened, err = openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
+		if err != nil && !cloudclient.ShouldRefreshEdgeLocator(err) {
+			return nil, err
+		}
 	}
-	opened, err := openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
-	if err != nil {
-		return nil, err
+	if opened == nil {
+		resolved, err = dialer.Cloud.Resolve(ctx, signaling.CloudRouteGrant(), signaling)
+		if err != nil {
+			return nil, err
+		}
+		opened, err = openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
+		if err != nil {
+			return nil, err
+		}
+		discovered = true
 	}
 	fingerprint, err := opened.RemoteCertificateFingerprint()
 	if err != nil {
@@ -98,6 +110,19 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		_ = application.Close()
 		_ = opened.Close()
 		return nil, err
+	}
+	if discovered {
+		locator, err := cloudclient.EncodeEdgeLocator(resolved.Edge())
+		if err != nil {
+			_ = application.Close()
+			_ = opened.Close()
+			return nil, fmt.Errorf("encode authenticated Cloud Edge locator: %w", err)
+		}
+		if err := signaling.StoreCloudEdgeLocator(ctx, locator); err != nil {
+			_ = application.Close()
+			_ = opened.Close()
+			return nil, fmt.Errorf("persist authenticated Cloud Edge locator: %w", err)
+		}
 	}
 	dialer.report(clientruntime.EndpointPhaseReady)
 	peer, signalSession := opened.Release()

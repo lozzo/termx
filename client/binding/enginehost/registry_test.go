@@ -209,13 +209,13 @@ func TestPairingCredentialRollbackRestoresPreparedState(t *testing.T) {
 	platform.credentials["grant-new"] = "bound-new"
 	if err := host.rollbackPreparedCredential(context.Background(), &bindingpb.CredentialRecord{
 		EndpointId: "new", CredentialRef: "grant-new", NewlyCreated: true,
-	}, "bound-new", nil); err != nil {
+	}, "bound-new", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	platform.credentials["grant-existing"] = "bound-new"
 	if err := host.rollbackPreparedCredential(context.Background(), &bindingpb.CredentialRecord{
 		EndpointId: "existing", CredentialRef: "grant-existing", CapabilityGrant: "bound-old",
-	}, "bound-new", nil); err != nil {
+	}, "bound-new", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	platform.mu.Lock()

@@ -3644,8 +3644,10 @@ type CredentialBindRequest struct {
 	CredentialRef   string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
 	CapabilityGrant string                 `protobuf:"bytes,3,opt,name=capability_grant,json=capabilityGrant,proto3" json:"capability_grant,omitempty"`
 	CloudRouteGrant []byte                 `protobuf:"bytes,4,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3" json:"cloud_route_grant,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// cloud_edge_locator 是 Controller 或配对流程返回的 CandidateEdge protobuf；不是授权真值。
+	CloudEdgeLocator []byte `protobuf:"bytes,5,opt,name=cloud_edge_locator,json=cloudEdgeLocator,proto3" json:"cloud_edge_locator,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CredentialBindRequest) Reset() {
@@ -3706,17 +3708,25 @@ func (x *CredentialBindRequest) GetCloudRouteGrant() []byte {
 	return nil
 }
 
+func (x *CredentialBindRequest) GetCloudEdgeLocator() []byte {
+	if x != nil {
+		return x.CloudEdgeLocator
+	}
+	return nil
+}
+
 type CredentialRecord struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	EndpointId      string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
-	CredentialRef   string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
-	PublicKey       []byte                 `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
-	KeyFingerprint  string                 `protobuf:"bytes,4,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"`
-	CapabilityGrant string                 `protobuf:"bytes,5,opt,name=capability_grant,json=capabilityGrant,proto3" json:"capability_grant,omitempty"`
-	NewlyCreated    bool                   `protobuf:"varint,6,opt,name=newly_created,json=newlyCreated,proto3" json:"newly_created,omitempty"`
-	CloudRouteGrant []byte                 `protobuf:"bytes,7,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3" json:"cloud_route_grant,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId       string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	CredentialRef    string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	PublicKey        []byte                 `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	KeyFingerprint   string                 `protobuf:"bytes,4,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"`
+	CapabilityGrant  string                 `protobuf:"bytes,5,opt,name=capability_grant,json=capabilityGrant,proto3" json:"capability_grant,omitempty"`
+	NewlyCreated     bool                   `protobuf:"varint,6,opt,name=newly_created,json=newlyCreated,proto3" json:"newly_created,omitempty"`
+	CloudRouteGrant  []byte                 `protobuf:"bytes,7,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3" json:"cloud_route_grant,omitempty"`
+	CloudEdgeLocator []byte                 `protobuf:"bytes,8,opt,name=cloud_edge_locator,json=cloudEdgeLocator,proto3" json:"cloud_edge_locator,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CredentialRecord) Reset() {
@@ -3794,6 +3804,13 @@ func (x *CredentialRecord) GetNewlyCreated() bool {
 func (x *CredentialRecord) GetCloudRouteGrant() []byte {
 	if x != nil {
 		return x.CloudRouteGrant
+	}
+	return nil
+}
+
+func (x *CredentialRecord) GetCloudEdgeLocator() []byte {
+	if x != nil {
+		return x.CloudEdgeLocator
 	}
 	return nil
 }
@@ -5208,13 +5225,14 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"endpointId\x12%\n" +
 	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\"@\n" +
 	"\x17CredentialDeleteRequest\x12%\n" +
-	"\x0ecredential_ref\x18\x01 \x01(\tR\rcredentialRef\"\xb6\x01\n" +
+	"\x0ecredential_ref\x18\x01 \x01(\tR\rcredentialRef\"\xe4\x01\n" +
 	"\x15CredentialBindRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12%\n" +
 	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\x12)\n" +
 	"\x10capability_grant\x18\x03 \x01(\tR\x0fcapabilityGrant\x12*\n" +
-	"\x11cloud_route_grant\x18\x04 \x01(\fR\x0fcloudRouteGrant\"\x9e\x02\n" +
+	"\x11cloud_route_grant\x18\x04 \x01(\fR\x0fcloudRouteGrant\x12,\n" +
+	"\x12cloud_edge_locator\x18\x05 \x01(\fR\x10cloudEdgeLocator\"\xcc\x02\n" +
 	"\x10CredentialRecord\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12%\n" +
@@ -5224,7 +5242,8 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0fkey_fingerprint\x18\x04 \x01(\tR\x0ekeyFingerprint\x12)\n" +
 	"\x10capability_grant\x18\x05 \x01(\tR\x0fcapabilityGrant\x12#\n" +
 	"\rnewly_created\x18\x06 \x01(\bR\fnewlyCreated\x12*\n" +
-	"\x11cloud_route_grant\x18\a \x01(\fR\x0fcloudRouteGrant\"X\n" +
+	"\x11cloud_route_grant\x18\a \x01(\fR\x0fcloudRouteGrant\x12,\n" +
+	"\x12cloud_edge_locator\x18\b \x01(\fR\x10cloudEdgeLocator\"X\n" +
 	"\x15CredentialSignRequest\x12%\n" +
 	"\x0ecredential_ref\x18\x01 \x01(\tR\rcredentialRef\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\"6\n" +

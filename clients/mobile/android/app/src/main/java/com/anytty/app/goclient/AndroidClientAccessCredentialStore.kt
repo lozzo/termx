@@ -39,6 +39,7 @@ data class AndroidClientAccessCredential(
     val identity: AndroidClientAccessIdentity,
     val capabilityGrant: String,
     val cloudRouteGrant: ByteArray,
+    val cloudEdgeLocator: ByteArray,
 ) {
     /** ready 只有在 PairingExchange 已返回并持久化非空 CapabilityGrant v2 后为 true。 */
     fun ready(): Boolean = capabilityGrant.isNotBlank()
@@ -76,7 +77,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
             publicKey = publicKey,
             fingerprint = keyFingerprint(publicKey),
         )
-        AndroidClientAccessCredential(identity, "", byteArrayOf()).also { persist(normalizedRef, it) }
+        AndroidClientAccessCredential(identity, "", byteArrayOf(), byteArrayOf()).also { persist(normalizedRef, it) }
     }
 
     /** delete 删除本地 ClientAccessIdentity/grant 密文；它不撤销 daemon-local grant。 */
@@ -115,7 +116,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
     }
 
     /** bindRecord 只持久化 Go PairingExchange 已验签的 grant；Kotlin 不解析或复制 remote-auth 规则。 */
-    fun bindRecord(credentialRef: String, endpointId: String, capabilityGrant: String, cloudRouteGrant: ByteArray): ClientBinding.CredentialRecord = synchronized(lock) {
+    fun bindRecord(credentialRef: String, endpointId: String, capabilityGrant: String, cloudRouteGrant: ByteArray, cloudEdgeLocator: ByteArray): ClientBinding.CredentialRecord = synchronized(lock) {
         val normalizedRef = validateRef(credentialRef)
         val normalizedEndpoint = endpointId.trim()
         val grant = capabilityGrant.trim()
@@ -127,7 +128,11 @@ class AndroidClientAccessCredentialStore(context: Context) {
         if (current.identity.endpointId != normalizedEndpoint) {
             throw ClientPlatformFailure("identity_conflict", "credential ref belongs to another endpoint")
         }
-        current.copy(capabilityGrant = grant, cloudRouteGrant = cloudRouteGrant.copyOf()).also { persist(normalizedRef, it) }.toPlatformRecord(normalizedRef)
+        current.copy(
+            capabilityGrant = grant,
+            cloudRouteGrant = cloudRouteGrant.copyOf(),
+            cloudEdgeLocator = cloudEdgeLocator.copyOf(),
+        ).also { persist(normalizedRef, it) }.toPlatformRecord(normalizedRef)
     }
 
     /** sign 只对 Go remote-auth 提供的 canonical bytes 签名；调用方只能按 credential ref 访问，不取得 key seed。 */
@@ -145,6 +150,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
             .put("private_key_seed", encodeUrl(credential.identity.privateKeySeed))
             .put("capability_grant", credential.capabilityGrant.trim())
             .put("cloud_route_grant", encodeUrl(credential.cloudRouteGrant))
+            .put("cloud_edge_locator", encodeUrl(credential.cloudEdgeLocator))
             .toString()
             .toByteArray(Charsets.UTF_8)
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -169,7 +175,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
             cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
             cipher.updateAAD(credentialRef.toByteArray(Charsets.UTF_8))
             val value = JSONObject(String(cipher.doFinal(ciphertext), Charsets.UTF_8))
-            if (value.keys().asSequence().toSet() != setOf("version", "endpoint_id", "private_key_seed", "capability_grant", "cloud_route_grant") ||
+            if (value.keys().asSequence().toSet() != setOf("version", "endpoint_id", "private_key_seed", "capability_grant", "cloud_route_grant", "cloud_edge_locator") ||
                 value.getInt("version") != CREDENTIAL_VERSION) {
                 throw ClientPlatformFailure("unauthenticated", "client access credential schema is invalid")
             }
@@ -181,6 +187,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
                 identity = AndroidClientAccessIdentity(endpointId, seed, publicKey, keyFingerprint(publicKey)),
                 capabilityGrant = value.getString("capability_grant").trim(),
                 cloudRouteGrant = decodeUrl(value.getString("cloud_route_grant")),
+                cloudEdgeLocator = decodeUrl(value.getString("cloud_edge_locator")),
             )
             validateCredential(credential)
             if (requireGrant && !credential.ready()) {
@@ -209,6 +216,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
             .setKeyFingerprint(identity.fingerprint)
             .setCapabilityGrant(capabilityGrant)
             .setCloudRouteGrant(com.google.protobuf.ByteString.copyFrom(cloudRouteGrant))
+            .setCloudEdgeLocator(com.google.protobuf.ByteString.copyFrom(cloudEdgeLocator))
             .setNewlyCreated(newlyCreated)
             .build()
 
@@ -243,7 +251,7 @@ class AndroidClientAccessCredentialStore(context: Context) {
         "ed25519-sha256:" + encodeUrl(MessageDigest.getInstance("SHA-256").digest(publicKey))
 
     companion object {
-        private const val CREDENTIAL_VERSION = 2
+        private const val CREDENTIAL_VERSION = 3
         private const val KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "anytty.client-access.credentials.v1"
         private const val PREFERENCES_NAME = "anytty_client_access_credentials_v1"

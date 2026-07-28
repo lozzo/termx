@@ -129,8 +129,8 @@ func (RelayTransport) EnumDescriptor() ([]byte, []int) {
 	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{1}
 }
 
-// RelayLeaseClaims 是 Controller 冻结商业准入后签发的短期 Relay 上限。
-// Edge 只能缩小这些限制，不能自行扩大或续期。
+// RelayLeaseClaims 是单个 session 的短期 Relay 上限。
+// Controller 在线时由其签发；控制流离线时 Edge 只能从 AgentTicket 的签名委托收缩生成。
 type RelayLeaseClaims struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId                  string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
@@ -509,7 +509,7 @@ func (*RelayLeaseDecision_Lease) isRelayLeaseDecision_Result() {}
 
 func (*RelayLeaseDecision_Denied) isRelayLeaseDecision_Result() {}
 
-// RelayICEConfig 是 Edge 从已验证租约派生的一次性 TURN credential。
+// RelayICEConfig 是 Edge 从已验证或已委托租约派生的一次性 TURN credential。
 // 该消息只在当前 ClientGateway/AgentGateway attempt 内存活，禁止持久化或写日志。
 type RelayICEConfig struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`

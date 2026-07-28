@@ -92,13 +92,16 @@ func (x *CloudICECandidate) GetUsernameFragment() string {
 }
 
 type ClientHello struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	ClientTicket      *SignedEnvelope        `protobuf:"bytes,1,opt,name=client_ticket,json=clientTicket,proto3" json:"client_ticket,omitempty"`
-	ClientProof       []byte                 `protobuf:"bytes,2,opt,name=client_proof,json=clientProof,proto3" json:"client_proof,omitempty"`
-	Product           ClientProduct          `protobuf:"varint,3,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
-	SoftwareVersion   string                 `protobuf:"bytes,4,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
-	AttemptGeneration uint64                 `protobuf:"varint,5,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
-	RelayPreference   RelayPreference        `protobuf:"varint,6,opt,name=relay_preference,json=relayPreference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// route_grant 是 owning daemon 签发的 capability 或 pairing RouteGrant；Controller 不签客户端准入票。
+	RouteGrant        *SignedEnvelope       `protobuf:"bytes,1,opt,name=route_grant,json=routeGrant,proto3" json:"route_grant,omitempty"`
+	ClientPublicKey   []byte                `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	ClientProof       []byte                `protobuf:"bytes,3,opt,name=client_proof,json=clientProof,proto3" json:"client_proof,omitempty"`
+	Product           ClientProduct         `protobuf:"varint,4,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
+	SoftwareVersion   string                `protobuf:"bytes,5,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
+	AttemptGeneration uint64                `protobuf:"varint,6,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
+	RelayPreference   RelayPreference       `protobuf:"varint,7,opt,name=relay_preference,json=relayPreference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
+	AccessMode        CloudClientAccessMode `protobuf:"varint,8,opt,name=access_mode,json=accessMode,proto3,enum=anytty.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -133,9 +136,16 @@ func (*ClientHello) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ClientHello) GetClientTicket() *SignedEnvelope {
+func (x *ClientHello) GetRouteGrant() *SignedEnvelope {
 	if x != nil {
-		return x.ClientTicket
+		return x.RouteGrant
+	}
+	return nil
+}
+
+func (x *ClientHello) GetClientPublicKey() []byte {
+	if x != nil {
+		return x.ClientPublicKey
 	}
 	return nil
 }
@@ -173,6 +183,13 @@ func (x *ClientHello) GetRelayPreference() RelayPreference {
 		return x.RelayPreference
 	}
 	return RelayPreference_RELAY_PREFERENCE_UNSPECIFIED
+}
+
+func (x *ClientHello) GetAccessMode() CloudClientAccessMode {
+	if x != nil {
+		return x.AccessMode
+	}
+	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
 }
 
 type ClientReady struct {
@@ -716,14 +733,18 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
 	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rR\rsdpMlineIndex\x12+\n" +
-	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xd7\x02\n" +
-	"\vClientHello\x12D\n" +
-	"\rclient_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\fclientTicket\x12!\n" +
-	"\fclient_proof\x18\x02 \x01(\fR\vclientProof\x128\n" +
-	"\aproduct\x18\x03 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12)\n" +
-	"\x10software_version\x18\x04 \x01(\tR\x0fsoftwareVersion\x12-\n" +
-	"\x12attempt_generation\x18\x05 \x01(\x04R\x11attemptGeneration\x12K\n" +
-	"\x10relay_preference\x18\x06 \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\x0frelayPreference\"\x83\x01\n" +
+	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xc8\x03\n" +
+	"\vClientHello\x12@\n" +
+	"\vroute_grant\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\n" +
+	"routeGrant\x12*\n" +
+	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
+	"\fclient_proof\x18\x03 \x01(\fR\vclientProof\x128\n" +
+	"\aproduct\x18\x04 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12)\n" +
+	"\x10software_version\x18\x05 \x01(\tR\x0fsoftwareVersion\x12-\n" +
+	"\x12attempt_generation\x18\x06 \x01(\x04R\x11attemptGeneration\x12K\n" +
+	"\x10relay_preference\x18\a \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\x0frelayPreference\x12G\n" +
+	"\vaccess_mode\x18\b \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
+	"accessMode\"\x83\x01\n" +
 	"\vClientReady\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
@@ -808,30 +829,32 @@ var file_cloud_v1_client_gateway_proto_goTypes = []any{
 	(*SignedEnvelope)(nil),        // 8: anytty.cloud.v1.SignedEnvelope
 	(ClientProduct)(0),            // 9: anytty.cloud.v1.ClientProduct
 	(RelayPreference)(0),          // 10: anytty.cloud.v1.RelayPreference
-	(*RelayICEConfig)(nil),        // 11: anytty.cloud.v1.RelayICEConfig
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(CloudClientAccessMode)(0),    // 11: anytty.cloud.v1.CloudClientAccessMode
+	(*RelayICEConfig)(nil),        // 12: anytty.cloud.v1.RelayICEConfig
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_cloud_v1_client_gateway_proto_depIdxs = []int32{
-	8,  // 0: anytty.cloud.v1.ClientHello.client_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
+	8,  // 0: anytty.cloud.v1.ClientHello.route_grant:type_name -> anytty.cloud.v1.SignedEnvelope
 	9,  // 1: anytty.cloud.v1.ClientHello.product:type_name -> anytty.cloud.v1.ClientProduct
 	10, // 2: anytty.cloud.v1.ClientHello.relay_preference:type_name -> anytty.cloud.v1.RelayPreference
-	11, // 3: anytty.cloud.v1.ClientReady.relay:type_name -> anytty.cloud.v1.RelayICEConfig
-	0,  // 4: anytty.cloud.v1.ClientOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
-	0,  // 5: anytty.cloud.v1.EdgeAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
-	12, // 6: anytty.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 7: anytty.cloud.v1.ClientSignal.hello:type_name -> anytty.cloud.v1.ClientHello
-	3,  // 8: anytty.cloud.v1.ClientSignal.offer:type_name -> anytty.cloud.v1.ClientOffer
-	12, // 9: anytty.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 10: anytty.cloud.v1.EdgeSignal.ready:type_name -> anytty.cloud.v1.ClientReady
-	4,  // 11: anytty.cloud.v1.EdgeSignal.answer:type_name -> anytty.cloud.v1.EdgeAnswer
-	5,  // 12: anytty.cloud.v1.EdgeSignal.rejected:type_name -> anytty.cloud.v1.SignalRejected
-	6,  // 13: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
-	7,  // 14: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
-	14, // [14:15] is the sub-list for method output_type
-	13, // [13:14] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	11, // 3: anytty.cloud.v1.ClientHello.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	12, // 4: anytty.cloud.v1.ClientReady.relay:type_name -> anytty.cloud.v1.RelayICEConfig
+	0,  // 5: anytty.cloud.v1.ClientOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	0,  // 6: anytty.cloud.v1.EdgeAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	13, // 7: anytty.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 8: anytty.cloud.v1.ClientSignal.hello:type_name -> anytty.cloud.v1.ClientHello
+	3,  // 9: anytty.cloud.v1.ClientSignal.offer:type_name -> anytty.cloud.v1.ClientOffer
+	13, // 10: anytty.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 11: anytty.cloud.v1.EdgeSignal.ready:type_name -> anytty.cloud.v1.ClientReady
+	4,  // 12: anytty.cloud.v1.EdgeSignal.answer:type_name -> anytty.cloud.v1.EdgeAnswer
+	5,  // 13: anytty.cloud.v1.EdgeSignal.rejected:type_name -> anytty.cloud.v1.SignalRejected
+	6,  // 14: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
+	7,  // 15: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
+	15, // [15:16] is the sub-list for method output_type
+	14, // [14:15] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_client_gateway_proto_init() }

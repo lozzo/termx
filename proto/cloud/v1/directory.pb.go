@@ -190,8 +190,7 @@ func (x *ResolveClientRouteRequest) GetClientProof() []byte {
 
 type ResolveClientRouteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ClientTicket  *SignedEnvelope        `protobuf:"bytes,1,opt,name=client_ticket,json=clientTicket,proto3" json:"client_ticket,omitempty"`
-	Edge          *CandidateEdge         `protobuf:"bytes,2,opt,name=edge,proto3" json:"edge,omitempty"`
+	Edge          *CandidateEdge         `protobuf:"bytes,1,opt,name=edge,proto3" json:"edge,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -226,13 +225,6 @@ func (*ResolveClientRouteResponse) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_directory_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ResolveClientRouteResponse) GetClientTicket() *SignedEnvelope {
-	if x != nil {
-		return x.ClientTicket
-	}
-	return nil
-}
-
 func (x *ResolveClientRouteResponse) GetEdge() *CandidateEdge {
 	if x != nil {
 		return x.Edge
@@ -255,10 +247,9 @@ const file_cloud_v1_directory_proto_rawDesc = "" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12!\n" +
-	"\fclient_proof\x18\x03 \x01(\fR\vclientProof\"\x96\x01\n" +
-	"\x1aResolveClientRouteResponse\x12D\n" +
-	"\rclient_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\fclientTicket\x122\n" +
-	"\x04edge\x18\x02 \x01(\v2\x1e.anytty.cloud.v1.CandidateEdgeR\x04edge2\xc7\x02\n" +
+	"\fclient_proof\x18\x03 \x01(\fR\vclientProof\"P\n" +
+	"\x1aResolveClientRouteResponse\x122\n" +
+	"\x04edge\x18\x01 \x01(\v2\x1e.anytty.cloud.v1.CandidateEdgeR\x04edge2\xc7\x02\n" +
 	"\x10DirectoryService\x12`\n" +
 	"\x10BeginClientRoute\x12(.anytty.cloud.v1.BeginClientRouteRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12b\n" +
 	"\x11BeginPairingRoute\x12).anytty.cloud.v1.BeginPairingRouteRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12m\n" +
@@ -291,19 +282,18 @@ var file_cloud_v1_directory_proto_depIdxs = []int32{
 	4, // 0: anytty.cloud.v1.BeginClientRouteRequest.cloud_route_grant:type_name -> anytty.cloud.v1.SignedEnvelope
 	4, // 1: anytty.cloud.v1.BeginPairingRouteRequest.pairing_route_grant:type_name -> anytty.cloud.v1.SignedEnvelope
 	5, // 2: anytty.cloud.v1.BeginPairingRouteRequest.product:type_name -> anytty.cloud.v1.ClientProduct
-	4, // 3: anytty.cloud.v1.ResolveClientRouteResponse.client_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
-	6, // 4: anytty.cloud.v1.ResolveClientRouteResponse.edge:type_name -> anytty.cloud.v1.CandidateEdge
-	0, // 5: anytty.cloud.v1.DirectoryService.BeginClientRoute:input_type -> anytty.cloud.v1.BeginClientRouteRequest
-	1, // 6: anytty.cloud.v1.DirectoryService.BeginPairingRoute:input_type -> anytty.cloud.v1.BeginPairingRouteRequest
-	2, // 7: anytty.cloud.v1.DirectoryService.ResolveClientRoute:input_type -> anytty.cloud.v1.ResolveClientRouteRequest
-	7, // 8: anytty.cloud.v1.DirectoryService.BeginClientRoute:output_type -> anytty.cloud.v1.IdentityChallenge
-	7, // 9: anytty.cloud.v1.DirectoryService.BeginPairingRoute:output_type -> anytty.cloud.v1.IdentityChallenge
-	3, // 10: anytty.cloud.v1.DirectoryService.ResolveClientRoute:output_type -> anytty.cloud.v1.ResolveClientRouteResponse
-	8, // [8:11] is the sub-list for method output_type
-	5, // [5:8] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 3: anytty.cloud.v1.ResolveClientRouteResponse.edge:type_name -> anytty.cloud.v1.CandidateEdge
+	0, // 4: anytty.cloud.v1.DirectoryService.BeginClientRoute:input_type -> anytty.cloud.v1.BeginClientRouteRequest
+	1, // 5: anytty.cloud.v1.DirectoryService.BeginPairingRoute:input_type -> anytty.cloud.v1.BeginPairingRouteRequest
+	2, // 6: anytty.cloud.v1.DirectoryService.ResolveClientRoute:input_type -> anytty.cloud.v1.ResolveClientRouteRequest
+	7, // 7: anytty.cloud.v1.DirectoryService.BeginClientRoute:output_type -> anytty.cloud.v1.IdentityChallenge
+	7, // 8: anytty.cloud.v1.DirectoryService.BeginPairingRoute:output_type -> anytty.cloud.v1.IdentityChallenge
+	3, // 9: anytty.cloud.v1.DirectoryService.ResolveClientRoute:output_type -> anytty.cloud.v1.ResolveClientRouteResponse
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_directory_proto_init() }

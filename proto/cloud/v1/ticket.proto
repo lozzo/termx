@@ -13,6 +13,14 @@ enum AgentCapability {
   AGENT_CAPABILITY_SIGNALING = 1;
 }
 
+// AgentRelayDelegation 是 Controller 在 daemon 接入时冻结给 Edge 的 Relay 上限。
+// EdgeControl 中断后，Edge 只能在这些上限内为已由 daemon 批准的客户端创建短租约。
+message AgentRelayDelegation {
+  uint64 max_bytes_per_lease = 1;
+  uint64 max_rate_bytes_per_second = 2;
+  uint32 max_concurrent_allocations = 3;
+}
+
 // AgentTicketClaims 把一次 daemon 到 Edge 的连接绑定到持久身份和短有效期。
 message AgentTicketClaims {
   string ticket_id = 1;
@@ -24,6 +32,7 @@ message AgentTicketClaims {
   repeated AgentCapability capabilities = 7;
   google.protobuf.Timestamp issued_at = 8;
   google.protobuf.Timestamp expires_at = 9;
+  AgentRelayDelegation relay_delegation = 10;
 }
 
 // AgentHelloProofInput 把 DeviceIdentity proof 绑定到票据和当前 stream generation。
@@ -32,14 +41,6 @@ message AgentHelloProofInput {
   string daemon_id = 2;
   string boot_id = 3;
   string connection_id = 4;
-}
-
-// CloudRoutePolicy 是 ClientTicket 允许 Edge 执行的 managed Route 范围。
-// P2P_OR_RELAY 仍需独立 RelayLease，不能由该枚举隐式放行 Relay 数据面。
-enum CloudRoutePolicy {
-  CLOUD_ROUTE_POLICY_UNSPECIFIED = 0;
-  CLOUD_ROUTE_POLICY_P2P_ONLY = 1;
-  CLOUD_ROUTE_POLICY_P2P_OR_RELAY = 2;
 }
 
 // CloudRouteGrantClaims 由 owning daemon 的 DeviceIdentity 签发，只授权发现和信令。
@@ -81,25 +82,11 @@ message PairingRouteProofInput {
   string request_id = 4;
 }
 
-// ClientTicketClaims 是 Controller 对单个在线 Edge 信令 attempt 的两分钟准入票据。
-message ClientTicketClaims {
-  string ticket_id = 1;
-  string account_id = 2;
-  string edge_id = 3;
-  string daemon_id = 4;
-  string client_id = 5;
-  bytes client_public_key = 6;
-  ClientProduct product = 7;
-  CloudRoutePolicy route_policy = 8;
-  google.protobuf.Timestamp issued_at = 9;
-  google.protobuf.Timestamp expires_at = 10;
-  CloudClientAccessMode access_mode = 11;
-  bytes pairing_claim_sha256 = 12;
-}
-
-// ClientHelloProofInput 把 ClientAccessIdentity proof 绑定到票据和当前 attempt generation。
-message ClientHelloProofInput {
-  bytes ticket_payload_sha256 = 1;
-  string session_id = 2;
-  uint64 attempt_generation = 3;
+// CloudRouteHelloProofInput 把 daemon 签名的长期 Route grant 绑定到当前 Edge 和单次 stream generation。
+// grant 可复用，但每次连接都必须由同一 ClientAccessIdentity 重新签名，复制 grant 本身不能建立连接。
+message CloudRouteHelloProofInput {
+  bytes route_grant_payload_sha256 = 1;
+  string edge_id = 2;
+  string session_id = 3;
+  uint64 attempt_generation = 4;
 }

@@ -49,6 +49,55 @@ describe('ProtoBindingClient cancellation ownership', () => {
   })
 })
 
+describe('ProtoBindingSession invalidation', () => {
+  it('retires a session and notifies the workspace when application commands report it unavailable', async () => {
+    const backend = new CancellationBackend()
+    let nextOperation = 0n
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.OPEN_SESSION) {
+        const operationHandle = ++nextOperation
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+            operationHandle,
+            sessionHandle: 70n,
+            session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n }),
+          }) },
+        }))))
+        return operationHandle
+      }
+      if (operation === BindingOperation.EXECUTE) {
+        const operationHandle = ++nextOperation
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'execute', value: create(ExecuteResultSchema, {
+            operationHandle,
+            sessionHandle: handle,
+            error: create(ApiErrorSchema, {
+              code: ApiErrorCode.UNAVAILABLE,
+              message: 'client session is unavailable',
+              retryable: true,
+            }),
+          }) },
+        }))))
+        return operationHandle
+      }
+      return 0n
+    }
+    const invalidated = vi.fn()
+    document.addEventListener('anytty:session-invalidated', invalidated)
+    const client = new ProtoBindingClient(backend)
+
+    try {
+      const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+      await expect(session.execute(create(CommandEnvelopeSchema))).rejects.toMatchObject({ code: 'unavailable' })
+      expect(session.isAlive()).toBe(false)
+      expect(invalidated).toHaveBeenCalledTimes(1)
+    } finally {
+      document.removeEventListener('anytty:session-invalidated', invalidated)
+      await client.close()
+    }
+  })
+})
+
 describe('ProtoBindingClient engine command boundary', () => {
   it('owns operation release failures when the binding generation closes', async () => {
     const backend = new CancellationBackend()

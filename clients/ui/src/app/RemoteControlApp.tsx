@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Monitor, MoreHorizontal, Plus, QrCode, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Monitor, MoreHorizontal, Plus, QrCode, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -155,6 +155,7 @@ export interface MachineRuntime {
     subscribe(listener: () => void): () => void
   } | undefined
   fileTransfer?: FileTransferContext | undefined
+  disconnect?(): void | Promise<void>
   dispose?(): void | Promise<void>
 }
 
@@ -551,6 +552,12 @@ export function RemoteControlApp({
     setError(null)
   }, [dropMachineRuntime, externalPairingAdapter, selectedMachineId, storage])
 
+  const disconnectMachineConnection = useCallback(async (machine: RemoteMachine) => {
+    const runtime = runtimeCacheRef.current?.runtimes.get(machine.id)
+    if (!runtime?.disconnect) return
+    await runtime.disconnect()
+  }, [])
+
   useEffect(() => addNativeBackHandler(() => {
     if (scanOpen) {
       setSSHCredentialNotice(null)
@@ -609,6 +616,7 @@ export function RemoteControlApp({
           onOpenSettings={() => { hapticSelection(); setView('settings') }}
           onOpenTransferCenter={() => { hapticSelection(); setTransferCenterOpen(true) }}
           onForgetMachineAuthorization={forgetMachineAuthorization}
+          onDisconnectMachine={disconnectMachineConnection}
           onSelectMachine={selectMachine}
         />
       )}
@@ -780,6 +788,7 @@ function HomeView({
   authorizedMachineIds,
   authorizationExpiries,
   onAddLocalDevice,
+  onDisconnectMachine,
   onForgetMachineAuthorization,
   onOpenSettings,
   onOpenTransferCenter,
@@ -792,6 +801,7 @@ function HomeView({
   authorizedMachineIds: Set<string>
   authorizationExpiries: Map<string, string>
   onAddLocalDevice: () => void
+  onDisconnectMachine: (machine: DisplayMachine) => void | Promise<void>
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
@@ -867,6 +877,7 @@ function HomeView({
                 authorizationState={machineAuthorizationState(machine, authorizedMachineIds, authorizationExpiries)}
                 machine={machine}
                 connectionStateSource={getConnectionStateSource(machine)}
+                onDisconnectMachine={onDisconnectMachine}
                 onForgetMachineAuthorization={onForgetMachineAuthorization}
                 onSelectMachine={onSelectMachine}
                 onShowDetails={setDetailMachine}
@@ -1555,6 +1566,7 @@ function MachineRow({
   authorizationState,
   machine,
   connectionStateSource,
+  onDisconnectMachine,
   onForgetMachineAuthorization,
   onSelectMachine,
   onShowDetails,
@@ -1563,12 +1575,15 @@ function MachineRow({
   authorizationState: MachineAuthorizationState
   machine: DisplayMachine
   connectionStateSource?: MachineRuntime['listConnectionState']
+  onDisconnectMachine: (machine: DisplayMachine) => void | Promise<void>
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onSelectMachine: (machine: DisplayMachine) => void
   onShowDetails: (machine: DisplayMachine) => void
 }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [disconnectError, setDisconnectError] = useState(false)
   const connection = useSyncExternalStore(
     connectionStateSource?.subscribe ?? noopSubscribe,
     connectionStateSource?.getSnapshot ?? getEmptyMachineConnectionSnapshot,
@@ -1579,6 +1594,20 @@ function MachineRow({
   const card = machineCardProjection(machine, authorizationState, authorizationExpiresAt, connection, t)
   const DeviceIcon = machine.accessClass === 'cloud' ? Cloud : LaptopMinimal
   const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
+  const canDisconnect = connection.phase === 'connected'
+  const disconnect = async () => {
+    if (!globalThis.confirm(t('machines.disconnectConfirm', { name: machine.name }))) return
+    setDisconnecting(true)
+    setDisconnectError(false)
+    try {
+      await onDisconnectMachine(machine)
+      setMenuOpen(false)
+    } catch {
+      setDisconnectError(true)
+    } finally {
+      setDisconnecting(false)
+    }
+  }
   return (
     <div className="relative bg-white">
       <button
@@ -1624,6 +1653,19 @@ function MachineRow({
                 <Info className="h-4 w-4" />
                 {t('machines.details')}
               </button>
+              {canDisconnect ? (
+                <button
+                  aria-label={t('machines.disconnectFrom', { name: machine.name })}
+                  className="flex h-11 w-full items-center gap-2 border-t border-[var(--anytty-app-line)] px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  disabled={disconnecting}
+                  type="button"
+                  onClick={() => { void disconnect() }}
+                >
+                  {disconnecting ? <span className="anytty-square-spinner h-4 w-4" aria-hidden="true" /> : <Unplug className="h-4 w-4" />}
+                  {t(disconnecting ? 'machines.disconnecting' : 'machines.disconnect')}
+                </button>
+              ) : null}
+              {disconnectError ? <p className="px-2.5 py-2 text-xs font-medium text-red-600" role="alert">{t('machines.disconnectFailed')}</p> : null}
               {canForget ? (
                 <button
                   aria-label={t('machines.removeAuthorization')}

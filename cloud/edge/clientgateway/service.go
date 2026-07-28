@@ -1,9 +1,11 @@
-// Package clientgateway 实现客户端到 Edge 的短票据准入和 P2P WebRTC 信令转发。
-// 本包不接收 CapabilityGrant，也不承载 DataChannel 或 terminal payload。
+// Package clientgateway 使用 daemon 签名 RouteGrant 完成客户端到 Edge 的离线准入和 P2P WebRTC 信令转发。
+// 本包不承载 DataChannel 或 terminal payload。
 package clientgateway
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,9 +32,12 @@ type Runtime interface {
 	BeginAgentSignal(context.Context, string, string, string) (uint64, <-chan *cloudv1.AgentEvent, error)
 	CancelAgentSignal(context.Context, string) error
 	SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error
+	AuthenticatedAgentClaims(context.Context, string) (*cloudv1.AgentTicketClaims, error)
 }
 
-// RelayBroker 只通过当前 EdgeControl generation 申请短租约并返回已经验签、登记的临时 ICE 参数。
+var errRouteStale = errors.New("cached Edge no longer owns the target daemon")
+
+// RelayBroker 使用在线 Controller 决策或 AgentTicket 委托创建并登记临时 ICE 参数。
 type RelayBroker interface {
 	RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error)
 	RenewRelayLease(context.Context, *cloudv1.RelayLeaseRequest, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error)
@@ -43,29 +49,27 @@ type RelaySessionCloser interface {
 	CloseRelaySession(context.Context, string) error
 }
 
-// Config 提供 Edge identity、动态 Controller ticket key set 和信令 deadline。
+// Config 提供 Edge identity、状态 owner 和信令 deadline。
 type Config struct {
-	EdgeID           string
-	EdgeBootID       string
-	Runtime          Runtime
-	VerificationKeys func() ticket.KeySet
-	Ready            func() bool
-	SignalTimeout    time.Duration
-	Now              func() time.Time
-	Relay            RelayBroker
+	EdgeID        string
+	EdgeBootID    string
+	Runtime       Runtime
+	SignalTimeout time.Duration
+	Now           func() time.Time
+	Relay         RelayBroker
 }
 
-// Service 只在票据、proof、产品和 attempt generation 全部一致后发布客户端实时摘要。
+// Service 只在 RouteGrant、proof、产品和 attempt generation 全部一致后发布客户端实时摘要。
 type Service struct {
 	cloudv1.UnimplementedClientGatewayServer
 	config Config
 }
 
-// NewService 拒绝无法离线验票、无法查询 ready 或没有 State actor 的装配。
+// NewService 拒绝没有 State actor 或信令 deadline 的装配。
 func NewService(config Config) (*Service, error) {
 	config.EdgeID, config.EdgeBootID = strings.TrimSpace(config.EdgeID), strings.TrimSpace(config.EdgeBootID)
-	if config.EdgeID == "" || config.EdgeBootID == "" || config.Runtime == nil || config.VerificationKeys == nil || config.Ready == nil || config.SignalTimeout <= 0 {
-		return nil, errors.New("ClientGateway Edge identity, runtime, ticket keys, readiness, and signal timeout are required")
+	if config.EdgeID == "" || config.EdgeBootID == "" || config.Runtime == nil || config.SignalTimeout <= 0 {
+		return nil, errors.New("ClientGateway Edge identity, runtime, and signal timeout are required")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -75,22 +79,22 @@ func NewService(config Config) (*Service, error) {
 
 // Connect 完成 ClientHello、单次完整 offer/answer correlation；成功后 P2P DataChannel 不再依赖该 stream。
 func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) error {
-	if !service.config.Ready() {
-		return status.Error(codes.Unavailable, "Edge is not synchronized with Controller")
-	}
 	helloEvent, err := stream.Recv()
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "receive ClientHello: %v", err)
 	}
-	claims, err := service.admit(helloEvent)
+	claims, err := service.admit(stream.Context(), helloEvent)
 	if err != nil {
+		if errors.Is(err, errRouteStale) {
+			return status.Error(codes.NotFound, errRouteStale.Error())
+		}
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
 	sessionID := helloEvent.GetConnectionId()
 	generation := helloEvent.GetHello().GetAttemptGeneration()
 	sessionContext, cancelSession := context.WithCancelCause(stream.Context())
 	defer cancelSession(context.Canceled)
-	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Product: claims.GetProduct(), Generation: generation, AccessMode: claims.GetAccessMode()}
+	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Product: claims.product, Generation: generation, AccessMode: claims.accessMode}
 	if err := service.config.Runtime.UpsertSession(sessionContext, summary); err != nil {
 		return status.Errorf(codes.Aborted, "publish client session: %v", err)
 	}
@@ -113,19 +117,28 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 	var relay *cloudv1.RelayICEConfig
 	if preference != cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY {
-		if claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY || service.config.Relay == nil {
+		if service.config.Relay == nil {
 			return status.Error(codes.FailedPrecondition, "Relay is not allowed for this Cloud attempt")
 		}
 		relay, err = service.config.Relay.RequestRelayLease(sessionContext, &cloudv1.RelayLeaseRequest{
-			CorrelationId: uuid.NewString(), SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Preference: preference,
+			CorrelationId: uuid.NewString(), SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
 		})
-		if err != nil {
-			return status.Error(codes.ResourceExhausted, err.Error())
+		if err != nil || relay == nil {
+			if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
+				if err == nil {
+					err = errors.New("Relay authorization is unavailable")
+				}
+				return status.Error(codes.Unavailable, err.Error())
+			}
+			// AUTO 在 Relay 授权不可用时仍允许纯 P2P。
+			relay = nil
 		}
-		renewRequest := &cloudv1.RelayLeaseRequest{
-			SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Preference: preference,
+		if relay != nil {
+			renewRequest := &cloudv1.RelayLeaseRequest{
+				SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
+			}
+			go service.maintainRelayLease(sessionContext, renewRequest, relay, cancelSession)
 		}
-		go service.maintainRelayLease(sessionContext, renewRequest, relay, cancelSession)
 	}
 	if err := stream.Send(service.edgeSignal(sessionID, 1, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
 		return err
@@ -138,7 +151,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	correlationID := uuid.NewString()
-	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(sessionContext, correlationID, claims.GetDaemonId(), sessionID)
+	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(sessionContext, correlationID, claims.daemonID, sessionID)
 	if err != nil {
 		return status.Error(codes.FailedPrecondition, "target daemon is no longer online")
 	}
@@ -149,10 +162,10 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}()
 	offer := offerEvent.GetOffer()
 	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Offer{Offer: &cloudv1.AgentOffer{
-		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), OfferSdp: offer.GetOfferSdp(), Candidates: cloneCandidates(offer.GetCandidates()), Relay: cloneRelay(relay),
-		AccessMode: claims.GetAccessMode(), PairingClaimSha256: append([]byte(nil), claims.GetPairingClaimSha256()...),
+		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.clientPublicKey...), OfferSdp: offer.GetOfferSdp(), Candidates: cloneCandidates(offer.GetCandidates()), Relay: cloneRelay(relay),
+		AccessMode: claims.accessMode, PairingClaimSha256: append([]byte(nil), claims.pairingClaimDigest...),
 	}}}
-	if err := service.config.Runtime.SendAgentCommand(sessionContext, claims.GetDaemonId(), agentGeneration, command); err != nil {
+	if err := service.config.Runtime.SendAgentCommand(sessionContext, claims.daemonID, agentGeneration, command); err != nil {
 		return status.Error(codes.FailedPrecondition, "target daemon signaling stream changed")
 	}
 	timer := time.NewTimer(service.config.SignalTimeout)
@@ -303,9 +316,9 @@ func receiveClientSignal(ctx context.Context, stream cloudv1.ClientGateway_Conne
 	}
 }
 
-func (service *Service) authorizeClient(ctx context.Context, claims *cloudv1.ClientTicketClaims, sessionID string) error {
+func (service *Service) authorizeClient(ctx context.Context, claims *admissionClaims, sessionID string) error {
 	correlationID := uuid.NewString()
-	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(ctx, correlationID, claims.GetDaemonId(), sessionID)
+	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(ctx, correlationID, claims.daemonID, sessionID)
 	if err != nil {
 		return errors.New("target daemon is no longer online")
 	}
@@ -315,10 +328,10 @@ func (service *Service) authorizeClient(ctx context.Context, claims *cloudv1.Cli
 		_ = service.config.Runtime.CancelAgentSignal(cleanup, correlationID)
 	}()
 	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Authorize{Authorize: &cloudv1.AgentAuthorize{
-		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), Product: claims.GetProduct(),
-		AccessMode: claims.GetAccessMode(), PairingClaimSha256: append([]byte(nil), claims.GetPairingClaimSha256()...),
+		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.clientPublicKey...), Product: claims.product,
+		AccessMode: claims.accessMode, PairingClaimSha256: append([]byte(nil), claims.pairingClaimDigest...),
 	}}}
-	if err := service.config.Runtime.SendAgentCommand(ctx, claims.GetDaemonId(), agentGeneration, command); err != nil {
+	if err := service.config.Runtime.SendAgentCommand(ctx, claims.daemonID, agentGeneration, command); err != nil {
 		return errors.New("target daemon authorization stream changed")
 	}
 	timer := time.NewTimer(service.config.SignalTimeout)
@@ -339,25 +352,86 @@ func (service *Service) authorizeClient(ctx context.Context, claims *cloudv1.Cli
 	}
 }
 
-func (service *Service) admit(event *cloudv1.ClientSignal) (*cloudv1.ClientTicketClaims, error) {
+type admissionClaims struct {
+	accountID, daemonID, clientID string
+	clientPublicKey               []byte
+	product                       cloudv1.ClientProduct
+	accessMode                    cloudv1.CloudClientAccessMode
+	pairingClaimDigest            []byte
+}
+
+func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) (*admissionClaims, error) {
 	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 1 || event.GetHello() == nil || strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
 		return nil, errors.New("ClientHello envelope is invalid")
 	}
 	hello := event.GetHello()
-	claims, err := ticket.VerifyClientTicket(hello.GetClientTicket(), service.config.VerificationKeys(), service.config.EdgeID, service.config.Now().UTC(), 30*time.Second)
-	if err != nil {
-		return nil, err
+	grant := hello.GetRouteGrant()
+	if grant == nil || len(hello.GetClientPublicKey()) != ed25519.PublicKeySize || hello.GetAttemptGeneration() == 0 || hello.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || hello.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+		return nil, errors.New("ClientHello RouteGrant identity is incomplete")
 	}
-	if event.GetSenderId() != claims.GetClientId() || hello.GetProduct() != claims.GetProduct() || hello.GetAttemptGeneration() == 0 {
-		return nil, errors.New("ClientHello identity, product, or generation does not match ClientTicket")
+	daemonID := routeGrantDaemonID(grant, hello.GetAccessMode())
+	if daemonID == "" {
+		return nil, errors.New("ClientHello RouteGrant payload is invalid")
+	}
+	agent, err := service.config.Runtime.AuthenticatedAgentClaims(ctx, daemonID)
+	if err != nil || agent == nil {
+		return nil, errRouteStale
+	}
+	if agent.GetEdgeId() != service.config.EdgeID || agent.GetDaemonId() != daemonID {
+		return nil, errRouteStale
+	}
+	claims := &admissionClaims{accountID: agent.GetAccountId(), daemonID: daemonID, clientPublicKey: append([]byte(nil), hello.GetClientPublicKey()...), product: hello.GetProduct(), accessMode: hello.GetAccessMode()}
+	switch hello.GetAccessMode() {
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
+		verified, verifyErr := ticket.VerifyCloudRouteGrant(grant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
+		if verifyErr != nil {
+			return nil, verifyErr
+		}
+		if !bytes.Equal(verified.GetClientPublicKey(), hello.GetClientPublicKey()) || verified.GetProduct() != hello.GetProduct() {
+			return nil, errors.New("ClientHello identity or product does not match CloudRouteGrant")
+		}
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
+		verified, verifyErr := ticket.VerifyPairingRouteGrant(grant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
+		if verifyErr != nil {
+			return nil, verifyErr
+		}
+		if verified.GetDeviceId() != agent.GetDeviceId() {
+			return nil, errors.New("PairingRouteGrant targets another device")
+		}
+		claims.pairingClaimDigest = append([]byte(nil), verified.GetPairingClaimSha256()...)
+	default:
+		return nil, errors.New("ClientHello RouteGrant access mode is invalid")
+	}
+	claims.clientID = remoteauth.Fingerprint(claims.clientPublicKey)
+	if event.GetSenderId() != claims.clientID {
+		return nil, errors.New("ClientHello sender does not match client public key")
 	}
 	if hello.GetRelayPreference() < cloudv1.RelayPreference_RELAY_PREFERENCE_UNSPECIFIED || hello.GetRelayPreference() > cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
 		return nil, errors.New("ClientHello Relay preference is invalid")
 	}
-	if err := ticket.VerifyClientHelloProof(claims.GetClientPublicKey(), hello.GetClientProof(), hello.GetClientTicket(), event.GetConnectionId(), hello.GetAttemptGeneration()); err != nil {
+	if err := ticket.VerifyCloudRouteHelloProof(claims.clientPublicKey, hello.GetClientProof(), grant, service.config.EdgeID, event.GetConnectionId(), hello.GetAttemptGeneration()); err != nil {
 		return nil, err
 	}
 	return claims, nil
+}
+
+func routeGrantDaemonID(grant *cloudv1.SignedEnvelope, mode cloudv1.CloudClientAccessMode) string {
+	if grant == nil {
+		return ""
+	}
+	switch mode {
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
+		claims := &cloudv1.CloudRouteGrantClaims{}
+		if proto.Unmarshal(grant.GetPayload(), claims) == nil {
+			return strings.TrimSpace(claims.GetDaemonId())
+		}
+	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
+		claims := &cloudv1.PairingRouteGrantClaims{}
+		if proto.Unmarshal(grant.GetPayload(), claims) == nil {
+			return strings.TrimSpace(claims.GetDaemonId())
+		}
+	}
+	return ""
 }
 
 func cloneRelay(value *cloudv1.RelayICEConfig) *cloudv1.RelayICEConfig {

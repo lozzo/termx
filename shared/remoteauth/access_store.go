@@ -47,6 +47,7 @@ type PairingExchangeResult struct {
 	Scope                 Scope
 	ExpiresAt             time.Time
 	CloudRouteGrant       []byte
+	CloudEdgeLocator      []byte
 }
 
 // ClientAccessRecord 是 local owner 或 ManageClientAccess session 可读取的脱敏授权投影。
@@ -86,7 +87,7 @@ type AccessStore struct {
 	closed                    bool
 	accessProjectionRevision  uint64
 	changes                   chan struct{}
-	managedRouteGrantIssuer   func(ed25519.PublicKey, uint32, time.Time) ([]byte, error)
+	managedRouteGrantIssuer   func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, error)
 	managedPairingGrantIssuer func([]byte, time.Time, time.Time) ([]byte, error)
 	clientGrants              map[string]map[string]struct{}
 }
@@ -182,7 +183,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 
 // ConfigureManagedRouteGrantIssuer 安装 daemon Cloud owner 的可选 grant issuer。
 // issuer 只在 PairingExchange 原子事务内调用，必须返回 DeviceIdentity 签名的 Cloud Proto bytes；重复配置会失败。
-func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.PublicKey, uint32, time.Time) ([]byte, error)) error {
+func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, error)) error {
 	if store == nil || issuer == nil {
 		return errors.New("managed Route grant issuer is required")
 	}
@@ -441,7 +442,7 @@ func (store *AccessStore) redeemPairingBundle(payload []byte, clientPublicKey ed
 		if store.managedRouteGrantIssuer == nil {
 			return PairingExchangeResult{}, errors.New("managed Route grant issuer is unavailable")
 		}
-		cloudRouteGrant, err = store.managedRouteGrantIssuer(append(ed25519.PublicKey(nil), clientPublicKey...), product, now)
+		cloudRouteGrant, err = store.managedRouteGrantIssuer(append(ed25519.PublicKey(nil), clientPublicKey...), product, now, grantClaims.ExpiresAt)
 		if err != nil {
 			return PairingExchangeResult{}, fmt.Errorf("issue managed Route grant: %w", err)
 		}

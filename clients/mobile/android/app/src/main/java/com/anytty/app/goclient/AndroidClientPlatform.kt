@@ -83,6 +83,7 @@ class AndroidClientPlatform(
                         request.credentialBind.endpointId,
                         request.credentialBind.capabilityGrant,
                         request.credentialBind.cloudRouteGrant.toByteArray(),
+                        request.credentialBind.cloudEdgeLocator.toByteArray(),
                     ))
                 ClientBinding.PlatformRequest.RequestCase.ENDPOINT_REGISTRY_LOAD ->
                     response.setEndpointRegistry(ClientBinding.EndpointRegistryLoaded.newBuilder()

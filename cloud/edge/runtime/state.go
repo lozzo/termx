@@ -59,6 +59,7 @@ type stateRequest struct {
 type stateData struct {
 	revision           uint64
 	agents             map[string]*cloudv1.AgentPresence
+	agentClaims        map[string]*cloudv1.AgentTicketClaims
 	agentWriters       map[string]agentWriter
 	agentNextGen       map[string]uint64
 	sessions           map[string]*cloudv1.ClientSessionSummary
@@ -125,9 +126,12 @@ func (state *State) UpsertAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 	})
 }
 
-// AttachAgent 为已认证 AgentGateway 分配单调 generation，并原子替换同 daemon 的旧 writer。
-// close/send 都只会在 actor 外调用，避免网络 IO 或 goroutine 等待阻塞唯一状态 owner。
-func (state *State) AttachAgent(ctx context.Context, agent *cloudv1.AgentPresence, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, error) {
+// AttachAuthenticatedAgent 为已认证 AgentGateway 分配单调 generation，并保留 daemon 身份供 ClientGateway 离线验签。
+func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1.AgentPresence, claims *cloudv1.AgentTicketClaims, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, error) {
+	if agent == nil || claims == nil || claims.GetDaemonId() != agent.GetDaemonId() || claims.GetAccountId() != agent.GetAccountId() || len(claims.GetDevicePublicKey()) == 0 {
+		return 0, errors.New("authenticated Agent claims do not match Presence")
+	}
+	claims = proto.Clone(claims).(*cloudv1.AgentTicketClaims)
 	if agent == nil || send == nil || closeWriter == nil {
 		return 0, errors.New("authenticated agent and writer are required")
 	}
@@ -152,6 +156,7 @@ func (state *State) AttachAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 		}
 		data.agentWriters[clone.GetDaemonId()] = agentWriter{generation: clone.GetGeneration(), send: send, close: closeWriter}
 		data.agents[clone.GetDaemonId()] = clone
+		data.agentClaims[clone.GetDaemonId()] = proto.Clone(claims).(*cloudv1.AgentTicketClaims)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: proto.Clone(clone).(*cloudv1.AgentPresence)}})
 		reply <- result{generation: clone.GetGeneration(), oldClose: oldClose}
@@ -171,6 +176,38 @@ func (state *State) AttachAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 	}
 }
 
+// AuthenticatedAgentClaims 返回当前 AgentGateway generation 已验证的 daemon 身份，不访问 Controller。
+func (state *State) AuthenticatedAgentClaims(ctx context.Context, daemonID string) (*cloudv1.AgentTicketClaims, error) {
+	daemonID = strings.TrimSpace(daemonID)
+	if daemonID == "" {
+		return nil, errors.New("daemon id is required")
+	}
+	reply := make(chan *cloudv1.AgentTicketClaims, 1)
+	if err := state.submit(ctx, func(data *stateData) {
+		claims := data.agentClaims[daemonID]
+		agent := data.agents[daemonID]
+		writer := data.agentWriters[daemonID]
+		if claims == nil || agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() {
+			reply <- nil
+			return
+		}
+		reply <- proto.Clone(claims).(*cloudv1.AgentTicketClaims)
+	}); err != nil {
+		return nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-state.done:
+		return nil, ErrStateClosed
+	case claims := <-reply:
+		if claims == nil {
+			return nil, ErrStaleGeneration
+		}
+		return claims, nil
+	}
+}
+
 // DetachAgent 删除精确 AgentGateway generation；迟到连接不能删除替换后的 Presence。
 func (state *State) DetachAgent(ctx context.Context, daemonID string, generation uint64) error {
 	return state.mutate(ctx, func(data *stateData) error {
@@ -181,6 +218,7 @@ func (state *State) DetachAgent(ctx context.Context, daemonID string, generation
 		}
 		delete(data.agentWriters, daemonID)
 		delete(data.agents, daemonID)
+		delete(data.agentClaims, daemonID)
 		data.cancelAgentSignals(daemonID, generation)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentRemoved{AgentRemoved: &cloudv1.AgentRemoved{DaemonId: daemonID, Generation: generation}}})
@@ -525,7 +563,7 @@ func (state *State) Close() {
 
 func (state *State) run(deltaBuffer int) {
 	data := &stateData{
-		agents: make(map[string]*cloudv1.AgentPresence), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
+		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.AgentTicketClaims), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
 		relayLeases: make(map[string]relayLease), relayReservations: make(map[string]relayReservation), allocations: make(map[string]relayAllocation), allocationNextGen: make(map[string]uint64),
 		accountAllocations: make(map[string]uint32), leaseAllocations: make(map[string]uint32), sessionAllocations: make(map[string]uint32),
 		accountRates: make(map[string]*policy.RateLimiter), sessionRates: make(map[string]*policy.RateLimiter),

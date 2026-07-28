@@ -18,6 +18,7 @@ import {
   type FileOperationResult,
 } from '../generated/apipb/file_pb'
 import { isModelPreviewFile } from './modelFileTypes'
+import { normalizeFilePath, parentPath } from './fileUtils'
 import {
   decodeFileTransferDataPayload,
   decodeFileTransferFinishPayload,
@@ -178,7 +179,7 @@ function createProtoFileApi(session: ProtoClientSession): FileApi {
       const result = await execute('fileList', create(FileListCommandSchema, { path: normalizeFilePath(path), cursor, limit }))
       if (result.result.case !== 'fileList') throw new Error('file list returned no result')
       return {
-        path: result.result.value.path,
+        path: normalizeFilePath(result.result.value.path),
         entries: result.result.value.entries.map(protoFileEntry),
         parent: parentPath(result.result.value.path),
         total: result.result.value.entries.length,
@@ -403,18 +404,6 @@ function normalizePreviewCategory(raw: string | undefined, mimeType: string, nam
 function basename(path: string): string {
   const normalized = path.replace(/\/+$/, '')
   return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized
-}
-
-function parentPath(path: string): string {
-  const normalized = normalizeFilePath(path)
-  if (normalized === '/') return ''
-  const parent = normalized.slice(0, normalized.lastIndexOf('/'))
-  return parent || '/'
-}
-
-function normalizeFilePath(path: string): string {
-  const trimmed = path.trim()
-  return trimmed.startsWith('/') ? trimmed : '/'
 }
 
 function normalizeFileError(err: unknown): Error {

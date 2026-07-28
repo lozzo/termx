@@ -604,7 +604,15 @@ class ProtoBindingSession implements ProtoClientSession {
 
   execute(command: AnyTTYApiApplication.CommandEnvelope, options?: { signal?: AbortSignal }): Promise<AnyTTYApiApplication.ResultEnvelope> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
-    return this.client.execute(this.handle, command, options?.signal)
+    return this.client.execute(this.handle, command, options?.signal).catch((error: unknown) => {
+      if (isSessionInvalidationError(error)) {
+        this.markClosed(error instanceof Error ? error : new Error(String(error)))
+        document.dispatchEvent(new CustomEvent('anytty:session-invalidated', {
+          detail: error instanceof Error ? error.message : String(error),
+        }))
+      }
+      throw error
+    })
   }
 
   subscribeEvents(handler: (event: AnyTTYApiApplication.EventEnvelope) => void): ProtoClientSubscription {
@@ -691,6 +699,13 @@ function apiError(error: { code?: AnyTTYApiCommon.ApiErrorCode, message?: string
   if (code) result.code = code
   if (typeof error?.retryable === 'boolean') result.retryable = error.retryable
   return result
+}
+
+function isSessionInvalidationError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as Error & { code?: string }).code
+  if (code === 'stale_session') return true
+  return code === 'unavailable' && /(?:client|application) session is unavailable/i.test(error.message)
 }
 
 function routePreferenceFromProto(value: AnyTTYRemoteAuth.EndpointRoutePreference | undefined): ConnectionPolicy['route'] {
