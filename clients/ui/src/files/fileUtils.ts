@@ -37,6 +37,37 @@ export function parentPath(path: string): string {
   return normalized.slice(0, index)
 }
 
+export interface PathBreadcrumb {
+  label: string
+  path: string
+}
+
+export function pathBreadcrumbs(path: string): PathBreadcrumb[] {
+  const normalized = normalizeFilePath(path)
+  const drive = normalized.match(/^([A-Za-z]:)(?:\/(.*))?$/)
+  if (drive) {
+    const root = `${drive[1]}/`
+    return breadcrumbsFromSegments(root, drive[1]!, drive[2])
+  }
+
+  const unc = normalized.match(/^(\/\/[^/]+\/[^/]+)(?:\/(.*))?$/)
+  if (unc) {
+    return breadcrumbsFromSegments(unc[1]!, unc[1]!, unc[2])
+  }
+
+  return breadcrumbsFromSegments('/', '/', normalized.replace(/^\/+/, ''))
+}
+
+function breadcrumbsFromSegments(rootPath: string, rootLabel: string, remainder: string | undefined): PathBreadcrumb[] {
+  const breadcrumbs: PathBreadcrumb[] = [{ label: rootLabel, path: rootPath }]
+  let current = rootPath.replace(/\/+$/, '')
+  for (const segment of remainder?.split('/').filter(Boolean) ?? []) {
+    current = `${current}/${segment}`
+    breadcrumbs.push({ label: segment, path: current })
+  }
+  return breadcrumbs
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }

@@ -1,6 +1,6 @@
 import { useFileManager, type FileSortState } from './useFileManager'
 import type { FileTransferContext } from './fileApi'
-import { extension, fileEntryMenuSubtitle, fileEntryMeta, isMarkdownFile, joinPath, normalizeFilePath, parentPath } from './fileUtils'
+import { extension, fileEntryMenuSubtitle, fileEntryMeta, isMarkdownFile, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
 import { isModelPreviewFile } from './modelFileTypes'
 import { FilePreviewSheet } from './preview/FilePreviewSheet'
 import type { ProtoClientSession } from '../core/protoClientSession'
@@ -51,7 +51,7 @@ export function FileManager({
   const pathBarRef = useRef<HTMLDivElement>(null)
   const webUploadRef = useRef<HTMLInputElement>(null)
 
-  const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
+  const breadcrumbs = pathBreadcrumbs(manager.currentPath)
   const entryKeyCounts = new Map<string, number>()
   const sortLabel = fileSortLabel(manager.sortState, t)
 
@@ -281,37 +281,24 @@ export function FileManager({
               className="flex h-11 min-w-0 flex-1 items-center gap-1 overflow-x-auto border border-[var(--anytty-app-line)] bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
             >
               <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
-              {pathSegments.length === 0 ? (
-                <span className="shrink-0 font-semibold text-zinc-900">/</span>
-              ) : (
-                <>
-                  <button
-                    onClick={() => { hapticSelection(); void manager.navigate('/') }}
-                    className="shrink-0 px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
-                  >
-                    /
-                  </button>
-                  {pathSegments.map((segment, index) => {
-                    const isLast = index === pathSegments.length - 1
-                    const path = '/' + pathSegments.slice(0, index + 1).join('/')
-                    return (
-                      <div key={`${path}:${index}`} className="flex shrink-0 items-center">
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
-                        {isLast ? (
-                          <span className="px-1.5 py-1 font-semibold text-zinc-900">{segment}</span>
-                        ) : (
-                          <button
-                            onClick={() => { hapticSelection(); void manager.navigate(path) }}
-                            className="px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
-                          >
-                            {segment}
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </>
-              )}
+              {breadcrumbs.map((breadcrumb, index) => {
+                const isLast = index === breadcrumbs.length - 1
+                return (
+                  <div key={breadcrumb.path} className="flex shrink-0 items-center">
+                    {index > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />}
+                    {isLast ? (
+                      <span className="px-1.5 py-1 font-semibold text-zinc-900">{breadcrumb.label}</span>
+                    ) : (
+                      <button
+                        onClick={() => { hapticSelection(); void manager.navigate(breadcrumb.path) }}
+                        className="px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
+                      >
+                        {breadcrumb.label}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
             <button
               type="button"
