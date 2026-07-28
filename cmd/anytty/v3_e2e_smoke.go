@@ -76,7 +76,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 		return v3E2ESmokeResult{}, err
 	}
 	target, _ := endpointdomain.DefaultRegistry().DefaultEndpoint()
-	client, _, err := connectCLIEndpoint(ctx, target, endpointdomain.DefaultLocalRouteID, socketPath, "", clientruntime.ConnectIntentInteractive)
+	client, _, err := connectCLIEndpoint(ctx, target, endpointdomain.DefaultLocalRouteID, socketPath, "", clientruntime.ConnectIntentInteractive, nil)
 	if err != nil {
 		return v3E2ESmokeResult{}, err
 	}

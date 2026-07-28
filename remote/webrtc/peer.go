@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"log/slog"
 	"net"
 	"net/url"
 	"strings"
@@ -15,11 +16,17 @@ type PeerConnectionFactory func(pion.Configuration) (*pion.PeerConnection, error
 // NewPeerConnection 按受信 ICE 配置创建公开 WebRTC primitive。
 // 只有显式 loopback TURN URL 会启用 loopback candidate，用于本地开发云或自托管 harness；普通公网配置保持 Pion 默认网络边界。
 func NewPeerConnection(configuration pion.Configuration) (*pion.PeerConnection, error) {
-	if !containsLoopbackTURN(configuration.ICEServers) {
-		return pion.NewPeerConnection(configuration)
-	}
+	return NewPeerConnectionWithLogger(configuration, nil)
+}
+
+// NewPeerConnectionWithLogger creates a public WebRTC primitive whose Pion
+// diagnostics are owned by the supplied process logger instead of stderr.
+func NewPeerConnectionWithLogger(configuration pion.Configuration, logger *slog.Logger) (*pion.PeerConnection, error) {
 	settingEngine := pion.SettingEngine{}
-	settingEngine.SetIncludeLoopbackCandidate(true)
+	settingEngine.LoggerFactory = NewLoggerFactory(logger)
+	if containsLoopbackTURN(configuration.ICEServers) {
+		settingEngine.SetIncludeLoopbackCandidate(true)
+	}
 	return pion.NewAPI(pion.WithSettingEngine(settingEngine)).NewPeerConnection(configuration)
 }
 

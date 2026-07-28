@@ -5,6 +5,7 @@ package pion
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -34,6 +35,8 @@ type Factory struct {
 	// Network 是当前 platform generation 的网络接口快照；nil 使用 Pion 默认网络枚举。
 	// Android 必须注入不依赖受限 netlink 的实现，网络切换后由平台 lifecycle 重建整个 generation。
 	Network transport.Net
+	// Logger owns Pion diagnostics. nil is silent and never falls back to stderr.
+	Logger *slog.Logger
 }
 
 // OpenDirectPeer 创建只启用 ICE-TCP 的 native Pion peer，供 Direct 与后续 SSH tunnel connector 使用。
@@ -42,6 +45,7 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 	peerFactory := factory.PeerConnections
 	if peerFactory == nil {
 		settings := pionwebrtc.SettingEngine{}
+		settings.LoggerFactory = remotewebrtc.NewLoggerFactory(factory.Logger)
 		settings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4, pionwebrtc.NetworkTypeTCP6})
 		settings.SetIncludeLoopbackCandidate(true)
 		if factory.Network != nil {
@@ -61,9 +65,12 @@ func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig
 	peerFactory := factory.PeerConnections
 	if peerFactory == nil {
 		if factory.Network == nil {
-			peerFactory = remotewebrtc.NewPeerConnection
+			peerFactory = func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
+				return remotewebrtc.NewPeerConnectionWithLogger(configuration, factory.Logger)
+			}
 		} else {
 			settings := pionwebrtc.SettingEngine{}
+			settings.LoggerFactory = remotewebrtc.NewLoggerFactory(factory.Logger)
 			settings.SetNet(factory.Network)
 			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
 			peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection

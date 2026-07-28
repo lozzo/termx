@@ -93,6 +93,10 @@ func TestR8CertificateContracts(t *testing.T) {
 
 // TestR6RelayContracts 锁定 daemon 预检、短租约和幂等 usage 的跨进程边界。
 func TestR6RelayContracts(t *testing.T) {
+	request := (&RelayLeaseRequest{}).ProtoReflect().Descriptor()
+	if field := request.Fields().ByName("renew_lease_id"); field == nil || field.Number() != 7 {
+		t.Fatalf("RelayLeaseRequest.renew_lease_id field number=%v want=7", field)
+	}
 	lease := (&RelayLeaseClaims{}).ProtoReflect().Descriptor()
 	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
 		"lease_id": 1, "account_id": 2, "edge_id": 3, "daemon_id": 4, "client_id": 5, "session_id": 6,

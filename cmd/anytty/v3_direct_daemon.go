@@ -57,7 +57,7 @@ func startV3DirectDaemon(ctx context.Context, core v3RemoteDaemonCore, clientAcc
 	}
 	server, err := remotev2webrtc.NewDirectServer(clientAccess.Identity, remotev2daemon.SessionAcceptor{
 		Core: core, Identity: clientAccess.Identity, AccessStore: clientAccess.Store,
-	}, signalingListener, iceListener, nil)
+	}, signalingListener, iceListener, nil, remotev2webrtc.WithPionLogger(logger))
 	if err != nil {
 		_ = signalingListener.Close()
 		_ = iceListener.Close()

@@ -3,6 +3,7 @@ package webrtc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,8 @@ type Answerer struct {
 	Handler DataChannelSessionHandler
 	// PeerConnections 只允许注入 Pion primitive 创建策略；nil 保持当前生产默认配置。
 	PeerConnections PeerConnectionFactory
+	// PionLogger owns embedded Pion diagnostics when PeerConnections is nil.
+	PionLogger *slog.Logger
 	// CloseOnDisconnected 用于 Direct/SSH ICE-TCP 的短连接 owner：对端关闭后立即释放共享 TCPMux ufrag。
 	CloseOnDisconnected bool
 	// OnPeerClosed 在 Pion peer 真正关闭后调用一次，供 listener 释放有界 admission token。
@@ -95,7 +98,9 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	}
 	peerFactory := answerer.PeerConnections
 	if peerFactory == nil {
-		peerFactory = NewPeerConnection
+		peerFactory = func(configuration pion.Configuration) (*pion.PeerConnection, error) {
+			return NewPeerConnectionWithLogger(configuration, answerer.PionLogger)
+		}
 	}
 	peer, err := peerFactory(configuration)
 	if err != nil {

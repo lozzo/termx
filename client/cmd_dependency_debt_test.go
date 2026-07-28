@@ -50,7 +50,6 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3_pair_command.go|github.com/anytty/anytty/shared/transport/unix":  {},
 	}
 	expectedHelpers := map[string]struct{}{
-		"v3_attach_runtime.go|openEndpointProtocolClient":   {},
 		"v3_daemon_client.go|dialOrStartV3Client":           {},
 		"v3_daemon_client.go|dialOrStartV3ClientContext":    {},
 		"v3_daemon_client.go|v3DialClient":                  {},

@@ -151,13 +151,13 @@ func registryEndpointIDs(registry endpointdomain.Registry) []state.EndpointID {
 	return result
 }
 
-func openV3AttachProtocolClientsWithClientRuntime(ctx context.Context, cfg v3AttachConfig, logPath string, _ *slog.Logger) (*clientprotocol.ApplicationClient, func(), error) {
+func openV3AttachProtocolClientsWithClientRuntime(ctx context.Context, cfg v3AttachConfig, logPath string, logger *slog.Logger) (*clientprotocol.ApplicationClient, func(), error) {
 	endpointID := endpointIDFromState(state.NormalizeEndpointID(cfg.EndpointID))
 	endpoint, ok := cfg.ConnectionRegistry.Endpoints[endpointID]
 	if !ok {
 		return nil, func() {}, fmt.Errorf("attach endpoint %q is not registered", endpointID)
 	}
-	application, closeClient, err := openEndpointProtocolClient(ctx, endpoint, cfg.SocketPath, logPath)
+	application, closeClient, err := openEndpointProtocolClientWithLogger(ctx, endpoint, cfg.SocketPath, logPath, logger)
 	if err != nil {
 		return nil, func() {}, err
 	}

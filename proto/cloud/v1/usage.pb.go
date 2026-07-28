@@ -264,6 +264,9 @@ type RelayLeaseRequest struct {
 	DaemonId      string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
 	ClientId      string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	Preference    RelayPreference        `protobuf:"varint,6,opt,name=preference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"preference,omitempty"`
+	// renew_lease_id 为空表示首次准入；非空时 Controller 为同一在线 session
+	// 重新评估策略并续期该 lease，Edge 不得借此更换 TURN credential。
+	RenewLeaseId  string `protobuf:"bytes,7,opt,name=renew_lease_id,json=renewLeaseId,proto3" json:"renew_lease_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -338,6 +341,13 @@ func (x *RelayLeaseRequest) GetPreference() RelayPreference {
 		return x.Preference
 	}
 	return RelayPreference_RELAY_PREFERENCE_UNSPECIFIED
+}
+
+func (x *RelayLeaseRequest) GetRenewLeaseId() string {
+	if x != nil {
+		return x.RenewLeaseId
+	}
+	return ""
 }
 
 type RelayLeaseDenied struct {
@@ -844,7 +854,7 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\tissued_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xf4\x01\n" +
+	"expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x9a\x02\n" +
 	"\x11RelayLeaseRequest\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
 	"\n" +
@@ -855,7 +865,8 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\tclient_id\x18\x05 \x01(\tR\bclientId\x12@\n" +
 	"\n" +
 	"preference\x18\x06 \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\n" +
-	"preference\"^\n" +
+	"preference\x12$\n" +
+	"\x0erenew_lease_id\x18\a \x01(\tR\frenewLeaseId\"^\n" +
 	"\x10RelayLeaseDenied\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +

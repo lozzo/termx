@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/securetransport"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -27,8 +27,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 是新 Cloud 控制流首发协议版本。
-const ProtocolVersion uint32 = 1
+// ProtocolVersion 2 requires explicit same-lease Relay renewal semantics.
+const ProtocolVersion uint32 = 2
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
@@ -480,6 +480,10 @@ func (service *Service) issueRelayLease(ctx context.Context, event *cloudv1.Edge
 		(request.GetPreference() != cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO && request.GetPreference() != cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY) {
 		return nil, errors.New("RelayLeaseRequest is invalid or Relay is unavailable")
 	}
+	leaseID, err := relayLeaseID(request)
+	if err != nil {
+		return nil, err
+	}
 	session, location, found, err := service.config.Directory.Session(ctx, request.GetSessionId())
 	if err != nil || !found || location.EdgeID != event.GetSenderId() || location.ConnectionID != event.GetConnectionId() ||
 		session.GetAccountId() != request.GetAccountId() || session.GetDaemonId() != request.GetDaemonId() || session.GetClientId() != request.GetClientId() {
@@ -491,7 +495,7 @@ func (service *Service) issueRelayLease(ctx context.Context, event *cloudv1.Edge
 	}
 	now := time.Now().UTC()
 	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: uuid.NewString(), AccountId: session.GetAccountId(), EdgeId: event.GetSenderId(), DaemonId: session.GetDaemonId(), ClientId: session.GetClientId(), SessionId: session.GetSessionId(),
+		LeaseId: leaseID, AccountId: session.GetAccountId(), EdgeId: event.GetSenderId(), DaemonId: session.GetDaemonId(), ClientId: session.GetClientId(), SessionId: session.GetSessionId(),
 		MaxBytes: limits.MaxBytes, MaxRateBytesPerSecond: limits.MaxRateBytesPerSecond, MaxConcurrentAllocations: limits.MaxConcurrentAllocations,
 		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.RelayLeaseTTL)),
 	}
@@ -500,6 +504,20 @@ func (service *Service) issueRelayLease(ctx context.Context, event *cloudv1.Edge
 		return nil, err
 	}
 	return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Lease{Lease: signed}}, nil
+}
+
+func relayLeaseID(request *cloudv1.RelayLeaseRequest) (string, error) {
+	if request == nil {
+		return "", errors.New("RelayLease request is required")
+	}
+	leaseID := strings.TrimSpace(request.GetRenewLeaseId())
+	if leaseID == "" {
+		return uuid.NewString(), nil
+	}
+	if _, err := uuid.Parse(leaseID); err != nil {
+		return "", errors.New("RelayLease renewal identity is invalid")
+	}
+	return leaseID, nil
 }
 
 func (service *Service) resyncCommand(connectionID string, sequence, expected uint64, reason string) *cloudv1.ControllerCommand {

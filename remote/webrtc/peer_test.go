@@ -1,10 +1,23 @@
 package webrtc
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
 	pion "github.com/pion/webrtc/v4"
 )
+
+func TestNewPeerConnectionWithLoggerAcceptsOwnedLogger(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	peer, err := NewPeerConnectionWithLogger(pion.Configuration{}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := peer.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestContainsLoopbackTURNOnlyAcceptsExplicitLoopbackRelay(t *testing.T) {
 	tests := []struct {

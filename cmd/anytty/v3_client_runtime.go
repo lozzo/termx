@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -92,8 +93,8 @@ func (source cliCredentialSource) CloudAvailable(ctx context.Context, endpointID
 	return err == nil && credential.EndpointID == endpointID && credential.Ready() && len(credential.CloudRouteGrant) != 0
 }
 
-func connectCLIEndpointApplication(ctx context.Context, owner *clientruntime.SessionOwner, target clientendpoint.Endpoint, requested clientendpoint.RouteID, intent clientruntime.ConnectIntent, localOptions localadapter.Options) (*protocoladapter.ApplicationClient, clientendpoint.AccessRoute, error) {
-	runtime, err := newCLIEndpointRuntime(ctx, owner, target, localOptions)
+func connectCLIEndpointApplication(ctx context.Context, owner *clientruntime.SessionOwner, target clientendpoint.Endpoint, requested clientendpoint.RouteID, intent clientruntime.ConnectIntent, localOptions localadapter.Options, logger *slog.Logger) (*protocoladapter.ApplicationClient, clientendpoint.AccessRoute, error) {
+	runtime, err := newCLIEndpointRuntime(ctx, owner, target, localOptions, logger)
 	if err != nil {
 		return nil, clientendpoint.AccessRoute{}, err
 	}
@@ -117,7 +118,7 @@ func connectCLIEndpointApplication(ctx context.Context, owner *clientruntime.Ses
 	return client, route, nil
 }
 
-func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwner, target clientendpoint.Endpoint, localOptions localadapter.Options) (*clientruntime.ClientRuntime, error) {
+func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwner, target clientendpoint.Endpoint, localOptions localadapter.Options, logger *slog.Logger) (*clientruntime.ClientRuntime, error) {
 	if ctx == nil || owner == nil {
 		return nil, fmt.Errorf("CLI endpoint runtime requires context and a session owner")
 	}
@@ -127,14 +128,15 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	credentials := cliCredentialSource{store: remoteauth.NewCredentialStore(v3RemoteCredentialDir())}
 	sshCredentials := sshadapter.AgentCredentialSource{}
 	localDialer := localadapter.NewDialer(localOptions)
+	peers := pionadapter.Factory{Logger: logger}
 	connectors := map[clientendpoint.RouteKind]clientruntime.PeerConnector{
 		clientendpoint.RouteLocalUnix: localDialer,
 		clientendpoint.RouteDirectWebRTCTCP: &directadapter.Dialer{
-			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
+			Peers: peers, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
 			ClientName: "anytty-cli", Now: time.Now,
 		},
 		clientendpoint.RouteSSHWebRTCTCP: sshadapter.NewDialer(sshadapter.Options{
-			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
+			Peers: peers, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
 			Credentials: sshCredentials, ClientName: "anytty-cli",
 		}),
 	}
@@ -143,7 +145,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 		return nil, err
 	}
 	if cloudProtocol != nil {
-		connectors[clientendpoint.RouteManagedWebRTC] = &cloudadapter.Dialer{Peers: pionadapter.Factory{}, Cloud: cloudProtocol, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials}, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, ClientName: "anytty-cli"}
+		connectors[clientendpoint.RouteManagedWebRTC] = &cloudadapter.Dialer{Peers: peers, Cloud: cloudProtocol, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials}, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, ClientName: "anytty-cli"}
 	}
 	dialers, err := clientruntime.NewPeerConnectorMap(connectors)
 	if err != nil {

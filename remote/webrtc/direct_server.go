@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -17,6 +18,19 @@ import (
 )
 
 const directSignalingClockSkew = 5 * time.Second
+
+type DirectServerOption func(*directServerOptions)
+
+type directServerOptions struct {
+	logger *slog.Logger
+}
+
+// WithPionLogger routes embedded Pion diagnostics through the daemon logger.
+func WithPionLogger(logger *slog.Logger) DirectServerOption {
+	return func(options *directServerOptions) {
+		options.logger = logger
+	}
+}
 
 // DirectServer 是 daemon embedded signaling 与共享 ICE-TCP mux 的生命周期 owner。
 // signaling connection 只交换一次短期 Proto offer/answer；terminal capability 仍必须在建立后的 DataChannel 内由 Handler 验证。
@@ -39,15 +53,23 @@ type DirectServer struct {
 
 // NewDirectServer 使用 daemon 已绑定的 signaling 与 ICE-TCP listener 创建服务。
 // ICE listener 被单个 Pion TCPMux 接管并在所有 peer 间共享；任一依赖缺失都在启动前失败，不创建 fallback listener。
-func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHandler, signalingListener, iceListener net.Listener, now func() time.Time) (*DirectServer, error) {
+func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHandler, signalingListener, iceListener net.Listener, now func() time.Time, serverOptions ...DirectServerOption) (*DirectServer, error) {
 	if err := identity.Validate(); err != nil {
 		return nil, fmt.Errorf("direct server identity: %w", err)
 	}
 	if handler == nil || signalingListener == nil || iceListener == nil {
 		return nil, fmt.Errorf("direct server handler and listeners are required")
 	}
-	mux := pion.NewICETCPMux(nil, iceListener, 8)
+	options := directServerOptions{}
+	for _, apply := range serverOptions {
+		if apply != nil {
+			apply(&options)
+		}
+	}
+	loggerFactory := NewLoggerFactory(options.logger)
+	mux := pion.NewICETCPMux(loggerFactory.NewLogger("ice-tcp-mux"), iceListener, 8)
 	settings := pion.SettingEngine{}
+	settings.LoggerFactory = loggerFactory
 	settings.SetNetworkTypes([]pion.NetworkType{pion.NetworkTypeTCP4, pion.NetworkTypeTCP6})
 	settings.SetIncludeLoopbackCandidate(true)
 	settings.SetICETCPMux(mux)

@@ -64,7 +64,7 @@ func connectLocalApplicationClient(ctx context.Context, path, logFile, configPat
 			}
 			return nil
 		},
-	})
+	}, logger)
 	if err != nil {
 		_ = owner.Close()
 		return nil, err

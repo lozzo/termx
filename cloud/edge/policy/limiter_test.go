@@ -25,6 +25,28 @@ func TestLeaseLimiterSharesBudgetAndStopsAtExpiry(t *testing.T) {
 	}
 }
 
+func TestLeaseLimiterRenewalExtendsExpiryWithoutResettingUsage(t *testing.T) {
+	now := time.Now().UTC()
+	oldExpiry := now.Add(time.Second)
+	limiter, err := policy.NewLeaseLimiter(oldExpiry, 100, 1000, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !limiter.Reserve(60, now) {
+		t.Fatal("initial lease usage was rejected")
+	}
+	if err := limiter.Renew(now.Add(time.Minute), 100, 1000, now.Add(500*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	afterOldExpiry := oldExpiry.Add(time.Millisecond)
+	if limiter.Reserve(41, afterOldExpiry) {
+		t.Fatal("renewal reset the cumulative lease byte budget")
+	}
+	if !limiter.Reserve(40, afterOldExpiry) {
+		t.Fatal("renewed lease rejected its remaining byte budget")
+	}
+}
+
 func TestAdmissionLimiterTakesStrictestAccountSessionAndLeaseRate(t *testing.T) {
 	now := time.Now().UTC()
 	account, _ := policy.NewRateLimiter(now.Add(time.Minute), 100, now)

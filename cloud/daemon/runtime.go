@@ -8,17 +8,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	remotedaemon "github.com/anytty/anytty/remote/daemon"
 	"github.com/anytty/anytty/remote/webrtc"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
@@ -40,12 +41,32 @@ type Config struct {
 // Runtime 每次启动重新向 Controller 解析候选并只在内存持有当前 AgentGateway generation。
 type Runtime struct{ config Config }
 
+type authorizedRuntimeOptions struct {
+	pionLogger *slog.Logger
+}
+
+// AuthorizedRuntimeOption configures process-owned dependencies for the Cloud WebRTC answerer.
+type AuthorizedRuntimeOption func(*authorizedRuntimeOptions)
+
+// WithPionLogger routes embedded Pion diagnostics through the daemon logger.
+func WithPionLogger(logger *slog.Logger) AuthorizedRuntimeOption {
+	return func(options *authorizedRuntimeOptions) {
+		options.pionLogger = logger
+	}
+}
+
 // NewAuthorizedRuntime 把现有 daemon Core/DeviceIdentity/AccessStore 接到真实 WebRTC Answerer。
 // cmd composition root 只传 owner 和只读 session 观测回调，不需要依赖 Cloud 内部的 Pion 装配类型；
 // 回调不能修改授权、PeerSession 或 Cloud generation 真值。
-func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity, accessStore *remoteauth.AccessStore, core remotedaemon.ScopedTransportServer, softwareVersion string, onSessionStart func(), onSessionError func(error)) (*Runtime, error) {
+func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity, accessStore *remoteauth.AccessStore, core remotedaemon.ScopedTransportServer, softwareVersion string, onSessionStart func(), onSessionError func(error), runtimeOptions ...AuthorizedRuntimeOption) (*Runtime, error) {
 	if accessStore == nil {
 		return nil, errors.New("daemon Cloud runtime requires AccessStore")
+	}
+	options := authorizedRuntimeOptions{}
+	for _, apply := range runtimeOptions {
+		if apply != nil {
+			apply(&options)
+		}
 	}
 	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, now time.Time) ([]byte, error) {
 		clientProduct := cloudv1.ClientProduct(product)
@@ -76,6 +97,7 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 	}
 	answerer := webrtc.Answerer{
 		Handler:        remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore},
+		PionLogger:     options.pionLogger,
 		OnSessionStart: onSessionStart,
 		OnSessionError: onSessionError,
 	}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -668,7 +669,7 @@ func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
 
 	socketPath := filepath.Join(t.TempDir(), "anytty-v2.sock")
 	dialed := false
-	connectV3EndpointApplication = func(_ context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(_ context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options, _ *slog.Logger) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		if options.SocketOverride != socketPath {
 			t.Fatalf("expected v3 ping to dial socket %q, got %q", socketPath, options.SocketOverride)
 		}
@@ -711,7 +712,7 @@ func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
 	startCalls := 0
 	var startedSocket string
 	var startedLog string
-	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options, _ *slog.Logger) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		connectCalls++
 		if options.SocketOverride != socketPath {
 			t.Fatalf("expected dial socket %q, got %q", socketPath, options.SocketOverride)
@@ -756,7 +757,7 @@ func TestV3PingReturnsAutoStartError(t *testing.T) {
 		startV3Daemon = oldStart
 	})
 
-	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options, _ *slog.Logger) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		return nil, endpointdomain.AccessRoute{}, options.Start(ctx, options.SocketOverride)
 	}
 	startV3Daemon = func(path string, logFile string) error {
@@ -915,7 +916,7 @@ func TestDialOrStartV3ClientUsesConfigStarterWhenConfigPathIsExplicit(t *testing
 		gotSocket, gotLog, gotConfig = path, logFile, cfg
 		return nil
 	}
-	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options, _ *slog.Logger) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		if err := options.Start(ctx, socketPath); err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
@@ -1262,6 +1263,33 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 	}
 	if got.TerminalID != "term-1" || got.SocketPath != socketPath || got.LogFile != logPath {
 		t.Fatalf("unexpected v3 attach config %#v", got)
+	}
+}
+
+func TestV3AttachRoutesFileLoggerIntoEndpointRuntime(t *testing.T) {
+	oldConnect := connectV3EndpointApplication
+	t.Cleanup(func() { connectV3EndpointApplication = oldConnect })
+
+	expectedLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var receivedLogger *slog.Logger
+	connectV3EndpointApplication = func(_ context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, _ localadapter.Options, logger *slog.Logger) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+		receivedLogger = logger
+		return nil, endpointdomain.AccessRoute{}, nil
+	}
+
+	registry := endpointdomain.DefaultRegistry()
+	client, _, err := openV3AttachProtocolClientsWithClientRuntime(context.Background(), v3AttachConfig{
+		EndpointID:         tuistate.DefaultEndpointID,
+		ConnectionRegistry: registry,
+	}, filepath.Join(t.TempDir(), "anytty.log"), expectedLogger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client != nil {
+		t.Fatal("logger routing fixture unexpectedly returned a protocol client")
+	}
+	if receivedLogger != expectedLogger {
+		t.Fatal("TUI attach did not pass its file logger into the endpoint runtime")
 	}
 }
 
@@ -2538,7 +2566,7 @@ func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.
 
 func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client *protocol.Client) {
 	t.Helper()
-	connectV3EndpointApplication = func(_ context.Context, owner *clientruntime.SessionOwner, target endpointdomain.Endpoint, requested endpointdomain.RouteID, intent clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(_ context.Context, owner *clientruntime.SessionOwner, target endpointdomain.Endpoint, requested endpointdomain.RouteID, intent clientruntime.ConnectIntent, options localadapter.Options, _ *slog.Logger) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		if options.SocketOverride != socketPath {
 			return nil, endpointdomain.AccessRoute{}, fmt.Errorf("test local socket = %q, want %q", options.SocketOverride, socketPath)
 		}

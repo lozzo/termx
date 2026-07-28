@@ -30,6 +30,7 @@ func startV3CloudDaemon(ctx context.Context, core v3RemoteDaemonCore, clientAcce
 			}
 			logger.Warn("AnyTTY Cloud DataChannel 会话异常结束", "daemon_id", record.DaemonID, "error", sessionErr)
 		},
+		clouddaemon.WithPionLogger(logger),
 	)
 	if err != nil {
 		return nil, err

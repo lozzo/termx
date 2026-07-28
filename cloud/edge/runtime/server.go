@@ -17,7 +17,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/configsignature"
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
 	edgecertificate "github.com/anytty/anytty/cloud/edge/certificate"
@@ -30,6 +29,7 @@ import (
 	"github.com/anytty/anytty/cloud/securetransport"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	grpc_health "google.golang.org/grpc/health"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -532,6 +532,41 @@ func (runtime *Runtime) relayBroker() clientgateway.RelayBroker {
 
 // RequestRelayLease 经当前 ready EdgeControl 申请、验签并登记 session-specific TURN credential。
 func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error) {
+	if request == nil || strings.TrimSpace(request.GetRenewLeaseId()) != "" {
+		return nil, errors.New("initial RelayLease request must not contain a renewal identity")
+	}
+	claims, err := runtime.requestRelayLeaseClaims(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	material, err := runtime.credentialDeriver.Material(claims)
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.state.RegisterRelayLease(ctx, claims, material); err != nil {
+		return nil, err
+	}
+	return material, nil
+}
+
+// RenewRelayLease re-evaluates policy through the current Controller generation
+// and extends the existing credential without requiring an ICE restart.
+func (runtime *Runtime) RenewRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+	if request == nil || current == nil || strings.TrimSpace(current.GetUsername()) == "" ||
+		strings.TrimSpace(request.GetRenewLeaseId()) == "" || request.GetRenewLeaseId() != current.GetLeaseId() {
+		return nil, errors.New("RelayLease renewal must identify the current credential")
+	}
+	claims, err := runtime.requestRelayLeaseClaims(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if claims.GetLeaseId() != current.GetLeaseId() {
+		return nil, errors.New("Controller RelayLease renewal changed lease identity")
+	}
+	return runtime.state.RenewRelayLease(ctx, current.GetUsername(), claims)
+}
+
+func (runtime *Runtime) requestRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
 	if runtime == nil || !runtime.Ready() || runtime.credentialDeriver == nil || runtime.RelayDegraded() {
 		return nil, errors.New("Edge Relay control is unavailable")
 	}
@@ -555,22 +590,23 @@ func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.
 	if claims.GetAccountId() != request.GetAccountId() || claims.GetDaemonId() != request.GetDaemonId() || claims.GetClientId() != request.GetClientId() {
 		return nil, errors.New("RelayLease identity does not match the accepted client session")
 	}
-	material, err := runtime.credentialDeriver.Material(claims)
-	if err != nil {
-		return nil, err
-	}
-	if err := runtime.state.RegisterRelayLease(ctx, claims, material); err != nil {
-		return nil, err
-	}
-	return material, nil
+	return claims, nil
 }
 
 // CloseRelaySession 把 ClientGateway session 生命周期绑定到同进程 TURN allocations。
 func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string) error {
-	if runtime == nil || runtime.relayServer == nil {
+	if runtime == nil {
 		return nil
 	}
-	return runtime.relayServer.CloseSessionAllocations(ctx, sessionID)
+	var revokeErr error
+	if runtime.state != nil {
+		revokeErr = runtime.state.RevokeRelaySession(ctx, sessionID)
+	}
+	var closeErr error
+	if runtime.relayServer != nil {
+		closeErr = runtime.relayServer.CloseSessionAllocations(ctx, sessionID)
+	}
+	return errors.Join(revokeErr, closeErr)
 }
 
 func (runtime *Runtime) setControlSession(session *controllerlink.Session) {

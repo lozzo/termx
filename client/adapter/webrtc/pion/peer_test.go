@@ -115,6 +115,29 @@ func TestPeerFailureAfterReadyClosesProtocolChannel(t *testing.T) {
 	}
 }
 
+func TestPeerDisconnectedKeepsProtocolChannelRecoverable(t *testing.T) {
+	channel := &lifecycleChannel{closed: make(chan struct{})}
+	peer := &webRTCPeer{
+		channel: channel, ready: make(chan struct{}), channelClosed: channel.closed,
+		connectionFailed: make(chan error, 1), readyTimeout: time.Second,
+	}
+	channel.SetCloseHandler(func() {
+		peer.channelClosedOnce.Do(func() { close(peer.channelClosed) })
+	})
+	close(peer.ready)
+
+	peer.handleConnectionState(pionwebrtc.PeerConnectionStateDisconnected)
+
+	if channel.closeCalls != 0 {
+		t.Fatalf("recoverable disconnect closed protocol channel %d times", channel.closeCalls)
+	}
+	select {
+	case err := <-peer.connectionFailed:
+		t.Fatalf("recoverable disconnect reported final failure: %v", err)
+	default:
+	}
+}
+
 type lifecycleChannel struct {
 	mu         sync.Mutex
 	closed     chan struct{}

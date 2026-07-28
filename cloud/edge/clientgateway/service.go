@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -34,6 +34,7 @@ type Runtime interface {
 // RelayBroker 只通过当前 EdgeControl generation 申请短租约并返回已经验签、登记的临时 ICE 参数。
 type RelayBroker interface {
 	RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error)
+	RenewRelayLease(context.Context, *cloudv1.RelayLeaseRequest, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error)
 }
 
 // RelaySessionCloser 在信令 stream 结束时释放同 session 的 TURN reservation/allocation。
@@ -87,8 +88,8 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 	sessionID := helloEvent.GetConnectionId()
 	generation := helloEvent.GetHello().GetAttemptGeneration()
-	sessionContext, cancelSession := context.WithCancel(stream.Context())
-	defer cancelSession()
+	sessionContext, cancelSession := context.WithCancelCause(stream.Context())
+	defer cancelSession(context.Canceled)
 	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Product: claims.GetProduct(), Generation: generation, AccessMode: claims.GetAccessMode()}
 	if err := service.config.Runtime.UpsertSession(sessionContext, summary); err != nil {
 		return status.Errorf(codes.Aborted, "publish client session: %v", err)
@@ -96,7 +97,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	if registry, ok := service.config.Runtime.(interface {
 		RegisterSessionCloser(context.Context, string, uint64, func()) error
 	}); ok {
-		if err := registry.RegisterSessionCloser(sessionContext, sessionID, generation, cancelSession); err != nil {
+		if err := registry.RegisterSessionCloser(sessionContext, sessionID, generation, func() { cancelSession(context.Canceled) }); err != nil {
 			return status.Errorf(codes.Aborted, "register client session owner: %v", err)
 		}
 	}
@@ -121,6 +122,10 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		if err != nil {
 			return status.Error(codes.ResourceExhausted, err.Error())
 		}
+		renewRequest := &cloudv1.RelayLeaseRequest{
+			SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Preference: preference,
+		}
+		go service.maintainRelayLease(sessionContext, renewRequest, relay, cancelSession)
 	}
 	if err := stream.Send(service.edgeSignal(sessionID, 1, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
 		return err
@@ -179,6 +184,97 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		}
 		return status.Error(codes.InvalidArgument, "ClientGateway does not accept messages after signaling")
 	}
+}
+
+func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *cloudv1.RelayLeaseRequest, initial *cloudv1.RelayICEConfig, cancel context.CancelCauseFunc) {
+	current := cloneRelay(initial)
+	retryDelay := time.Duration(0)
+	for ctx.Err() == nil {
+		now := service.config.Now().UTC()
+		remaining, err := relayLeaseRemaining(current, now)
+		if err != nil {
+			cancel(err)
+			return
+		}
+		delay := remaining / 2
+		if retryDelay > 0 && retryDelay < delay {
+			delay = retryDelay
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+
+		now = service.config.Now().UTC()
+		remaining, err = relayLeaseRemaining(current, now)
+		if err != nil {
+			cancel(err)
+			return
+		}
+		request := proto.Clone(baseRequest).(*cloudv1.RelayLeaseRequest)
+		request.CorrelationId = uuid.NewString()
+		request.RenewLeaseId = current.GetLeaseId()
+		timeout := 10 * time.Second
+		if half := remaining / 2; half < timeout {
+			timeout = half
+		}
+		renewContext, stopRenewal := context.WithTimeout(ctx, timeout)
+		renewed, renewErr := service.config.Relay.RenewRelayLease(renewContext, request, current)
+		stopRenewal()
+		if renewErr == nil {
+			if err := validateRelayRenewal(current, renewed, now); err != nil {
+				cancel(err)
+				return
+			}
+			current = cloneRelay(renewed)
+			retryDelay = 0
+			continue
+		}
+		retryDelay = nextRelayRenewalRetry(retryDelay, remaining)
+	}
+}
+
+func relayLeaseRemaining(relay *cloudv1.RelayICEConfig, now time.Time) (time.Duration, error) {
+	if relay == nil || strings.TrimSpace(relay.GetLeaseId()) == "" || strings.TrimSpace(relay.GetUsername()) == "" ||
+		strings.TrimSpace(relay.GetCredential()) == "" || relay.GetExpiresAt() == nil || relay.GetExpiresAt().CheckValid() != nil {
+		return 0, errors.New("RelayLease renewal state is incomplete")
+	}
+	remaining := relay.GetExpiresAt().AsTime().Sub(now.UTC())
+	if remaining <= 0 {
+		return 0, errors.New("RelayLease expired before renewal completed")
+	}
+	return remaining, nil
+}
+
+func validateRelayRenewal(current, renewed *cloudv1.RelayICEConfig, now time.Time) error {
+	if _, err := relayLeaseRemaining(renewed, now); err != nil {
+		return err
+	}
+	if current == nil || renewed.GetLeaseId() != current.GetLeaseId() || renewed.GetUsername() != current.GetUsername() || renewed.GetCredential() != current.GetCredential() ||
+		!renewed.GetExpiresAt().AsTime().After(current.GetExpiresAt().AsTime()) {
+		return errors.New("RelayLease renewal changed credential identity or did not extend expiry")
+	}
+	return nil
+}
+
+func nextRelayRenewalRetry(previous, remaining time.Duration) time.Duration {
+	next := previous * 2
+	if next <= 0 {
+		next = time.Second
+	}
+	if next > 15*time.Second {
+		next = 15 * time.Second
+	}
+	if half := remaining / 2; next > half {
+		next = half
+	}
+	if next <= 0 {
+		return time.Nanosecond
+	}
+	return next
 }
 
 func (service *Service) cleanupSession(sessionID string, generation uint64) {

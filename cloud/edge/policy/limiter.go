@@ -47,6 +47,28 @@ func NewLeaseLimiter(expiresAt time.Time, maxBytes, maxRateBytesPerSecond uint64
 	}, nil
 }
 
+// Renew applies a Controller-authorized extension without resetting bytes used
+// by the existing physical TURN allocation.
+func (limiter *LeaseLimiter) Renew(expiresAt time.Time, maxBytes, maxRateBytesPerSecond uint64, now time.Time) error {
+	if limiter == nil || maxBytes == 0 || maxRateBytesPerSecond == 0 {
+		return errors.New("active Relay lease expiry, byte limit, and rate limit are required")
+	}
+	expiresAt, now = expiresAt.UTC(), now.UTC()
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if !limiter.expiresAt.After(now) || !expiresAt.After(limiter.expiresAt) {
+		return errors.New("Relay lease renewal must extend an active lease")
+	}
+	limiter.refill(now)
+	limiter.expiresAt = expiresAt
+	limiter.maxBytes = maxBytes
+	limiter.rate = maxRateBytesPerSecond
+	if limiter.tokens > float64(maxRateBytesPerSecond) {
+		limiter.tokens = float64(maxRateBytesPerSecond)
+	}
+	return nil
+}
+
 // NewRateLimiter 为一个活跃 account/session 创建内存速率桶。
 func NewRateLimiter(expiresAt time.Time, rate uint64, now time.Time) (*RateLimiter, error) {
 	expiresAt, now = expiresAt.UTC(), now.UTC()
@@ -130,23 +152,28 @@ func (limiter *LeaseLimiter) Reserve(count uint64, now time.Time) bool {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 	now = now.UTC()
-	if !limiter.expiresAt.After(now) || count > limiter.maxBytes-limiter.used {
+	if !limiter.expiresAt.After(now) || limiter.used >= limiter.maxBytes || count > limiter.maxBytes-limiter.used {
 		return false
 	}
-	elapsed := now.Sub(limiter.lastRefill).Seconds()
-	if elapsed > 0 {
-		limiter.tokens += elapsed * float64(limiter.rate)
-		if maximum := float64(limiter.rate); limiter.tokens > maximum {
-			limiter.tokens = maximum
-		}
-		limiter.lastRefill = now
-	}
+	limiter.refill(now)
 	if float64(count) > limiter.tokens {
 		return false
 	}
 	limiter.tokens -= float64(count)
 	limiter.used += count
 	return true
+}
+
+func (limiter *LeaseLimiter) refill(now time.Time) {
+	elapsed := now.Sub(limiter.lastRefill).Seconds()
+	if elapsed <= 0 {
+		return
+	}
+	limiter.tokens += elapsed * float64(limiter.rate)
+	if maximum := float64(limiter.rate); limiter.tokens > maximum {
+		limiter.tokens = maximum
+	}
+	limiter.lastRefill = now
 }
 
 // Refund 归还底层 socket 未实际写出的预留字节和 token，不改变已经成功转发的 usage。

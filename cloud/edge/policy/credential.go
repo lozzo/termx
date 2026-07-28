@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
@@ -50,10 +49,13 @@ func NewCredentialDeriver(secret []byte, urls []string) (*CredentialDeriver, err
 
 // Material 从已验证 RelayLease 生成只在当前信令 attempt 中返回的 ICE 参数。
 func (deriver *CredentialDeriver) Material(claims *cloudv1.RelayLeaseClaims) (*cloudv1.RelayICEConfig, error) {
-	if deriver == nil || claims == nil || claims.GetExpiresAt() == nil || strings.TrimSpace(claims.GetLeaseId()) == "" || strings.TrimSpace(claims.GetSessionId()) == "" {
+	if deriver == nil || claims == nil || claims.GetExpiresAt() == nil || claims.GetExpiresAt().CheckValid() != nil ||
+		strings.TrimSpace(claims.GetLeaseId()) == "" || strings.TrimSpace(claims.GetSessionId()) == "" {
 		return nil, errors.New("verified RelayLease is required")
 	}
-	username := strconv.FormatInt(claims.GetExpiresAt().AsTime().Unix(), 10) + ":" + claims.GetLeaseId() + ":" + claims.GetSessionId()
+	// Expiry deliberately stays out of the username: renewal extends the
+	// Runtime authorization attached to this stable physical TURN session.
+	username := "v1:" + claims.GetLeaseId() + ":" + claims.GetSessionId()
 	return &cloudv1.RelayICEConfig{
 		LeaseId: claims.GetLeaseId(), Urls: append([]string(nil), deriver.urls...), Username: username, Credential: deriver.Password(username),
 		ExpiresAt: timestamppb.New(claims.GetExpiresAt().AsTime()),

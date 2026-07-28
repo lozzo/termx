@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"strings"
 
 	pionadapter "github.com/anytty/anytty/client/adapter/webrtc/pion"
@@ -33,7 +34,10 @@ func newAndroidProductionHost() (*androidProductionHost, error) {
 		_ = broker.Close()
 		return nil, err
 	}
-	peers := pionadapter.Factory{Network: network}
+	peers := pionadapter.Factory{
+		Network: network,
+		Logger:  slog.New(slog.NewTextHandler(log.Writer(), &slog.HandlerOptions{Level: slog.LevelError})),
+	}
 	host, err := enginehost.New(enginehost.Options{
 		Broker: broker, DirectPeers: peers, ClientName: "anytty-android", CredentialPrefix: "android-access-",
 		SessionAuthority: androidSessionAuthority, CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/edge/policy"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -58,6 +58,94 @@ func (state *State) RegisterRelayLease(ctx context.Context, claims *cloudv1.Rela
 		data.relayLeases[materialClone.GetUsername()] = relayLease{claims: claimsClone, material: materialClone, limiter: limiter}
 		return nil
 	})
+}
+
+// RenewRelayLease atomically extends the policy attached to an existing TURN
+// credential. The credential and cumulative byte usage remain unchanged.
+func (state *State) RenewRelayLease(ctx context.Context, username string, claims *cloudv1.RelayLeaseClaims) (*cloudv1.RelayICEConfig, error) {
+	username = strings.TrimSpace(username)
+	if username == "" || claims == nil || claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil ||
+		claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || claims.GetMaxBytes() == 0 ||
+		claims.GetMaxRateBytesPerSecond() == 0 || claims.GetMaxConcurrentAllocations() == 0 {
+		return nil, errors.New("RelayLease renewal claims are incomplete")
+	}
+	claimsClone := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
+	var renewed *cloudv1.RelayICEConfig
+	err := state.mutate(ctx, func(data *stateData) error {
+		now := time.Now().UTC()
+		current, exists := data.relayLeases[username]
+		if !exists || current.claims.GetExpiresAt() == nil || !current.claims.GetExpiresAt().AsTime().After(now) {
+			return errors.New("RelayLease renewal targets an unavailable or expired credential")
+		}
+		if !sameRelayLeaseIdentity(current.claims, claimsClone) {
+			return errors.New("RelayLease renewal changed its bound identity")
+		}
+		if !claimsClone.GetExpiresAt().AsTime().After(current.claims.GetExpiresAt().AsTime()) {
+			return errors.New("RelayLease renewal did not extend expiry")
+		}
+		if data.leaseAllocations[current.claims.GetLeaseId()] > claimsClone.GetMaxConcurrentAllocations() {
+			return errors.New("RelayLease renewal concurrency is below active allocations")
+		}
+		if _, err := data.restrictRelayRate(data.accountRates, claimsClone.GetAccountId(), claimsClone); err != nil {
+			return err
+		}
+		if _, err := data.restrictRelayRate(data.sessionRates, claimsClone.GetSessionId(), claimsClone); err != nil {
+			return err
+		}
+		if err := current.limiter.Renew(claimsClone.GetExpiresAt().AsTime(), claimsClone.GetMaxBytes(), claimsClone.GetMaxRateBytesPerSecond(), now); err != nil {
+			return err
+		}
+		material := proto.Clone(current.material).(*cloudv1.RelayICEConfig)
+		material.LeaseId = claimsClone.GetLeaseId()
+		material.ExpiresAt = timestamppb.New(claimsClone.GetExpiresAt().AsTime())
+		current.claims, current.material = claimsClone, material
+		data.relayLeases[username] = current
+		for reservationID, reservation := range data.relayReservations {
+			if reservation.username == username {
+				reservation.claims = claimsClone
+				data.relayReservations[reservationID] = reservation
+			}
+		}
+		for allocationID, allocation := range data.allocations {
+			if allocation.claims.GetLeaseId() == claimsClone.GetLeaseId() && allocation.claims.GetSessionId() == claimsClone.GetSessionId() {
+				allocation.claims = claimsClone
+				data.allocations[allocationID] = allocation
+			}
+		}
+		renewed = proto.Clone(material).(*cloudv1.RelayICEConfig)
+		return nil
+	})
+	return renewed, err
+}
+
+// RevokeRelaySession removes every credential for a closed ClientGateway
+// session before physical allocations are settled, preventing recreation races.
+func (state *State) RevokeRelaySession(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return errors.New("Relay session identity is required")
+	}
+	return state.mutate(ctx, func(data *stateData) error {
+		for username, lease := range data.relayLeases {
+			if lease.claims.GetSessionId() == sessionID {
+				delete(data.relayLeases, username)
+			}
+		}
+		for reservationID, reservation := range data.relayReservations {
+			if reservation.claims.GetSessionId() == sessionID {
+				delete(data.relayReservations, reservationID)
+				data.decrementRelayCounters(reservation.claims)
+			}
+		}
+		return nil
+	})
+}
+
+func sameRelayLeaseIdentity(current, renewed *cloudv1.RelayLeaseClaims) bool {
+	return current != nil && renewed != nil &&
+		current.GetLeaseId() == renewed.GetLeaseId() && current.GetAccountId() == renewed.GetAccountId() &&
+		current.GetEdgeId() == renewed.GetEdgeId() && current.GetDaemonId() == renewed.GetDaemonId() &&
+		current.GetClientId() == renewed.GetClientId() && current.GetSessionId() == renewed.GetSessionId()
 }
 
 func (data *stateData) expireRelayLeases(now time.Time) {

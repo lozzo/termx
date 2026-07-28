@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	apilayer "github.com/anytty/anytty/api_layer"
 	cloudadapter "github.com/anytty/anytty/client/adapter/cloud"
 	peeradapter "github.com/anytty/anytty/client/adapter/peer"
@@ -36,6 +35,7 @@ import (
 	remotedaemon "github.com/anytty/anytty/remote/daemon"
 	remotewebrtc "github.com/anytty/anytty/remote/webrtc"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	pionwebrtc "github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -71,6 +71,8 @@ func TestCorruptUsageOutboxDegradesRelayWithoutStoppingEdge(t *testing.T) {
 }
 
 func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
+	const relayLeaseTTL = 4 * time.Second
+
 	certificates := newCertificateFiles(t, testEdgeID)
 	ticketPublicKey, ticketPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -78,7 +80,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	}
 	ticketKeyID := "ticket-r6"
 	usageStore := newR6UsageStore()
-	controllerRuntime, controllerDirectory := startR6ControlController(t, certificates, "127.0.0.1:0", ticketKeyID, ticketPublicKey, ticketPrivateKey, usageStore)
+	controllerRuntime, controllerDirectory := startR6ControlController(t, certificates, "127.0.0.1:0", ticketKeyID, ticketPublicKey, ticketPrivateKey, usageStore, relayLeaseTTL)
 	controllerAddress := controllerRuntime.GRPCAddress()
 	controllerStopped := false
 	defer func() {
@@ -112,7 +114,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	identityStore := r5EnrollmentStore{daemon: daemonRecord}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Entitlement: testEntitlementReader{},
-		Store: identityStore, Edges: edges, Directory: controllerDirectory, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
+		Store:       identityStore, Edges: edges, Directory: controllerDirectory, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
 		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
 	})
 	if err != nil {
@@ -120,7 +122,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	}
 	directoryService, err := directoryapi.NewService(directoryapi.Config{
 		Entitlement: testEntitlementReader{},
-		Store: identityStore, Directory: controllerDirectory, Edges: edges, EdgeCACertificate: edgeCAPEM,
+		Store:       identityStore, Directory: controllerDirectory, Edges: edges, EdgeCACertificate: edgeCAPEM,
 		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
 	})
 	if err != nil {
@@ -242,6 +244,10 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	if snapshot, ok := session.ConnectionSnapshot(time.Now().UTC()); !ok || snapshot.ObservedPath != string(endpoint.PathSingleRelay) {
 		t.Fatalf("forced Relay selected path = %+v ok=%v", snapshot, ok)
 	}
+	// Wait beyond the original lease and prove that renewal kept the same TURN
+	// allocation usable without an ICE restart.
+	time.Sleep(relayLeaseTTL + time.Second)
+	assertR5TerminalIO(t, session, credential.EndpointID, "r6-relay-after-renewal")
 
 	shutdownR6Controller(t, controllerRuntime, controllerDirectory)
 	controllerStopped = true
@@ -255,7 +261,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		return depthErr == nil && depth > 0
 	})
 
-	secondController, secondDirectory := startR6ControlController(t, certificates, controllerAddress, ticketKeyID, ticketPublicKey, ticketPrivateKey, usageStore)
+	secondController, secondDirectory := startR6ControlController(t, certificates, controllerAddress, ticketKeyID, ticketPublicKey, ticketPrivateKey, usageStore, relayLeaseTTL)
 	defer shutdownR6Controller(t, secondController, secondDirectory)
 	eventually(t, 8*time.Second, func() bool { return edgeRuntime.Ready() })
 	eventually(t, 8*time.Second, func() bool {
@@ -279,7 +285,7 @@ func r6AutoAttempt(t *testing.T, identity remoteauth.Identity, endpointID string
 	return attempt
 }
 
-func startR6ControlController(t *testing.T, certificates certificateFiles, listen, keyID string, publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, usageStore *r6UsageStore) (*controllerruntime.Runtime, *directory.Directory) {
+func startR6ControlController(t *testing.T, certificates certificateFiles, listen, keyID string, publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, usageStore *r6UsageStore, relayLeaseTTL time.Duration) (*controllerruntime.Runtime, *directory.Directory) {
 	t.Helper()
 	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
 	if err != nil {
@@ -288,7 +294,7 @@ func startR6ControlController(t *testing.T, certificates certificateFiles, liste
 	service, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: 250 * time.Millisecond, HeartbeatTimeout: time.Second,
 		TicketVerificationKeys: []*cloudv1.VerificationKey{{KeyId: keyID, Algorithm: "Ed25519", PublicKey: publicKey}}, Directory: directoryState,
-		TicketSigningKey: privateKey, TicketSigningKeyID: keyID, RelayLeaseTTL: 5 * time.Minute,
+		TicketSigningKey: privateKey, TicketSigningKeyID: keyID, RelayLeaseTTL: relayLeaseTTL,
 		RelayPolicy: control.ConfiguredRelayPolicy{Value: control.RelayLimits{MaxBytes: 16 << 20, MaxRateBytesPerSecond: 4 << 20, MaxConcurrentAllocations: 2}}, UsageStore: usageStore,
 	})
 	if err != nil {

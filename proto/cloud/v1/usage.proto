@@ -48,6 +48,9 @@ message RelayLeaseRequest {
   string daemon_id = 4;
   string client_id = 5;
   RelayPreference preference = 6;
+  // renew_lease_id 为空表示首次准入；非空时 Controller 为同一在线 session
+  // 重新评估策略并续期该 lease，Edge 不得借此更换 TURN credential。
+  string renew_lease_id = 7;
 }
 
 message RelayLeaseDenied {
