@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/edge/clientgateway"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
@@ -42,8 +42,29 @@ type Config struct {
 // Client 是无状态 Cloud 网络协议客户端；每次 Resolve/Exchange 都使用当前调用的 grant 和 generation。
 type Client struct{ config Config }
 
+// RouteResolution 是一次已认证的目录结果，或者由本机缓存 Edge locator 与原始 daemon grant 重建。
+type RouteResolution struct {
+	edge       *cloudv1.CandidateEdge
+	routeGrant *cloudv1.SignedEnvelope
+	accessMode cloudv1.CloudClientAccessMode
+}
+
+func NewCachedRoute(edge *cloudv1.CandidateEdge, routeGrant *cloudv1.SignedEnvelope, accessMode cloudv1.CloudClientAccessMode) (*RouteResolution, error) {
+	if err := validateEdgeLocator(edge); err != nil || routeGrant == nil || (accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY && accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING) {
+		return nil, errors.New("cached Cloud Route is incomplete")
+	}
+	return &RouteResolution{edge: proto.Clone(edge).(*cloudv1.CandidateEdge), routeGrant: proto.Clone(routeGrant).(*cloudv1.SignedEnvelope), accessMode: accessMode}, nil
+}
+
+func (resolution *RouteResolution) Edge() *cloudv1.CandidateEdge {
+	if resolution == nil || resolution.edge == nil {
+		return nil
+	}
+	return proto.Clone(resolution.edge).(*cloudv1.CandidateEdge)
+}
+
 // SignalSession 持有一个已经完成 offer/answer 的 ClientGateway 流。
-// R5 让该流跟随 ReadyPeerSession 存活，使 Edge/Controller 的纯内存客户端投影与真实 P2P 生命周期一致；terminal 数据仍只走 DataChannel。
+// 该流跟随 ReadyPeerSession 存活，使 Edge 的纯内存客户端投影与真实 P2P 生命周期一致；terminal 数据仍只走 DataChannel。
 type SignalSession struct {
 	answer     *cloudv1.EdgeAnswer
 	connection *grpc.ClientConn
@@ -61,7 +82,7 @@ func (session *SignalSession) Answer() *cloudv1.EdgeAnswer {
 	return proto.Clone(session.answer).(*cloudv1.EdgeAnswer)
 }
 
-// Close 结束 ClientGateway 观察流并释放 Controller/Edge gRPC 连接；可以重复调用。
+// Close 结束 ClientGateway 观察流并释放 Edge gRPC 连接；可以重复调用。
 func (session *SignalSession) Close() error {
 	if session == nil {
 		return nil
@@ -95,8 +116,8 @@ func NewClient(config Config) (*Client, error) {
 	return &Client{config: config}, nil
 }
 
-// Resolve 用 DeviceIdentity grant 和 ClientAccessIdentity proof 查询实时 Presence 并获取两分钟 ClientTicket。
-func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signer Signer) (*cloudv1.ResolveClientRouteResponse, error) {
+// Resolve 只在本机没有 Edge locator 或旧 Edge 失效时查询实时 Presence；返回结果仍使用原始 daemon grant 准入。
+func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signer Signer) (*RouteResolution, error) {
 	if client == nil || signer == nil || len(cloudRouteGrant) == 0 {
 		return nil, errors.New("Cloud route grant and signer are required")
 	}
@@ -127,14 +148,14 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	if err != nil {
 		return nil, fmt.Errorf("resolve Cloud route: %w", err)
 	}
-	if resolved.GetClientTicket() == nil || resolved.GetEdge() == nil {
+	if resolved.GetEdge() == nil {
 		return nil, errors.New("Cloud route response is incomplete")
 	}
-	return resolved, nil
+	return NewCachedRoute(resolved.GetEdge(), grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY)
 }
 
-// ResolvePairing 使用短期 claim offer 和待绑定的 ClientAccessIdentity 获取 pairing-only ClientTicket。
-func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []byte, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct) (*cloudv1.ResolveClientRouteResponse, error) {
+// ResolvePairing 使用短期 claim offer 定位 daemon；PairingRouteGrant 仍由 daemon 签名并由 Edge 离线验证。
+func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []byte, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct) (*RouteResolution, error) {
 	if client == nil || signer == nil || len(pairingClaimOffer) == 0 || identity.ValidatePublic() != nil || product < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || product > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
 		return nil, errors.New("Cloud pairing route input is incomplete")
 	}
@@ -195,25 +216,18 @@ func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []by
 	if err != nil {
 		return nil, fmt.Errorf("resolve Cloud pairing route: %w", err)
 	}
-	if resolved.GetClientTicket() == nil || resolved.GetEdge() == nil {
+	if resolved.GetEdge() == nil {
 		return nil, errors.New("Cloud pairing route response is incomplete")
 	}
-	claims := &cloudv1.ClientTicketClaims{}
-	if err := proto.Unmarshal(resolved.GetClientTicket().GetPayload(), claims); err != nil {
-		return nil, errors.New("Cloud pairing ClientTicket payload is invalid")
-	}
-	if claims.GetAccessMode() != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING || !bytes.Equal(claims.GetPairingClaimSha256(), digest[:]) || !bytes.Equal(claims.GetClientPublicKey(), identity.PublicKey) || claims.GetProduct() != product {
-		return nil, errors.New("Cloud pairing ClientTicket does not match the requested claim")
-	}
-	return resolved, nil
+	return NewCachedRoute(resolved.GetEdge(), grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING)
 }
 
-// Exchange 连接目标 Edge，完成 ClientHello proof 和一次完整 offer/answer；SDP 不进入持久状态。
-func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveClientRouteResponse, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct, attemptGeneration uint64, relayPreference cloudv1.RelayPreference, createOffer func(context.Context, *cloudv1.ClientReady) (string, error)) (*SignalSession, error) {
-	if client == nil || resolved == nil || resolved.GetClientTicket() == nil || resolved.GetEdge() == nil || signer == nil || identity.ValidatePublic() != nil || product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || attemptGeneration == 0 || createOffer == nil {
+// Exchange 连接目标 Edge，并用 daemon RouteGrant 与本次 client proof 完成一次 offer/answer。
+func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct, attemptGeneration uint64, relayPreference cloudv1.RelayPreference, createOffer func(context.Context, *cloudv1.ClientReady) (string, error)) (*SignalSession, error) {
+	if client == nil || resolution == nil || resolution.edge == nil || resolution.routeGrant == nil || signer == nil || identity.ValidatePublic() != nil || product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || attemptGeneration == 0 || createOffer == nil {
 		return nil, errors.New("Cloud signaling input is incomplete")
 	}
-	edge := resolved.GetEdge()
+	edge, routeGrant := resolution.edge, resolution.routeGrant
 	connection, err := client.dial(edge.GetPublicEndpoint(), edge.GetServerName(), edge.GetCaCertificatePem())
 	if err != nil {
 		return nil, err
@@ -240,7 +254,7 @@ func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveCli
 		return nil, err
 	}
 	sessionID, bootID := uuid.NewString(), uuid.NewString()
-	canonical, err := ticket.ClientHelloProofBytes(resolved.GetClientTicket(), sessionID, attemptGeneration)
+	canonical, err := ticket.CloudRouteHelloProofBytes(routeGrant, edge.GetEdgeId(), sessionID, attemptGeneration)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +262,7 @@ func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveCli
 	if err != nil {
 		return nil, err
 	}
-	hello := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: bootID, ConnectionId: sessionID, StreamSeq: 1, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{ClientTicket: resolved.GetClientTicket(), ClientProof: proof, Product: product, SoftwareVersion: "development", AttemptGeneration: attemptGeneration, RelayPreference: relayPreference}}}
+	hello := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: bootID, ConnectionId: sessionID, StreamSeq: 1, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{RouteGrant: routeGrant, ClientPublicKey: append([]byte(nil), identity.PublicKey...), ClientProof: proof, Product: product, SoftwareVersion: "development", AttemptGeneration: attemptGeneration, RelayPreference: relayPreference, AccessMode: resolution.accessMode}}}
 	if err := stream.Send(hello); err != nil {
 		return nil, err
 	}

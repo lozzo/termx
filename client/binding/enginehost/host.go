@@ -219,7 +219,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		return nil, err
 	}
 	boundResponse, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialBind{
-		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: endpointID, CredentialRef: credentialRef, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant},
+		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: endpointID, CredentialRef: credentialRef, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant, CloudEdgeLocator: paired.CloudEdgeLocator},
 	}})
 	if err != nil {
 		return nil, err
@@ -228,14 +228,14 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	if bound.GetKeyFingerprint() != identity.Fingerprint || bound.GetCapabilityGrant() != paired.Grant || !bytes.Equal(bound.GetCloudRouteGrant(), paired.CloudRouteGrant) {
+	if bound.GetKeyFingerprint() != identity.Fingerprint || bound.GetCapabilityGrant() != paired.Grant || !bytes.Equal(bound.GetCloudRouteGrant(), paired.CloudRouteGrant) || !bytes.Equal(bound.GetCloudEdgeLocator(), paired.CloudEdgeLocator) {
 		return nil, fmt.Errorf("platform secure store bound a different pairing credential")
 	}
 	committed, registry, err := host.commitPairingEndpoint(ctx, endpoint.EndpointID(endpointID), candidate, credentialRef)
 	if err != nil {
 		rollbackContext, cancelRollback := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelRollback()
-		rollbackErr := host.rollbackPreparedCredential(rollbackContext, record, paired.Grant, paired.CloudRouteGrant)
+		rollbackErr := host.rollbackPreparedCredential(rollbackContext, record, paired.Grant, paired.CloudRouteGrant, paired.CloudEdgeLocator)
 		if rollbackErr != nil {
 			return nil, fmt.Errorf("commit paired endpoint: %v; rollback credential: %w", err, rollbackErr)
 		}
@@ -556,7 +556,28 @@ func (source platformCredentials) ResolveClientCredential(ctx context.Context, e
 	if err := identity.ValidatePublic(); err != nil {
 		return remoteauth.ClientAccessCredential{}, err
 	}
-	return remoteauth.ClientAccessCredential{Version: 1, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), UpdatedAt: time.Now().UTC()}, nil
+	return remoteauth.ClientAccessCredential{Version: 2, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), CloudEdgeLocator: append([]byte(nil), record.GetCloudEdgeLocator()...), UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (source platformCredentials) UpdateCloudEdgeLocator(ctx context.Context, endpointID, reference string, locator []byte) error {
+	credential, err := source.ResolveClientCredential(ctx, endpointID, reference)
+	if err != nil {
+		return err
+	}
+	response, err := source.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialBind{
+		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: endpointID, CredentialRef: reference, CapabilityGrant: credential.CapabilityGrant, CloudRouteGrant: credential.CloudRouteGrant, CloudEdgeLocator: append([]byte(nil), locator...)},
+	}})
+	if err != nil {
+		return err
+	}
+	record, err := platformCredential(response)
+	if err != nil {
+		return err
+	}
+	if record.GetEndpointId() != endpointID || record.GetCredentialRef() != reference || record.GetKeyFingerprint() != credential.Identity.Fingerprint || record.GetCapabilityGrant() != credential.CapabilityGrant || !bytes.Equal(record.GetCloudRouteGrant(), credential.CloudRouteGrant) || !bytes.Equal(record.GetCloudEdgeLocator(), locator) {
+		return errors.New("platform secure store changed the Cloud credential while updating its Edge locator")
+	}
+	return nil
 }
 
 func (source platformCredentials) CloudAvailable(ctx context.Context, endpointID, reference string) bool {

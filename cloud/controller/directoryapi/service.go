@@ -1,4 +1,4 @@
-// Package directoryapi 实现客户端 Cloud Route 解析与短期 ClientTicket 签发。
+// Package directoryapi 实现客户端 Cloud Route 解析；客户端准入只由 owning daemon 签名的 RouteGrant 决定。
 // 持久 Store 只提供 daemon identity；在线位置唯一来自 Controller Directory actor。
 package directoryapi
 
@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	"github.com/anytty/anytty/cloud/controller/enrollment"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -26,30 +26,24 @@ import (
 )
 
 type challengeState struct {
-	challenge          []byte
-	expires            time.Time
-	grant              *cloudv1.SignedEnvelope
-	claims             *cloudv1.CloudRouteGrantClaims
-	pairingGrant       *cloudv1.SignedEnvelope
-	pairingClaimDigest []byte
-	clientPublicKey    ed25519.PublicKey
-	product            cloudv1.ClientProduct
-	accessMode         cloudv1.CloudClientAccessMode
-	daemon             enrollment.Daemon
-	location           directory.ObjectLocation
+	challenge       []byte
+	expires         time.Time
+	grant           *cloudv1.SignedEnvelope
+	pairingGrant    *cloudv1.SignedEnvelope
+	clientPublicKey ed25519.PublicKey
+	accessMode      cloudv1.CloudClientAccessMode
+	daemon          enrollment.Daemon
+	location        directory.ObjectLocation
 }
 
-// Config 固定客户端解析所需的持久身份、纯内存目录、Edge desired state 与 Controller TicketSigner。
+// Config 固定客户端位置解析所需的持久身份、纯内存目录和 Edge desired state。
 type Config struct {
-	Store              enrollment.Store
-	Directory          *directory.Directory
-	Edges              *edgeconfig.Service
-	EdgeCACertificate  []byte
-	TicketSigningKey   ed25519.PrivateKey
-	TicketSigningKeyID string
-	ChallengeTTL       time.Duration
-	ClientTicketTTL    time.Duration
-	Entitlement        interface {
+	Store             enrollment.Store
+	Directory         *directory.Directory
+	Edges             *edgeconfig.Service
+	EdgeCACertificate []byte
+	ChallengeTTL      time.Duration
+	Entitlement       interface {
 		EffectiveEntitlement(context.Context, string) (*cloudv1.EffectiveEntitlement, error)
 	}
 	Now func() time.Time
@@ -63,12 +57,10 @@ type Service struct {
 	challenges map[string]challengeState
 }
 
-// NewService 拒绝缺失 identity store、runtime Directory 或独立票据签名密钥的装配。
+// NewService 拒绝缺失 identity store、runtime Directory 或 Edge CA 的装配。
 func NewService(config Config) (*Service, error) {
-	config.TicketSigningKeyID = strings.TrimSpace(config.TicketSigningKeyID)
-	if config.Store == nil || config.Directory == nil || config.Edges == nil || config.Entitlement == nil || len(config.EdgeCACertificate) == 0 || len(config.TicketSigningKey) != ed25519.PrivateKeySize ||
-		config.TicketSigningKeyID == "" || config.ChallengeTTL <= 0 || config.ClientTicketTTL <= 0 || config.ClientTicketTTL > 2*time.Minute {
-		return nil, errors.New("DirectoryService store, runtime directory, Edge state, signer, CA, and bounded TTLs are required")
+	if config.Store == nil || config.Directory == nil || config.Edges == nil || config.Entitlement == nil || len(config.EdgeCACertificate) == 0 || config.ChallengeTTL <= 0 {
+		return nil, errors.New("DirectoryService store, runtime directory, Edge state, CA, and challenge TTL are required")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -106,7 +98,7 @@ func (service *Service) BeginClientRoute(ctx context.Context, request *cloudv1.B
 	id := uuid.NewString()
 	service.mu.Lock()
 	service.compactLocked(now)
-	service.challenges[id] = challengeState{challenge: challenge, expires: now.Add(service.config.ChallengeTTL), grant: proto.Clone(grant).(*cloudv1.SignedEnvelope), claims: proto.Clone(claims).(*cloudv1.CloudRouteGrantClaims), clientPublicKey: append(ed25519.PublicKey(nil), claims.GetClientPublicKey()...), product: claims.GetProduct(), accessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY, daemon: daemon, location: location}
+	service.challenges[id] = challengeState{challenge: challenge, expires: now.Add(service.config.ChallengeTTL), grant: proto.Clone(grant).(*cloudv1.SignedEnvelope), clientPublicKey: append(ed25519.PublicKey(nil), claims.GetClientPublicKey()...), accessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY, daemon: daemon, location: location}
 	service.mu.Unlock()
 	return &cloudv1.IdentityChallenge{ChallengeId: id, Challenge: append([]byte(nil), challenge...), ExpiresAt: timestamppb.New(now.Add(service.config.ChallengeTTL))}, nil
 }
@@ -145,15 +137,15 @@ func (service *Service) BeginPairingRoute(ctx context.Context, request *cloudv1.
 	service.mu.Lock()
 	service.compactLocked(now)
 	service.challenges[id] = challengeState{
-		challenge: challenge, expires: now.Add(service.config.ChallengeTTL), pairingGrant: proto.Clone(grant).(*cloudv1.SignedEnvelope), pairingClaimDigest: append([]byte(nil), claims.GetPairingClaimSha256()...),
-		clientPublicKey: append(ed25519.PublicKey(nil), request.GetClientPublicKey()...), product: request.GetProduct(), accessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING,
+		challenge: challenge, expires: now.Add(service.config.ChallengeTTL), pairingGrant: proto.Clone(grant).(*cloudv1.SignedEnvelope),
+		clientPublicKey: append(ed25519.PublicKey(nil), request.GetClientPublicKey()...), accessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING,
 		daemon: daemon, location: location,
 	}
 	service.mu.Unlock()
 	return &cloudv1.IdentityChallenge{ChallengeId: id, Challenge: append([]byte(nil), challenge...), ExpiresAt: timestamppb.New(now.Add(service.config.ChallengeTTL))}, nil
 }
 
-// ResolveClientRoute 校验 ClientAccessIdentity proof，并按当前 Presence 签发允许独立 RelayLease 的 ClientTicket。
+// ResolveClientRoute 校验 ClientAccessIdentity proof，并只返回当前 daemon 所在 Edge 的公开 locator。
 func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1.ResolveClientRouteRequest) (*cloudv1.ResolveClientRouteResponse, error) {
 	if request == nil || strings.TrimSpace(request.GetRequestId()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "client route request ID is required")
@@ -186,21 +178,6 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 	if entitlementErr != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() {
 		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
 	}
-	now := service.now()
-	clientID := remoteauth.Fingerprint(state.clientPublicKey)
-	routePolicy := cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY
-	if entitlement.GetCapability().GetRelayEnabled() && entitlement.GetRelayRemainingBytes() > 0 {
-		routePolicy = cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY
-	}
-	claims := &cloudv1.ClientTicketClaims{
-		TicketId: uuid.NewString(), AccountId: state.daemon.AccountID, EdgeId: current.EdgeID, DaemonId: state.daemon.ID, ClientId: clientID,
-		ClientPublicKey: append([]byte(nil), state.clientPublicKey...), Product: state.product, RoutePolicy: routePolicy, AccessMode: state.accessMode,
-		PairingClaimSha256: append([]byte(nil), state.pairingClaimDigest...), IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.ClientTicketTTL)),
-	}
-	signed, err := ticket.SignClientTicket(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
 	projection, online, err := service.config.Directory.Edge(ctx, edge.ID)
 	if err != nil || !online {
 		return nil, status.Error(codes.FailedPrecondition, "target Edge is offline")
@@ -210,7 +187,7 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 		host = parsed
 	}
 	candidate := &cloudv1.CandidateEdge{EdgeId: edge.ID, Name: edge.Name, Region: edge.Region, PublicEndpoint: edge.PublicEndpoint, ServerName: strings.Trim(host, "[]"), CaCertificatePem: append([]byte(nil), service.config.EdgeCACertificate...), Capacity: edge.Capacity, CurrentAgents: uint64(projection.AgentCount)}
-	return &cloudv1.ResolveClientRouteResponse{ClientTicket: signed, Edge: candidate}, nil
+	return &cloudv1.ResolveClientRouteResponse{Edge: candidate}, nil
 }
 
 func (service *Service) takeChallenge(id string) (challengeState, error) {

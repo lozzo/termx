@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/apihttp"
 	"github.com/anytty/anytty/cloud/controller/certificate"
@@ -31,6 +30,7 @@ import (
 	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
 	"github.com/anytty/anytty/cloud/keymaterial"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 )
 
 const (
@@ -188,8 +188,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	}
 	clientDirectoryService, err := directoryapi.NewService(directoryapi.Config{
 		Store: database, Directory: directoryState, Edges: edgeService, EdgeCACertificate: edgeCAPayload,
-		TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
-		Entitlement: commerceService,
+		ChallengeTTL: time.Minute, Entitlement: commerceService,
 	})
 	if err != nil {
 		return err

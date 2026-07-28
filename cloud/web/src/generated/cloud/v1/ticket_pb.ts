@@ -6,7 +6,7 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { ClientProduct, CloudClientAccessMode } from "./runtime_pb";
+import type { ClientProduct } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,37 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/ticket.proto.
  */
 export const file_cloud_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSKjAgoRQWdlbnRUaWNrZXRDbGFpbXMSEQoJdGlja2V0X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEg8KB2VkZ2VfaWQYBCABKAkSEQoJZGV2aWNlX2lkGAUgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAYgASgMEjYKDGNhcGFiaWxpdGllcxgHIAMoDjIgLmFueXR0eS5jbG91ZC52MS5BZ2VudENhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChRBZ2VudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4uYW55dHR5LmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLOAQoXUGFpcmluZ1JvdXRlR3JhbnRDbGFpbXMSEAoIZ3JhbnRfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIcChRwYWlyaW5nX2NsYWltX3NoYTI1NhgEIAEoDBItCglpc3N1ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInIKFUNsaWVudFJvdXRlUHJvb2ZJbnB1dBIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEhwKFGdyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkigQEKFlBhaXJpbmdSb3V0ZVByb29mSW5wdXQSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhEKCWNoYWxsZW5nZRgCIAEoDBIqCiJwYWlyaW5nX3JvdXRlX2dyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkisQMKEkNsaWVudFRpY2tldENsYWltcxIRCgl0aWNrZXRfaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIPCgdlZGdlX2lkGAMgASgJEhEKCWRhZW1vbl9pZBgEIAEoCRIRCgljbGllbnRfaWQYBSABKAkSGQoRY2xpZW50X3B1YmxpY19rZXkYBiABKAwSLwoHcHJvZHVjdBgHIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EjcKDHJvdXRlX3BvbGljeRgIIAEoDjIhLmFueXR0eS5jbG91ZC52MS5DbG91ZFJvdXRlUG9saWN5Ei0KCWlzc3VlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASOwoLYWNjZXNzX21vZGUYCyABKA4yJi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRDbGllbnRBY2Nlc3NNb2RlEhwKFHBhaXJpbmdfY2xhaW1fc2hhMjU2GAwgASgMImYKFUNsaWVudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEgoKc2Vzc2lvbl9pZBgCIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YAyABKAQqUwoPQWdlbnRDYXBhYmlsaXR5EiAKHEFHRU5UX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIeChpBR0VOVF9DQVBBQklMSVRZX1NJR05BTElORxABKnwKEENsb3VkUm91dGVQb2xpY3kSIgoeQ0xPVURfUk9VVEVfUE9MSUNZX1VOU1BFQ0lGSUVEEAASHwobQ0xPVURfUk9VVEVfUE9MSUNZX1AyUF9PTkxZEAESIwofQ0xPVURfUk9VVEVfUE9MSUNZX1AyUF9PUl9SRUxBWRACQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
+  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSJ6ChRBZ2VudFJlbGF5RGVsZWdhdGlvbhIbChNtYXhfYnl0ZXNfcGVyX2xlYXNlGAEgASgEEiEKGW1heF9yYXRlX2J5dGVzX3Blcl9zZWNvbmQYAiABKAQSIgoabWF4X2NvbmN1cnJlbnRfYWxsb2NhdGlvbnMYAyABKA0i5AIKEUFnZW50VGlja2V0Q2xhaW1zEhEKCXRpY2tldF9pZBgBIAEoCRIRCglkYWVtb25faWQYAiABKAkSEgoKYWNjb3VudF9pZBgDIAEoCRIPCgdlZGdlX2lkGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgGIAEoDBI2CgxjYXBhYmlsaXRpZXMYByADKA4yIC5hbnl0dHkuY2xvdWQudjEuQWdlbnRDYXBhYmlsaXR5Ei0KCWlzc3VlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASPwoQcmVsYXlfZGVsZWdhdGlvbhgKIAEoCzIlLmFueXR0eS5jbG91ZC52MS5BZ2VudFJlbGF5RGVsZWdhdGlvbiJwChRBZ2VudEhlbGxvUHJvb2ZJbnB1dBIdChV0aWNrZXRfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4uYW55dHR5LmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLOAQoXUGFpcmluZ1JvdXRlR3JhbnRDbGFpbXMSEAoIZ3JhbnRfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIcChRwYWlyaW5nX2NsYWltX3NoYTI1NhgEIAEoDBItCglpc3N1ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInIKFUNsaWVudFJvdXRlUHJvb2ZJbnB1dBIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEhwKFGdyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkigQEKFlBhaXJpbmdSb3V0ZVByb29mSW5wdXQSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhEKCWNoYWxsZW5nZRgCIAEoDBIqCiJwYWlyaW5nX3JvdXRlX2dyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkigAEKGUNsb3VkUm91dGVIZWxsb1Byb29mSW5wdXQSIgoacm91dGVfZ3JhbnRfcGF5bG9hZF9zaGEyNTYYASABKAwSDwoHZWRnZV9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhoKEmF0dGVtcHRfZ2VuZXJhdGlvbhgEIAEoBCpTCg9BZ2VudENhcGFiaWxpdHkSIAocQUdFTlRfQ0FQQUJJTElUWV9VTlNQRUNJRklFRBAAEh4KGkFHRU5UX0NBUEFCSUxJVFlfU0lHTkFMSU5HEAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
+
+/**
+ * AgentRelayDelegation 是 Controller 在 daemon 接入时冻结给 Edge 的 Relay 上限。
+ * EdgeControl 中断后，Edge 只能在这些上限内为已由 daemon 批准的客户端创建短租约。
+ *
+ * @generated from message anytty.cloud.v1.AgentRelayDelegation
+ */
+export type AgentRelayDelegation = Message<"anytty.cloud.v1.AgentRelayDelegation"> & {
+  /**
+   * @generated from field: uint64 max_bytes_per_lease = 1;
+   */
+  maxBytesPerLease: bigint;
+
+  /**
+   * @generated from field: uint64 max_rate_bytes_per_second = 2;
+   */
+  maxRateBytesPerSecond: bigint;
+
+  /**
+   * @generated from field: uint32 max_concurrent_allocations = 3;
+   */
+  maxConcurrentAllocations: number;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.AgentRelayDelegation.
+ * Use `create(AgentRelayDelegationSchema)` to create a new message.
+ */
+export const AgentRelayDelegationSchema: GenMessage<AgentRelayDelegation> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_ticket, 0);
 
 /**
  * AgentTicketClaims 把一次 daemon 到 Edge 的连接绑定到持久身份和短有效期。
@@ -66,6 +96,11 @@ export type AgentTicketClaims = Message<"anytty.cloud.v1.AgentTicketClaims"> & {
    * @generated from field: google.protobuf.Timestamp expires_at = 9;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.AgentRelayDelegation relay_delegation = 10;
+   */
+  relayDelegation?: AgentRelayDelegation | undefined;
 };
 
 /**
@@ -73,7 +108,7 @@ export type AgentTicketClaims = Message<"anytty.cloud.v1.AgentTicketClaims"> & {
  * Use `create(AgentTicketClaimsSchema)` to create a new message.
  */
 export const AgentTicketClaimsSchema: GenMessage<AgentTicketClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 0);
+  messageDesc(file_cloud_v1_ticket, 1);
 
 /**
  * AgentHelloProofInput 把 DeviceIdentity proof 绑定到票据和当前 stream generation。
@@ -107,7 +142,7 @@ export type AgentHelloProofInput = Message<"anytty.cloud.v1.AgentHelloProofInput
  * Use `create(AgentHelloProofInputSchema)` to create a new message.
  */
 export const AgentHelloProofInputSchema: GenMessage<AgentHelloProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 1);
+  messageDesc(file_cloud_v1_ticket, 2);
 
 /**
  * CloudRouteGrantClaims 由 owning daemon 的 DeviceIdentity 签发，只授权发现和信令。
@@ -152,7 +187,7 @@ export type CloudRouteGrantClaims = Message<"anytty.cloud.v1.CloudRouteGrantClai
  * Use `create(CloudRouteGrantClaimsSchema)` to create a new message.
  */
 export const CloudRouteGrantClaimsSchema: GenMessage<CloudRouteGrantClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 2);
+  messageDesc(file_cloud_v1_ticket, 3);
 
 /**
  * PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
@@ -197,7 +232,7 @@ export type PairingRouteGrantClaims = Message<"anytty.cloud.v1.PairingRouteGrant
  * Use `create(PairingRouteGrantClaimsSchema)` to create a new message.
  */
 export const PairingRouteGrantClaimsSchema: GenMessage<PairingRouteGrantClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 3);
+  messageDesc(file_cloud_v1_ticket, 4);
 
 /**
  * ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
@@ -231,7 +266,7 @@ export type ClientRouteProofInput = Message<"anytty.cloud.v1.ClientRouteProofInp
  * Use `create(ClientRouteProofInputSchema)` to create a new message.
  */
 export const ClientRouteProofInputSchema: GenMessage<ClientRouteProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 4);
+  messageDesc(file_cloud_v1_ticket, 5);
 
 /**
  * PairingRouteProofInput 证明首次配对请求持有即将绑定到 claim 的 ClientAccessIdentity。
@@ -266,109 +301,41 @@ export type PairingRouteProofInput = Message<"anytty.cloud.v1.PairingRouteProofI
  * Use `create(PairingRouteProofInputSchema)` to create a new message.
  */
 export const PairingRouteProofInputSchema: GenMessage<PairingRouteProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 5);
+  messageDesc(file_cloud_v1_ticket, 6);
 
 /**
- * ClientTicketClaims 是 Controller 对单个在线 Edge 信令 attempt 的两分钟准入票据。
+ * CloudRouteHelloProofInput 把 daemon 签名的长期 Route grant 绑定到当前 Edge 和单次 stream generation。
+ * grant 可复用，但每次连接都必须由同一 ClientAccessIdentity 重新签名，复制 grant 本身不能建立连接。
  *
- * @generated from message anytty.cloud.v1.ClientTicketClaims
+ * @generated from message anytty.cloud.v1.CloudRouteHelloProofInput
  */
-export type ClientTicketClaims = Message<"anytty.cloud.v1.ClientTicketClaims"> & {
+export type CloudRouteHelloProofInput = Message<"anytty.cloud.v1.CloudRouteHelloProofInput"> & {
   /**
-   * @generated from field: string ticket_id = 1;
+   * @generated from field: bytes route_grant_payload_sha256 = 1;
    */
-  ticketId: string;
+  routeGrantPayloadSha256: Uint8Array;
 
   /**
-   * @generated from field: string account_id = 2;
-   */
-  accountId: string;
-
-  /**
-   * @generated from field: string edge_id = 3;
+   * @generated from field: string edge_id = 2;
    */
   edgeId: string;
 
   /**
-   * @generated from field: string daemon_id = 4;
-   */
-  daemonId: string;
-
-  /**
-   * @generated from field: string client_id = 5;
-   */
-  clientId: string;
-
-  /**
-   * @generated from field: bytes client_public_key = 6;
-   */
-  clientPublicKey: Uint8Array;
-
-  /**
-   * @generated from field: anytty.cloud.v1.ClientProduct product = 7;
-   */
-  product: ClientProduct;
-
-  /**
-   * @generated from field: anytty.cloud.v1.CloudRoutePolicy route_policy = 8;
-   */
-  routePolicy: CloudRoutePolicy;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 9;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 10;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: anytty.cloud.v1.CloudClientAccessMode access_mode = 11;
-   */
-  accessMode: CloudClientAccessMode;
-
-  /**
-   * @generated from field: bytes pairing_claim_sha256 = 12;
-   */
-  pairingClaimSha256: Uint8Array;
-};
-
-/**
- * Describes the message anytty.cloud.v1.ClientTicketClaims.
- * Use `create(ClientTicketClaimsSchema)` to create a new message.
- */
-export const ClientTicketClaimsSchema: GenMessage<ClientTicketClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 6);
-
-/**
- * ClientHelloProofInput 把 ClientAccessIdentity proof 绑定到票据和当前 attempt generation。
- *
- * @generated from message anytty.cloud.v1.ClientHelloProofInput
- */
-export type ClientHelloProofInput = Message<"anytty.cloud.v1.ClientHelloProofInput"> & {
-  /**
-   * @generated from field: bytes ticket_payload_sha256 = 1;
-   */
-  ticketPayloadSha256: Uint8Array;
-
-  /**
-   * @generated from field: string session_id = 2;
+   * @generated from field: string session_id = 3;
    */
   sessionId: string;
 
   /**
-   * @generated from field: uint64 attempt_generation = 3;
+   * @generated from field: uint64 attempt_generation = 4;
    */
   attemptGeneration: bigint;
 };
 
 /**
- * Describes the message anytty.cloud.v1.ClientHelloProofInput.
- * Use `create(ClientHelloProofInputSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.CloudRouteHelloProofInput.
+ * Use `create(CloudRouteHelloProofInputSchema)` to create a new message.
  */
-export const ClientHelloProofInputSchema: GenMessage<ClientHelloProofInput> = /*@__PURE__*/
+export const CloudRouteHelloProofInputSchema: GenMessage<CloudRouteHelloProofInput> = /*@__PURE__*/
   messageDesc(file_cloud_v1_ticket, 7);
 
 /**
@@ -393,32 +360,3 @@ export enum AgentCapability {
  */
 export const AgentCapabilitySchema: GenEnum<AgentCapability> = /*@__PURE__*/
   enumDesc(file_cloud_v1_ticket, 0);
-
-/**
- * CloudRoutePolicy 是 ClientTicket 允许 Edge 执行的 managed Route 范围。
- * P2P_OR_RELAY 仍需独立 RelayLease，不能由该枚举隐式放行 Relay 数据面。
- *
- * @generated from enum anytty.cloud.v1.CloudRoutePolicy
- */
-export enum CloudRoutePolicy {
-  /**
-   * @generated from enum value: CLOUD_ROUTE_POLICY_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: CLOUD_ROUTE_POLICY_P2P_ONLY = 1;
-   */
-  P2P_ONLY = 1,
-
-  /**
-   * @generated from enum value: CLOUD_ROUTE_POLICY_P2P_OR_RELAY = 2;
-   */
-  P2P_OR_RELAY = 2,
-}
-
-/**
- * Describes the enum anytty.cloud.v1.CloudRoutePolicy.
- */
-export const CloudRoutePolicySchema: GenEnum<CloudRoutePolicy> = /*@__PURE__*/
-  enumDesc(file_cloud_v1_ticket, 1);

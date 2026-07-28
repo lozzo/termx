@@ -28,7 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// DirectoryService 是客户端解析实时 daemon Presence 和获取短期 ClientTicket 的唯一公共 API。
+// DirectoryService 只在首次发现或 Edge locator 失效时解析实时 daemon Presence。
 type DirectoryServiceClient interface {
 	BeginClientRoute(ctx context.Context, in *BeginClientRouteRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
 	BeginPairingRoute(ctx context.Context, in *BeginPairingRouteRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
@@ -77,7 +77,7 @@ func (c *directoryServiceClient) ResolveClientRoute(ctx context.Context, in *Res
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
 //
-// DirectoryService 是客户端解析实时 daemon Presence 和获取短期 ClientTicket 的唯一公共 API。
+// DirectoryService 只在首次发现或 Edge locator 失效时解析实时 daemon Presence。
 type DirectoryServiceServer interface {
 	BeginClientRoute(context.Context, *BeginClientRouteRequest) (*IdentityChallenge, error)
 	BeginPairingRoute(context.Context, *BeginPairingRouteRequest) (*IdentityChallenge, error)

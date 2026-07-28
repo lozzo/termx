@@ -28,11 +28,10 @@ message ResolveClientRouteRequest {
 }
 
 message ResolveClientRouteResponse {
-  SignedEnvelope client_ticket = 1;
-  CandidateEdge edge = 2;
+  CandidateEdge edge = 1;
 }
 
-// DirectoryService 是客户端解析实时 daemon Presence 和获取短期 ClientTicket 的唯一公共 API。
+// DirectoryService 只在首次发现或 Edge locator 失效时解析实时 daemon Presence。
 service DirectoryService {
   rpc BeginClientRoute(BeginClientRouteRequest) returns (IdentityChallenge);
   rpc BeginPairingRoute(BeginPairingRouteRequest) returns (IdentityChallenge);

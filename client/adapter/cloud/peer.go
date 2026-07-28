@@ -30,7 +30,7 @@ func openResolvedCloudPeer(
 	request clientruntime.AttemptRequest,
 	peers PeerFactory,
 	cloud *cloudclient.Client,
-	resolved *cloudv1.ResolveClientRouteResponse,
+	resolved *cloudclient.RouteResolution,
 	identity remoteauth.ClientAccessIdentity,
 	signer cloudclient.Signer,
 	product cloudv1.ClientProduct,

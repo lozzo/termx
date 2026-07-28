@@ -405,6 +405,8 @@ message CredentialBindRequest {
   string credential_ref = 2;
   string capability_grant = 3;
   bytes cloud_route_grant = 4;
+  // cloud_edge_locator 是 Controller 或配对流程返回的 CandidateEdge protobuf；不是授权真值。
+  bytes cloud_edge_locator = 5;
 }
 
 message CredentialRecord {
@@ -415,6 +417,7 @@ message CredentialRecord {
   string capability_grant = 5;
   bool newly_created = 6;
   bytes cloud_route_grant = 7;
+  bytes cloud_edge_locator = 8;
 }
 
 message CredentialSignRequest {

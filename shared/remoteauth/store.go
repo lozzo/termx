@@ -19,7 +19,7 @@ import (
 	"github.com/anytty/anytty/shared/securefs"
 )
 
-const clientCredentialVersion = 1
+const clientCredentialVersion = 2
 
 var grantRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
@@ -36,6 +36,7 @@ type ClientAccessCredential struct {
 	Identity                ClientAccessIdentity
 	CapabilityGrant         string
 	CloudRouteGrant         []byte
+	CloudEdgeLocator        []byte
 	LastPairingBundleDigest string
 	UpdatedAt               time.Time
 }
@@ -65,6 +66,7 @@ type storedClientAccessCredential struct {
 	PrivateKey              string    `json:"private_key"`
 	CapabilityGrant         string    `json:"capability_grant,omitempty"`
 	CloudRouteGrant         []byte    `json:"cloud_route_grant,omitempty"`
+	CloudEdgeLocator        []byte    `json:"cloud_edge_locator,omitempty"`
 	LastPairingBundleDigest string    `json:"last_pairing_bundle_digest,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at"`
 }
@@ -205,6 +207,7 @@ func (store *CredentialStore) PairAndBind(
 	}
 	credential.CapabilityGrant = strings.TrimSpace(result.Grant)
 	credential.CloudRouteGrant = append([]byte(nil), result.CloudRouteGrant...)
+	credential.CloudEdgeLocator = append([]byte(nil), result.CloudEdgeLocator...)
 	credential.LastPairingBundleDigest = bundleDigest
 	credential.UpdatedAt = responseNow
 	if err := store.persistLocked(ref, credential); err != nil {
@@ -286,6 +289,33 @@ func (store *CredentialStore) ResolveContext(ctx context.Context, ref string) (C
 	return credential, nil
 }
 
+// UpdateCloudEdgeLocator 原子替换同一 credential 的公开 Edge locator；grant、identity 和权限保持不变。
+func (store *CredentialStore) UpdateCloudEdgeLocator(ctx context.Context, ref, endpointID string, locator []byte) error {
+	if err := store.validate(ref); err != nil {
+		return err
+	}
+	if strings.TrimSpace(endpointID) == "" || len(locator) == 0 {
+		return errors.New("Cloud Edge locator update is incomplete")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	lock, err := store.acquireRefLockLocked(ctx, ref)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	credential, err := store.resolveLocked(ref)
+	if err != nil {
+		return err
+	}
+	if credential.EndpointID != strings.TrimSpace(endpointID) || !credential.Ready() || len(credential.CloudRouteGrant) == 0 {
+		return errors.New("Cloud Edge locator credential binding is invalid")
+	}
+	credential.CloudEdgeLocator = append([]byte(nil), locator...)
+	credential.UpdatedAt = time.Now().UTC()
+	return store.persistLocked(ref, credential)
+}
+
 // Delete 删除本地 credential ref，且不修改 daemon AccessStore 或撤销远端 grant。
 // 该操作只用于显式忘记 Endpoint；删除已消费 ticket 对应的唯一 private key 会使该 grant 永久不可用。
 func (store *CredentialStore) Delete(ref string) error {
@@ -351,8 +381,9 @@ func (store *CredentialStore) resolveLocked(ref string) (ClientAccessCredential,
 	return ClientAccessCredential{
 		Version: stored.Version, EndpointID: stored.EndpointID, Identity: identity,
 		CapabilityGrant: strings.TrimSpace(stored.CapabilityGrant), LastPairingBundleDigest: strings.TrimSpace(stored.LastPairingBundleDigest),
-		CloudRouteGrant: append([]byte(nil), stored.CloudRouteGrant...),
-		UpdatedAt:       stored.UpdatedAt.UTC(),
+		CloudRouteGrant:  append([]byte(nil), stored.CloudRouteGrant...),
+		CloudEdgeLocator: append([]byte(nil), stored.CloudEdgeLocator...),
+		UpdatedAt:        stored.UpdatedAt.UTC(),
 	}, nil
 }
 
@@ -396,6 +427,7 @@ func (store *CredentialStore) persistLocked(ref string, credential ClientAccessC
 		PrivateKey:              base64.RawURLEncoding.EncodeToString(credential.Identity.PrivateKey),
 		CapabilityGrant:         strings.TrimSpace(credential.CapabilityGrant),
 		CloudRouteGrant:         append([]byte(nil), credential.CloudRouteGrant...),
+		CloudEdgeLocator:        append([]byte(nil), credential.CloudEdgeLocator...),
 		LastPairingBundleDigest: strings.TrimSpace(credential.LastPairingBundleDigest), UpdatedAt: credential.UpdatedAt.UTC(),
 	}
 	payload, err := json.MarshalIndent(stored, "", "  ")

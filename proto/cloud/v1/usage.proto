@@ -24,8 +24,8 @@ enum RelayTransport {
   RELAY_TRANSPORT_TLS = 3;
 }
 
-// RelayLeaseClaims 是 Controller 冻结商业准入后签发的短期 Relay 上限。
-// Edge 只能缩小这些限制，不能自行扩大或续期。
+// RelayLeaseClaims 是单个 session 的短期 Relay 上限。
+// Controller 在线时由其签发；控制流离线时 Edge 只能从 AgentTicket 的签名委托收缩生成。
 message RelayLeaseClaims {
   string lease_id = 1;
   string account_id = 2;
@@ -66,7 +66,7 @@ message RelayLeaseDecision {
   }
 }
 
-// RelayICEConfig 是 Edge 从已验证租约派生的一次性 TURN credential。
+// RelayICEConfig 是 Edge 从已验证或已委托租约派生的一次性 TURN credential。
 // 该消息只在当前 ClientGateway/AgentGateway attempt 内存活，禁止持久化或写日志。
 message RelayICEConfig {
   string lease_id = 1;

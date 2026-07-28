@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	apilayer "github.com/anytty/anytty/api_layer"
 	cloudadapter "github.com/anytty/anytty/client/adapter/cloud"
 	peeradapter "github.com/anytty/anytty/client/adapter/peer"
@@ -37,6 +36,7 @@ import (
 	remotedaemon "github.com/anytty/anytty/remote/daemon"
 	remotewebrtc "github.com/anytty/anytty/remote/webrtc"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	pionwebrtc "github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -97,12 +97,12 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	directoryService, err := directoryapi.NewService(directoryapi.Config{
 		Entitlement: testEntitlementReader{},
 		Store:       identityStore, Directory: directoryState, Edges: edges, EdgeCACertificate: edgeCAPEM,
-		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
+		ChallengeTTL: time.Minute,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicControllerAddress := startR5PublicController(t, certificates, enrollmentService, directoryService)
+	publicControllerAddress, stopPublicController := startR5PublicController(t, certificates, enrollmentService, directoryService)
 
 	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
 		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
@@ -127,10 +127,10 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = accessStore.Close() })
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, now time.Time) ([]byte, error) {
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, error) {
 		claims := &cloudv1.CloudRouteGrantClaims{
 			GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: cloudv1.ClientProduct(product),
-			IssuedAt: timestamppb.New(now.UTC()), ExpiresAt: timestamppb.New(now.UTC().Add(7 * 24 * time.Hour)),
+			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()),
 		}
 		signed, signErr := ticket.SignCloudRouteGrant(daemonIdentity, claims)
 		if signErr != nil {
@@ -198,7 +198,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	pairedCredential := pairR5CloudCredential(t, accessStore, daemonIdentity, cloudNetwork, loopbackAPI)
 	pairedDialer := &cloudadapter.Dialer{
 		Peers: pionadapter.Factory{PeerConnections: loopbackAPI.NewPeerConnection}, Cloud: cloudNetwork, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
-		Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: pairedCredential}},
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: &r5CredentialSource{credential: pairedCredential}},
 	}
 	pairedContext, cancelPaired := context.WithTimeout(context.Background(), 45*time.Second)
 	pairedReady, err := pairedDialer.Connect(pairedContext, r5CloudAttempt(t, daemonIdentity, pairedCredential.EndpointID, 80))
@@ -211,6 +211,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		t.Fatalf("close post-pairing Cloud session: %v", err)
 	}
 	eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 0 })
+	stopPublicController()
 
 	products := []cloudv1.ClientProduct{cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, cloudv1.ClientProduct_CLIENT_PRODUCT_TUI}
 	var revokedCredential remoteauth.ClientAccessCredential
@@ -218,9 +219,10 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	for index, product := range products {
 		endpointID := fmt.Sprintf("cloud-r5-%s", strings.ToLower(strings.TrimPrefix(product.String(), "CLIENT_PRODUCT_")))
 		credential, grantID := issueR5CloudCredential(t, accessStore, daemonIdentity, endpointID, product)
+		credential.CloudEdgeLocator = append([]byte(nil), pairedCredential.CloudEdgeLocator...)
 		dialer := &cloudadapter.Dialer{
 			Peers: pionadapter.Factory{PeerConnections: loopbackAPI.NewPeerConnection}, Cloud: cloudNetwork, Product: product,
-			Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: credential}},
+			Authorization: peeradapter.CapabilityAuthorizer{Credentials: &r5CredentialSource{credential: credential}},
 		}
 		attempt := r5CloudAttempt(t, daemonIdentity, endpointID, clientruntime.SessionGeneration(index+1))
 		connectContext, cancelConnect := context.WithTimeout(context.Background(), 45*time.Second)
@@ -252,7 +254,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	}
 	revokedDialer := &cloudadapter.Dialer{
 		Peers: pionadapter.Factory{PeerConnections: loopbackAPI.NewPeerConnection}, Cloud: cloudNetwork, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
-		Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: revokedCredential}},
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: &r5CredentialSource{credential: revokedCredential}},
 	}
 	revokedContext, cancelRevoked := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelRevoked()
@@ -309,7 +311,7 @@ func pairR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonId
 	if err != nil {
 		t.Fatalf("pair through Cloud bootstrap: %v", err)
 	}
-	if paired.Grant == "" || len(paired.CloudRouteGrant) == 0 || len(paired.Bundle) == 0 || !store.AllowsClientPublicKey(clientIdentity.PublicKey, time.Now().UTC()) {
+	if paired.Grant == "" || len(paired.CloudRouteGrant) == 0 || len(paired.CloudEdgeLocator) == 0 || len(paired.Bundle) == 0 || !store.AllowsClientPublicKey(clientIdentity.PublicKey, time.Now().UTC()) {
 		t.Fatalf("Cloud pairing result is incomplete: %#v", paired)
 	}
 	intruderIdentity, err := remoteauth.GenerateClientAccessIdentity("cloud-r5-intruder", rand.Reader)
@@ -339,7 +341,7 @@ func pairR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonId
 		t.Fatalf("bound Cloud pairing claim admitted another client: %v", err)
 	}
 	return remoteauth.ClientAccessCredential{
-		Version: 1, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant, UpdatedAt: time.Now().UTC(),
+		Version: 2, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant, CloudEdgeLocator: paired.CloudEdgeLocator, UpdatedAt: time.Now().UTC(),
 	}
 }
 
@@ -367,7 +369,7 @@ func issueR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonI
 	if len(exchanged.CloudRouteGrant) == 0 {
 		t.Fatal("managed pairing did not issue CloudRouteGrant")
 	}
-	return remoteauth.ClientAccessCredential{Version: 1, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: exchanged.Grant, CloudRouteGrant: exchanged.CloudRouteGrant, UpdatedAt: time.Now().UTC()}, exchanged.GrantID
+	return remoteauth.ClientAccessCredential{Version: 2, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: exchanged.Grant, CloudRouteGrant: exchanged.CloudRouteGrant, UpdatedAt: time.Now().UTC()}, exchanged.GrantID
 }
 
 func r5CloudAttempt(t *testing.T, identity remoteauth.Identity, endpointID string, generation clientruntime.SessionGeneration) clientruntime.AttemptRequest {
@@ -433,7 +435,7 @@ func r5LoopbackWebRTCAPI() *pionwebrtc.API {
 	return pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings))
 }
 
-func startR5PublicController(t *testing.T, certificates certificateFiles, enrollmentService *enrollment.Service, directoryService *directoryapi.Service) string {
+func startR5PublicController(t *testing.T, certificates certificateFiles, enrollmentService *enrollment.Service, directoryService *directoryapi.Service) (string, func()) {
 	t.Helper()
 	certificate, err := tls.LoadX509KeyPair(certificates.controllerCert, certificates.controllerKey)
 	if err != nil {
@@ -447,11 +449,15 @@ func startR5PublicController(t *testing.T, certificates certificateFiles, enroll
 	cloudv1.RegisterEnrollmentServiceServer(server, enrollmentService)
 	cloudv1.RegisterDirectoryServiceServer(server, directoryService)
 	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return listener.Addr().String()
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			server.Stop()
+			_ = listener.Close()
+		})
+	}
+	t.Cleanup(stop)
+	return listener.Addr().String(), stop
 }
 
 type r5CredentialSource struct {
@@ -460,6 +466,14 @@ type r5CredentialSource struct {
 
 func (source r5CredentialSource) ResolveClientCredential(context.Context, string, string) (remoteauth.ClientAccessCredential, error) {
 	return source.credential, nil
+}
+
+func (source *r5CredentialSource) UpdateCloudEdgeLocator(_ context.Context, endpointID, _ string, locator []byte) error {
+	if source.credential.EndpointID != endpointID {
+		return errors.New("credential belongs to another endpoint")
+	}
+	source.credential.CloudEdgeLocator = append([]byte(nil), locator...)
+	return nil
 }
 
 type r5EnrollmentStore struct{ daemon enrollment.Daemon }

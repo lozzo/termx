@@ -4,6 +4,7 @@ package peer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -20,6 +21,11 @@ import (
 type CredentialSource interface {
 	// ResolveClientCredential 解析 endpoint/ref 对应的 grant 与 public identity projection。
 	ResolveClientCredential(context.Context, string, string) (remoteauth.ClientAccessCredential, error)
+}
+
+// CloudEdgeLocatorStore 只更新 managed Route 的公开位置缓存，不得修改 identity 或授权 grant。
+type CloudEdgeLocatorStore interface {
+	UpdateCloudEdgeLocator(context.Context, string, string, []byte) error
 }
 
 // SignerSource 从 Android Keystore、WebCrypto 或其他平台 secure key owner 解析不可导出 signer。
@@ -42,6 +48,8 @@ type PreparedSignalingAuthorization interface {
 	PreparedAuthorization
 	ClientIdentity() remoteauth.ClientAccessIdentity
 	CloudRouteGrant() []byte
+	CloudEdgeLocator() []byte
+	StoreCloudEdgeLocator(context.Context, []byte) error
 	Sign(context.Context, []byte) ([]byte, error)
 }
 
@@ -113,15 +121,18 @@ func (authorizer CapabilityAuthorizer) Prepare(ctx context.Context, request clie
 	}
 	return &preparedCapabilityAuthorization{
 		credential: credential, identity: request.DaemonIdentity(), signer: signer, random: authorizer.Random, now: authorizer.Now,
+		credentialRef: route.CredentialRef, locatorStore: locatorStore(authorizer.Credentials),
 	}, nil
 }
 
 type preparedCapabilityAuthorization struct {
-	credential remoteauth.ClientAccessCredential
-	identity   endpoint.DaemonIdentity
-	signer     remoteauth.ClientAccessSigner
-	random     io.Reader
-	now        func() time.Time
+	credential    remoteauth.ClientAccessCredential
+	identity      endpoint.DaemonIdentity
+	signer        remoteauth.ClientAccessSigner
+	random        io.Reader
+	now           func() time.Time
+	credentialRef string
+	locatorStore  CloudEdgeLocatorStore
 }
 
 func (authorization *preparedCapabilityAuthorization) Authenticate(ctx context.Context, connection transport.Transport, certificateFingerprint string) (remoteauth.Claims, error) {
@@ -149,9 +160,25 @@ func (authorization *preparedCapabilityAuthorization) CloudRouteGrant() []byte {
 	return append([]byte(nil), authorization.credential.CloudRouteGrant...)
 }
 
+func (authorization *preparedCapabilityAuthorization) CloudEdgeLocator() []byte {
+	return append([]byte(nil), authorization.credential.CloudEdgeLocator...)
+}
+
+func (authorization *preparedCapabilityAuthorization) StoreCloudEdgeLocator(ctx context.Context, locator []byte) error {
+	if authorization.locatorStore == nil {
+		return errors.New("Cloud Edge locator store is unavailable")
+	}
+	return authorization.locatorStore.UpdateCloudEdgeLocator(ctx, authorization.credential.EndpointID, authorization.credentialRef, append([]byte(nil), locator...))
+}
+
 // Sign 委托当前 frozen platform signer 对 Cloud challenge/hello canonical bytes 签名。
 func (authorization *preparedCapabilityAuthorization) Sign(ctx context.Context, payload []byte) ([]byte, error) {
 	return authorization.signer.Sign(ctx, append([]byte(nil), payload...))
+}
+
+func locatorStore(source CredentialSource) CloudEdgeLocatorStore {
+	store, _ := source.(CloudEdgeLocatorStore)
+	return store
 }
 
 var _ Authorizer = CapabilityAuthorizer{}

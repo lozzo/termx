@@ -579,7 +579,7 @@ func (host *Host) commitPairingEndpoint(ctx context.Context, preferredID endpoin
 	return wireEndpoint, wireRegistry, nil
 }
 
-func (host *Host) rollbackPreparedCredential(ctx context.Context, prepared *bindingpb.CredentialRecord, boundGrant string, boundCloudGrant []byte) error {
+func (host *Host) rollbackPreparedCredential(ctx context.Context, prepared *bindingpb.CredentialRecord, boundGrant string, boundCloudGrant, boundEdgeLocator []byte) error {
 	if prepared == nil || strings.TrimSpace(prepared.GetCredentialRef()) == "" {
 		return nil
 	}
@@ -592,11 +592,11 @@ func (host *Host) rollbackPreparedCredential(ctx context.Context, prepared *bind
 		}
 		return platformResponseError(response)
 	}
-	if prepared.GetCapabilityGrant() == boundGrant && bytes.Equal(prepared.GetCloudRouteGrant(), boundCloudGrant) {
+	if prepared.GetCapabilityGrant() == boundGrant && bytes.Equal(prepared.GetCloudRouteGrant(), boundCloudGrant) && bytes.Equal(prepared.GetCloudEdgeLocator(), boundEdgeLocator) {
 		return nil
 	}
 	response, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialBind{
-		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: prepared.GetEndpointId(), CredentialRef: prepared.GetCredentialRef(), CapabilityGrant: prepared.GetCapabilityGrant(), CloudRouteGrant: prepared.GetCloudRouteGrant()},
+		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: prepared.GetEndpointId(), CredentialRef: prepared.GetCredentialRef(), CapabilityGrant: prepared.GetCapabilityGrant(), CloudRouteGrant: prepared.GetCloudRouteGrant(), CloudEdgeLocator: prepared.GetCloudEdgeLocator()},
 	}})
 	if err != nil {
 		return err
