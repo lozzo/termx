@@ -11,5 +11,6 @@ import (
 type EndpointConnectionService interface {
 	LoadConnections(context.Context) (state.EndpointStore, error)
 	SampleConnection(context.Context, state.EndpointID) (state.EndpointConnectionSnapshot, bool, error)
+	SetEndpointEnabled(context.Context, state.EndpointID, bool) (state.EndpointStore, error)
 	ApplyConnectionSettings(context.Context, state.EndpointID, state.EndpointConnectionPolicy, map[string]*int) (state.EndpointStore, error)
 }

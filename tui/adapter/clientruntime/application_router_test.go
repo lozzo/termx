@@ -82,10 +82,126 @@ func TestEndpointApplicationRouterSamplesOnlyCachedSession(t *testing.T) {
 	}
 }
 
+func TestEndpointApplicationRouterDisablesIdleSessionImmediately(t *testing.T) {
+	local := newRouterReady("local", "/Users/local")
+	runtime := &routerRuntime{sessions: map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession{}}
+	initial, err := clientprotocol.NewRuntimeApplicationClient(local, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewEndpointApplicationRouter("local", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := router.SetEndpointEnabled(context.Background(), "local", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.disconnects) != 1 || runtime.disconnects[0].Stamp != local.stamp {
+		t.Fatalf("disconnects = %#v", runtime.disconnects)
+	}
+	if _, err := router.Defaults(context.Background(), port.PathDefaultsRequest{EndpointID: "local"}); err == nil {
+		t.Fatal("disabled endpoint accepted a new defaults request")
+	}
+	if len(runtime.requests) != 0 {
+		t.Fatalf("disabled endpoint was dialed: %#v", runtime.requests)
+	}
+}
+
+func TestEndpointApplicationRouterDrainsAttachmentsBeforeDisconnect(t *testing.T) {
+	local := newRouterReady("local", "/Users/local")
+	runtime := &routerRuntime{sessions: map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession{}}
+	initial, err := clientprotocol.NewRuntimeApplicationClient(local, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewEndpointApplicationRouter("local", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !router.recordAttachment("local", 7) || !router.recordAttachment("local", 8) {
+		t.Fatal("failed to record active attachments")
+	}
+	if err := router.SetEndpointEnabled(context.Background(), "local", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.disconnects) != 0 {
+		t.Fatalf("active session disconnected early: %#v", runtime.disconnects)
+	}
+	if err := router.releaseAttachment(context.Background(), "local", 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.disconnects) != 0 {
+		t.Fatalf("session disconnected before last attachment: %#v", runtime.disconnects)
+	}
+	if err := router.releaseAttachment(context.Background(), "local", 8); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.disconnects) != 1 || runtime.disconnects[0].Stamp != local.stamp {
+		t.Fatalf("last attachment did not disconnect exact session: %#v", runtime.disconnects)
+	}
+}
+
+func TestEndpointApplicationRouterReenableCancelsDeferredDisconnect(t *testing.T) {
+	local := newRouterReady("local", "/Users/local")
+	runtime := &routerRuntime{sessions: map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession{}}
+	initial, err := clientprotocol.NewRuntimeApplicationClient(local, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewEndpointApplicationRouter("local", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !router.recordAttachment("local", 7) {
+		t.Fatal("failed to record active attachment")
+	}
+	if err := router.SetEndpointEnabled(context.Background(), "local", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := router.SetEndpointEnabled(context.Background(), "local", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := router.releaseAttachment(context.Background(), "local", 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.disconnects) != 0 {
+		t.Fatalf("reenabled endpoint was disconnected: %#v", runtime.disconnects)
+	}
+}
+
+func TestEndpointApplicationRouterDropsAttachmentsFromClosedGeneration(t *testing.T) {
+	local := newRouterReady("local", "/Users/local")
+	runtime := &routerRuntime{sessions: map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession{}}
+	initial, err := clientprotocol.NewRuntimeApplicationClient(local, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewEndpointApplicationRouter("local", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !router.recordAttachment("local", 7) {
+		t.Fatal("failed to record active attachment")
+	}
+	if err := local.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := router.SetEndpointEnabled(context.Background(), "local", false); err != nil {
+		t.Fatal(err)
+	}
+	router.mu.Lock()
+	remaining := len(router.attachments["local"])
+	router.mu.Unlock()
+	if remaining != 0 || len(runtime.disconnects) != 0 {
+		t.Fatalf("closed generation kept lifecycle state: attachments=%d disconnects=%#v", remaining, runtime.disconnects)
+	}
+}
+
 type routerRuntime struct {
-	mu       sync.Mutex
-	sessions map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession
-	requests []clientruntime.ConnectRequest
+	mu          sync.Mutex
+	sessions    map[clientendpoint.EndpointID]clientruntime.ApplicationReadyPeerSession
+	requests    []clientruntime.ConnectRequest
+	disconnects []clientruntime.DisconnectRequest
 }
 
 func (runtime *routerRuntime) AcquireSession(_ context.Context, request clientruntime.ConnectRequest) (clientruntime.ApplicationReadyPeerSession, error) {
@@ -99,7 +215,12 @@ func (*routerRuntime) EnsureSession(context.Context, clientruntime.ConnectReques
 	return clientruntime.SessionLease{}, nil
 }
 
-func (*routerRuntime) Disconnect(context.Context, clientruntime.DisconnectRequest) error { return nil }
+func (runtime *routerRuntime) Disconnect(_ context.Context, request clientruntime.DisconnectRequest) error {
+	runtime.mu.Lock()
+	runtime.disconnects = append(runtime.disconnects, request)
+	runtime.mu.Unlock()
+	return nil
+}
 
 func (*routerRuntime) WatchEndpoint(context.Context, clientendpoint.EndpointID) (<-chan clientruntime.EndpointEvent, error) {
 	return make(chan clientruntime.EndpointEvent), nil

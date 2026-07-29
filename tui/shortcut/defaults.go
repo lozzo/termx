@@ -199,6 +199,7 @@ var defaultBindings = []DefaultBinding{
 	{Scene: "terminal_pool", Key: "ctrl-x", Action: "terminal_pool.delete"},
 
 	{Scene: "connections", Key: "enter", Action: "connections.edit"},
+	{Scene: "connections", Key: "space", Action: "connections.toggle"},
 	{Scene: "connections", Key: "r", Action: "connections.refresh"},
 
 	{Scene: "workbench_tree", Key: "enter", Action: "workbench_tree.open"},

@@ -107,7 +107,7 @@ func buildActionHandlerRegistry() map[actiondomain.ID]actionHandler {
 	for _, id := range []actiondomain.ID{
 		"terminal_picker.attach", "terminal_picker.split", "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete", "terminal_picker.close",
 		"terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete", "terminal_pool.close",
-		"connections.edit", "connections.refresh", "connections.close",
+		"connections.edit", "connections.toggle", "connections.refresh", "connections.close",
 		"workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom", "workbench_tree.close",
 		"clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close",
 		"floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close",

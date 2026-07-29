@@ -141,6 +141,7 @@ var defaultLabels = map[string]string{
 	"terminal_pool.kill":             "KILL",
 	"terminal_pool.delete":           "REMOVE",
 	"connections.edit":               "SETTINGS",
+	"connections.toggle":             "TOGGLE",
 	"connections.refresh":            "REFRESH",
 	"floating_overview.open":         "OPEN",
 	"floating_overview.show_all":     "SHOW ALL",
@@ -219,7 +220,7 @@ func buildSpecs() map[string]Spec {
 	addFixed("workspace.create", "workspace.next", "workspace.previous", "workspace.rename", "workspace.delete")
 	addFixed("terminal_picker.attach", "terminal_picker.split", "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete", "terminal_picker.close")
 	addFixed("terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete", "terminal_pool.close")
-	addFixed("connections.edit", "connections.refresh", "connections.close")
+	addFixed("connections.edit", "connections.toggle", "connections.refresh", "connections.close")
 	addFixed("workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom", "workbench_tree.close")
 	addFixed("clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close")
 	addFixed("floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close")

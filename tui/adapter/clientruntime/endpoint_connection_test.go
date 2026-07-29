@@ -14,6 +14,19 @@ type endpointPlanSnapshotStub struct {
 	registry endpoint.Registry
 }
 
+type endpointEnableLifecycleStub struct {
+	endpointID state.EndpointID
+	enabled    bool
+	calls      int
+}
+
+func (stub *endpointEnableLifecycleStub) SetEndpointEnabled(_ context.Context, endpointID state.EndpointID, enabled bool) error {
+	stub.endpointID = endpointID
+	stub.enabled = enabled
+	stub.calls++
+	return nil
+}
+
 func (stub endpointPlanSnapshotStub) PlanSnapshot(_ context.Context, endpointID endpoint.EndpointID) (clientruntime.EndpointPlanSnapshot, error) {
 	target := stub.registry.Endpoints[endpointID]
 	return clientruntime.EndpointPlanSnapshot{
@@ -66,6 +79,38 @@ func TestEndpointConnectionControlLoadsAndAtomicallyAppliesPriorities(t *testing
 	persisted, _ = endpoint.Load(path)
 	if got := *persisted.Endpoints["studio"].Routes["cloud"].Priority; got != 10 {
 		t.Fatalf("failed transaction changed persisted registry: %d", got)
+	}
+}
+
+func TestEndpointConnectionControlPersistsEnabledAndNotifiesLifecycle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "endpoints.yaml")
+	registry := connectionControlRegistry()
+	local := endpoint.NewLocalEndpoint("local", "Local", "auto", endpoint.ConnectAuto)
+	registry.Endpoints[local.ID] = local
+	registry.Default = local.ID
+	if err := endpoint.Save(path, registry); err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := &endpointEnableLifecycleStub{}
+	control := EndpointConnectionControl{
+		RegistryPath: path,
+		Runtime:      endpointPlanSnapshotStub{registry: registry},
+		Lifecycle:    lifecycle,
+	}
+	store, err := control.SetEndpointEnabled(context.Background(), "studio", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	studio, ok := store.Endpoint("studio")
+	if !ok || studio.Enabled {
+		t.Fatalf("disabled projection = %#v ok=%t", studio, ok)
+	}
+	persisted, err := endpoint.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Endpoints["studio"].Enabled || lifecycle.calls != 1 || lifecycle.endpointID != "studio" || lifecycle.enabled {
+		t.Fatalf("persisted=%#v lifecycle=%#v", persisted.Endpoints["studio"], lifecycle)
 	}
 }
 

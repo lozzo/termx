@@ -59,8 +59,8 @@ func TestDefaultShortcutActionsReachObservableOwnerBoundary(t *testing.T) {
 			assertDefaultActionServiceOwner(t, invocation, execution)
 		})
 	}
-	if len(seen) != 155 {
-		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=155", len(seen))
+	if len(seen) != 156 {
+		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=156", len(seen))
 	}
 }
 
@@ -77,6 +77,10 @@ func (service defaultActionEndpointConnections) SampleConnection(context.Context
 }
 
 func (service defaultActionEndpointConnections) ApplyConnectionSettings(context.Context, state.EndpointID, state.EndpointConnectionPolicy, map[string]*int) (state.EndpointStore, error) {
+	return service.store, nil
+}
+
+func (service defaultActionEndpointConnections) SetEndpointEnabled(context.Context, state.EndpointID, bool) (state.EndpointStore, error) {
 	return service.store, nil
 }
 

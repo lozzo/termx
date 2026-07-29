@@ -72,7 +72,7 @@ type storedClientAccessCredential struct {
 }
 
 // NewCredentialStore 创建桌面客户端 secure credential store。
-// dir 必须位于当前用户安全域，不能与 daemon DeviceIdentity、AccessStore、Cloud session 或普通 connections.yaml 混用。
+// dir 必须位于当前用户安全域，不能与 daemon DeviceIdentity、AccessStore、Cloud session 或普通 endpoints.yaml 混用。
 func NewCredentialStore(dir string) *CredentialStore {
 	return &CredentialStore{dir: strings.TrimSpace(dir)}
 }

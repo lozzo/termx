@@ -376,6 +376,9 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 	beforeSessionState := root.Session.State
 	var missingRefs []state.TerminalRef
 	if msg.EndpointID != "" {
+		if endpoint, ok := root.Endpoints.Endpoint(msg.EndpointID); ok && !endpoint.Enabled {
+			return root, nil
+		}
 		if root.TerminalPool.IsStale(msg.Seq) {
 			return root, nil
 		}

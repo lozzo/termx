@@ -514,6 +514,19 @@ func (store TerminalViewStore) Bindings() []TerminalViewBinding {
 	return bindings
 }
 
+// AttachedBindingCountForEndpoint returns the number of live TUI attachments for one Endpoint.
+// Pending or disconnected view intents do not keep a disabled transport alive.
+func (store TerminalViewStore) AttachedBindingCountForEndpoint(endpointID EndpointID) int {
+	endpointID = NormalizeEndpointID(endpointID)
+	count := 0
+	for _, binding := range store.Views {
+		if NormalizeEndpointID(binding.EndpointID) == endpointID && binding.Attached && binding.Channel != 0 {
+			count++
+		}
+	}
+	return count
+}
+
 // BeginAttach 创建独立 candidate 并返回唯一 operation ID；已有 committed channel 不会被覆盖。
 func (store TerminalViewStore) BeginAttach(binding TerminalViewBinding) (TerminalViewStore, TerminalAttachCandidate) {
 	binding = binding.withDefaultEndpoint()

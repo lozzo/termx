@@ -20,10 +20,12 @@ import (
 type EndpointApplicationRouter struct {
 	runtime clientruntime.ApplicationRuntime
 
-	mu      sync.Mutex
-	closed  bool
-	clients map[state.EndpointID]routedApplicationClient
-	opening map[state.EndpointID]*applicationOpen
+	mu          sync.Mutex
+	closed      bool
+	clients     map[state.EndpointID]routedApplicationClient
+	opening     map[state.EndpointID]*applicationOpen
+	disabled    map[state.EndpointID]bool
+	attachments map[state.EndpointID]map[uint16]struct{}
 }
 
 type routedApplicationClient struct {
@@ -49,9 +51,11 @@ func NewEndpointApplicationRouter(initialEndpointID state.EndpointID, initial *c
 		return nil, errors.New("endpoint application router requires an application-capable client runtime")
 	}
 	return &EndpointApplicationRouter{
-		runtime: runtime,
-		clients: map[state.EndpointID]routedApplicationClient{initialEndpointID: {client: initial}},
-		opening: make(map[state.EndpointID]*applicationOpen),
+		runtime:     runtime,
+		clients:     map[state.EndpointID]routedApplicationClient{initialEndpointID: {client: initial}},
+		opening:     make(map[state.EndpointID]*applicationOpen),
+		disabled:    make(map[state.EndpointID]bool),
+		attachments: make(map[state.EndpointID]map[uint16]struct{}),
 	}, nil
 }
 
@@ -71,9 +75,14 @@ func (router *EndpointApplicationRouter) application(ctx context.Context, endpoi
 			return cached.client, nil
 		} else if ok {
 			delete(router.clients, endpointID)
+			delete(router.attachments, endpointID)
 			if cached.owned && cached.client != nil {
 				_ = cached.client.Close()
 			}
+		}
+		if router.disabled[endpointID] {
+			router.mu.Unlock()
+			return nil, fmt.Errorf("endpoint %q is disabled", endpointID)
 		}
 		if pending := router.opening[endpointID]; pending != nil {
 			router.mu.Unlock()
@@ -103,11 +112,17 @@ func (router *EndpointApplicationRouter) application(ctx context.Context, endpoi
 			}
 		}
 
+		var rejected *clientprotocol.ApplicationClient
 		router.mu.Lock()
 		delete(router.opening, endpointID)
 		if err == nil && router.closed {
 			err = fmt.Errorf("endpoint application router is closed")
-			_ = client.Close()
+			rejected = client
+			client = nil
+		}
+		if err == nil && router.disabled[endpointID] {
+			err = fmt.Errorf("endpoint %q is disabled", endpointID)
+			rejected = client
 			client = nil
 		}
 		if err == nil {
@@ -116,8 +131,117 @@ func (router *EndpointApplicationRouter) application(ctx context.Context, endpoi
 		pending.client, pending.err = client, err
 		close(pending.done)
 		router.mu.Unlock()
+		if rejected != nil {
+			_ = router.disconnectApplication(ctx, rejected)
+		}
 		return client, err
 	}
+}
+
+// SetEndpointEnabled applies an already-persisted Endpoint switch to this TUI's cached sessions.
+// Disabled sessions with attachments enter draining; idle sessions disconnect immediately.
+func (router *EndpointApplicationRouter) SetEndpointEnabled(ctx context.Context, endpointID state.EndpointID, enabled bool) error {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	if router == nil || endpointID == "" {
+		return fmt.Errorf("endpoint lifecycle update requires endpoint_id")
+	}
+	router.mu.Lock()
+	if router.closed {
+		router.mu.Unlock()
+		return fmt.Errorf("endpoint application router is closed")
+	}
+	if enabled {
+		delete(router.disabled, endpointID)
+		router.mu.Unlock()
+		return nil
+	}
+	router.disabled[endpointID] = true
+	if cached, ok := router.clients[endpointID]; ok && !applicationClientReady(cached.client) {
+		delete(router.clients, endpointID)
+		delete(router.attachments, endpointID)
+	}
+	if len(router.attachments[endpointID]) != 0 {
+		router.mu.Unlock()
+		return nil
+	}
+	cached, ok := router.clients[endpointID]
+	if ok {
+		delete(router.clients, endpointID)
+	}
+	router.mu.Unlock()
+	if !ok || cached.client == nil {
+		return nil
+	}
+	return router.disconnectApplication(ctx, cached.client)
+}
+
+func (router *EndpointApplicationRouter) endpointEnabled(endpointID state.EndpointID) error {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	router.mu.Lock()
+	disabled := router.disabled[endpointID]
+	closed := router.closed
+	router.mu.Unlock()
+	if closed {
+		return fmt.Errorf("endpoint application router is closed")
+	}
+	if disabled {
+		return fmt.Errorf("endpoint %q is disabled", endpointID)
+	}
+	return nil
+}
+
+func (router *EndpointApplicationRouter) recordAttachment(endpointID state.EndpointID, channel uint16) bool {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	if endpointID == "" || channel == 0 {
+		return false
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	if router.closed || router.disabled[endpointID] {
+		return false
+	}
+	if router.attachments[endpointID] == nil {
+		router.attachments[endpointID] = make(map[uint16]struct{})
+	}
+	router.attachments[endpointID][channel] = struct{}{}
+	return true
+}
+
+func (router *EndpointApplicationRouter) releaseAttachment(ctx context.Context, endpointID state.EndpointID, channel uint16) error {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	if endpointID == "" || channel == 0 {
+		return nil
+	}
+	router.mu.Lock()
+	attachments := router.attachments[endpointID]
+	delete(attachments, channel)
+	if len(attachments) == 0 {
+		delete(router.attachments, endpointID)
+	}
+	if len(attachments) != 0 || !router.disabled[endpointID] {
+		router.mu.Unlock()
+		return nil
+	}
+	cached, ok := router.clients[endpointID]
+	if ok {
+		delete(router.clients, endpointID)
+	}
+	router.mu.Unlock()
+	if !ok || cached.client == nil {
+		return nil
+	}
+	return router.disconnectApplication(ctx, cached.client)
+}
+
+func (router *EndpointApplicationRouter) disconnectApplication(ctx context.Context, client *clientprotocol.ApplicationClient) error {
+	if client == nil || client.ApplicationSession == nil {
+		return nil
+	}
+	err := router.runtime.Disconnect(ctx, clientruntime.DisconnectRequest{Stamp: client.ApplicationSession.Stamp()})
+	if err == nil {
+		return nil
+	}
+	return errors.Join(err, client.Close())
 }
 
 func applicationClientReady(client *clientprotocol.ApplicationClient) bool {
@@ -177,22 +301,37 @@ func (router *EndpointApplicationRouter) core(ctx context.Context, endpointID st
 }
 
 func (router *EndpointApplicationRouter) Attach(ctx context.Context, req port.TerminalAttachRequest) (port.TerminalAttachResult, error) {
+	if err := router.endpointEnabled(req.EndpointID); err != nil {
+		return port.TerminalAttachResult{}, err
+	}
 	adapter, err := router.terminal(ctx, req.EndpointID)
 	if err != nil {
 		return port.TerminalAttachResult{}, err
 	}
-	return adapter.Attach(ctx, req)
+	result, err := adapter.Attach(ctx, req)
+	if err == nil && !router.recordAttachment(req.EndpointID, result.Channel) {
+		cleanupErr := adapter.Detach(ctx, port.TerminalDetachRequest{
+			EndpointID: req.EndpointID, TerminalID: req.TerminalID, Channel: result.Channel,
+			SurfaceID: req.SurfaceID, ViewID: req.ViewID, Session: result.Session, OperationID: req.OperationID,
+		})
+		return port.TerminalAttachResult{}, errors.Join(fmt.Errorf("endpoint %q was disabled while attaching", state.NormalizeEndpointID(req.EndpointID)), cleanupErr)
+	}
+	return result, err
 }
 
 func (router *EndpointApplicationRouter) Detach(ctx context.Context, req port.TerminalDetachRequest) error {
 	adapter, err := router.terminal(ctx, req.EndpointID)
 	if err != nil {
-		return err
+		return errors.Join(err, router.releaseAttachment(ctx, req.EndpointID, req.Channel))
 	}
-	return adapter.Detach(ctx, req)
+	detachErr := adapter.Detach(ctx, req)
+	return errors.Join(detachErr, router.releaseAttachment(ctx, req.EndpointID, req.Channel))
 }
 
 func (router *EndpointApplicationRouter) List(ctx context.Context, req port.TerminalListRequest) (port.TerminalListResult, error) {
+	if err := router.endpointEnabled(req.EndpointID); err != nil {
+		return port.TerminalListResult{}, err
+	}
 	adapter, err := router.terminal(ctx, req.EndpointID)
 	if err != nil {
 		return port.TerminalListResult{}, err
@@ -201,6 +340,9 @@ func (router *EndpointApplicationRouter) List(ctx context.Context, req port.Term
 }
 
 func (router *EndpointApplicationRouter) Create(ctx context.Context, req port.TerminalCreateRequest) (port.TerminalCreateResult, error) {
+	if err := router.endpointEnabled(req.EndpointID); err != nil {
+		return port.TerminalCreateResult{}, err
+	}
 	adapter, err := router.terminal(ctx, req.EndpointID)
 	if err != nil {
 		return port.TerminalCreateResult{}, err
@@ -217,11 +359,22 @@ func (router *EndpointApplicationRouter) Restart(ctx context.Context, req port.T
 }
 
 func (router *EndpointApplicationRouter) Reconnect(ctx context.Context, req port.TerminalReconnectRequest) (port.TerminalAttachResult, error) {
+	if err := router.endpointEnabled(req.EndpointID); err != nil {
+		return port.TerminalAttachResult{}, err
+	}
 	adapter, err := router.terminal(ctx, req.EndpointID)
 	if err != nil {
 		return port.TerminalAttachResult{}, err
 	}
-	return adapter.Reconnect(ctx, req)
+	result, err := adapter.Reconnect(ctx, req)
+	if err == nil && !router.recordAttachment(req.EndpointID, result.Channel) {
+		cleanupErr := adapter.Detach(ctx, port.TerminalDetachRequest{
+			EndpointID: req.EndpointID, TerminalID: req.TerminalID, Channel: result.Channel,
+			SurfaceID: req.SurfaceID, ViewID: req.ViewID, Session: result.Session, OperationID: req.OperationID,
+		})
+		return port.TerminalAttachResult{}, errors.Join(fmt.Errorf("endpoint %q was disabled while reconnecting", state.NormalizeEndpointID(req.EndpointID)), cleanupErr)
+	}
+	return result, err
 }
 
 func (router *EndpointApplicationRouter) Kill(ctx context.Context, req port.TerminalKillRequest) error {
@@ -289,6 +442,9 @@ func (router *EndpointApplicationRouter) ArmLiveInvalidation(ctx context.Context
 }
 
 func (router *EndpointApplicationRouter) ListDirectories(ctx context.Context, req port.PathListDirectoriesRequest) (port.PathListDirectoriesResult, error) {
+	if err := router.endpointEnabled(req.EndpointID); err != nil {
+		return port.PathListDirectoriesResult{}, err
+	}
 	adapter, err := router.path(ctx, req.EndpointID)
 	if err != nil {
 		return port.PathListDirectoriesResult{}, err
@@ -297,6 +453,9 @@ func (router *EndpointApplicationRouter) ListDirectories(ctx context.Context, re
 }
 
 func (router *EndpointApplicationRouter) Defaults(ctx context.Context, req port.PathDefaultsRequest) (port.PathDefaultsResult, error) {
+	if err := router.endpointEnabled(req.EndpointID); err != nil {
+		return port.PathDefaultsResult{}, err
+	}
 	adapter, err := router.path(ctx, req.EndpointID)
 	if err != nil {
 		return port.PathDefaultsResult{}, err
@@ -370,6 +529,8 @@ func (router *EndpointApplicationRouter) Close() error {
 		}
 	}
 	router.clients = nil
+	router.disabled = nil
+	router.attachments = nil
 	router.mu.Unlock()
 	var errs []error
 	for _, client := range clients {
@@ -384,3 +545,4 @@ var _ port.LiveInvalidationSource = (*EndpointApplicationRouter)(nil)
 var _ port.PathService = (*EndpointApplicationRouter)(nil)
 var _ port.CoreClient = (*EndpointApplicationRouter)(nil)
 var _ EndpointConnectionSnapshotSource = (*EndpointApplicationRouter)(nil)
+var _ EndpointEnableLifecycle = (*EndpointApplicationRouter)(nil)

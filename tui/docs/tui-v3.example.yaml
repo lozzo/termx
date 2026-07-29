@@ -231,7 +231,7 @@ tui:
     # 默认值：""，表示使用内置标题：优先 terminal pool 名称，其次 pane title，最后 terminal id。
     # 可用变量/函数：
     # - {{terminal}} / {{terminal_title}}：terminal pool 名称或 fallback 标题。
-    # - {{endpoint}} / {{endpoint_label}}：connections.yaml 中的机器展示名，缺失时为 endpoint id。
+    # - {{endpoint}} / {{endpoint_label}}：endpoints.yaml 中的机器展示名，缺失时为 endpoint id。
     # - {{terminal_id}} / {{endpoint_id}} / {{pane}} / {{pane_title}}。
     # - {{terminal | truncate 16}} 按 terminal cell 宽度裁切。
     # 这个模板只影响展示，不改变 EndpointID + TerminalID 路由。
@@ -445,6 +445,7 @@ tui:
   #   system:
   #     h: system.toggle_header
   #     f: system.toggle_footer
+  #     e: system.open_connections
   #
   #   panel:
   #     x: panel.close
@@ -453,3 +454,8 @@ tui:
   #     k:
   #       action: panel.kill_and_close
   #       label: kill+close
+  #
+  #   connections:
+  #     enter: connections.edit
+  #     space: connections.toggle
+  #     r: connections.refresh

@@ -69,6 +69,8 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 		return reduceTerminalPoolPageAttach(root, items)
 	case "connections.edit":
 		return reduceConnectionsEdit(root, row)
+	case "connections.toggle":
+		return reduceConnectionsToggle(root, row)
 	case "connections.refresh":
 		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return ConnectionsLoadRequestMsg{} }}}
 	case "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete":

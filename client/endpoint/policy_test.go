@@ -2,6 +2,46 @@ package endpoint
 
 import "testing"
 
+func TestSetEndpointEnabledReassignsDisabledDefaultToLocalEndpoint(t *testing.T) {
+	registry := Registry{
+		Version: RegistryVersion,
+		Default: "alpha",
+		Endpoints: map[EndpointID]Endpoint{
+			"alpha":  NewSSHEndpoint("alpha", "Alpha", "alpha", "ssh:alpha", "127.0.0.1:41120", "127.0.0.1:41121", ConnectOnDemand),
+			"beta":   NewSSHEndpoint("beta", "Beta", "beta", "ssh:beta", "127.0.0.1:41120", "127.0.0.1:41121", ConnectOnDemand),
+			"zlocal": NewLocalEndpoint("zlocal", "Local", "auto", ConnectAuto),
+		},
+	}
+	next, err := SetEndpointEnabled(registry, "alpha", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Endpoints["alpha"].Enabled || next.Default != "zlocal" {
+		t.Fatalf("disabled registry = %#v", next)
+	}
+	if !registry.Endpoints["alpha"].Enabled || registry.Default != "alpha" {
+		t.Fatal("input registry was mutated")
+	}
+
+	next, err = SetEndpointEnabled(next, "alpha", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !next.Endpoints["alpha"].Enabled || next.Default != "zlocal" {
+		t.Fatalf("enabled registry = %#v", next)
+	}
+}
+
+func TestSetEndpointEnabledRejectsLastEnabledEndpoint(t *testing.T) {
+	registry := DefaultRegistry()
+	if _, err := SetEndpointEnabled(registry, registry.Default, false); err == nil {
+		t.Fatal("last enabled endpoint was disabled")
+	}
+	if !registry.Endpoints[registry.Default].Enabled {
+		t.Fatal("failed update mutated input registry")
+	}
+}
+
 func TestSetConnectionPolicyUpdatesEveryManagedRouteAtomically(t *testing.T) {
 	registry := Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": plannerEndpoint()}}
 	registry.Endpoints["studio"] = cloneEndpoint(registry.Endpoints["studio"])

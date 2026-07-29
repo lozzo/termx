@@ -99,6 +99,9 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 			if diagnostics, ok := opts.EndpointApplications.(clientruntimeadapter.EndpointConnectionSnapshotSource); ok {
 				control.Diagnostics = diagnostics
 			}
+			if lifecycle, ok := opts.EndpointApplications.(clientruntimeadapter.EndpointEnableLifecycle); ok {
+				control.Lifecycle = lifecycle
+			}
 			endpointConnections = control
 		}
 	}
@@ -138,7 +141,7 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	)
 }
 
-func newV3EndpointApplicationRouter(endpointID state.EndpointID, client *clientprotocol.ApplicationClient) (v3EndpointApplicationServices, error) {
+var newV3EndpointApplicationRouter = func(endpointID state.EndpointID, client *clientprotocol.ApplicationClient) (v3EndpointApplicationServices, error) {
 	return clientruntimeadapter.NewEndpointApplicationRouter(endpointID, client)
 }
 

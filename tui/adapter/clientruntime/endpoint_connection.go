@@ -2,6 +2,7 @@ package clientruntimeadapter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/anytty/anytty/client/endpoint"
@@ -15,6 +16,13 @@ type EndpointConnectionControl struct {
 	RegistryPath string
 	Runtime      EndpointPlanSnapshotSource
 	Diagnostics  EndpointConnectionSnapshotSource
+	Lifecycle    EndpointEnableLifecycle
+}
+
+// EndpointEnableLifecycle 接收已经持久化的 Endpoint 开关结果。
+// 实现可以立即关闭空闲 session，或在仍有 attachment 时进入 draining。
+type EndpointEnableLifecycle interface {
+	SetEndpointEnabled(context.Context, state.EndpointID, bool) error
 }
 
 // EndpointConnectionSnapshotSource samples only sessions already owned by the TUI.
@@ -35,6 +43,27 @@ func (control EndpointConnectionControl) LoadConnections(ctx context.Context) (s
 		return state.EndpointStore{}, err
 	}
 	return control.project(ctx, registry)
+}
+
+// SetEndpointEnabled 原子回写共享 registry，再把已发布的状态同步给当前 TUI session lifecycle。
+// lifecycle 或 projection 失败不能回滚已经原子发布的配置，因此仍返回最新可用投影。
+func (control EndpointConnectionControl) SetEndpointEnabled(ctx context.Context, endpointID state.EndpointID, enabled bool) (state.EndpointStore, error) {
+	registry, err := endpoint.UpdateContext(ctx, control.RegistryPath, false, func(current endpoint.Registry) (endpoint.Registry, error) {
+		return endpoint.SetEndpointEnabled(current, endpoint.EndpointID(endpointID), enabled)
+	})
+	if err != nil && !endpoint.RegistryWritePublished(err) {
+		return state.EndpointStore{}, err
+	}
+	writeErr := err
+	var lifecycleErr error
+	if control.Lifecycle != nil {
+		lifecycleErr = control.Lifecycle.SetEndpointEnabled(ctx, endpointID, enabled)
+	}
+	store, projectErr := control.project(ctx, registry)
+	if lifecycleErr != nil {
+		lifecycleErr = fmt.Errorf("endpoint setting was saved but session lifecycle update failed: %w", lifecycleErr)
+	}
+	return store, errors.Join(writeErr, lifecycleErr, projectErr)
 }
 
 // ApplyConnectionSettings atomically commits policy and the complete automatic-route priority set.
@@ -85,14 +114,14 @@ func (control EndpointConnectionControl) project(ctx context.Context, registry e
 	for _, target := range registry.List() {
 		snapshot, err := control.Runtime.PlanSnapshot(ctx, target.ID)
 		if err != nil {
-			return state.EndpointStore{}, fmt.Errorf("load endpoint %q planner policy: %w", target.ID, err)
+			return store, fmt.Errorf("load endpoint %q planner policy: %w", target.ID, err)
 		}
 		availability, err := endpoint.EvaluateRouteAvailability(endpoint.RouteAvailabilityRequest{
 			Endpoint: target, PlanningEndpoint: snapshot.Endpoint,
 			SupportedRouteKinds: snapshot.Environment.SupportedRouteKinds, AvailableCredentialRefs: snapshot.Environment.AvailableCredentialRefs,
 		})
 		if err != nil {
-			return state.EndpointStore{}, fmt.Errorf("evaluate endpoint %q route availability: %w", target.ID, err)
+			return store, fmt.Errorf("evaluate endpoint %q route availability: %w", target.ID, err)
 		}
 		store = store.ApplyRouteAvailability(state.EndpointID(target.ID), availability)
 	}

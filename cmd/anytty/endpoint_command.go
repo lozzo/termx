@@ -380,18 +380,14 @@ func newEndpointToggleCommand(runtime *endpointCommandRuntime, enabled bool) *co
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := endpointdomain.EndpointID(args[0])
 			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
-				endpoint, ok := registry.Endpoints[id]
-				if !ok {
+				if _, ok := registry.Endpoints[id]; !ok {
 					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
-				endpoint.Enabled = enabled
-				registry.Endpoints[id] = endpoint
-				if !enabled && registry.Default == id {
-					if err := reassignEndpointDefault(&registry); err != nil {
-						return endpointdomain.Registry{}, err
-					}
+				updated, err := endpointdomain.SetEndpointEnabled(registry, id, enabled)
+				if err != nil {
+					return endpointdomain.Registry{}, &cliError{code: 4, message: err.Error(), cause: err}
 				}
-				return registry, nil
+				return updated, nil
 			}); err != nil {
 				return err
 			}

@@ -52,6 +52,24 @@ type ConnectionsApplySettingsResultMsg struct {
 
 func (ConnectionsApplySettingsResultMsg) isMsg() {}
 
+// ConnectionsSetEnabledRequestMsg persists one Endpoint's participation in automatic observation and new connections.
+type ConnectionsSetEnabledRequestMsg struct {
+	EndpointID state.EndpointID
+	Enabled    bool
+}
+
+func (ConnectionsSetEnabledRequestMsg) isMsg() {}
+
+// ConnectionsSetEnabledResultMsg carries both the durable registry projection and the runtime drain outcome.
+type ConnectionsSetEnabledResultMsg struct {
+	EndpointID state.EndpointID
+	Enabled    bool
+	Store      state.EndpointStore
+	Err        error
+}
+
+func (ConnectionsSetEnabledResultMsg) isMsg() {}
+
 type ConnectionsSnapshotRefreshMsg struct{}
 
 func (ConnectionsSnapshotRefreshMsg) isMsg()           {}
@@ -86,6 +104,10 @@ func NewEndpointConnectionsReducer(deps LiveDeps) Reducer {
 			return root, []Effect{connectionsApplyEffect(deps, msg)}
 		case ConnectionsApplySettingsResultMsg:
 			return reduceConnectionsApplyResult(root, msg, deps)
+		case ConnectionsSetEnabledRequestMsg:
+			return root, []Effect{connectionsSetEnabledEffect(deps, msg)}
+		case ConnectionsSetEnabledResultMsg:
+			return reduceConnectionsSetEnabledResult(root, msg, deps)
 		case ConnectionsSnapshotRefreshMsg:
 			return root, connectionsSnapshotEffects(root, deps)
 		case ConnectionsSnapshotResultMsg:
@@ -120,6 +142,22 @@ func connectionsApplyEffect(deps LiveDeps, request ConnectionsApplySettingsReque
 	}}
 }
 
+func connectionsSetEnabledEffect(deps LiveDeps, request ConnectionsSetEnabledRequestMsg) Effect {
+	return FuncEffect{Run: func(ctx context.Context) Msg {
+		if deps.EndpointConnections == nil {
+			return ConnectionsSetEnabledResultMsg{
+				EndpointID: request.EndpointID, Enabled: request.Enabled,
+				Err: fmt.Errorf("connection settings are unavailable"),
+			}
+		}
+		store, err := deps.EndpointConnections.SetEndpointEnabled(ctx, request.EndpointID, request.Enabled)
+		return ConnectionsSetEnabledResultMsg{
+			EndpointID: request.EndpointID, Enabled: request.Enabled,
+			Store: store, Err: err,
+		}
+	}}
+}
+
 func reduceConnectionsApplyResult(root state.Root, msg ConnectionsApplySettingsResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		shell := root.Shell.EnsureDefaults()
@@ -136,6 +174,33 @@ func reduceConnectionsApplyResult(root state.Root, msg ConnectionsApplySettingsR
 	root.Shell = restoreConnectionsSelection(root.Shell.OpenConnections(), root.Endpoints, msg.EndpointID)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Connection settings saved", Body: "Applies to the next connection"})
 	return root.Advance(), connectionsSnapshotEffects(root, deps)
+}
+
+func reduceConnectionsSetEnabledResult(root state.Root, msg ConnectionsSetEnabledResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.Store.HasItems() {
+		root.Endpoints = root.Endpoints.ApplyConnectionProjection(msg.Store)
+		root.Shell = restoreConnectionsSelection(root.Shell, root.Endpoints, msg.EndpointID)
+	}
+	if msg.Err != nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastError, Title: "Endpoint switch", Body: msg.Err.Error()})
+		return root.Advance(), connectionsSnapshotEffects(root, deps)
+	}
+
+	body := "Disabled and disconnected"
+	activeViews := root.TerminalViews.AttachedBindingCountForEndpoint(msg.EndpointID)
+	if msg.Enabled {
+		body = "Enabled for new connections"
+	} else if activeViews > 0 {
+		body = fmt.Sprintf("Disabled; waiting for %d active view(s) to close", activeViews)
+	}
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Endpoint switch", Body: body})
+	effects := connectionsSnapshotEffects(root, deps)
+	if item, ok := root.Endpoints.Endpoint(msg.EndpointID); msg.Enabled && ok && item.ConnectMode != state.EndpointConnectManual {
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolListRequestMsg{EndpointID: msg.EndpointID, Refresh: true}
+		}})
+	}
+	return root.Advance(), effects
 }
 
 func connectionsSnapshotEffects(root state.Root, deps LiveDeps) []Effect {
@@ -233,6 +298,24 @@ func reduceConnectionsEdit(root state.Root, row int) (state.Root, []Effect) {
 		Purpose: "connections.settings", TargetEndpointID: selected.ID, Fields: fields,
 	})
 	return root.Advance(), []Effect{handledEffect{}}
+}
+
+func reduceConnectionsToggle(root state.Root, row int) (state.Root, []Effect) {
+	if row >= 0 {
+		root.Shell = root.Shell.SetConnectionsSelectedIndex(row, len(root.Endpoints.Items))
+	}
+	selected, ok := selectedConnectionsEndpoint(root)
+	if !ok {
+		return shortcutUnavailable(root, "connections.toggle", "no endpoint")
+	}
+	request := ConnectionsSetEnabledRequestMsg{
+		EndpointID: selected.ID,
+		Enabled:    !selected.Enabled,
+	}
+	return root.Advance(), []Effect{
+		handledEffect{},
+		FuncEffect{Run: func(context.Context) Msg { return request }},
+	}
 }
 
 func connectionSettingsRequestFromPrompt(root state.Root, prompt state.PromptState) (ConnectionsApplySettingsRequestMsg, error) {

@@ -51,6 +51,27 @@ func TestTerminalPoolListResultSchedulesResourceRefreshAndLivePreview(t *testing
 	}
 }
 
+func TestTerminalPoolIgnoresInFlightListAfterEndpointIsDisabled(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPool(),
+		Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{
+			ID: "remote", Label: "Remote", Enabled: false,
+		}),
+	}
+	root.TerminalPool = root.TerminalPool.RequestRefresh()
+	next, effects := reduceTerminalPoolListResult(root, TerminalPoolListResultMsg{
+		EndpointID: "remote",
+		Seq:        root.TerminalPool.RequestSeq,
+		Refresh:    true,
+		Result: port.TerminalListResult{Items: []port.TerminalPoolItem{{
+			TerminalID: "late", Title: "Late result",
+		}}},
+	}, LiveDeps{})
+	if len(next.TerminalPool.Items) != 0 || len(effects) != 0 {
+		t.Fatalf("disabled endpoint applied late observation: pool=%#v effects=%#v", next.TerminalPool, effects)
+	}
+}
+
 func TestTerminalPoolDisconnectedReconnectErrorStaysInPane(t *testing.T) {
 	ref := state.NewTerminalRef("west", "remote")
 	err := errors.New("ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused")

@@ -120,6 +120,11 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 		return err
 	}
 	defer client.Close()
+	endpointApplications, err := newV3EndpointApplicationRouter(state.DefaultEndpointID, client)
+	if err != nil {
+		return err
+	}
+	defer endpointApplications.Close()
 
 	host := newV3TerminalHost()
 	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
@@ -136,9 +141,11 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, host, logger, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
+		InitialEndpointID:        state.DefaultEndpointID,
 		TUIConfig:                cfg.TUIConfig,
 		ConnectionRegistry:       cfg.ConnectionRegistry,
 		EndpointContext:          ctx,
+		EndpointApplications:     endpointApplications,
 	})
 	// root 空启动不创建 terminal；先让用户在 picker 中显式选择创建或连接。
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {

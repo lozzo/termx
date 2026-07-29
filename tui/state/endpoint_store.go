@@ -25,7 +25,7 @@ const (
 
 const (
 	// EndpointConnectAuto 表示 endpoint 会在启动或恢复需要时自动连接。
-	// 它来自 connections.yaml 的 connect_mode，不表示当前已经 online。
+	// 它来自 endpoints.yaml 的 connect_mode，不表示当前已经 online。
 	EndpointConnectAuto EndpointConnectMode = "auto"
 	// EndpointConnectOnDemand 表示 endpoint 只在 picker 展开、搜索命中或可见 restore 需要时连接。
 	EndpointConnectOnDemand EndpointConnectMode = "on_demand"
@@ -188,7 +188,7 @@ type EndpointItem struct {
 }
 
 // EndpointStore 是 TUI/client 侧 endpoint registry 与运行时连接状态的 reducer-owned 投影。
-// connections.yaml 是期望状态，已连接 session 是运行时事实；该 store 只保存两者 diff 后的 UI 可见结果。
+// endpoints.yaml 是期望状态，已连接 session 是运行时事实；该 store 只保存两者 diff 后的 UI 可见结果。
 type EndpointStore struct {
 	Items []EndpointItem
 }
@@ -245,7 +245,7 @@ func EndpointItemFromEndpoint(endpoint endpointdomain.Endpoint) EndpointItem {
 	return item.withDefaults()
 }
 
-// ApplyConnectionRegistry 用新的 connections.yaml 快照更新 endpoint 展示配置。
+// ApplyConnectionRegistry 用新的 endpoints.yaml 快照更新 endpoint 展示配置。
 // 已存在的运行时状态会按 endpoint id 保留；被删除但仍有运行时状态的 endpoint 会标记为 unregistered。
 func (store EndpointStore) ApplyConnectionRegistry(registry endpointdomain.Registry) EndpointStore {
 	next := EndpointStore{}

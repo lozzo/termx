@@ -44,6 +44,47 @@ type ConnectionPolicy struct {
 	RelayTransport  RelayTransport
 }
 
+// SetEndpointEnabled 在 registry 副本中更新 Endpoint 开关，并在关闭当前 default 时
+// 优先选择仍启用的 local Endpoint，否则选择稳定排序后的首个启用 Endpoint。
+// 该操作只改变客户端连接资格，不删除 Endpoint、Route 或 credential 引用。
+func SetEndpointEnabled(registry Registry, endpointID EndpointID, enabled bool) (Registry, error) {
+	next, err := registry.Normalize()
+	if err != nil {
+		return Registry{}, err
+	}
+	endpointID = normalizeEndpointID(endpointID)
+	target, ok := next.Endpoints[endpointID]
+	if !ok {
+		return Registry{}, connectionError(ErrorConfig, "endpoint %q does not exist", endpointID)
+	}
+	target.Enabled = enabled
+	next.Endpoints[endpointID] = target
+	if enabled || next.Default != endpointID {
+		return next.Normalize()
+	}
+
+	var fallback EndpointID
+	for _, candidate := range next.List() {
+		if !candidate.Enabled {
+			continue
+		}
+		if fallback == "" {
+			fallback = candidate.ID
+		}
+		for _, route := range candidate.RouteList() {
+			if route.Enabled && route.Kind == RouteLocalUnix {
+				next.Default = candidate.ID
+				return next.Normalize()
+			}
+		}
+	}
+	if fallback == "" {
+		return Registry{}, connectionError(ErrorConfig, "endpoint registry requires at least one enabled default endpoint")
+	}
+	next.Default = fallback
+	return next.Normalize()
+}
+
 // SetConnectionPolicy 在 registry 深拷贝中原子更新 Endpoint 选路偏好和全部 managed Route 的 Relay 约束。
 func SetConnectionPolicy(registry Registry, endpointID EndpointID, policy ConnectionPolicy) (Registry, error) {
 	switch policy.RoutePreference {

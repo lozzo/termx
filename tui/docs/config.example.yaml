@@ -405,6 +405,7 @@ tui:
     system:
       h: system.toggle_header
       f: system.toggle_footer
+      e: system.open_connections
       q: system.quit
 
     panel:
@@ -435,3 +436,8 @@ tui:
       p: tab.previous
       c: tab.create
       x: tab.close
+
+    connections:
+      enter: connections.edit
+      space: connections.toggle
+      r: connections.refresh

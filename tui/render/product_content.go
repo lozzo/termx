@@ -332,14 +332,17 @@ func buildConnectionsContent(root state.Root, shell state.ShellStore) ContentVM 
 	}
 	var selected state.EndpointItem
 	selectedOK := len(items) > 0
+	selectedActiveViews := 0
 	if selectedOK {
 		selected = items[selectedIndex]
+		selectedActiveViews = root.TerminalViews.AttachedBindingCountForEndpoint(selected.ID)
 	}
-	details := connectionsDetailLines(selected, selectedOK, layout.DetailWidth)
+	details := connectionsDetailLines(selected, selectedOK, layout.DetailWidth, selectedActiveViews)
 	for row := 0; row < layout.BodyRows; row++ {
 		left := Line{}
 		if row < len(items) {
-			left = connectionsEndpointLine(items[row], row == selectedIndex)
+			activeViews := root.TerminalViews.AttachedBindingCountForEndpoint(items[row].ID)
+			left = connectionsEndpointLine(items[row], row == selectedIndex, activeViews)
 		}
 		right := Line{}
 		if row < len(details) {
@@ -353,21 +356,30 @@ func buildConnectionsContent(root state.Root, shell state.ShellStore) ContentVM 
 	}
 }
 
-func connectionsEndpointLine(item state.EndpointItem, selected bool) Line {
+func connectionsEndpointLine(item state.EndpointItem, selected bool, activeViews int) Line {
 	marker, markerStyle, labelStyle := "  ", StyleMuted, StyleForeground
 	if selected {
 		marker, markerStyle, labelStyle = "▸ ", StyleAccent, StyleAccent
 	}
+	checkbox, checkboxStyle := "[ ] ", StyleMuted
+	if item.Enabled {
+		checkbox, checkboxStyle = "[x] ", StyleSuccess
+	}
 	status := string(item.DisplayStatus())
+	statusStyle := endpointStatusStyle(item.DisplayStatus())
+	if !item.Enabled && activeViews > 0 {
+		status = fmt.Sprintf("draining %d view(s)", activeViews)
+		statusStyle = StyleWarning
+	}
 	if status == "" {
 		status = "unknown"
 	}
 	return Line{Cells: []Cell{
-		styledCell(marker, markerStyle), styledCell(item.DisplayLabel(), labelStyle), NewCell(" "), tokenCell(status, endpointStatusStyle(item.DisplayStatus())),
+		styledCell(marker, markerStyle), styledCell(checkbox, checkboxStyle), styledCell(item.DisplayLabel(), labelStyle), NewCell(" "), tokenCell(status, statusStyle),
 	}}
 }
 
-func connectionsDetailLines(item state.EndpointItem, ok bool, width int) []Line {
+func connectionsDetailLines(item state.EndpointItem, ok bool, width int, activeViews int) []Line {
 	if !ok {
 		return []Line{NewLine("No endpoint configured")}
 	}
@@ -392,11 +404,15 @@ func connectionsDetailLines(item state.EndpointItem, ok bool, width int) []Line 
 	snapshot := item.ConnectionSnapshot
 	lines := []Line{
 		terminalManagerHeaderLine("CURRENT CONNECTION"),
+		value("Enabled", map[bool]string{true: "yes", false: "no"}[item.Enabled]),
 		value("Status", string(item.DisplayStatus())),
 		value("Route", string(item.ActiveRouteID)),
 		value("Path", item.ObservedPath),
 		value("Generation", generation),
 		value("Reason", item.RouteSelectionReason),
+	}
+	if !item.Enabled && activeViews > 0 {
+		lines = append(lines, value("Drain", fmt.Sprintf("%d active view(s)", activeViews)))
 	}
 	if local := candidateEndpoint(snapshot.LocalAddress, snapshot.LocalPort); local != "" {
 		lines = append(lines, value("Local", local))

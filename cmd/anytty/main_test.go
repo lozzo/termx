@@ -33,6 +33,7 @@ import (
 	"github.com/anytty/anytty/shared/transport"
 	tuiv3 "github.com/anytty/anytty/tui"
 	actiondomain "github.com/anytty/anytty/tui/action"
+	clientruntimeadapter "github.com/anytty/anytty/tui/adapter/clientruntime"
 	protocoladapter "github.com/anytty/anytty/tui/adapter/protocol"
 	"github.com/anytty/anytty/tui/app"
 	tuiinput "github.com/anytty/anytty/tui/input"
@@ -1372,6 +1373,54 @@ func TestV3RootEmptyRuntimeEnablesPerfTrace(t *testing.T) {
 		t.Fatalf("root empty runtime must write tui-v3 perftrace record, got %s", data)
 	}
 }
+
+func TestV3RootEmptyRuntimeInstallsEndpointApplicationRouter(t *testing.T) {
+	_, protocolClient, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	oldConnect := connectV3EndpointApplication
+	oldRouter := newV3EndpointApplicationRouter
+	oldHost := newV3TerminalHost
+	t.Cleanup(func() {
+		connectV3EndpointApplication = oldConnect
+		newV3EndpointApplicationRouter = oldRouter
+		newV3TerminalHost = oldHost
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "anytty-v2.sock")
+	installV3LocalApplicationTestClient(t, socketPath, protocolClient)
+	routerCalled := false
+	newV3EndpointApplicationRouter = func(endpointID tuistate.EndpointID, client *clientprotocol.ApplicationClient) (v3EndpointApplicationServices, error) {
+		routerCalled = true
+		if endpointID != tuistate.DefaultEndpointID || client == nil {
+			t.Fatalf("root empty router input: endpoint=%q client=%v", endpointID, client)
+		}
+		return &clientruntimeadapter.EndpointApplicationRouter{}, nil
+	}
+	enterErr := errors.New("stop after composition")
+	newV3TerminalHost = func() v3TerminalHost {
+		return &enterFailingV3TerminalHost{FakeTerminalHost: app.NewFakeTerminalHost(1), err: enterErr}
+	}
+
+	err := runV3RootEmptyRuntime(context.Background(), v3RootEmptyConfig{
+		SocketPath:         socketPath,
+		LogFile:            filepath.Join(t.TempDir(), "anytty.log"),
+		ConnectionRegistry: endpointdomain.DefaultRegistry(),
+	})
+	if !errors.Is(err, enterErr) {
+		t.Fatalf("root empty runtime error = %v", err)
+	}
+	if !routerCalled {
+		t.Fatal("root empty runtime did not install endpoint application router")
+	}
+}
+
+type enterFailingV3TerminalHost struct {
+	*app.FakeTerminalHost
+	err error
+}
+
+func (host *enterFailingV3TerminalHost) Enter(context.Context) error { return host.err }
+func (*enterFailingV3TerminalHost) Close() error                     { return nil }
 
 func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)

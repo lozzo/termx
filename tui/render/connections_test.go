@@ -63,6 +63,25 @@ func TestConnectionsOverlayShowsSelectedPairAddressesAndRTT(t *testing.T) {
 	}
 }
 
+func TestConnectionsOverlayShowsEnabledCheckboxAndDrainingState(t *testing.T) {
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Shell:    state.DefaultShell().OpenConnections(),
+		Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{
+			ID: "studio", Label: "Studio", Enabled: false, Status: state.EndpointStatusConnected,
+		}),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(
+		"studio", "pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-1"), false,
+	))
+	text := frameText(NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root)))
+	for _, want := range []string{"[ ] Studio", "draining 1 view(s)", "Enabled: no", "Drain: 1 active view(s)"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("connections frame missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestConnectionsEntryIsDiscoverableInNarrowSystemFooterAndHelp(t *testing.T) {
 	root := state.Root{
 		Viewport: state.ViewportStore{Valid: true, Cols: 56, Rows: 24},
