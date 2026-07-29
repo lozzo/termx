@@ -85,7 +85,7 @@ func TestEdgeControllerHelloWelcomeOverMutualTLS(t *testing.T) {
 	if err := edgeRuntime.WaitReady(readyContext); err != nil {
 		t.Fatalf("wait for real EdgeHello/EdgeWelcome: %v", err)
 	}
-	agent := &cloudv1.AgentPresence{DaemonId: "daemon-r2-1", AccountId: "account-r2-1", BootId: "daemon-boot-r2-1", ConnectionId: "agent-connection-r2-1", Generation: 1, TicketId: "ticket-r2-1", TicketIssuedAt: timestamppb.Now()}
+	agent := &cloudv1.AgentPresence{DaemonId: "daemon-r2-1", AccountId: "account-r2-1", BootId: "daemon-boot-r2-1", ConnectionId: "agent-connection-r2-1", Generation: 1, BindingId: "binding-r2-1", BindingIssuedAt: timestamppb.Now()}
 	if err := edgeRuntime.UpsertAgent(context.Background(), agent); err != nil {
 		t.Fatalf("publish test agent through Edge runtime: %v", err)
 	}
@@ -148,8 +148,8 @@ func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.
 	}
 	t.Cleanup(state.Close)
 	daemonClosed := make(chan struct{}, 1)
-	agent := &cloudv1.AgentPresence{DaemonId: "daemon-command-1", AccountId: "account-command-1", BootId: "daemon-boot-command", ConnectionId: "agent-command", TicketId: "ticket-command", TicketIssuedAt: timestamppb.Now()}
-	agentClaims := &cloudv1.AgentTicketClaims{DaemonId: agent.GetDaemonId(), AccountId: agent.GetAccountId(), EdgeId: testEdgeID, DevicePublicKey: make([]byte, ed25519.PublicKeySize)}
+	agent := &cloudv1.AgentPresence{DaemonId: "daemon-command-1", AccountId: "account-command-1", BootId: "daemon-boot-command", ConnectionId: "agent-command", BindingId: "binding-command", BindingIssuedAt: timestamppb.Now()}
+	agentClaims := &cloudv1.DaemonBindingClaims{DaemonId: agent.GetDaemonId(), AccountId: agent.GetAccountId(), EdgeId: testEdgeID, DevicePublicKey: make([]byte, ed25519.PublicKeySize)}
 	generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, agentClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { daemonClosed <- struct{}{} })
 	if err != nil {
 		t.Fatal(err)

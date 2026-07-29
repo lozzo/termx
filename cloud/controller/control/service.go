@@ -3,7 +3,6 @@ package control
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/securetransport"
-	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -27,25 +25,26 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 2 requires explicit same-lease Relay renewal semantics.
-const ProtocolVersion uint32 = 2
+// ProtocolVersion 3 removes per-session Relay decisions from EdgeControl.
+const ProtocolVersion uint32 = 3
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
-	ControllerID           string
-	ControllerBootID       string
-	HeartbeatInterval      time.Duration
-	HeartbeatTimeout       time.Duration
-	TicketVerificationKeys []*cloudv1.VerificationKey
-	Directory              *directory.Directory
-	DesiredConfig          func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
-	DesiredCertificate     func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
-	CertificateApplied     func(context.Context, string, *cloudv1.CertificateApplied) error
-	TicketSigningKey       ed25519.PrivateKey
-	TicketSigningKeyID     string
-	RelayLeaseTTL          time.Duration
-	RelayPolicy            RelayPolicy
-	UsageStore             UsageStore
+	ControllerID            string
+	ControllerBootID        string
+	HeartbeatInterval       time.Duration
+	HeartbeatTimeout        time.Duration
+	BindingVerificationKeys []*cloudv1.VerificationKey
+	Directory               *directory.Directory
+	DesiredConfig           func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
+	DesiredCertificate      func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
+	CertificateApplied      func(context.Context, string, *cloudv1.CertificateApplied) error
+	UsageStore              UsageStore
+}
+
+// UsageStore 是 Controller 对 Edge 用量批次的持久事务边界。
+type UsageStore interface {
+	CommitRelayUsage(context.Context, string, []*cloudv1.UsageEvent) ([]string, error)
 }
 
 // Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
@@ -76,13 +75,7 @@ func NewService(config Config) (*Service, error) {
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
 	}
-	config.TicketVerificationKeys = cloneKeys(config.TicketVerificationKeys)
-	config.TicketSigningKeyID = strings.TrimSpace(config.TicketSigningKeyID)
-	if config.RelayPolicy != nil || config.UsageStore != nil || len(config.TicketSigningKey) != 0 || config.RelayLeaseTTL != 0 {
-		if config.RelayPolicy == nil || config.UsageStore == nil || len(config.TicketSigningKey) != ed25519.PrivateKeySize || config.TicketSigningKeyID == "" || config.RelayLeaseTTL <= 0 || config.RelayLeaseTTL > 5*time.Minute {
-			return nil, errors.New("R6 Relay policy, usage store, signer, and bounded lease TTL must be configured together")
-		}
-	}
+	config.BindingVerificationKeys = cloneKeys(config.BindingVerificationKeys)
 	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand), edgeConnections: make(map[string]string)}, nil
 }
 
@@ -160,7 +153,7 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_Welcome{Welcome: &cloudv1.EdgeWelcome{
 		AcceptedProtocolVersion: ProtocolVersion,
 		Heartbeat:               &cloudv1.HeartbeatPolicy{Interval: durationpb.New(service.config.HeartbeatInterval), Timeout: durationpb.New(service.config.HeartbeatTimeout)},
-		TicketVerificationKeys:  cloneKeys(service.config.TicketVerificationKeys),
+		BindingVerificationKeys: cloneKeys(service.config.BindingVerificationKeys),
 	}})); err != nil {
 		return status.Errorf(codes.Unavailable, "send EdgeWelcome: %v", err)
 	}
@@ -311,12 +304,6 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 			return nil, errors.New("CertificateApplied is invalid or unavailable")
 		}
 		return nil, service.config.CertificateApplied(ctx, event.GetSenderId(), payload.CertificateApplied)
-	case *cloudv1.EdgeEvent_RelayLeaseRequest:
-		decision, err := service.issueRelayLease(ctx, event, payload.RelayLeaseRequest)
-		if err != nil {
-			return nil, err
-		}
-		return &cloudv1.ControllerCommand_RelayLeaseDecision{RelayLeaseDecision: decision}, nil
 	case *cloudv1.EdgeEvent_UsageBatch:
 		if service.config.UsageStore == nil || payload.UsageBatch == nil || strings.TrimSpace(payload.UsageBatch.GetBatchId()) == "" || len(payload.UsageBatch.GetEvents()) == 0 {
 			return nil, errors.New("UsageBatch is invalid or settlement is unavailable")
@@ -343,8 +330,6 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_ResyncRequired:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_DesiredConfig:
-		command.Payload = typed
-	case *cloudv1.ControllerCommand_RelayLeaseDecision:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_UsageAck:
 		command.Payload = typed
@@ -473,51 +458,6 @@ func waitRuntimeCommand(ctx context.Context, waiter <-chan *cloudv1.EdgeCommandR
 			return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_REJECTED
 		}
 	}
-}
-
-func (service *Service) issueRelayLease(ctx context.Context, event *cloudv1.EdgeEvent, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseDecision, error) {
-	if service.config.RelayPolicy == nil || request == nil || strings.TrimSpace(request.GetCorrelationId()) == "" || strings.TrimSpace(request.GetSessionId()) == "" ||
-		(request.GetPreference() != cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO && request.GetPreference() != cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY) {
-		return nil, errors.New("RelayLeaseRequest is invalid or Relay is unavailable")
-	}
-	leaseID, err := relayLeaseID(request)
-	if err != nil {
-		return nil, err
-	}
-	session, location, found, err := service.config.Directory.Session(ctx, request.GetSessionId())
-	if err != nil || !found || location.EdgeID != event.GetSenderId() || location.ConnectionID != event.GetConnectionId() ||
-		session.GetAccountId() != request.GetAccountId() || session.GetDaemonId() != request.GetDaemonId() || session.GetClientId() != request.GetClientId() {
-		return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Denied{Denied: &cloudv1.RelayLeaseDenied{Code: "SESSION_STALE", Message: "Relay session no longer belongs to this Edge generation"}}}, nil
-	}
-	limits, err := service.config.RelayPolicy.Limits(ctx, session)
-	if err != nil || limits.MaxBytes == 0 || limits.MaxRateBytesPerSecond == 0 || limits.MaxConcurrentAllocations == 0 {
-		return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Denied{Denied: &cloudv1.RelayLeaseDenied{Code: "RELAY_NOT_ENTITLED", Message: "Relay entitlement is unavailable"}}}, nil
-	}
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: leaseID, AccountId: session.GetAccountId(), EdgeId: event.GetSenderId(), DaemonId: session.GetDaemonId(), ClientId: session.GetClientId(), SessionId: session.GetSessionId(),
-		MaxBytes: limits.MaxBytes, MaxRateBytesPerSecond: limits.MaxRateBytesPerSecond, MaxConcurrentAllocations: limits.MaxConcurrentAllocations,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.RelayLeaseTTL)),
-	}
-	signed, err := ticket.SignRelayLease(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)
-	if err != nil {
-		return nil, err
-	}
-	return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Lease{Lease: signed}}, nil
-}
-
-func relayLeaseID(request *cloudv1.RelayLeaseRequest) (string, error) {
-	if request == nil {
-		return "", errors.New("RelayLease request is required")
-	}
-	leaseID := strings.TrimSpace(request.GetRenewLeaseId())
-	if leaseID == "" {
-		return uuid.NewString(), nil
-	}
-	if _, err := uuid.Parse(leaseID); err != nil {
-		return "", errors.New("RelayLease renewal identity is invalid")
-	}
-	return leaseID, nil
 }
 
 func (service *Service) resyncCommand(connectionID string, sequence, expected uint64, reason string) *cloudv1.ControllerCommand {

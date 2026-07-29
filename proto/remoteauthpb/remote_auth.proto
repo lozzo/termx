@@ -443,6 +443,7 @@ message PairingDirectRouteSeed {
 message PairingManagedRouteSeed {
   string target_device_id = 1;
   bytes bootstrap_grant = 2;
+  bytes edge_locator = 3;
 }
 
 // PairingSSHRouteSeed 只携带建立首个 SSH tunnel pairing peer 所需的公开连接信息。

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/tls"
 	"errors"
 	"net"
 	"os"
@@ -71,16 +70,14 @@ func TestCorruptUsageOutboxDegradesRelayWithoutStoppingEdge(t *testing.T) {
 }
 
 func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
-	const relayLeaseTTL = 4 * time.Second
-
 	certificates := newCertificateFiles(t, testEdgeID)
-	ticketPublicKey, ticketPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	bindingPublicKey, bindingPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ticketKeyID := "ticket-r6"
+	bindingKeyID := "binding-r6"
 	usageStore := newR6UsageStore()
-	controllerRuntime, controllerDirectory := startR6ControlController(t, certificates, "127.0.0.1:0", ticketKeyID, ticketPublicKey, ticketPrivateKey, usageStore, relayLeaseTTL)
+	controllerRuntime, controllerDirectory := startR6ControlController(t, certificates, "127.0.0.1:0", bindingKeyID, bindingPublicKey, usageStore)
 	controllerAddress := controllerRuntime.GRPCAddress()
 	controllerStopped := false
 	defer func() {
@@ -114,8 +111,8 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	identityStore := r5EnrollmentStore{daemon: daemonRecord}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Entitlement: testEntitlementReader{},
-		Store:       identityStore, Edges: edges, Directory: controllerDirectory, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
-		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
+		Store:       identityStore, Edges: edges, Directory: controllerDirectory, BindingSigningKey: bindingPrivateKey, BindingSigningKeyID: bindingKeyID,
+		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, BindingTTL: 365 * 24 * time.Hour,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +145,11 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		}
 	}()
 	edgeStore.setPublicEndpoint(edgeRuntime.PublicAddress())
+	edgeLocator := &cloudv1.EdgeLocator{EdgeId: testEdgeID, Name: "R6 Edge", Region: "local", PublicEndpoint: edgeRuntime.PublicAddress(), ServerName: testEdgePublicServer, CaCertificatePem: edgeCAPEM, Revision: 1}
+	edgeLocatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(edgeLocator)
+	if err != nil {
+		t.Fatal(err)
+	}
 	readyContext, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := edgeRuntime.WaitReady(readyContext); err != nil {
 		cancelReady()
@@ -184,8 +186,10 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		return loopbackAPI.NewPeerConnection(configuration)
 	}
 	daemonRuntime, err := clouddaemon.NewRuntime(clouddaemon.Config{
-		Record:   clouddaemon.EnrollmentRecord{Version: 1, DaemonID: daemonRecord.ID, AccountID: daemonRecord.AccountID, ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, EnrolledAt: time.Now().UTC()},
-		Identity: daemonIdentity, AccessStore: accessStore, SoftwareVersion: "r6-integration", ControllerTLS: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: certificates.rootPool, ServerName: testControllerServer},
+		Record: r5DaemonEnrollmentRecord(t, daemonRecord, daemonIdentity, bindingKeyID, bindingPrivateKey, edgeLocatorPayload, &cloudv1.DaemonRelayDelegation{
+			MaxBytesPerLease: 16 << 20, MaxRateBytesPerSecond: 4 << 20, MaxConcurrentAllocations: 2,
+		}),
+		Identity: daemonIdentity, AccessStore: accessStore, SoftwareVersion: "r6-integration",
 		Answerer: remotewebrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: coreServer, Identity: daemonIdentity, AccessStore: accessStore}, PeerConnections: daemonPeerFactory},
 	})
 	if err != nil {
@@ -215,6 +219,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	credential, _ := issueR5CloudCredential(t, accessStore, daemonIdentity, "cloud-r6-relay", cloudv1.ClientProduct_CLIENT_PRODUCT_CLI)
+	credential.CloudEdgeLocator = append([]byte(nil), edgeLocatorPayload...)
 	relayClientFactory := func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
 		// 故障注入只移除本次 auto attempt 的 direct candidate，并锁定一个 URL，分别覆盖 TURN UDP/TCP。
 		configuration.ICETransportPolicy = pionwebrtc.ICETransportPolicyRelay
@@ -245,11 +250,6 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	if snapshot, ok := session.ConnectionSnapshot(time.Now().UTC()); !ok || snapshot.ObservedPath != string(endpoint.PathSingleRelay) {
 		t.Fatalf("forced Relay selected path = %+v ok=%v", snapshot, ok)
 	}
-	// Wait beyond the original lease and prove that renewal kept the same TURN
-	// allocation usable without an ICE restart.
-	time.Sleep(relayLeaseTTL + time.Second)
-	assertR5TerminalIO(t, session, credential.EndpointID, "r6-relay-after-renewal")
-
 	shutdownR6Controller(t, controllerRuntime, controllerDirectory)
 	controllerStopped = true
 	eventually(t, 5*time.Second, func() bool { return !edgeRuntime.Ready() })
@@ -276,7 +276,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		return depthErr == nil && depth > 0
 	})
 
-	secondController, secondDirectory := startR6ControlController(t, certificates, controllerAddress, ticketKeyID, ticketPublicKey, ticketPrivateKey, usageStore, relayLeaseTTL)
+	secondController, secondDirectory := startR6ControlController(t, certificates, controllerAddress, bindingKeyID, bindingPublicKey, usageStore)
 	defer shutdownR6Controller(t, secondController, secondDirectory)
 	eventually(t, 8*time.Second, func() bool { return edgeRuntime.Ready() })
 	eventually(t, 8*time.Second, func() bool {
@@ -300,7 +300,7 @@ func r6AutoAttempt(t *testing.T, identity remoteauth.Identity, endpointID string
 	return attempt
 }
 
-func startR6ControlController(t *testing.T, certificates certificateFiles, listen, keyID string, publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, usageStore *r6UsageStore, relayLeaseTTL time.Duration) (*controllerruntime.Runtime, *directory.Directory) {
+func startR6ControlController(t *testing.T, certificates certificateFiles, listen, keyID string, publicKey ed25519.PublicKey, usageStore *r6UsageStore) (*controllerruntime.Runtime, *directory.Directory) {
 	t.Helper()
 	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
 	if err != nil {
@@ -308,9 +308,8 @@ func startR6ControlController(t *testing.T, certificates certificateFiles, liste
 	}
 	service, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: 250 * time.Millisecond, HeartbeatTimeout: time.Second,
-		TicketVerificationKeys: []*cloudv1.VerificationKey{{KeyId: keyID, Algorithm: "Ed25519", PublicKey: publicKey}}, Directory: directoryState,
-		TicketSigningKey: privateKey, TicketSigningKeyID: keyID, RelayLeaseTTL: relayLeaseTTL,
-		RelayPolicy: control.ConfiguredRelayPolicy{Value: control.RelayLimits{MaxBytes: 16 << 20, MaxRateBytesPerSecond: 4 << 20, MaxConcurrentAllocations: 2}}, UsageStore: usageStore,
+		BindingVerificationKeys: []*cloudv1.VerificationKey{{KeyId: keyID, Algorithm: "Ed25519", PublicKey: publicKey}}, Directory: directoryState,
+		UsageStore: usageStore,
 	})
 	if err != nil {
 		directoryState.Close()

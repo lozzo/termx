@@ -67,7 +67,7 @@ func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T
 		}
 	}
 	managedSeed := (&PairingManagedRouteSeed{}).ProtoReflect().Descriptor()
-	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"target_device_id": 1, "bootstrap_grant": 2} {
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"target_device_id": 1, "bootstrap_grant": 2, "edge_locator": 3} {
 		if field := managedSeed.Fields().ByName(name); field == nil || field.Number() != number {
 			t.Fatalf("PairingManagedRouteSeed.%s field = %v, want number %d", name, field, number)
 		}

@@ -55,12 +55,12 @@ func TestManagedPairingClaimRequiresAndEmbedsDigestGrant(t *testing.T) {
 		t.Fatalf("managed claim without issuer error = %v", err)
 	}
 	var grantedDigest []byte
-	if err := store.ConfigureManagedPairingGrantIssuer(func(digest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, error) {
+	if err := store.ConfigureManagedPairingRouteIssuer(func(digest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, []byte, error) {
 		grantedDigest = append([]byte(nil), digest...)
 		if !expiresAt.After(issuedAt) {
 			t.Fatalf("managed grant lifetime = %v to %v", issuedAt, expiresAt)
 		}
-		return []byte("daemon-signed-bootstrap-grant"), nil
+		return []byte("daemon-signed-bootstrap-grant"), []byte("edge-locator"), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestManagedPairingClaimRequiresAndEmbedsDigestGrant(t *testing.T) {
 	}
 	wantDigest := sha256.Sum256(issued.Offer.GetClaim())
 	managed := issued.Offer.GetRoutes()[0].GetManagedWebrtc()
-	if !bytes.Equal(grantedDigest, wantDigest[:]) || !bytes.Equal(managed.GetBootstrapGrant(), []byte("daemon-signed-bootstrap-grant")) {
+	if !bytes.Equal(grantedDigest, wantDigest[:]) || !bytes.Equal(managed.GetBootstrapGrant(), []byte("daemon-signed-bootstrap-grant")) || !bytes.Equal(managed.GetEdgeLocator(), []byte("edge-locator")) {
 		t.Fatalf("managed bootstrap grant digest=%x route=%#v", grantedDigest, managed)
 	}
 	if bytes.Contains(managed.GetBootstrapGrant(), issued.Offer.GetClaim()) {

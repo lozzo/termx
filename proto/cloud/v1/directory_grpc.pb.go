@@ -20,7 +20,6 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	DirectoryService_BeginClientRoute_FullMethodName   = "/anytty.cloud.v1.DirectoryService/BeginClientRoute"
-	DirectoryService_BeginPairingRoute_FullMethodName  = "/anytty.cloud.v1.DirectoryService/BeginPairingRoute"
 	DirectoryService_ResolveClientRoute_FullMethodName = "/anytty.cloud.v1.DirectoryService/ResolveClientRoute"
 )
 
@@ -31,7 +30,6 @@ const (
 // DirectoryService 只在首次发现或 Edge locator 失效时解析实时 daemon Presence。
 type DirectoryServiceClient interface {
 	BeginClientRoute(ctx context.Context, in *BeginClientRouteRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
-	BeginPairingRoute(ctx context.Context, in *BeginPairingRouteRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
 	ResolveClientRoute(ctx context.Context, in *ResolveClientRouteRequest, opts ...grpc.CallOption) (*ResolveClientRouteResponse, error)
 }
 
@@ -47,16 +45,6 @@ func (c *directoryServiceClient) BeginClientRoute(ctx context.Context, in *Begin
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IdentityChallenge)
 	err := c.cc.Invoke(ctx, DirectoryService_BeginClientRoute_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *directoryServiceClient) BeginPairingRoute(ctx context.Context, in *BeginPairingRouteRequest, opts ...grpc.CallOption) (*IdentityChallenge, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(IdentityChallenge)
-	err := c.cc.Invoke(ctx, DirectoryService_BeginPairingRoute_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +68,6 @@ func (c *directoryServiceClient) ResolveClientRoute(ctx context.Context, in *Res
 // DirectoryService 只在首次发现或 Edge locator 失效时解析实时 daemon Presence。
 type DirectoryServiceServer interface {
 	BeginClientRoute(context.Context, *BeginClientRouteRequest) (*IdentityChallenge, error)
-	BeginPairingRoute(context.Context, *BeginPairingRouteRequest) (*IdentityChallenge, error)
 	ResolveClientRoute(context.Context, *ResolveClientRouteRequest) (*ResolveClientRouteResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
@@ -94,9 +81,6 @@ type UnimplementedDirectoryServiceServer struct{}
 
 func (UnimplementedDirectoryServiceServer) BeginClientRoute(context.Context, *BeginClientRouteRequest) (*IdentityChallenge, error) {
 	return nil, status.Error(codes.Unimplemented, "method BeginClientRoute not implemented")
-}
-func (UnimplementedDirectoryServiceServer) BeginPairingRoute(context.Context, *BeginPairingRouteRequest) (*IdentityChallenge, error) {
-	return nil, status.Error(codes.Unimplemented, "method BeginPairingRoute not implemented")
 }
 func (UnimplementedDirectoryServiceServer) ResolveClientRoute(context.Context, *ResolveClientRouteRequest) (*ResolveClientRouteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveClientRoute not implemented")
@@ -140,24 +124,6 @@ func _DirectoryService_BeginClientRoute_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DirectoryService_BeginPairingRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BeginPairingRouteRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DirectoryServiceServer).BeginPairingRoute(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DirectoryService_BeginPairingRoute_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DirectoryServiceServer).BeginPairingRoute(ctx, req.(*BeginPairingRouteRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DirectoryService_ResolveClientRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResolveClientRouteRequest)
 	if err := dec(in); err != nil {
@@ -186,10 +152,6 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BeginClientRoute",
 			Handler:    _DirectoryService_BeginClientRoute_Handler,
-		},
-		{
-			MethodName: "BeginPairingRoute",
-			Handler:    _DirectoryService_BeginPairingRoute_Handler,
 		},
 		{
 			MethodName: "ResolveClientRoute",

@@ -22,56 +22,56 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// AgentCapability 是 AgentTicket 冻结的 Edge 侧准入能力，不表达 terminal 权限。
-type AgentCapability int32
+// DaemonCapability 是 enrollment 时授予 daemon 的 Edge 侧能力，不表达 terminal 权限。
+type DaemonCapability int32
 
 const (
-	AgentCapability_AGENT_CAPABILITY_UNSPECIFIED AgentCapability = 0
-	AgentCapability_AGENT_CAPABILITY_SIGNALING   AgentCapability = 1
+	DaemonCapability_DAEMON_CAPABILITY_UNSPECIFIED DaemonCapability = 0
+	DaemonCapability_DAEMON_CAPABILITY_SIGNALING   DaemonCapability = 1
 )
 
-// Enum value maps for AgentCapability.
+// Enum value maps for DaemonCapability.
 var (
-	AgentCapability_name = map[int32]string{
-		0: "AGENT_CAPABILITY_UNSPECIFIED",
-		1: "AGENT_CAPABILITY_SIGNALING",
+	DaemonCapability_name = map[int32]string{
+		0: "DAEMON_CAPABILITY_UNSPECIFIED",
+		1: "DAEMON_CAPABILITY_SIGNALING",
 	}
-	AgentCapability_value = map[string]int32{
-		"AGENT_CAPABILITY_UNSPECIFIED": 0,
-		"AGENT_CAPABILITY_SIGNALING":   1,
+	DaemonCapability_value = map[string]int32{
+		"DAEMON_CAPABILITY_UNSPECIFIED": 0,
+		"DAEMON_CAPABILITY_SIGNALING":   1,
 	}
 )
 
-func (x AgentCapability) Enum() *AgentCapability {
-	p := new(AgentCapability)
+func (x DaemonCapability) Enum() *DaemonCapability {
+	p := new(DaemonCapability)
 	*p = x
 	return p
 }
 
-func (x AgentCapability) String() string {
+func (x DaemonCapability) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (AgentCapability) Descriptor() protoreflect.EnumDescriptor {
+func (DaemonCapability) Descriptor() protoreflect.EnumDescriptor {
 	return file_cloud_v1_ticket_proto_enumTypes[0].Descriptor()
 }
 
-func (AgentCapability) Type() protoreflect.EnumType {
+func (DaemonCapability) Type() protoreflect.EnumType {
 	return &file_cloud_v1_ticket_proto_enumTypes[0]
 }
 
-func (x AgentCapability) Number() protoreflect.EnumNumber {
+func (x DaemonCapability) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use AgentCapability.Descriptor instead.
-func (AgentCapability) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use DaemonCapability.Descriptor instead.
+func (DaemonCapability) EnumDescriptor() ([]byte, []int) {
 	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{0}
 }
 
-// AgentRelayDelegation 是 Controller 在 daemon 接入时冻结给 Edge 的 Relay 上限。
-// EdgeControl 中断后，Edge 只能在这些上限内为已由 daemon 批准的客户端创建短租约。
-type AgentRelayDelegation struct {
+// DaemonRelayDelegation 是 Controller 授予 Edge 的 Relay 上限。
+// Edge 只能在这些上限内为已由 daemon 批准的客户端创建本地短租约。
+type DaemonRelayDelegation struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	MaxBytesPerLease         uint64                 `protobuf:"varint,1,opt,name=max_bytes_per_lease,json=maxBytesPerLease,proto3" json:"max_bytes_per_lease,omitempty"`
 	MaxRateBytesPerSecond    uint64                 `protobuf:"varint,2,opt,name=max_rate_bytes_per_second,json=maxRateBytesPerSecond,proto3" json:"max_rate_bytes_per_second,omitempty"`
@@ -80,20 +80,20 @@ type AgentRelayDelegation struct {
 	sizeCache                protoimpl.SizeCache
 }
 
-func (x *AgentRelayDelegation) Reset() {
-	*x = AgentRelayDelegation{}
+func (x *DaemonRelayDelegation) Reset() {
+	*x = DaemonRelayDelegation{}
 	mi := &file_cloud_v1_ticket_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AgentRelayDelegation) String() string {
+func (x *DaemonRelayDelegation) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AgentRelayDelegation) ProtoMessage() {}
+func (*DaemonRelayDelegation) ProtoMessage() {}
 
-func (x *AgentRelayDelegation) ProtoReflect() protoreflect.Message {
+func (x *DaemonRelayDelegation) ProtoReflect() protoreflect.Message {
 	mi := &file_cloud_v1_ticket_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -105,63 +105,66 @@ func (x *AgentRelayDelegation) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AgentRelayDelegation.ProtoReflect.Descriptor instead.
-func (*AgentRelayDelegation) Descriptor() ([]byte, []int) {
+// Deprecated: Use DaemonRelayDelegation.ProtoReflect.Descriptor instead.
+func (*DaemonRelayDelegation) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *AgentRelayDelegation) GetMaxBytesPerLease() uint64 {
+func (x *DaemonRelayDelegation) GetMaxBytesPerLease() uint64 {
 	if x != nil {
 		return x.MaxBytesPerLease
 	}
 	return 0
 }
 
-func (x *AgentRelayDelegation) GetMaxRateBytesPerSecond() uint64 {
+func (x *DaemonRelayDelegation) GetMaxRateBytesPerSecond() uint64 {
 	if x != nil {
 		return x.MaxRateBytesPerSecond
 	}
 	return 0
 }
 
-func (x *AgentRelayDelegation) GetMaxConcurrentAllocations() uint32 {
+func (x *DaemonRelayDelegation) GetMaxConcurrentAllocations() uint32 {
 	if x != nil {
 		return x.MaxConcurrentAllocations
 	}
 	return 0
 }
 
-// AgentTicketClaims 把一次 daemon 到 Edge 的连接绑定到持久身份和短有效期。
-type AgentTicketClaims struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	TicketId        string                 `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	DaemonId        string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	AccountId       string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	EdgeId          string                 `protobuf:"bytes,4,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	DeviceId        string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DevicePublicKey []byte                 `protobuf:"bytes,6,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
-	Capabilities    []AgentCapability      `protobuf:"varint,7,rep,packed,name=capabilities,proto3,enum=anytty.cloud.v1.AgentCapability" json:"capabilities,omitempty"`
-	IssuedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
-	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	RelayDelegation *AgentRelayDelegation  `protobuf:"bytes,10,opt,name=relay_delegation,json=relayDelegation,proto3" json:"relay_delegation,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+// DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和 owning Edge，
+// 不是 bearer token；每次 AgentGateway 连接仍必须证明 DeviceIdentity 私钥持有权。
+type DaemonBindingClaims struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	BindingId         string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	DaemonId          string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	AccountId         string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	EdgeId            string                 `protobuf:"bytes,4,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	DeviceId          string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DevicePublicKey   []byte                 `protobuf:"bytes,6,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
+	Capabilities      []DaemonCapability     `protobuf:"varint,7,rep,packed,name=capabilities,proto3,enum=anytty.cloud.v1.DaemonCapability" json:"capabilities,omitempty"`
+	IssuedAt          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	RelayDelegation   *DaemonRelayDelegation `protobuf:"bytes,10,opt,name=relay_delegation,json=relayDelegation,proto3" json:"relay_delegation,omitempty"`
+	Revision          uint64                 `protobuf:"varint,11,opt,name=revision,proto3" json:"revision,omitempty"`
+	EdgeLocatorSha256 []byte                 `protobuf:"bytes,12,opt,name=edge_locator_sha256,json=edgeLocatorSha256,proto3" json:"edge_locator_sha256,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
-func (x *AgentTicketClaims) Reset() {
-	*x = AgentTicketClaims{}
+func (x *DaemonBindingClaims) Reset() {
+	*x = DaemonBindingClaims{}
 	mi := &file_cloud_v1_ticket_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AgentTicketClaims) String() string {
+func (x *DaemonBindingClaims) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AgentTicketClaims) ProtoMessage() {}
+func (*DaemonBindingClaims) ProtoMessage() {}
 
-func (x *AgentTicketClaims) ProtoReflect() protoreflect.Message {
+func (x *DaemonBindingClaims) ProtoReflect() protoreflect.Message {
 	mi := &file_cloud_v1_ticket_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -173,90 +176,104 @@ func (x *AgentTicketClaims) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AgentTicketClaims.ProtoReflect.Descriptor instead.
-func (*AgentTicketClaims) Descriptor() ([]byte, []int) {
+// Deprecated: Use DaemonBindingClaims.ProtoReflect.Descriptor instead.
+func (*DaemonBindingClaims) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *AgentTicketClaims) GetTicketId() string {
+func (x *DaemonBindingClaims) GetBindingId() string {
 	if x != nil {
-		return x.TicketId
+		return x.BindingId
 	}
 	return ""
 }
 
-func (x *AgentTicketClaims) GetDaemonId() string {
+func (x *DaemonBindingClaims) GetDaemonId() string {
 	if x != nil {
 		return x.DaemonId
 	}
 	return ""
 }
 
-func (x *AgentTicketClaims) GetAccountId() string {
+func (x *DaemonBindingClaims) GetAccountId() string {
 	if x != nil {
 		return x.AccountId
 	}
 	return ""
 }
 
-func (x *AgentTicketClaims) GetEdgeId() string {
+func (x *DaemonBindingClaims) GetEdgeId() string {
 	if x != nil {
 		return x.EdgeId
 	}
 	return ""
 }
 
-func (x *AgentTicketClaims) GetDeviceId() string {
+func (x *DaemonBindingClaims) GetDeviceId() string {
 	if x != nil {
 		return x.DeviceId
 	}
 	return ""
 }
 
-func (x *AgentTicketClaims) GetDevicePublicKey() []byte {
+func (x *DaemonBindingClaims) GetDevicePublicKey() []byte {
 	if x != nil {
 		return x.DevicePublicKey
 	}
 	return nil
 }
 
-func (x *AgentTicketClaims) GetCapabilities() []AgentCapability {
+func (x *DaemonBindingClaims) GetCapabilities() []DaemonCapability {
 	if x != nil {
 		return x.Capabilities
 	}
 	return nil
 }
 
-func (x *AgentTicketClaims) GetIssuedAt() *timestamppb.Timestamp {
+func (x *DaemonBindingClaims) GetIssuedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.IssuedAt
 	}
 	return nil
 }
 
-func (x *AgentTicketClaims) GetExpiresAt() *timestamppb.Timestamp {
+func (x *DaemonBindingClaims) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
 	}
 	return nil
 }
 
-func (x *AgentTicketClaims) GetRelayDelegation() *AgentRelayDelegation {
+func (x *DaemonBindingClaims) GetRelayDelegation() *DaemonRelayDelegation {
 	if x != nil {
 		return x.RelayDelegation
 	}
 	return nil
 }
 
-// AgentHelloProofInput 把 DeviceIdentity proof 绑定到票据和当前 stream generation。
+func (x *DaemonBindingClaims) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *DaemonBindingClaims) GetEdgeLocatorSha256() []byte {
+	if x != nil {
+		return x.EdgeLocatorSha256
+	}
+	return nil
+}
+
+// AgentHelloProofInput 把 DeviceIdentity proof 绑定到持久 binding 和当前 stream generation。
 type AgentHelloProofInput struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	TicketPayloadSha256 []byte                 `protobuf:"bytes,1,opt,name=ticket_payload_sha256,json=ticketPayloadSha256,proto3" json:"ticket_payload_sha256,omitempty"`
-	DaemonId            string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	BootId              string                 `protobuf:"bytes,3,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	ConnectionId        string                 `protobuf:"bytes,4,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	BindingPayloadSha256 []byte                 `protobuf:"bytes,1,opt,name=binding_payload_sha256,json=bindingPayloadSha256,proto3" json:"binding_payload_sha256,omitempty"`
+	DaemonId             string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	BootId               string                 `protobuf:"bytes,3,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
+	ConnectionId         string                 `protobuf:"bytes,4,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *AgentHelloProofInput) Reset() {
@@ -289,9 +306,9 @@ func (*AgentHelloProofInput) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *AgentHelloProofInput) GetTicketPayloadSha256() []byte {
+func (x *AgentHelloProofInput) GetBindingPayloadSha256() []byte {
 	if x != nil {
-		return x.TicketPayloadSha256
+		return x.BindingPayloadSha256
 	}
 	return nil
 }
@@ -413,6 +430,7 @@ type PairingRouteGrantClaims struct {
 	PairingClaimSha256 []byte                 `protobuf:"bytes,4,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
 	IssuedAt           *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	ExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	EdgeLocatorSha256  []byte                 `protobuf:"bytes,7,opt,name=edge_locator_sha256,json=edgeLocatorSha256,proto3" json:"edge_locator_sha256,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -489,6 +507,13 @@ func (x *PairingRouteGrantClaims) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *PairingRouteGrantClaims) GetEdgeLocatorSha256() []byte {
+	if x != nil {
+		return x.EdgeLocatorSha256
+	}
+	return nil
+}
+
 // ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
 type ClientRouteProofInput struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -558,76 +583,6 @@ func (x *ClientRouteProofInput) GetRequestId() string {
 	return ""
 }
 
-// PairingRouteProofInput 证明首次配对请求持有即将绑定到 claim 的 ClientAccessIdentity。
-// Controller 只看到 daemon 签名 bootstrap grant 的摘要；真正的 claim 仍只在端到端 DataChannel 内由 daemon 消费。
-type PairingRouteProofInput struct {
-	state                          protoimpl.MessageState `protogen:"open.v1"`
-	ChallengeId                    string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
-	Challenge                      []byte                 `protobuf:"bytes,2,opt,name=challenge,proto3" json:"challenge,omitempty"`
-	PairingRouteGrantPayloadSha256 []byte                 `protobuf:"bytes,3,opt,name=pairing_route_grant_payload_sha256,json=pairingRouteGrantPayloadSha256,proto3" json:"pairing_route_grant_payload_sha256,omitempty"`
-	RequestId                      string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	unknownFields                  protoimpl.UnknownFields
-	sizeCache                      protoimpl.SizeCache
-}
-
-func (x *PairingRouteProofInput) Reset() {
-	*x = PairingRouteProofInput{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PairingRouteProofInput) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PairingRouteProofInput) ProtoMessage() {}
-
-func (x *PairingRouteProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PairingRouteProofInput.ProtoReflect.Descriptor instead.
-func (*PairingRouteProofInput) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *PairingRouteProofInput) GetChallengeId() string {
-	if x != nil {
-		return x.ChallengeId
-	}
-	return ""
-}
-
-func (x *PairingRouteProofInput) GetChallenge() []byte {
-	if x != nil {
-		return x.Challenge
-	}
-	return nil
-}
-
-func (x *PairingRouteProofInput) GetPairingRouteGrantPayloadSha256() []byte {
-	if x != nil {
-		return x.PairingRouteGrantPayloadSha256
-	}
-	return nil
-}
-
-func (x *PairingRouteProofInput) GetRequestId() string {
-	if x != nil {
-		return x.RequestId
-	}
-	return ""
-}
-
 // CloudRouteHelloProofInput 把 daemon 签名的长期 Route grant 绑定到当前 Edge 和单次 stream generation。
 // grant 可复用，但每次连接都必须由同一 ClientAccessIdentity 重新签名，复制 grant 本身不能建立连接。
 type CloudRouteHelloProofInput struct {
@@ -642,7 +597,7 @@ type CloudRouteHelloProofInput struct {
 
 func (x *CloudRouteHelloProofInput) Reset() {
 	*x = CloudRouteHelloProofInput{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[7]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -654,7 +609,7 @@ func (x *CloudRouteHelloProofInput) String() string {
 func (*CloudRouteHelloProofInput) ProtoMessage() {}
 
 func (x *CloudRouteHelloProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[7]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -667,7 +622,7 @@ func (x *CloudRouteHelloProofInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudRouteHelloProofInput.ProtoReflect.Descriptor instead.
 func (*CloudRouteHelloProofInput) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CloudRouteHelloProofInput) GetRouteGrantPayloadSha256() []byte {
@@ -702,27 +657,30 @@ var File_cloud_v1_ticket_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\n" +
-	"\x15cloud/v1/ticket.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16cloud/v1/runtime.proto\"\xbd\x01\n" +
-	"\x14AgentRelayDelegation\x12-\n" +
+	"\x15cloud/v1/ticket.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16cloud/v1/runtime.proto\"\xbe\x01\n" +
+	"\x15DaemonRelayDelegation\x12-\n" +
 	"\x13max_bytes_per_lease\x18\x01 \x01(\x04R\x10maxBytesPerLease\x128\n" +
 	"\x19max_rate_bytes_per_second\x18\x02 \x01(\x04R\x15maxRateBytesPerSecond\x12<\n" +
-	"\x1amax_concurrent_allocations\x18\x03 \x01(\rR\x18maxConcurrentAllocations\"\xda\x03\n" +
-	"\x11AgentTicketClaims\x12\x1b\n" +
-	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x1b\n" +
+	"\x1amax_concurrent_allocations\x18\x03 \x01(\rR\x18maxConcurrentAllocations\"\xac\x04\n" +
+	"\x13DaemonBindingClaims\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x01 \x01(\tR\tbindingId\x12\x1b\n" +
 	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x03 \x01(\tR\taccountId\x12\x17\n" +
 	"\aedge_id\x18\x04 \x01(\tR\x06edgeId\x12\x1b\n" +
 	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\x12*\n" +
-	"\x11device_public_key\x18\x06 \x01(\fR\x0fdevicePublicKey\x12D\n" +
-	"\fcapabilities\x18\a \x03(\x0e2 .anytty.cloud.v1.AgentCapabilityR\fcapabilities\x127\n" +
+	"\x11device_public_key\x18\x06 \x01(\fR\x0fdevicePublicKey\x12E\n" +
+	"\fcapabilities\x18\a \x03(\x0e2!.anytty.cloud.v1.DaemonCapabilityR\fcapabilities\x127\n" +
 	"\tissued_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12P\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12Q\n" +
 	"\x10relay_delegation\x18\n" +
-	" \x01(\v2%.anytty.cloud.v1.AgentRelayDelegationR\x0frelayDelegation\"\xa5\x01\n" +
-	"\x14AgentHelloProofInput\x122\n" +
-	"\x15ticket_payload_sha256\x18\x01 \x01(\fR\x13ticketPayloadSha256\x12\x1b\n" +
+	" \x01(\v2&.anytty.cloud.v1.DaemonRelayDelegationR\x0frelayDelegation\x12\x1a\n" +
+	"\brevision\x18\v \x01(\x04R\brevision\x12.\n" +
+	"\x13edge_locator_sha256\x18\f \x01(\fR\x11edgeLocatorSha256\"\xa7\x01\n" +
+	"\x14AgentHelloProofInput\x124\n" +
+	"\x16binding_payload_sha256\x18\x01 \x01(\fR\x14bindingPayloadSha256\x12\x1b\n" +
 	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12\x17\n" +
 	"\aboot_id\x18\x03 \x01(\tR\x06bootId\x12#\n" +
 	"\rconnection_id\x18\x04 \x01(\tR\fconnectionId\"\xa9\x02\n" +
@@ -733,7 +691,7 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\aproduct\x18\x04 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x127\n" +
 	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x94\x02\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xc4\x02\n" +
 	"\x17PairingRouteGrantClaims\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12\x1b\n" +
 	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12\x1b\n" +
@@ -741,17 +699,12 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\x14pairing_claim_sha256\x18\x04 \x01(\fR\x12pairingClaimSha256\x127\n" +
 	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa9\x01\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12.\n" +
+	"\x13edge_locator_sha256\x18\a \x01(\fR\x11edgeLocatorSha256\"\xa9\x01\n" +
 	"\x15ClientRouteProofInput\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x120\n" +
 	"\x14grant_payload_sha256\x18\x03 \x01(\fR\x12grantPayloadSha256\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x04 \x01(\tR\trequestId\"\xc4\x01\n" +
-	"\x16PairingRouteProofInput\x12!\n" +
-	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
-	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12J\n" +
-	"\"pairing_route_grant_payload_sha256\x18\x03 \x01(\fR\x1epairingRouteGrantPayloadSha256\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x04 \x01(\tR\trequestId\"\xbf\x01\n" +
 	"\x19CloudRouteHelloProofInput\x12;\n" +
@@ -759,10 +712,10 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
-	"\x12attempt_generation\x18\x04 \x01(\x04R\x11attemptGeneration*S\n" +
-	"\x0fAgentCapability\x12 \n" +
-	"\x1cAGENT_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1e\n" +
-	"\x1aAGENT_CAPABILITY_SIGNALING\x10\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x12attempt_generation\x18\x04 \x01(\x04R\x11attemptGeneration*V\n" +
+	"\x10DaemonCapability\x12!\n" +
+	"\x1dDAEMON_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bDAEMON_CAPABILITY_SIGNALING\x10\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_ticket_proto_rawDescOnce sync.Once
@@ -777,35 +730,34 @@ func file_cloud_v1_ticket_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_ticket_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cloud_v1_ticket_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_cloud_v1_ticket_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_cloud_v1_ticket_proto_goTypes = []any{
-	(AgentCapability)(0),              // 0: anytty.cloud.v1.AgentCapability
-	(*AgentRelayDelegation)(nil),      // 1: anytty.cloud.v1.AgentRelayDelegation
-	(*AgentTicketClaims)(nil),         // 2: anytty.cloud.v1.AgentTicketClaims
+	(DaemonCapability)(0),             // 0: anytty.cloud.v1.DaemonCapability
+	(*DaemonRelayDelegation)(nil),     // 1: anytty.cloud.v1.DaemonRelayDelegation
+	(*DaemonBindingClaims)(nil),       // 2: anytty.cloud.v1.DaemonBindingClaims
 	(*AgentHelloProofInput)(nil),      // 3: anytty.cloud.v1.AgentHelloProofInput
 	(*CloudRouteGrantClaims)(nil),     // 4: anytty.cloud.v1.CloudRouteGrantClaims
 	(*PairingRouteGrantClaims)(nil),   // 5: anytty.cloud.v1.PairingRouteGrantClaims
 	(*ClientRouteProofInput)(nil),     // 6: anytty.cloud.v1.ClientRouteProofInput
-	(*PairingRouteProofInput)(nil),    // 7: anytty.cloud.v1.PairingRouteProofInput
-	(*CloudRouteHelloProofInput)(nil), // 8: anytty.cloud.v1.CloudRouteHelloProofInput
-	(*timestamppb.Timestamp)(nil),     // 9: google.protobuf.Timestamp
-	(ClientProduct)(0),                // 10: anytty.cloud.v1.ClientProduct
+	(*CloudRouteHelloProofInput)(nil), // 7: anytty.cloud.v1.CloudRouteHelloProofInput
+	(*timestamppb.Timestamp)(nil),     // 8: google.protobuf.Timestamp
+	(ClientProduct)(0),                // 9: anytty.cloud.v1.ClientProduct
 }
 var file_cloud_v1_ticket_proto_depIdxs = []int32{
-	0,  // 0: anytty.cloud.v1.AgentTicketClaims.capabilities:type_name -> anytty.cloud.v1.AgentCapability
-	9,  // 1: anytty.cloud.v1.AgentTicketClaims.issued_at:type_name -> google.protobuf.Timestamp
-	9,  // 2: anytty.cloud.v1.AgentTicketClaims.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 3: anytty.cloud.v1.AgentTicketClaims.relay_delegation:type_name -> anytty.cloud.v1.AgentRelayDelegation
-	10, // 4: anytty.cloud.v1.CloudRouteGrantClaims.product:type_name -> anytty.cloud.v1.ClientProduct
-	9,  // 5: anytty.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
-	9,  // 6: anytty.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 7: anytty.cloud.v1.PairingRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
-	9,  // 8: anytty.cloud.v1.PairingRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	0, // 0: anytty.cloud.v1.DaemonBindingClaims.capabilities:type_name -> anytty.cloud.v1.DaemonCapability
+	8, // 1: anytty.cloud.v1.DaemonBindingClaims.issued_at:type_name -> google.protobuf.Timestamp
+	8, // 2: anytty.cloud.v1.DaemonBindingClaims.expires_at:type_name -> google.protobuf.Timestamp
+	1, // 3: anytty.cloud.v1.DaemonBindingClaims.relay_delegation:type_name -> anytty.cloud.v1.DaemonRelayDelegation
+	9, // 4: anytty.cloud.v1.CloudRouteGrantClaims.product:type_name -> anytty.cloud.v1.ClientProduct
+	8, // 5: anytty.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
+	8, // 6: anytty.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
+	8, // 7: anytty.cloud.v1.PairingRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
+	8, // 8: anytty.cloud.v1.PairingRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_ticket_proto_init() }
@@ -820,7 +772,7 @@ func file_cloud_v1_ticket_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_ticket_proto_rawDesc), len(file_cloud_v1_ticket_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

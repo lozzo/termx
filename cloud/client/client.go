@@ -21,6 +21,7 @@ import (
 	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -44,23 +45,23 @@ type Client struct{ config Config }
 
 // RouteResolution 是一次已认证的目录结果，或者由本机缓存 Edge locator 与原始 daemon grant 重建。
 type RouteResolution struct {
-	edge       *cloudv1.CandidateEdge
+	locator    *cloudv1.EdgeLocator
 	routeGrant *cloudv1.SignedEnvelope
 	accessMode cloudv1.CloudClientAccessMode
 }
 
-func NewCachedRoute(edge *cloudv1.CandidateEdge, routeGrant *cloudv1.SignedEnvelope, accessMode cloudv1.CloudClientAccessMode) (*RouteResolution, error) {
-	if err := validateEdgeLocator(edge); err != nil || routeGrant == nil || (accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY && accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING) {
+func NewCachedRoute(locator *cloudv1.EdgeLocator, routeGrant *cloudv1.SignedEnvelope, accessMode cloudv1.CloudClientAccessMode) (*RouteResolution, error) {
+	if err := validateEdgeLocator(locator); err != nil || routeGrant == nil || (accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY && accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING) {
 		return nil, errors.New("cached Cloud Route is incomplete")
 	}
-	return &RouteResolution{edge: proto.Clone(edge).(*cloudv1.CandidateEdge), routeGrant: proto.Clone(routeGrant).(*cloudv1.SignedEnvelope), accessMode: accessMode}, nil
+	return &RouteResolution{locator: proto.Clone(locator).(*cloudv1.EdgeLocator), routeGrant: proto.Clone(routeGrant).(*cloudv1.SignedEnvelope), accessMode: accessMode}, nil
 }
 
-func (resolution *RouteResolution) Edge() *cloudv1.CandidateEdge {
-	if resolution == nil || resolution.edge == nil {
+func (resolution *RouteResolution) Locator() *cloudv1.EdgeLocator {
+	if resolution == nil || resolution.locator == nil {
 		return nil
 	}
-	return proto.Clone(resolution.edge).(*cloudv1.CandidateEdge)
+	return proto.Clone(resolution.locator).(*cloudv1.EdgeLocator)
 }
 
 // SignalSession 持有一个已经完成 offer/answer 的 ClientGateway 流。
@@ -148,15 +149,15 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	if err != nil {
 		return nil, fmt.Errorf("resolve Cloud route: %w", err)
 	}
-	if resolved.GetEdge() == nil {
+	if resolved.GetEdgeLocator() == nil {
 		return nil, errors.New("Cloud route response is incomplete")
 	}
-	return NewCachedRoute(resolved.GetEdge(), grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY)
+	return NewCachedRoute(resolved.GetEdgeLocator(), grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY)
 }
 
-// ResolvePairing 使用短期 claim offer 定位 daemon；PairingRouteGrant 仍由 daemon 签名并由 Edge 离线验证。
-func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []byte, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct) (*RouteResolution, error) {
-	if client == nil || signer == nil || len(pairingClaimOffer) == 0 || identity.ValidatePublic() != nil || product < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || product > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+// PairingRoute 只使用 claim offer 内由 daemon 签名绑定的 locator，不访问 Controller。
+func (client *Client) PairingRoute(pairingClaimOffer []byte) (*RouteResolution, error) {
+	if client == nil || len(pairingClaimOffer) == 0 {
 		return nil, errors.New("Cloud pairing route input is incomplete")
 	}
 	offer, err := remoteauth.ParsePairingClaimOfferForExchange(pairingClaimOffer)
@@ -164,9 +165,11 @@ func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []by
 		return nil, err
 	}
 	var grant *cloudv1.SignedEnvelope
+	var locator *cloudv1.EdgeLocator
+	var locatorPayload []byte
 	for _, route := range offer.GetRoutes() {
 		managed := route.GetManagedWebrtc()
-		if managed == nil || len(managed.GetBootstrapGrant()) == 0 {
+		if managed == nil || len(managed.GetBootstrapGrant()) == 0 || len(managed.GetEdgeLocator()) == 0 {
 			continue
 		}
 		candidate := &cloudv1.SignedEnvelope{}
@@ -174,6 +177,11 @@ func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []by
 			return nil, errors.New("Cloud pairing bootstrap grant is invalid")
 		}
 		grant = candidate
+		locator, err = DecodeEdgeLocator(managed.GetEdgeLocator())
+		if err != nil {
+			return nil, err
+		}
+		locatorPayload = append([]byte(nil), managed.GetEdgeLocator()...)
 		break
 	}
 	if grant == nil {
@@ -191,46 +199,26 @@ func (client *Client) ResolvePairing(ctx context.Context, pairingClaimOffer []by
 	if !bytes.Equal(verifiedGrant.GetPairingClaimSha256(), digest[:]) {
 		return nil, errors.New("Cloud pairing bootstrap grant does not match the invited claim")
 	}
-	connection, err := client.dial(client.config.ControllerAddress, client.config.ControllerServerName, client.config.ControllerCAPEM)
-	if err != nil {
-		return nil, err
+	locatorDigest := sha256.Sum256(locatorPayload)
+	if !bytes.Equal(verifiedGrant.GetEdgeLocatorSha256(), locatorDigest[:]) {
+		return nil, errors.New("Cloud pairing bootstrap grant does not match its Edge locator")
 	}
-	defer connection.Close()
-	directory := cloudv1.NewDirectoryServiceClient(connection)
-	challenge, err := directory.BeginPairingRoute(ctx, &cloudv1.BeginPairingRouteRequest{
-		PairingRouteGrant: proto.Clone(grant).(*cloudv1.SignedEnvelope), ClientPublicKey: append([]byte(nil), identity.PublicKey...), Product: product,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("begin Cloud pairing route resolution: %w", err)
-	}
-	requestID := uuid.NewString()
-	canonical, err := ticket.PairingRouteProofBytes(challenge.GetChallengeId(), challenge.GetChallenge(), grant, requestID)
-	if err != nil {
-		return nil, err
-	}
-	proof, err := signer.Sign(ctx, canonical)
-	if err != nil {
-		return nil, fmt.Errorf("sign Cloud pairing route challenge: %w", err)
-	}
-	resolved, err := directory.ResolveClientRoute(ctx, &cloudv1.ResolveClientRouteRequest{ChallengeId: challenge.GetChallengeId(), RequestId: requestID, ClientProof: proof})
-	if err != nil {
-		return nil, fmt.Errorf("resolve Cloud pairing route: %w", err)
-	}
-	if resolved.GetEdge() == nil {
-		return nil, errors.New("Cloud pairing route response is incomplete")
-	}
-	return NewCachedRoute(resolved.GetEdge(), grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING)
+	return NewCachedRoute(locator, grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING)
 }
 
 // Exchange 连接目标 Edge，并用 daemon RouteGrant 与本次 client proof 完成一次 offer/answer。
 func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct, attemptGeneration uint64, relayPreference cloudv1.RelayPreference, createOffer func(context.Context, *cloudv1.ClientReady) (string, error)) (*SignalSession, error) {
-	if client == nil || resolution == nil || resolution.edge == nil || resolution.routeGrant == nil || signer == nil || identity.ValidatePublic() != nil || product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || attemptGeneration == 0 || createOffer == nil {
+	if client == nil || resolution == nil || resolution.locator == nil || resolution.routeGrant == nil || signer == nil || identity.ValidatePublic() != nil || product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || attemptGeneration == 0 || createOffer == nil {
 		return nil, errors.New("Cloud signaling input is incomplete")
 	}
-	edge, routeGrant := resolution.edge, resolution.routeGrant
-	connection, err := client.dial(edge.GetPublicEndpoint(), edge.GetServerName(), edge.GetCaCertificatePem())
+	locator, routeGrant := resolution.locator, resolution.routeGrant
+	connection, err := client.dial(locator.GetPublicEndpoint(), locator.GetServerName(), locator.GetCaCertificatePem())
 	if err != nil {
-		return nil, err
+		return nil, markEdgeLocatorUnavailable(err)
+	}
+	if err := waitForEdgeTransport(ctx, connection); err != nil {
+		_ = connection.Close()
+		return nil, markEdgeLocatorUnavailable(err)
 	}
 	closeConnection := true
 	defer func() {
@@ -254,7 +242,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 		return nil, err
 	}
 	sessionID, bootID := uuid.NewString(), uuid.NewString()
-	canonical, err := ticket.CloudRouteHelloProofBytes(routeGrant, edge.GetEdgeId(), sessionID, attemptGeneration)
+	canonical, err := ticket.CloudRouteHelloProofBytes(routeGrant, locator.GetEdgeId(), sessionID, attemptGeneration)
 	if err != nil {
 		return nil, err
 	}
@@ -306,14 +294,31 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	return &SignalSession{answer: proto.Clone(response.GetAnswer()).(*cloudv1.EdgeAnswer), connection: connection, stream: stream, cancel: cancelStream}, nil
 }
 
+func waitForEdgeTransport(ctx context.Context, connection *grpc.ClientConn) error {
+	if connection == nil {
+		return errors.New("Edge connection is nil")
+	}
+	dialContext, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	connection.Connect()
+	for {
+		state := connection.GetState()
+		if state == connectivity.Ready {
+			return nil
+		}
+		if state == connectivity.Shutdown {
+			return errors.New("Edge transport shut down during connect")
+		}
+		if !connection.WaitForStateChange(dialContext, state) {
+			return context.Cause(dialContext)
+		}
+	}
+}
+
 func (client *Client) dial(address, serverName string, caPEM []byte) (*grpc.ClientConn, error) {
 	var roots *x509.CertPool
 	if len(caPEM) != 0 {
-		var err error
-		roots, err = x509.SystemCertPool()
-		if err != nil || roots == nil {
-			roots = x509.NewCertPool()
-		}
+		roots = x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(caPEM) {
 			return nil, errors.New("Cloud TLS CA certificate is invalid")
 		}

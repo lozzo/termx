@@ -33,8 +33,8 @@ message AgentPresence {
   string boot_id = 3;
   string connection_id = 4;
   uint64 generation = 5;
-  string ticket_id = 6;
-  google.protobuf.Timestamp ticket_issued_at = 7;
+  string binding_id = 6;
+  google.protobuf.Timestamp binding_issued_at = 7;
 }
 
 // ClientSessionSummary 是 Edge 内存中一个客户端信令会话的实时投影。

@@ -80,8 +80,8 @@ type Runtime struct {
 	state              *State
 	configPublicKey    ed25519.PublicKey
 	certificateManager *edgecertificate.Manager
-	ticketKeysMu       sync.RWMutex
-	ticketKeys         ticket.KeySet
+	bindingKeysMu      sync.RWMutex
+	bindingKeys        ticket.KeySet
 	credentialDeriver  *policy.CredentialDeriver
 	usageOutbox        *usage.Outbox
 	relayServer        *relay.Server
@@ -129,7 +129,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		}
 		configPublicKey = ed25519.PublicKey(append([]byte(nil), payload...))
 	}
-	state, err := NewState(StateConfig{MailboxSize: 1024, DeltaBuffer: 4096})
+	state, err := NewState(StateConfig{MailboxSize: 1024, DeltaBuffer: 4096, MaxSessions: 4096, MaxPendingSignals: 4096})
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	}
 	healthState := &processhealth.State{}
 	healthState.SetAlive(true)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1024), grpc.MaxSendMsgSize(1024*1024), grpc.MaxConcurrentStreams(256))
 	grpcHealth := grpc_health.NewServer()
 	grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcServer, grpcHealth)
@@ -183,7 +183,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	}
 	agentService, err := agentgateway.NewService(agentgateway.Config{
 		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state,
-		VerificationKeys: runtime.currentTicketKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
+		VerificationKeys: runtime.currentBindingKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
 	})
 	if err != nil {
 		_ = listener.Close()
@@ -385,15 +385,15 @@ func (runtime *Runtime) runControllerLink() {
 			CloseSession:       runtime.state.CloseSession,
 		})
 		if err == nil {
-			if keys := session.Welcome().GetTicketVerificationKeys(); len(keys) != 0 {
+			if keys := session.Welcome().GetBindingVerificationKeys(); len(keys) != 0 {
 				parsed, parseErr := ticket.FromVerificationKeys(keys)
 				if parseErr != nil {
 					_ = session.Close()
 					err = parseErr
 				} else {
-					runtime.ticketKeysMu.Lock()
-					runtime.ticketKeys = parsed
-					runtime.ticketKeysMu.Unlock()
+					runtime.bindingKeysMu.Lock()
+					runtime.bindingKeys = parsed
+					runtime.bindingKeysMu.Unlock()
 				}
 			}
 			if runtime.ctx.Err() != nil {
@@ -433,11 +433,11 @@ func (runtime *Runtime) runControllerLink() {
 	}
 }
 
-func (runtime *Runtime) currentTicketKeys() ticket.KeySet {
-	runtime.ticketKeysMu.RLock()
-	defer runtime.ticketKeysMu.RUnlock()
-	result := make(ticket.KeySet, len(runtime.ticketKeys))
-	for id, publicKey := range runtime.ticketKeys {
+func (runtime *Runtime) currentBindingKeys() ticket.KeySet {
+	runtime.bindingKeysMu.RLock()
+	defer runtime.bindingKeysMu.RUnlock()
+	result := make(ticket.KeySet, len(runtime.bindingKeys))
+	for id, publicKey := range runtime.bindingKeys {
 		result[id] = append(ed25519.PublicKey(nil), publicKey...)
 	}
 	return result
@@ -531,8 +531,8 @@ func (runtime *Runtime) relayBroker() clientgateway.RelayBroker {
 	return runtime
 }
 
-// RequestRelayLease 优先使用 Controller 最新决策；控制流离线时使用 AgentTicket 冻结的 Relay 委托。
-func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error) {
+// RequestRelayLease 始终使用 daemon binding 的 Relay 委托在 Edge 本地签发。
+func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error) {
 	if request == nil || strings.TrimSpace(request.GetRenewLeaseId()) != "" {
 		return nil, errors.New("initial RelayLease request must not contain a renewal identity")
 	}
@@ -550,9 +550,8 @@ func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.
 	return material, nil
 }
 
-// RenewRelayLease re-evaluates policy through the current Controller generation
-// and extends the existing credential without requiring an ICE restart.
-func (runtime *Runtime) RenewRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+// RenewRelayLease 在当前 binding 上限内延长同一个 credential，不触发 Controller RPC 或 ICE restart。
+func (runtime *Runtime) RenewRelayLease(ctx context.Context, request *cloudv1.RelayLeaseSpec, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
 	if request == nil || current == nil || strings.TrimSpace(current.GetUsername()) == "" ||
 		strings.TrimSpace(request.GetRenewLeaseId()) == "" || request.GetRenewLeaseId() != current.GetLeaseId() {
 		return nil, errors.New("RelayLease renewal must identify the current credential")
@@ -562,55 +561,22 @@ func (runtime *Runtime) RenewRelayLease(ctx context.Context, request *cloudv1.Re
 		return nil, err
 	}
 	if claims.GetLeaseId() != current.GetLeaseId() {
-		return nil, errors.New("Controller RelayLease renewal changed lease identity")
+		return nil, errors.New("Edge RelayLease renewal changed lease identity")
 	}
 	return runtime.state.RenewRelayLease(ctx, current.GetUsername(), claims)
 }
 
-func (runtime *Runtime) requestRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
+func (runtime *Runtime) requestRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseSpec) (*cloudv1.RelayLeaseClaims, error) {
 	if runtime == nil || runtime.credentialDeriver == nil || runtime.RelayDegraded() {
 		return nil, errors.New("Edge Relay control is unavailable")
 	}
 	if request == nil || strings.TrimSpace(request.GetSessionId()) == "" || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetDaemonId()) == "" || strings.TrimSpace(request.GetClientId()) == "" {
 		return nil, errors.New("Relay lease request is incomplete")
 	}
-	if runtime.Ready() {
-		claims, err := runtime.requestControllerRelayLeaseClaims(ctx, request)
-		if err == nil {
-			return claims, nil
-		}
-		if runtime.Ready() {
-			return nil, err
-		}
-	}
 	return runtime.issueDelegatedRelayLeaseClaims(ctx, request)
 }
 
-func (runtime *Runtime) requestControllerRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
-	runtime.controlSessionMu.RLock()
-	session := runtime.controlSession
-	runtime.controlSessionMu.RUnlock()
-	if session == nil {
-		return nil, errors.New("EdgeControl has no ready generation")
-	}
-	decision, err := session.RequestRelayLease(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	if denied := decision.GetDenied(); denied != nil {
-		return nil, fmt.Errorf("Relay lease denied (%s): %s", denied.GetCode(), denied.GetMessage())
-	}
-	claims, err := ticket.VerifyRelayLease(decision.GetLease(), runtime.currentTicketKeys(), runtime.config.EdgeID, request.GetSessionId(), time.Now().UTC(), 30*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	if claims.GetAccountId() != request.GetAccountId() || claims.GetDaemonId() != request.GetDaemonId() || claims.GetClientId() != request.GetClientId() {
-		return nil, errors.New("RelayLease identity does not match the accepted client session")
-	}
-	return claims, nil
-}
-
-func (runtime *Runtime) issueDelegatedRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseClaims, error) {
+func (runtime *Runtime) issueDelegatedRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseSpec) (*cloudv1.RelayLeaseClaims, error) {
 	agent, err := runtime.state.AuthenticatedAgentClaims(ctx, request.GetDaemonId())
 	if err != nil || agent == nil || agent.GetAccountId() != request.GetAccountId() || agent.GetEdgeId() != runtime.config.EdgeID ||
 		agent.GetExpiresAt() == nil || agent.GetExpiresAt().CheckValid() != nil {

@@ -7,37 +7,40 @@ import "cloud/v1/runtime.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
-// AgentCapability 是 AgentTicket 冻结的 Edge 侧准入能力，不表达 terminal 权限。
-enum AgentCapability {
-  AGENT_CAPABILITY_UNSPECIFIED = 0;
-  AGENT_CAPABILITY_SIGNALING = 1;
+// DaemonCapability 是 enrollment 时授予 daemon 的 Edge 侧能力，不表达 terminal 权限。
+enum DaemonCapability {
+  DAEMON_CAPABILITY_UNSPECIFIED = 0;
+  DAEMON_CAPABILITY_SIGNALING = 1;
 }
 
-// AgentRelayDelegation 是 Controller 在 daemon 接入时冻结给 Edge 的 Relay 上限。
-// EdgeControl 中断后，Edge 只能在这些上限内为已由 daemon 批准的客户端创建短租约。
-message AgentRelayDelegation {
+// DaemonRelayDelegation 是 Controller 授予 Edge 的 Relay 上限。
+// Edge 只能在这些上限内为已由 daemon 批准的客户端创建本地短租约。
+message DaemonRelayDelegation {
   uint64 max_bytes_per_lease = 1;
   uint64 max_rate_bytes_per_second = 2;
   uint32 max_concurrent_allocations = 3;
 }
 
-// AgentTicketClaims 把一次 daemon 到 Edge 的连接绑定到持久身份和短有效期。
-message AgentTicketClaims {
-  string ticket_id = 1;
+// DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和 owning Edge，
+// 不是 bearer token；每次 AgentGateway 连接仍必须证明 DeviceIdentity 私钥持有权。
+message DaemonBindingClaims {
+  string binding_id = 1;
   string daemon_id = 2;
   string account_id = 3;
   string edge_id = 4;
   string device_id = 5;
   bytes device_public_key = 6;
-  repeated AgentCapability capabilities = 7;
+  repeated DaemonCapability capabilities = 7;
   google.protobuf.Timestamp issued_at = 8;
   google.protobuf.Timestamp expires_at = 9;
-  AgentRelayDelegation relay_delegation = 10;
+  DaemonRelayDelegation relay_delegation = 10;
+  uint64 revision = 11;
+  bytes edge_locator_sha256 = 12;
 }
 
-// AgentHelloProofInput 把 DeviceIdentity proof 绑定到票据和当前 stream generation。
+// AgentHelloProofInput 把 DeviceIdentity proof 绑定到持久 binding 和当前 stream generation。
 message AgentHelloProofInput {
-  bytes ticket_payload_sha256 = 1;
+  bytes binding_payload_sha256 = 1;
   string daemon_id = 2;
   string boot_id = 3;
   string connection_id = 4;
@@ -63,6 +66,7 @@ message PairingRouteGrantClaims {
   bytes pairing_claim_sha256 = 4;
   google.protobuf.Timestamp issued_at = 5;
   google.protobuf.Timestamp expires_at = 6;
+  bytes edge_locator_sha256 = 7;
 }
 
 // ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
@@ -70,15 +74,6 @@ message ClientRouteProofInput {
   string challenge_id = 1;
   bytes challenge = 2;
   bytes grant_payload_sha256 = 3;
-  string request_id = 4;
-}
-
-// PairingRouteProofInput 证明首次配对请求持有即将绑定到 claim 的 ClientAccessIdentity。
-// Controller 只看到 daemon 签名 bootstrap grant 的摘要；真正的 claim 仍只在端到端 DataChannel 内由 daemon 消费。
-message PairingRouteProofInput {
-  string challenge_id = 1;
-  bytes challenge = 2;
-  bytes pairing_route_grant_payload_sha256 = 3;
   string request_id = 4;
 }
 

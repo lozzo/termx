@@ -43,6 +43,6 @@ func startV3CloudDaemon(ctx context.Context, core v3RemoteDaemonCore, clientAcce
 			logger.Error("AnyTTY Cloud daemon runtime stopped", "error", runErr)
 		}
 	}()
-	logger.Info("AnyTTY Cloud daemon runtime started", "daemon_id", record.DaemonID, "controller", record.ControllerAddress)
+	logger.Info("AnyTTY Cloud daemon runtime started", "daemon_id", record.DaemonID)
 	return func() { cancel(); <-done }, nil
 }

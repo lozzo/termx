@@ -72,10 +72,10 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28, "command_result": 29, "certificate_applied": 30,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "usage_batch": 28, "command_result": 29, "certificate_applied": 30,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "usage_ack": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28,
 	})
 }
 
@@ -91,11 +91,11 @@ func TestR8CertificateContracts(t *testing.T) {
 	}
 }
 
-// TestR6RelayContracts 锁定 daemon 预检、短租约和幂等 usage 的跨进程边界。
-func TestR6RelayContracts(t *testing.T) {
-	request := (&RelayLeaseRequest{}).ProtoReflect().Descriptor()
-	if field := request.Fields().ByName("renew_lease_id"); field == nil || field.Number() != 7 {
-		t.Fatalf("RelayLeaseRequest.renew_lease_id field number=%v want=7", field)
+// TestEdgeLocalRelayContracts 锁定 daemon 预检、本地短租约和幂等 usage 的边界。
+func TestEdgeLocalRelayContracts(t *testing.T) {
+	request := (&RelayLeaseSpec{}).ProtoReflect().Descriptor()
+	if field := request.Fields().ByName("renew_lease_id"); field == nil || field.Number() != 6 {
+		t.Fatalf("RelayLeaseSpec.renew_lease_id field number=%v want=6", field)
 	}
 	lease := (&RelayLeaseClaims{}).ProtoReflect().Descriptor()
 	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
@@ -107,11 +107,19 @@ func TestR6RelayContracts(t *testing.T) {
 			t.Fatalf("RelayLeaseClaims.%s field number=%v want=%d", name, field, number)
 		}
 	}
-	if (&RelayLeaseDecision{}).ProtoReflect().Descriptor().Oneofs().ByName("result") == nil {
-		t.Fatal("RelayLeaseDecision result oneof is missing")
-	}
 	if (&UsageEvent{}).ProtoReflect().Descriptor().Fields().ByName("event_id").Number() != 2 {
 		t.Fatal("UsageEvent.event_id must remain the idempotency key at field 2")
+	}
+}
+
+func TestEnrollmentAndDirectoryExcludeRemovedHotPathRPCs(t *testing.T) {
+	enrollment := File_cloud_v1_enrollment_proto.Services().ByName("EnrollmentService")
+	if enrollment == nil || enrollment.Methods().Len() != 2 || enrollment.Methods().ByName("BeginDaemonEnrollment") == nil || enrollment.Methods().ByName("CompleteDaemonEnrollment") == nil {
+		t.Fatalf("EnrollmentService methods = %v", enrollment)
+	}
+	directory := File_cloud_v1_directory_proto.Services().ByName("DirectoryService")
+	if directory == nil || directory.Methods().Len() != 2 || directory.Methods().ByName("BeginClientRoute") == nil || directory.Methods().ByName("ResolveClientRoute") == nil {
+		t.Fatalf("DirectoryService methods = %v", directory)
 	}
 }
 

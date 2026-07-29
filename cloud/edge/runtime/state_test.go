@@ -67,6 +67,29 @@ func TestStateConcurrentWritersRemainLinearized(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedAgentClaimsExpireEvenWhileWriterRemainsConnected(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 16, DeltaBuffer: 16, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(state.Close)
+	claims := &cloudv1.DaemonBindingClaims{
+		BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge", DeviceId: "device", DevicePublicKey: make([]byte, 32),
+		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Second)),
+	}
+	if _, err := state.AttachAuthenticatedAgent(context.Background(), &cloudv1.AgentPresence{DaemonId: "daemon", AccountId: "account", BootId: "boot", ConnectionId: "connection", BindingId: "binding", BindingIssuedAt: claims.GetIssuedAt()}, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AuthenticatedAgentClaims(context.Background(), "daemon"); err != nil {
+		t.Fatalf("valid claims rejected: %v", err)
+	}
+	now = now.Add(2 * time.Second)
+	if _, err := state.AuthenticatedAgentClaims(context.Background(), "daemon"); !errors.Is(err, edgeruntime.ErrStaleGeneration) {
+		t.Fatalf("expired claims error = %v", err)
+	}
+}
+
 func newState(t *testing.T) *edgeruntime.State {
 	t.Helper()
 	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 256, DeltaBuffer: 256})
@@ -78,7 +101,7 @@ func newState(t *testing.T) *edgeruntime.State {
 }
 
 func stateAgent(id string, generation uint64) *cloudv1.AgentPresence {
-	return &cloudv1.AgentPresence{DaemonId: id, AccountId: "account-1", BootId: "boot", ConnectionId: "connection", Generation: generation, TicketId: "ticket", TicketIssuedAt: timestamppb.New(time.Unix(1, 0))}
+	return &cloudv1.AgentPresence{DaemonId: id, AccountId: "account-1", BootId: "boot", ConnectionId: "connection", Generation: generation, BindingId: "binding", BindingIssuedAt: timestamppb.New(time.Unix(1, 0))}
 }
 
 func stateSession(id string, generation uint64) *cloudv1.ClientSessionSummary {

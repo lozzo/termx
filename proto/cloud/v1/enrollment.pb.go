@@ -925,16 +925,111 @@ func (x *CompleteDaemonEnrollmentRequest) GetDeviceProof() []byte {
 	return nil
 }
 
+// EdgeLocator 是 daemon 和已授权客户端可持久化的公开连接位置，不包含授权秘密。
+type EdgeLocator struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId           string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Region           string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	PublicEndpoint   string                 `protobuf:"bytes,4,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
+	ServerName       string                 `protobuf:"bytes,5,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
+	CaCertificatePem []byte                 `protobuf:"bytes,6,opt,name=ca_certificate_pem,json=caCertificatePem,proto3" json:"ca_certificate_pem,omitempty"`
+	Revision         uint64                 `protobuf:"varint,7,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *EdgeLocator) Reset() {
+	*x = EdgeLocator{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeLocator) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeLocator) ProtoMessage() {}
+
+func (x *EdgeLocator) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeLocator.ProtoReflect.Descriptor instead.
+func (*EdgeLocator) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *EdgeLocator) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *EdgeLocator) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EdgeLocator) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *EdgeLocator) GetPublicEndpoint() string {
+	if x != nil {
+		return x.PublicEndpoint
+	}
+	return ""
+}
+
+func (x *EdgeLocator) GetServerName() string {
+	if x != nil {
+		return x.ServerName
+	}
+	return ""
+}
+
+func (x *EdgeLocator) GetCaCertificatePem() []byte {
+	if x != nil {
+		return x.CaCertificatePem
+	}
+	return nil
+}
+
+func (x *EdgeLocator) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 type CompleteDaemonEnrollmentResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Daemon        *DaemonRecord          `protobuf:"bytes,1,opt,name=daemon,proto3" json:"daemon,omitempty"`
+	DaemonBinding *SignedEnvelope        `protobuf:"bytes,2,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
+	EdgeLocator   *EdgeLocator           `protobuf:"bytes,3,opt,name=edge_locator,json=edgeLocator,proto3" json:"edge_locator,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CompleteDaemonEnrollmentResponse) Reset() {
 	*x = CompleteDaemonEnrollmentResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +1041,7 @@ func (x *CompleteDaemonEnrollmentResponse) String() string {
 func (*CompleteDaemonEnrollmentResponse) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +1054,7 @@ func (x *CompleteDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentResponse.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{15}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CompleteDaemonEnrollmentResponse) GetDaemon() *DaemonRecord {
@@ -969,354 +1064,16 @@ func (x *CompleteDaemonEnrollmentResponse) GetDaemon() *DaemonRecord {
 	return nil
 }
 
-type ListAgentCandidatesRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	DaemonId        string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	PreferredRegion string                 `protobuf:"bytes,2,opt,name=preferred_region,json=preferredRegion,proto3" json:"preferred_region,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *ListAgentCandidatesRequest) Reset() {
-	*x = ListAgentCandidatesRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentCandidatesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentCandidatesRequest) ProtoMessage() {}
-
-func (x *ListAgentCandidatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+func (x *CompleteDaemonEnrollmentResponse) GetDaemonBinding() *SignedEnvelope {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentCandidatesRequest.ProtoReflect.Descriptor instead.
-func (*ListAgentCandidatesRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *ListAgentCandidatesRequest) GetDaemonId() string {
-	if x != nil {
-		return x.DaemonId
-	}
-	return ""
-}
-
-func (x *ListAgentCandidatesRequest) GetPreferredRegion() string {
-	if x != nil {
-		return x.PreferredRegion
-	}
-	return ""
-}
-
-type CandidateEdge struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	EdgeId           string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Region           string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
-	PublicEndpoint   string                 `protobuf:"bytes,4,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
-	ServerName       string                 `protobuf:"bytes,5,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
-	CaCertificatePem []byte                 `protobuf:"bytes,6,opt,name=ca_certificate_pem,json=caCertificatePem,proto3" json:"ca_certificate_pem,omitempty"`
-	Capacity         uint64                 `protobuf:"varint,7,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	CurrentAgents    uint64                 `protobuf:"varint,8,opt,name=current_agents,json=currentAgents,proto3" json:"current_agents,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *CandidateEdge) Reset() {
-	*x = CandidateEdge{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CandidateEdge) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CandidateEdge) ProtoMessage() {}
-
-func (x *CandidateEdge) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CandidateEdge.ProtoReflect.Descriptor instead.
-func (*CandidateEdge) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *CandidateEdge) GetEdgeId() string {
-	if x != nil {
-		return x.EdgeId
-	}
-	return ""
-}
-
-func (x *CandidateEdge) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CandidateEdge) GetRegion() string {
-	if x != nil {
-		return x.Region
-	}
-	return ""
-}
-
-func (x *CandidateEdge) GetPublicEndpoint() string {
-	if x != nil {
-		return x.PublicEndpoint
-	}
-	return ""
-}
-
-func (x *CandidateEdge) GetServerName() string {
-	if x != nil {
-		return x.ServerName
-	}
-	return ""
-}
-
-func (x *CandidateEdge) GetCaCertificatePem() []byte {
-	if x != nil {
-		return x.CaCertificatePem
+		return x.DaemonBinding
 	}
 	return nil
 }
 
-func (x *CandidateEdge) GetCapacity() uint64 {
+func (x *CompleteDaemonEnrollmentResponse) GetEdgeLocator() *EdgeLocator {
 	if x != nil {
-		return x.Capacity
-	}
-	return 0
-}
-
-func (x *CandidateEdge) GetCurrentAgents() uint64 {
-	if x != nil {
-		return x.CurrentAgents
-	}
-	return 0
-}
-
-type ListAgentCandidatesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Candidates    []*CandidateEdge       `protobuf:"bytes,1,rep,name=candidates,proto3" json:"candidates,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentCandidatesResponse) Reset() {
-	*x = ListAgentCandidatesResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentCandidatesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentCandidatesResponse) ProtoMessage() {}
-
-func (x *ListAgentCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentCandidatesResponse.ProtoReflect.Descriptor instead.
-func (*ListAgentCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *ListAgentCandidatesResponse) GetCandidates() []*CandidateEdge {
-	if x != nil {
-		return x.Candidates
-	}
-	return nil
-}
-
-type BeginAgentTicketRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DaemonId      string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	EdgeId        string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BeginAgentTicketRequest) Reset() {
-	*x = BeginAgentTicketRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BeginAgentTicketRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BeginAgentTicketRequest) ProtoMessage() {}
-
-func (x *BeginAgentTicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BeginAgentTicketRequest.ProtoReflect.Descriptor instead.
-func (*BeginAgentTicketRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *BeginAgentTicketRequest) GetDaemonId() string {
-	if x != nil {
-		return x.DaemonId
-	}
-	return ""
-}
-
-func (x *BeginAgentTicketRequest) GetEdgeId() string {
-	if x != nil {
-		return x.EdgeId
-	}
-	return ""
-}
-
-type IssueAgentTicketRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChallengeId   string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
-	DeviceProof   []byte                 `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *IssueAgentTicketRequest) Reset() {
-	*x = IssueAgentTicketRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IssueAgentTicketRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IssueAgentTicketRequest) ProtoMessage() {}
-
-func (x *IssueAgentTicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IssueAgentTicketRequest.ProtoReflect.Descriptor instead.
-func (*IssueAgentTicketRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *IssueAgentTicketRequest) GetChallengeId() string {
-	if x != nil {
-		return x.ChallengeId
-	}
-	return ""
-}
-
-func (x *IssueAgentTicketRequest) GetDeviceProof() []byte {
-	if x != nil {
-		return x.DeviceProof
-	}
-	return nil
-}
-
-type IssueAgentTicketResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentTicket   *SignedEnvelope        `protobuf:"bytes,1,opt,name=agent_ticket,json=agentTicket,proto3" json:"agent_ticket,omitempty"`
-	Edge          *CandidateEdge         `protobuf:"bytes,2,opt,name=edge,proto3" json:"edge,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *IssueAgentTicketResponse) Reset() {
-	*x = IssueAgentTicketResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IssueAgentTicketResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IssueAgentTicketResponse) ProtoMessage() {}
-
-func (x *IssueAgentTicketResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IssueAgentTicketResponse.ProtoReflect.Descriptor instead.
-func (*IssueAgentTicketResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *IssueAgentTicketResponse) GetAgentTicket() *SignedEnvelope {
-	if x != nil {
-		return x.AgentTicket
-	}
-	return nil
-}
-
-func (x *IssueAgentTicketResponse) GetEdge() *CandidateEdge {
-	if x != nil {
-		return x.Edge
+		return x.EdgeLocator
 	}
 	return nil
 }
@@ -1398,13 +1155,8 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"g\n" +
 	"\x1fCompleteDaemonEnrollmentRequest\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12!\n" +
-	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"Y\n" +
-	" CompleteDaemonEnrollmentResponse\x125\n" +
-	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\"d\n" +
-	"\x1aListAgentCandidatesRequest\x12\x1b\n" +
-	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12)\n" +
-	"\x10preferred_region\x18\x02 \x01(\tR\x0fpreferredRegion\"\x8f\x02\n" +
-	"\rCandidateEdge\x12\x17\n" +
+	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"\xe6\x01\n" +
+	"\vEdgeLocator\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
 	"\x06region\x18\x03 \x01(\tR\x06region\x12'\n" +
@@ -1412,27 +1164,14 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\vserver_name\x18\x05 \x01(\tR\n" +
 	"serverName\x12,\n" +
 	"\x12ca_certificate_pem\x18\x06 \x01(\fR\x10caCertificatePem\x12\x1a\n" +
-	"\bcapacity\x18\a \x01(\x04R\bcapacity\x12%\n" +
-	"\x0ecurrent_agents\x18\b \x01(\x04R\rcurrentAgents\"]\n" +
-	"\x1bListAgentCandidatesResponse\x12>\n" +
-	"\n" +
-	"candidates\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.CandidateEdgeR\n" +
-	"candidates\"O\n" +
-	"\x17BeginAgentTicketRequest\x12\x1b\n" +
-	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x17\n" +
-	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\"_\n" +
-	"\x17IssueAgentTicketRequest\x12!\n" +
-	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12!\n" +
-	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"\x92\x01\n" +
-	"\x18IssueAgentTicketResponse\x12B\n" +
-	"\fagent_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\vagentTicket\x122\n" +
-	"\x04edge\x18\x02 \x01(\v2\x1e.anytty.cloud.v1.CandidateEdgeR\x04edge2\xbd\x04\n" +
+	"\brevision\x18\a \x01(\x04R\brevision\"\xe2\x01\n" +
+	" CompleteDaemonEnrollmentResponse\x125\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12F\n" +
+	"\x0edaemon_binding\x18\x02 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12?\n" +
+	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator2\x80\x02\n" +
 	"\x11EnrollmentService\x12j\n" +
 	"\x15BeginDaemonEnrollment\x12-.anytty.cloud.v1.BeginDaemonEnrollmentRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12\x7f\n" +
-	"\x18CompleteDaemonEnrollment\x120.anytty.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.anytty.cloud.v1.CompleteDaemonEnrollmentResponse\x12p\n" +
-	"\x13ListAgentCandidates\x12+.anytty.cloud.v1.ListAgentCandidatesRequest\x1a,.anytty.cloud.v1.ListAgentCandidatesResponse\x12`\n" +
-	"\x10BeginAgentTicket\x12(.anytty.cloud.v1.BeginAgentTicketRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12g\n" +
-	"\x10IssueAgentTicket\x12(.anytty.cloud.v1.IssueAgentTicketRequest\x1a).anytty.cloud.v1.IssueAgentTicketResponse2\xd5\x02\n" +
+	"\x18CompleteDaemonEnrollment\x120.anytty.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.anytty.cloud.v1.CompleteDaemonEnrollmentResponse2\xd5\x02\n" +
 	"\x17DaemonManagementService\x12w\n" +
 	"\x12CreateMyEnrollment\x120.anytty.cloud.v1.CreateMyDaemonEnrollmentRequest\x1a/.anytty.cloud.v1.CreateDaemonEnrollmentResponse\x12^\n" +
 	"\rListMyDaemons\x12%.anytty.cloud.v1.ListMyDaemonsRequest\x1a&.anytty.cloud.v1.ListMyDaemonsResponse\x12a\n" +
@@ -1450,7 +1189,7 @@ func file_cloud_v1_enrollment_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_enrollment_proto_rawDescData
 }
 
-var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_cloud_v1_enrollment_proto_goTypes = []any{
 	(*DaemonRecord)(nil),                     // 0: anytty.cloud.v1.DaemonRecord
 	(*DaemonRuntimeProjection)(nil),          // 1: anytty.cloud.v1.DaemonRuntimeProjection
@@ -1467,51 +1206,39 @@ var file_cloud_v1_enrollment_proto_goTypes = []any{
 	(*BeginDaemonEnrollmentRequest)(nil),     // 12: anytty.cloud.v1.BeginDaemonEnrollmentRequest
 	(*IdentityChallenge)(nil),                // 13: anytty.cloud.v1.IdentityChallenge
 	(*CompleteDaemonEnrollmentRequest)(nil),  // 14: anytty.cloud.v1.CompleteDaemonEnrollmentRequest
-	(*CompleteDaemonEnrollmentResponse)(nil), // 15: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
-	(*ListAgentCandidatesRequest)(nil),       // 16: anytty.cloud.v1.ListAgentCandidatesRequest
-	(*CandidateEdge)(nil),                    // 17: anytty.cloud.v1.CandidateEdge
-	(*ListAgentCandidatesResponse)(nil),      // 18: anytty.cloud.v1.ListAgentCandidatesResponse
-	(*BeginAgentTicketRequest)(nil),          // 19: anytty.cloud.v1.BeginAgentTicketRequest
-	(*IssueAgentTicketRequest)(nil),          // 20: anytty.cloud.v1.IssueAgentTicketRequest
-	(*IssueAgentTicketResponse)(nil),         // 21: anytty.cloud.v1.IssueAgentTicketResponse
-	(*timestamppb.Timestamp)(nil),            // 22: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),                   // 23: anytty.cloud.v1.SignedEnvelope
+	(*EdgeLocator)(nil),                      // 15: anytty.cloud.v1.EdgeLocator
+	(*CompleteDaemonEnrollmentResponse)(nil), // 16: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	(*timestamppb.Timestamp)(nil),            // 17: google.protobuf.Timestamp
+	(*SignedEnvelope)(nil),                   // 18: anytty.cloud.v1.SignedEnvelope
 }
 var file_cloud_v1_enrollment_proto_depIdxs = []int32{
-	22, // 0: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
-	22, // 1: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
+	17, // 0: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
+	17, // 1: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: anytty.cloud.v1.ManagedDaemon.daemon:type_name -> anytty.cloud.v1.DaemonRecord
 	1,  // 3: anytty.cloud.v1.ManagedDaemon.runtime:type_name -> anytty.cloud.v1.DaemonRuntimeProjection
-	22, // 4: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 4: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 5: anytty.cloud.v1.ListDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
 	2,  // 6: anytty.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
 	0,  // 7: anytty.cloud.v1.RevokeMyDaemonResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	22, // 8: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 8: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
 	0,  // 9: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	17, // 10: anytty.cloud.v1.ListAgentCandidatesResponse.candidates:type_name -> anytty.cloud.v1.CandidateEdge
-	23, // 11: anytty.cloud.v1.IssueAgentTicketResponse.agent_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
-	17, // 12: anytty.cloud.v1.IssueAgentTicketResponse.edge:type_name -> anytty.cloud.v1.CandidateEdge
-	12, // 13: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
-	14, // 14: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
-	16, // 15: anytty.cloud.v1.EnrollmentService.ListAgentCandidates:input_type -> anytty.cloud.v1.ListAgentCandidatesRequest
-	19, // 16: anytty.cloud.v1.EnrollmentService.BeginAgentTicket:input_type -> anytty.cloud.v1.BeginAgentTicketRequest
-	20, // 17: anytty.cloud.v1.EnrollmentService.IssueAgentTicket:input_type -> anytty.cloud.v1.IssueAgentTicketRequest
-	7,  // 18: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
-	8,  // 19: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
-	10, // 20: anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon:input_type -> anytty.cloud.v1.RevokeMyDaemonRequest
-	13, // 21: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
-	15, // 22: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
-	18, // 23: anytty.cloud.v1.EnrollmentService.ListAgentCandidates:output_type -> anytty.cloud.v1.ListAgentCandidatesResponse
-	13, // 24: anytty.cloud.v1.EnrollmentService.BeginAgentTicket:output_type -> anytty.cloud.v1.IdentityChallenge
-	21, // 25: anytty.cloud.v1.EnrollmentService.IssueAgentTicket:output_type -> anytty.cloud.v1.IssueAgentTicketResponse
-	4,  // 26: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
-	9,  // 27: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
-	11, // 28: anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon:output_type -> anytty.cloud.v1.RevokeMyDaemonResponse
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	18, // 10: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
+	15, // 11: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
+	12, // 12: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	14, // 13: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	7,  // 14: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	8,  // 15: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
+	10, // 16: anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon:input_type -> anytty.cloud.v1.RevokeMyDaemonRequest
+	13, // 17: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
+	16, // 18: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	4,  // 19: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	9,  // 20: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
+	11, // 21: anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon:output_type -> anytty.cloud.v1.RevokeMyDaemonResponse
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_enrollment_proto_init() }
@@ -1526,7 +1253,7 @@ func file_cloud_v1_enrollment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_enrollment_proto_rawDesc), len(file_cloud_v1_enrollment_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

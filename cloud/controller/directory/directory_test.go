@@ -209,7 +209,7 @@ func commitBenchmark(b *testing.B, value *directory.Directory, connectionID stri
 }
 
 func testAgent(id string, generation uint64) *cloudv1.AgentPresence {
-	return &cloudv1.AgentPresence{DaemonId: id, AccountId: "account-1", BootId: "daemon-boot", ConnectionId: "agent-connection", Generation: generation, TicketId: "ticket", TicketIssuedAt: timestamppb.New(time.Unix(1, 0))}
+	return &cloudv1.AgentPresence{DaemonId: id, AccountId: "account-1", BootId: "daemon-boot", ConnectionId: "agent-connection", Generation: generation, BindingId: "binding", BindingIssuedAt: timestamppb.New(time.Unix(1, 0))}
 }
 
 func testSession(id, daemonID string, generation uint64) *cloudv1.ClientSessionSummary {

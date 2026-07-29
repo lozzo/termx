@@ -222,7 +222,7 @@ type EdgeWelcome struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
 	AcceptedProtocolVersion uint32                 `protobuf:"varint,1,opt,name=accepted_protocol_version,json=acceptedProtocolVersion,proto3" json:"accepted_protocol_version,omitempty"`
 	Heartbeat               *HeartbeatPolicy       `protobuf:"bytes,2,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
-	TicketVerificationKeys  []*VerificationKey     `protobuf:"bytes,3,rep,name=ticket_verification_keys,json=ticketVerificationKeys,proto3" json:"ticket_verification_keys,omitempty"`
+	BindingVerificationKeys []*VerificationKey     `protobuf:"bytes,3,rep,name=binding_verification_keys,json=bindingVerificationKeys,proto3" json:"binding_verification_keys,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -271,9 +271,9 @@ func (x *EdgeWelcome) GetHeartbeat() *HeartbeatPolicy {
 	return nil
 }
 
-func (x *EdgeWelcome) GetTicketVerificationKeys() []*VerificationKey {
+func (x *EdgeWelcome) GetBindingVerificationKeys() []*VerificationKey {
 	if x != nil {
-		return x.TicketVerificationKeys
+		return x.BindingVerificationKeys
 	}
 	return nil
 }
@@ -1031,7 +1031,6 @@ type EdgeEvent struct {
 	//	*EdgeEvent_RuntimeDelta
 	//	*EdgeEvent_Heartbeat
 	//	*EdgeEvent_ConfigApplied
-	//	*EdgeEvent_RelayLeaseRequest
 	//	*EdgeEvent_UsageBatch
 	//	*EdgeEvent_CommandResult
 	//	*EdgeEvent_CertificateApplied
@@ -1189,15 +1188,6 @@ func (x *EdgeEvent) GetConfigApplied() *ConfigApplied {
 	return nil
 }
 
-func (x *EdgeEvent) GetRelayLeaseRequest() *RelayLeaseRequest {
-	if x != nil {
-		if x, ok := x.Payload.(*EdgeEvent_RelayLeaseRequest); ok {
-			return x.RelayLeaseRequest
-		}
-	}
-	return nil
-}
-
 func (x *EdgeEvent) GetUsageBatch() *UsageBatch {
 	if x != nil {
 		if x, ok := x.Payload.(*EdgeEvent_UsageBatch); ok {
@@ -1257,10 +1247,6 @@ type EdgeEvent_ConfigApplied struct {
 	ConfigApplied *ConfigApplied `protobuf:"bytes,26,opt,name=config_applied,json=configApplied,proto3,oneof"`
 }
 
-type EdgeEvent_RelayLeaseRequest struct {
-	RelayLeaseRequest *RelayLeaseRequest `protobuf:"bytes,27,opt,name=relay_lease_request,json=relayLeaseRequest,proto3,oneof"`
-}
-
 type EdgeEvent_UsageBatch struct {
 	UsageBatch *UsageBatch `protobuf:"bytes,28,opt,name=usage_batch,json=usageBatch,proto3,oneof"`
 }
@@ -1287,8 +1273,6 @@ func (*EdgeEvent_Heartbeat) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_ConfigApplied) isEdgeEvent_Payload() {}
 
-func (*EdgeEvent_RelayLeaseRequest) isEdgeEvent_Payload() {}
-
 func (*EdgeEvent_UsageBatch) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_CommandResult) isEdgeEvent_Payload() {}
@@ -1312,7 +1296,6 @@ type ControllerCommand struct {
 	//	*ControllerCommand_SnapshotAccepted
 	//	*ControllerCommand_ResyncRequired
 	//	*ControllerCommand_DesiredConfig
-	//	*ControllerCommand_RelayLeaseDecision
 	//	*ControllerCommand_UsageAck
 	//	*ControllerCommand_CloseDaemon
 	//	*ControllerCommand_CloseSession
@@ -1444,15 +1427,6 @@ func (x *ControllerCommand) GetDesiredConfig() *SignedEdgeDesiredConfig {
 	return nil
 }
 
-func (x *ControllerCommand) GetRelayLeaseDecision() *RelayLeaseDecision {
-	if x != nil {
-		if x, ok := x.Payload.(*ControllerCommand_RelayLeaseDecision); ok {
-			return x.RelayLeaseDecision
-		}
-	}
-	return nil
-}
-
 func (x *ControllerCommand) GetUsageAck() *UsageAck {
 	if x != nil {
 		if x, ok := x.Payload.(*ControllerCommand_UsageAck); ok {
@@ -1509,10 +1483,6 @@ type ControllerCommand_DesiredConfig struct {
 	DesiredConfig *SignedEdgeDesiredConfig `protobuf:"bytes,23,opt,name=desired_config,json=desiredConfig,proto3,oneof"`
 }
 
-type ControllerCommand_RelayLeaseDecision struct {
-	RelayLeaseDecision *RelayLeaseDecision `protobuf:"bytes,24,opt,name=relay_lease_decision,json=relayLeaseDecision,proto3,oneof"`
-}
-
 type ControllerCommand_UsageAck struct {
 	UsageAck *UsageAck `protobuf:"bytes,25,opt,name=usage_ack,json=usageAck,proto3,oneof"`
 }
@@ -1537,8 +1507,6 @@ func (*ControllerCommand_ResyncRequired) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_DesiredConfig) isControllerCommand_Payload() {}
 
-func (*ControllerCommand_RelayLeaseDecision) isControllerCommand_Payload() {}
-
 func (*ControllerCommand_UsageAck) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_CloseDaemon) isControllerCommand_Payload() {}
@@ -1558,11 +1526,11 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\fcapabilities\x18\x03 \x03(\x0e2\x1f.anytty.cloud.v1.EdgeCapabilityR\fcapabilities\x124\n" +
 	"\x16desired_config_version\x18\x04 \x01(\x04R\x14desiredConfigVersion\x12/\n" +
 	"\x13certificate_version\x18\x05 \x01(\x04R\x12certificateVersion\x124\n" +
-	"\x16certificate_profile_id\x18\x06 \x01(\tR\x14certificateProfileId\"\xe5\x01\n" +
+	"\x16certificate_profile_id\x18\x06 \x01(\tR\x14certificateProfileId\"\xe7\x01\n" +
 	"\vEdgeWelcome\x12:\n" +
 	"\x19accepted_protocol_version\x18\x01 \x01(\rR\x17acceptedProtocolVersion\x12>\n" +
-	"\theartbeat\x18\x02 \x01(\v2 .anytty.cloud.v1.HeartbeatPolicyR\theartbeat\x12Z\n" +
-	"\x18ticket_verification_keys\x18\x03 \x03(\v2 .anytty.cloud.v1.VerificationKeyR\x16ticketVerificationKeys\"L\n" +
+	"\theartbeat\x18\x02 \x01(\v2 .anytty.cloud.v1.HeartbeatPolicyR\theartbeat\x12\\\n" +
+	"\x19binding_verification_keys\x18\x03 \x03(\v2 .anytty.cloud.v1.VerificationKeyR\x17bindingVerificationKeys\"L\n" +
 	"\rSnapshotBegin\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
@@ -1630,7 +1598,7 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\x0ecorrelation_id\x18\x02 \x01(\tR\rcorrelationId\x126\n" +
 	"\x04code\x18\x03 \x01(\x0e2\".anytty.cloud.v1.CommandResultCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12=\n" +
-	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xa2\b\n" +
+	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xcc\a\n" +
 	"\tEdgeEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1647,13 +1615,12 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\fsnapshot_end\x18\x17 \x01(\v2\x1c.anytty.cloud.v1.SnapshotEndH\x00R\vsnapshotEnd\x12D\n" +
 	"\rruntime_delta\x18\x18 \x01(\v2\x1d.anytty.cloud.v1.RuntimeDeltaH\x00R\fruntimeDelta\x12>\n" +
 	"\theartbeat\x18\x19 \x01(\v2\x1e.anytty.cloud.v1.EdgeHeartbeatH\x00R\theartbeat\x12G\n" +
-	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.anytty.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12T\n" +
-	"\x13relay_lease_request\x18\x1b \x01(\v2\".anytty.cloud.v1.RelayLeaseRequestH\x00R\x11relayLeaseRequest\x12>\n" +
+	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.anytty.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12>\n" +
 	"\vusage_batch\x18\x1c \x01(\v2\x1b.anytty.cloud.v1.UsageBatchH\x00R\n" +
 	"usageBatch\x12K\n" +
 	"\x0ecommand_result\x18\x1d \x01(\v2\".anytty.cloud.v1.EdgeCommandResultH\x00R\rcommandResult\x12V\n" +
 	"\x13certificate_applied\x18\x1e \x01(\v2#.anytty.cloud.v1.CertificateAppliedH\x00R\x12certificateAppliedB\t\n" +
-	"\apayload\"\xc7\a\n" +
+	"\apayload\"\xee\x06\n" +
 	"\x11ControllerCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1667,8 +1634,7 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\awelcome\x18\x14 \x01(\v2\x1c.anytty.cloud.v1.EdgeWelcomeH\x00R\awelcome\x12P\n" +
 	"\x11snapshot_accepted\x18\x15 \x01(\v2!.anytty.cloud.v1.SnapshotAcceptedH\x00R\x10snapshotAccepted\x12J\n" +
 	"\x0fresync_required\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12Q\n" +
-	"\x0edesired_config\x18\x17 \x01(\v2(.anytty.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x12W\n" +
-	"\x14relay_lease_decision\x18\x18 \x01(\v2#.anytty.cloud.v1.RelayLeaseDecisionH\x00R\x12relayLeaseDecision\x128\n" +
+	"\x0edesired_config\x18\x17 \x01(\v2(.anytty.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x128\n" +
 	"\tusage_ack\x18\x19 \x01(\v2\x19.anytty.cloud.v1.UsageAckH\x00R\busageAck\x12K\n" +
 	"\fclose_daemon\x18\x1a \x01(\v2&.anytty.cloud.v1.CloseDaemonConnectionH\x00R\vcloseDaemon\x12J\n" +
 	"\rclose_session\x18\x1b \x01(\v2#.anytty.cloud.v1.CloseClientSessionH\x00R\fcloseSession\x12W\n" +
@@ -1727,17 +1693,15 @@ var file_cloud_v1_edge_control_proto_goTypes = []any{
 	(*RelayAllocationSummary)(nil),  // 21: anytty.cloud.v1.RelayAllocationSummary
 	(*timestamppb.Timestamp)(nil),   // 22: google.protobuf.Timestamp
 	(*RuntimeDelta)(nil),            // 23: anytty.cloud.v1.RuntimeDelta
-	(*RelayLeaseRequest)(nil),       // 24: anytty.cloud.v1.RelayLeaseRequest
-	(*UsageBatch)(nil),              // 25: anytty.cloud.v1.UsageBatch
-	(*SignedEdgeDesiredConfig)(nil), // 26: anytty.cloud.v1.SignedEdgeDesiredConfig
-	(*RelayLeaseDecision)(nil),      // 27: anytty.cloud.v1.RelayLeaseDecision
-	(*UsageAck)(nil),                // 28: anytty.cloud.v1.UsageAck
-	(*EdgeCertificateBundle)(nil),   // 29: anytty.cloud.v1.EdgeCertificateBundle
+	(*UsageBatch)(nil),              // 24: anytty.cloud.v1.UsageBatch
+	(*SignedEdgeDesiredConfig)(nil), // 25: anytty.cloud.v1.SignedEdgeDesiredConfig
+	(*UsageAck)(nil),                // 26: anytty.cloud.v1.UsageAck
+	(*EdgeCertificateBundle)(nil),   // 27: anytty.cloud.v1.EdgeCertificateBundle
 }
 var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	0,  // 0: anytty.cloud.v1.EdgeHello.capabilities:type_name -> anytty.cloud.v1.EdgeCapability
 	17, // 1: anytty.cloud.v1.EdgeWelcome.heartbeat:type_name -> anytty.cloud.v1.HeartbeatPolicy
-	18, // 2: anytty.cloud.v1.EdgeWelcome.ticket_verification_keys:type_name -> anytty.cloud.v1.VerificationKey
+	18, // 2: anytty.cloud.v1.EdgeWelcome.binding_verification_keys:type_name -> anytty.cloud.v1.VerificationKey
 	19, // 3: anytty.cloud.v1.SnapshotChunk.agents:type_name -> anytty.cloud.v1.AgentPresence
 	20, // 4: anytty.cloud.v1.SnapshotChunk.sessions:type_name -> anytty.cloud.v1.ClientSessionSummary
 	21, // 5: anytty.cloud.v1.SnapshotChunk.allocations:type_name -> anytty.cloud.v1.RelayAllocationSummary
@@ -1753,27 +1717,25 @@ var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	23, // 15: anytty.cloud.v1.EdgeEvent.runtime_delta:type_name -> anytty.cloud.v1.RuntimeDelta
 	7,  // 16: anytty.cloud.v1.EdgeEvent.heartbeat:type_name -> anytty.cloud.v1.EdgeHeartbeat
 	10, // 17: anytty.cloud.v1.EdgeEvent.config_applied:type_name -> anytty.cloud.v1.ConfigApplied
-	24, // 18: anytty.cloud.v1.EdgeEvent.relay_lease_request:type_name -> anytty.cloud.v1.RelayLeaseRequest
-	25, // 19: anytty.cloud.v1.EdgeEvent.usage_batch:type_name -> anytty.cloud.v1.UsageBatch
-	14, // 20: anytty.cloud.v1.EdgeEvent.command_result:type_name -> anytty.cloud.v1.EdgeCommandResult
-	11, // 21: anytty.cloud.v1.EdgeEvent.certificate_applied:type_name -> anytty.cloud.v1.CertificateApplied
-	22, // 22: anytty.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
-	3,  // 23: anytty.cloud.v1.ControllerCommand.welcome:type_name -> anytty.cloud.v1.EdgeWelcome
-	8,  // 24: anytty.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> anytty.cloud.v1.SnapshotAccepted
-	9,  // 25: anytty.cloud.v1.ControllerCommand.resync_required:type_name -> anytty.cloud.v1.ResyncRequired
-	26, // 26: anytty.cloud.v1.ControllerCommand.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
-	27, // 27: anytty.cloud.v1.ControllerCommand.relay_lease_decision:type_name -> anytty.cloud.v1.RelayLeaseDecision
-	28, // 28: anytty.cloud.v1.ControllerCommand.usage_ack:type_name -> anytty.cloud.v1.UsageAck
-	12, // 29: anytty.cloud.v1.ControllerCommand.close_daemon:type_name -> anytty.cloud.v1.CloseDaemonConnection
-	13, // 30: anytty.cloud.v1.ControllerCommand.close_session:type_name -> anytty.cloud.v1.CloseClientSession
-	29, // 31: anytty.cloud.v1.ControllerCommand.certificate_bundle:type_name -> anytty.cloud.v1.EdgeCertificateBundle
-	15, // 32: anytty.cloud.v1.EdgeControl.Connect:input_type -> anytty.cloud.v1.EdgeEvent
-	16, // 33: anytty.cloud.v1.EdgeControl.Connect:output_type -> anytty.cloud.v1.ControllerCommand
-	33, // [33:34] is the sub-list for method output_type
-	32, // [32:33] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	24, // 18: anytty.cloud.v1.EdgeEvent.usage_batch:type_name -> anytty.cloud.v1.UsageBatch
+	14, // 19: anytty.cloud.v1.EdgeEvent.command_result:type_name -> anytty.cloud.v1.EdgeCommandResult
+	11, // 20: anytty.cloud.v1.EdgeEvent.certificate_applied:type_name -> anytty.cloud.v1.CertificateApplied
+	22, // 21: anytty.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
+	3,  // 22: anytty.cloud.v1.ControllerCommand.welcome:type_name -> anytty.cloud.v1.EdgeWelcome
+	8,  // 23: anytty.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> anytty.cloud.v1.SnapshotAccepted
+	9,  // 24: anytty.cloud.v1.ControllerCommand.resync_required:type_name -> anytty.cloud.v1.ResyncRequired
+	25, // 25: anytty.cloud.v1.ControllerCommand.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
+	26, // 26: anytty.cloud.v1.ControllerCommand.usage_ack:type_name -> anytty.cloud.v1.UsageAck
+	12, // 27: anytty.cloud.v1.ControllerCommand.close_daemon:type_name -> anytty.cloud.v1.CloseDaemonConnection
+	13, // 28: anytty.cloud.v1.ControllerCommand.close_session:type_name -> anytty.cloud.v1.CloseClientSession
+	27, // 29: anytty.cloud.v1.ControllerCommand.certificate_bundle:type_name -> anytty.cloud.v1.EdgeCertificateBundle
+	15, // 30: anytty.cloud.v1.EdgeControl.Connect:input_type -> anytty.cloud.v1.EdgeEvent
+	16, // 31: anytty.cloud.v1.EdgeControl.Connect:output_type -> anytty.cloud.v1.ControllerCommand
+	31, // [31:32] is the sub-list for method output_type
+	30, // [30:31] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_edge_control_proto_init() }
@@ -1794,7 +1756,6 @@ func file_cloud_v1_edge_control_proto_init() {
 		(*EdgeEvent_RuntimeDelta)(nil),
 		(*EdgeEvent_Heartbeat)(nil),
 		(*EdgeEvent_ConfigApplied)(nil),
-		(*EdgeEvent_RelayLeaseRequest)(nil),
 		(*EdgeEvent_UsageBatch)(nil),
 		(*EdgeEvent_CommandResult)(nil),
 		(*EdgeEvent_CertificateApplied)(nil),
@@ -1804,7 +1765,6 @@ func file_cloud_v1_edge_control_proto_init() {
 		(*ControllerCommand_SnapshotAccepted)(nil),
 		(*ControllerCommand_ResyncRequired)(nil),
 		(*ControllerCommand_DesiredConfig)(nil),
-		(*ControllerCommand_RelayLeaseDecision)(nil),
 		(*ControllerCommand_UsageAck)(nil),
 		(*ControllerCommand_CloseDaemon)(nil),
 		(*ControllerCommand_CloseSession)(nil),

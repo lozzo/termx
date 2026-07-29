@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -46,12 +47,12 @@ import (
 
 func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T) {
 	certificates := newCertificateFiles(t, testEdgeID)
-	ticketPublicKey, ticketPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	bindingPublicKey, bindingPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ticketKeyID := "ticket-r5"
-	controllerRuntime, directoryState := startPresenceController(t, certificates, "127.0.0.1:0", &cloudv1.VerificationKey{KeyId: ticketKeyID, Algorithm: "Ed25519", PublicKey: ticketPublicKey})
+	bindingKeyID := "binding-r5"
+	controllerRuntime, directoryState := startPresenceController(t, certificates, "127.0.0.1:0", &cloudv1.VerificationKey{KeyId: bindingKeyID, Algorithm: "Ed25519", PublicKey: bindingPublicKey})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -88,8 +89,8 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	identityStore := r5EnrollmentStore{daemon: daemonRecord}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Entitlement: testEntitlementReader{},
-		Store:       identityStore, Edges: edges, Directory: directoryState, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
-		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
+		Store:       identityStore, Edges: edges, Directory: directoryState, BindingSigningKey: bindingPrivateKey, BindingSigningKeyID: bindingKeyID,
+		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, BindingTTL: 365 * 24 * time.Hour,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +116,12 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	}
 	t.Cleanup(func() { shutdownEdge(t, edgeRuntime) })
 	edgeStore.setPublicEndpoint(edgeRuntime.PublicAddress())
+	edgeLocator := &cloudv1.EdgeLocator{EdgeId: testEdgeID, Name: "R5 Edge", Region: "local", PublicEndpoint: edgeRuntime.PublicAddress(), ServerName: testEdgePublicServer, CaCertificatePem: edgeCAPEM, Revision: 1}
+	edgeLocatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(edgeLocator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeLocatorDigest := sha256.Sum256(edgeLocatorPayload)
 	readyContext, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := edgeRuntime.WaitReady(readyContext); err != nil {
 		cancelReady()
@@ -140,16 +147,17 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := accessStore.ConfigureManagedPairingGrantIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, error) {
+	if err := accessStore.ConfigureManagedPairingRouteIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, []byte, error) {
 		claims := &cloudv1.PairingRouteGrantClaims{
 			GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, DeviceId: daemonIdentity.DeviceID, PairingClaimSha256: append([]byte(nil), claimDigest...),
-			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()),
+			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()), EdgeLocatorSha256: edgeLocatorDigest[:],
 		}
 		signed, signErr := ticket.SignPairingRouteGrant(daemonIdentity, claims)
 		if signErr != nil {
-			return nil, signErr
+			return nil, nil, signErr
 		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(signed)
+		grant, marshalErr := proto.MarshalOptions{Deterministic: true}.Marshal(signed)
+		return grant, append([]byte(nil), edgeLocatorPayload...), marshalErr
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,10 +172,9 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	})
 	loopbackAPI := r5LoopbackWebRTCAPI()
 	daemonRuntime, err := clouddaemon.NewRuntime(clouddaemon.Config{
-		Record:   clouddaemon.EnrollmentRecord{Version: 1, DaemonID: daemonRecord.ID, AccountID: daemonRecord.AccountID, ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, EnrolledAt: time.Now().UTC()},
+		Record:   r5DaemonEnrollmentRecord(t, daemonRecord, daemonIdentity, bindingKeyID, bindingPrivateKey, edgeLocatorPayload, nil),
 		Identity: daemonIdentity, AccessStore: accessStore, SoftwareVersion: "r5-integration",
-		ControllerTLS: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: certificates.rootPool, ServerName: testControllerServer},
-		Answerer:      remotewebrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: coreServer, Identity: daemonIdentity, AccessStore: accessStore}, PeerConnections: loopbackAPI.NewPeerConnection},
+		Answerer: remotewebrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: coreServer, Identity: daemonIdentity, AccessStore: accessStore}, PeerConnections: loopbackAPI.NewPeerConnection},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +197,8 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		location, found, locateErr := directoryState.LocateDaemon(context.Background(), daemonRecord.ID)
 		return locateErr == nil && found && location.EdgeID == testEdgeID
 	})
+	// Pairing and all cached client routes must remain usable after the public Controller is gone.
+	stopPublicController()
 
 	cloudNetwork, err := cloudclient.NewClient(cloudclient.Config{ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, ControllerCAPEM: edgeCAPEM})
 	if err != nil {
@@ -211,8 +220,6 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		t.Fatalf("close post-pairing Cloud session: %v", err)
 	}
 	eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 0 })
-	stopPublicController()
-
 	products := []cloudv1.ClientProduct{cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, cloudv1.ClientProduct_CLIENT_PRODUCT_TUI}
 	var revokedCredential remoteauth.ClientAccessCredential
 	var revokedGrantID string
@@ -433,6 +440,30 @@ func r5LoopbackWebRTCAPI() *pionwebrtc.API {
 	settings.SetIncludeLoopbackCandidate(true)
 	settings.SetIPFilter(func(address net.IP) bool { return address.IsLoopback() })
 	return pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings))
+}
+
+func r5DaemonEnrollmentRecord(t *testing.T, daemon enrollment.Daemon, identity remoteauth.Identity, keyID string, privateKey ed25519.PrivateKey, locatorPayload []byte, delegation *cloudv1.DaemonRelayDelegation) clouddaemon.EnrollmentRecord {
+	t.Helper()
+	locator := &cloudv1.EdgeLocator{}
+	if err := proto.Unmarshal(locatorPayload, locator); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	locatorDigest := sha256.Sum256(locatorPayload)
+	claims := &cloudv1.DaemonBindingClaims{
+		BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: locator.GetEdgeId(), DeviceId: identity.DeviceID,
+		DevicePublicKey: append([]byte(nil), identity.PublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING},
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(365 * 24 * time.Hour)), RelayDelegation: delegation, Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:],
+	}
+	binding, err := ticket.SignDaemonBinding(keyID, privateKey, claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return clouddaemon.EnrollmentRecord{Version: 2, DaemonID: daemon.ID, AccountID: daemon.AccountID, DaemonBinding: bindingPayload, EdgeLocator: append([]byte(nil), locatorPayload...), EnrolledAt: now}
 }
 
 func startR5PublicController(t *testing.T, certificates certificateFiles, enrollmentService *enrollment.Service, directoryService *directoryapi.Service) (string, func()) {

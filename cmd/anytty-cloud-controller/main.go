@@ -59,11 +59,10 @@ type options struct {
 	artifactFile         string
 	artifactVersion      string
 	artifactSigningKey   string
-	ticketSigningKey     string
-	ticketSigningKeyID   string
+	bindingSigningKey    string
+	bindingSigningKeyID  string
 	heartbeatInterval    time.Duration
 	heartbeatTimeout     time.Duration
-	relayLeaseTTL        time.Duration
 	developmentPayments  bool
 	startupTimeout       time.Duration
 	shutdownTimeout      time.Duration
@@ -87,8 +86,8 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	if config.startupTimeout <= 0 || config.shutdownTimeout <= 0 || config.relayLeaseTTL <= 0 || config.relayLeaseTTL > 5*time.Minute {
-		return errors.New("startup, shutdown, and bounded Relay lease TTL must be positive")
+	if config.startupTimeout <= 0 || config.shutdownTimeout <= 0 {
+		return errors.New("startup and shutdown timeouts must be positive")
 	}
 	startupContext, cancelStartup := context.WithTimeout(ctx, config.startupTimeout)
 	database, err := postgres.Open(startupContext, getenv("ANYTTY_CLOUD_DATABASE_URL"))
@@ -116,7 +115,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	ticketKey, err := keymaterial.LoadEd25519PrivateKey(config.ticketSigningKey)
+	bindingKey, err := keymaterial.LoadEd25519PrivateKey(config.bindingSigningKey)
 	if err != nil {
 		return err
 	}
@@ -179,9 +178,9 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
-		Store: database, Edges: edgeService, Directory: directoryState, TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID,
+		Store: database, Edges: edgeService, Directory: directoryState, BindingSigningKey: bindingKey, BindingSigningKeyID: config.bindingSigningKeyID,
 		Entitlement:       commerceService,
-		EdgeCACertificate: edgeCAPayload, EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
+		EdgeCACertificate: edgeCAPayload, EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, BindingTTL: 365 * 24 * time.Hour,
 	})
 	if err != nil {
 		return err
@@ -194,15 +193,13 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	service, err = control.NewService(control.Config{
-		ControllerID:           config.controllerID,
-		ControllerBootID:       uuid.NewString(),
-		HeartbeatInterval:      config.heartbeatInterval,
-		HeartbeatTimeout:       config.heartbeatTimeout,
-		Directory:              directoryState,
-		TicketVerificationKeys: []*cloudv1.VerificationKey{enrollmentService.TicketVerificationKey()},
-		TicketSigningKey:       ticketKey, TicketSigningKeyID: config.ticketSigningKeyID, RelayLeaseTTL: config.relayLeaseTTL,
-		RelayPolicy: commerce.EntitlementRelayPolicy{Service: commerceService},
-		UsageStore:  database,
+		ControllerID:            config.controllerID,
+		ControllerBootID:        uuid.NewString(),
+		HeartbeatInterval:       config.heartbeatInterval,
+		HeartbeatTimeout:        config.heartbeatTimeout,
+		Directory:               directoryState,
+		BindingVerificationKeys: []*cloudv1.VerificationKey{enrollmentService.BindingVerificationKey()},
+		UsageStore:              database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
@@ -289,11 +286,10 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.artifactFile, "edge-artifact", "", "signed linux/amd64 Edge artifact")
 	flags.StringVar(&config.artifactVersion, "edge-artifact-version", softwareVersion, "Edge artifact immutable version")
 	flags.StringVar(&config.artifactSigningKey, "artifact-signing-key", "", "Edge artifact Ed25519 private key")
-	flags.StringVar(&config.ticketSigningKey, "ticket-signing-key", "", "Cloud ticket Ed25519 private key")
-	flags.StringVar(&config.ticketSigningKeyID, "ticket-signing-key-id", "", "Cloud ticket signing key ID")
+	flags.StringVar(&config.bindingSigningKey, "binding-signing-key", "", "daemon binding Ed25519 private key")
+	flags.StringVar(&config.bindingSigningKeyID, "binding-signing-key-id", "", "daemon binding signing key ID")
 	flags.DurationVar(&config.heartbeatInterval, "heartbeat-interval", 10*time.Second, "Edge heartbeat interval")
 	flags.DurationVar(&config.heartbeatTimeout, "heartbeat-timeout", 30*time.Second, "Edge heartbeat timeout")
-	flags.DurationVar(&config.relayLeaseTTL, "relay-lease-ttl", 5*time.Minute, "maximum lifetime of a signed RelayLease")
 	flags.BoolVar(&config.developmentPayments, "development-payments", false, "enable the Development-only self-service payment adapter")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")

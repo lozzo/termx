@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/control"
 	"github.com/anytty/anytty/cloud/runtimesnapshot"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -52,23 +52,21 @@ type Config struct {
 
 // Session 拥有一个 EdgeControl generation、唯一 reader、唯一 writer 与同步 coordinator。
 type Session struct {
-	connectionID  string
-	welcome       *cloudv1.EdgeWelcome
-	stream        cloudv1.EdgeControl_ConnectClient
-	connection    *grpc.ClientConn
-	cancel        context.CancelFunc
-	done          chan struct{}
-	doneOnce      sync.Once
-	resultMu      sync.Mutex
-	resultErr     error
-	ready         chan struct{}
-	readyOnce     sync.Once
-	closeOnce     sync.Once
-	outbound      chan any
-	pendingMu     sync.Mutex
-	pendingLeases map[string]chan *cloudv1.RelayLeaseDecision
-	usageAcks     chan *cloudv1.UsageAck
-	usageMu       sync.Mutex
+	connectionID string
+	welcome      *cloudv1.EdgeWelcome
+	stream       cloudv1.EdgeControl_ConnectClient
+	connection   *grpc.ClientConn
+	cancel       context.CancelFunc
+	done         chan struct{}
+	doneOnce     sync.Once
+	resultMu     sync.Mutex
+	resultErr    error
+	ready        chan struct{}
+	readyOnce    sync.Once
+	closeOnce    sync.Once
+	outbound     chan any
+	usageAcks    chan *cloudv1.UsageAck
+	usageMu      sync.Mutex
 }
 
 // Open 建立 mTLS 流并完成 Hello/Welcome；SnapshotAccepted 由 WaitReady 单独等待。
@@ -122,7 +120,7 @@ func Open(parent context.Context, config Config) (*Session, error) {
 	}
 	session := &Session{
 		connectionID: connectionID, welcome: welcome, stream: stream, connection: connection, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}),
-		outbound: make(chan any, config.WriterQueueSize), pendingLeases: make(map[string]chan *cloudv1.RelayLeaseDecision), usageAcks: make(chan *cloudv1.UsageAck, 1),
+		outbound: make(chan any, config.WriterQueueSize), usageAcks: make(chan *cloudv1.UsageAck, 1),
 	}
 	go session.run(ctx, config, command.GetSenderId(), command.GetBootId(), config.WriterQueueSize)
 	return session, nil
@@ -166,39 +164,6 @@ func (session *Session) Close() error {
 		err = session.connection.Close()
 	})
 	return err
-}
-
-// RequestRelayLease 通过当前 EdgeControl generation 申请精确 session 的短租约。
-// correlation 只保存在内存；控制流关闭会使等待方失败，禁止跨 generation 复用决定。
-func (session *Session) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseDecision, error) {
-	if session == nil || request == nil || strings.TrimSpace(request.GetCorrelationId()) == "" || strings.TrimSpace(request.GetSessionId()) == "" {
-		return nil, errors.New("RelayLeaseRequest correlation and session are required")
-	}
-	correlationID := request.GetCorrelationId()
-	response := make(chan *cloudv1.RelayLeaseDecision, 1)
-	session.pendingMu.Lock()
-	if _, exists := session.pendingLeases[correlationID]; exists {
-		session.pendingMu.Unlock()
-		return nil, errors.New("RelayLeaseRequest correlation already exists")
-	}
-	session.pendingLeases[correlationID] = response
-	session.pendingMu.Unlock()
-	defer func() {
-		session.pendingMu.Lock()
-		delete(session.pendingLeases, correlationID)
-		session.pendingMu.Unlock()
-	}()
-	if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_RelayLeaseRequest{RelayLeaseRequest: request}); err != nil {
-		return nil, err
-	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-session.done:
-		return nil, errors.New("EdgeControl closed before RelayLeaseDecision")
-	case decision := <-response:
-		return decision, nil
-	}
 }
 
 // CommitUsageBatch 发送一个 outbox 批次并等待数据库提交后的精确 ACK。
@@ -325,8 +290,6 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 					session.finish(err)
 					return
 				}
-			case *cloudv1.ControllerCommand_RelayLeaseDecision:
-				session.resolveRelayLease(payload.RelayLeaseDecision)
 			case *cloudv1.ControllerCommand_UsageAck:
 				select {
 				case session.usageAcks <- payload.UsageAck:
@@ -402,21 +365,6 @@ func executeRuntimeCommand(parent context.Context, commandID, correlationID stri
 	result.Code = cloudv1.CommandResultCode_COMMAND_RESULT_CODE_STALE
 	result.Message = "target generation is no longer current"
 	return result
-}
-
-func (session *Session) resolveRelayLease(decision *cloudv1.RelayLeaseDecision) {
-	if decision == nil || strings.TrimSpace(decision.GetCorrelationId()) == "" {
-		return
-	}
-	session.pendingMu.Lock()
-	waiter := session.pendingLeases[decision.GetCorrelationId()]
-	session.pendingMu.Unlock()
-	if waiter != nil {
-		select {
-		case waiter <- decision:
-		default:
-		}
-	}
 }
 
 func (session *Session) readCommands(ctx context.Context, controllerID, controllerBootID string, output chan<- *cloudv1.ControllerCommand, errorsOut chan<- error) {
@@ -537,8 +485,6 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_Heartbeat:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_ConfigApplied:
-		event.Payload = typed
-	case *cloudv1.EdgeEvent_RelayLeaseRequest:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_UsageBatch:
 		event.Payload = typed

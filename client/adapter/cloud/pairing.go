@@ -39,7 +39,7 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	if connector.Phase != nil {
 		connector.Phase(clientruntime.EndpointPhaseSignaling)
 	}
-	resolved, err := connector.Cloud.ResolvePairing(ctx, pairing.PairingClaimOffer, pairing.Identity, pairing.Signer, connector.Product)
+	resolved, err := connector.Cloud.PairingRoute(pairing.PairingClaimOffer)
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err
 	}
@@ -54,7 +54,7 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err
 	}
-	result.CloudEdgeLocator, err = cloudclient.EncodeEdgeLocator(resolved.Edge())
+	result.CloudEdgeLocator, err = cloudclient.EncodeEdgeLocator(resolved.Locator())
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, fmt.Errorf("encode paired Cloud Edge locator: %w", err)
 	}

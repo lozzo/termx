@@ -1,4 +1,4 @@
-// Package enrollment 实现 daemon 持久注册、Edge 候选选择和短期 AgentTicket 签发。
+// Package enrollment 实现 daemon 持久注册以及一次性 Edge binding 签发。
 package enrollment
 
 import (
@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -51,7 +52,7 @@ type Store interface {
 	ListDaemons(context.Context) ([]Daemon, error)
 }
 
-// Config 组合持久 Store、纯内存 Directory、Edge desired state 和 Controller TicketSigner。
+// Config 组合持久 Store、纯内存 Directory、Edge desired state 和 Controller binding signer。
 type Config struct {
 	Store       Store
 	Edges       *edgeconfig.Service
@@ -59,20 +60,19 @@ type Config struct {
 	Entitlement interface {
 		EffectiveEntitlement(context.Context, string) (*cloudv1.EffectiveEntitlement, error)
 	}
-	TicketSigningKey   ed25519.PrivateKey
-	TicketSigningKeyID string
-	EdgeCACertificate  []byte
-	EnrollmentTTL      time.Duration
-	ChallengeTTL       time.Duration
-	AgentTicketTTL     time.Duration
-	Now                func() time.Time
+	BindingSigningKey   ed25519.PrivateKey
+	BindingSigningKeyID string
+	EdgeCACertificate   []byte
+	EnrollmentTTL       time.Duration
+	ChallengeTTL        time.Duration
+	BindingTTL          time.Duration
+	Now                 func() time.Time
 }
 
 type challengeKind uint8
 
 const (
 	challengeEnrollment challengeKind = iota + 1
-	challengeAgentTicket
 )
 
 type challengeState struct {
@@ -82,9 +82,6 @@ type challengeState struct {
 	tokenDigest           []byte
 	deviceID, fingerprint string
 	publicKey             ed25519.PublicKey
-	daemon                Daemon
-	edge                  edgeconfig.Edge
-	relayDelegation       *cloudv1.AgentRelayDelegation
 }
 
 // Service 是 EnrollmentService gRPC 实现，也是运营管理页创建 code/列 daemon 的 application owner。
@@ -97,9 +94,9 @@ type Service struct {
 
 // NewService 验证所有 owner 和期限，避免启动部分可用的收费准入路径。
 func NewService(config Config) (*Service, error) {
-	config.TicketSigningKeyID = strings.TrimSpace(config.TicketSigningKeyID)
-	if config.Store == nil || config.Edges == nil || config.Directory == nil || config.Entitlement == nil || len(config.TicketSigningKey) != ed25519.PrivateKeySize ||
-		config.TicketSigningKeyID == "" || len(config.EdgeCACertificate) == 0 || config.EnrollmentTTL <= 0 || config.ChallengeTTL <= 0 || config.AgentTicketTTL <= 0 {
+	config.BindingSigningKeyID = strings.TrimSpace(config.BindingSigningKeyID)
+	if config.Store == nil || config.Edges == nil || config.Directory == nil || config.Entitlement == nil || len(config.BindingSigningKey) != ed25519.PrivateKeySize ||
+		config.BindingSigningKeyID == "" || len(config.EdgeCACertificate) == 0 || config.EnrollmentTTL <= 0 || config.ChallengeTTL <= 0 || config.BindingTTL <= 0 {
 		return nil, errors.New("enrollment store, directory, Edge state, signer, CA, and positive TTLs are required")
 	}
 	if config.Now == nil {
@@ -108,10 +105,10 @@ func NewService(config Config) (*Service, error) {
 	return &Service{config: config, challenges: make(map[string]challengeState)}, nil
 }
 
-// TicketVerificationKey 返回只能下发给 Edge 的 Controller Ed25519 公钥。
-func (service *Service) TicketVerificationKey() *cloudv1.VerificationKey {
-	publicKey := service.config.TicketSigningKey.Public().(ed25519.PublicKey)
-	return &cloudv1.VerificationKey{KeyId: service.config.TicketSigningKeyID, Algorithm: "Ed25519", PublicKey: append([]byte(nil), publicKey...)}
+// BindingVerificationKey 返回只能下发给 Edge 的 Controller Ed25519 公钥。
+func (service *Service) BindingVerificationKey() *cloudv1.VerificationKey {
+	publicKey := service.config.BindingSigningKey.Public().(ed25519.PublicKey)
+	return &cloudv1.VerificationKey{KeyId: service.config.BindingSigningKeyID, Algorithm: "Ed25519", PublicKey: append([]byte(nil), publicKey...)}
 }
 
 // CreateEnrollment 为已存在账号创建至少 192 bit 随机 code，数据库只接收摘要。
@@ -201,68 +198,33 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	return &cloudv1.CompleteDaemonEnrollmentResponse{Daemon: projectDaemon(daemon)}, nil
-}
-
-// ListAgentCandidates 返回最多三个当前 ready 且 enabled 的 Edge；选择结果不持久化。
-func (service *Service) ListAgentCandidates(ctx context.Context, request *cloudv1.ListAgentCandidatesRequest) (*cloudv1.ListAgentCandidatesResponse, error) {
-	daemon, err := service.config.Store.GetDaemon(ctx, strings.TrimSpace(request.GetDaemonId()))
-	if err != nil || daemon.Revoked {
-		return nil, status.Error(codes.NotFound, ErrDaemonUnavailable.Error())
-	}
-	candidates, err := service.candidates(ctx, strings.TrimSpace(request.GetPreferredRegion()))
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, err.Error())
-	}
-	return &cloudv1.ListAgentCandidatesResponse{Candidates: candidates}, nil
-}
-
-// BeginAgentTicket 把 daemon 选择的当前在线 Edge 固定到一次性 proof challenge。
-func (service *Service) BeginAgentTicket(ctx context.Context, request *cloudv1.BeginAgentTicketRequest) (*cloudv1.IdentityChallenge, error) {
-	daemon, err := service.config.Store.GetDaemon(ctx, strings.TrimSpace(request.GetDaemonId()))
-	if err != nil || daemon.Revoked {
-		return nil, status.Error(codes.NotFound, ErrDaemonUnavailable.Error())
-	}
 	entitlement, entitlementErr := service.config.Entitlement.EffectiveEntitlement(ctx, daemon.AccountID)
 	if entitlementErr != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() {
 		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
 	}
-	edge, err := service.config.Edges.GetEdge(ctx, strings.TrimSpace(request.GetEdgeId()))
-	if err != nil || !edge.Enabled {
-		return nil, status.Error(codes.FailedPrecondition, "selected Edge is unavailable")
-	}
-	if _, found, locateErr := service.config.Directory.Edge(ctx, edge.ID); locateErr != nil || !found {
-		return nil, status.Error(codes.FailedPrecondition, "selected Edge is offline")
-	}
-	return service.newChallenge(challengeState{kind: challengeAgentTicket, daemon: daemon, edge: edge, deviceID: daemon.DeviceID, fingerprint: daemon.DeviceFingerprint, publicKey: daemon.DevicePublicKey, relayDelegation: agentRelayDelegation(entitlement)})
-}
-
-// IssueAgentTicket 验证 daemon proof 后签发默认十分钟短票据，不保存票据或 Edge assignment。
-func (service *Service) IssueAgentTicket(ctx context.Context, request *cloudv1.IssueAgentTicketRequest) (*cloudv1.IssueAgentTicketResponse, error) {
-	state, err := service.takeChallenge(request.GetChallengeId(), challengeAgentTicket)
-	if err != nil {
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
-	}
-	if err := remoteauth.VerifyDeviceIdentityProof(state.value, state.deviceID, state.fingerprint, state.publicKey, request.GetDeviceProof()); err != nil {
-		return nil, status.Error(codes.Unauthenticated, err.Error())
-	}
-	if _, found, locateErr := service.config.Directory.Edge(ctx, state.edge.ID); locateErr != nil || !found {
-		return nil, status.Error(codes.FailedPrecondition, "selected Edge is offline")
-	}
-	now := service.now()
-	claims := &cloudv1.AgentTicketClaims{TicketId: uuid.NewString(), DaemonId: state.daemon.ID, AccountId: state.daemon.AccountID, EdgeId: state.edge.ID, DeviceId: state.daemon.DeviceID, DevicePublicKey: append([]byte(nil), state.daemon.DevicePublicKey...), Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.AgentTicketTTL)), RelayDelegation: state.relayDelegation}
-	signed, err := ticket.SignAgentTicket(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	candidate, err := service.projectCandidate(ctx, state.edge)
+	edge, err := service.selectEdge(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
-	return &cloudv1.IssueAgentTicketResponse{AgentTicket: signed, Edge: candidate}, nil
+	locator, err := service.projectLocator(ctx, edge)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(locator)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	locatorDigest := sha256.Sum256(locatorPayload)
+	now := service.now()
+	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), RelayDelegation: daemonRelayDelegation(entitlement), Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:]}
+	signed, err := ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &cloudv1.CompleteDaemonEnrollmentResponse{Daemon: projectDaemon(daemon), DaemonBinding: signed, EdgeLocator: locator}, nil
 }
 
-func agentRelayDelegation(entitlement *cloudv1.EffectiveEntitlement) *cloudv1.AgentRelayDelegation {
+func daemonRelayDelegation(entitlement *cloudv1.EffectiveEntitlement) *cloudv1.DaemonRelayDelegation {
 	capability := entitlement.GetCapability()
 	if entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || capability == nil || !capability.GetRelayEnabled() {
 		return nil
@@ -274,55 +236,43 @@ func agentRelayDelegation(entitlement *cloudv1.EffectiveEntitlement) *cloudv1.Ag
 	if maxBytes == 0 || capability.GetRelayMaxRateBytesPerSecond() == 0 || capability.GetRelayMaxConcurrency() == 0 {
 		return nil
 	}
-	return &cloudv1.AgentRelayDelegation{MaxBytesPerLease: maxBytes, MaxRateBytesPerSecond: capability.GetRelayMaxRateBytesPerSecond(), MaxConcurrentAllocations: capability.GetRelayMaxConcurrency()}
+	return &cloudv1.DaemonRelayDelegation{MaxBytesPerLease: maxBytes, MaxRateBytesPerSecond: capability.GetRelayMaxRateBytesPerSecond(), MaxConcurrentAllocations: capability.GetRelayMaxConcurrency()}
 }
 
-func (service *Service) candidates(ctx context.Context, region string) ([]*cloudv1.CandidateEdge, error) {
+func (service *Service) selectEdge(ctx context.Context) (edgeconfig.Edge, error) {
 	edges, err := service.config.Edges.ListEdges(ctx)
 	if err != nil {
-		return nil, err
+		return edgeconfig.Edge{}, err
 	}
 	type scored struct {
-		edge      edgeconfig.Edge
-		preferred bool
-		load      float64
+		edge edgeconfig.Edge
+		load float64
 	}
 	values := make([]scored, 0, len(edges))
 	for _, edge := range edges {
 		projection, found, locateErr := service.config.Directory.Edge(ctx, edge.ID)
 		if locateErr != nil {
-			return nil, locateErr
+			return edgeconfig.Edge{}, locateErr
 		}
 		if !edge.Enabled || !found {
 			continue
 		}
-		values = append(values, scored{edge: edge, preferred: region != "" && edge.Region == region, load: float64(projection.AgentCount) / float64(edge.Capacity)})
+		values = append(values, scored{edge: edge, load: float64(projection.AgentCount) / float64(edge.Capacity)})
 	}
 	sort.Slice(values, func(i, j int) bool {
-		if values[i].preferred != values[j].preferred {
-			return values[i].preferred
-		}
 		if values[i].load != values[j].load {
 			return values[i].load < values[j].load
 		}
 		return values[i].edge.ID < values[j].edge.ID
 	})
-	if len(values) > 3 {
-		values = values[:3]
+	if len(values) == 0 {
+		return edgeconfig.Edge{}, ErrDaemonUnavailable
 	}
-	result := make([]*cloudv1.CandidateEdge, 0, len(values))
-	for _, value := range values {
-		candidate, err := service.projectCandidate(ctx, value.edge)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, candidate)
-	}
-	return result, nil
+	return values[0].edge, nil
 }
 
-func (service *Service) projectCandidate(ctx context.Context, edge edgeconfig.Edge) (*cloudv1.CandidateEdge, error) {
-	projection, found, err := service.config.Directory.Edge(ctx, edge.ID)
+func (service *Service) projectLocator(ctx context.Context, edge edgeconfig.Edge) (*cloudv1.EdgeLocator, error) {
+	_, found, err := service.config.Directory.Edge(ctx, edge.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +283,7 @@ func (service *Service) projectCandidate(ctx context.Context, edge edgeconfig.Ed
 	if parsed, _, splitErr := net.SplitHostPort(edge.PublicEndpoint); splitErr == nil {
 		host = parsed
 	}
-	return &cloudv1.CandidateEdge{EdgeId: edge.ID, Name: edge.Name, Region: edge.Region, PublicEndpoint: edge.PublicEndpoint, ServerName: strings.Trim(host, "[]"), CaCertificatePem: append([]byte(nil), service.config.EdgeCACertificate...), Capacity: edge.Capacity, CurrentAgents: uint64(projection.AgentCount)}, nil
+	return &cloudv1.EdgeLocator{EdgeId: edge.ID, Name: edge.Name, Region: edge.Region, PublicEndpoint: edge.PublicEndpoint, ServerName: strings.Trim(host, "[]"), CaCertificatePem: append([]byte(nil), service.config.EdgeCACertificate...), Revision: edge.Revision}, nil
 }
 
 func (service *Service) newChallenge(state challengeState) (*cloudv1.IdentityChallenge, error) {

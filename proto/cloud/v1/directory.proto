@@ -4,21 +4,12 @@ package anytty.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "cloud/v1/enrollment.proto";
-import "cloud/v1/runtime.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 // BeginClientRouteRequest 只提交 DeviceIdentity 签名的发现 grant；Controller 不接收 terminal capability。
 message BeginClientRouteRequest {
   SignedEnvelope cloud_route_grant = 1;
-}
-
-// BeginPairingRouteRequest 只为持有 daemon 签名 bootstrap grant 的未授权客户端建立 pairing-only signaling。
-// Controller 只接收 claim 摘要，不接收二维码中的 128-bit claim 本体。
-message BeginPairingRouteRequest {
-  SignedEnvelope pairing_route_grant = 1;
-  bytes client_public_key = 2;
-  ClientProduct product = 3;
 }
 
 message ResolveClientRouteRequest {
@@ -28,12 +19,11 @@ message ResolveClientRouteRequest {
 }
 
 message ResolveClientRouteResponse {
-  CandidateEdge edge = 1;
+  EdgeLocator edge_locator = 1;
 }
 
 // DirectoryService 只在首次发现或 Edge locator 失效时解析实时 daemon Presence。
 service DirectoryService {
   rpc BeginClientRoute(BeginClientRouteRequest) returns (IdentityChallenge);
-  rpc BeginPairingRoute(BeginPairingRouteRequest) returns (IdentityChallenge);
   rpc ResolveClientRoute(ResolveClientRouteRequest) returns (ResolveClientRouteResponse);
 }

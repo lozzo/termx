@@ -112,16 +112,14 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		return nil, err
 	}
 	if discovered {
-		locator, err := cloudclient.EncodeEdgeLocator(resolved.Edge())
+		locator, err := cloudclient.EncodeEdgeLocator(resolved.Locator())
 		if err != nil {
 			_ = application.Close()
 			_ = opened.Close()
 			return nil, fmt.Errorf("encode authenticated Cloud Edge locator: %w", err)
 		}
 		if err := signaling.StoreCloudEdgeLocator(ctx, locator); err != nil {
-			_ = application.Close()
-			_ = opened.Close()
-			return nil, fmt.Errorf("persist authenticated Cloud Edge locator: %w", err)
+			// Locator 是公开位置缓存；持久化故障不能杀死已经完成端到端认证的会话。
 		}
 	}
 	dialer.report(clientruntime.EndpointPhaseReady)

@@ -3,6 +3,7 @@ package daemon
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,26 +11,38 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"google.golang.org/protobuf/proto"
 )
 
-const recordVersion = 1
+const recordVersion = 2
 
 // EnrollmentRecord 是 daemon 唯一允许持久化的 Cloud 状态。
-// 它不包含 Edge assignment、AgentTicket、Presence、session 或任何私钥。
+// 它不包含 Controller runtime locator、Presence、session 或任何私钥。
 type EnrollmentRecord struct {
-	Version              int       `json:"version"`
-	DaemonID             string    `json:"daemon_id"`
-	AccountID            string    `json:"account_id"`
-	ControllerAddress    string    `json:"controller_address"`
-	ControllerServerName string    `json:"controller_server_name"`
-	EnrolledAt           time.Time `json:"enrolled_at"`
+	Version       int       `json:"version"`
+	DaemonID      string    `json:"daemon_id"`
+	AccountID     string    `json:"account_id"`
+	DaemonBinding []byte    `json:"daemon_binding"`
+	EdgeLocator   []byte    `json:"edge_locator"`
+	EnrolledAt    time.Time `json:"enrolled_at"`
 }
 
-// Validate 校验本地 enrollment record 的稳定发现字段。
+// Validate 校验 v2 record，并拒绝旧字段、损坏 protobuf 和 binding/locator 身份错配。
 func (record EnrollmentRecord) Validate() error {
-	if record.Version != recordVersion || strings.TrimSpace(record.DaemonID) == "" || strings.TrimSpace(record.AccountID) == "" ||
-		strings.TrimSpace(record.ControllerAddress) == "" || strings.TrimSpace(record.ControllerServerName) == "" || record.EnrolledAt.IsZero() {
+	if record.Version != recordVersion || strings.TrimSpace(record.DaemonID) == "" || strings.TrimSpace(record.AccountID) == "" || len(record.DaemonBinding) == 0 || len(record.EdgeLocator) == 0 || record.EnrolledAt.IsZero() {
 		return errors.New("Cloud enrollment record is incomplete or unsupported")
+	}
+	binding := &cloudv1.SignedEnvelope{}
+	claims := &cloudv1.DaemonBindingClaims{}
+	locator := &cloudv1.EdgeLocator{}
+	locatorDigest := sha256.Sum256(record.EdgeLocator)
+	if proto.Unmarshal(record.DaemonBinding, binding) != nil || proto.Unmarshal(binding.GetPayload(), claims) != nil || proto.Unmarshal(record.EdgeLocator, locator) != nil ||
+		claims.GetDaemonId() != record.DaemonID || claims.GetAccountId() != record.AccountID || claims.GetEdgeId() != locator.GetEdgeId() ||
+		!bytes.Equal(claims.GetEdgeLocatorSha256(), locatorDigest[:]) ||
+		strings.TrimSpace(locator.GetPublicEndpoint()) == "" || strings.TrimSpace(locator.GetServerName()) == "" || len(locator.GetCaCertificatePem()) == 0 {
+		return errors.New("Cloud enrollment record binding or Edge locator is invalid")
 	}
 	return nil
 }

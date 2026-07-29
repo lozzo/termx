@@ -21,22 +21,16 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	EnrollmentService_BeginDaemonEnrollment_FullMethodName    = "/anytty.cloud.v1.EnrollmentService/BeginDaemonEnrollment"
 	EnrollmentService_CompleteDaemonEnrollment_FullMethodName = "/anytty.cloud.v1.EnrollmentService/CompleteDaemonEnrollment"
-	EnrollmentService_ListAgentCandidates_FullMethodName      = "/anytty.cloud.v1.EnrollmentService/ListAgentCandidates"
-	EnrollmentService_BeginAgentTicket_FullMethodName         = "/anytty.cloud.v1.EnrollmentService/BeginAgentTicket"
-	EnrollmentService_IssueAgentTicket_FullMethodName         = "/anytty.cloud.v1.EnrollmentService/IssueAgentTicket"
 )
 
 // EnrollmentServiceClient is the client API for EnrollmentService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// EnrollmentService 是 daemon 注册和短期 AgentTicket 的唯一公共 API。
+// EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
 type EnrollmentServiceClient interface {
 	BeginDaemonEnrollment(ctx context.Context, in *BeginDaemonEnrollmentRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
 	CompleteDaemonEnrollment(ctx context.Context, in *CompleteDaemonEnrollmentRequest, opts ...grpc.CallOption) (*CompleteDaemonEnrollmentResponse, error)
-	ListAgentCandidates(ctx context.Context, in *ListAgentCandidatesRequest, opts ...grpc.CallOption) (*ListAgentCandidatesResponse, error)
-	BeginAgentTicket(ctx context.Context, in *BeginAgentTicketRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
-	IssueAgentTicket(ctx context.Context, in *IssueAgentTicketRequest, opts ...grpc.CallOption) (*IssueAgentTicketResponse, error)
 }
 
 type enrollmentServiceClient struct {
@@ -67,47 +61,14 @@ func (c *enrollmentServiceClient) CompleteDaemonEnrollment(ctx context.Context, 
 	return out, nil
 }
 
-func (c *enrollmentServiceClient) ListAgentCandidates(ctx context.Context, in *ListAgentCandidatesRequest, opts ...grpc.CallOption) (*ListAgentCandidatesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListAgentCandidatesResponse)
-	err := c.cc.Invoke(ctx, EnrollmentService_ListAgentCandidates_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *enrollmentServiceClient) BeginAgentTicket(ctx context.Context, in *BeginAgentTicketRequest, opts ...grpc.CallOption) (*IdentityChallenge, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(IdentityChallenge)
-	err := c.cc.Invoke(ctx, EnrollmentService_BeginAgentTicket_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *enrollmentServiceClient) IssueAgentTicket(ctx context.Context, in *IssueAgentTicketRequest, opts ...grpc.CallOption) (*IssueAgentTicketResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(IssueAgentTicketResponse)
-	err := c.cc.Invoke(ctx, EnrollmentService_IssueAgentTicket_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // EnrollmentServiceServer is the server API for EnrollmentService service.
 // All implementations must embed UnimplementedEnrollmentServiceServer
 // for forward compatibility.
 //
-// EnrollmentService 是 daemon 注册和短期 AgentTicket 的唯一公共 API。
+// EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
 type EnrollmentServiceServer interface {
 	BeginDaemonEnrollment(context.Context, *BeginDaemonEnrollmentRequest) (*IdentityChallenge, error)
 	CompleteDaemonEnrollment(context.Context, *CompleteDaemonEnrollmentRequest) (*CompleteDaemonEnrollmentResponse, error)
-	ListAgentCandidates(context.Context, *ListAgentCandidatesRequest) (*ListAgentCandidatesResponse, error)
-	BeginAgentTicket(context.Context, *BeginAgentTicketRequest) (*IdentityChallenge, error)
-	IssueAgentTicket(context.Context, *IssueAgentTicketRequest) (*IssueAgentTicketResponse, error)
 	mustEmbedUnimplementedEnrollmentServiceServer()
 }
 
@@ -123,15 +84,6 @@ func (UnimplementedEnrollmentServiceServer) BeginDaemonEnrollment(context.Contex
 }
 func (UnimplementedEnrollmentServiceServer) CompleteDaemonEnrollment(context.Context, *CompleteDaemonEnrollmentRequest) (*CompleteDaemonEnrollmentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CompleteDaemonEnrollment not implemented")
-}
-func (UnimplementedEnrollmentServiceServer) ListAgentCandidates(context.Context, *ListAgentCandidatesRequest) (*ListAgentCandidatesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListAgentCandidates not implemented")
-}
-func (UnimplementedEnrollmentServiceServer) BeginAgentTicket(context.Context, *BeginAgentTicketRequest) (*IdentityChallenge, error) {
-	return nil, status.Error(codes.Unimplemented, "method BeginAgentTicket not implemented")
-}
-func (UnimplementedEnrollmentServiceServer) IssueAgentTicket(context.Context, *IssueAgentTicketRequest) (*IssueAgentTicketResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method IssueAgentTicket not implemented")
 }
 func (UnimplementedEnrollmentServiceServer) mustEmbedUnimplementedEnrollmentServiceServer() {}
 func (UnimplementedEnrollmentServiceServer) testEmbeddedByValue()                           {}
@@ -190,60 +142,6 @@ func _EnrollmentService_CompleteDaemonEnrollment_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EnrollmentService_ListAgentCandidates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListAgentCandidatesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EnrollmentServiceServer).ListAgentCandidates(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: EnrollmentService_ListAgentCandidates_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EnrollmentServiceServer).ListAgentCandidates(ctx, req.(*ListAgentCandidatesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _EnrollmentService_BeginAgentTicket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BeginAgentTicketRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EnrollmentServiceServer).BeginAgentTicket(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: EnrollmentService_BeginAgentTicket_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EnrollmentServiceServer).BeginAgentTicket(ctx, req.(*BeginAgentTicketRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _EnrollmentService_IssueAgentTicket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(IssueAgentTicketRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EnrollmentServiceServer).IssueAgentTicket(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: EnrollmentService_IssueAgentTicket_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EnrollmentServiceServer).IssueAgentTicket(ctx, req.(*IssueAgentTicketRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // EnrollmentService_ServiceDesc is the grpc.ServiceDesc for EnrollmentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -258,18 +156,6 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompleteDaemonEnrollment",
 			Handler:    _EnrollmentService_CompleteDaemonEnrollment_Handler,
-		},
-		{
-			MethodName: "ListAgentCandidates",
-			Handler:    _EnrollmentService_ListAgentCandidates_Handler,
-		},
-		{
-			MethodName: "BeginAgentTicket",
-			Handler:    _EnrollmentService_BeginAgentTicket_Handler,
-		},
-		{
-			MethodName: "IssueAgentTicket",
-			Handler:    _EnrollmentService_IssueAgentTicket_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

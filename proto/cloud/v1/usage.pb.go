@@ -129,8 +129,7 @@ func (RelayTransport) EnumDescriptor() ([]byte, []int) {
 	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{1}
 }
 
-// RelayLeaseClaims 是单个 session 的短期 Relay 上限。
-// Controller 在线时由其签发；控制流离线时 Edge 只能从 AgentTicket 的签名委托收缩生成。
+// RelayLeaseClaims 是 Edge 从 daemon binding 委托收缩生成的单 session 短期 Relay 上限。
 type RelayLeaseClaims struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId                  string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
@@ -255,36 +254,33 @@ func (x *RelayLeaseClaims) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// RelayLeaseRequest 只为已经通过 daemon 本地预检的精确 session 申请租约。
-type RelayLeaseRequest struct {
+// RelayLeaseSpec 是 Edge 进程内的准入输入，不进入 EdgeControl 协议。
+type RelayLeaseSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	AccountId     string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	DaemonId      string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	ClientId      string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	Preference    RelayPreference        `protobuf:"varint,6,opt,name=preference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"preference,omitempty"`
-	// renew_lease_id 为空表示首次准入；非空时 Controller 为同一在线 session
-	// 重新评估策略并续期该 lease，Edge 不得借此更换 TURN credential。
-	RenewLeaseId  string `protobuf:"bytes,7,opt,name=renew_lease_id,json=renewLeaseId,proto3" json:"renew_lease_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AccountId     string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	DaemonId      string                 `protobuf:"bytes,3,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	ClientId      string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	Preference    RelayPreference        `protobuf:"varint,5,opt,name=preference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"preference,omitempty"`
+	RenewLeaseId  string                 `protobuf:"bytes,6,opt,name=renew_lease_id,json=renewLeaseId,proto3" json:"renew_lease_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RelayLeaseRequest) Reset() {
-	*x = RelayLeaseRequest{}
+func (x *RelayLeaseSpec) Reset() {
+	*x = RelayLeaseSpec{}
 	mi := &file_cloud_v1_usage_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RelayLeaseRequest) String() string {
+func (x *RelayLeaseSpec) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RelayLeaseRequest) ProtoMessage() {}
+func (*RelayLeaseSpec) ProtoMessage() {}
 
-func (x *RelayLeaseRequest) ProtoReflect() protoreflect.Message {
+func (x *RelayLeaseSpec) ProtoReflect() protoreflect.Message {
 	mi := &file_cloud_v1_usage_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -296,218 +292,52 @@ func (x *RelayLeaseRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RelayLeaseRequest.ProtoReflect.Descriptor instead.
-func (*RelayLeaseRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use RelayLeaseSpec.ProtoReflect.Descriptor instead.
+func (*RelayLeaseSpec) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *RelayLeaseRequest) GetCorrelationId() string {
-	if x != nil {
-		return x.CorrelationId
-	}
-	return ""
-}
-
-func (x *RelayLeaseRequest) GetSessionId() string {
+func (x *RelayLeaseSpec) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
 	}
 	return ""
 }
 
-func (x *RelayLeaseRequest) GetAccountId() string {
+func (x *RelayLeaseSpec) GetAccountId() string {
 	if x != nil {
 		return x.AccountId
 	}
 	return ""
 }
 
-func (x *RelayLeaseRequest) GetDaemonId() string {
+func (x *RelayLeaseSpec) GetDaemonId() string {
 	if x != nil {
 		return x.DaemonId
 	}
 	return ""
 }
 
-func (x *RelayLeaseRequest) GetClientId() string {
+func (x *RelayLeaseSpec) GetClientId() string {
 	if x != nil {
 		return x.ClientId
 	}
 	return ""
 }
 
-func (x *RelayLeaseRequest) GetPreference() RelayPreference {
+func (x *RelayLeaseSpec) GetPreference() RelayPreference {
 	if x != nil {
 		return x.Preference
 	}
 	return RelayPreference_RELAY_PREFERENCE_UNSPECIFIED
 }
 
-func (x *RelayLeaseRequest) GetRenewLeaseId() string {
+func (x *RelayLeaseSpec) GetRenewLeaseId() string {
 	if x != nil {
 		return x.RenewLeaseId
 	}
 	return ""
 }
-
-type RelayLeaseDenied struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Retryable     bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RelayLeaseDenied) Reset() {
-	*x = RelayLeaseDenied{}
-	mi := &file_cloud_v1_usage_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RelayLeaseDenied) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RelayLeaseDenied) ProtoMessage() {}
-
-func (x *RelayLeaseDenied) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_usage_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RelayLeaseDenied.ProtoReflect.Descriptor instead.
-func (*RelayLeaseDenied) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *RelayLeaseDenied) GetCode() string {
-	if x != nil {
-		return x.Code
-	}
-	return ""
-}
-
-func (x *RelayLeaseDenied) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *RelayLeaseDenied) GetRetryable() bool {
-	if x != nil {
-		return x.Retryable
-	}
-	return false
-}
-
-// RelayLeaseDecision 用 correlation_id 把 Controller 决策返回当前 EdgeControl generation。
-type RelayLeaseDecision struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// Types that are valid to be assigned to Result:
-	//
-	//	*RelayLeaseDecision_Lease
-	//	*RelayLeaseDecision_Denied
-	Result        isRelayLeaseDecision_Result `protobuf_oneof:"result"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RelayLeaseDecision) Reset() {
-	*x = RelayLeaseDecision{}
-	mi := &file_cloud_v1_usage_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RelayLeaseDecision) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RelayLeaseDecision) ProtoMessage() {}
-
-func (x *RelayLeaseDecision) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_usage_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RelayLeaseDecision.ProtoReflect.Descriptor instead.
-func (*RelayLeaseDecision) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *RelayLeaseDecision) GetCorrelationId() string {
-	if x != nil {
-		return x.CorrelationId
-	}
-	return ""
-}
-
-func (x *RelayLeaseDecision) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *RelayLeaseDecision) GetResult() isRelayLeaseDecision_Result {
-	if x != nil {
-		return x.Result
-	}
-	return nil
-}
-
-func (x *RelayLeaseDecision) GetLease() *SignedEnvelope {
-	if x != nil {
-		if x, ok := x.Result.(*RelayLeaseDecision_Lease); ok {
-			return x.Lease
-		}
-	}
-	return nil
-}
-
-func (x *RelayLeaseDecision) GetDenied() *RelayLeaseDenied {
-	if x != nil {
-		if x, ok := x.Result.(*RelayLeaseDecision_Denied); ok {
-			return x.Denied
-		}
-	}
-	return nil
-}
-
-type isRelayLeaseDecision_Result interface {
-	isRelayLeaseDecision_Result()
-}
-
-type RelayLeaseDecision_Lease struct {
-	Lease *SignedEnvelope `protobuf:"bytes,10,opt,name=lease,proto3,oneof"`
-}
-
-type RelayLeaseDecision_Denied struct {
-	Denied *RelayLeaseDenied `protobuf:"bytes,11,opt,name=denied,proto3,oneof"`
-}
-
-func (*RelayLeaseDecision_Lease) isRelayLeaseDecision_Result() {}
-
-func (*RelayLeaseDecision_Denied) isRelayLeaseDecision_Result() {}
 
 // RelayICEConfig 是 Edge 从已验证或已委托租约派生的一次性 TURN credential。
 // 该消息只在当前 ClientGateway/AgentGateway attempt 内存活，禁止持久化或写日志。
@@ -524,7 +354,7 @@ type RelayICEConfig struct {
 
 func (x *RelayICEConfig) Reset() {
 	*x = RelayICEConfig{}
-	mi := &file_cloud_v1_usage_proto_msgTypes[4]
+	mi := &file_cloud_v1_usage_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -536,7 +366,7 @@ func (x *RelayICEConfig) String() string {
 func (*RelayICEConfig) ProtoMessage() {}
 
 func (x *RelayICEConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_usage_proto_msgTypes[4]
+	mi := &file_cloud_v1_usage_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -549,7 +379,7 @@ func (x *RelayICEConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayICEConfig.ProtoReflect.Descriptor instead.
 func (*RelayICEConfig) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RelayICEConfig) GetLeaseId() string {
@@ -610,7 +440,7 @@ type UsageEvent struct {
 
 func (x *UsageEvent) Reset() {
 	*x = UsageEvent{}
-	mi := &file_cloud_v1_usage_proto_msgTypes[5]
+	mi := &file_cloud_v1_usage_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -622,7 +452,7 @@ func (x *UsageEvent) String() string {
 func (*UsageEvent) ProtoMessage() {}
 
 func (x *UsageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_usage_proto_msgTypes[5]
+	mi := &file_cloud_v1_usage_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -635,7 +465,7 @@ func (x *UsageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageEvent.ProtoReflect.Descriptor instead.
 func (*UsageEvent) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *UsageEvent) GetSchemaVersion() uint32 {
@@ -747,7 +577,7 @@ type UsageBatch struct {
 
 func (x *UsageBatch) Reset() {
 	*x = UsageBatch{}
-	mi := &file_cloud_v1_usage_proto_msgTypes[6]
+	mi := &file_cloud_v1_usage_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -759,7 +589,7 @@ func (x *UsageBatch) String() string {
 func (*UsageBatch) ProtoMessage() {}
 
 func (x *UsageBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_usage_proto_msgTypes[6]
+	mi := &file_cloud_v1_usage_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -772,7 +602,7 @@ func (x *UsageBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageBatch.ProtoReflect.Descriptor instead.
 func (*UsageBatch) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UsageBatch) GetBatchId() string {
@@ -799,7 +629,7 @@ type UsageAck struct {
 
 func (x *UsageAck) Reset() {
 	*x = UsageAck{}
-	mi := &file_cloud_v1_usage_proto_msgTypes[7]
+	mi := &file_cloud_v1_usage_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +641,7 @@ func (x *UsageAck) String() string {
 func (*UsageAck) ProtoMessage() {}
 
 func (x *UsageAck) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_usage_proto_msgTypes[7]
+	mi := &file_cloud_v1_usage_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +654,7 @@ func (x *UsageAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageAck.ProtoReflect.Descriptor instead.
 func (*UsageAck) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_usage_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UsageAck) GetEventIds() []string {
@@ -838,7 +668,7 @@ var File_cloud_v1_usage_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\n" +
-	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x03\n" +
+	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x03\n" +
 	"\x10RelayLeaseClaims\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1d\n" +
 	"\n" +
@@ -854,31 +684,18 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\tissued_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x9a\x02\n" +
-	"\x11RelayLeaseRequest\x12%\n" +
-	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
+	"expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xf0\x01\n" +
+	"\x0eRelayLeaseSpec\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1d\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x03 \x01(\tR\taccountId\x12\x1b\n" +
-	"\tdaemon_id\x18\x04 \x01(\tR\bdaemonId\x12\x1b\n" +
-	"\tclient_id\x18\x05 \x01(\tR\bclientId\x12@\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n" +
+	"\tdaemon_id\x18\x03 \x01(\tR\bdaemonId\x12\x1b\n" +
+	"\tclient_id\x18\x04 \x01(\tR\bclientId\x12@\n" +
 	"\n" +
-	"preference\x18\x06 \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\n" +
+	"preference\x18\x05 \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\n" +
 	"preference\x12$\n" +
-	"\x0erenew_lease_id\x18\a \x01(\tR\frenewLeaseId\"^\n" +
-	"\x10RelayLeaseDenied\x12\x12\n" +
-	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
-	"\tretryable\x18\x03 \x01(\bR\tretryable\"\xda\x01\n" +
-	"\x12RelayLeaseDecision\x12%\n" +
-	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x127\n" +
-	"\x05lease\x18\n" +
-	" \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeH\x00R\x05lease\x12;\n" +
-	"\x06denied\x18\v \x01(\v2!.anytty.cloud.v1.RelayLeaseDeniedH\x00R\x06deniedB\b\n" +
-	"\x06result\"\xb6\x01\n" +
+	"\x0erenew_lease_id\x18\x06 \x01(\tR\frenewLeaseId\"\xb6\x01\n" +
 	"\x0eRelayICEConfig\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x12\n" +
 	"\x04urls\x18\x02 \x03(\tR\x04urls\x12\x1a\n" +
@@ -938,37 +755,32 @@ func file_cloud_v1_usage_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_usage_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloud_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_cloud_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_cloud_v1_usage_proto_goTypes = []any{
 	(RelayPreference)(0),          // 0: anytty.cloud.v1.RelayPreference
 	(RelayTransport)(0),           // 1: anytty.cloud.v1.RelayTransport
 	(*RelayLeaseClaims)(nil),      // 2: anytty.cloud.v1.RelayLeaseClaims
-	(*RelayLeaseRequest)(nil),     // 3: anytty.cloud.v1.RelayLeaseRequest
-	(*RelayLeaseDenied)(nil),      // 4: anytty.cloud.v1.RelayLeaseDenied
-	(*RelayLeaseDecision)(nil),    // 5: anytty.cloud.v1.RelayLeaseDecision
-	(*RelayICEConfig)(nil),        // 6: anytty.cloud.v1.RelayICEConfig
-	(*UsageEvent)(nil),            // 7: anytty.cloud.v1.UsageEvent
-	(*UsageBatch)(nil),            // 8: anytty.cloud.v1.UsageBatch
-	(*UsageAck)(nil),              // 9: anytty.cloud.v1.UsageAck
-	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),        // 11: anytty.cloud.v1.SignedEnvelope
+	(*RelayLeaseSpec)(nil),        // 3: anytty.cloud.v1.RelayLeaseSpec
+	(*RelayICEConfig)(nil),        // 4: anytty.cloud.v1.RelayICEConfig
+	(*UsageEvent)(nil),            // 5: anytty.cloud.v1.UsageEvent
+	(*UsageBatch)(nil),            // 6: anytty.cloud.v1.UsageBatch
+	(*UsageAck)(nil),              // 7: anytty.cloud.v1.UsageAck
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_cloud_v1_usage_proto_depIdxs = []int32{
-	10, // 0: anytty.cloud.v1.RelayLeaseClaims.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 1: anytty.cloud.v1.RelayLeaseClaims.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 2: anytty.cloud.v1.RelayLeaseRequest.preference:type_name -> anytty.cloud.v1.RelayPreference
-	11, // 3: anytty.cloud.v1.RelayLeaseDecision.lease:type_name -> anytty.cloud.v1.SignedEnvelope
-	4,  // 4: anytty.cloud.v1.RelayLeaseDecision.denied:type_name -> anytty.cloud.v1.RelayLeaseDenied
-	10, // 5: anytty.cloud.v1.RelayICEConfig.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 6: anytty.cloud.v1.UsageEvent.transport:type_name -> anytty.cloud.v1.RelayTransport
-	10, // 7: anytty.cloud.v1.UsageEvent.started_at:type_name -> google.protobuf.Timestamp
-	10, // 8: anytty.cloud.v1.UsageEvent.ended_at:type_name -> google.protobuf.Timestamp
-	7,  // 9: anytty.cloud.v1.UsageBatch.events:type_name -> anytty.cloud.v1.UsageEvent
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	8, // 0: anytty.cloud.v1.RelayLeaseClaims.issued_at:type_name -> google.protobuf.Timestamp
+	8, // 1: anytty.cloud.v1.RelayLeaseClaims.expires_at:type_name -> google.protobuf.Timestamp
+	0, // 2: anytty.cloud.v1.RelayLeaseSpec.preference:type_name -> anytty.cloud.v1.RelayPreference
+	8, // 3: anytty.cloud.v1.RelayICEConfig.expires_at:type_name -> google.protobuf.Timestamp
+	1, // 4: anytty.cloud.v1.UsageEvent.transport:type_name -> anytty.cloud.v1.RelayTransport
+	8, // 5: anytty.cloud.v1.UsageEvent.started_at:type_name -> google.protobuf.Timestamp
+	8, // 6: anytty.cloud.v1.UsageEvent.ended_at:type_name -> google.protobuf.Timestamp
+	5, // 7: anytty.cloud.v1.UsageBatch.events:type_name -> anytty.cloud.v1.UsageEvent
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_usage_proto_init() }
@@ -976,18 +788,13 @@ func file_cloud_v1_usage_proto_init() {
 	if File_cloud_v1_usage_proto != nil {
 		return
 	}
-	file_cloud_v1_common_proto_init()
-	file_cloud_v1_usage_proto_msgTypes[3].OneofWrappers = []any{
-		(*RelayLeaseDecision_Lease)(nil),
-		(*RelayLeaseDecision_Denied)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_usage_proto_rawDesc), len(file_cloud_v1_usage_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   8,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

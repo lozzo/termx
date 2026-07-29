@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/anytty/anytty/cloud/edge/policy"
 	"github.com/anytty/anytty/cloud/runtimesnapshot"
@@ -23,8 +24,11 @@ var (
 
 // StateConfig 约束 Edge runtime actor 的 mailbox 和每条 Controller 流的增量缓冲。
 type StateConfig struct {
-	MailboxSize int
-	DeltaBuffer int
+	MailboxSize       int
+	DeltaBuffer       int
+	MaxSessions       int
+	MaxPendingSignals int
+	Now               func() time.Time
 }
 
 // State 是 Edge 在线 agent/session 的唯一内存 owner。
@@ -34,6 +38,13 @@ type State struct {
 	done      chan struct{}
 	closing   atomic.Bool
 	closeOnce sync.Once
+	now       func() time.Time
+	limits    stateLimits
+}
+
+type stateLimits struct {
+	maxSessions       int
+	maxPendingSignals int
 }
 
 // Feed 在同一个 actor 事务中取得 revision R 的快照并订阅 R 之后的增量。
@@ -59,7 +70,7 @@ type stateRequest struct {
 type stateData struct {
 	revision           uint64
 	agents             map[string]*cloudv1.AgentPresence
-	agentClaims        map[string]*cloudv1.AgentTicketClaims
+	agentClaims        map[string]*cloudv1.DaemonBindingClaims
 	agentWriters       map[string]agentWriter
 	agentNextGen       map[string]uint64
 	sessions           map[string]*cloudv1.ClientSessionSummary
@@ -101,7 +112,19 @@ func NewState(config StateConfig) (*State, error) {
 	if config.MailboxSize <= 0 || config.DeltaBuffer <= 0 {
 		return nil, errors.New("runtime mailbox and delta buffer must be positive")
 	}
-	state := &State{mailbox: make(chan stateRequest, config.MailboxSize), done: make(chan struct{})}
+	if config.MaxSessions <= 0 {
+		config.MaxSessions = 4096
+	}
+	if config.MaxPendingSignals <= 0 {
+		config.MaxPendingSignals = 4096
+	}
+	if config.Now == nil {
+		config.Now = time.Now
+	}
+	state := &State{
+		mailbox: make(chan stateRequest, config.MailboxSize), done: make(chan struct{}), now: config.Now,
+		limits: stateLimits{maxSessions: config.MaxSessions, maxPendingSignals: config.MaxPendingSignals},
+	}
 	go state.run(config.DeltaBuffer)
 	return state, nil
 }
@@ -127,11 +150,11 @@ func (state *State) UpsertAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 }
 
 // AttachAuthenticatedAgent 为已认证 AgentGateway 分配单调 generation，并保留 daemon 身份供 ClientGateway 离线验签。
-func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1.AgentPresence, claims *cloudv1.AgentTicketClaims, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, error) {
+func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1.AgentPresence, claims *cloudv1.DaemonBindingClaims, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, error) {
 	if agent == nil || claims == nil || claims.GetDaemonId() != agent.GetDaemonId() || claims.GetAccountId() != agent.GetAccountId() || len(claims.GetDevicePublicKey()) == 0 {
 		return 0, errors.New("authenticated Agent claims do not match Presence")
 	}
-	claims = proto.Clone(claims).(*cloudv1.AgentTicketClaims)
+	claims = proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
 	if agent == nil || send == nil || closeWriter == nil {
 		return 0, errors.New("authenticated agent and writer are required")
 	}
@@ -156,7 +179,7 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 		}
 		data.agentWriters[clone.GetDaemonId()] = agentWriter{generation: clone.GetGeneration(), send: send, close: closeWriter}
 		data.agents[clone.GetDaemonId()] = clone
-		data.agentClaims[clone.GetDaemonId()] = proto.Clone(claims).(*cloudv1.AgentTicketClaims)
+		data.agentClaims[clone.GetDaemonId()] = proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: proto.Clone(clone).(*cloudv1.AgentPresence)}})
 		reply <- result{generation: clone.GetGeneration(), oldClose: oldClose}
@@ -177,21 +200,21 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 }
 
 // AuthenticatedAgentClaims 返回当前 AgentGateway generation 已验证的 daemon 身份，不访问 Controller。
-func (state *State) AuthenticatedAgentClaims(ctx context.Context, daemonID string) (*cloudv1.AgentTicketClaims, error) {
+func (state *State) AuthenticatedAgentClaims(ctx context.Context, daemonID string) (*cloudv1.DaemonBindingClaims, error) {
 	daemonID = strings.TrimSpace(daemonID)
 	if daemonID == "" {
 		return nil, errors.New("daemon id is required")
 	}
-	reply := make(chan *cloudv1.AgentTicketClaims, 1)
+	reply := make(chan *cloudv1.DaemonBindingClaims, 1)
 	if err := state.submit(ctx, func(data *stateData) {
 		claims := data.agentClaims[daemonID]
 		agent := data.agents[daemonID]
 		writer := data.agentWriters[daemonID]
-		if claims == nil || agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() {
+		if claims == nil || agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() || claims.GetExpiresAt() == nil || !claims.GetExpiresAt().AsTime().After(state.now().UTC()) {
 			reply <- nil
 			return
 		}
-		reply <- proto.Clone(claims).(*cloudv1.AgentTicketClaims)
+		reply <- proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
 	}); err != nil {
 		return nil, err
 	}
@@ -311,6 +334,10 @@ func (state *State) BeginAgentSignal(ctx context.Context, correlationID, daemonI
 			reply <- result{err: errors.New("agent signal correlation already exists")}
 			return
 		}
+		if len(data.pendingSignals) >= state.limits.maxPendingSignals {
+			reply <- result{err: errors.New("runtime pending signal capacity is exhausted")}
+			return
+		}
 		agent := data.agents[daemonID]
 		writer := data.agentWriters[daemonID]
 		if agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() {
@@ -404,6 +431,9 @@ func (state *State) UpsertSession(ctx context.Context, session *cloudv1.ClientSe
 	return state.mutate(ctx, func(data *stateData) error {
 		if current := data.sessions[clone.GetSessionId()]; current != nil && clone.GetGeneration() < current.GetGeneration() {
 			return ErrStaleGeneration
+		}
+		if data.sessions[clone.GetSessionId()] == nil && len(data.sessions) >= state.limits.maxSessions {
+			return errors.New("runtime client session capacity is exhausted")
 		}
 		data.sessions[clone.GetSessionId()] = clone
 		data.revision++
@@ -563,7 +593,7 @@ func (state *State) Close() {
 
 func (state *State) run(deltaBuffer int) {
 	data := &stateData{
-		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.AgentTicketClaims), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
+		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
 		relayLeases: make(map[string]relayLease), relayReservations: make(map[string]relayReservation), allocations: make(map[string]relayAllocation), allocationNextGen: make(map[string]uint64),
 		accountAllocations: make(map[string]uint32), leaseAllocations: make(map[string]uint32), sessionAllocations: make(map[string]uint32),
 		accountRates: make(map[string]*policy.RateLimiter), sessionRates: make(map[string]*policy.RateLimiter),

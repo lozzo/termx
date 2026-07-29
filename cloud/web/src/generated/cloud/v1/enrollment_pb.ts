@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/enrollment.proto.
  */
 export const file_cloud_v1_enrollment: GenFile = /*@__PURE__*/
-  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEikwIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSDwoHcmV2b2tlZBgHIAEoCBIQCghyZXZpc2lvbhgIIAEoBBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK8AQoXRGFlbW9uUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2VkZ2VfaWQYAiABKAkSEQoJZWRnZV9uYW1lGAMgASgJEhMKC2VkZ2VfcmVnaW9uGAQgASgJEg8KB2Jvb3RfaWQYBSABKAkSFQoNY29ubmVjdGlvbl9pZBgGIAEoCRISCgpnZW5lcmF0aW9uGAcgASgEEhwKFGVkZ2VfcHVibGljX2VuZHBvaW50GAggASgJInkKDU1hbmFnZWREYWVtb24SLQoGZGFlbW9uGAEgASgLMh0uYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlY29yZBI5CgdydW50aW1lGAIgASgLMiguYW55dHR5LmNsb3VkLnYxLkRhZW1vblJ1bnRpbWVQcm9qZWN0aW9uIl4KHUNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSFAoMYWNjb3VudF9uYW1lGAIgASgJEhMKC2RhZW1vbl9uYW1lGAMgASgJIpUBCh5DcmVhdGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2USEgoKYWNjb3VudF9pZBgBIAEoCRIXCg9lbnJvbGxtZW50X2NvZGUYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOZW5yb2xsX2NvbW1hbmQYBCABKAkiFAoSTGlzdERhZW1vbnNSZXF1ZXN0IkYKE0xpc3REYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIjYKH0NyZWF0ZU15RGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEwoLZGFlbW9uX25hbWUYASABKAkiFgoUTGlzdE15RGFlbW9uc1JlcXVlc3QiSAoVTGlzdE15RGFlbW9uc1Jlc3BvbnNlEi8KB2RhZW1vbnMYASADKAsyHi5hbnl0dHkuY2xvdWQudjEuTWFuYWdlZERhZW1vbiJVChVSZXZva2VNeURhZW1vblJlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSKHAQoWUmV2b2tlTXlEYWVtb25SZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEhoKEnJ1bnRpbWVfd2FzX29ubGluZRgCIAEoCBIiChpydW50aW1lX2Rpc2Nvbm5lY3RfYXBwbGllZBgDIAEoCCKBAQocQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBIXCg9lbnJvbGxtZW50X2NvZGUYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgEIAEoDCJsChFJZGVudGl0eUNoYWxsZW5nZRIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KH0NvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCJRCiBDb21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkIkkKGkxpc3RBZ2VudENhbmRpZGF0ZXNSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCRIYChBwcmVmZXJyZWRfcmVnaW9uGAIgASgJIrIBCg1DYW5kaWRhdGVFZGdlEg8KB2VkZ2VfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZyZWdpb24YAyABKAkSFwoPcHVibGljX2VuZHBvaW50GAQgASgJEhMKC3NlcnZlcl9uYW1lGAUgASgJEhoKEmNhX2NlcnRpZmljYXRlX3BlbRgGIAEoDBIQCghjYXBhY2l0eRgHIAEoBBIWCg5jdXJyZW50X2FnZW50cxgIIAEoBCJRChtMaXN0QWdlbnRDYW5kaWRhdGVzUmVzcG9uc2USMgoKY2FuZGlkYXRlcxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5DYW5kaWRhdGVFZGdlIj0KF0JlZ2luQWdlbnRUaWNrZXRSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCRIPCgdlZGdlX2lkGAIgASgJIkUKF0lzc3VlQWdlbnRUaWNrZXRSZXF1ZXN0EhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIUCgxkZXZpY2VfcHJvb2YYAiABKAwifwoYSXNzdWVBZ2VudFRpY2tldFJlc3BvbnNlEjUKDGFnZW50X3RpY2tldBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZRIsCgRlZGdlGAIgASgLMh4uYW55dHR5LmNsb3VkLnYxLkNhbmRpZGF0ZUVkZ2UyvQQKEUVucm9sbG1lbnRTZXJ2aWNlEmoKFUJlZ2luRGFlbW9uRW5yb2xsbWVudBItLmFueXR0eS5jbG91ZC52MS5CZWdpbkRhZW1vbkVucm9sbG1lbnRSZXF1ZXN0GiIuYW55dHR5LmNsb3VkLnYxLklkZW50aXR5Q2hhbGxlbmdlEn8KGENvbXBsZXRlRGFlbW9uRW5yb2xsbWVudBIwLmFueXR0eS5jbG91ZC52MS5Db21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0GjEuYW55dHR5LmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEnAKE0xpc3RBZ2VudENhbmRpZGF0ZXMSKy5hbnl0dHkuY2xvdWQudjEuTGlzdEFnZW50Q2FuZGlkYXRlc1JlcXVlc3QaLC5hbnl0dHkuY2xvdWQudjEuTGlzdEFnZW50Q2FuZGlkYXRlc1Jlc3BvbnNlEmAKEEJlZ2luQWdlbnRUaWNrZXQSKC5hbnl0dHkuY2xvdWQudjEuQmVnaW5BZ2VudFRpY2tldFJlcXVlc3QaIi5hbnl0dHkuY2xvdWQudjEuSWRlbnRpdHlDaGFsbGVuZ2USZwoQSXNzdWVBZ2VudFRpY2tldBIoLmFueXR0eS5jbG91ZC52MS5Jc3N1ZUFnZW50VGlja2V0UmVxdWVzdBopLmFueXR0eS5jbG91ZC52MS5Jc3N1ZUFnZW50VGlja2V0UmVzcG9uc2Uy1QIKF0RhZW1vbk1hbmFnZW1lbnRTZXJ2aWNlEncKEkNyZWF0ZU15RW5yb2xsbWVudBIwLmFueXR0eS5jbG91ZC52MS5DcmVhdGVNeURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0Gi8uYW55dHR5LmNsb3VkLnYxLkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRJeCg1MaXN0TXlEYWVtb25zEiUuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXF1ZXN0GiYuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXNwb25zZRJhCg5SZXZva2VNeURhZW1vbhImLmFueXR0eS5jbG91ZC52MS5SZXZva2VNeURhZW1vblJlcXVlc3QaJy5hbnl0dHkuY2xvdWQudjEuUmV2b2tlTXlEYWVtb25SZXNwb25zZUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEikwIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSDwoHcmV2b2tlZBgHIAEoCBIQCghyZXZpc2lvbhgIIAEoBBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK8AQoXRGFlbW9uUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2VkZ2VfaWQYAiABKAkSEQoJZWRnZV9uYW1lGAMgASgJEhMKC2VkZ2VfcmVnaW9uGAQgASgJEg8KB2Jvb3RfaWQYBSABKAkSFQoNY29ubmVjdGlvbl9pZBgGIAEoCRISCgpnZW5lcmF0aW9uGAcgASgEEhwKFGVkZ2VfcHVibGljX2VuZHBvaW50GAggASgJInkKDU1hbmFnZWREYWVtb24SLQoGZGFlbW9uGAEgASgLMh0uYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlY29yZBI5CgdydW50aW1lGAIgASgLMiguYW55dHR5LmNsb3VkLnYxLkRhZW1vblJ1bnRpbWVQcm9qZWN0aW9uIl4KHUNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSFAoMYWNjb3VudF9uYW1lGAIgASgJEhMKC2RhZW1vbl9uYW1lGAMgASgJIpUBCh5DcmVhdGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2USEgoKYWNjb3VudF9pZBgBIAEoCRIXCg9lbnJvbGxtZW50X2NvZGUYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOZW5yb2xsX2NvbW1hbmQYBCABKAkiFAoSTGlzdERhZW1vbnNSZXF1ZXN0IkYKE0xpc3REYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIjYKH0NyZWF0ZU15RGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEwoLZGFlbW9uX25hbWUYASABKAkiFgoUTGlzdE15RGFlbW9uc1JlcXVlc3QiSAoVTGlzdE15RGFlbW9uc1Jlc3BvbnNlEi8KB2RhZW1vbnMYASADKAsyHi5hbnl0dHkuY2xvdWQudjEuTWFuYWdlZERhZW1vbiJVChVSZXZva2VNeURhZW1vblJlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSKHAQoWUmV2b2tlTXlEYWVtb25SZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEhoKEnJ1bnRpbWVfd2FzX29ubGluZRgCIAEoCBIiChpydW50aW1lX2Rpc2Nvbm5lY3RfYXBwbGllZBgDIAEoCCKBAQocQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBIXCg9lbnJvbGxtZW50X2NvZGUYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgEIAEoDCJsChFJZGVudGl0eUNoYWxsZW5nZRIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KH0NvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCKYAQoLRWRnZUxvY2F0b3ISDwoHZWRnZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnJlZ2lvbhgDIAEoCRIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkSEwoLc2VydmVyX25hbWUYBSABKAkSGgoSY2FfY2VydGlmaWNhdGVfcGVtGAYgASgMEhAKCHJldmlzaW9uGAcgASgEIr4BCiBDb21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjcKDmRhZW1vbl9iaW5kaW5nGAIgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEjIKDGVkZ2VfbG9jYXRvchgDIAEoCzIcLmFueXR0eS5jbG91ZC52MS5FZGdlTG9jYXRvcjKAAgoRRW5yb2xsbWVudFNlcnZpY2USagoVQmVnaW5EYWVtb25FbnJvbGxtZW50Ei0uYW55dHR5LmNsb3VkLnYxLkJlZ2luRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaIi5hbnl0dHkuY2xvdWQudjEuSWRlbnRpdHlDaGFsbGVuZ2USfwoYQ29tcGxldGVEYWVtb25FbnJvbGxtZW50EjAuYW55dHR5LmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaMS5hbnl0dHkuY2xvdWQudjEuQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2Uy1QIKF0RhZW1vbk1hbmFnZW1lbnRTZXJ2aWNlEncKEkNyZWF0ZU15RW5yb2xsbWVudBIwLmFueXR0eS5jbG91ZC52MS5DcmVhdGVNeURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0Gi8uYW55dHR5LmNsb3VkLnYxLkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRJeCg1MaXN0TXlEYWVtb25zEiUuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXF1ZXN0GiYuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXNwb25zZRJhCg5SZXZva2VNeURhZW1vbhImLmFueXR0eS5jbG91ZC52MS5SZXZva2VNeURhZW1vblJlcXVlc3QaJy5hbnl0dHkuY2xvdWQudjEuUmV2b2tlTXlEYWVtb25SZXNwb25zZUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
@@ -430,48 +430,11 @@ export const CompleteDaemonEnrollmentRequestSchema: GenMessage<CompleteDaemonEnr
   messageDesc(file_cloud_v1_enrollment, 14);
 
 /**
- * @generated from message anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+ * EdgeLocator 是 daemon 和已授权客户端可持久化的公开连接位置，不包含授权秘密。
+ *
+ * @generated from message anytty.cloud.v1.EdgeLocator
  */
-export type CompleteDaemonEnrollmentResponse = Message<"anytty.cloud.v1.CompleteDaemonEnrollmentResponse"> & {
-  /**
-   * @generated from field: anytty.cloud.v1.DaemonRecord daemon = 1;
-   */
-  daemon?: DaemonRecord | undefined;
-};
-
-/**
- * Describes the message anytty.cloud.v1.CompleteDaemonEnrollmentResponse.
- * Use `create(CompleteDaemonEnrollmentResponseSchema)` to create a new message.
- */
-export const CompleteDaemonEnrollmentResponseSchema: GenMessage<CompleteDaemonEnrollmentResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 15);
-
-/**
- * @generated from message anytty.cloud.v1.ListAgentCandidatesRequest
- */
-export type ListAgentCandidatesRequest = Message<"anytty.cloud.v1.ListAgentCandidatesRequest"> & {
-  /**
-   * @generated from field: string daemon_id = 1;
-   */
-  daemonId: string;
-
-  /**
-   * @generated from field: string preferred_region = 2;
-   */
-  preferredRegion: string;
-};
-
-/**
- * Describes the message anytty.cloud.v1.ListAgentCandidatesRequest.
- * Use `create(ListAgentCandidatesRequestSchema)` to create a new message.
- */
-export const ListAgentCandidatesRequestSchema: GenMessage<ListAgentCandidatesRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 16);
-
-/**
- * @generated from message anytty.cloud.v1.CandidateEdge
- */
-export type CandidateEdge = Message<"anytty.cloud.v1.CandidateEdge"> & {
+export type EdgeLocator = Message<"anytty.cloud.v1.EdgeLocator"> & {
   /**
    * @generated from field: string edge_id = 1;
    */
@@ -503,108 +466,47 @@ export type CandidateEdge = Message<"anytty.cloud.v1.CandidateEdge"> & {
   caCertificatePem: Uint8Array;
 
   /**
-   * @generated from field: uint64 capacity = 7;
+   * @generated from field: uint64 revision = 7;
    */
-  capacity: bigint;
-
-  /**
-   * @generated from field: uint64 current_agents = 8;
-   */
-  currentAgents: bigint;
+  revision: bigint;
 };
 
 /**
- * Describes the message anytty.cloud.v1.CandidateEdge.
- * Use `create(CandidateEdgeSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.EdgeLocator.
+ * Use `create(EdgeLocatorSchema)` to create a new message.
  */
-export const CandidateEdgeSchema: GenMessage<CandidateEdge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 17);
+export const EdgeLocatorSchema: GenMessage<EdgeLocator> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 15);
 
 /**
- * @generated from message anytty.cloud.v1.ListAgentCandidatesResponse
+ * @generated from message anytty.cloud.v1.CompleteDaemonEnrollmentResponse
  */
-export type ListAgentCandidatesResponse = Message<"anytty.cloud.v1.ListAgentCandidatesResponse"> & {
+export type CompleteDaemonEnrollmentResponse = Message<"anytty.cloud.v1.CompleteDaemonEnrollmentResponse"> & {
   /**
-   * @generated from field: repeated anytty.cloud.v1.CandidateEdge candidates = 1;
+   * @generated from field: anytty.cloud.v1.DaemonRecord daemon = 1;
    */
-  candidates: CandidateEdge[];
+  daemon?: DaemonRecord | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.SignedEnvelope daemon_binding = 2;
+   */
+  daemonBinding?: SignedEnvelope | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.EdgeLocator edge_locator = 3;
+   */
+  edgeLocator?: EdgeLocator | undefined;
 };
 
 /**
- * Describes the message anytty.cloud.v1.ListAgentCandidatesResponse.
- * Use `create(ListAgentCandidatesResponseSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.CompleteDaemonEnrollmentResponse.
+ * Use `create(CompleteDaemonEnrollmentResponseSchema)` to create a new message.
  */
-export const ListAgentCandidatesResponseSchema: GenMessage<ListAgentCandidatesResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 18);
+export const CompleteDaemonEnrollmentResponseSchema: GenMessage<CompleteDaemonEnrollmentResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 16);
 
 /**
- * @generated from message anytty.cloud.v1.BeginAgentTicketRequest
- */
-export type BeginAgentTicketRequest = Message<"anytty.cloud.v1.BeginAgentTicketRequest"> & {
-  /**
-   * @generated from field: string daemon_id = 1;
-   */
-  daemonId: string;
-
-  /**
-   * @generated from field: string edge_id = 2;
-   */
-  edgeId: string;
-};
-
-/**
- * Describes the message anytty.cloud.v1.BeginAgentTicketRequest.
- * Use `create(BeginAgentTicketRequestSchema)` to create a new message.
- */
-export const BeginAgentTicketRequestSchema: GenMessage<BeginAgentTicketRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 19);
-
-/**
- * @generated from message anytty.cloud.v1.IssueAgentTicketRequest
- */
-export type IssueAgentTicketRequest = Message<"anytty.cloud.v1.IssueAgentTicketRequest"> & {
-  /**
-   * @generated from field: string challenge_id = 1;
-   */
-  challengeId: string;
-
-  /**
-   * @generated from field: bytes device_proof = 2;
-   */
-  deviceProof: Uint8Array;
-};
-
-/**
- * Describes the message anytty.cloud.v1.IssueAgentTicketRequest.
- * Use `create(IssueAgentTicketRequestSchema)` to create a new message.
- */
-export const IssueAgentTicketRequestSchema: GenMessage<IssueAgentTicketRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 20);
-
-/**
- * @generated from message anytty.cloud.v1.IssueAgentTicketResponse
- */
-export type IssueAgentTicketResponse = Message<"anytty.cloud.v1.IssueAgentTicketResponse"> & {
-  /**
-   * @generated from field: anytty.cloud.v1.SignedEnvelope agent_ticket = 1;
-   */
-  agentTicket?: SignedEnvelope | undefined;
-
-  /**
-   * @generated from field: anytty.cloud.v1.CandidateEdge edge = 2;
-   */
-  edge?: CandidateEdge | undefined;
-};
-
-/**
- * Describes the message anytty.cloud.v1.IssueAgentTicketResponse.
- * Use `create(IssueAgentTicketResponseSchema)` to create a new message.
- */
-export const IssueAgentTicketResponseSchema: GenMessage<IssueAgentTicketResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 21);
-
-/**
- * EnrollmentService 是 daemon 注册和短期 AgentTicket 的唯一公共 API。
+ * EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
  *
  * @generated from service anytty.cloud.v1.EnrollmentService
  */
@@ -624,30 +526,6 @@ export const EnrollmentService: GenService<{
     methodKind: "unary";
     input: typeof CompleteDaemonEnrollmentRequestSchema;
     output: typeof CompleteDaemonEnrollmentResponseSchema;
-  },
-  /**
-   * @generated from rpc anytty.cloud.v1.EnrollmentService.ListAgentCandidates
-   */
-  listAgentCandidates: {
-    methodKind: "unary";
-    input: typeof ListAgentCandidatesRequestSchema;
-    output: typeof ListAgentCandidatesResponseSchema;
-  },
-  /**
-   * @generated from rpc anytty.cloud.v1.EnrollmentService.BeginAgentTicket
-   */
-  beginAgentTicket: {
-    methodKind: "unary";
-    input: typeof BeginAgentTicketRequestSchema;
-    output: typeof IdentityChallengeSchema;
-  },
-  /**
-   * @generated from rpc anytty.cloud.v1.EnrollmentService.IssueAgentTicket
-   */
-  issueAgentTicket: {
-    methodKind: "unary";
-    input: typeof IssueAgentTicketRequestSchema;
-    output: typeof IssueAgentTicketResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cloud_v1_enrollment, 0);

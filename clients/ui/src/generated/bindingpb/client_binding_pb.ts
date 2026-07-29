@@ -1518,7 +1518,7 @@ export type CredentialBindRequest = Message<"anytty.client.binding.v1.Credential
   cloudRouteGrant: Uint8Array;
 
   /**
-   * cloud_edge_locator 是 Controller 或配对流程返回的 CandidateEdge protobuf；不是授权真值。
+   * cloud_edge_locator 是 enrollment、配对或 Controller 纠偏返回的 EdgeLocator protobuf；不是授权真值。
    *
    * @generated from field: bytes cloud_edge_locator = 5;
    */

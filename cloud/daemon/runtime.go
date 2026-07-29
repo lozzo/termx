@@ -3,13 +3,12 @@ package daemon
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"strings"
 	"time"
 
@@ -33,12 +32,11 @@ type Config struct {
 	Answerer        webrtc.Answerer
 	AccessStore     *remoteauth.AccessStore
 	SoftwareVersion string
-	ControllerTLS   *tls.Config
 	RetryMinimum    time.Duration
 	RetryMaximum    time.Duration
 }
 
-// Runtime 每次启动重新向 Controller 解析候选并只在内存持有当前 AgentGateway generation。
+// Runtime 只使用 enrollment 持久化的 binding 和 locator 维持 AgentGateway generation。
 type Runtime struct{ config Config }
 
 type authorizedRuntimeOptions struct {
@@ -82,16 +80,18 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 	}); err != nil {
 		return nil, err
 	}
-	if err := accessStore.ConfigureManagedPairingGrantIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, error) {
+	if err := accessStore.ConfigureManagedPairingRouteIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, []byte, error) {
+		locatorDigest := sha256.Sum256(record.EdgeLocator)
 		claims := &cloudv1.PairingRouteGrantClaims{
 			GrantId: uuid.NewString(), DaemonId: record.DaemonID, DeviceId: identity.DeviceID, PairingClaimSha256: append([]byte(nil), claimDigest...),
-			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()),
+			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()), EdgeLocatorSha256: locatorDigest[:],
 		}
 		envelope, err := ticket.SignPairingRouteGrant(identity, claims)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+		grant, err := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+		return grant, append([]byte(nil), record.EdgeLocator...), err
 	}); err != nil {
 		return nil, err
 	}
@@ -154,55 +154,24 @@ func (runtime *Runtime) Run(ctx context.Context) error {
 }
 
 func (runtime *Runtime) connectOnce(ctx context.Context) error {
-	controller, err := runtime.dialController()
-	if err != nil {
-		return err
+	binding := &cloudv1.SignedEnvelope{}
+	locator := &cloudv1.EdgeLocator{}
+	if proto.Unmarshal(runtime.config.Record.DaemonBinding, binding) != nil || proto.Unmarshal(runtime.config.Record.EdgeLocator, locator) != nil {
+		return errors.New("Cloud enrollment binding or Edge locator is invalid")
 	}
-	defer controller.Close()
-	enrollmentClient := cloudv1.NewEnrollmentServiceClient(controller)
-	candidates, err := enrollmentClient.ListAgentCandidates(ctx, &cloudv1.ListAgentCandidatesRequest{DaemonId: runtime.config.Record.DaemonID})
-	if err != nil {
-		return fmt.Errorf("list Cloud Edge candidates: %w", err)
-	}
-	edge, err := selectCandidate(ctx, candidates.GetCandidates())
-	if err != nil {
-		return err
-	}
-	challenge, err := enrollmentClient.BeginAgentTicket(ctx, &cloudv1.BeginAgentTicketRequest{DaemonId: runtime.config.Record.DaemonID, EdgeId: edge.GetEdgeId()})
-	if err != nil {
-		return fmt.Errorf("begin AgentTicket: %w", err)
-	}
-	proof, err := remoteauth.SignDeviceIdentityProof(runtime.config.Identity, challenge.GetChallenge())
-	if err != nil {
-		return err
-	}
-	issued, err := enrollmentClient.IssueAgentTicket(ctx, &cloudv1.IssueAgentTicketRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
-	if err != nil {
-		return fmt.Errorf("issue AgentTicket: %w", err)
-	}
-	return runtime.connectEdge(ctx, issued)
+	return runtime.connectEdge(ctx, binding, locator)
 }
 
-func (runtime *Runtime) dialController() (*grpc.ClientConn, error) {
-	tlsConfig := runtime.config.ControllerTLS
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS13, ServerName: runtime.config.Record.ControllerServerName}
-	} else {
-		tlsConfig = tlsConfig.Clone()
-	}
-	return grpc.NewClient(runtime.config.Record.ControllerAddress, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-}
-
-func (runtime *Runtime) connectEdge(ctx context.Context, issued *cloudv1.IssueAgentTicketResponse) error {
-	if issued == nil || issued.GetAgentTicket() == nil || issued.GetEdge() == nil {
-		return errors.New("AgentTicket response is incomplete")
+func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.SignedEnvelope, locator *cloudv1.EdgeLocator) error {
+	if binding == nil || locator == nil {
+		return errors.New("daemon binding or Edge locator is incomplete")
 	}
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(issued.GetEdge().GetCaCertificatePem()) {
+	if !roots.AppendCertsFromPEM(locator.GetCaCertificatePem()) {
 		return errors.New("Edge CA certificate is invalid")
 	}
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, ServerName: issued.GetEdge().GetServerName()}
-	connection, err := grpc.NewClient(issued.GetEdge().GetPublicEndpoint(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, ServerName: locator.GetServerName()}
+	connection, err := grpc.NewClient(locator.GetPublicEndpoint(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	if err != nil {
 		return err
 	}
@@ -212,11 +181,11 @@ func (runtime *Runtime) connectEdge(ctx context.Context, issued *cloudv1.IssueAg
 		return err
 	}
 	bootID, connectionID := uuid.NewString(), uuid.NewString()
-	proof, err := ticket.SignAgentHelloProof(runtime.config.Identity, issued.GetAgentTicket(), runtime.config.Record.DaemonID, bootID, connectionID)
+	proof, err := ticket.SignAgentHelloProof(runtime.config.Identity, binding, runtime.config.Record.DaemonID, bootID, connectionID)
 	if err != nil {
 		return err
 	}
-	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{AgentTicket: issued.GetAgentTicket(), DeviceProof: proof, SoftwareVersion: runtime.config.SoftwareVersion}}}
+	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: binding, DeviceProof: proof, SoftwareVersion: runtime.config.SoftwareVersion}}}
 	if err := stream.Send(hello); err != nil {
 		return err
 	}
@@ -384,21 +353,6 @@ func cloudAccessRejection(mode cloudv1.CloudClientAccessMode) (string, string) {
 	return "PAIRING_CLAIM_INVALID", "pairing claim is not active"
 }
 
-func selectCandidate(ctx context.Context, candidates []*cloudv1.CandidateEdge) (*cloudv1.CandidateEdge, error) {
-	for _, candidate := range candidates {
-		if candidate == nil {
-			continue
-		}
-		dialer := net.Dialer{Timeout: 2 * time.Second}
-		connection, err := dialer.DialContext(ctx, "tcp", candidate.GetPublicEndpoint())
-		if err == nil {
-			_ = connection.Close()
-			return candidate, nil
-		}
-	}
-	return nil, errors.New("no Cloud Edge candidate is reachable")
-}
-
 // Enroll 使用一次性 code 和现有 DeviceIdentity 完成 challenge，并返回可持久化最小记录。
 func Enroll(ctx context.Context, controllerAddress, controllerServerName, code string, tlsConfig *tls.Config, identity remoteauth.Identity) (EnrollmentRecord, error) {
 	if err := identity.Validate(); err != nil {
@@ -427,10 +381,18 @@ func Enroll(ctx context.Context, controllerAddress, controllerServerName, code s
 	if err != nil {
 		return EnrollmentRecord{}, err
 	}
-	if completed.GetDaemon() == nil {
+	if completed.GetDaemon() == nil || completed.GetDaemonBinding() == nil || completed.GetEdgeLocator() == nil {
 		return EnrollmentRecord{}, errors.New("daemon enrollment response is incomplete")
 	}
-	return EnrollmentRecord{Version: recordVersion, DaemonID: completed.GetDaemon().GetDaemonId(), AccountID: completed.GetDaemon().GetAccountId(), ControllerAddress: strings.TrimSpace(controllerAddress), ControllerServerName: strings.TrimSpace(controllerServerName), EnrolledAt: time.Now().UTC()}, nil
+	binding, err := proto.MarshalOptions{Deterministic: true}.Marshal(completed.GetDaemonBinding())
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	locator, err := proto.MarshalOptions{Deterministic: true}.Marshal(completed.GetEdgeLocator())
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	return EnrollmentRecord{Version: recordVersion, DaemonID: completed.GetDaemon().GetDaemonId(), AccountID: completed.GetDaemon().GetAccountId(), DaemonBinding: binding, EdgeLocator: locator, EnrolledAt: time.Now().UTC()}, nil
 }
 
 // EnrollLocal 加载 daemon 已有 DeviceIdentity、完成注册并原子保存最小 Cloud record。

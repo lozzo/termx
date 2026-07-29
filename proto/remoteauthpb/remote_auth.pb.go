@@ -3409,6 +3409,7 @@ type PairingManagedRouteSeed struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TargetDeviceId string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
 	BootstrapGrant []byte                 `protobuf:"bytes,2,opt,name=bootstrap_grant,json=bootstrapGrant,proto3" json:"bootstrap_grant,omitempty"`
+	EdgeLocator    []byte                 `protobuf:"bytes,3,opt,name=edge_locator,json=edgeLocator,proto3" json:"edge_locator,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -3453,6 +3454,13 @@ func (x *PairingManagedRouteSeed) GetTargetDeviceId() string {
 func (x *PairingManagedRouteSeed) GetBootstrapGrant() []byte {
 	if x != nil {
 		return x.BootstrapGrant
+	}
+	return nil
+}
+
+func (x *PairingManagedRouteSeed) GetEdgeLocator() []byte {
+	if x != nil {
+		return x.EdgeLocator
 	}
 	return nil
 }
@@ -5354,10 +5362,11 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11signaling_address\x18\x01 \x01(\tR\x10signalingAddress\x12&\n" +
 	"\x0fice_tcp_address\x18\x02 \x01(\tR\riceTcpAddress\x12\x1f\n" +
 	"\vserver_name\x18\x03 \x01(\tR\n" +
-	"serverName\"l\n" +
+	"serverName\"\x8f\x01\n" +
 	"\x17PairingManagedRouteSeed\x12(\n" +
 	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12'\n" +
-	"\x0fbootstrap_grant\x18\x02 \x01(\fR\x0ebootstrapGrant\"\xeb\x02\n" +
+	"\x0fbootstrap_grant\x18\x02 \x01(\fR\x0ebootstrapGrant\x12!\n" +
+	"\fedge_locator\x18\x03 \x01(\fR\vedgeLocator\"\xeb\x02\n" +
 	"\x13PairingSSHRouteSeed\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x12\n" +

@@ -98,7 +98,7 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	if len(seeds) == 0 {
 		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires at least one Direct, SSH, or Cloud pairing Route", ErrPairingClaimMalformed)
 	}
-	managedPairingIssuer := store.managedPairingGrantIssuer
+	managedPairingIssuer := store.managedPairingRouteIssuer
 	for _, seed := range seeds {
 		managed := seed.GetManagedWebrtc()
 		if managed == nil {
@@ -107,14 +107,15 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 		if managedPairingIssuer == nil {
 			return PairingClaimIssueResult{}, errors.New("managed pairing grant issuer is unavailable")
 		}
-		grant, grantErr := managedPairingIssuer(append([]byte(nil), digest[:]...), claims.ExpiresAt, claims.IssuedAt)
+		grant, locator, grantErr := managedPairingIssuer(append([]byte(nil), digest[:]...), claims.ExpiresAt, claims.IssuedAt)
 		if grantErr != nil {
 			return PairingClaimIssueResult{}, fmt.Errorf("issue managed pairing grant: %w", grantErr)
 		}
-		if len(grant) == 0 {
-			return PairingClaimIssueResult{}, errors.New("managed pairing grant issuer returned an empty grant")
+		if len(grant) == 0 || len(locator) == 0 {
+			return PairingClaimIssueResult{}, errors.New("managed pairing route issuer returned incomplete route material")
 		}
 		managed.BootstrapGrant = append([]byte(nil), grant...)
+		managed.EdgeLocator = append([]byte(nil), locator...)
 	}
 	offer := &remoteauthpb.PairingClaimOfferV1{
 		SchemaVersion:     PairingClaimOfferVersion,
@@ -342,7 +343,7 @@ func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1, now time
 				return ErrPairingClaimMalformed
 			}
 		case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
-			if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) || len(route.ManagedWebrtc.GetBootstrapGrant()) == 0 {
+			if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) || len(route.ManagedWebrtc.GetBootstrapGrant()) == 0 || len(route.ManagedWebrtc.GetEdgeLocator()) == 0 {
 				return ErrPairingClaimMalformed
 			}
 		case *remoteauthpb.PairingRouteSeed_SshWebrtcTcp:

@@ -25,12 +25,12 @@ const ProtocolVersion uint32 = 1
 
 // Runtime 是 Edge 唯一 State actor 暴露给 AgentGateway 的窄连接边界。
 type Runtime interface {
-	AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.AgentTicketClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error)
+	AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.DaemonBindingClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error)
 	DetachAgent(context.Context, string, uint64) error
 	ResolveAgentSignal(context.Context, string, uint64, *cloudv1.AgentEvent) error
 }
 
-// Config 提供 Edge identity、动态 Controller ticket key set 和心跳策略。
+// Config 提供 Edge identity、动态 Controller binding key set 和心跳策略。
 type Config struct {
 	EdgeID           string
 	EdgeBootID       string
@@ -41,7 +41,7 @@ type Config struct {
 	Now              func() time.Time
 }
 
-// Service 验证 AgentTicket/DeviceIdentity proof，并把连接生命周期提交给 Runtime actor。
+// Service 验证 daemon binding/DeviceIdentity proof，并把连接生命周期提交给 Runtime actor。
 type Service struct {
 	cloudv1.UnimplementedAgentGatewayServer
 	config Config
@@ -76,7 +76,7 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	go writer.run()
 	presence := &cloudv1.AgentPresence{
 		DaemonId: claims.GetDaemonId(), AccountId: claims.GetAccountId(), BootId: event.GetBootId(), ConnectionId: event.GetConnectionId(),
-		TicketId: claims.GetTicketId(), TicketIssuedAt: claims.GetIssuedAt(),
+		BindingId: claims.GetBindingId(), BindingIssuedAt: claims.GetIssuedAt(),
 	}
 	generation, err := service.config.Runtime.AttachAuthenticatedAgent(connectionCtx, presence, claims, writer.trySend, writer.close)
 	if err != nil {
@@ -99,6 +99,12 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	expectedSequence := uint64(2)
 	timer := time.NewTimer(service.config.HeartbeatTimeout)
 	defer timer.Stop()
+	expiresIn := claims.GetExpiresAt().AsTime().Sub(service.config.Now().UTC())
+	if expiresIn <= 0 {
+		return status.Error(codes.Unauthenticated, "daemon binding expired after admission")
+	}
+	expiry := time.NewTimer(expiresIn)
+	defer expiry.Stop()
 	for {
 		select {
 		case <-connectionCtx.Done():
@@ -107,6 +113,8 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 			return status.Errorf(codes.Unavailable, "send Edge command: %v", writeErr)
 		case <-timer.C:
 			return status.Error(codes.DeadlineExceeded, "Agent heartbeat timed out")
+		case <-expiry.C:
+			return status.Error(codes.Unauthenticated, "daemon binding expired")
 		case result := <-received:
 			if errors.Is(result.err, io.EOF) {
 				return nil
@@ -135,19 +143,19 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	}
 }
 
-func (service *Service) admit(event *cloudv1.AgentEvent) (*cloudv1.AgentTicketClaims, error) {
+func (service *Service) admit(event *cloudv1.AgentEvent) (*cloudv1.DaemonBindingClaims, error) {
 	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 1 || event.GetHello() == nil ||
 		strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetSenderId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
 		return nil, errors.New("AgentHello envelope is invalid")
 	}
-	claims, err := ticket.VerifyAgentTicket(event.GetHello().GetAgentTicket(), service.config.VerificationKeys(), service.config.EdgeID, service.config.Now().UTC(), 30*time.Second)
+	claims, err := ticket.VerifyDaemonBinding(event.GetHello().GetDaemonBinding(), service.config.VerificationKeys(), service.config.EdgeID, service.config.Now().UTC(), 30*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	if event.GetSenderId() != claims.GetDaemonId() {
-		return nil, errors.New("AgentHello sender does not match AgentTicket")
+		return nil, errors.New("AgentHello sender does not match daemon binding")
 	}
-	if err := ticket.VerifyAgentHelloProof(claims.GetDevicePublicKey(), event.GetHello().GetDeviceProof(), event.GetHello().GetAgentTicket(), claims.GetDaemonId(), event.GetBootId(), event.GetConnectionId()); err != nil {
+	if err := ticket.VerifyAgentHelloProof(claims.GetDevicePublicKey(), event.GetHello().GetDeviceProof(), event.GetHello().GetDaemonBinding(), claims.GetDaemonId(), event.GetBootId(), event.GetConnectionId()); err != nil {
 		return nil, err
 	}
 	return claims, nil

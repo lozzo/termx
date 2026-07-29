@@ -135,16 +135,16 @@ func (CloudClientAccessMode) EnumDescriptor() ([]byte, []int) {
 // AgentPresence 是 Edge 内存中一个已认证 daemon 连接的实时投影。
 // R2 只由测试事件生成；R4 才由真实 AgentGateway 写入。
 type AgentPresence struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	DaemonId       string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	AccountId      string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	BootId         string                 `protobuf:"bytes,3,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	ConnectionId   string                 `protobuf:"bytes,4,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	Generation     uint64                 `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
-	TicketId       string                 `protobuf:"bytes,6,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	TicketIssuedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=ticket_issued_at,json=ticketIssuedAt,proto3" json:"ticket_issued_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId        string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	AccountId       string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	BootId          string                 `protobuf:"bytes,3,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
+	ConnectionId    string                 `protobuf:"bytes,4,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	Generation      uint64                 `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
+	BindingId       string                 `protobuf:"bytes,6,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	BindingIssuedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=binding_issued_at,json=bindingIssuedAt,proto3" json:"binding_issued_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AgentPresence) Reset() {
@@ -212,16 +212,16 @@ func (x *AgentPresence) GetGeneration() uint64 {
 	return 0
 }
 
-func (x *AgentPresence) GetTicketId() string {
+func (x *AgentPresence) GetBindingId() string {
 	if x != nil {
-		return x.TicketId
+		return x.BindingId
 	}
 	return ""
 }
 
-func (x *AgentPresence) GetTicketIssuedAt() *timestamppb.Timestamp {
+func (x *AgentPresence) GetBindingIssuedAt() *timestamppb.Timestamp {
 	if x != nil {
-		return x.TicketIssuedAt
+		return x.BindingIssuedAt
 	}
 	return nil
 }
@@ -814,7 +814,7 @@ var File_cloud_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\x16cloud/v1/runtime.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14cloud/v1/usage.proto\"\x8c\x02\n" +
+	"\x16cloud/v1/runtime.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14cloud/v1/usage.proto\"\x90\x02\n" +
 	"\rAgentPresence\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1d\n" +
 	"\n" +
@@ -823,9 +823,10 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\rconnection_id\x18\x04 \x01(\tR\fconnectionId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x05 \x01(\x04R\n" +
-	"generation\x12\x1b\n" +
-	"\tticket_id\x18\x06 \x01(\tR\bticketId\x12D\n" +
-	"\x10ticket_issued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0eticketIssuedAt\"\xb1\x02\n" +
+	"generation\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x06 \x01(\tR\tbindingId\x12F\n" +
+	"\x11binding_issued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fbindingIssuedAt\"\xb1\x02\n" +
 	"\x14ClientSessionSummary\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -926,7 +927,7 @@ var file_cloud_v1_runtime_proto_goTypes = []any{
 	(RelayTransport)(0),            // 11: anytty.cloud.v1.RelayTransport
 }
 var file_cloud_v1_runtime_proto_depIdxs = []int32{
-	10, // 0: anytty.cloud.v1.AgentPresence.ticket_issued_at:type_name -> google.protobuf.Timestamp
+	10, // 0: anytty.cloud.v1.AgentPresence.binding_issued_at:type_name -> google.protobuf.Timestamp
 	0,  // 1: anytty.cloud.v1.ClientSessionSummary.product:type_name -> anytty.cloud.v1.ClientProduct
 	1,  // 2: anytty.cloud.v1.ClientSessionSummary.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
 	11, // 3: anytty.cloud.v1.RelayAllocationSummary.transport:type_name -> anytty.cloud.v1.RelayTransport

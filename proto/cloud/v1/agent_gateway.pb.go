@@ -24,7 +24,7 @@ const (
 
 type AgentHello struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	AgentTicket     *SignedEnvelope        `protobuf:"bytes,1,opt,name=agent_ticket,json=agentTicket,proto3" json:"agent_ticket,omitempty"`
+	DaemonBinding   *SignedEnvelope        `protobuf:"bytes,1,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
 	DeviceProof     []byte                 `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
 	SoftwareVersion string                 `protobuf:"bytes,3,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -61,9 +61,9 @@ func (*AgentHello) Descriptor() ([]byte, []int) {
 	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *AgentHello) GetAgentTicket() *SignedEnvelope {
+func (x *AgentHello) GetDaemonBinding() *SignedEnvelope {
 	if x != nil {
-		return x.AgentTicket
+		return x.DaemonBinding
 	}
 	return nil
 }
@@ -935,10 +935,10 @@ var File_cloud_v1_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1ccloud/v1/agent_gateway.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
+	"\x1ccloud/v1/agent_gateway.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x01\n" +
 	"\n" +
-	"AgentHello\x12B\n" +
-	"\fagent_ticket\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\vagentTicket\x12!\n" +
+	"AgentHello\x12F\n" +
+	"\x0edaemon_binding\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12!\n" +
 	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\x12)\n" +
 	"\x10software_version\x18\x03 \x01(\tR\x0fsoftwareVersion\"0\n" +
 	"\x0eAgentHeartbeat\x12\x1e\n" +
@@ -1067,7 +1067,7 @@ var file_cloud_v1_agent_gateway_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil),    // 16: google.protobuf.Timestamp
 }
 var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
-	10, // 0: anytty.cloud.v1.AgentHello.agent_ticket:type_name -> anytty.cloud.v1.SignedEnvelope
+	10, // 0: anytty.cloud.v1.AgentHello.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
 	11, // 1: anytty.cloud.v1.AgentOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
 	12, // 2: anytty.cloud.v1.AgentOffer.relay:type_name -> anytty.cloud.v1.RelayICEConfig
 	13, // 3: anytty.cloud.v1.AgentOffer.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode

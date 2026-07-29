@@ -4,8 +4,6 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { SignedEnvelope } from "./common_pb";
-import { file_cloud_v1_common } from "./common_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,11 +12,10 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/usage.proto.
  */
 export const file_cloud_v1_usage: GenFile = /*@__PURE__*/
-  fileDesc("ChRjbG91ZC92MS91c2FnZS5wcm90bxIPYW55dHR5LmNsb3VkLnYxIrwCChBSZWxheUxlYXNlQ2xhaW1zEhAKCGxlYXNlX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHZWRnZV9pZBgDIAEoCRIRCglkYWVtb25faWQYBCABKAkSEQoJY2xpZW50X2lkGAUgASgJEhIKCnNlc3Npb25faWQYBiABKAkSEQoJbWF4X2J5dGVzGAcgASgEEiEKGW1heF9yYXRlX2J5dGVzX3Blcl9zZWNvbmQYCCABKAQSIgoabWF4X2NvbmN1cnJlbnRfYWxsb2NhdGlvbnMYCSABKA0SLQoJaXNzdWVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLHAQoRUmVsYXlMZWFzZVJlcXVlc3QSFgoOY29ycmVsYXRpb25faWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhEKCWRhZW1vbl9pZBgEIAEoCRIRCgljbGllbnRfaWQYBSABKAkSNAoKcHJlZmVyZW5jZRgGIAEoDjIgLmFueXR0eS5jbG91ZC52MS5SZWxheVByZWZlcmVuY2USFgoOcmVuZXdfbGVhc2VfaWQYByABKAkiRAoQUmVsYXlMZWFzZURlbmllZBIMCgRjb2RlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkSEQoJcmV0cnlhYmxlGAMgASgIIrEBChJSZWxheUxlYXNlRGVjaXNpb24SFgoOY29ycmVsYXRpb25faWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIwCgVsZWFzZRgKIAEoCzIfLmFueXR0eS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZUgAEjMKBmRlbmllZBgLIAEoCzIhLmFueXR0eS5jbG91ZC52MS5SZWxheUxlYXNlRGVuaWVkSABCCAoGcmVzdWx0IoYBCg5SZWxheUlDRUNvbmZpZxIQCghsZWFzZV9pZBgBIAEoCRIMCgR1cmxzGAIgAygJEhAKCHVzZXJuYW1lGAMgASgJEhIKCmNyZWRlbnRpYWwYBCABKAkSLgoKZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi/QIKClVzYWdlRXZlbnQSFgoOc2NoZW1hX3ZlcnNpb24YASABKA0SEAoIZXZlbnRfaWQYAiABKAkSDwoHZWRnZV9pZBgDIAEoCRIQCghsZWFzZV9pZBgEIAEoCRISCgphY2NvdW50X2lkGAUgASgJEhEKCWRhZW1vbl9pZBgGIAEoCRIRCgljbGllbnRfaWQYByABKAkSEgoKc2Vzc2lvbl9pZBgIIAEoCRIVCg1hbGxvY2F0aW9uX2lkGAkgASgJEjIKCXRyYW5zcG9ydBgKIAEoDjIfLmFueXR0eS5jbG91ZC52MS5SZWxheVRyYW5zcG9ydBIVCg1pbmdyZXNzX2J5dGVzGAsgASgEEhQKDGVncmVzc19ieXRlcxgMIAEoBBIuCgpzdGFydGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSwoKVXNhZ2VCYXRjaBIQCghiYXRjaF9pZBgBIAEoCRIrCgZldmVudHMYAiADKAsyGy5hbnl0dHkuY2xvdWQudjEuVXNhZ2VFdmVudCIdCghVc2FnZUFjaxIRCglldmVudF9pZHMYASADKAkqkQEKD1JlbGF5UHJlZmVyZW5jZRIgChxSRUxBWV9QUkVGRVJFTkNFX1VOU1BFQ0lGSUVEEAASGQoVUkVMQVlfUFJFRkVSRU5DRV9BVVRPEAESIAocUkVMQVlfUFJFRkVSRU5DRV9ESVJFQ1RfT05MWRACEh8KG1JFTEFZX1BSRUZFUkVOQ0VfUkVMQVlfT05MWRADKnwKDlJlbGF5VHJhbnNwb3J0Eh8KG1JFTEFZX1RSQU5TUE9SVF9VTlNQRUNJRklFRBAAEhcKE1JFTEFZX1RSQU5TUE9SVF9VRFAQARIXChNSRUxBWV9UUkFOU1BPUlRfVENQEAISFwoTUkVMQVlfVFJBTlNQT1JUX1RMUxADQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChRjbG91ZC92MS91c2FnZS5wcm90bxIPYW55dHR5LmNsb3VkLnYxIrwCChBSZWxheUxlYXNlQ2xhaW1zEhAKCGxlYXNlX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHZWRnZV9pZBgDIAEoCRIRCglkYWVtb25faWQYBCABKAkSEQoJY2xpZW50X2lkGAUgASgJEhIKCnNlc3Npb25faWQYBiABKAkSEQoJbWF4X2J5dGVzGAcgASgEEiEKGW1heF9yYXRlX2J5dGVzX3Blcl9zZWNvbmQYCCABKAQSIgoabWF4X2NvbmN1cnJlbnRfYWxsb2NhdGlvbnMYCSABKA0SLQoJaXNzdWVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKsAQoOUmVsYXlMZWFzZVNwZWMSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhEKCWRhZW1vbl9pZBgDIAEoCRIRCgljbGllbnRfaWQYBCABKAkSNAoKcHJlZmVyZW5jZRgFIAEoDjIgLmFueXR0eS5jbG91ZC52MS5SZWxheVByZWZlcmVuY2USFgoOcmVuZXdfbGVhc2VfaWQYBiABKAkihgEKDlJlbGF5SUNFQ29uZmlnEhAKCGxlYXNlX2lkGAEgASgJEgwKBHVybHMYAiADKAkSEAoIdXNlcm5hbWUYAyABKAkSEgoKY3JlZGVudGlhbBgEIAEoCRIuCgpleHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCL9AgoKVXNhZ2VFdmVudBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIQCghldmVudF9pZBgCIAEoCRIPCgdlZGdlX2lkGAMgASgJEhAKCGxlYXNlX2lkGAQgASgJEhIKCmFjY291bnRfaWQYBSABKAkSEQoJZGFlbW9uX2lkGAYgASgJEhEKCWNsaWVudF9pZBgHIAEoCRISCgpzZXNzaW9uX2lkGAggASgJEhUKDWFsbG9jYXRpb25faWQYCSABKAkSMgoJdHJhbnNwb3J0GAogASgOMh8uYW55dHR5LmNsb3VkLnYxLlJlbGF5VHJhbnNwb3J0EhUKDWluZ3Jlc3NfYnl0ZXMYCyABKAQSFAoMZWdyZXNzX2J5dGVzGAwgASgEEi4KCnN0YXJ0ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJLCgpVc2FnZUJhdGNoEhAKCGJhdGNoX2lkGAEgASgJEisKBmV2ZW50cxgCIAMoCzIbLmFueXR0eS5jbG91ZC52MS5Vc2FnZUV2ZW50Ih0KCFVzYWdlQWNrEhEKCWV2ZW50X2lkcxgBIAMoCSqRAQoPUmVsYXlQcmVmZXJlbmNlEiAKHFJFTEFZX1BSRUZFUkVOQ0VfVU5TUEVDSUZJRUQQABIZChVSRUxBWV9QUkVGRVJFTkNFX0FVVE8QARIgChxSRUxBWV9QUkVGRVJFTkNFX0RJUkVDVF9PTkxZEAISHwobUkVMQVlfUFJFRkVSRU5DRV9SRUxBWV9PTkxZEAMqfAoOUmVsYXlUcmFuc3BvcnQSHwobUkVMQVlfVFJBTlNQT1JUX1VOU1BFQ0lGSUVEEAASFwoTUkVMQVlfVFJBTlNQT1JUX1VEUBABEhcKE1JFTEFZX1RSQU5TUE9SVF9UQ1AQAhIXChNSRUxBWV9UUkFOU1BPUlRfVExTEANCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
- * RelayLeaseClaims 是单个 session 的短期 Relay 上限。
- * Controller 在线时由其签发；控制流离线时 Edge 只能从 AgentTicket 的签名委托收缩生成。
+ * RelayLeaseClaims 是 Edge 从 daemon binding 委托收缩生成的单 session 短期 Relay 上限。
  *
  * @generated from message anytty.cloud.v1.RelayLeaseClaims
  */
@@ -87,124 +84,48 @@ export const RelayLeaseClaimsSchema: GenMessage<RelayLeaseClaims> = /*@__PURE__*
   messageDesc(file_cloud_v1_usage, 0);
 
 /**
- * RelayLeaseRequest 只为已经通过 daemon 本地预检的精确 session 申请租约。
+ * RelayLeaseSpec 是 Edge 进程内的准入输入，不进入 EdgeControl 协议。
  *
- * @generated from message anytty.cloud.v1.RelayLeaseRequest
+ * @generated from message anytty.cloud.v1.RelayLeaseSpec
  */
-export type RelayLeaseRequest = Message<"anytty.cloud.v1.RelayLeaseRequest"> & {
+export type RelayLeaseSpec = Message<"anytty.cloud.v1.RelayLeaseSpec"> & {
   /**
-   * @generated from field: string correlation_id = 1;
-   */
-  correlationId: string;
-
-  /**
-   * @generated from field: string session_id = 2;
+   * @generated from field: string session_id = 1;
    */
   sessionId: string;
 
   /**
-   * @generated from field: string account_id = 3;
+   * @generated from field: string account_id = 2;
    */
   accountId: string;
 
   /**
-   * @generated from field: string daemon_id = 4;
+   * @generated from field: string daemon_id = 3;
    */
   daemonId: string;
 
   /**
-   * @generated from field: string client_id = 5;
+   * @generated from field: string client_id = 4;
    */
   clientId: string;
 
   /**
-   * @generated from field: anytty.cloud.v1.RelayPreference preference = 6;
+   * @generated from field: anytty.cloud.v1.RelayPreference preference = 5;
    */
   preference: RelayPreference;
 
   /**
-   * renew_lease_id 为空表示首次准入；非空时 Controller 为同一在线 session
-   * 重新评估策略并续期该 lease，Edge 不得借此更换 TURN credential。
-   *
-   * @generated from field: string renew_lease_id = 7;
+   * @generated from field: string renew_lease_id = 6;
    */
   renewLeaseId: string;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RelayLeaseRequest.
- * Use `create(RelayLeaseRequestSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RelayLeaseSpec.
+ * Use `create(RelayLeaseSpecSchema)` to create a new message.
  */
-export const RelayLeaseRequestSchema: GenMessage<RelayLeaseRequest> = /*@__PURE__*/
+export const RelayLeaseSpecSchema: GenMessage<RelayLeaseSpec> = /*@__PURE__*/
   messageDesc(file_cloud_v1_usage, 1);
-
-/**
- * @generated from message anytty.cloud.v1.RelayLeaseDenied
- */
-export type RelayLeaseDenied = Message<"anytty.cloud.v1.RelayLeaseDenied"> & {
-  /**
-   * @generated from field: string code = 1;
-   */
-  code: string;
-
-  /**
-   * @generated from field: string message = 2;
-   */
-  message: string;
-
-  /**
-   * @generated from field: bool retryable = 3;
-   */
-  retryable: boolean;
-};
-
-/**
- * Describes the message anytty.cloud.v1.RelayLeaseDenied.
- * Use `create(RelayLeaseDeniedSchema)` to create a new message.
- */
-export const RelayLeaseDeniedSchema: GenMessage<RelayLeaseDenied> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 2);
-
-/**
- * RelayLeaseDecision 用 correlation_id 把 Controller 决策返回当前 EdgeControl generation。
- *
- * @generated from message anytty.cloud.v1.RelayLeaseDecision
- */
-export type RelayLeaseDecision = Message<"anytty.cloud.v1.RelayLeaseDecision"> & {
-  /**
-   * @generated from field: string correlation_id = 1;
-   */
-  correlationId: string;
-
-  /**
-   * @generated from field: string session_id = 2;
-   */
-  sessionId: string;
-
-  /**
-   * @generated from oneof anytty.cloud.v1.RelayLeaseDecision.result
-   */
-  result: {
-    /**
-     * @generated from field: anytty.cloud.v1.SignedEnvelope lease = 10;
-     */
-    value: SignedEnvelope;
-    case: "lease";
-  } | {
-    /**
-     * @generated from field: anytty.cloud.v1.RelayLeaseDenied denied = 11;
-     */
-    value: RelayLeaseDenied;
-    case: "denied";
-  } | { case: undefined; value?: undefined };
-};
-
-/**
- * Describes the message anytty.cloud.v1.RelayLeaseDecision.
- * Use `create(RelayLeaseDecisionSchema)` to create a new message.
- */
-export const RelayLeaseDecisionSchema: GenMessage<RelayLeaseDecision> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 3);
 
 /**
  * RelayICEConfig 是 Edge 从已验证或已委托租约派生的一次性 TURN credential。
@@ -244,7 +165,7 @@ export type RelayICEConfig = Message<"anytty.cloud.v1.RelayICEConfig"> & {
  * Use `create(RelayICEConfigSchema)` to create a new message.
  */
 export const RelayICEConfigSchema: GenMessage<RelayICEConfig> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 4);
+  messageDesc(file_cloud_v1_usage, 2);
 
 /**
  * UsageEvent 是 allocation 关闭或租约窗口结束时冻结的幂等计费事实。
@@ -328,7 +249,7 @@ export type UsageEvent = Message<"anytty.cloud.v1.UsageEvent"> & {
  * Use `create(UsageEventSchema)` to create a new message.
  */
 export const UsageEventSchema: GenMessage<UsageEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 5);
+  messageDesc(file_cloud_v1_usage, 3);
 
 /**
  * UsageBatch 从 durable outbox 读取；发送失败时保留原 event_id 重试。
@@ -352,7 +273,7 @@ export type UsageBatch = Message<"anytty.cloud.v1.UsageBatch"> & {
  * Use `create(UsageBatchSchema)` to create a new message.
  */
 export const UsageBatchSchema: GenMessage<UsageBatch> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 6);
+  messageDesc(file_cloud_v1_usage, 4);
 
 /**
  * UsageAck 只列出已经在 Controller 数据库事务中提交的 event_id。
@@ -371,7 +292,7 @@ export type UsageAck = Message<"anytty.cloud.v1.UsageAck"> & {
  * Use `create(UsageAckSchema)` to create a new message.
  */
 export const UsageAckSchema: GenMessage<UsageAck> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 7);
+  messageDesc(file_cloud_v1_usage, 5);
 
 /**
  * RelayPreference 是客户端本次 Cloud attempt 的 ICE 选择意图。

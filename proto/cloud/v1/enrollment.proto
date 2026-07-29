@@ -88,48 +88,27 @@ message CompleteDaemonEnrollmentRequest {
   bytes device_proof = 2;
 }
 
-message CompleteDaemonEnrollmentResponse { DaemonRecord daemon = 1; }
-
-message ListAgentCandidatesRequest {
-  string daemon_id = 1;
-  string preferred_region = 2;
-}
-
-message CandidateEdge {
+// EdgeLocator 是 daemon 和已授权客户端可持久化的公开连接位置，不包含授权秘密。
+message EdgeLocator {
   string edge_id = 1;
   string name = 2;
   string region = 3;
   string public_endpoint = 4;
   string server_name = 5;
   bytes ca_certificate_pem = 6;
-  uint64 capacity = 7;
-  uint64 current_agents = 8;
+  uint64 revision = 7;
 }
 
-message ListAgentCandidatesResponse { repeated CandidateEdge candidates = 1; }
-
-message BeginAgentTicketRequest {
-  string daemon_id = 1;
-  string edge_id = 2;
+message CompleteDaemonEnrollmentResponse {
+  DaemonRecord daemon = 1;
+  SignedEnvelope daemon_binding = 2;
+  EdgeLocator edge_locator = 3;
 }
 
-message IssueAgentTicketRequest {
-  string challenge_id = 1;
-  bytes device_proof = 2;
-}
-
-message IssueAgentTicketResponse {
-  SignedEnvelope agent_ticket = 1;
-  CandidateEdge edge = 2;
-}
-
-// EnrollmentService 是 daemon 注册和短期 AgentTicket 的唯一公共 API。
+// EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
 service EnrollmentService {
   rpc BeginDaemonEnrollment(BeginDaemonEnrollmentRequest) returns (IdentityChallenge);
   rpc CompleteDaemonEnrollment(CompleteDaemonEnrollmentRequest) returns (CompleteDaemonEnrollmentResponse);
-  rpc ListAgentCandidates(ListAgentCandidatesRequest) returns (ListAgentCandidatesResponse);
-  rpc BeginAgentTicket(BeginAgentTicketRequest) returns (IdentityChallenge);
-  rpc IssueAgentTicket(IssueAgentTicketRequest) returns (IssueAgentTicketResponse);
 }
 
 // DaemonManagementService 是登录用户管理自己 daemon 的 API；实现必须从 session 推导账号。

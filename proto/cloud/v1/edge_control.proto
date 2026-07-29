@@ -36,7 +36,7 @@ message EdgeHello {
 message EdgeWelcome {
   uint32 accepted_protocol_version = 1;
   HeartbeatPolicy heartbeat = 2;
-  repeated VerificationKey ticket_verification_keys = 3;
+  repeated VerificationKey binding_verification_keys = 3;
 }
 
 // SnapshotBegin 开始当前 connection generation 的临时快照命名空间。
@@ -147,7 +147,6 @@ message EdgeEvent {
     RuntimeDelta runtime_delta = 24;
     EdgeHeartbeat heartbeat = 25;
     ConfigApplied config_applied = 26;
-    RelayLeaseRequest relay_lease_request = 27;
     UsageBatch usage_batch = 28;
     EdgeCommandResult command_result = 29;
     CertificateApplied certificate_applied = 30;
@@ -169,7 +168,6 @@ message ControllerCommand {
     SnapshotAccepted snapshot_accepted = 21;
     ResyncRequired resync_required = 22;
     SignedEdgeDesiredConfig desired_config = 23;
-    RelayLeaseDecision relay_lease_decision = 24;
     UsageAck usage_ack = 25;
     CloseDaemonConnection close_daemon = 26;
     CloseClientSession close_session = 27;

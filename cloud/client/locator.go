@@ -2,6 +2,8 @@ package client
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"strings"
 
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
@@ -10,8 +12,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type edgeLocatorUnavailableError struct{ cause error }
+
+func (err *edgeLocatorUnavailableError) Error() string {
+	return fmt.Sprintf("cached Edge locator is unreachable: %v", err.cause)
+}
+func (err *edgeLocatorUnavailableError) Unwrap() error { return err.cause }
+
+func markEdgeLocatorUnavailable(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &edgeLocatorUnavailableError{cause: err}
+}
+
 // EncodeEdgeLocator 持久化 Controller 已认证返回的公开 Edge locator；它不包含客户端授权。
-func EncodeEdgeLocator(edge *cloudv1.CandidateEdge) ([]byte, error) {
+func EncodeEdgeLocator(edge *cloudv1.EdgeLocator) ([]byte, error) {
 	if err := validateEdgeLocator(edge); err != nil {
 		return nil, err
 	}
@@ -19,11 +35,11 @@ func EncodeEdgeLocator(edge *cloudv1.CandidateEdge) ([]byte, error) {
 }
 
 // DecodeEdgeLocator 解析本机缓存；最终 TLS 和 CloudRouteGrant 仍分别验证 Edge 与客户端身份。
-func DecodeEdgeLocator(payload []byte) (*cloudv1.CandidateEdge, error) {
+func DecodeEdgeLocator(payload []byte) (*cloudv1.EdgeLocator, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("cached Edge locator is empty")
 	}
-	edge := &cloudv1.CandidateEdge{}
+	edge := &cloudv1.EdgeLocator{}
 	if err := proto.Unmarshal(payload, edge); err != nil {
 		return nil, errors.New("cached Edge locator is invalid")
 	}
@@ -52,17 +68,25 @@ func ShouldRefreshEdgeLocator(err error) bool {
 	if err == nil {
 		return false
 	}
+	var unavailable *edgeLocatorUnavailableError
+	if errors.As(err, &unavailable) {
+		return true
+	}
 	switch status.Code(err) {
-	case codes.NotFound, codes.Unavailable:
+	case codes.NotFound:
 		return true
 	default:
 		return false
 	}
 }
 
-func validateEdgeLocator(edge *cloudv1.CandidateEdge) error {
-	if edge == nil || strings.TrimSpace(edge.GetEdgeId()) == "" || strings.TrimSpace(edge.GetPublicEndpoint()) == "" || strings.TrimSpace(edge.GetServerName()) == "" {
+func validateEdgeLocator(edge *cloudv1.EdgeLocator) error {
+	if edge == nil || strings.TrimSpace(edge.GetEdgeId()) == "" || strings.TrimSpace(edge.GetPublicEndpoint()) == "" || strings.TrimSpace(edge.GetServerName()) == "" || len(edge.GetCaCertificatePem()) == 0 {
 		return errors.New("cached Edge locator is incomplete")
+	}
+	host, port, err := net.SplitHostPort(edge.GetPublicEndpoint())
+	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" || strings.Contains(edge.GetPublicEndpoint(), "://") {
+		return errors.New("cached Edge locator endpoint is invalid")
 	}
 	return nil
 }

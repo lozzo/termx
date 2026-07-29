@@ -88,7 +88,7 @@ type AccessStore struct {
 	accessProjectionRevision  uint64
 	changes                   chan struct{}
 	managedRouteGrantIssuer   func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, error)
-	managedPairingGrantIssuer func([]byte, time.Time, time.Time) ([]byte, error)
+	managedPairingRouteIssuer func([]byte, time.Time, time.Time) ([]byte, []byte, error)
 	clientGrants              map[string]map[string]struct{}
 }
 
@@ -199,9 +199,9 @@ func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.P
 	return nil
 }
 
-// ConfigureManagedPairingGrantIssuer 安装 Cloud bootstrap grant issuer。
+// ConfigureManagedPairingRouteIssuer 安装同时签发 bootstrap grant 和公开 Edge locator 的 Cloud route issuer。
 // issuer 只接收 claim 摘要和时间窗，不能读取或返回 128-bit claim 本体。
-func (store *AccessStore) ConfigureManagedPairingGrantIssuer(issuer func([]byte, time.Time, time.Time) ([]byte, error)) error {
+func (store *AccessStore) ConfigureManagedPairingRouteIssuer(issuer func([]byte, time.Time, time.Time) ([]byte, []byte, error)) error {
 	if store == nil || issuer == nil {
 		return errors.New("managed pairing grant issuer is required")
 	}
@@ -210,10 +210,10 @@ func (store *AccessStore) ConfigureManagedPairingGrantIssuer(issuer func([]byte,
 	if err := store.ensureOpenLocked(); err != nil {
 		return err
 	}
-	if store.managedPairingGrantIssuer != nil {
-		return errors.New("managed pairing grant issuer is already configured")
+	if store.managedPairingRouteIssuer != nil {
+		return errors.New("managed pairing route issuer is already configured")
 	}
-	store.managedPairingGrantIssuer = issuer
+	store.managedPairingRouteIssuer = issuer
 	return nil
 }
 

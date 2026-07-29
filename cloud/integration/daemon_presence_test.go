@@ -4,11 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/control"
 	"github.com/anytty/anytty/cloud/controller/directory"
 	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
@@ -17,6 +17,7 @@ import (
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -28,7 +29,7 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	verification := &cloudv1.VerificationKey{KeyId: "ticket-r4", Algorithm: "Ed25519", PublicKey: publicKey}
+	verification := &cloudv1.VerificationKey{KeyId: "binding-r4", Algorithm: "Ed25519", PublicKey: publicKey}
 	firstRuntime, firstDirectory := startPresenceController(t, certificates, "127.0.0.1:0", verification)
 	controllerAddress := firstRuntime.GRPCAddress()
 
@@ -57,8 +58,8 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	claims := &cloudv1.AgentTicketClaims{TicketId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: testEdgeID, DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey, Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute))}
-	signed, err := ticket.SignAgentTicket("ticket-r4", privateKey, claims)
+	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: testEdgeID, DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey, Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), Revision: 1, EdgeLocatorSha256: make([]byte, sha256.Size)}
+	signed, err := ticket.SignDaemonBinding("binding-r4", privateKey, claims)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: claims.GetDaemonId(), BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{AgentTicket: signed, DeviceProof: proof, SoftwareVersion: "r4-test"}}}); err != nil {
+	if err := stream.Send(&cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: claims.GetDaemonId(), BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: signed, DeviceProof: proof, SoftwareVersion: "r4-test"}}}); err != nil {
 		t.Fatal(err)
 	}
 	ready, err := stream.Recv()
@@ -114,7 +115,7 @@ func startPresenceController(t *testing.T, certificates certificateFiles, listen
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := control.NewService(control.Config{ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, TicketVerificationKeys: []*cloudv1.VerificationKey{key}, Directory: directoryState})
+	service, err := control.NewService(control.Config{ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, BindingVerificationKeys: []*cloudv1.VerificationKey{key}, Directory: directoryState})
 	if err != nil {
 		directoryState.Close()
 		t.Fatal(err)

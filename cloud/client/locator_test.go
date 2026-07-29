@@ -10,13 +10,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestCachedCapabilityRouteRoundTripsWithoutControllerTicket(t *testing.T) {
-	edge := &cloudv1.CandidateEdge{EdgeId: "edge-a", PublicEndpoint: "edge.example:443", ServerName: "edge.example", CaCertificatePem: []byte("ca")}
+func TestCachedCapabilityRouteRoundTripsWithoutController(t *testing.T) {
+	edge := &cloudv1.EdgeLocator{EdgeId: "edge-a", PublicEndpoint: "edge.example:443", ServerName: "edge.example", CaCertificatePem: []byte("ca")}
 	locator, err := EncodeEdgeLocator(edge)
 	if err != nil {
 		t.Fatal(err)
 	}
-	grantPayload, err := proto.Marshal(&cloudv1.SignedEnvelope{KeyId: "daemon-key", Payload: []byte("grant"), Signature: []byte("signature")})
+	claims, err := proto.Marshal(&cloudv1.CloudRouteGrantClaims{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grantPayload, err := proto.Marshal(&cloudv1.SignedEnvelope{KeyId: "daemon-key", Payload: claims, Signature: []byte("signature")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,12 +28,12 @@ func TestCachedCapabilityRouteRoundTripsWithoutControllerTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved := resolution.Edge()
+	resolved := resolution.Locator()
 	if resolved.GetEdgeId() != edge.GetEdgeId() || resolved.GetPublicEndpoint() != edge.GetPublicEndpoint() || resolved.GetServerName() != edge.GetServerName() {
 		t.Fatalf("cached Edge = %v", resolved)
 	}
 	resolved.PublicEndpoint = "mutated"
-	if resolution.Edge().GetPublicEndpoint() != edge.GetPublicEndpoint() {
+	if resolution.Locator().GetPublicEndpoint() != edge.GetPublicEndpoint() {
 		t.Fatal("cached route exposed mutable Edge state")
 	}
 }
@@ -41,8 +45,9 @@ func TestShouldRefreshEdgeLocatorOnlyForStaleOrUnreachableEdge(t *testing.T) {
 		want bool
 	}{
 		{name: "migrated", err: status.Error(codes.NotFound, "daemon moved"), want: true},
-		{name: "unreachable", err: status.Error(codes.Unavailable, "edge unavailable"), want: true},
-		{name: "wrapped unreachable", err: errors.Join(errors.New("exchange"), status.Error(codes.Unavailable, "edge unavailable")), want: true},
+		{name: "transport unavailable", err: markEdgeLocatorUnavailable(errors.New("dial timeout")), want: true},
+		{name: "generic unavailable", err: status.Error(codes.Unavailable, "relay or edge unavailable")},
+		{name: "wrapped unavailable", err: errors.Join(errors.New("exchange"), status.Error(codes.Unavailable, "edge unavailable"))},
 		{name: "unauthorized", err: status.Error(codes.Unauthenticated, "grant rejected")},
 		{name: "daemon denied", err: status.Error(codes.PermissionDenied, "revoked")},
 	} {

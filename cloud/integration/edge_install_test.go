@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/apihttp"
 	"github.com/anytty/anytty/cloud/controller/certificate"
@@ -35,6 +34,7 @@ import (
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -95,8 +95,8 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ticketKey, _ := ed25519.GenerateKey(rand.Reader)
-	enrollmentService, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: commercial, TicketSigningKey: ticketKey, TicketSigningKeyID: "r7-http", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute})
+	_, bindingKey, _ := ed25519.GenerateKey(rand.Reader)
+	enrollmentService, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: commercial, BindingSigningKey: bindingKey, BindingSigningKeyID: "r7-http", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, BindingTTL: 10 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,8 +356,8 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer directoryState.Close()
-	_, ticketKey, _ := ed25519.GenerateKey(rand.Reader)
-	service, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: testEntitlementReader{}, TicketSigningKey: ticketKey, TicketSigningKeyID: "r4-ticket", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute})
+	_, bindingKey, _ := ed25519.GenerateKey(rand.Reader)
+	service, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: testEntitlementReader{}, BindingSigningKey: bindingKey, BindingSigningKeyID: "r4-binding", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, BindingTTL: 10 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

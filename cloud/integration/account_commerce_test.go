@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/commerce"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	"github.com/anytty/anytty/cloud/controller/postgres"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -153,15 +153,6 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if err != nil || aggregateAfterUsage.GetUsage().GetRelayTotalBytes() != usageBytes || aggregateAfterUsage.GetEntitlement().GetRelayUsedBytes() != usageBytes || aggregateAfterUsage.GetEntitlement().GetRelayRemainingBytes() != capability.GetRelayMaxBytesPerPeriod()-usageBytes {
 		t.Fatalf("commerce usage aggregate=%+v err=%v", aggregateAfterUsage, err)
 	}
-	policy := commerce.EntitlementRelayPolicy{Service: commercial}
-	limitsAfterUsage, err := policy.Limits(ctx, &cloudv1.ClientSessionSummary{AccountId: registered.GetAccount().GetAccountId()})
-	expectedLeaseBytes := capability.GetRelayMaxBytesPerLease()
-	if expectedLeaseBytes > aggregateAfterUsage.GetEntitlement().GetRelayRemainingBytes() {
-		expectedLeaseBytes = aggregateAfterUsage.GetEntitlement().GetRelayRemainingBytes()
-	}
-	if err != nil || limitsAfterUsage.MaxBytes != expectedLeaseBytes || limitsAfterUsage.MaxRateBytesPerSecond != capability.GetRelayMaxRateBytesPerSecond() || limitsAfterUsage.MaxConcurrentAllocations != capability.GetRelayMaxConcurrency() {
-		t.Fatalf("Relay limits after usage=%+v err=%v", limitsAfterUsage, err)
-	}
 	duplicate, err := commercial.CompleteDevelopmentPayment(userContext, &cloudv1.CompleteDevelopmentPaymentRequest{PaymentAttemptId: created.GetPaymentAttempt().GetPaymentAttemptId(), OrderId: created.GetOrder().GetOrderId()})
 	if err != nil {
 		t.Fatal(err)
@@ -185,16 +176,17 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if suspended.GetEntitlement().GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_SUSPENDED {
 		t.Fatalf("suspended entitlement = %+v", suspended.GetEntitlement())
 	}
-	if _, err := policy.Limits(ctx, &cloudv1.ClientSessionSummary{AccountId: registered.GetAccount().GetAccountId()}); err == nil {
-		t.Fatal("suspended account received Relay limits")
+	currentEntitlement, err := commercial.EffectiveEntitlement(ctx, registered.GetAccount().GetAccountId())
+	if err != nil || currentEntitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_SUSPENDED {
+		t.Fatalf("suspended effective entitlement=%+v err=%v", currentEntitlement, err)
 	}
 	restored, err := commercial.TransitionSubscription(adminContext, &cloudv1.TransitionSubscriptionRequest{AccountId: registered.GetAccount().GetAccountId(), Transition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_RESTORE, ExpectedRevision: suspended.GetSubscription().GetRevision(), Reason: "R7 test restore"})
 	if err != nil || restored.GetSubscription().GetState() != cloudv1.SubscriptionState_SUBSCRIPTION_STATE_ACTIVE || restored.GetEntitlement().GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE {
 		t.Fatalf("restored subscription=%+v err=%v", restored, err)
 	}
-	limitsAfterRestore, err := policy.Limits(ctx, &cloudv1.ClientSessionSummary{AccountId: registered.GetAccount().GetAccountId()})
-	if err != nil || limitsAfterRestore != limitsAfterUsage {
-		t.Fatalf("Relay limits after restore=%+v want=%+v err=%v", limitsAfterRestore, limitsAfterUsage, err)
+	restoredEntitlement, err := commercial.EffectiveEntitlement(ctx, registered.GetAccount().GetAccountId())
+	if err != nil || restoredEntitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || restoredEntitlement.GetRelayRemainingBytes() != aggregateAfterUsage.GetEntitlement().GetRelayRemainingBytes() {
+		t.Fatalf("restored effective entitlement=%+v err=%v", restoredEntitlement, err)
 	}
 	refund := &cloudv1.ApplyPaymentEventRequest{Provider: "development", ProviderEventId: uuid.NewString(), PaymentAttemptId: created.GetPaymentAttempt().GetPaymentAttemptId(), OrderId: created.GetOrder().GetOrderId(), EventType: cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED, ProviderReference: "r7-refund", OccurredAt: timestamppb.Now()}
 	refunded, err := commercial.ApplyPaymentEvent(adminContext, refund)

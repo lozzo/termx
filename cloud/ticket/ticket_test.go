@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"testing"
 	"time"
 
@@ -14,31 +15,36 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestAgentTicketBindsEdgeAndRejectsTamper(t *testing.T) {
+func TestDaemonBindingBindsEdgeAndRejectsTamper(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	claims := &cloudv1.AgentTicketClaims{TicketId: "ticket", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.AgentCapability{cloudv1.AgentCapability_AGENT_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), RelayDelegation: &cloudv1.AgentRelayDelegation{MaxBytesPerLease: 1024, MaxRateBytesPerSecond: 512, MaxConcurrentAllocations: 2}}
-	envelope, err := ticket.SignAgentTicket("key", privateKey, claims)
+	claims := &cloudv1.DaemonBindingClaims{BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), RelayDelegation: &cloudv1.DaemonRelayDelegation{MaxBytesPerLease: 1024, MaxRateBytesPerSecond: 512, MaxConcurrentAllocations: 2}, Revision: 1, EdgeLocatorSha256: bytes.Repeat([]byte{0x41}, sha256.Size)}
+	envelope, err := ticket.SignDaemonBinding("key", privateKey, claims)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keys := ticket.KeySet{"key": publicKey}
-	verified, err := ticket.VerifyAgentTicket(envelope, keys, "edge-a", now, 30*time.Second)
+	verified, err := ticket.VerifyDaemonBinding(envelope, keys, "edge-a", now, 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if verified.GetRelayDelegation().GetMaxBytesPerLease() != 1024 {
-		t.Fatalf("AgentTicket Relay delegation = %v", verified.GetRelayDelegation())
+		t.Fatalf("daemon binding Relay delegation = %v", verified.GetRelayDelegation())
 	}
-	if _, err := ticket.VerifyAgentTicket(envelope, keys, "edge-b", now, 30*time.Second); err == nil {
-		t.Fatal("ticket accepted on another Edge")
+	if _, err := ticket.VerifyDaemonBinding(envelope, keys, "edge-b", now, 30*time.Second); err == nil {
+		t.Fatal("binding accepted on another Edge")
+	}
+	withoutLocator := proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
+	withoutLocator.EdgeLocatorSha256 = nil
+	if _, err := ticket.SignDaemonBinding("key", privateKey, withoutLocator); err == nil {
+		t.Fatal("binding without an Edge locator digest was signed")
 	}
 	envelope.Payload[0] ^= 0xff
-	if _, err := ticket.VerifyAgentTicket(envelope, keys, "edge-a", now, 30*time.Second); err == nil {
-		t.Fatal("tampered ticket accepted")
+	if _, err := ticket.VerifyDaemonBinding(envelope, keys, "edge-a", now, 30*time.Second); err == nil {
+		t.Fatal("tampered binding accepted")
 	}
 }
 
@@ -99,7 +105,7 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	}
 }
 
-func TestPairingRouteGrantCarriesOnlyClaimDigestAndBindsClientProof(t *testing.T) {
+func TestPairingRouteGrantBindsClaimAndLocator(t *testing.T) {
 	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -108,67 +114,23 @@ func TestPairingRouteGrantCarriesOnlyClaimDigestAndBindsClientProof(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
 	now := time.Now().UTC()
 	claimDigest := bytes.Repeat([]byte{0x71}, 32)
+	locatorDigest := bytes.Repeat([]byte{0x72}, 32)
 	grant, err := ticket.SignPairingRouteGrant(identity, &cloudv1.PairingRouteGrantClaims{
 		GrantId: "pairing-route", DaemonId: "daemon-pairing", DeviceId: identity.DeviceID, PairingClaimSha256: claimDigest,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)),
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), EdgeLocatorSha256: locatorDigest,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	claims, err := ticket.VerifyPairingRouteGrant(grant, identity.PublicKey, "daemon-pairing", now)
-	if err != nil || !bytes.Equal(claims.GetPairingClaimSha256(), claimDigest) {
+	if err != nil || !bytes.Equal(claims.GetPairingClaimSha256(), claimDigest) || !bytes.Equal(claims.GetEdgeLocatorSha256(), locatorDigest) {
 		t.Fatalf("verified PairingRouteGrant=%v err=%v", claims, err)
-	}
-	canonical, err := ticket.PairingRouteProofBytes("pairing-challenge", bytes.Repeat([]byte{0x72}, 32), grant, "pairing-request")
-	if err != nil {
-		t.Fatal(err)
-	}
-	proof := ed25519.Sign(clientPrivateKey, canonical)
-	if err := ticket.VerifyClientRouteProof(clientPublicKey, proof, canonical); err != nil {
-		t.Fatal(err)
 	}
 	tampered := proto.Clone(grant).(*cloudv1.SignedEnvelope)
 	tampered.Payload[0] ^= 0xff
 	if _, err := ticket.VerifyPairingRouteGrant(tampered, identity.PublicKey, "daemon-pairing", now); err == nil {
 		t.Fatal("tampered PairingRouteGrant was accepted")
-	}
-}
-
-func TestRelayLeaseBindsSessionLimitsAndExpiry(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: "lease-r6", AccountId: "account-r6", EdgeId: "edge-r6", DaemonId: "daemon-r6", ClientId: "client-r6", SessionId: "session-r6",
-		MaxBytes: 1 << 20, MaxRateBytesPerSecond: 64 << 10, MaxConcurrentAllocations: 1,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(5 * time.Minute)),
-	}
-	envelope, err := ticket.SignRelayLease("controller-r6", privateKey, claims)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys := ticket.KeySet{"controller-r6": publicKey}
-	verified, err := ticket.VerifyRelayLease(envelope, keys, "edge-r6", "session-r6", now, 30*time.Second)
-	if err != nil || verified.GetMaxBytes() != 1<<20 {
-		t.Fatalf("verified RelayLease=%v err=%v", verified, err)
-	}
-	if _, err := ticket.VerifyRelayLease(envelope, keys, "edge-r6", "session-other", now, 30*time.Second); err == nil {
-		t.Fatal("RelayLease accepted another session")
-	}
-	if _, err := ticket.VerifyRelayLease(envelope, keys, "edge-r6", "session-r6", now.Add(6*time.Minute), 30*time.Second); err == nil {
-		t.Fatal("expired RelayLease was accepted")
-	}
-	tooLong := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
-	tooLong.ExpiresAt = timestamppb.New(now.Add(5*time.Minute + time.Nanosecond))
-	if _, err := ticket.SignRelayLease("controller-r6", privateKey, tooLong); err == nil {
-		t.Fatal("RelayLease accepted a lifetime longer than five minutes")
 	}
 }

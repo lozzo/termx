@@ -25,6 +25,12 @@ import (
 // ProtocolVersion 是 ClientGateway 首发 envelope 版本。
 const ProtocolVersion uint32 = 1
 
+const (
+	maxOfferSDPBytes     = 256 * 1024
+	maxICECandidates     = 64
+	maxICECandidateBytes = 2 * 1024
+)
+
 // Runtime 是 Edge State actor 暴露给 ClientGateway 的唯一状态与 correlation 边界。
 type Runtime interface {
 	UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error
@@ -32,15 +38,15 @@ type Runtime interface {
 	BeginAgentSignal(context.Context, string, string, string) (uint64, <-chan *cloudv1.AgentEvent, error)
 	CancelAgentSignal(context.Context, string) error
 	SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error
-	AuthenticatedAgentClaims(context.Context, string) (*cloudv1.AgentTicketClaims, error)
+	AuthenticatedAgentClaims(context.Context, string) (*cloudv1.DaemonBindingClaims, error)
 }
 
 var errRouteStale = errors.New("cached Edge no longer owns the target daemon")
 
-// RelayBroker 使用在线 Controller 决策或 AgentTicket 委托创建并登记临时 ICE 参数。
+// RelayBroker 从当前 daemon binding 委托创建并登记 Edge 本地短期 ICE 参数。
 type RelayBroker interface {
-	RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error)
-	RenewRelayLease(context.Context, *cloudv1.RelayLeaseRequest, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error)
+	RequestRelayLease(context.Context, *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error)
+	RenewRelayLease(context.Context, *cloudv1.RelayLeaseSpec, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error)
 }
 
 // RelaySessionCloser 在信令 stream 结束时释放同 session 的 TURN reservation/allocation。
@@ -120,8 +126,8 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		if service.config.Relay == nil {
 			return status.Error(codes.FailedPrecondition, "Relay is not allowed for this Cloud attempt")
 		}
-		relay, err = service.config.Relay.RequestRelayLease(sessionContext, &cloudv1.RelayLeaseRequest{
-			CorrelationId: uuid.NewString(), SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
+		relay, err = service.config.Relay.RequestRelayLease(sessionContext, &cloudv1.RelayLeaseSpec{
+			SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
 		})
 		if err != nil || relay == nil {
 			if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
@@ -134,7 +140,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 			relay = nil
 		}
 		if relay != nil {
-			renewRequest := &cloudv1.RelayLeaseRequest{
+			renewRequest := &cloudv1.RelayLeaseSpec{
 				SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
 			}
 			go service.maintainRelayLease(sessionContext, renewRequest, relay, cancelSession)
@@ -199,7 +205,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 }
 
-func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *cloudv1.RelayLeaseRequest, initial *cloudv1.RelayICEConfig, cancel context.CancelCauseFunc) {
+func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *cloudv1.RelayLeaseSpec, initial *cloudv1.RelayICEConfig, cancel context.CancelCauseFunc) {
 	current := cloneRelay(initial)
 	retryDelay := time.Duration(0)
 	for ctx.Err() == nil {
@@ -227,8 +233,7 @@ func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *clo
 			cancel(err)
 			return
 		}
-		request := proto.Clone(baseRequest).(*cloudv1.RelayLeaseRequest)
-		request.CorrelationId = uuid.NewString()
+		request := proto.Clone(baseRequest).(*cloudv1.RelayLeaseSpec)
 		request.RenewLeaseId = current.GetLeaseId()
 		timeout := 10 * time.Second
 		if half := remaining / 2; half < timeout {
@@ -444,6 +449,14 @@ func cloneRelay(value *cloudv1.RelayICEConfig) *cloudv1.RelayICEConfig {
 func validateOffer(event, hello *cloudv1.ClientSignal, sessionID string) error {
 	if event == nil || event.GetOffer() == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 2 || event.GetSenderId() != hello.GetSenderId() || event.GetBootId() != hello.GetBootId() || event.GetConnectionId() != sessionID || event.GetOffer().GetSessionId() != sessionID || strings.TrimSpace(event.GetOffer().GetOfferSdp()) == "" {
 		return errors.New("ClientOffer envelope is invalid")
+	}
+	if len(event.GetOffer().GetOfferSdp()) > maxOfferSDPBytes || len(event.GetOffer().GetCandidates()) > maxICECandidates {
+		return errors.New("ClientOffer exceeds signaling limits")
+	}
+	for _, candidate := range event.GetOffer().GetCandidates() {
+		if candidate == nil || len(candidate.GetCandidate()) > maxICECandidateBytes || len(candidate.GetSdpMid()) > 256 || len(candidate.GetUsernameFragment()) > 256 {
+			return errors.New("ClientOffer ICE candidate exceeds signaling limits")
+		}
 	}
 	return nil
 }

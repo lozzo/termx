@@ -118,8 +118,8 @@ func validateAgent(agent *cloudv1.AgentPresence) error {
 	if agent == nil || strings.TrimSpace(agent.GetDaemonId()) == "" || strings.TrimSpace(agent.GetBootId()) == "" || strings.TrimSpace(agent.GetConnectionId()) == "" || agent.GetGeneration() == 0 {
 		return errors.New("agent daemon, boot, connection, and generation are required")
 	}
-	if agent.GetTicketIssuedAt() == nil || agent.GetTicketIssuedAt().CheckValid() != nil {
-		return errors.New("agent ticket_issued_at is invalid")
+	if agent.GetBindingIssuedAt() == nil || agent.GetBindingIssuedAt().CheckValid() != nil {
+		return errors.New("agent binding_issued_at is invalid")
 	}
 	return nil
 }

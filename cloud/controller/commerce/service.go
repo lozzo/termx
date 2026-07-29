@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/cloud/controller/account"
-	"github.com/anytty/anytty/cloud/controller/control"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -215,25 +214,6 @@ func (service *Service) CompleteDevelopmentPayment(ctx context.Context, request 
 		EventType: cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, ProviderReference: "development-confirmed", OccurredAt: timestamppb.New(now),
 	}
 	return service.store.ApplyPaymentEvent(ctx, event, identity.Account.GetAccountId(), now)
-}
-
-// EntitlementRelayPolicy 把 commerce truth 投影为 RelayLease 的窄执行上限。
-type EntitlementRelayPolicy struct{ Service *Service }
-
-// Limits 从数据库读取当前 EffectiveEntitlement；读取失败或额度耗尽时拒绝新 Relay。
-func (policy EntitlementRelayPolicy) Limits(ctx context.Context, session *cloudv1.ClientSessionSummary) (control.RelayLimits, error) {
-	if policy.Service == nil || session == nil || session.GetAccountId() == "" {
-		return control.RelayLimits{}, ErrEntitlementUnavailable
-	}
-	entitlement, err := policy.Service.store.EffectiveEntitlement(ctx, session.GetAccountId(), policy.Service.now().UTC())
-	if err != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetRelayEnabled() || entitlement.GetRelayRemainingBytes() == 0 {
-		return control.RelayLimits{}, ErrEntitlementUnavailable
-	}
-	maxBytes := entitlement.GetCapability().GetRelayMaxBytesPerLease()
-	if maxBytes > entitlement.GetRelayRemainingBytes() {
-		maxBytes = entitlement.GetRelayRemainingBytes()
-	}
-	return control.RelayLimits{MaxBytes: maxBytes, MaxRateBytesPerSecond: entitlement.GetCapability().GetRelayMaxRateBytesPerSecond(), MaxConcurrentAllocations: entitlement.GetCapability().GetRelayMaxConcurrency()}, nil
 }
 
 func operatorIdentity(ctx context.Context) bool {

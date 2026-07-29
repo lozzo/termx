@@ -43,16 +43,16 @@ func (*cleanupRuntime) CancelAgentSignal(context.Context, string) error { return
 func (*cleanupRuntime) SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error {
 	return nil
 }
-func (*cleanupRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloudv1.AgentTicketClaims, error) {
+func (*cleanupRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloudv1.DaemonBindingClaims, error) {
 	return nil, nil
 }
 
 type cleanupRelay struct{ order *[]string }
 
-func (*cleanupRelay) RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error) {
+func (*cleanupRelay) RequestRelayLease(context.Context, *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error) {
 	return nil, nil
 }
-func (*cleanupRelay) RenewRelayLease(context.Context, *cloudv1.RelayLeaseRequest, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+func (*cleanupRelay) RenewRelayLease(context.Context, *cloudv1.RelayLeaseSpec, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
 	return nil, nil
 }
 func (relay *cleanupRelay) CloseRelaySession(_ context.Context, sessionID string) error {
@@ -70,7 +70,7 @@ func TestMaintainRelayLeaseRenewsWithoutChangingCredential(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	done := make(chan struct{})
 	go func() {
-		service.maintainRelayLease(ctx, &cloudv1.RelayLeaseRequest{SessionId: "session-renew"}, initial, cancel)
+		service.maintainRelayLease(ctx, &cloudv1.RelayLeaseSpec{SessionId: "session-renew"}, initial, cancel)
 		close(done)
 	}()
 
@@ -98,7 +98,7 @@ func TestMaintainRelayLeaseCancelsSessionWhenRenewalCannotComplete(t *testing.T)
 		LeaseId: "lease-expire", Username: "username-expire", Credential: "credential-expire", ExpiresAt: timestamppb.New(now.Add(80 * time.Millisecond)),
 	}
 	ctx, cancel := context.WithCancelCause(context.Background())
-	go service.maintainRelayLease(ctx, &cloudv1.RelayLeaseRequest{SessionId: "session-expire"}, initial, cancel)
+	go service.maintainRelayLease(ctx, &cloudv1.RelayLeaseSpec{SessionId: "session-expire"}, initial, cancel)
 
 	select {
 	case <-ctx.Done():
@@ -117,7 +117,7 @@ func TestMaintainRelayLeaseStopsBeforeRenewalAfterSessionClose(t *testing.T) {
 	cancel(context.Canceled)
 	done := make(chan struct{})
 	go func() {
-		service.maintainRelayLease(ctx, &cloudv1.RelayLeaseRequest{SessionId: "session-closed"}, &cloudv1.RelayICEConfig{
+		service.maintainRelayLease(ctx, &cloudv1.RelayLeaseSpec{SessionId: "session-closed"}, &cloudv1.RelayICEConfig{
 			LeaseId: "lease-closed", Username: "username-closed", Credential: "credential-closed", ExpiresAt: timestamppb.New(time.Now().Add(time.Minute)),
 		}, cancel)
 		close(done)
@@ -135,7 +135,7 @@ func TestMaintainRelayLeaseStopsBeforeRenewalAfterSessionClose(t *testing.T) {
 }
 
 type renewalCall struct {
-	request *cloudv1.RelayLeaseRequest
+	request *cloudv1.RelayLeaseSpec
 	current *cloudv1.RelayICEConfig
 }
 
@@ -145,15 +145,15 @@ type recordingRenewalBroker struct {
 	renewErr error
 }
 
-func (*recordingRenewalBroker) RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error) {
+func (*recordingRenewalBroker) RequestRelayLease(context.Context, *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error) {
 	return nil, nil
 }
 
-func (broker *recordingRenewalBroker) RenewRelayLease(_ context.Context, request *cloudv1.RelayLeaseRequest, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+func (broker *recordingRenewalBroker) RenewRelayLease(_ context.Context, request *cloudv1.RelayLeaseSpec, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
 	broker.mu.Lock()
 	defer broker.mu.Unlock()
 	if broker.calls != nil {
-		broker.calls <- renewalCall{request: proto.Clone(request).(*cloudv1.RelayLeaseRequest), current: cloneRelay(current)}
+		broker.calls <- renewalCall{request: proto.Clone(request).(*cloudv1.RelayLeaseSpec), current: cloneRelay(current)}
 	}
 	if broker.renewErr != nil {
 		return nil, broker.renewErr

@@ -11,7 +11,7 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
 message AgentHello {
-  SignedEnvelope agent_ticket = 1;
+  SignedEnvelope daemon_binding = 1;
   bytes device_proof = 2;
   string software_version = 3;
 }

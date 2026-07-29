@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package anytty.cloud.v1;
 
-import "cloud/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
@@ -24,8 +23,7 @@ enum RelayTransport {
   RELAY_TRANSPORT_TLS = 3;
 }
 
-// RelayLeaseClaims 是单个 session 的短期 Relay 上限。
-// Controller 在线时由其签发；控制流离线时 Edge 只能从 AgentTicket 的签名委托收缩生成。
+// RelayLeaseClaims 是 Edge 从 daemon binding 委托收缩生成的单 session 短期 Relay 上限。
 message RelayLeaseClaims {
   string lease_id = 1;
   string account_id = 2;
@@ -40,33 +38,14 @@ message RelayLeaseClaims {
   google.protobuf.Timestamp expires_at = 11;
 }
 
-// RelayLeaseRequest 只为已经通过 daemon 本地预检的精确 session 申请租约。
-message RelayLeaseRequest {
-  string correlation_id = 1;
-  string session_id = 2;
-  string account_id = 3;
-  string daemon_id = 4;
-  string client_id = 5;
-  RelayPreference preference = 6;
-  // renew_lease_id 为空表示首次准入；非空时 Controller 为同一在线 session
-  // 重新评估策略并续期该 lease，Edge 不得借此更换 TURN credential。
-  string renew_lease_id = 7;
-}
-
-message RelayLeaseDenied {
-  string code = 1;
-  string message = 2;
-  bool retryable = 3;
-}
-
-// RelayLeaseDecision 用 correlation_id 把 Controller 决策返回当前 EdgeControl generation。
-message RelayLeaseDecision {
-  string correlation_id = 1;
-  string session_id = 2;
-  oneof result {
-    SignedEnvelope lease = 10;
-    RelayLeaseDenied denied = 11;
-  }
+// RelayLeaseSpec 是 Edge 进程内的准入输入，不进入 EdgeControl 协议。
+message RelayLeaseSpec {
+  string session_id = 1;
+  string account_id = 2;
+  string daemon_id = 3;
+  string client_id = 4;
+  RelayPreference preference = 5;
+  string renew_lease_id = 6;
 }
 
 // RelayICEConfig 是 Edge 从已验证或已委托租约派生的一次性 TURN credential。

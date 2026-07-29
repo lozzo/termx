@@ -3644,7 +3644,7 @@ type CredentialBindRequest struct {
 	CredentialRef   string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
 	CapabilityGrant string                 `protobuf:"bytes,3,opt,name=capability_grant,json=capabilityGrant,proto3" json:"capability_grant,omitempty"`
 	CloudRouteGrant []byte                 `protobuf:"bytes,4,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3" json:"cloud_route_grant,omitempty"`
-	// cloud_edge_locator 是 Controller 或配对流程返回的 CandidateEdge protobuf；不是授权真值。
+	// cloud_edge_locator 是 enrollment、配对或 Controller 纠偏返回的 EdgeLocator protobuf；不是授权真值。
 	CloudEdgeLocator []byte `protobuf:"bytes,5,opt,name=cloud_edge_locator,json=cloudEdgeLocator,proto3" json:"cloud_edge_locator,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
