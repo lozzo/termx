@@ -29,6 +29,7 @@ import {
 export type FileEntryType = 'file' | 'dir' | 'symlink' | 'symlink-dir'
 
 export interface FileEntry {
+  path?: string | undefined
   name: string
   type: FileEntryType | string
   size: number
@@ -332,6 +333,7 @@ async function readProtoFileTransferStream(
 
 function protoFileEntry(entry: ProtoFileEntry): FileEntry {
   return {
+    path: entry.path ? normalizeFilePath(entry.path) : undefined,
     name: entry.name,
     type: entry.type === ProtoFileEntryType.DIRECTORY ? 'dir' : entry.type === ProtoFileEntryType.SYMLINK ? 'symlink' : entry.type === ProtoFileEntryType.FILE ? 'file' : 'other',
     size: Number(entry.size),

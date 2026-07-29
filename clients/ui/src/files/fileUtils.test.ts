@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { basename, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
+import { basename, fileEntryPath, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
 
 describe('file path utilities', () => {
   it('normalizes and navigates Windows drive paths', () => {
@@ -23,6 +23,7 @@ describe('file path utilities', () => {
       { label: 'log', path: '/var/log' },
     ])
     expect(pathBreadcrumbs('C:\\Users\\lozzow')).toEqual([
+      { label: '/', path: '/' },
       { label: 'C:', path: 'C:/' },
       { label: 'Users', path: 'C:/Users' },
       { label: 'lozzow', path: 'C:/Users/lozzow' },
@@ -31,5 +32,10 @@ describe('file path utilities', () => {
       { label: '//server/share', path: '//server/share' },
       { label: 'folder', path: '//server/share/folder' },
     ])
+  })
+
+  it('uses an entry absolute path for virtual Windows drive roots', () => {
+    expect(fileEntryPath('/', { name: 'C:', path: 'C:/' })).toBe('C:/')
+    expect(fileEntryPath('/home', { name: 'ada' })).toBe('/home/ada')
   })
 })

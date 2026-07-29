@@ -13,7 +13,7 @@ import type { ConnectionInfo } from '../core/transport'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { anyttyI18n } from '../i18n'
 import { createPathBookmarkApi, type PathBookmark } from './pathBookmarks'
-import { joinPath, normalizeFilePath, parentPath } from './fileUtils'
+import { fileEntryPath, joinPath, normalizeFilePath, parentPath } from './fileUtils'
 
 export type FileSortField = 'name' | 'modified' | 'size' | 'type'
 export type FileSortDirection = 'asc' | 'desc'
@@ -199,7 +199,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   )
 
   const selectAll = useCallback(() => {
-    setSelectedPaths(new Set(visibleEntries.map(e => joinPath(currentPathRef.current, e.name))))
+    setSelectedPaths(new Set(visibleEntries.map(e => fileEntryPath(currentPathRef.current, e))))
   }, [visibleEntries])
 
   const deselectAll = useCallback(() => {
@@ -575,9 +575,10 @@ async function listDirWithParentFallback(
       return { response: await fileApi.listDir(current), fallbackFrom }
     } catch (err) {
       lastErr = err
-      if (current === '/') break
+      const parent = parentPath(current)
+      if (parent === current) break
       fallbackFrom = requested
-      current = parentPath(current)
+      current = parent
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))

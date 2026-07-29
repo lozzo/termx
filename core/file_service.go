@@ -18,6 +18,9 @@ const fileListLimitMax = 500
 const filePreviewMaxBytes = 4 << 20
 
 func fileList(params FileListRequest) (FileListResult, error) {
+	if result, handled, err := fileSystemRootList(params); handled {
+		return result, err
+	}
 	path, err := absoluteFilePath(params.Path)
 	if err != nil {
 		return FileListResult{}, err

@@ -18,6 +18,10 @@ export function joinPath(base: string, name: string): string {
   return `${normalizedBase.replace(/\/+$/, '')}/${child}`
 }
 
+export function fileEntryPath(base: string, entry: Pick<FileEntry, 'path' | 'name'>): string {
+  return entry.path ? normalizeFilePath(entry.path) : joinPath(base, entry.name)
+}
+
 export function normalizeFilePath(path: string): string {
   const normalized = path.trim().replace(/\\/g, '/')
   if (!normalized || normalized === '/') return '/'
@@ -47,7 +51,10 @@ export function pathBreadcrumbs(path: string): PathBreadcrumb[] {
   const drive = normalized.match(/^([A-Za-z]:)(?:\/(.*))?$/)
   if (drive) {
     const root = `${drive[1]}/`
-    return breadcrumbsFromSegments(root, drive[1]!, drive[2])
+    return [
+      { label: '/', path: '/' },
+      ...breadcrumbsFromSegments(root, drive[1]!, drive[2]),
+    ]
   }
 
   const unc = normalized.match(/^(\/\/[^/]+\/[^/]+)(?:\/(.*))?$/)

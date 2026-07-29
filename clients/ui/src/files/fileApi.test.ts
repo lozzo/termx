@@ -27,6 +27,18 @@ describe('createFileApi generated Proto API', () => {
     })
   })
 
+  it('preserves absolute entry paths returned for Windows drive roots', async () => {
+    const session = new MockProtoSession('machine-windows', () => protoResult('fileList', create(FileListResultSchema, {
+      path: '/',
+      entries: [create(FileEntrySchema, { path: 'C:/', name: 'C:', type: FileEntryType.DIRECTORY })],
+    })))
+
+    await expect(createFileApi(session).listDir('/')).resolves.toMatchObject({
+      path: '/',
+      entries: [{ path: 'C:/', name: 'C:', type: 'dir' }],
+    })
+  })
+
   it('routes list, stat, and preview through typed commands', async () => {
     const file = create(FileEntrySchema, { path: '/README.md', name: 'README.md', type: FileEntryType.FILE, size: 8n })
     const session = new MockProtoSession('machine-local', (command) => {

@@ -6,7 +6,7 @@ import { ConnectionRouteManager, type ConnectionRouteManagementAdapter } from '.
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { FileManager } from '../files/FileManager'
 import { createFileApi, type FileEntry } from '../files/fileApi'
-import { joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
+import { fileEntryPath, joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
 import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { MachineNetworkStatusOverlay } from '../machine-runtime/MachineNetworkStatusOverlay'
@@ -1774,7 +1774,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             ) : (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {directories.map((entry) => {
-                  const path = joinPath(normalizedPath, entry.name)
+                  const path = fileEntryPath(normalizedPath, entry)
                   return (
                     <button
                       key={path}

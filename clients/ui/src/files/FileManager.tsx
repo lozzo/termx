@@ -1,6 +1,6 @@
 import { useFileManager, type FileSortState } from './useFileManager'
 import type { FileTransferContext } from './fileApi'
-import { extension, fileEntryMenuSubtitle, fileEntryMeta, isMarkdownFile, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
+import { extension, fileEntryMenuSubtitle, fileEntryMeta, fileEntryPath, isMarkdownFile, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
 import { isModelPreviewFile } from './modelFileTypes'
 import { FilePreviewSheet } from './preview/FilePreviewSheet'
 import type { ProtoClientSession } from '../core/protoClientSession'
@@ -57,7 +57,7 @@ export function FileManager({
 
   const menuEntry = useMemo(() => {
     if (!entryMenuPath) return null
-    return manager.entries.find(e => joinPath(manager.currentPath, e.name) === entryMenuPath)
+    return manager.entries.find(e => fileEntryPath(manager.currentPath, e) === entryMenuPath)
   }, [entryMenuPath, manager.entries, manager.currentPath])
 
   const menuActions: ActionSheetItem[] = useMemo(() => {
@@ -107,6 +107,8 @@ export function FileManager({
       icon: <ClipboardCopy className="h-5 w-5" />,
       onClick: () => { hapticImpact(); void manager.copyFilePaths([entryMenuPath]) },
     })
+
+    if (manager.currentPath === '/' && /^[A-Za-z]:\/$/.test(entryMenuPath)) return actions
 
     actions.push({
       label: t('files.actions.copy'),
@@ -410,7 +412,7 @@ export function FileManager({
               </li>
             ) : null}
             {manager.visibleEntries.map((entry) => {
-              const entryPath = joinPath(manager.currentPath, entry.name)
+              const entryPath = fileEntryPath(manager.currentPath, entry)
               const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
               const Icon = isDirectory ? Folder : iconForFile(entry.name)
               const itemKey = uniqueFileListKey(entryKeyCounts, entryPath)
