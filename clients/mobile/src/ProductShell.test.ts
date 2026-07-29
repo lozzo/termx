@@ -23,4 +23,14 @@ describe('mobile product shell', () => {
     expect(nativeConnectionSource).not.toContain('getCloudAccount')
     expect(nativeConnectionSource).not.toContain('ManagedCloudAssembly')
   })
+
+  it('waits for the replacement native generation before reconnecting after network recovery', () => {
+    expect(nativeConnectionSource).toMatch(
+      /onAvailable[\s\S]*notifyListeners\("generationChanging"[\s\S]*delay\(300\)[\s\S]*notifyListeners\("generationChanged"/,
+    )
+    expect(mobileAppSource).toContain("addListener('generationChanging'")
+    expect(mobileAppSource).toContain("addListener('generationChangeFailed'")
+    expect(mobileAppSource).toContain('connectionReady={nativeConnectionRecovery.connectionReady}')
+    expect(mobileAppSource).toContain('onRetryConnectionRecovery={nativeConnectionRecovery.retryConnectionRecovery}')
+  })
 })

@@ -116,7 +116,7 @@ export {
 export type { BrowserRemoteNetworkRuntimeOptions } from './connection/browserNetworkRuntime'
 export type { MachineConnectionSnapshot } from './connection/machineConnectionSnapshot'
 export { RemoteNetworkStateManager } from './connection/remoteNetworkState'
-export type { RemoteNetworkState, RemoteResumeType } from './connection/remoteNetworkState'
+export type { NativeNetworkStatusPlugin, RemoteNetworkState, RemoteResumeType } from './connection/remoteNetworkState'
 export { TerminalClient } from './terminal/terminalClient'
 export type {
   TerminalClientCallbacks,

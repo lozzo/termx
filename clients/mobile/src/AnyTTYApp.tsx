@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
+import { Network } from '@capacitor/network'
 import { create } from '@bufbuild/protobuf'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
@@ -43,6 +44,7 @@ import { NativeSessionManager, type NativeSessionConnector } from './NativeSessi
 import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 import { NativeForegroundBarrier, runAcrossNativePicker } from './NativeForegroundBarrier'
+import { NativeGenerationRecoveryFence } from './NativeGenerationRecoveryFence'
 
 const qrScannerRootId = 'anytty-camera-qr-scanner'
 const qrScannerReaderId = 'anytty-camera-qr-reader'
@@ -83,12 +85,15 @@ export function AnyTTYApp() {
       setRegistryReady(true)
     } catch (error) {
       setRegistryError(error instanceof Error ? error.message : String(error))
-      setRegistryReady(false)
       throw error
     }
   }, [endpointRegistry, networkRuntime])
   useEffect(() => { void refreshRegistry().catch(() => undefined) }, [refreshRegistry])
-  useAppResumeSync(refreshRegistry, nativeAppRuntime.resetGeneration, nativeAppRuntime.resumeInterruptedTransfers)
+  const nativeConnectionRecovery = useAppResumeSync(
+    refreshRegistry,
+    nativeAppRuntime.resetGeneration,
+    nativeAppRuntime.resumeInterruptedTransfers,
+  )
   const externalPairingAdapter = useMemo(
     () => createNativeExternalPairingAdapter(endpointRegistry),
     [endpointRegistry],
@@ -125,6 +130,11 @@ export function AnyTTYApp() {
         globalFileTransfer={globalFileTransfer}
         machineRuntimeFactory={machineRuntimeFactory}
         networkRuntime={networkRuntime}
+        nativeNetworkStatusPlugin={Network}
+        connectionReady={nativeConnectionRecovery.connectionReady}
+        connectionRecoveryFailed={nativeConnectionRecovery.connectionRecoveryFailed}
+        onRetryConnectionRecovery={nativeConnectionRecovery.retryConnectionRecovery}
+        onRefreshMachines={() => refreshRegistry()}
         scanPairingCode={scanPairingCode}
       />
     </section>
@@ -294,7 +304,6 @@ let nativeGenerationReplacement: Promise<void> = Promise.resolve()
 function replaceNativeGeneration(
   refreshRegistry: (client?: GoBindingClient) => Promise<void>,
   resetRuntime: () => Promise<void>,
-  resumeInterruptedTransfers: () => void,
   reloadRegistry: boolean,
 ): Promise<void> {
   const replacement = nativeGenerationReplacement.catch(() => undefined).then(async () => {
@@ -308,7 +317,6 @@ function replaceNativeGeneration(
     // 网络切换不会修改 Endpoint registry；此时重读 registry 会让恢复依赖刚启动 engine 的
     // 额外 operation。只有 WebView 前后台恢复才重新读取 Go-owned 持久投影。
     if (reloadRegistry) await refreshRegistry(currentClient)
-    resumeInterruptedTransfers()
   })
   nativeGenerationReplacement = replacement
   return replacement
@@ -319,39 +327,79 @@ function useAppResumeSync(
   refreshRegistry: (client?: GoBindingClient) => Promise<void>,
   resetRuntime: () => Promise<void>,
   resumeInterruptedTransfers: () => void,
-): void {
+): {
+  connectionReady: boolean
+  connectionRecoveryFailed: boolean
+  retryConnectionRecovery: () => Promise<void>
+} {
+  const [status, setStatus] = useState<'ready' | 'restoring' | 'failed'>('ready')
+  const [recoveryFence] = useState(() => new NativeGenerationRecoveryFence())
+  const runRecovery = useCallback(async (restartNative: boolean, reloadRegistry: boolean, claimedAttempt?: number) => {
+    const attempt = claimedAttempt ?? recoveryFence.beginAttempt()
+    if (!recoveryFence.isCurrent(attempt)) return
+    setStatus('restoring')
+    markNativeBackground()
+    try {
+      if (restartNative) await NativeConnection.handleForegroundResume()
+      // Native generation 就绪后再替换 JS owner；旧 session/resource handle 不得继续使用。
+      await replaceNativeGeneration(refreshRegistry, resetRuntime, reloadRegistry)
+      if (!recoveryFence.isCurrent(attempt)) return
+      resumeInterruptedTransfers()
+      setStatus('ready')
+      finishNativeForeground()
+    } catch (failure) {
+      if (!recoveryFence.isCurrent(attempt)) return
+      setStatus('failed')
+      reportNativeGenerationFailure(failure)
+      finishNativeForeground(failure)
+      throw failure
+    }
+  }, [recoveryFence, refreshRegistry, resetRuntime, resumeInterruptedTransfers])
+
+  const retryConnectionRecovery = useCallback(async () => {
+    await runRecovery(true, false).catch(() => undefined)
+  }, [runRecovery])
+
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
+        recoveryFence.invalidate()
+        setStatus('restoring')
         markNativeBackground()
         return
       }
-    void NativeConnection.handleForegroundResume().then(async () => {
-    // Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
-    await replaceNativeGeneration(refreshRegistry, resetRuntime, resumeInterruptedTransfers, true)
-    }).then(
-    () => finishNativeForeground(),
-    (failure) => {
+      void runRecovery(true, true).catch(() => undefined)
+    })
+    const generationChangingPromise = NativeConnection.addListener('generationChanging', ({ epoch }) => {
+      if (recoveryFence.beginNativeEpoch(epoch) === null) return
+      setStatus('restoring')
+      markNativeBackground()
+    })
+    const generationPromise = NativeConnection.addListener('generationChanged', ({ epoch }) => {
+      const attempt = recoveryFence.claimNativeReadyAttempt(epoch)
+      if (attempt === null) return
+      void runRecovery(false, false, attempt).catch(() => undefined)
+    })
+    const generationFailurePromise = NativeConnection.addListener('generationChangeFailed', ({ epoch }) => {
+      if (recoveryFence.failNativeEpoch(epoch) === null) return
+      const failure = new Error('native connection recovery failed')
+      setStatus('failed')
       reportNativeGenerationFailure(failure)
       finishNativeForeground(failure)
-    },
-    )
-    })
-    const generationPromise = NativeConnection.addListener('generationChanged', () => {
-      markNativeBackground()
-      void replaceNativeGeneration(refreshRegistry, resetRuntime, resumeInterruptedTransfers, false).then(
-        () => finishNativeForeground(),
-        (failure) => {
-          reportNativeGenerationFailure(failure)
-          finishNativeForeground(failure)
-        },
-      )
     })
     return () => {
       void promise.then((sub) => sub.remove())
+      void generationChangingPromise.then((sub) => sub.remove())
       void generationPromise.then((sub) => sub.remove())
+      void generationFailurePromise.then((sub) => sub.remove())
     }
-  }, [refreshRegistry, resetRuntime, resumeInterruptedTransfers])
+  }, [recoveryFence, runRecovery])
+
+  return {
+    connectionReady: status === 'ready',
+    connectionRecoveryFailed: status === 'failed',
+    retryConnectionRecovery,
+  }
 }
 
 function useAndroidBackButton(): void {

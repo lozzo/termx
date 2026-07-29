@@ -16,12 +16,13 @@ import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { MachineWorkspace } from './MachineWorkspace'
 
 const terminalRender = vi.hoisted(() => vi.fn())
+const terminalSendInput = vi.hoisted(() => vi.fn())
 
 vi.mock('../terminal/Terminal', () => ({
   Terminal: forwardRef(function MockTerminal(props: unknown, ref) {
     terminalRender(props)
     useImperativeHandle(ref, () => ({
-      sendInput: () => {},
+      sendInput: terminalSendInput,
       sendResize: () => {},
       requestResizeOwner: async () => ({ canResize: true, reason: 'owner' }),
       releaseResizeOwner: async () => ({ canResize: false, reason: 'follower' }),
@@ -47,6 +48,7 @@ vi.mock('../terminal/Terminal', () => ({
 describe('MachineWorkspace terminal creation', () => {
   beforeEach(async () => {
     terminalRender.mockReset()
+    terminalSendInput.mockReset()
     await anyttyI18n.changeLanguage('en')
   })
   afterEach(() => {
@@ -163,6 +165,59 @@ describe('MachineWorkspace terminal creation', () => {
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(terminalRender).toHaveBeenCalled())
     expect(terminalRender.mock.calls.every(([props]) => (props as { session: MockProtoSession }).session === freshSession)).toBe(true)
+  })
+
+  it('pauses terminal input while the phone is offline', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    const api = {
+      getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+      listTerminals: vi.fn(async () => [terminal]),
+    }
+    const connector = { connect: vi.fn(async () => session), reconnect: vi.fn(async () => undefined) }
+    const retryConnectionRecovery = vi.fn(async () => undefined)
+    const view = render(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline={false} connectionReady={false} />)
+    await screen.findByText('Your phone is offline')
+
+    const latestProps = terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => void }
+    latestProps.onInput('whoami\n')
+    expect(terminalSendInput).not.toHaveBeenCalled()
+
+    view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline connectionReady={false} />)
+    await screen.findByText('Connection interrupted. Reconnecting')
+    expect(connector.reconnect).not.toHaveBeenCalled()
+    expect(connector.connect).toHaveBeenCalledTimes(1)
+
+    view.rerender(<MachineWorkspace
+      api={api}
+      connector={connector}
+      initialMachine={machine}
+      phoneOnline
+      connectionReady={false}
+      connectionRecoveryFailed
+      onRetryConnectionRecovery={retryConnectionRecovery}
+    />)
+    expect(await screen.findByText('Connection service unavailable')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(retryConnectionRecovery).toHaveBeenCalledOnce()
+    expect(connector.connect).toHaveBeenCalledTimes(1)
+
+    view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline connectionReady />)
+    await waitFor(() => expect(connector.reconnect).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(connector.connect).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Connection restored')).toBeTruthy()
+
+    view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline={false} connectionReady={false} />)
+    await screen.findByText('Your phone is offline')
+    expect(screen.queryByText('Connection restored')).toBeNull()
   })
 
   it('refreshes daemon inventory after a list-page manual reconnect', async () => {

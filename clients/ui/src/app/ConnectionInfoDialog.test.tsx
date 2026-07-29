@@ -25,7 +25,7 @@ describe('MachineWorkspace connection policy ownership', () => {
     expect(listTerminals.mock.calls[0]?.[0]?.forceRelay).toBeUndefined()
   })
 
-  it('clears a stale bridge error after the current generation loads inventory', async () => {
+  it('hides a stale bridge error and clears the user-facing failure after recovery', async () => {
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
     const connector = { connect: vi.fn() }
     const getStatus = vi.fn(async () => ({
@@ -42,11 +42,13 @@ describe('MachineWorkspace connection policy ownership', () => {
     }
 
     const view = render(<MachineWorkspace api={failedApi} connector={connector} initialMachine={machine} />)
-    await waitFor(() => expect(screen.getByText('Go binding bridge disconnected')).toBeTruthy())
+    const failure = await screen.findByTestId('anytty-connection-failure')
+    expect(failure.textContent).toContain('Connection interrupted')
+    expect(failure.textContent).not.toMatch(/Go binding|bridge/i)
 
     view.rerender(<MachineWorkspace api={recoveredApi} connector={connector} initialMachine={machine} />)
     await waitFor(() => expect(recoveredApi.listTerminals).toHaveBeenCalledOnce())
-    await waitFor(() => expect(screen.queryByText('Go binding bridge disconnected')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('anytty-connection-failure')).toBeNull())
   })
 })
 

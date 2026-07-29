@@ -50,12 +50,13 @@ describe('MachineBrowserShell', () => {
       terminalCount: 2,
     }))
     expect(screen.getByTestId('anytty-connection-flow')).toBeTruthy()
-    expect(screen.getByText('Trying local')).toBeTruthy()
+    expect(screen.getByText('Connecting to device')).toBeTruthy()
     expect(screen.queryByTestId('anytty-terminal')).toBeNull()
     expect(screen.queryByTestId('anytty-terminal-list')).toBeNull()
 
-    await waitFor(() => expect(screen.getByText('Trying hub')).toBeTruthy())
-    expect(screen.getByText('Local unavailable. Trying Hub.')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Connecting to device')).toBeTruthy())
+    expect(screen.getByText('Finding the best available connection...')).toBeTruthy()
+    expect(screen.queryByText('Local unavailable. Trying Hub.')).toBeNull()
   })
 
   it('surfaces hub relay as connection info without exposing relay as a path', async () => {
@@ -77,9 +78,9 @@ describe('MachineBrowserShell', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /connect to office linux/i }))
 
-    await waitFor(() => expect(screen.getByText('Trying hub')).toBeTruthy())
-    expect(screen.getByText('Relay active')).toBeTruthy()
-    expect(screen.getByTestId('anytty-connection-flow').textContent).not.toMatch(/\brelay path\b|\bpaid relay\b|\banonymous p2p\b/i)
+    await waitFor(() => expect(screen.getByText('Connecting to device')).toBeTruthy())
+    expect(screen.queryByText('Relay active')).toBeNull()
+    expect(screen.getByTestId('anytty-connection-flow').textContent).not.toMatch(/\bhub\b|\brelay\b|\bp2p\b|\bice\b/i)
   })
 })
 

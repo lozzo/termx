@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { MachineList } from '../machines/MachineList'
 import { hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord, ConnectionFlowSnapshot } from '../state/appMachine'
-import { formatConnectionStage } from '../state/appMachine'
 
 export interface MachineBrowserShellProps {
   machines: AppMachineRecord[]
@@ -26,6 +26,7 @@ export function MachineBrowserShell({
 }: MachineBrowserShellProps) {
   const [selectedMachine, setSelectedMachine] = useState<AppMachineRecord | null>(null)
   const [connection, setConnection] = useState<ConnectionFlowSnapshot | null>(null)
+  const { t } = useTranslation()
   const attemptSeqRef = useRef(0)
   const resultTimerRef = useRef<number | null>(null)
 
@@ -62,7 +63,7 @@ export function MachineBrowserShell({
           setConnection(snapshot)
         }, 50)
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         resultTimerRef.current = window.setTimeout(() => {
           resultTimerRef.current = null
           if (attemptSeqRef.current !== attemptSeq) return
@@ -70,11 +71,11 @@ export function MachineBrowserShell({
             stage: 'failed',
             path: 'hub',
             relayInUse: false,
-            message: err instanceof Error ? err.message : String(err),
+            message: t('errors.connectionInterrupted'),
           })
         }, 50)
       })
-  }, [clearPendingResult, onStartConnection])
+  }, [clearPendingResult, onStartConnection, t])
 
   return (
     <main
@@ -115,12 +116,24 @@ function ConnectionFlowView({
   machine: AppMachineRecord
   onBack: () => void
 }) {
+  const { t } = useTranslation()
   const active = connection.stage.startsWith('trying_')
+  const failed = connection.stage === 'failed'
+  const title = active
+    ? t('workspace.connection.progressTitle')
+    : failed
+      ? t('errors.connectionProblemTitle')
+      : t('workspace.connection.phase.connected')
+  const message = active
+    ? t('workspace.connection.phase.probing')
+    : failed
+      ? t('errors.connectionInterrupted')
+      : t('workspace.connection.phase.connected')
   return (
     <section className="anytty-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="anytty-connection-flow">
       <header className="anytty-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
-          aria-label="Back to machines"
+          aria-label={t('common.backToMachines')}
           className="anytty-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
           type="button"
           onClick={() => { hapticSelection(); onBack() }}
@@ -139,19 +152,9 @@ function ConnectionFlowView({
               {active ? <span className="anytty-square-spinner h-5 w-5" aria-hidden="true" /> : null}
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-semibold text-zinc-950">{formatConnectionStage(connection.stage)}</h2>
-              <p className="mt-1 text-sm leading-5 text-zinc-500">{connection.message ?? 'Preparing connection.'}</p>
+              <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
+              <p className="mt-1 text-sm leading-5 text-zinc-500">{message}</p>
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {connection.path ? (
-              <span className="border border-[var(--anytty-app-line)] bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
-                {connection.path === 'hub' ? 'Hub' : 'Local'}
-              </span>
-            ) : null}
-            {connection.relayInUse ? (
-              <span className="border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Relay active</span>
-            ) : null}
           </div>
         </div>
       </div>

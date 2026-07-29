@@ -47,9 +47,11 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onLost(network: Network) {
             if (activeNetwork != network) return
-            networkChangeEpoch += 1
+            val epoch = networkChangeEpoch + 1
+            networkChangeEpoch = epoch
             activeNetwork = null
             suspendGoBridgeServer()
+            notifyListeners("generationChanging", JSObject().put("reason", "network_lost").put("epoch", epoch))
         }
 
         override fun onAvailable(network: Network) {
@@ -59,6 +61,7 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
             if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
             val epoch = networkChangeEpoch + 1
             networkChangeEpoch = epoch
+            notifyListeners("generationChanging", JSObject().put("reason", "network_available").put("epoch", epoch))
             runtimeScope.launch {
                 // Wi-Fi -> cellular -> Wi-Fi 会连续发布多个 onAvailable。只允许最终 active network
                 // 创建 generation，避免后一个 bridge 在 JS 正读取前一个 registry 时将其关闭。
@@ -67,9 +70,12 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
                 if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
                 runCatching { restartGoBridgeServer() }
                     .onSuccess {
-                        notifyListeners("generationChanged", JSObject().put("reason", "network_available"))
+                        notifyListeners("generationChanged", JSObject().put("reason", "network_available").put("epoch", epoch))
                     }
-                    .onFailure { AnyTTYDebugLog.e(TAG, "Go client engine could not follow Android network epoch", it) }
+                    .onFailure {
+                        AnyTTYDebugLog.e(TAG, "Go client engine could not follow Android network epoch", it)
+                        notifyListeners("generationChangeFailed", JSObject().put("reason", "network_available").put("epoch", epoch))
+                    }
             }
         }
     }

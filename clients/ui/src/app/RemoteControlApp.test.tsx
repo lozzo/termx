@@ -55,14 +55,26 @@ describe('RemoteControlApp accountless product shell', () => {
     expect(await screen.findByText('Could not connect to this device. Check both devices\' networks and try again.')).toBeTruthy()
     expect((within(sheet).getByRole('button', { name: 'Add device' }) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('refreshes the native device projection from the home toolbar', async () => {
+    const onRefreshMachines = vi.fn(async () => undefined)
+    renderApp({ onRefreshMachines })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Refresh devices' }))
+
+    expect(onRefreshMachines).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Device status updated')).toBeTruthy()
+  })
 })
 
 function renderApp({
   pairingImport,
   scanPairingCode,
+  onRefreshMachines,
 }: {
   pairingImport?: ExternalPairingAdapter['import'] | undefined
   scanPairingCode?: (() => Promise<string | null>) | undefined
+  onRefreshMachines?: (() => Promise<void>) | undefined
 } = {}) {
   const storage = new MemoryStorage()
   const networkRuntime: RemoteNetworkRuntime = {
@@ -79,6 +91,7 @@ function renderApp({
     <RemoteControlApp
       externalPairingAdapter={externalPairingAdapter}
       networkRuntime={networkRuntime}
+      onRefreshMachines={onRefreshMachines}
       scanPairingCode={scanPairingCode}
     />,
   )

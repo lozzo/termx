@@ -10,6 +10,14 @@ export interface RemoteNetworkState {
   resumeDuration: number
 }
 
+export interface NativeNetworkStatusPlugin {
+  getStatus?: (() => Promise<NativeNetworkStatus>) | undefined
+  addListener?: ((
+    eventName: 'networkStatusChange',
+    handler: (status: NativeNetworkStatus) => void,
+  ) => NativePluginListenerHandle | Promise<NativePluginListenerHandle>) | undefined
+}
+
 type NetworkStateListener = (state: RemoteNetworkState, prevState: RemoteNetworkState) => void
 
 const HEARTBEAT_INTERVAL_MS = 3000
@@ -36,6 +44,8 @@ export class RemoteNetworkStateManager {
   private resumeType: RemoteResumeType | null = null
   private resumeDuration = 0
   private lastSnapshot: RemoteNetworkState = this.createSnapshot()
+
+  constructor(private readonly nativeNetworkPlugin?: NativeNetworkStatusPlugin) {}
 
   get state(): RemoteNetworkState {
     return this.lastSnapshot
@@ -123,7 +133,7 @@ export class RemoteNetworkStateManager {
   }
 
   private async initNativeNetwork(): Promise<void> {
-    const network = capacitorNetworkPlugin()
+    const network = this.nativeNetworkPlugin ?? capacitorNetworkPlugin()
     if (!network) return
     try {
       const status = await network.getStatus?.()
@@ -278,21 +288,13 @@ function browserNavigator(): Navigator | undefined {
   return typeof navigator === 'undefined' ? undefined : navigator
 }
 
-interface NativePluginListenerHandle {
+export interface NativePluginListenerHandle {
   remove(): void | Promise<void>
 }
 
-interface NativeNetworkStatus {
+export interface NativeNetworkStatus {
   connected: boolean
   connectionType?: string | undefined
-}
-
-interface NativeNetworkPlugin {
-  getStatus?: (() => Promise<NativeNetworkStatus>) | undefined
-  addListener?: ((
-    eventName: 'networkStatusChange',
-    handler: (status: NativeNetworkStatus) => void,
-  ) => NativePluginListenerHandle | Promise<NativePluginListenerHandle>) | undefined
 }
 
 interface NativeAppPlugin {
@@ -302,8 +304,8 @@ interface NativeAppPlugin {
   ) => NativePluginListenerHandle | Promise<NativePluginListenerHandle>) | undefined
 }
 
-function capacitorNetworkPlugin(): NativeNetworkPlugin | undefined {
-  return capacitorPlugin('Network') as NativeNetworkPlugin | undefined
+function capacitorNetworkPlugin(): NativeNetworkStatusPlugin | undefined {
+  return capacitorPlugin('Network') as NativeNetworkStatusPlugin | undefined
 }
 
 function capacitorAppPlugin(): NativeAppPlugin | undefined {

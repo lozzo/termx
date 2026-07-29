@@ -22,7 +22,7 @@ describe('MachineNetworkStatusOverlay', () => {
     expect(card.className).toContain('text-[var(--anytty-text)]')
     expect(card.className).not.toMatch(/rounded|shadow/)
     expect(card.textContent).toContain('Connecting to device')
-    expect(card.textContent).toContain('Waiting for network...')
+    expect(card.textContent).toContain('Your phone is offline.')
   })
 
   it('uses the stable phase instead of exposing a native implementation message', async () => {
@@ -31,7 +31,7 @@ describe('MachineNetworkStatusOverlay', () => {
 
     const overlay = screen.getByTestId('anytty-machine-network-overlay')
     expect(overlay.textContent).toContain('正在连接设备')
-    expect(overlay.textContent).toContain('正在进行 P2P 信令协商')
+    expect(overlay.textContent).toContain('正在连接设备')
     expect(overlay.textContent).not.toMatch(/JNI|runtime|handle/i)
   })
 })

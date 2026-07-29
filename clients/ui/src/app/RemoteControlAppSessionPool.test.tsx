@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { anyttyI18n } from '../i18n'
@@ -93,6 +93,63 @@ describe('RemoteControlApp native session pool', () => {
     await waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1))
     expect(screen.getByText('Available')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Disconnect from Build host' })).toBeNull()
+  })
+
+  it('refreshes the device registry after a deliberate pull gesture', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveMachine({
+      machineId: 'device-1',
+      name: 'Build host',
+      hostname: 'build.local',
+      state: 'online',
+      terminalCount: 2,
+      source: 'manual',
+      accessClass: 'local',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: '2026-07-28T00:00:00.000Z',
+      updatedAt: '2026-07-28T00:00:00.000Z',
+    })
+    const onRefreshMachines = vi.fn(async () => undefined)
+
+    const view = render(
+      <RemoteControlApp
+        connectionReady={false}
+        externalPairingAdapter={authorizedAdapter()}
+        networkRuntime={networkRuntime(storage)}
+        onRefreshMachines={onRefreshMachines}
+      />,
+    )
+
+    const scroller = await screen.findByTestId('anytty-machine-list-scroller')
+    expect(screen.getByText('Network is back. Restoring secure connections...')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Refresh devices' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 10 }] })
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 150 }] })
+    fireEvent.touchEnd(scroller)
+    expect(onRefreshMachines).not.toHaveBeenCalled()
+
+    view.rerender(
+      <RemoteControlApp
+        connectionReady
+        externalPairingAdapter={authorizedAdapter()}
+        networkRuntime={networkRuntime(storage)}
+        onRefreshMachines={onRefreshMachines}
+      />,
+    )
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Refresh devices' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 10 }] })
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 150 }] })
+    fireEvent.touchCancel(scroller)
+    expect(onRefreshMachines).not.toHaveBeenCalled()
+
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 10 }] })
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 150 }] })
+    expect(screen.getByText('Release to refresh')).toBeTruthy()
+    fireEvent.touchEnd(scroller)
+
+    await waitFor(() => expect(onRefreshMachines).toHaveBeenCalledOnce())
+    expect(await screen.findByText('Device status updated')).toBeTruthy()
   })
 })
 

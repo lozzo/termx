@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Monitor, MoreHorizontal, Plus, QrCode, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, Check, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Link2Off, Monitor, MoreHorizontal, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, WifiOff, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -26,6 +26,8 @@ import {
 import type { TerminalRenderer } from '../terminal/Terminal'
 import type { MachineAccessClass } from '../state/appMachine'
 import { anyttyIntlLocale, anyttyLanguages, normalizeAnyTTYLanguage } from '../i18n'
+import { connectionErrorDisplayMessage } from '../connection/connectionErrorPresentation'
+import { RemoteNetworkStateManager, type NativeNetworkStatusPlugin } from '../connection/remoteNetworkState'
 
 const appName = 'AnyTTY Remote App'
 
@@ -167,6 +169,11 @@ export interface RemoteControlAppProps {
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
   externalPairingAdapter?: ExternalPairingAdapter | undefined
   exportDebugLogs?: (() => Promise<void>) | undefined
+  onRefreshMachines?: (() => Promise<void>) | undefined
+  nativeNetworkStatusPlugin?: NativeNetworkStatusPlugin | undefined
+  connectionReady?: boolean | undefined
+  connectionRecoveryFailed?: boolean | undefined
+  onRetryConnectionRecovery?: (() => void | Promise<void>) | undefined
 }
 
 export function RemoteControlApp({
@@ -177,6 +184,11 @@ export function RemoteControlApp({
   scanPairingCode,
   externalPairingAdapter,
   exportDebugLogs,
+  onRefreshMachines,
+  nativeNetworkStatusPlugin,
+  connectionReady = true,
+  connectionRecoveryFailed = false,
+  onRetryConnectionRecovery,
 }: RemoteControlAppProps) {
   const { t } = useTranslation()
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
@@ -201,6 +213,17 @@ export function RemoteControlApp({
   const [sshCredentialNotice, setSSHCredentialNotice] = useState<NonNullable<ExternalPairingImportResult['sshCredentials']> | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
+  const [reachabilityRefreshToken, setReachabilityRefreshToken] = useState(0)
+  const remoteNetworkStateManager = useMemo(
+    () => new RemoteNetworkStateManager(nativeNetworkStatusPlugin),
+    [nativeNetworkStatusPlugin],
+  )
+  const remoteNetworkState = useSyncExternalStore(
+    remoteNetworkStateManager.subscribeSnapshot.bind(remoteNetworkStateManager),
+    () => remoteNetworkStateManager.state,
+    () => remoteNetworkStateManager.state,
+  )
+  const effectiveConnectionReady = connectionReady && remoteNetworkState.networkReady
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const cameraScanInFlightRef = useRef(false)
   const runtimeCacheRef = useRef<{
@@ -209,6 +232,11 @@ export function RemoteControlApp({
     storage: RemoteRuntimeStorage
     runtimes: Map<string, MachineRuntime>
   } | null>(null)
+
+  useEffect(() => {
+    remoteNetworkStateManager.init()
+    return () => remoteNetworkStateManager.destroy()
+  }, [remoteNetworkStateManager])
 
   if (storage) {
     const cache = runtimeCacheRef.current
@@ -289,7 +317,7 @@ export function RemoteControlApp({
       })
     }
     return () => controller.abort()
-  }, [localHubReachabilityTargets, networkRuntime.fetch])
+  }, [localHubReachabilityTargets, networkRuntime.fetch, reachabilityRefreshToken])
 
   const displayMachines = useMemo(() => {
     const map = new Map<string, DisplayMachine>()
@@ -331,6 +359,14 @@ export function RemoteControlApp({
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setSelectedMachineId((current) => current && localMachineList.some((machine) => machine.machineId === current) ? current : null)
   }, [externalPairingAdapter, storage])
+
+  const performMachineRefresh = useCallback(async () => {
+    if (!remoteNetworkStateManager.state.phoneOnline) throw Object.assign(new Error('phone offline'), { code: 'offline' })
+    if (!effectiveConnectionReady) throw Object.assign(new Error('connection generation is not ready'), { code: 'cancelled' })
+    await onRefreshMachines?.()
+    refreshMachines()
+    setReachabilityRefreshToken((current) => current + 1)
+  }, [effectiveConnectionReady, onRefreshMachines, refreshMachines, remoteNetworkStateManager])
 
   const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
     if (!globalFileTransfer || !transferId) return
@@ -596,6 +632,10 @@ export function RemoteControlApp({
           storage={storage}
           terminalSettings={terminalSettings}
           runtime={getMachineRuntime(selectedMachine)}
+          phoneOnline={remoteNetworkState.phoneOnline}
+          connectionReady={effectiveConnectionReady}
+          connectionRecoveryFailed={connectionRecoveryFailed}
+          onRetryConnectionRecovery={onRetryConnectionRecovery}
           onBack={() => {
             hapticSelection()
             setView('home')
@@ -612,6 +652,11 @@ export function RemoteControlApp({
           getConnectionStateSource={(machine) => authorizedMachineIds.has(machine.id) ? getExistingMachineRuntime(machine)?.listConnectionState : undefined}
           authorizedMachineIds={authorizedMachineIds}
           authorizationExpiries={authorizationExpiries}
+          phoneOnline={remoteNetworkState.phoneOnline}
+          connectionReady={effectiveConnectionReady}
+          connectionRecoveryFailed={connectionRecoveryFailed}
+          onRetryConnectionRecovery={onRetryConnectionRecovery}
+          onRefresh={performMachineRefresh}
           onAddLocalDevice={openAddLocalSheet}
           onOpenSettings={() => { hapticSelection(); setView('settings') }}
           onOpenTransferCenter={() => { hapticSelection(); setTransferCenterOpen(true) }}
@@ -697,6 +742,10 @@ function MachineTerminalListView({
   storage,
   terminalSettings,
   runtime,
+  phoneOnline,
+  connectionReady,
+  connectionRecoveryFailed,
+  onRetryConnectionRecovery,
   onBack,
   onNeedsReauthorization,
   onTerminalSettingsChange,
@@ -705,6 +754,10 @@ function MachineTerminalListView({
   storage: RemoteRuntimeStorage | undefined
   terminalSettings: TerminalSettings
   runtime: MachineRuntime | null
+  phoneOnline: boolean
+  connectionReady: boolean
+  connectionRecoveryFailed: boolean
+  onRetryConnectionRecovery?: (() => void | Promise<void>) | undefined
   onBack: () => void
   onNeedsReauthorization: (machineId: string) => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
@@ -733,6 +786,10 @@ function MachineTerminalListView({
         inventoryEvents={runtime.inventoryEvents}
         fileTransfer={runtime.fileTransfer}
         terminalSettings={terminalSettings}
+        phoneOnline={phoneOnline}
+        connectionReady={connectionReady}
+        connectionRecoveryFailed={connectionRecoveryFailed}
+        onRetryConnectionRecovery={onRetryConnectionRecovery}
         onNeedsReauthorization={onNeedsReauthorization}
         onTerminalSettingsChange={onTerminalSettingsChange}
         onBack={onBack}
@@ -773,9 +830,23 @@ function MachineRuntimeErrorShell({
   machine: DisplayMachine
   onBack: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <section className="anytty-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="anytty-machine-terminal-list">
       <MachineRuntimeHeader machine={machine} onBack={onBack} />
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-10">
+        <div className="w-full max-w-sm text-center">
+          <span className="mx-auto grid size-12 place-items-center border border-zinc-300 bg-white text-zinc-600" aria-hidden="true">
+            <WifiOff className="h-5 w-5" />
+          </span>
+          <h2 className="mt-4 text-base font-semibold text-zinc-950">{t('errors.connectionProblemTitle')}</h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-600">{t('errors.connectionInterrupted')}</p>
+          <button className="anytty-app-secondary-button mt-5 h-11 px-4 text-sm font-semibold" type="button" onClick={onBack}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {t('common.backToMachines')}
+          </button>
+        </div>
+      </div>
     </section>
   )
 }
@@ -787,11 +858,16 @@ function HomeView({
   getConnectionStateSource,
   authorizedMachineIds,
   authorizationExpiries,
+  phoneOnline,
+  connectionReady,
+  connectionRecoveryFailed,
   onAddLocalDevice,
   onDisconnectMachine,
   onForgetMachineAuthorization,
   onOpenSettings,
   onOpenTransferCenter,
+  onRefresh,
+  onRetryConnectionRecovery,
   onSelectMachine,
 }: {
   fileTransfer?: FileTransferContext | undefined
@@ -800,15 +876,97 @@ function HomeView({
   getConnectionStateSource: (machine: DisplayMachine) => MachineRuntime['listConnectionState']
   authorizedMachineIds: Set<string>
   authorizationExpiries: Map<string, string>
+  phoneOnline: boolean
+  connectionReady: boolean
+  connectionRecoveryFailed: boolean
   onAddLocalDevice: () => void
   onDisconnectMachine: (machine: DisplayMachine) => void | Promise<void>
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
+  onRefresh: () => Promise<void>
+  onRetryConnectionRecovery?: (() => void | Promise<void>) | undefined
   onSelectMachine: (machine: DisplayMachine) => void
 }) {
   const { t } = useTranslation()
   const [detailMachine, setDetailMachine] = useState<DisplayMachine | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshFeedback, setRefreshFeedback] = useState<'success' | 'error' | 'offline' | null>(null)
+  const [pullDistance, setPullDistance] = useState(0)
+  const refreshFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshInFlightRef = useRef(false)
+  const pullStartYRef = useRef<number | null>(null)
+  const pullArmedRef = useRef(false)
+  const runRefresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return
+    if (refreshFeedbackTimerRef.current) clearTimeout(refreshFeedbackTimerRef.current)
+    setPullDistance(0)
+    if (!phoneOnline) {
+      setRefreshFeedback('offline')
+      hapticError()
+      refreshFeedbackTimerRef.current = setTimeout(() => setRefreshFeedback(null), 2_400)
+      return
+    }
+    if (!connectionReady) return
+    setRefreshing(true)
+    refreshInFlightRef.current = true
+    setRefreshFeedback(null)
+    try {
+      await onRefresh()
+      setRefreshFeedback('success')
+      hapticSuccess()
+    } catch {
+      setRefreshFeedback('error')
+      hapticError()
+    } finally {
+      refreshInFlightRef.current = false
+      setRefreshing(false)
+      refreshFeedbackTimerRef.current = setTimeout(() => setRefreshFeedback(null), 2_000)
+    }
+  }, [connectionReady, onRefresh, phoneOnline])
+  useEffect(() => () => {
+    if (refreshFeedbackTimerRef.current) clearTimeout(refreshFeedbackTimerRef.current)
+  }, [])
+  const handlePullStart = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.currentTarget.scrollTop > 0 || refreshing || !connectionReady) return
+    pullStartYRef.current = event.touches[0]?.clientY ?? null
+    pullArmedRef.current = false
+  }, [connectionReady, refreshing])
+  const handlePullMove = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    const startY = pullStartYRef.current
+    const currentY = event.touches[0]?.clientY
+    if (startY === null || currentY === undefined || event.currentTarget.scrollTop > 0) return
+    const delta = Math.max(0, currentY - startY)
+    if (delta <= 0) return
+    event.preventDefault()
+    const distance = Math.min(88, Math.round(delta * 0.55))
+    pullArmedRef.current = distance >= 60
+    setPullDistance(distance)
+  }, [])
+  const handlePullEnd = useCallback(() => {
+    const shouldRefresh = pullArmedRef.current
+    pullStartYRef.current = null
+    pullArmedRef.current = false
+    setPullDistance(0)
+    if (shouldRefresh) void runRefresh()
+  }, [runRefresh])
+  const handlePullCancel = useCallback(() => {
+    pullStartYRef.current = null
+    pullArmedRef.current = false
+    setPullDistance(0)
+  }, [])
+  const refreshStatus = refreshing
+    ? t('machines.refreshing')
+    : refreshFeedback === 'success'
+      ? t('machines.refreshed')
+      : refreshFeedback === 'error'
+        ? t('machines.refreshFailed')
+        : refreshFeedback === 'offline'
+          ? t('machines.refreshOffline')
+          : pullArmedRef.current
+            ? t('machines.releaseToRefresh')
+            : t('machines.pullToRefresh')
+  const refreshIndicatorVisible = refreshing || refreshFeedback !== null || pullDistance > 0
   return (
     <section className="anytty-app-page flex min-h-0 flex-1 flex-col" data-testid="anytty-app-home">
       <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
@@ -824,6 +982,16 @@ function HomeView({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            aria-label={t('machines.refresh')}
+            className="anytty-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)] disabled:opacity-60"
+            disabled={refreshing || !connectionReady}
+            title={t('machines.refresh')}
+            type="button"
+            onClick={() => { hapticSelection(); void runRefresh() }}
+          >
+            <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
           <button
             aria-label={t('machines.add')}
             className="anytty-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)] lg:px-3"
@@ -855,12 +1023,58 @@ function HomeView({
         </div>
       </header>
 
+      {!phoneOnline ? (
+        <div className="flex min-h-10 shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-900" role="status" aria-live="polite">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <span>{t('machines.offlineNotice')}</span>
+        </div>
+      ) : connectionRecoveryFailed ? (
+        <div className="flex min-h-10 shrink-0 items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-950" role="alert">
+          <Link2Off className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1">{t('machines.networkRecoveryFailed')}</span>
+          {onRetryConnectionRecovery ? (
+            <button className="min-h-8 shrink-0 border border-amber-300 bg-white px-3 text-xs font-semibold" type="button" onClick={() => { hapticSelection(); void onRetryConnectionRecovery() }}>
+              {t('workspace.connection.retry')}
+            </button>
+          ) : null}
+        </div>
+      ) : !connectionReady ? (
+        <div className="flex min-h-10 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700" role="status" aria-live="polite">
+          <span className="anytty-square-spinner h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{t('machines.restoringNetwork')}</span>
+        </div>
+      ) : null}
+      {phoneOnline && machines.length === 0 && (refreshing || refreshFeedback) ? (
+        <div className={`flex min-h-10 shrink-0 items-center gap-2 border-b px-4 py-2 text-xs font-medium ${refreshFeedback === 'error' ? 'border-red-200 bg-red-50 text-red-800' : 'border-zinc-200 bg-white text-zinc-700'}`} role="status" aria-live="polite">
+          {refreshFeedback === 'success' ? <Check className="h-4 w-4 text-emerald-700" /> : <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />}
+          <span>{refreshStatus}</span>
+        </div>
+      ) : null}
+
       {machines.length === 0 ? (
         <FirstUseState
           onAddLocalDevice={onAddLocalDevice}
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto py-4 lg:px-8 lg:py-7">
+        <div
+          className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain py-4 lg:px-8 lg:py-7"
+          data-testid="anytty-machine-list-scroller"
+          onTouchStart={handlePullStart}
+          onTouchMove={handlePullMove}
+          onTouchEnd={handlePullEnd}
+          onTouchCancel={handlePullCancel}
+        >
+          {refreshIndicatorVisible ? (
+            <div
+              className="flex items-center justify-center overflow-hidden text-xs font-semibold text-zinc-600 transition-[height,opacity] duration-200 motion-reduce:transition-none"
+              style={{ height: Math.max(40, pullDistance) }}
+              role="status"
+              aria-live="polite"
+            >
+              {refreshFeedback === 'success' ? <Check className="mr-2 h-4 w-4 text-emerald-700" /> : <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />}
+              {refreshStatus}
+            </div>
+          ) : null}
           <div className="anytty-app-panel mx-auto w-full max-w-7xl border-x-0 lg:overflow-visible lg:border-x">
             <div className="hidden grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-zinc-500 lg:grid">
               <span aria-hidden="true" />
@@ -1773,7 +1987,7 @@ function machineCardProjection(
       status: t('machines.failed'),
       statusClass: 'text-red-600',
       tone: 'warning',
-      detail: connection.error || connection.statusText || t('machines.connectionFailed'),
+      detail: connectionErrorDisplayMessage(connection.error || connection.statusText || 'connection failed', t),
     }
   }
   if (connection.phase !== 'idle') {
@@ -1781,7 +1995,7 @@ function machineCardProjection(
       status: connectionPhaseShortLabel(connection.phase, t),
       statusClass: 'text-blue-700',
       tone: 'active',
-      detail: connection.statusText,
+      detail: t('machines.connectionInProgress'),
     }
   }
   if (machine.online) {

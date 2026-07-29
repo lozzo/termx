@@ -28,11 +28,9 @@ describe('connection display projection', () => {
 
     expect(english).toHaveLength(phases.length)
     expect(chinese).toHaveLength(phases.length)
-    expect(english.join(' ')).toMatch(/Direct.*SSH.*P2P.*Relay/s)
-    expect(english.join(' ')).toContain('ICE')
-    expect(chinese.join(' ')).toMatch(/Direct.*SSH.*P2P.*Relay/s)
-    expect(chinese.join(' ')).toContain('ICE')
-    expect([...english, ...chinese].join(' ')).not.toMatch(/JNI|native runtime|Go runtime|binding|handle|generation/i)
+    expect(english.every(Boolean)).toBe(true)
+    expect(chinese.every(Boolean)).toBe(true)
+    expect([...english, ...chinese].join(' ')).not.toMatch(/\b(?:Direct|SSH|P2P|Relay|ICE|JNI)\b|native runtime|Go runtime|binding|handle|generation/i)
   })
 
   it('does not expose internal path-owner names as connection labels', () => {

@@ -43,15 +43,15 @@ const connectionPhaseKeys: Record<RtcConnectionPhase, string> = {
 
 const englishConnectionPhaseLabels: Record<RtcConnectionPhase, string> = {
   idle: 'Ready',
-  probing: 'Checking Direct, SSH, P2P, and Relay paths...',
-  resolving: 'Preparing the selected connection path...',
-  signaling: 'Starting P2P signaling...',
-  connecting: 'Negotiating the ICE connection...',
+  probing: 'Finding the best available connection...',
+  resolving: 'Preparing a secure connection...',
+  signaling: 'Connecting to the device...',
+  connecting: 'Connecting to the device...',
   authorizing: 'Verifying device access...',
   connected: 'Connected',
-  verifying: 'Verifying device access...',
-  reconnecting: 'Reconnecting...',
-  waiting_network: 'Waiting for network...',
+  verifying: 'Checking the connection...',
+  reconnecting: 'Connection interrupted. Reconnecting...',
+  waiting_network: 'Your phone is offline.',
   failed: 'Connection failed',
 }
 

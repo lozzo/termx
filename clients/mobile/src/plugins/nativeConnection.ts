@@ -13,7 +13,7 @@ export interface NativeBridgeEndpoint {
 }
 
 export interface NativeConnectionPlugin extends Plugin {
-  addListener(eventName: 'generationChanged', listener: (event: { reason: string }) => void): Promise<PluginListenerHandle>
+  addListener(eventName: 'generationChanging' | 'generationChanged' | 'generationChangeFailed', listener: (event: { reason: string; epoch: number }) => void): Promise<PluginListenerHandle>
   handleForegroundResume(): Promise<void>
   getBridgeEndpoint(): Promise<NativeBridgeEndpoint>
   exportDebugLogs(): Promise<NativeDebugLogExport>

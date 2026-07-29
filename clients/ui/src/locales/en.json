@@ -7,7 +7,21 @@
     "storageRequired": "Local storage is required before importing a AnyTTY code.",
     "connectionFailed": "Could not connect to this device. Check both devices' networks and try again.",
     "temporary": "The service is temporarily unavailable. Please try again.",
-    "relayEntitlementDenied": "P2P could not connect on this network, and Relay is not included in your current AnyTTY Cloud plan. Upgrade your plan or try another network."
+    "relayEntitlementDenied": "Your current plan does not include the cloud service needed for this connection. Try another network or check your plan.",
+    "phoneOfflineTitle": "Your phone is offline",
+    "phoneOffline": "Check Wi-Fi or mobile data. AnyTTY will keep trying when the network returns.",
+    "connectionTimeoutTitle": "Connection timed out",
+    "connectionTimeout": "The device did not respond in time. Make sure it is online, then try again.",
+    "deviceUnavailableTitle": "Device is unavailable",
+    "deviceUnavailable": "Make sure the device is online and both networks are available, then try again.",
+    "serviceUnavailableTitle": "Connection service unavailable",
+    "serviceUnavailable": "AnyTTY cannot establish the connection right now. Please try again shortly.",
+    "authorizationTitle": "Authorization required",
+    "identityMismatchTitle": "Device identity could not be verified",
+    "identityMismatch": "For your security, return to the device list and pair this device again.",
+    "connectionProblemTitle": "Connection interrupted",
+    "connectionInterrupted": "The connection could not be established. Try again. If it keeps happening, export diagnostic logs from Settings.",
+    "connectionCancelled": "The connection was cancelled. You can try again."
   },
   "common": {
     "loading": "Loading",
@@ -30,6 +44,15 @@
     "signInToSync": "Sign in to sync devices",
     "savedCount": "{{count}} saved",
     "refresh": "Refresh devices",
+    "pullToRefresh": "Pull to refresh devices",
+    "releaseToRefresh": "Release to refresh",
+    "refreshing": "Refreshing devices",
+    "refreshed": "Device status updated",
+    "refreshFailed": "Refresh failed. Try again shortly.",
+    "refreshOffline": "Your phone is offline. Refresh is unavailable.",
+    "offlineNotice": "Your phone is offline. Showing the latest saved device status.",
+    "restoringNetwork": "Network is back. Restoring secure connections...",
+    "networkRecoveryFailed": "Secure connections could not be restored.",
     "scanPairing": "Scan pairing QR",
     "add": "Add device",
     "transfers": "Open file transfers",
@@ -72,6 +95,7 @@
     "connected": "Connected",
     "failed": "Failed",
     "connectionFailed": "Connection failed",
+    "connectionInProgress": "Establishing a secure connection",
     "notReachable": "Not currently reachable",
     "lastOnline": "Last online {{time}}",
     "source": {
@@ -100,12 +124,12 @@
     "phase": {
       "probing": "Checking connection paths",
       "resolving": "Preparing connection path",
-      "signaling": "P2P signaling",
+      "signaling": "Connecting to device",
       "authorizing": "Verifying device access",
       "verifying": "Verifying device access",
       "reconnecting": "Reconnecting",
       "waiting_network": "Waiting for network",
-      "connecting": "ICE negotiation"
+      "connecting": "Connecting to device"
     },
     "details": "Device details",
     "closeDetails": "Close device details",
@@ -209,13 +233,19 @@
       "pause": "Pause", "start": "Start", "select": "Select", "done": "Done", "failed": "Failed"
     }
   },
+  "connectionStatus": {
+    "recovering": "Connection interrupted. Reconnecting",
+    "inputPaused": "Input is paused until the connection recovers.",
+    "restored": "Connection restored",
+    "restoredCopy": "The terminal is ready to use again."
+  },
   "workspace": {
     "chooseDirectory": "Choose directory", "clipboard": "Clipboard", "clipboardText": "Clipboard text", "clipboardEmpty": "Clipboard is empty", "clipboardTextEmpty": "Clipboard text is empty", "clipboardUpdated": "Clipboard entry updated", "clipboardSaved": "Clipboard entry saved", "browserClipboardError": "Unable to read browser clipboard", "clipboardReadError": "Unable to read clipboard", "browserClipboard": "Browser", "noClipboardHistory": "No clipboard history", "update": "Update", "connectionInfo": "Connection info", "openFiles": "Open files", "closeFiles": "Close files", "createTerminal": "Create terminal", "newTerminal": "New terminal", "saveChanges": "Save changes", "saving": "Saving...", "browse": "Browse", "connecting": "Connecting...", "connectingTerminal": "Connecting terminal...", "verifyDevice": "Verify this device", "verifyDeviceCopy": "Pair first before opening or managing local terminals.", "restartTerminal": "Restart terminal", "editTerminal": "Edit terminal", "deleteTerminal": "Delete terminal", "connectionError": "Connection error", "selectTerminal": "Select a terminal to start", "showTerminalList": "Back to terminal list", "switchTerminal": "Switch terminal", "openTerminalMenu": "Open terminal menu", "unlockResize": "Unlock resize", "unlocking": "Unlocking...", "terminalTools": "Terminal tools", "changeSplit": "Change split", "splitTerminal": "Split terminal", "releaseResize": "Release resize", "controlResize": "Control resize", "syncInput": "Sync input", "closeSplit": "Close split", "openBeforeSplit": "Open a terminal before starting split view", "chooseDifferentTerminal": "Choose a different terminal", "noOtherTerminal": "No other terminal is available", "fileAccessNotReady": "File access is not ready", "p2pUnavailable": "P2P unavailable", "p2pUnavailableCopy": "A direct connection could not be established on the current network. Switch this connection to Relay?", "notNow": "Not now", "copied": "Copied", "copyFailed": "Copy failed",
     "resizeMode": { "resizable": "Resizable", "warn": "Warn only", "locked": "Locked" },
     "resize": { "unlocked": "Resize unlocked", "acquired": "Resize control acquired", "locked": "Resize is locked", "unavailable": "Resize control unavailable", "released": "Resize control released" },
     "routeManager": { "title": "Routes", "description": "Choose, test, and order the ways this device can be reached.", "add": { "direct": "Add Direct", "ssh": "Add SSH", "cloud": "Add Cloud" }, "routeId": "Route ID", "displayName": "Display name", "signalingAddresses": "Signaling addresses", "iceAddresses": "ICE TCP addresses", "serverName": "TLS server name", "sshHost": "SSH host", "sshPort": "SSH port", "sshUser": "SSH user", "hostKeys": "Host key fingerprints", "remoteSignaling": "Remote signaling address", "remoteICE": "Remote ICE TCP address", "cloudManaged": "Cloud addresses and relay credentials are managed by AnyTTY Cloud.", "moveUp": "Move route up", "moveDown": "Move route down", "test": "Test route", "testing": "Testing the complete connection...", "saving": "Saving...", "saved": "Saved", "testReady": "Connection test passed", "edit": "Edit", "delete": "Delete", "deleteConfirm": "Delete route {{name}}?", "prepareSSH": "Prepare SSH key", "sshReady": "SSH key is ready", "sshPublicKey": "SSH public key", "copyKey": "Copy public key", "closeKey": "Close public key", "save": "Save route", "validation": { "routeId": "Use letters, numbers, dots, underscores, or hyphens for the route ID.", "duplicate": "This route ID already exists.", "direct": "Direct requires at least one signaling address and one ICE TCP address.", "ssh": "SSH requires a host, user, valid port, and at least one host key fingerprint.", "cloud": "Cloud requires a target device identity." }, "errors": { "credential": "The credential for this route is unavailable. Update it and try again.", "authorization": "This device did not authorize the connection.", "entitlement": "Your current plan does not include this Cloud connection path.", "quota": "The Cloud relay quota for this period has been used.", "identity": "The device identity does not match this route.", "config": "This route configuration is incomplete or invalid.", "unavailable": "This route is currently unreachable. Check both networks and try again.", "cancelled": "The route test was cancelled.", "internal": "AnyTTY could not test this route. Try again." } },
     "terminalForm": { "name": "Name", "command": "Command", "commandRequired": "Command is required", "cwd": "Working directory", "environment": "Environment variables", "environmentKey": "Key", "environmentValue": "Value", "addEnvironment": "Add variable", "removeEnvironment": "Remove variable", "pasteEnvironment": "Paste variables", "environmentPasteContent": "Environment variables to paste", "applyEnvironment": "Apply variables", "sizeLock": "Size lock" },
-    "connection": { "label": "Connection", "title": "Connection & network", "closeInfo": "Close connection and network", "progressTitle": "Connecting to device", "current": "Current connection", "preference": "Connection preference", "route": "Route", "routeId": "Connection route ID", "routeAuto": "Auto", "routeLocal": "Local", "routeDirect": "Direct", "routeSSH": "SSH tunnel", "routeCloud": "AnyTTY Cloud", "cloudAdvanced": "Cloud advanced settings", "cloudPath": "Cloud P2P / Relay", "cloudAuto": "Auto", "cloudP2P": "P2P only", "cloudRelay": "Relay only", "relayTransport": "Relay transport", "transportAuto": "Auto", "transportUDP": "UDP only", "transportTCP": "TCP only", "path": "Actual path", "pathDirect": "P2P direct", "pathRelay": "Relay", "pathRelayMesh": "Relay mesh", "localAddress": "Local address", "remoteAddress": "Remote address", "reason": "Selection reason", "candidates": "ICE candidates", "protocols": "ICE transport", "networkClass": "Network class", "rtt": "RTT", "sampledAt": "Sampled", "traffic": "Sent / received", "generation": "Connection attempt", "diagnostics": "Advanced network details", "phase": { "ready": "Ready", "probing": "Checking Direct, SSH, P2P, and Relay paths...", "resolving": "Preparing the selected connection path...", "signaling": "Starting P2P signaling...", "connecting": "Negotiating the ICE connection...", "authorizing": "Verifying device access...", "connected": "Connected", "verifying": "Verifying device access...", "reconnecting": "Reconnecting...", "waiting_network": "Waiting for network...", "failed": "Connection failed" }, "reading": "Reading status...", "notProvided": "Not provided", "unavailableShort": "Unavailable", "unavailableReason": { "route_not_configured": "Not configured", "route_disabled": "Disabled", "platform_unsupported": "Not supported on this device", "credential_unavailable": "Credential unavailable", "cloud_unavailable": "Cloud unavailable" }, "unavailable": "No machine connection is available", "policyUnavailable": "Connection policy is unavailable on this client", "reconnectConfirm": "Applying this setting will interrupt the active terminal and reconnect. Continue?", "applyReconnect": "Apply & reconnect", "applying": "Applying...", "retry": "Retry", "restoreAuto": "Restore Auto", "reconnect": "Reconnect", "tryP2P": "Try P2P", "useRelay": "Use Relay", "mode": "Mode", "transport": "Transport", "smartRoute": "SmartRoute", "local": "Local", "remote": "Remote", "connectionId": "Connection" }
+    "connection": { "label": "Connection", "title": "Connection & network", "closeInfo": "Close connection and network", "progressTitle": "Connecting to device", "current": "Current connection", "preference": "Connection preference", "route": "Route", "routeId": "Connection route ID", "routeAuto": "Auto", "routeLocal": "Local", "routeDirect": "Direct", "routeSSH": "SSH tunnel", "routeCloud": "AnyTTY Cloud", "cloudAdvanced": "Cloud advanced settings", "cloudPath": "Cloud P2P / Relay", "cloudAuto": "Auto", "cloudP2P": "P2P only", "cloudRelay": "Relay only", "relayTransport": "Relay transport", "transportAuto": "Auto", "transportUDP": "UDP only", "transportTCP": "TCP only", "path": "Actual path", "pathDirect": "P2P direct", "pathRelay": "Relay", "pathRelayMesh": "Relay mesh", "localAddress": "Local address", "remoteAddress": "Remote address", "reason": "Selection reason", "candidates": "ICE candidates", "protocols": "ICE transport", "networkClass": "Network class", "rtt": "RTT", "sampledAt": "Sampled", "traffic": "Sent / received", "generation": "Connection attempt", "diagnostics": "Advanced network details", "phase": { "ready": "Ready", "probing": "Finding the best available connection...", "resolving": "Preparing a secure connection...", "signaling": "Connecting to the device...", "connecting": "Connecting to the device...", "authorizing": "Verifying device access...", "connected": "Connected", "verifying": "Checking the connection...", "reconnecting": "Connection interrupted. Reconnecting...", "waiting_network": "Your phone is offline.", "failed": "Connection failed" }, "reading": "Reading status...", "notProvided": "Not provided", "unavailableShort": "Unavailable", "unavailableReason": { "route_not_configured": "Not configured", "route_disabled": "Disabled", "platform_unsupported": "Not supported on this device", "credential_unavailable": "Credential unavailable", "cloud_unavailable": "Cloud unavailable" }, "unavailable": "No machine connection is available", "policyUnavailable": "Connection policy is unavailable on this client", "reconnectConfirm": "Applying this setting will interrupt the active terminal and reconnect. Continue?", "applyReconnect": "Apply & reconnect", "applying": "Applying...", "retry": "Retry", "restoreAuto": "Restore Auto", "reconnect": "Reconnect", "tryP2P": "Try P2P", "useRelay": "Use Relay", "mode": "Mode", "transport": "Transport", "smartRoute": "SmartRoute", "local": "Local", "remote": "Remote", "connectionId": "Connection" }
   },
   "pairing": {
     "sshReady": "SSH key ready",
