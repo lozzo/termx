@@ -24,13 +24,23 @@ type ptyProcessPlatform interface {
 
 type unixPTYProcessPlatform struct {
 	process   *os.Process
-	terminal  crosspty.Pty
+	master    *os.File
 	closeOnce sync.Once
 	closeErr  error
 }
 
 func newPTYProcessPlatform(process *os.Process, terminal crosspty.Pty) (ptyProcessPlatform, error) {
-	return &unixPTYProcessPlatform{process: process, terminal: terminal}, nil
+	unixTerminal, ok := terminal.(crosspty.UnixPty)
+	if !ok || unixTerminal.Master() == nil || unixTerminal.Slave() == nil {
+		return nil, errors.New("unix terminal file descriptors are unavailable")
+	}
+	// The child inherited its own slave descriptor during Start. Keeping the
+	// parent's copy open prevents the master read loop from observing EOF after
+	// the child exits, which leaves completed terminals stuck in running state.
+	if err := unixTerminal.Slave().Close(); err != nil {
+		return nil, err
+	}
+	return &unixPTYProcessPlatform{process: process, master: unixTerminal.Master()}, nil
 }
 
 func (platform *unixPTYProcessPlatform) Kill() error {
@@ -70,8 +80,8 @@ func (platform *unixPTYProcessPlatform) closeTerminal() error {
 		return nil
 	}
 	platform.closeOnce.Do(func() {
-		if platform.terminal != nil {
-			platform.closeErr = platform.terminal.Close()
+		if platform.master != nil {
+			platform.closeErr = platform.master.Close()
 		}
 	})
 	return platform.closeErr

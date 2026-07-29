@@ -170,7 +170,7 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, request cor
 		return corev2.ClientAccessTicket{}, err
 	}
 	return corev2.ClientAccessTicket{
-		Bundle: issued.BundlePayload, ClaimOffer: issued.OfferPayload, ClaimCode: issued.ClaimCode,
+		ClaimOffer: issued.OfferPayload, ClaimCode: issued.ClaimCode,
 		TicketID: issued.Claims.TicketID, ExpiresAt: issued.Claims.ExpiresAt,
 	}, nil
 }

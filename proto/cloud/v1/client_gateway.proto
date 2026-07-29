@@ -17,16 +17,29 @@ message CloudICECandidate {
   string username_fragment = 4;
 }
 
+// PairingAdmission 是二维码材料的网络投影。Edge 必须将其与当前在线 daemon binding 对齐，
+// 再向该 daemon 实时请求授权；它自身不是 grant，也不能兑换 capability。
+message PairingAdmission {
+  string daemon_id = 1;
+  string device_id = 2;
+  bytes device_public_key = 3;
+  bytes pairing_claim_sha256 = 4;
+  int64 expires_at_unix_nano = 5;
+}
+
 message ClientHello {
-  // route_grant 是 owning daemon 签发的 capability 或 pairing RouteGrant；Controller 不签客户端准入票。
-  SignedEnvelope route_grant = 1;
   bytes client_public_key = 2;
   bytes client_proof = 3;
   ClientProduct product = 4;
   string software_version = 5;
   uint64 attempt_generation = 6;
   RelayPreference relay_preference = 7;
-  CloudClientAccessMode access_mode = 8;
+  oneof authorization {
+    // cloud_route_grant 是 owning daemon 签发给已配对 ClientAccessIdentity 的长期发现和信令授权。
+    SignedEnvelope cloud_route_grant = 10;
+    // pairing_admission 只允许 Edge 向在线 daemon 请求一次性 pairing 预检。
+    PairingAdmission pairing_admission = 11;
+  }
 }
 
 message ClientReady {

@@ -111,15 +111,8 @@ func TestPairingHandshakeReturnsBoundGrantAndIdempotentReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, _, err := store.IssuePairingBundle(PairingIssueOptions{Scope: FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: 24 * time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() { _ = store.Close() })
-	bundlePayload, err := EncodePairingBundle(bundle)
-	if err != nil {
-		t.Fatal(err)
-	}
+	issued := issueHandshakePairingClaim(t, store, FullDaemonScope(), time.Hour, 24*time.Hour, now)
 	client, _ := GenerateClientAccessIdentity("endpoint-1", bytes.NewReader(bytes.Repeat([]byte{0x51}, 64)))
 	binding := fixtureDTLSBinding(t, 0x11)
 	redeem := func() PairingExchangeResult {
@@ -133,7 +126,7 @@ func TestPairingHandshakeReturnsBoundGrantAndIdempotentReceipt(t *testing.T) {
 		}()
 		result, redeemErr := (ClientPairingHandshake{Now: fixedNow(now)}).Redeem(context.Background(), clientConn, ClientPairingRequest{
 			ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
-			PairingBundle: bundlePayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
+			PairingClaimOffer: issued.OfferPayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
 		})
 		if redeemErr != nil {
 			t.Fatalf("Redeem: %v", redeemErr)
@@ -165,14 +158,7 @@ func TestClientPairingHandshakeCancelsBlockedPairingOpenSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	bundle, _, err := store.IssuePairingBundle(PairingIssueOptions{Scope: FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: 24 * time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundlePayload, err := EncodePairingBundle(bundle)
-	if err != nil {
-		t.Fatal(err)
-	}
+	issued := issueHandshakePairingClaim(t, store, FullDaemonScope(), time.Hour, 24*time.Hour, now)
 	client, err := GenerateClientAccessIdentity("endpoint-1", bytes.NewReader(bytes.Repeat([]byte{0x51}, 64)))
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +169,7 @@ func TestClientPairingHandshakeCancelsBlockedPairingOpenSend(t *testing.T) {
 	defer cancel()
 	_, err = (ClientPairingHandshake{Now: fixedNow(now)}).Redeem(ctx, connection, ClientPairingRequest{
 		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
-		PairingBundle: bundlePayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
+		PairingClaimOffer: issued.OfferPayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
 	})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("blocked PairingOpen send error = %v", err)
@@ -335,11 +321,7 @@ func TestServerHandshakeValidatesCredentialAtOpenReceiptTime(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = store.Close() })
-		bundle, _, err := store.IssuePairingBundle(PairingIssueOptions{Scope: Scope{AllowDaemon: true}, TicketTTL: time.Second, GrantLifetime: time.Hour, Now: now})
-		if err != nil {
-			t.Fatal(err)
-		}
-		payload, _ := EncodePairingBundle(bundle)
+		issued := issueHandshakePairingClaim(t, store, Scope{AllowDaemon: true}, time.Second, time.Hour, now)
 		client, _ := GenerateClientAccessIdentity("endpoint-1", bytes.NewReader(bytes.Repeat([]byte{0x51}, 64)))
 		binding := fixtureDTLSBinding(t, 0x11)
 		clientConn, serverConn := memory.NewPair()
@@ -359,7 +341,7 @@ func TestServerHandshakeValidatesCredentialAtOpenReceiptTime(t *testing.T) {
 		}()
 		_, err = (ClientPairingHandshake{Now: fixedNow(now)}).Redeem(context.Background(), clientConn, ClientPairingRequest{
 			ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
-			PairingBundle: payload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
+			PairingClaimOffer: issued.OfferPayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
 		})
 		if HandshakeCodeOf(err) != remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_EXPIRED {
 			t.Fatalf("ticket accepted after exact expiry: %v", err)
@@ -379,13 +361,7 @@ func TestClientPairingRejectsGrantExpiredBeforeResponseValidation(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	bundle, _, err := store.IssuePairingBundle(PairingIssueOptions{
-		Scope: Scope{AllowDaemon: true}, TicketTTL: time.Hour, GrantLifetime: time.Second, Now: now,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, _ := EncodePairingBundle(bundle)
+	issued := issueHandshakePairingClaim(t, store, Scope{AllowDaemon: true}, time.Hour, time.Second, now)
 	client, _ := GenerateClientAccessIdentity("endpoint-1", bytes.NewReader(bytes.Repeat([]byte{0x51}, 64)))
 	binding := fixtureDTLSBinding(t, 0x11)
 	clientConn, serverConn := memory.NewPair()
@@ -405,7 +381,7 @@ func TestClientPairingRejectsGrantExpiredBeforeResponseValidation(t *testing.T) 
 		return now.Add(time.Second)
 	}}).Redeem(context.Background(), clientConn, ClientPairingRequest{
 		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
-		PairingBundle: payload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
+		PairingClaimOffer: issued.OfferPayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
 	})
 	if HandshakeCodeOf(err) != remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_CAPABILITY_EXPIRED {
 		t.Fatalf("expired PairingAccepted grant error = %v", err)
@@ -534,7 +510,7 @@ func handshakeFixtureWithLifetime(t *testing.T, scope Scope, ticketTTL time.Dura
 	if err != nil {
 		t.Fatal(err)
 	}
-	return identity, ClientAccessCredential{Version: 1, EndpointID: client.EndpointID, Identity: client, CapabilityGrant: result.Grant, UpdatedAt: now}, store, now
+	return identity, ClientAccessCredential{Version: 3, EndpointID: client.EndpointID, Identity: client, CapabilityGrant: result.Grant, UpdatedAt: now}, store, now
 }
 
 func fixtureDTLSBinding(t *testing.T, octet byte) ChannelBinding {
@@ -559,6 +535,23 @@ func fixtureDTLSFingerprint(octet byte) string {
 }
 
 func fixedNow(now time.Time) func() time.Time { return func() time.Time { return now } }
+
+func issueHandshakePairingClaim(t *testing.T, store *AccessStore, scope Scope, ticketTTL, grantLifetime time.Duration, now time.Time) PairingClaimIssueResult {
+	t.Helper()
+	issued, err := store.IssuePairingClaim(PairingIssueOptions{
+		Scope: scope, TicketTTL: ticketTTL, GrantLifetime: grantLifetime, Now: now,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{
+			SchemaVersion: 1, RouteId: "direct", Enabled: true,
+			Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{
+				SignalingAddresses: []string{"127.0.0.1:4040"}, IceTcpAddresses: []string{"127.0.0.1:4041"},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return issued
+}
 
 func signedDeviceHelloFrame(t *testing.T, identity Identity, binding ChannelBinding, now time.Time) []byte {
 	t.Helper()

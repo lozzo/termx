@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -13,8 +12,10 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
+	"github.com/anytty/anytty/cloud/securetransport"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	remotedaemon "github.com/anytty/anytty/remote/daemon"
 	"github.com/anytty/anytty/remote/webrtc"
 	"github.com/anytty/anytty/shared/remoteauth"
@@ -66,32 +67,34 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 			apply(&options)
 		}
 	}
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, error) {
+	locator := &cloudv1.EdgeLocator{}
+	if err := proto.Unmarshal(record.EdgeLocator, locator); err != nil {
+		return nil, errors.New("daemon Cloud runtime Edge locator is invalid")
+	}
+	caFingerprint, err := securetransport.EdgeCACertificateDERFingerprint(locator.GetCaCertificatePem())
+	if err != nil {
+		return nil, err
+	}
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, []byte, error) {
 		clientProduct := cloudv1.ClientProduct(product)
 		if clientProduct == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || clientProduct > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
-			return nil, errors.New("CloudRouteGrant client product is invalid")
+			return nil, nil, errors.New("CloudRouteGrant client product is invalid")
 		}
 		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: record.DaemonID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: clientProduct, IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC())}
 		envelope, err := ticket.SignCloudRouteGrant(identity, claims)
-		if err != nil {
-			return nil, err
-		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
-	}); err != nil {
-		return nil, err
-	}
-	if err := accessStore.ConfigureManagedPairingRouteIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, []byte, error) {
-		locatorDigest := sha256.Sum256(record.EdgeLocator)
-		claims := &cloudv1.PairingRouteGrantClaims{
-			GrantId: uuid.NewString(), DaemonId: record.DaemonID, DeviceId: identity.DeviceID, PairingClaimSha256: append([]byte(nil), claimDigest...),
-			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()), EdgeLocatorSha256: locatorDigest[:],
-		}
-		envelope, err := ticket.SignPairingRouteGrant(identity, claims)
 		if err != nil {
 			return nil, nil, err
 		}
 		grant, err := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
 		return grant, append([]byte(nil), record.EdgeLocator...), err
+	}); err != nil {
+		return nil, err
+	}
+	if err := accessStore.ConfigureManagedPairingBootstrapIssuer(func() (*remoteauthpb.PairingManagedRouteSeed, error) {
+		return &remoteauthpb.PairingManagedRouteSeed{
+			DaemonId: record.DaemonID, EdgeId: locator.GetEdgeId(), PublicEndpoint: locator.GetPublicEndpoint(), ServerName: locator.GetServerName(),
+			CaCertificateDerSha256: append([]byte(nil), caFingerprint...),
+		}, nil
 	}); err != nil {
 		return nil, err
 	}

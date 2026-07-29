@@ -17,6 +17,25 @@ ANYTTY_BIN="$BIN_DIR/anytty"
 HARNESS_BIN="$BIN_DIR/conn002client"
 daemon_pid=""
 
+allocate_tcp_port() {
+  node -e '
+    const net = require("net");
+    const server = net.createServer();
+    server.listen(0, "127.0.0.1", () => {
+      process.stdout.write(String(server.address().port));
+      server.close();
+    });
+  '
+}
+
+DIRECT_SIGNALING_PORT="$(allocate_tcp_port)"
+DIRECT_ICE_TCP_PORT="$(allocate_tcp_port)"
+while [[ "$DIRECT_ICE_TCP_PORT" == "$DIRECT_SIGNALING_PORT" ]]; do
+  DIRECT_ICE_TCP_PORT="$(allocate_tcp_port)"
+done
+DIRECT_SIGNALING_ADDRESS="127.0.0.1:$DIRECT_SIGNALING_PORT"
+DIRECT_ICE_TCP_ADDRESS="127.0.0.1:$DIRECT_ICE_TCP_PORT"
+
 fail() {
   printf 'conn002 e2e failed: %s\n' "$*" >&2
   exit 1
@@ -55,6 +74,8 @@ daemon_cli() {
     XDG_RUNTIME_DIR="$DAEMON_RUNTIME" \
     XDG_STATE_HOME="$DAEMON_STATE" \
     XDG_CONFIG_HOME="$DAEMON_CONFIG" \
+    ANYTTY_DIRECT_SIGNALING_LISTEN="$DIRECT_SIGNALING_ADDRESS" \
+    ANYTTY_DIRECT_ICE_TCP_LISTEN="$DIRECT_ICE_TCP_ADDRESS" \
     "$ANYTTY_BIN" --socket "$DAEMON_SOCKET" --log-file "$DAEMON_LOG" "$@"
 }
 
@@ -85,6 +106,8 @@ start_daemon() {
     XDG_STATE_HOME="$DAEMON_STATE" \
     XDG_CONFIG_HOME="$DAEMON_CONFIG" \
     ANYTTY_HISTORY_DISABLE=1 \
+    ANYTTY_DIRECT_SIGNALING_LISTEN="$DIRECT_SIGNALING_ADDRESS" \
+    ANYTTY_DIRECT_ICE_TCP_LISTEN="$DIRECT_ICE_TCP_ADDRESS" \
     "$ANYTTY_BIN" --socket "$DAEMON_SOCKET" --log-file "$DAEMON_LOG" daemon run \
     >>"$REPORT_DIR/daemon.stdout" 2>>"$REPORT_DIR/daemon.stderr" &
   daemon_pid=$!
@@ -130,6 +153,7 @@ SECOND_SOCKET="$DAEMON_RUNTIME/anytty-second.sock"
 set +e
 clean_anytty_env env \
   XDG_RUNTIME_DIR="$DAEMON_RUNTIME" XDG_STATE_HOME="$DAEMON_STATE" XDG_CONFIG_HOME="$DAEMON_CONFIG" ANYTTY_HISTORY_DISABLE=1 \
+  ANYTTY_DIRECT_SIGNALING_LISTEN="$DIRECT_SIGNALING_ADDRESS" ANYTTY_DIRECT_ICE_TCP_LISTEN="$DIRECT_ICE_TCP_ADDRESS" \
   "$ANYTTY_BIN" --socket "$SECOND_SOCKET" --log-file "$REPORT_DIR/daemon-second.log" daemon run \
   >"$REPORT_DIR/daemon-second.stdout" 2>"$REPORT_DIR/daemon-second.stderr" &
 second_pid=$!
@@ -150,21 +174,21 @@ second_status=$?
 set -e
 [[ "$second_status" -ne 0 ]] || fail "second daemon sharing client-access state exited successfully"
 
-RACE_BUNDLE="$SECRET_DIR/race-pairing.pb"
-daemon_cli pair create --out "$RACE_BUNDLE" --ttl 5m --grant-ttl 1h --label conn002-race >"$REPORT_DIR/race-create.out"
-daemon_cli pair inspect "$RACE_BUNDLE" --json >"$REPORT_DIR/race-bundle.json"
-RACE_DEVICE_ID="$(node -e 'const v=require(process.argv[1]); process.stdout.write(v.device_id)' "$REPORT_DIR/race-bundle.json")"
-RACE_FINGERPRINT="$(node -e 'const v=require(process.argv[1]); process.stdout.write(v.device_fingerprint)' "$REPORT_DIR/race-bundle.json")"
+RACE_CLAIM="$SECRET_DIR/race-pairing.pb"
+daemon_cli pair create --out "$RACE_CLAIM" --ttl 5m --grant-ttl 1h --label conn002-race >"$REPORT_DIR/race-create.out"
+daemon_cli pair inspect "$RACE_CLAIM" --json >"$REPORT_DIR/race-claim.json"
+RACE_DEVICE_ID="$(node -e 'const v=require(process.argv[1]); process.stdout.write(v.device_id)' "$REPORT_DIR/race-claim.json")"
+RACE_FINGERPRINT="$(node -e 'const v=require(process.argv[1]); process.stdout.write(v.device_fingerprint)' "$REPORT_DIR/race-claim.json")"
 
 CLIENT_A="$TMP_ROOT/client-a"
 CLIENT_B="$TMP_ROOT/client-b"
 prepare_client_endpoint "$CLIENT_A" endpoint-race "$RACE_DEVICE_ID" "$RACE_FINGERPRINT"
 prepare_client_endpoint "$CLIENT_B" endpoint-race "$RACE_DEVICE_ID" "$RACE_FINGERPRINT"
 set +e
-client_cli "$CLIENT_A" pair import "$RACE_BUNDLE" --id endpoint-race --pair-socket "$PAIRING_SOCKET" \
+client_cli "$CLIENT_A" pair import "$RACE_CLAIM" --id endpoint-race --pair-socket "$PAIRING_SOCKET" \
   --registry "$CLIENT_A/connections.yaml" --client-label race-a >"$REPORT_DIR/race-a.out" 2>"$REPORT_DIR/race-a.err" &
 pid_a=$!
-client_cli "$CLIENT_B" pair import "$RACE_BUNDLE" --id endpoint-race --pair-socket "$PAIRING_SOCKET" \
+client_cli "$CLIENT_B" pair import "$RACE_CLAIM" --id endpoint-race --pair-socket "$PAIRING_SOCKET" \
   --registry "$CLIENT_B/connections.yaml" --client-label race-b >"$REPORT_DIR/race-b.out" 2>"$REPORT_DIR/race-b.err" &
 pid_b=$!
 wait "$pid_a"
@@ -180,20 +204,20 @@ elif [[ "$status_b" -eq 0 && "$status_a" -ne 0 ]]; then
   WINNER_ROOT="$CLIENT_B"
   LOSER_ROOT="$CLIENT_A"
 else
-  fail "concurrent ticket redemption must have exactly one winner (a=$status_a b=$status_b)"
+  fail "concurrent claim redemption must have exactly one winner (a=$status_a b=$status_b)"
 fi
 
-if client_cli "$LOSER_ROOT" pair import "$RACE_BUNDLE" --id endpoint-race --pair-socket "$PAIRING_SOCKET" \
+if client_cli "$LOSER_ROOT" pair import "$RACE_CLAIM" --id endpoint-race --pair-socket "$PAIRING_SOCKET" \
   --registry "$LOSER_ROOT/connections.yaml" --client-label race-loser-retry >"$REPORT_DIR/race-loser-retry.out" 2>"$REPORT_DIR/race-loser-retry.err"; then
-  fail "ticket bound to the winning key was accepted for the losing key"
+  fail "claim bound to the winning key was accepted for the losing key"
 fi
 
-BAD_FINGERPRINT_BUNDLE="$SECRET_DIR/bad-fingerprint.pb"
-"$HARNESS_BIN" --mode tamper-fingerprint --bundle "$RACE_BUNDLE" --output "$BAD_FINGERPRINT_BUNDLE"
-if client_cli "$TMP_ROOT/client-bad-fingerprint" pair import "$BAD_FINGERPRINT_BUNDLE" --id endpoint-bad \
+BAD_FINGERPRINT_CLAIM="$SECRET_DIR/bad-fingerprint.pb"
+"$HARNESS_BIN" --mode tamper-fingerprint --claim "$RACE_CLAIM" --output "$BAD_FINGERPRINT_CLAIM"
+if client_cli "$TMP_ROOT/client-bad-fingerprint" pair import "$BAD_FINGERPRINT_CLAIM" --id endpoint-bad \
   --pair-socket "$PAIRING_SOCKET" --registry "$TMP_ROOT/client-bad-fingerprint/connections.yaml" \
   >"$REPORT_DIR/bad-fingerprint.out" 2>"$REPORT_DIR/bad-fingerprint.err"; then
-  fail "bundle with the wrong daemon fingerprint was accepted"
+  fail "claim with the wrong daemon fingerprint was accepted"
 fi
 
 daemon_cli access list --json >"$REPORT_DIR/access-after-race.json"
@@ -211,19 +235,19 @@ NODE
   --credential-dir "$WINNER_ROOT/state/anytty/remote-v2/credentials" \
   --endpoint-id endpoint-race --expect active >"$REPORT_DIR/race-winner-active.json"
 
-SHARED_BUNDLE="$SECRET_DIR/shared-key-race.pb"
+SHARED_CLAIM="$SECRET_DIR/shared-key-race.pb"
 SHARED_CLIENT="$TMP_ROOT/client-shared"
-daemon_cli pair create --out "$SHARED_BUNDLE" --ttl 5m --grant-ttl 1h --label conn002-shared-key >"$REPORT_DIR/shared-create.out"
+daemon_cli pair create --out "$SHARED_CLAIM" --ttl 5m --grant-ttl 1h --label conn002-shared-key >"$REPORT_DIR/shared-create.out"
 prepare_client_endpoint "$SHARED_CLIENT" endpoint-shared "$RACE_DEVICE_ID" "$RACE_FINGERPRINT"
 set +e
-client_cli "$SHARED_CLIENT" pair import "$SHARED_BUNDLE" --id endpoint-shared --pair-socket "$PAIRING_SOCKET" \
+client_cli "$SHARED_CLIENT" pair import "$SHARED_CLAIM" --id endpoint-shared --pair-socket "$PAIRING_SOCKET" \
   --registry "$SHARED_CLIENT/connections.yaml" --client-label shared-key >"$REPORT_DIR/shared-a.out" 2>"$REPORT_DIR/shared-a.err" &
 shared_a=$!
-client_cli "$SHARED_CLIENT" pair import "$SHARED_BUNDLE" --id endpoint-shared --pair-socket "$PAIRING_SOCKET" \
+client_cli "$SHARED_CLIENT" pair import "$SHARED_CLAIM" --id endpoint-shared --pair-socket "$PAIRING_SOCKET" \
   --registry "$SHARED_CLIENT/connections.yaml" --client-label shared-key >"$REPORT_DIR/shared-b.out" 2>"$REPORT_DIR/shared-b.err" &
 shared_b=$!
 client_cli "$SHARED_CLIENT" endpoint --registry "$SHARED_CLIENT/connections.yaml" add ssh sidecar \
-  --host sidecar.example --remote-socket auto >"$REPORT_DIR/shared-endpoint-add.out" 2>"$REPORT_DIR/shared-endpoint-add.err" &
+  --host sidecar.example >"$REPORT_DIR/shared-endpoint-add.out" 2>"$REPORT_DIR/shared-endpoint-add.err" &
 shared_endpoint_add=$!
 wait "$shared_a"
 shared_status_a=$?
@@ -233,6 +257,9 @@ wait "$shared_endpoint_add"
 shared_endpoint_status=$?
 set -e
 if [[ "$shared_status_a" -ne 0 || "$shared_status_b" -ne 0 || "$shared_endpoint_status" -ne 0 ]]; then
+  if [[ -s "$REPORT_DIR/shared-endpoint-add.err" ]]; then
+    sed -n '1,120p' "$REPORT_DIR/shared-endpoint-add.err" >&2
+  fi
   fail "pair import and endpoint mutation did not converge (a=$shared_status_a b=$shared_status_b endpoint=$shared_endpoint_status)"
 fi
 client_cli "$SHARED_CLIENT" endpoint --registry "$SHARED_CLIENT/connections.yaml" show sidecar --json >"$REPORT_DIR/shared-sidecar.json"
@@ -246,17 +273,17 @@ node -e '
   --credential-dir "$SHARED_CLIENT/state/anytty/remote-v2/credentials" \
   --endpoint-id endpoint-shared --expect active >"$REPORT_DIR/shared-key-active.json"
 
-LOST_BUNDLE="$SECRET_DIR/lost-response.pb"
+LOST_CLAIM="$SECRET_DIR/lost-response.pb"
 LOST_CLIENT="$TMP_ROOT/client-lost"
 mkdir -p "$LOST_CLIENT/state/anytty/remote-v2/credentials"
-daemon_cli pair create --out "$LOST_BUNDLE" --ttl 2s --grant-ttl 1h --label conn002-lost >"$REPORT_DIR/lost-create.out"
+daemon_cli pair create --out "$LOST_CLAIM" --ttl 2s --grant-ttl 1h --label conn002-lost >"$REPORT_DIR/lost-create.out"
 prepare_client_endpoint "$LOST_CLIENT" endpoint-lost "$RACE_DEVICE_ID" "$RACE_FINGERPRINT"
-"$HARNESS_BIN" --mode drop-response --bundle "$LOST_BUNDLE" --pair-socket "$PAIRING_SOCKET" \
+"$HARNESS_BIN" --mode drop-response --claim "$LOST_CLAIM" --pair-socket "$PAIRING_SOCKET" \
   --credential-dir "$LOST_CLIENT/state/anytty/remote-v2/credentials" --endpoint-id endpoint-lost \
   --client-label lost-response >"$REPORT_DIR/lost-drop.json"
 wait_for_access_label lost-response "$REPORT_DIR/access-after-drop.json"
 sleep 3
-client_cli "$LOST_CLIENT" pair import "$LOST_BUNDLE" --id endpoint-lost --pair-socket "$PAIRING_SOCKET" \
+client_cli "$LOST_CLIENT" pair import "$LOST_CLAIM" --id endpoint-lost --pair-socket "$PAIRING_SOCKET" \
   --registry "$LOST_CLIENT/connections.yaml" --client-label lost-response >"$REPORT_DIR/lost-retry.out" 2>"$REPORT_DIR/lost-retry.err"
 
 "$HARNESS_BIN" --mode verify \
@@ -291,7 +318,7 @@ node - "$REPORT_DIR/access-after-restart.json" "$LOST_GRANT_ID" <<'NODE'
 const fs = require("fs");
 const records = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const record = records.find((item) => item.grant_id === process.argv[3]);
-if (!record || !record.revoked_at || record.revoked_at.startsWith("0001-")) {
+if (!record || typeof record.revoked_at_unix_nano !== "number" || record.revoked_at_unix_nano <= 0) {
   throw new Error(`revocation did not survive restart: ${JSON.stringify(record)}`);
 }
 NODE

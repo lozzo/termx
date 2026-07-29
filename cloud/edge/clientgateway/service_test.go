@@ -2,6 +2,9 @@ package clientgateway
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"strconv"
 	"strings"
@@ -9,10 +12,89 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestPairingAdmissionRequiresClientProofAndOnlineDaemonIdentity(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	daemonPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := &cloudv1.PairingAdmission{
+		DaemonId: "daemon-1", DeviceId: "device-1", DevicePublicKey: daemonPublicKey,
+		PairingClaimSha256: bytesOf(0x61, sha256.Size), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
+	}
+	proofBytes, err := ticket.PairingHelloProofBytes(admission, "edge-1", "session-1", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := &cloudv1.ClientSignal{
+		ProtocolVersion: ProtocolVersion, MessageId: "message-1", SenderId: remoteauth.Fingerprint(clientPublicKey), BootId: "boot-1", ConnectionId: "session-1", StreamSeq: 1,
+		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{
+			ClientPublicKey: clientPublicKey, ClientProof: ed25519.Sign(clientPrivateKey, proofBytes), Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
+			AttemptGeneration: 7, RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO,
+			Authorization: &cloudv1.ClientHello_PairingAdmission{PairingAdmission: admission},
+		}},
+	}
+	service := &Service{config: Config{
+		EdgeID: "edge-1", Now: func() time.Time { return now },
+		Runtime: &pairingAdmissionRuntime{claims: &cloudv1.DaemonBindingClaims{AccountId: "account-1", DaemonId: "daemon-1", DeviceId: "device-1", DevicePublicKey: daemonPublicKey, EdgeId: "edge-1"}},
+	}}
+	claims, err := service.admit(context.Background(), event)
+	if err != nil || claims.accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING || !proto.Equal(admission, event.GetHello().GetPairingAdmission()) {
+		t.Fatalf("pairing admission claims=%#v err=%v", claims, err)
+	}
+
+	tamperedIdentity := proto.Clone(event).(*cloudv1.ClientSignal)
+	tamperedIdentity.GetHello().GetPairingAdmission().DevicePublicKey[0] ^= 0xff
+	if _, err := service.admit(context.Background(), tamperedIdentity); err == nil {
+		t.Fatal("pairing admission accepted another daemon identity")
+	}
+	expired := proto.Clone(event).(*cloudv1.ClientSignal)
+	expired.GetHello().GetPairingAdmission().ExpiresAtUnixNano = now.UnixNano()
+	if _, err := service.admit(context.Background(), expired); err == nil {
+		t.Fatal("expired pairing admission was accepted")
+	}
+	wrongProof := proto.Clone(event).(*cloudv1.ClientSignal)
+	wrongProof.GetHello().ClientProof[0] ^= 0xff
+	if _, err := service.admit(context.Background(), wrongProof); err == nil {
+		t.Fatal("pairing admission accepted an invalid client proof")
+	}
+}
+
+func bytesOf(value byte, size int) []byte {
+	result := make([]byte, size)
+	for index := range result {
+		result[index] = value
+	}
+	return result
+}
+
+type pairingAdmissionRuntime struct{ claims *cloudv1.DaemonBindingClaims }
+
+func (*pairingAdmissionRuntime) UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error {
+	return nil
+}
+func (*pairingAdmissionRuntime) RemoveSession(context.Context, string, uint64) error { return nil }
+func (*pairingAdmissionRuntime) BeginAgentSignal(context.Context, string, string, string) (uint64, <-chan *cloudv1.AgentEvent, error) {
+	return 0, nil, nil
+}
+func (*pairingAdmissionRuntime) CancelAgentSignal(context.Context, string) error { return nil }
+func (*pairingAdmissionRuntime) SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error {
+	return nil
+}
+func (runtime *pairingAdmissionRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloudv1.DaemonBindingClaims, error) {
+	return proto.Clone(runtime.claims).(*cloudv1.DaemonBindingClaims), nil
+}
 
 func TestCleanupSessionClosesRelayBeforeRemovingRuntimeSession(t *testing.T) {
 	order := make([]string, 0, 2)

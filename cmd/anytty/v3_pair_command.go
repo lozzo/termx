@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -27,8 +26,6 @@ import (
 	"golang.org/x/term"
 )
 
-const pairingBootstrapURIPrefix = "anytty://bootstrap?payload="
-
 var (
 	updateV3ConnectionRegistry = endpointdomain.UpdateContext
 	dialV3PairingTransport     = unixtransport.DialContext
@@ -48,27 +45,20 @@ var (
 )
 
 func v3PairCommand(socket *string, logFile *string) *cobra.Command {
-	command := &cobra.Command{Use: "pair", Short: "Create or redeem a client-bound daemon pairing ticket"}
+	command := &cobra.Command{Use: "pair", Short: "Create or redeem a client-bound daemon pairing claim"}
 	command.AddCommand(v3PairCreateCommand(socket, logFile))
-	command.AddCommand(v3PairImportCommand(socket, logFile))
+	command.AddCommand(v3PairImportCommand())
 	command.AddCommand(v3PairInspectCommand())
 	return command
 }
 
 type pairInspectView struct {
-	SchemaVersion     int              `json:"schema_version"`
-	Kind              string           `json:"kind"`
-	Version           uint32           `json:"version"`
-	Label             string           `json:"label,omitempty"`
-	DeviceID          string           `json:"device_id"`
-	DeviceFingerprint string           `json:"device_fingerprint"`
-	TicketID          string           `json:"ticket_id"`
-	ScopeCeiling      remoteauth.Scope `json:"scope_ceiling"`
-	IssuedAt          string           `json:"issued_at"`
-	NotBefore         string           `json:"not_before"`
-	ExpiresAt         string           `json:"expires_at"`
-	GrantLifetime     int64            `json:"grant_lifetime_seconds"`
-	Routes            []pairRouteView  `json:"routes"`
+	SchemaVersion     uint32          `json:"schema_version"`
+	Kind              string          `json:"kind"`
+	DeviceID          string          `json:"device_id"`
+	DeviceFingerprint string          `json:"device_fingerprint"`
+	ExpiresAt         string          `json:"expires_at"`
+	Routes            []pairRouteView `json:"routes"`
 }
 
 type pairRouteView struct {
@@ -79,29 +69,30 @@ type pairRouteView struct {
 	AdvertisedAddresses []string `json:"advertised_addresses,omitempty"`
 	ServerName          string   `json:"server_name,omitempty"`
 	TargetDeviceID      string   `json:"target_device_id,omitempty"`
+	DaemonID            string   `json:"daemon_id,omitempty"`
+	EdgeID              string   `json:"edge_id,omitempty"`
+	PublicEndpoint      string   `json:"public_endpoint,omitempty"`
 	RelayMode           string   `json:"relay_mode,omitempty"`
 }
 
 func v3PairInspectCommand() *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
-		Use: "inspect <BUNDLE_FILE|->", Short: "Verify one-time pairing ticket metadata", Args: cobra.ExactArgs(1),
+		Use: "inspect <CLAIM_FILE|->", Short: "Verify one-time pairing claim metadata", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			payload, err := readV3PairingBundle(cmd.Context(), cmd.InOrStdin(), args[0])
+			payload, err := readV3PairingClaim(cmd.Context(), cmd.InOrStdin(), args[0])
 			if err != nil {
 				return err
 			}
-			bundle, claims, err := remoteauth.ParsePairingBundle(payload, time.Time{})
+			offer, err := remoteauth.ParsePairingClaimOffer(payload, time.Now().UTC())
 			clear(payload)
 			if err != nil {
 				return err
 			}
 			view := pairInspectView{
-				SchemaVersion: 1, Kind: "pairing_bundle", Version: bundle.GetSchemaVersion(), Label: bundle.GetSuggestedLabel(),
-				DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
-				TicketID: claims.TicketID, ScopeCeiling: claims.ScopeCeiling, GrantLifetime: claims.GrantLifetimeSeconds,
-				IssuedAt: formatTerminalTime(claims.IssuedAt), NotBefore: formatTerminalTime(claims.NotBefore), ExpiresAt: formatTerminalTime(claims.ExpiresAt),
-				Routes: pairRouteViews(bundle),
+				SchemaVersion: offer.GetSchemaVersion(), Kind: "pairing_claim", DeviceID: offer.GetDeviceId(),
+				DeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey())), ExpiresAt: formatTerminalTime(time.Unix(0, offer.GetExpiresAtUnixNano()).UTC()),
+				Routes: pairingClaimRouteViews(offer),
 			}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
@@ -109,7 +100,6 @@ func v3PairInspectCommand() *cobra.Command {
 			return writeCLIFields(cmd.OutOrStdout(),
 				cliField{Label: "Device", Value: view.DeviceID},
 				cliField{Label: "Fingerprint", Value: view.DeviceFingerprint},
-				cliField{Label: "Ticket ID", Value: view.TicketID},
 				cliField{Label: "Expires", Value: view.ExpiresAt},
 			)
 		},
@@ -142,7 +132,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var sshHostKeys []string
 	command := &cobra.Command{
 		Use:   "create",
-		Short: "Issue a short-lived one-time pairing ticket from the local daemon",
+		Short: "Issue a short-lived one-time pairing claim from the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			socketPath := resolveV3Socket(*socket)
@@ -202,7 +192,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 				return fmt.Errorf("daemon did not return a pairing claim offer")
 			}
 			if rawOutput {
-				_, err = cmd.OutOrStdout().Write(result.GetBundle())
+				_, err = cmd.OutOrStdout().Write(payload)
 				return err
 			}
 			portablePayload := v3PairingBootstrapURI(payload)
@@ -236,16 +226,16 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if err := renderV3PairingPreview(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC()); err != nil {
 				return err
 			}
-			if err := writeV3PrivateFile(outputPath, result.GetBundle()); err != nil {
+			if err := writeV3PrivateFile(outputPath, payload); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Pairing bundle written to %s\n", outputPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Pairing claim written to %s\n", outputPath)
 			return nil
 		},
 	}
-	command.Flags().StringVar(&outputPath, "out", "", "write the one-time pairing bundle to an owner-only file")
+	command.Flags().StringVar(&outputPath, "out", "", "write the one-time pairing claim to an owner-only file")
 	command.Flags().StringVar(&qrOutputPath, "qr-file", "", "write a square pairing QR PNG to an owner-only file")
-	command.Flags().BoolVar(&rawOutput, "raw", false, "write the one-time pairing bundle to stdout for explicit owner scripting")
+	command.Flags().BoolVar(&rawOutput, "raw", false, "write the one-time pairing claim to stdout for explicit owner scripting")
 	command.Flags().BoolVar(&textOutput, "text", false, "write the portable pairing URI to stdout for copying")
 	command.Flags().BoolVar(&commandOutput, "command", false, "write a copyable one-command pairing import")
 	command.Flags().StringVar(&label, "label", "", "daemon display label (defaults to this host name)")
@@ -396,7 +386,7 @@ func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Tim
 			continue
 		}
 		if managed := route.GetManagedWebrtc(); managed != nil {
-			rows = append(rows, []string{route.GetRouteId(), "cloud", "target=" + managed.GetTargetDeviceId()})
+			rows = append(rows, []string{route.GetRouteId(), "cloud", fmt.Sprintf("edge=%s, endpoint=%s", managed.GetEdgeId(), managed.GetPublicEndpoint())})
 			continue
 		}
 		if ssh := route.GetSshWebrtcTcp(); ssh != nil {
@@ -406,22 +396,25 @@ func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Tim
 	return writeCLITable(output, []string{"ID", "KIND", "DETAILS"}, rows)
 }
 
-func pairRouteViews(bundle *remoteauth.PairingBundle) []pairRouteView {
-	views := make([]pairRouteView, 0, len(bundle.GetRoutes()))
-	for _, route := range bundle.GetRoutes() {
+func pairingClaimRouteViews(offer *remoteauthpb.PairingClaimOffer) []pairRouteView {
+	views := make([]pairRouteView, 0, len(offer.GetRoutes()))
+	for _, route := range offer.GetRoutes() {
 		if direct := route.GetDirectWebrtcTcp(); direct != nil {
 			views = append(views, pairRouteView{
 				RouteID: route.GetRouteId(), Kind: string(endpointdomain.RouteDirectWebRTCTCP),
-				SignalingAddresses:  append([]string(nil), direct.GetSignalingAddresses()...),
-				ICETCPAddresses:     append([]string(nil), direct.GetIceTcpAddresses()...),
-				AdvertisedAddresses: append([]string(nil), direct.GetAdvertisedAddresses()...), ServerName: direct.GetServerName(),
+				SignalingAddresses: []string{direct.GetSignalingAddress()}, ICETCPAddresses: []string{direct.GetIceTcpAddress()}, ServerName: direct.GetServerName(),
 			})
+			continue
 		}
 		if managed := route.GetManagedWebrtc(); managed != nil {
 			views = append(views, pairRouteView{
-				RouteID: route.GetRouteId(), Kind: string(endpointdomain.RouteManagedWebRTC),
-				TargetDeviceID: managed.GetTargetDeviceId(), RelayMode: managed.GetRelayMode().String(),
+				RouteID: route.GetRouteId(), Kind: string(endpointdomain.RouteManagedWebRTC), TargetDeviceID: offer.GetDeviceId(),
+				DaemonID: managed.GetDaemonId(), EdgeID: managed.GetEdgeId(), PublicEndpoint: managed.GetPublicEndpoint(), ServerName: managed.GetServerName(),
 			})
+			continue
+		}
+		if ssh := route.GetSshWebrtcTcp(); ssh != nil {
+			views = append(views, pairRouteView{RouteID: route.GetRouteId(), Kind: string(endpointdomain.RouteSSHWebRTCTCP)})
 		}
 	}
 	return views
@@ -441,7 +434,7 @@ func localPairTerminalID(target string) (string, error) {
 	return target, nil
 }
 
-func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
+func v3PairImportCommand() *cobra.Command {
 	var endpointID string
 	var label string
 	var registryPath string
@@ -453,33 +446,22 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 		Short: "Redeem a one-time claim into client-bound credentials and endpoint registry",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			payload, err := readV3PairingBundle(cmd.Context(), cmd.InOrStdin(), args[0])
+			payload, err := readV3PairingClaim(cmd.Context(), cmd.InOrStdin(), args[0])
 			if err != nil {
 				return err
 			}
 			defer clear(payload)
-			bundle, _, bundleErr := remoteauth.ParsePairingBundleForExchange(payload)
-			claimMode := bundleErr != nil
-			var identity endpointdomain.DaemonIdentity
-			var pairingCandidate endpointdomain.EndpointCandidate
-			if claimMode {
-				offer, claimErr := remoteauth.ParsePairingClaimOfferForExchange(payload)
-				if claimErr != nil {
-					return bundleErr
-				}
-				identity = endpointdomain.DaemonIdentity{DeviceID: offer.GetDeviceId(), DeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))}
-				pairingCandidate, err = remoteauth.PairingClaimEndpointCandidate(offer)
-				if err != nil {
-					return err
-				}
-			} else {
-				identity = endpointdomain.DaemonIdentity{DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint()}
+			offer, err := remoteauth.ParsePairingClaimOfferForExchange(payload)
+			if err != nil {
+				return err
+			}
+			identity := endpointdomain.DaemonIdentity{DeviceID: offer.GetDeviceId(), DeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))}
+			pairingCandidate, err := remoteauth.PairingClaimEndpointCandidate(offer)
+			if err != nil {
+				return err
 			}
 			id := endpointdomain.EndpointID(strings.TrimSpace(endpointID))
 			endpointLabel := strings.TrimSpace(label)
-			if endpointLabel == "" && !claimMode {
-				endpointLabel = bundle.GetSuggestedLabel()
-			}
 			if endpointLabel == "" {
 				endpointLabel = string(id)
 			}
@@ -504,9 +486,6 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 				grantRef := v3PairingGrantRef(actualID, identity.DeviceID)
 				credentials := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
 				var exchangedBundle []byte
-				if !claimMode {
-					exchangedBundle = append([]byte(nil), payload...)
-				}
 				bound, bindErr := credentials.PairAndBind(
 					cmd.Context(), grantRef, string(actualID), payload, nil, nil,
 					remoteauth.BindGrantOptions{AllowScopeExpansion: allowScopeExpansion},
@@ -514,7 +493,7 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 						resolvedPairingSocket := strings.TrimSpace(pairingSocket)
 						pairingRequest := remoteauth.ClientPairingRequest{
 							ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.DeviceFingerprint,
-							Identity: clientIdentity, ClientLabel: strings.TrimSpace(clientLabel), ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI),
+							PairingClaimOffer: payload, Identity: clientIdentity, ClientLabel: strings.TrimSpace(clientLabel), ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI),
 						}
 						if pairingRequest.ClientLabel == "" {
 							pairingRequest.ClientLabel = "anytty-cli"
@@ -522,29 +501,15 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 								pairingRequest.ClientLabel = "anytty-cli@" + strings.TrimSpace(hostname)
 							}
 						}
-						if claimMode {
-							pairingRequest.PairingClaimOffer = payload
-							signer, signerErr := remoteauth.NewPrivateClientAccessSigner(clientIdentity)
-							if signerErr != nil {
-								return remoteauth.PairingExchangeResult{}, signerErr
-							}
-							pairingRequest.Signer = signer
-							if resolvedPairingSocket == "" {
-								result, redeemErr := redeemV3RemotePairing(cmd.Context(), actualID, grantRef, pairingCandidate, pairingRequest)
-								exchangedBundle = append([]byte(nil), result.Bundle...)
-								return result, redeemErr
-							}
-						} else {
-							pairingRequest.PairingBundle = payload
+						signer, signerErr := remoteauth.NewPrivateClientAccessSigner(clientIdentity)
+						if signerErr != nil {
+							return remoteauth.PairingExchangeResult{}, signerErr
 						}
+						pairingRequest.Signer = signer
 						if resolvedPairingSocket == "" {
-							localSocket := resolveV3Socket(*socket)
-							client, startErr := dialOrStartV3ClientContext(cmd.Context(), localSocket, resolveV3LogFilePath(*logFile), nil)
-							if startErr != nil {
-								return remoteauth.PairingExchangeResult{}, startErr
-							}
-							_ = client.Close()
-							resolvedPairingSocket = v3PairingSocketPath(localSocket)
+							result, redeemErr := redeemV3RemotePairing(cmd.Context(), actualID, grantRef, pairingCandidate, pairingRequest)
+							exchangedBundle = append([]byte(nil), result.Bundle...)
+							return result, redeemErr
 						}
 						binding, bindingErr := remoteauth.LocalUnixChannelBinding(resolvedPairingSocket)
 						if bindingErr != nil {
@@ -700,7 +665,7 @@ func mergePairingEndpoint(
 	return result.Registry, endpoint, grantRef, nil
 }
 
-func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]byte, error) {
+func readV3PairingClaim(ctx context.Context, stdin io.Reader, path string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -715,18 +680,18 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 		var err error
 		file, err = os.Open(path)
 		if err != nil {
-			return nil, fmt.Errorf("open pairing bundle: %w", err)
+			return nil, fmt.Errorf("open pairing claim: %w", err)
 		}
 		defer file.Close()
 		reader = file
 	}
 	payload, err := io.ReadAll(io.LimitReader(reader, endpointdomain.MaxPortableContractBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read pairing bundle: %w", err)
+		return nil, fmt.Errorf("read pairing claim: %w", err)
 	}
 	if len(payload) == 0 || len(payload) > endpointdomain.MaxPortableContractBytes {
 		clear(payload)
-		return nil, fmt.Errorf("pairing bundle size is invalid")
+		return nil, fmt.Errorf("pairing claim size is invalid")
 	}
 	if decoded, inline, decodeErr := decodeInlineV3Pairing(strings.TrimSpace(string(payload))); inline {
 		clear(payload)
@@ -740,14 +705,6 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 }
 
 func decodeInlineV3Pairing(text string) ([]byte, bool, error) {
-	if strings.HasPrefix(text, pairingBootstrapURIPrefix) {
-		decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, pairingBootstrapURIPrefix))
-		if err != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {
-			clear(decoded)
-			return nil, true, fmt.Errorf("pairing bootstrap URI payload is invalid")
-		}
-		return decoded, true, nil
-	}
 	if strings.HasPrefix(text, remoteauth.PairingClaimCodePrefix) {
 		decoded, err := remoteauth.DecodePairingClaimCode(text)
 		if err != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {

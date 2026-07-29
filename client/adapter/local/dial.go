@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -71,7 +72,8 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		return nil, fmt.Errorf("local Unix socket path is required")
 	}
 	client, err := dialProtocol(ctx, path, dialer.options.ClientName)
-	if err != nil && dialer.options.Start != nil {
+	var handshakeErr *protocolHandshakeError
+	if err != nil && dialer.options.Start != nil && !errors.As(err, &handshakeErr) {
 		if startErr := dialer.options.Start(ctx, path); startErr != nil {
 			return nil, fmt.Errorf("start local daemon: %w", startErr)
 		}
@@ -111,6 +113,11 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	return ready, nil
 }
 
+type protocolHandshakeError struct{ cause error }
+
+func (err *protocolHandshakeError) Error() string { return err.cause.Error() }
+func (err *protocolHandshakeError) Unwrap() error { return err.cause }
+
 func dialProtocol(ctx context.Context, path, clientName string) (*internalprotocol.Client, error) {
 	transport, err := unixtransport.DialContext(ctx, path)
 	if err != nil {
@@ -119,7 +126,7 @@ func dialProtocol(ctx context.Context, path, clientName string) (*internalprotoc
 	client := internalprotocol.NewClient(transport)
 	if err := client.Hello(ctx, internalprotocol.Hello{Version: wire.Version, Client: clientName}); err != nil {
 		_ = client.Close()
-		return nil, err
+		return nil, &protocolHandshakeError{cause: err}
 	}
 	return client, nil
 }

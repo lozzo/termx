@@ -222,6 +222,7 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterE
 	if err != nil {
 		return nil, err
 	}
+	publicCertificate = append(publicCertificate, service.caCertificatePEM...)
 	keyID, configPublicKey := service.edges.SigningPublicKey()
 	return &cloudv1.RegisterEdgeResponse{
 		EdgeId: edge.ID, IdentityCertificatePem: identityCertificate, PublicCertificatePem: publicCertificate,

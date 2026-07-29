@@ -33,7 +33,7 @@ func TestPairingClaimCodeUsesCanonicalCompressionAndBoundedDecode(t *testing.T) 
 	}
 }
 
-func TestManagedPairingClaimRequiresAndEmbedsDigestGrant(t *testing.T) {
+func TestManagedPairingClaimRequiresAndEmbedsCompactBootstrap(t *testing.T) {
 	now := time.Date(2026, 7, 23, 9, 0, 0, 0, time.UTC)
 	identity, err := NewIdentity("device-managed-claim", ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x40}, ed25519.SeedSize)))
 	if err != nil {
@@ -51,16 +51,12 @@ func TestManagedPairingClaimRequiresAndEmbedsDigestGrant(t *testing.T) {
 			Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{TargetDeviceId: identity.DeviceID}},
 		}},
 	}
-	if _, err := store.IssuePairingClaim(options); err == nil || !strings.Contains(err.Error(), "managed pairing grant issuer is unavailable") {
+	if _, err := store.IssuePairingClaim(options); err == nil || !strings.Contains(err.Error(), "managed pairing bootstrap issuer is unavailable") {
 		t.Fatalf("managed claim without issuer error = %v", err)
 	}
-	var grantedDigest []byte
-	if err := store.ConfigureManagedPairingRouteIssuer(func(digest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, []byte, error) {
-		grantedDigest = append([]byte(nil), digest...)
-		if !expiresAt.After(issuedAt) {
-			t.Fatalf("managed grant lifetime = %v to %v", issuedAt, expiresAt)
-		}
-		return []byte("daemon-signed-bootstrap-grant"), []byte("edge-locator"), nil
+	pin := bytes.Repeat([]byte{0x71}, sha256.Size)
+	if err := store.ConfigureManagedPairingBootstrapIssuer(func() (*remoteauthpb.PairingManagedRouteSeed, error) {
+		return &remoteauthpb.PairingManagedRouteSeed{DaemonId: "daemon-1", EdgeId: "edge-1", PublicEndpoint: "edge.example:443", ServerName: "edge.example", CaCertificateDerSha256: pin}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -68,13 +64,12 @@ func TestManagedPairingClaimRequiresAndEmbedsDigestGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantDigest := sha256.Sum256(issued.Offer.GetClaim())
 	managed := issued.Offer.GetRoutes()[0].GetManagedWebrtc()
-	if !bytes.Equal(grantedDigest, wantDigest[:]) || !bytes.Equal(managed.GetBootstrapGrant(), []byte("daemon-signed-bootstrap-grant")) || !bytes.Equal(managed.GetEdgeLocator(), []byte("edge-locator")) {
-		t.Fatalf("managed bootstrap grant digest=%x route=%#v", grantedDigest, managed)
+	if managed.GetDaemonId() != "daemon-1" || managed.GetEdgeId() != "edge-1" || managed.GetPublicEndpoint() != "edge.example:443" || managed.GetServerName() != "edge.example" || !bytes.Equal(managed.GetCaCertificateDerSha256(), pin) {
+		t.Fatalf("managed bootstrap route=%#v", managed)
 	}
-	if bytes.Contains(managed.GetBootstrapGrant(), issued.Offer.GetClaim()) {
-		t.Fatal("managed bootstrap grant leaked the raw pairing claim")
+	if bytes.Contains(issued.OfferPayload, []byte("CERTIFICATE")) {
+		t.Fatal("managed pairing offer leaked a full CA certificate")
 	}
 }
 
@@ -138,6 +133,59 @@ func TestPairingClaimIsMemoryOnlySingleUseAndClientBound(t *testing.T) {
 	defer reloaded.Close()
 	if _, err := reloaded.ResolvePairingClaimForExchange(issued.OfferPayload, clientA.PublicKey, now.Add(3*time.Minute)); !errors.Is(err, ErrPairingClaimUnavailable) {
 		t.Fatalf("claim survived daemon restart: %v", err)
+	}
+}
+
+func TestManagedPairingResultPersistsLocatorForDeliveryRecovery(t *testing.T) {
+	now := time.Date(2026, 7, 29, 13, 0, 0, 0, time.UTC)
+	identity, err := NewIdentity("device-managed-recovery", ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, ed25519.SeedSize)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store, err := LoadAccessStore(dir, identity, AccessStoreOptions{Now: fixedNow(now), Random: bytes.NewReader(bytes.Repeat([]byte{0x56}, 4096))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := bytes.Repeat([]byte{0x72}, sha256.Size)
+	if err := store.ConfigureManagedPairingBootstrapIssuer(func() (*remoteauthpb.PairingManagedRouteSeed, error) {
+		return &remoteauthpb.PairingManagedRouteSeed{DaemonId: "daemon-recovery", EdgeId: "edge-recovery", PublicEndpoint: "edge.example:443", ServerName: "edge.example", CaCertificateDerSha256: pin}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantRouteGrant := []byte("signed-cloud-route-grant")
+	wantLocator := []byte("complete-edge-locator")
+	if err := store.ConfigureManagedRouteGrantIssuer(func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, []byte, error) {
+		return append([]byte(nil), wantRouteGrant...), append([]byte(nil), wantLocator...), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := store.IssuePairingClaim(PairingIssueOptions{
+		Scope: FullDaemonScope(), TicketTTL: time.Minute, GrantLifetime: time.Hour, Now: now,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{SchemaVersion: 1, RouteId: "cloud", Enabled: true, Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{TargetDeviceId: identity.DeviceID}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := GenerateClientAccessIdentity("endpoint-managed-recovery", bytes.NewReader(bytes.Repeat([]byte{0x67}, 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, _, err := store.RedeemPairingClaimForProduct(issued.OfferPayload, client.PublicKey, "phone", 1, now)
+	if err != nil || !bytes.Equal(result.CloudRouteGrant, wantRouteGrant) || !bytes.Equal(result.CloudEdgeLocator, wantLocator) {
+		t.Fatalf("managed result=%#v err=%v", result, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := LoadAccessStore(dir, identity, AccessStoreOptions{Now: fixedNow(now.Add(time.Minute))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reloaded.Close()
+	recovered, err := reloaded.pairingResultFromStored(reloaded.tickets[issued.Claims.TicketID])
+	if err != nil || !bytes.Equal(recovered.CloudRouteGrant, wantRouteGrant) || !bytes.Equal(recovered.CloudEdgeLocator, wantLocator) {
+		t.Fatalf("recovered managed result=%#v err=%v", recovered, err)
 	}
 }
 

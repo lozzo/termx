@@ -29,6 +29,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/enrollment"
 	clouddaemon "github.com/anytty/anytty/cloud/daemon"
 	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	"github.com/anytty/anytty/cloud/securetransport"
 	"github.com/anytty/anytty/cloud/ticket"
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/proto/apipb"
@@ -121,7 +122,6 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	edgeLocatorDigest := sha256.Sum256(edgeLocatorPayload)
 	readyContext, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := edgeRuntime.WaitReady(readyContext); err != nil {
 		cancelReady()
@@ -134,30 +134,28 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = accessStore.Close() })
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, error) {
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, []byte, error) {
 		claims := &cloudv1.CloudRouteGrantClaims{
 			GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: cloudv1.ClientProduct(product),
 			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()),
 		}
 		signed, signErr := ticket.SignCloudRouteGrant(daemonIdentity, claims)
 		if signErr != nil {
-			return nil, signErr
-		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(signed)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := accessStore.ConfigureManagedPairingRouteIssuer(func(claimDigest []byte, expiresAt time.Time, issuedAt time.Time) ([]byte, []byte, error) {
-		claims := &cloudv1.PairingRouteGrantClaims{
-			GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, DeviceId: daemonIdentity.DeviceID, PairingClaimSha256: append([]byte(nil), claimDigest...),
-			IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC()), EdgeLocatorSha256: edgeLocatorDigest[:],
-		}
-		signed, signErr := ticket.SignPairingRouteGrant(daemonIdentity, claims)
-		if signErr != nil {
 			return nil, nil, signErr
 		}
 		grant, marshalErr := proto.MarshalOptions{Deterministic: true}.Marshal(signed)
 		return grant, append([]byte(nil), edgeLocatorPayload...), marshalErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	caFingerprint, err := securetransport.EdgeCACertificateDERFingerprint(edgeCAPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := accessStore.ConfigureManagedPairingBootstrapIssuer(func() (*remoteauthpb.PairingManagedRouteSeed, error) {
+		return &remoteauthpb.PairingManagedRouteSeed{
+			DaemonId: daemonRecord.ID, EdgeId: edgeLocator.GetEdgeId(), PublicEndpoint: edgeLocator.GetPublicEndpoint(), ServerName: edgeLocator.GetServerName(), CaCertificateDerSha256: caFingerprint,
+		}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +346,7 @@ func pairR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonId
 		t.Fatalf("bound Cloud pairing claim admitted another client: %v", err)
 	}
 	return remoteauth.ClientAccessCredential{
-		Version: 2, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant, CloudEdgeLocator: paired.CloudEdgeLocator, UpdatedAt: time.Now().UTC(),
+		Version: 3, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant, CloudEdgeLocator: paired.CloudEdgeLocator, UpdatedAt: time.Now().UTC(),
 	}
 }
 
@@ -376,7 +374,7 @@ func issueR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonI
 	if len(exchanged.CloudRouteGrant) == 0 {
 		t.Fatal("managed pairing did not issue CloudRouteGrant")
 	}
-	return remoteauth.ClientAccessCredential{Version: 2, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: exchanged.Grant, CloudRouteGrant: exchanged.CloudRouteGrant, UpdatedAt: time.Now().UTC()}, exchanged.GrantID
+	return remoteauth.ClientAccessCredential{Version: 3, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: exchanged.Grant, CloudRouteGrant: exchanged.CloudRouteGrant, CloudEdgeLocator: exchanged.CloudEdgeLocator, UpdatedAt: time.Now().UTC()}, exchanged.GrantID
 }
 
 func r5CloudAttempt(t *testing.T, identity remoteauth.Identity, endpointID string, generation clientruntime.SessionGeneration) clientruntime.AttemptRequest {

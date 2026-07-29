@@ -49,7 +49,7 @@ describe('RemoteControlApp accountless product shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
     const sheet = screen.getByTestId('anytty-pair-sheet')
-    await userEvent.type(within(sheet).getByLabelText('Pairing code or share link'), 'MXP1-TEST')
+    await userEvent.type(within(sheet).getByLabelText('Pairing code or share link'), 'MXP2-TEST')
     await userEvent.click(within(sheet).getByRole('button', { name: 'Add device' }))
 
     expect(await screen.findByText('Could not connect to this device. Check both devices\' networks and try again.')).toBeTruthy()

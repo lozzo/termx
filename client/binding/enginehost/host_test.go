@@ -26,7 +26,7 @@ func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
 func TestPairingClaimCandidateProducesValidDirectAttempt(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x21}, 32)
 	route := &remoteauthpb.PairingRouteSeed{RouteId: "direct", Route: &remoteauthpb.PairingRouteSeed_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.PairingDirectRouteSeed{SignalingAddress: "127.0.0.1:41001", IceTcpAddress: "127.0.0.1:41002"}}}
-	candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOfferV1{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Routes: []*remoteauthpb.PairingRouteSeed{route}})
+	candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOffer{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Routes: []*remoteauthpb.PairingRouteSeed{route}})
 	if err != nil {
 		t.Fatal(err)
 	}

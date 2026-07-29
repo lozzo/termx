@@ -357,7 +357,7 @@ func newDirectFixture(t *testing.T) *directFixture {
 	go func() { done <- directServer.Serve(ctx) }()
 	fixture := &directFixture{
 		identity: identity, credential: remoteauth.ClientAccessCredential{
-			Version: 1, EndpointID: "direct", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now,
+			Version: 3, EndpointID: "direct", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now,
 		},
 		store: store, now: now, signalingAddress: signalingListener.Addr().String(), iceAddress: iceListener.Addr().String(), server: directServer, cancel: cancel, done: done,
 	}

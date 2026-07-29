@@ -59,7 +59,7 @@ func NewCachedCapabilityRoute(locatorPayload, grantPayload []byte) (*RouteResolu
 	if len(grantPayload) == 0 || proto.Unmarshal(grantPayload, grant) != nil {
 		return nil, errors.New("cached Cloud Route grant is invalid")
 	}
-	return NewCachedRoute(edge, grant, cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY)
+	return NewCachedRoute(edge, grant)
 }
 
 // ShouldRefreshEdgeLocator 只把位置失效或旧 Edge 不可达解释为目录缓存失效。

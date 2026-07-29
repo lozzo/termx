@@ -105,32 +105,33 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	}
 }
 
-func TestPairingRouteGrantBindsClaimAndLocator(t *testing.T) {
-	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+func TestPairingHelloProofBindsAdmissionEdgeSessionAndProduct(t *testing.T) {
+	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := remoteauth.NewIdentity("device-pairing-route", daemonPrivateKey)
+	devicePublicKey, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
-	claimDigest := bytes.Repeat([]byte{0x71}, 32)
-	locatorDigest := bytes.Repeat([]byte{0x72}, 32)
-	grant, err := ticket.SignPairingRouteGrant(identity, &cloudv1.PairingRouteGrantClaims{
-		GrantId: "pairing-route", DaemonId: "daemon-pairing", DeviceId: identity.DeviceID, PairingClaimSha256: claimDigest,
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), EdgeLocatorSha256: locatorDigest,
-	})
+	admission := &cloudv1.PairingAdmission{
+		DaemonId: "daemon-pairing", DeviceId: "device-pairing", DevicePublicKey: devicePublicKey,
+		PairingClaimSha256: bytes.Repeat([]byte{0x71}, sha256.Size), ExpiresAtUnixNano: time.Now().Add(10 * time.Minute).UnixNano(),
+	}
+	canonical, err := ticket.PairingHelloProofBytes(admission, "edge-pairing", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims, err := ticket.VerifyPairingRouteGrant(grant, identity.PublicKey, "daemon-pairing", now)
-	if err != nil || !bytes.Equal(claims.GetPairingClaimSha256(), claimDigest) || !bytes.Equal(claims.GetEdgeLocatorSha256(), locatorDigest) {
-		t.Fatalf("verified PairingRouteGrant=%v err=%v", claims, err)
+	proof := ed25519.Sign(clientPrivateKey, canonical)
+	if err := ticket.VerifyPairingHelloProof(clientPublicKey, proof, admission, "edge-pairing", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI); err != nil {
+		t.Fatal(err)
 	}
-	tampered := proto.Clone(grant).(*cloudv1.SignedEnvelope)
-	tampered.Payload[0] ^= 0xff
-	if _, err := ticket.VerifyPairingRouteGrant(tampered, identity.PublicKey, "daemon-pairing", now); err == nil {
-		t.Fatal("tampered PairingRouteGrant was accepted")
+	tampered := proto.Clone(admission).(*cloudv1.PairingAdmission)
+	tampered.PairingClaimSha256[0] ^= 0xff
+	if err := ticket.VerifyPairingHelloProof(clientPublicKey, proof, tampered, "edge-pairing", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI); err == nil {
+		t.Fatal("pairing proof accepted a different claim")
+	}
+	if err := ticket.VerifyPairingHelloProof(clientPublicKey, proof, admission, "edge-other", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI); err == nil {
+		t.Fatal("pairing proof accepted another Edge")
 	}
 }

@@ -18,9 +18,9 @@ const (
 	daemonBindingDomain        = "anytty.cloud.daemon-binding.v2\x00"
 	agentProofDomain           = "anytty.cloud.agent-hello-proof.v1\x00"
 	cloudRouteGrantDomain      = "anytty.cloud.route-grant.v1\x00"
-	pairingRouteGrantDomain    = "anytty.cloud.pairing-route-grant.v1\x00"
 	clientRouteProofDomain     = "anytty.cloud.client-route-proof.v1\x00"
 	cloudRouteHelloProofDomain = "anytty.cloud.route-hello-proof.v1\x00"
+	pairingHelloProofDomain    = "anytty.cloud.pairing-hello-proof.v2\x00"
 )
 
 // KeySet 是 Edge 当前从 EdgeWelcome 获得的 daemon binding 公钥集合。
@@ -147,41 +147,6 @@ func VerifyCloudRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed2
 	return claims, nil
 }
 
-// SignPairingRouteGrant 使用 daemon DeviceIdentity 签发不包含 claim 本体的 Cloud bootstrap grant。
-func SignPairingRouteGrant(identity remoteauth.Identity, claims *cloudv1.PairingRouteGrantClaims) (*cloudv1.SignedEnvelope, error) {
-	if err := identity.Validate(); err != nil {
-		return nil, err
-	}
-	if err := validatePairingRouteGrant(claims, time.Time{}); err != nil {
-		return nil, err
-	}
-	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
-	if err != nil {
-		return nil, err
-	}
-	return &cloudv1.SignedEnvelope{KeyId: identity.Fingerprint, Payload: payload, Signature: ed25519.Sign(identity.PrivateKey, signingBytes(pairingRouteGrantDomain, payload))}, nil
-}
-
-// VerifyPairingRouteGrant 使用 Controller 持久化的 daemon identity 验证 bootstrap grant。
-func VerifyPairingRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed25519.PublicKey, expectedDaemonID string, now time.Time) (*cloudv1.PairingRouteGrantClaims, error) {
-	if envelope == nil || len(daemonPublicKey) != ed25519.PublicKeySize || len(envelope.GetSignature()) != ed25519.SignatureSize ||
-		strings.TrimSpace(envelope.GetKeyId()) != remoteauth.Fingerprint(daemonPublicKey) ||
-		!ed25519.Verify(daemonPublicKey, signingBytes(pairingRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature()) {
-		return nil, errors.New("PairingRouteGrant signature is invalid")
-	}
-	claims := &cloudv1.PairingRouteGrantClaims{}
-	if err := proto.Unmarshal(envelope.GetPayload(), claims); err != nil {
-		return nil, errors.New("PairingRouteGrant payload is invalid")
-	}
-	if err := validatePairingRouteGrant(claims, now); err != nil {
-		return nil, err
-	}
-	if claims.GetDaemonId() != strings.TrimSpace(expectedDaemonID) {
-		return nil, errors.New("PairingRouteGrant targets another daemon")
-	}
-	return claims, nil
-}
-
 // ClientRouteProofBytes 返回 ClientAccessIdentity 对 Controller challenge 的 canonical 签名输入。
 func ClientRouteProofBytes(challengeID string, challenge []byte, grant *cloudv1.SignedEnvelope, requestID string) ([]byte, error) {
 	if strings.TrimSpace(challengeID) == "" || len(challenge) == 0 || grant == nil || strings.TrimSpace(requestID) == "" {
@@ -232,6 +197,39 @@ func VerifyCloudRouteHelloProof(publicKey, proof []byte, routeGrant *cloudv1.Sig
 	return nil
 }
 
+// PairingHelloProofBytes 把完整 pairing admission 摘要绑定到目标 Edge、产品和单次连接。
+func PairingHelloProofBytes(admission *cloudv1.PairingAdmission, edgeID, sessionID string, attemptGeneration uint64, product cloudv1.ClientProduct) ([]byte, error) {
+	if admission == nil || len(admission.ProtoReflect().GetUnknown()) != 0 || strings.TrimSpace(admission.GetDaemonId()) == "" || strings.TrimSpace(admission.GetDeviceId()) == "" ||
+		len(admission.GetDevicePublicKey()) != ed25519.PublicKeySize || len(admission.GetPairingClaimSha256()) != sha256.Size || admission.GetExpiresAtUnixNano() <= 0 ||
+		strings.TrimSpace(edgeID) == "" || strings.TrimSpace(sessionID) == "" || attemptGeneration == 0 || product < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || product > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+		return nil, errors.New("pairing hello proof input is incomplete")
+	}
+	admissionPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(admission)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(admissionPayload)
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.PairingHelloProofInput{
+		PairingAdmissionSha256: digest[:], EdgeId: strings.TrimSpace(edgeID), SessionId: strings.TrimSpace(sessionID), AttemptGeneration: attemptGeneration, Product: product,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return signingBytes(pairingHelloProofDomain, payload), nil
+}
+
+// VerifyPairingHelloProof 证明发起 pairing 的客户端持有将被 claim 原子绑定的 ClientAccessIdentity 私钥。
+func VerifyPairingHelloProof(publicKey, proof []byte, admission *cloudv1.PairingAdmission, edgeID, sessionID string, attemptGeneration uint64, product cloudv1.ClientProduct) error {
+	canonical, err := PairingHelloProofBytes(admission, edgeID, sessionID, attemptGeneration, product)
+	if err != nil {
+		return err
+	}
+	if len(publicKey) != ed25519.PublicKeySize || len(proof) != ed25519.SignatureSize || !ed25519.Verify(ed25519.PublicKey(publicKey), canonical, proof) {
+		return errors.New("pairing hello proof is invalid")
+	}
+	return nil
+}
+
 func agentHelloProofBytes(envelope *cloudv1.SignedEnvelope, daemonID, bootID, connectionID string) ([]byte, error) {
 	if envelope == nil || strings.TrimSpace(daemonID) == "" || strings.TrimSpace(bootID) == "" || strings.TrimSpace(connectionID) == "" {
 		return nil, errors.New("AgentHello proof input is incomplete")
@@ -276,17 +274,6 @@ func validateCloudRouteGrant(claims *cloudv1.CloudRouteGrantClaims, now time.Tim
 	}
 	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(30*time.Second)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-30*time.Second))) {
 		return errors.New("CloudRouteGrant is outside its validity window")
-	}
-	return nil
-}
-
-func validatePairingRouteGrant(claims *cloudv1.PairingRouteGrantClaims, now time.Time) error {
-	if claims == nil || strings.TrimSpace(claims.GetGrantId()) == "" || strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetDeviceId()) == "" || len(claims.GetPairingClaimSha256()) != sha256.Size || len(claims.GetEdgeLocatorSha256()) != sha256.Size ||
-		claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 24*time.Hour {
-		return errors.New("PairingRouteGrant claims are incomplete")
-	}
-	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(30*time.Second)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-30*time.Second))) {
-		return errors.New("PairingRouteGrant is outside its validity window")
 	}
 	return nil
 }

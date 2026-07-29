@@ -34,12 +34,11 @@ type ClientAccessTicketRequest struct {
 }
 
 // ClientAccessTicket 是 daemon 创建一次性配对 claim 后返回给 API Layer 的 core-native 结果。
-// ClaimOffer 可以跨进程进入二维码；Bundle 只供 owner-only 兼容工具使用，不能成为官方客户端载荷。
 type ClientAccessTicket struct {
-	Bundle, ClaimOffer []byte
-	ClaimCode          string
-	TicketID           string
-	ExpiresAt          time.Time
+	ClaimOffer []byte
+	ClaimCode  string
+	TicketID   string
+	ExpiresAt  time.Time
 }
 
 // ClientAccessRecord 是 daemon 持久化 grant 的脱敏投影。

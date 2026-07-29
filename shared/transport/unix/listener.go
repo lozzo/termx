@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/anytty/anytty/shared/transport"
+	"github.com/klauspost/compress/zstd"
 )
 
 // Transport 是本机 unix socket 上的压缩 frame transport。
@@ -177,6 +177,9 @@ type Listener struct {
 // 当用户可见 path 超过系统 socket path 限制时，会创建短实际路径并在原路径放置 symlink。
 func NewListener(path string) (*Listener, error) {
 	actualPath, aliasPath := resolveSocketPath(path)
+	if err := preserveActiveSocket(actualPath); err != nil {
+		return nil, err
+	}
 	_ = os.Remove(path)
 	if actualPath != path {
 		_ = os.Remove(actualPath)
@@ -203,6 +206,18 @@ func NewListener(path string) (*Listener, error) {
 		}
 	}
 	return &Listener{path: path, actualPath: actualPath, aliasPath: aliasPath, ln: ln}, nil
+}
+
+func preserveActiveSocket(path string) error {
+	conn, err := net.DialTimeout("unix", path, 100*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		return fmt.Errorf("transport/unix: socket %q already has an active listener", path)
+	}
+	if os.IsNotExist(err) || errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
+		return nil
+	}
+	return fmt.Errorf("transport/unix: inspect existing socket %q: %w", path, err)
 }
 
 // Accept 接收一个 unix socket 连接。

@@ -2,8 +2,11 @@
 package securetransport
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -158,6 +161,79 @@ func NewClientTLSConfig(options ClientOptions) (*tls.Config, error) {
 		ServerName:   serverName,
 		NextProtos:   []string{"h2"},
 	}, nil
+}
+
+// EdgeCACertificateDERFingerprint 返回 locator 中唯一 CA 证书 DER 的 SHA-256。
+// pairing 二维码只携带该 pin；完整 CA 仍保留在 enrollment 和配对成功后的 EdgeLocator 中。
+func EdgeCACertificateDERFingerprint(certificatePEM []byte) ([]byte, error) {
+	rest := bytes.TrimSpace(certificatePEM)
+	block, trailing := pem.Decode(rest)
+	if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 || len(bytes.TrimSpace(trailing)) != 0 {
+		return nil, errors.New("Edge CA PEM must contain exactly one certificate")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || !certificate.IsCA {
+		return nil, errors.New("Edge CA certificate is invalid")
+	}
+	digest := sha256.Sum256(certificate.Raw)
+	return append([]byte(nil), digest[:]...), nil
+}
+
+// NewPinnedEdgeClientTLSConfig 验证 Edge 实际发送的完整证书链，并把唯一信任锚固定到二维码中的 DER pin。
+// InsecureSkipVerify 只关闭系统默认 roots；VerifyConnection 无条件执行等价的 hostname、时间、EKU 和链验证。
+func NewPinnedEdgeClientTLSConfig(serverName string, caCertificateDERFingerprint []byte, now func() time.Time) (*tls.Config, error) {
+	serverName = strings.TrimSpace(serverName)
+	if serverName == "" || len(caCertificateDERFingerprint) != sha256.Size {
+		return nil, errors.New("pinned Edge TLS server name and CA fingerprint are required")
+	}
+	pinned := append([]byte(nil), caCertificateDERFingerprint...)
+	if now == nil {
+		now = time.Now
+	}
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS13,
+		ServerName:         serverName,
+		NextProtos:         []string{"h2"},
+		InsecureSkipVerify: true, // Verification is replaced, not disabled; see VerifyConnection below.
+		VerifyConnection: func(state tls.ConnectionState) error {
+			return verifyPinnedEdgeConnection(state, serverName, pinned, now().UTC())
+		},
+	}, nil
+}
+
+func verifyPinnedEdgeConnection(state tls.ConnectionState, serverName string, pinned []byte, now time.Time) error {
+	if len(state.PeerCertificates) < 2 {
+		return errors.New("Edge TLS server did not send a complete certificate chain")
+	}
+	var trustAnchor *x509.Certificate
+	for _, certificate := range state.PeerCertificates[1:] {
+		digest := sha256.Sum256(certificate.Raw)
+		if bytes.Equal(digest[:], pinned) {
+			if trustAnchor != nil {
+				return errors.New("Edge TLS chain contains duplicate pinned trust anchors")
+			}
+			trustAnchor = certificate
+		}
+	}
+	if trustAnchor == nil || !trustAnchor.IsCA {
+		return errors.New("Edge TLS chain does not contain the pinned CA certificate")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(trustAnchor)
+	intermediates := x509.NewCertPool()
+	for _, certificate := range state.PeerCertificates[1:] {
+		if !bytes.Equal(certificate.Raw, trustAnchor.Raw) {
+			intermediates.AddCert(certificate)
+		}
+	}
+	_, err := state.PeerCertificates[0].Verify(x509.VerifyOptions{
+		DNSName: serverName, Roots: roots, Intermediates: intermediates, CurrentTime: now,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	})
+	if err != nil {
+		return fmt.Errorf("verify pinned Edge TLS certificate: %w", err)
+	}
+	return nil
 }
 
 // EdgeIdentityURI 返回 EdgeIdentity 证书唯一允许的 URI SAN。

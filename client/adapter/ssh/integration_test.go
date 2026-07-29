@@ -221,7 +221,7 @@ func newSSHWebRTCFixture(t *testing.T) *sshWebRTCFixture {
 	fixture := &sshWebRTCFixture{
 		identity: identity,
 		credential: remoteauth.ClientAccessCredential{
-			Version: 1, EndpointID: "ssh-e2e", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now,
+			Version: 3, EndpointID: "ssh-e2e", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now,
 		},
 		now: now, signalingAddress: signaling.Addr().String(), iceAddress: ice.Addr().String(),
 		server: server, cancel: cancel, done: done,

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/filelock"
 	"github.com/anytty/anytty/shared/securefs"
 )
@@ -138,7 +138,7 @@ func TestCredentialStoreRequiresExplicitScopeExpansion(t *testing.T) {
 	}
 }
 
-func TestCredentialStoreChecksScopeBeforeExchangeAndRecoversByBundleDigest(t *testing.T) {
+func TestCredentialStoreChecksScopeBeforeCommitAndRecoversByClaimDigest(t *testing.T) {
 	_, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	identity, _ := NewIdentity("device-pair-client", daemonPrivate)
 	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
@@ -148,86 +148,78 @@ func TestCredentialStoreChecksScopeBeforeExchangeAndRecoversByBundleDigest(t *te
 	}
 	t.Cleanup(func() { _ = accessStore.Close() })
 	credentialStore := NewCredentialStore(t.TempDir())
-	issue := func(scope Scope) []byte {
-		bundle, _, issueErr := accessStore.IssuePairingBundle(PairingIssueOptions{
-			Scope: scope, TicketTTL: time.Hour, GrantLifetime: 48 * time.Hour, Now: now,
+	issue := func(scope Scope, grantLifetime time.Duration) PairingClaimIssueResult {
+		issued, issueErr := accessStore.IssuePairingClaim(PairingIssueOptions{
+			Scope: scope, TicketTTL: time.Hour, GrantLifetime: grantLifetime, Now: now,
+			Routes: []*remoteauthpb.EndpointRouteConfigV1{{SchemaVersion: 1, RouteId: "direct", Enabled: true, Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{SignalingAddresses: []string{"127.0.0.1:4040"}, IceTcpAddresses: []string{"127.0.0.1:4041"}}}}},
 		})
 		if issueErr != nil {
 			t.Fatal(issueErr)
 		}
-		payload, encodeErr := EncodePairingBundle(bundle)
-		if encodeErr != nil {
-			t.Fatal(encodeErr)
-		}
-		return payload
+		return issued
 	}
-	redeem := func(payload []byte, label string) func(ClientAccessIdentity) (PairingExchangeResult, error) {
+	redeem := func(issued PairingClaimIssueResult, label string) func(ClientAccessIdentity) (PairingExchangeResult, error) {
 		return func(client ClientAccessIdentity) (PairingExchangeResult, error) {
-			return accessStore.RedeemPairingBundle(payload, client.PublicKey, label, now)
+			result, bundle, redeemErr := accessStore.RedeemPairingClaim(issued.OfferPayload, client.PublicKey, label, now)
+			result.Bundle = bundle
+			return result, redeemErr
 		}
 	}
-	narrowPayload := issue(Scope{TerminalID: "term-1"})
+	narrow := issue(Scope{TerminalID: "term-1"}, 48*time.Hour)
 	if _, err := credentialStore.PairAndBind(
-		context.Background(), "pair-ref", "endpoint-1", narrowPayload, fixedNow(now), rand.Reader, BindGrantOptions{}, redeem(narrowPayload, "narrow"),
+		context.Background(), "pair-ref", "endpoint-1", narrow.OfferPayload, fixedNow(now), rand.Reader, BindGrantOptions{}, redeem(narrow, "narrow"),
 	); err != nil {
 		t.Fatal(err)
 	}
-	expandedPayload := issue(Scope{AllowDaemon: true})
-	_, expandedClaims, err := ParsePairingBundleForExchange(expandedPayload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expanded := issue(Scope{AllowDaemon: true}, 48*time.Hour)
 	exchangeCalls := 0
 	_, err = credentialStore.PairAndBind(
-		context.Background(), "pair-ref", "endpoint-1", expandedPayload, fixedNow(now), rand.Reader, BindGrantOptions{},
+		context.Background(), "pair-ref", "endpoint-1", expanded.OfferPayload, fixedNow(now), rand.Reader, BindGrantOptions{},
 		func(client ClientAccessIdentity) (PairingExchangeResult, error) {
 			exchangeCalls++
-			return accessStore.RedeemPairingBundle(expandedPayload, client.PublicKey, "expanded", now)
+			return redeem(expanded, "expanded")(client)
 		},
 	)
-	if !errors.Is(err, ErrGrantScopeExpansion) || exchangeCalls != 0 {
+	if !errors.Is(err, ErrGrantScopeExpansion) || exchangeCalls != 1 {
 		t.Fatalf("scope expansion reached daemon: calls=%d err=%v", exchangeCalls, err)
 	}
-	if accessStore.tickets[expandedClaims.TicketID].GrantID != "" {
-		t.Fatal("unconfirmed scope expansion consumed the PairingTicket")
+	if accessStore.tickets[expanded.Claims.TicketID].GrantID == "" {
+		t.Fatal("claim was not atomically bound to the prepared client key")
 	}
 	bound, err := credentialStore.PairAndBind(
-		context.Background(), "pair-ref", "endpoint-1", expandedPayload, fixedNow(now), rand.Reader, BindGrantOptions{AllowScopeExpansion: true},
+		context.Background(), "pair-ref", "endpoint-1", expanded.OfferPayload, fixedNow(now), rand.Reader, BindGrantOptions{AllowScopeExpansion: true},
 		func(client ClientAccessIdentity) (PairingExchangeResult, error) {
 			exchangeCalls++
-			return accessStore.RedeemPairingBundle(expandedPayload, client.PublicKey, "expanded", now)
+			return redeem(expanded, "expanded")(client)
 		},
 	)
-	if err != nil || exchangeCalls != 1 || bound.LastPairingBundleDigest == "" {
+	if err != nil || exchangeCalls != 2 || bound.LastPairingClaimDigest == "" {
 		t.Fatalf("confirmed scope expansion = credential %#v calls=%d err=%v", bound, exchangeCalls, err)
 	}
 	recovered, err := credentialStore.PairAndBind(
-		context.Background(), "pair-ref", "endpoint-1", expandedPayload, fixedNow(now.Add(defaultDeliveryGrace+time.Hour)), rand.Reader, BindGrantOptions{},
-		func(ClientAccessIdentity) (PairingExchangeResult, error) {
-			return PairingExchangeResult{}, errors.New("same bundle should recover locally after delivery grace")
+		context.Background(), "pair-ref", "endpoint-1", expanded.OfferPayload, fixedNow(now.Add(time.Hour)), rand.Reader, BindGrantOptions{},
+		func(client ClientAccessIdentity) (PairingExchangeResult, error) {
+			exchangeCalls++
+			result, bundle, redeemErr := accessStore.RedeemPairingClaim(expanded.OfferPayload, client.PublicKey, "expanded", now.Add(time.Hour))
+			result.Bundle = bundle
+			return result, redeemErr
 		},
 	)
-	if err != nil || recovered.CapabilityGrant != bound.CapabilityGrant {
-		t.Fatalf("bundle digest recovery = credential %#v err=%v", recovered, err)
+	if err != nil || recovered.CapabilityGrant != bound.CapabilityGrant || exchangeCalls != 3 {
+		t.Fatalf("claim delivery recovery = credential %#v calls=%d err=%v", recovered, exchangeCalls, err)
 	}
-	shortBundle, _, err := accessStore.IssuePairingBundle(PairingIssueOptions{
-		Scope: Scope{AllowDaemon: true}, TicketTTL: time.Hour, GrantLifetime: time.Second, Now: now,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	shortPayload, _ := EncodePairingBundle(shortBundle)
+	short := issue(Scope{AllowDaemon: true}, time.Second)
 	_, err = credentialStore.PairAndBind(
-		context.Background(), "pair-ref", "endpoint-1", shortPayload, fixedNow(now.Add(time.Second)), rand.Reader, BindGrantOptions{},
+		context.Background(), "pair-ref", "endpoint-1", short.OfferPayload, fixedNow(now.Add(time.Second)), rand.Reader, BindGrantOptions{},
 		func(client ClientAccessIdentity) (PairingExchangeResult, error) {
-			return accessStore.RedeemPairingBundle(shortPayload, client.PublicKey, "short", now)
+			return redeem(short, "short")(client)
 		},
 	)
 	if !errors.Is(err, ErrGrantExpired) {
 		t.Fatalf("expired exchange result error = %v", err)
 	}
 	unchanged, err := credentialStore.Resolve("pair-ref")
-	if err != nil || unchanged.CapabilityGrant != bound.CapabilityGrant || unchanged.LastPairingBundleDigest != bound.LastPairingBundleDigest {
+	if err != nil || unchanged.CapabilityGrant != bound.CapabilityGrant || unchanged.LastPairingClaimDigest != bound.LastPairingClaimDigest {
 		t.Fatalf("expired exchange replaced existing credential: credential=%#v err=%v", unchanged, err)
 	}
 }
@@ -546,71 +538,5 @@ func TestAccessStoreRejectsBrokenTicketGrantLinkOnRestart(t *testing.T) {
 	}
 	if _, err := LoadAccessStore(dir, identity, AccessStoreOptions{}); err == nil {
 		t.Fatal("corrupt ticket/grant linkage was accepted after restart")
-	}
-}
-
-func TestAccessStoreLoadsMuxviaSignatureDuringBrandMigration(t *testing.T) {
-	_, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
-	identity, _ := NewIdentity("device-legacy", daemonPrivate)
-	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
-	dir := t.TempDir()
-	store, err := LoadAccessStore(dir, identity, AccessStoreOptions{Now: func() time.Time { return now }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle, ticketClaims, err := store.IssuePairingBundle(PairingIssueOptions{Scope: FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundlePayload, err := EncodePairingBundle(bundle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, _ := GenerateClientAccessIdentity("endpoint-legacy", rand.Reader)
-	if _, err := store.RedeemPairingBundle(bundlePayload, client.PublicKey, "legacy", now); err != nil {
-		t.Fatal(err)
-	}
-	state := storedAccessState{
-		Version: accessStoreVersion, IssuerDeviceID: identity.DeviceID, IssuerFingerprint: identity.Fingerprint,
-		Tickets: cloneTicketRecords(store.tickets), Grants: cloneGrantRecords(store.grants), AccessProjectionRevision: store.accessProjectionRevision,
-	}
-	ticketRecord := state.Tickets[ticketClaims.TicketID]
-	grantRecord := state.Grants[ticketRecord.GrantID]
-	legacyGrant, err := issueWithPrefix(identity.PrivateKey, grantRecord.Claims, legacyGrantPrefix)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ticketRecord.ResultGrantDigest = payloadDigest([]byte(legacyGrant))
-	legacyReceipt := pairingDeliveryReceiptWithFormat(identity.PrivateKey, legacyPairingReceiptDomain, "muxvia-pairing-receipt-v1", ticketClaims.TicketID, ticketRecord.SubjectKeyFingerprint, ticketRecord.GrantID)
-	ticketRecord.DeliveryReceiptDigest = payloadDigest([]byte(legacyReceipt))
-	state.Tickets[ticketClaims.TicketID] = ticketRecord
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	signingBytes, err := accessStateSigningBytesWithDomain(state, legacyAccessSignatureDomain)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.StateSignature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(identity.PrivateKey, signingBytes))
-	payload, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, accessStoreFile), append(payload, '\n'), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	store, err = LoadAccessStore(dir, identity, AccessStoreOptions{Now: func() time.Time { return now }})
-	if err != nil {
-		t.Fatalf("legacy muxvia access state rejected during migration: %v", err)
-	}
-	result, err := store.RedeemPairingBundle(bundlePayload, client.PublicKey, "legacy", now)
-	if err != nil {
-		t.Fatalf("legacy muxvia pairing result rejected during migration: %v", err)
-	}
-	if result.Grant != legacyGrant || result.DeliveryReceipt != legacyReceipt {
-		t.Fatal("legacy muxvia pairing result was not reconstructed byte-for-byte")
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
 	}
 }

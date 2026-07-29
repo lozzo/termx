@@ -420,100 +420,6 @@ func (x *CloudRouteGrantClaims) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
-// pairing_claim_sha256 不足以兑换 claim，Cloud 不接收 128-bit claim 本体。
-type PairingRouteGrantClaims struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	GrantId            string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
-	DaemonId           string                 `protobuf:"bytes,2,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	DeviceId           string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	PairingClaimSha256 []byte                 `protobuf:"bytes,4,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
-	IssuedAt           *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
-	ExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	EdgeLocatorSha256  []byte                 `protobuf:"bytes,7,opt,name=edge_locator_sha256,json=edgeLocatorSha256,proto3" json:"edge_locator_sha256,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *PairingRouteGrantClaims) Reset() {
-	*x = PairingRouteGrantClaims{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PairingRouteGrantClaims) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PairingRouteGrantClaims) ProtoMessage() {}
-
-func (x *PairingRouteGrantClaims) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PairingRouteGrantClaims.ProtoReflect.Descriptor instead.
-func (*PairingRouteGrantClaims) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *PairingRouteGrantClaims) GetGrantId() string {
-	if x != nil {
-		return x.GrantId
-	}
-	return ""
-}
-
-func (x *PairingRouteGrantClaims) GetDaemonId() string {
-	if x != nil {
-		return x.DaemonId
-	}
-	return ""
-}
-
-func (x *PairingRouteGrantClaims) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
-	}
-	return ""
-}
-
-func (x *PairingRouteGrantClaims) GetPairingClaimSha256() []byte {
-	if x != nil {
-		return x.PairingClaimSha256
-	}
-	return nil
-}
-
-func (x *PairingRouteGrantClaims) GetIssuedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.IssuedAt
-	}
-	return nil
-}
-
-func (x *PairingRouteGrantClaims) GetExpiresAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.ExpiresAt
-	}
-	return nil
-}
-
-func (x *PairingRouteGrantClaims) GetEdgeLocatorSha256() []byte {
-	if x != nil {
-		return x.EdgeLocatorSha256
-	}
-	return nil
-}
-
 // ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
 type ClientRouteProofInput struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -527,7 +433,7 @@ type ClientRouteProofInput struct {
 
 func (x *ClientRouteProofInput) Reset() {
 	*x = ClientRouteProofInput{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +445,7 @@ func (x *ClientRouteProofInput) String() string {
 func (*ClientRouteProofInput) ProtoMessage() {}
 
 func (x *ClientRouteProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +458,7 @@ func (x *ClientRouteProofInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientRouteProofInput.ProtoReflect.Descriptor instead.
 func (*ClientRouteProofInput) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ClientRouteProofInput) GetChallengeId() string {
@@ -597,7 +503,7 @@ type CloudRouteHelloProofInput struct {
 
 func (x *CloudRouteHelloProofInput) Reset() {
 	*x = CloudRouteHelloProofInput{}
-	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -609,7 +515,7 @@ func (x *CloudRouteHelloProofInput) String() string {
 func (*CloudRouteHelloProofInput) ProtoMessage() {}
 
 func (x *CloudRouteHelloProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
+	mi := &file_cloud_v1_ticket_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -622,7 +528,7 @@ func (x *CloudRouteHelloProofInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudRouteHelloProofInput.ProtoReflect.Descriptor instead.
 func (*CloudRouteHelloProofInput) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CloudRouteHelloProofInput) GetRouteGrantPayloadSha256() []byte {
@@ -651,6 +557,84 @@ func (x *CloudRouteHelloProofInput) GetAttemptGeneration() uint64 {
 		return x.AttemptGeneration
 	}
 	return 0
+}
+
+// PairingHelloProofInput 把紧凑 pairing admission 的全部安全字段绑定到目标 Edge 和单次 stream。
+// proof 由新建的 ClientAccessIdentity 签名；Edge 只接收 claim 摘要，不接收 128-bit claim 本体。
+type PairingHelloProofInput struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	PairingAdmissionSha256 []byte                 `protobuf:"bytes,1,opt,name=pairing_admission_sha256,json=pairingAdmissionSha256,proto3" json:"pairing_admission_sha256,omitempty"`
+	EdgeId                 string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	SessionId              string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AttemptGeneration      uint64                 `protobuf:"varint,4,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
+	Product                ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *PairingHelloProofInput) Reset() {
+	*x = PairingHelloProofInput{}
+	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingHelloProofInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingHelloProofInput) ProtoMessage() {}
+
+func (x *PairingHelloProofInput) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_ticket_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingHelloProofInput.ProtoReflect.Descriptor instead.
+func (*PairingHelloProofInput) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PairingHelloProofInput) GetPairingAdmissionSha256() []byte {
+	if x != nil {
+		return x.PairingAdmissionSha256
+	}
+	return nil
+}
+
+func (x *PairingHelloProofInput) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *PairingHelloProofInput) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PairingHelloProofInput) GetAttemptGeneration() uint64 {
+	if x != nil {
+		return x.AttemptGeneration
+	}
+	return 0
+}
+
+func (x *PairingHelloProofInput) GetProduct() ClientProduct {
+	if x != nil {
+		return x.Product
+	}
+	return ClientProduct_CLIENT_PRODUCT_UNSPECIFIED
 }
 
 var File_cloud_v1_ticket_proto protoreflect.FileDescriptor
@@ -691,16 +675,7 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\aproduct\x18\x04 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x127\n" +
 	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xc4\x02\n" +
-	"\x17PairingRouteGrantClaims\x12\x19\n" +
-	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12\x1b\n" +
-	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12\x1b\n" +
-	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x120\n" +
-	"\x14pairing_claim_sha256\x18\x04 \x01(\fR\x12pairingClaimSha256\x127\n" +
-	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
-	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12.\n" +
-	"\x13edge_locator_sha256\x18\a \x01(\fR\x11edgeLocatorSha256\"\xa9\x01\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa9\x01\n" +
 	"\x15ClientRouteProofInput\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x120\n" +
@@ -712,7 +687,14 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
-	"\x12attempt_generation\x18\x04 \x01(\x04R\x11attemptGeneration*V\n" +
+	"\x12attempt_generation\x18\x04 \x01(\x04R\x11attemptGeneration\"\xf3\x01\n" +
+	"\x16PairingHelloProofInput\x128\n" +
+	"\x18pairing_admission_sha256\x18\x01 \x01(\fR\x16pairingAdmissionSha256\x12\x17\n" +
+	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
+	"\x12attempt_generation\x18\x04 \x01(\x04R\x11attemptGeneration\x128\n" +
+	"\aproduct\x18\x05 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct*V\n" +
 	"\x10DaemonCapability\x12!\n" +
 	"\x1dDAEMON_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bDAEMON_CAPABILITY_SIGNALING\x10\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
@@ -737,9 +719,9 @@ var file_cloud_v1_ticket_proto_goTypes = []any{
 	(*DaemonBindingClaims)(nil),       // 2: anytty.cloud.v1.DaemonBindingClaims
 	(*AgentHelloProofInput)(nil),      // 3: anytty.cloud.v1.AgentHelloProofInput
 	(*CloudRouteGrantClaims)(nil),     // 4: anytty.cloud.v1.CloudRouteGrantClaims
-	(*PairingRouteGrantClaims)(nil),   // 5: anytty.cloud.v1.PairingRouteGrantClaims
-	(*ClientRouteProofInput)(nil),     // 6: anytty.cloud.v1.ClientRouteProofInput
-	(*CloudRouteHelloProofInput)(nil), // 7: anytty.cloud.v1.CloudRouteHelloProofInput
+	(*ClientRouteProofInput)(nil),     // 5: anytty.cloud.v1.ClientRouteProofInput
+	(*CloudRouteHelloProofInput)(nil), // 6: anytty.cloud.v1.CloudRouteHelloProofInput
+	(*PairingHelloProofInput)(nil),    // 7: anytty.cloud.v1.PairingHelloProofInput
 	(*timestamppb.Timestamp)(nil),     // 8: google.protobuf.Timestamp
 	(ClientProduct)(0),                // 9: anytty.cloud.v1.ClientProduct
 }
@@ -751,13 +733,12 @@ var file_cloud_v1_ticket_proto_depIdxs = []int32{
 	9, // 4: anytty.cloud.v1.CloudRouteGrantClaims.product:type_name -> anytty.cloud.v1.ClientProduct
 	8, // 5: anytty.cloud.v1.CloudRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
 	8, // 6: anytty.cloud.v1.CloudRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	8, // 7: anytty.cloud.v1.PairingRouteGrantClaims.issued_at:type_name -> google.protobuf.Timestamp
-	8, // 8: anytty.cloud.v1.PairingRouteGrantClaims.expires_at:type_name -> google.protobuf.Timestamp
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	9, // 7: anytty.cloud.v1.PairingHelloProofInput.product:type_name -> anytty.cloud.v1.ClientProduct
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_ticket_proto_init() }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	core "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/anytty/anytty/shared/transport"
 	"github.com/anytty/anytty/shared/transport/memory"
@@ -124,11 +125,10 @@ func TestSessionAcceptorMapsExplicitFilePermissions(t *testing.T) {
 
 func TestSessionAcceptorPairingModeNeverStartsCoreProtocol(t *testing.T) {
 	identity, _, store, now := sessionFixture(t, remoteauth.FullDaemonScope())
-	bundle, _, err := store.IssuePairingBundle(remoteauth.PairingIssueOptions{Scope: remoteauth.FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: 24 * time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundlePayload, err := remoteauth.EncodePairingBundle(bundle)
+	issued, err := store.IssuePairingClaim(remoteauth.PairingIssueOptions{
+		Scope: remoteauth.FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: 24 * time.Hour,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{SchemaVersion: 1, RouteId: "direct", Enabled: true, Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{SignalingAddresses: []string{"127.0.0.1:4040"}, IceTcpAddresses: []string{"127.0.0.1:4041"}}}}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestSessionAcceptorPairingModeNeverStartsCoreProtocol(t *testing.T) {
 	}()
 	result, err := (remoteauth.ClientPairingHandshake{Now: fixedSessionNow(now)}).Redeem(context.Background(), clientConn, remoteauth.ClientPairingRequest{
 		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
-		PairingBundle: bundlePayload, Identity: clientIdentity, ChannelBinding: sessionDTLSBinding(t),
+		PairingClaimOffer: issued.OfferPayload, Identity: clientIdentity, ChannelBinding: sessionDTLSBinding(t),
 	})
 	if err != nil || result.Grant == "" {
 		t.Fatalf("pairing result=%#v err=%v", result, err)
@@ -248,7 +248,7 @@ func sessionFixture(t *testing.T, scope remoteauth.Scope) (remoteauth.Identity, 
 		t.Fatal(err)
 	}
 	return identity, remoteauth.ClientAccessCredential{
-		Version: 1, EndpointID: clientIdentity.EndpointID, Identity: clientIdentity,
+		Version: 3, EndpointID: clientIdentity.EndpointID, Identity: clientIdentity,
 		CapabilityGrant: result.Grant, UpdatedAt: now,
 	}, store, now
 }

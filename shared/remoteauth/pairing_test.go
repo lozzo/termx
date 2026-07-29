@@ -3,7 +3,6 @@ package remoteauth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -43,7 +42,7 @@ func TestPairingBundleCarriesOnlySignedOneTimeTicket(t *testing.T) {
 	}
 }
 
-func TestPairingBundleRejectsV1UnknownFieldExpiryAndIdentityMismatch(t *testing.T) {
+func TestPairingBundleRejectsUnknownFieldExpiryAndIdentityMismatch(t *testing.T) {
 	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
 	identity, _ := NewIdentity("device-pairing", privateKey)
 	now := time.Date(2026, 7, 11, 15, 0, 0, 0, time.UTC)
@@ -59,11 +58,6 @@ func TestPairingBundleRejectsV1UnknownFieldExpiryAndIdentityMismatch(t *testing.
 	unknown, _ := proto.Marshal(unknownBundle)
 	if _, _, err := ParsePairingBundle(unknown, now); err == nil {
 		t.Fatal("unknown Hub field was accepted")
-	}
-	v1 := map[string]any{"version": 1, "device_id": identity.DeviceID, "device_fingerprint": identity.Fingerprint, "capability_grant": "legacy"}
-	v1Payload, _ := json.Marshal(v1)
-	if _, _, err := ParsePairingBundle(v1Payload, now); err == nil {
-		t.Fatal("v1 bearer pairing bundle was accepted")
 	}
 	bundle.Identity.DeviceId = "device-other"
 	payload, _ = proto.Marshal(bundle)

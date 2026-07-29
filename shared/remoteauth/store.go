@@ -19,7 +19,7 @@ import (
 	"github.com/anytty/anytty/shared/securefs"
 )
 
-const clientCredentialVersion = 2
+const clientCredentialVersion = 3
 
 var grantRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
@@ -31,14 +31,14 @@ var (
 // ClientAccessCredential 是客户端 secure store 中一个 Endpoint 的完整授权真值。
 // Identity private key 与 CapabilityGrant 必须原子保存在 owner-only 文件；普通 endpoint registry 只能保存 ref，不能保存本结构任何 secret 字段。
 type ClientAccessCredential struct {
-	Version                 uint32
-	EndpointID              string
-	Identity                ClientAccessIdentity
-	CapabilityGrant         string
-	CloudRouteGrant         []byte
-	CloudEdgeLocator        []byte
-	LastPairingBundleDigest string
-	UpdatedAt               time.Time
+	Version                uint32
+	EndpointID             string
+	Identity               ClientAccessIdentity
+	CapabilityGrant        string
+	CloudRouteGrant        []byte
+	CloudEdgeLocator       []byte
+	LastPairingClaimDigest string
+	UpdatedAt              time.Time
 }
 
 // Ready 返回 credential 是否已经取得与当前 ClientAccessIdentity 绑定的非空 grant。
@@ -61,14 +61,14 @@ type BindGrantOptions struct {
 }
 
 type storedClientAccessCredential struct {
-	Version                 uint32    `json:"version"`
-	EndpointID              string    `json:"endpoint_id"`
-	PrivateKey              string    `json:"private_key"`
-	CapabilityGrant         string    `json:"capability_grant,omitempty"`
-	CloudRouteGrant         []byte    `json:"cloud_route_grant,omitempty"`
-	CloudEdgeLocator        []byte    `json:"cloud_edge_locator,omitempty"`
-	LastPairingBundleDigest string    `json:"last_pairing_bundle_digest,omitempty"`
-	UpdatedAt               time.Time `json:"updated_at"`
+	Version                uint32    `json:"version"`
+	EndpointID             string    `json:"endpoint_id"`
+	PrivateKey             string    `json:"private_key"`
+	CapabilityGrant        string    `json:"capability_grant,omitempty"`
+	CloudRouteGrant        []byte    `json:"cloud_route_grant,omitempty"`
+	CloudEdgeLocator       []byte    `json:"cloud_edge_locator,omitempty"`
+	LastPairingClaimDigest string    `json:"last_pairing_claim_digest,omitempty"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // NewCredentialStore 创建桌面客户端 secure credential store。
@@ -98,13 +98,13 @@ func (store *CredentialStore) LoadOrCreateIdentity(ref string, endpointID string
 }
 
 // PairAndBind 在同一 credential ref 的跨进程锁内完成 scope 预检、PairingExchange 回调、grant 验签与原子落盘。
-// 未确认的 scope 扩大在 exchange 前失败；相同 canonical bundle 已成功绑定时直接返回本地 credential，用于 registry 写失败后的跨进程幂等恢复。
+// 相同 claim 已成功绑定时仍用同一 client key 执行 exchange，由 daemon 幂等返回完整响应，供 registry 写失败后的恢复使用。
 // exchange 只接收当前 Endpoint 的 ClientAccessIdentity，必须通过 daemon-local PairingExchange 返回 client-bound grant，不能访问 registry 或写入其他 ref。
 func (store *CredentialStore) PairAndBind(
 	ctx context.Context,
 	ref string,
 	endpointID string,
-	pairingBundle []byte,
+	pairingClaimOffer []byte,
 	now func() time.Time,
 	random io.Reader,
 	options BindGrantOptions,
@@ -113,22 +113,12 @@ func (store *CredentialStore) PairAndBind(
 	if err := store.validate(ref); err != nil {
 		return ClientAccessCredential{}, err
 	}
-	bundle, ticketClaims, bundleErr := ParsePairingBundleForExchange(pairingBundle)
-	expectedDeviceID := ""
-	expectedFingerprint := ""
-	claimCredential := false
-	if bundleErr == nil {
-		expectedDeviceID = bundle.GetIdentity().GetDeviceId()
-		expectedFingerprint = bundle.GetIdentity().GetDeviceFingerprint()
-	} else {
-		offer, claimErr := ParsePairingClaimOfferForExchange(pairingBundle)
-		if claimErr != nil {
-			return ClientAccessCredential{}, bundleErr
-		}
-		expectedDeviceID = offer.GetDeviceId()
-		expectedFingerprint = Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))
-		claimCredential = true
+	offer, err := ParsePairingClaimOfferForExchange(pairingClaimOffer)
+	if err != nil {
+		return ClientAccessCredential{}, err
 	}
+	expectedDeviceID := offer.GetDeviceId()
+	expectedFingerprint := Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))
 	if exchange == nil {
 		return ClientAccessCredential{}, fmt.Errorf("client access pairing requires exchange callback")
 	}
@@ -142,7 +132,7 @@ func (store *CredentialStore) PairAndBind(
 	if now == nil {
 		now = time.Now
 	}
-	bundleDigest := payloadDigest(pairingBundle)
+	claimDigest := payloadDigest(pairingClaimOffer)
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	lock, err := store.acquireRefLockLocked(ctx, ref)
@@ -165,14 +155,10 @@ func (store *CredentialStore) PairAndBind(
 		if currentClaims.SubjectKeyFingerprint != credential.Identity.Fingerprint {
 			return ClientAccessCredential{}, ErrGrantSubjectMismatch
 		}
-		if !claimCredential && !scopeContains(currentClaims.Scope, ticketClaims.ScopeCeiling) && !options.AllowScopeExpansion {
-			return ClientAccessCredential{}, ErrGrantScopeExpansion
-		}
-		if !claimCredential && credential.LastPairingBundleDigest == bundleDigest {
+		if credential.LastPairingClaimDigest == claimDigest {
 			if _, verifyErr := Verify(credential.CapabilityGrant, expectedFingerprint, now().UTC(), nil); verifyErr != nil {
 				return ClientAccessCredential{}, verifyErr
 			}
-			return credential, nil
 		}
 	}
 	result, err := exchange(credential.Identity)
@@ -180,18 +166,10 @@ func (store *CredentialStore) PairAndBind(
 		return ClientAccessCredential{}, err
 	}
 	responseNow := now().UTC()
-	responseBundlePayload := result.Bundle
-	if !claimCredential && len(responseBundlePayload) == 0 {
-		responseBundlePayload = pairingBundle
-	}
-	responseBundle, responseTicketClaims, err := ParsePairingBundleForExchange(responseBundlePayload)
+	responseBundle, ticketClaims, err := ParsePairingBundleForExchange(result.Bundle)
 	if err != nil || responseBundle.GetIdentity().GetDeviceId() != expectedDeviceID || responseBundle.GetIdentity().GetDeviceFingerprint() != expectedFingerprint {
 		return ClientAccessCredential{}, fmt.Errorf("pairing exchange returned an invalid bundle: %w", err)
 	}
-	if !claimCredential && (responseTicketClaims.TicketID != ticketClaims.TicketID || responseTicketClaims.ScopeCeiling != ticketClaims.ScopeCeiling) {
-		return ClientAccessCredential{}, ErrPairingTicketMalformed
-	}
-	ticketClaims = responseTicketClaims
 	claims, err := Verify(result.Grant, expectedFingerprint, responseNow, nil)
 	if err != nil {
 		return ClientAccessCredential{}, err
@@ -205,10 +183,19 @@ func (store *CredentialStore) PairAndBind(
 	if !scopeContains(ticketClaims.ScopeCeiling, claims.Scope) {
 		return ClientAccessCredential{}, fmt.Errorf("%w: pairing exchange grant exceeds ticket scope", ErrGrantScopeInvalid)
 	}
+	if credential.Ready() {
+		currentClaims, currentErr := verifyGrantEnvelope(credential.CapabilityGrant, expectedFingerprint)
+		if currentErr != nil {
+			return ClientAccessCredential{}, fmt.Errorf("verify existing client access grant: %w", currentErr)
+		}
+		if !scopeContains(currentClaims.Scope, claims.Scope) && !options.AllowScopeExpansion {
+			return ClientAccessCredential{}, ErrGrantScopeExpansion
+		}
+	}
 	credential.CapabilityGrant = strings.TrimSpace(result.Grant)
 	credential.CloudRouteGrant = append([]byte(nil), result.CloudRouteGrant...)
 	credential.CloudEdgeLocator = append([]byte(nil), result.CloudEdgeLocator...)
-	credential.LastPairingBundleDigest = bundleDigest
+	credential.LastPairingClaimDigest = claimDigest
 	credential.UpdatedAt = responseNow
 	if err := store.persistLocked(ref, credential); err != nil {
 		return ClientAccessCredential{}, err
@@ -367,8 +354,8 @@ func (store *CredentialStore) resolveLocked(ref string) (ClientAccessCredential,
 	if stored.Version != clientCredentialVersion || strings.TrimSpace(stored.EndpointID) == "" || stored.UpdatedAt.IsZero() {
 		return ClientAccessCredential{}, fmt.Errorf("client access credential %q is incomplete or unsupported", ref)
 	}
-	if stored.LastPairingBundleDigest != "" && !validPayloadDigest(strings.TrimSpace(stored.LastPairingBundleDigest)) {
-		return ClientAccessCredential{}, fmt.Errorf("client access credential %q has invalid pairing bundle digest", ref)
+	if stored.LastPairingClaimDigest != "" && !validPayloadDigest(strings.TrimSpace(stored.LastPairingClaimDigest)) {
+		return ClientAccessCredential{}, fmt.Errorf("client access credential %q has invalid pairing claim digest", ref)
 	}
 	privateKey, err := base64.RawURLEncoding.DecodeString(stored.PrivateKey)
 	if err != nil || len(privateKey) != ed25519.PrivateKeySize {
@@ -380,7 +367,7 @@ func (store *CredentialStore) resolveLocked(ref string) (ClientAccessCredential,
 	}
 	return ClientAccessCredential{
 		Version: stored.Version, EndpointID: stored.EndpointID, Identity: identity,
-		CapabilityGrant: strings.TrimSpace(stored.CapabilityGrant), LastPairingBundleDigest: strings.TrimSpace(stored.LastPairingBundleDigest),
+		CapabilityGrant: strings.TrimSpace(stored.CapabilityGrant), LastPairingClaimDigest: strings.TrimSpace(stored.LastPairingClaimDigest),
 		CloudRouteGrant:  append([]byte(nil), stored.CloudRouteGrant...),
 		CloudEdgeLocator: append([]byte(nil), stored.CloudEdgeLocator...),
 		UpdatedAt:        stored.UpdatedAt.UTC(),
@@ -424,11 +411,11 @@ func (store *CredentialStore) persistLocked(ref string, credential ClientAccessC
 	}
 	stored := storedClientAccessCredential{
 		Version: credential.Version, EndpointID: credential.EndpointID,
-		PrivateKey:              base64.RawURLEncoding.EncodeToString(credential.Identity.PrivateKey),
-		CapabilityGrant:         strings.TrimSpace(credential.CapabilityGrant),
-		CloudRouteGrant:         append([]byte(nil), credential.CloudRouteGrant...),
-		CloudEdgeLocator:        append([]byte(nil), credential.CloudEdgeLocator...),
-		LastPairingBundleDigest: strings.TrimSpace(credential.LastPairingBundleDigest), UpdatedAt: credential.UpdatedAt.UTC(),
+		PrivateKey:             base64.RawURLEncoding.EncodeToString(credential.Identity.PrivateKey),
+		CapabilityGrant:        strings.TrimSpace(credential.CapabilityGrant),
+		CloudRouteGrant:        append([]byte(nil), credential.CloudRouteGrant...),
+		CloudEdgeLocator:       append([]byte(nil), credential.CloudEdgeLocator...),
+		LastPairingClaimDigest: strings.TrimSpace(credential.LastPairingClaimDigest), UpdatedAt: credential.UpdatedAt.UTC(),
 	}
 	payload, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {

@@ -90,16 +90,15 @@ message CapabilityOpen {
   bytes proof = 4;
 }
 
-// PairingOpen 只能兑换一次性 PairingTicket，不能访问 terminal、history、file 或普通 protocol method。
-// client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 ticket。
+// PairingOpen 只能兑换一次性 pairing claim，不能访问 terminal、history、file 或普通 protocol method。
+// client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 claim。
 message PairingOpen {
-  bytes pairing_bundle = 1;
+  bytes pairing_claim_offer = 1;
   bytes client_public_key = 2;
   string client_label = 3;
   bytes client_nonce = 4;
   bytes proof = 5;
-  bytes pairing_claim_offer = 6;
-  uint32 client_product = 7;
+  uint32 client_product = 6;
 }
 
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
@@ -147,12 +146,10 @@ message ClientAccessTicketCreateRequest {
 }
 
 message ClientAccessTicketCreateResult {
-  // bundle 仅保留给 owner-only 兼容工具；官方二维码、文本导入和平台 binding 必须使用 claim_offer。
-  bytes bundle = 1;
-  string ticket_id = 2;
-  int64 expires_at_unix_nano = 3;
-  bytes claim_offer = 4;
-  string claim_code = 5;
+  string ticket_id = 1;
+  int64 expires_at_unix_nano = 2;
+  bytes claim_offer = 3;
+  string claim_code = 4;
 }
 
 message ClientAccessRevokeRequest {
@@ -190,6 +187,7 @@ message PairingAccepted {
   ScopeSummary scope = 4;
   bytes pairing_bundle = 5;
   bytes cloud_route_grant = 6;
+  bytes cloud_edge_locator = 7;
 }
 
 // CapabilityRejected 返回稳定错误类别和固定脱敏消息，随后 channel 必须关闭。
@@ -438,12 +436,14 @@ message PairingDirectRouteSeed {
   string server_name = 3;
 }
 
-// PairingManagedRouteSeed 标识 Cloud signaling 中的 owning daemon，并携带 daemon 签名的短期 bootstrap grant。
-// grant 只包含 claim 摘要；128-bit claim 本体仍只在端到端 PairingExchange 内发送。
+// PairingManagedRouteSeed 只携带首次直连 owning Edge 所需的公开入口和 CA pin。
+// 完整 CA、EdgeLocator 与长期 RouteGrant 只在端到端 PairingAccepted 中返回。
 message PairingManagedRouteSeed {
-  string target_device_id = 1;
-  bytes bootstrap_grant = 2;
-  bytes edge_locator = 3;
+  string daemon_id = 1;
+  string edge_id = 2;
+  string public_endpoint = 3;
+  string server_name = 4;
+  bytes ca_certificate_der_sha256 = 5;
 }
 
 // PairingSSHRouteSeed 只携带建立首个 SSH tunnel pairing peer 所需的公开连接信息。
@@ -471,9 +471,9 @@ message PairingRouteSeed {
   optional int32 priority = 6;
 }
 
-// PairingClaimOfferV1 是二维码和无摄像头输入使用的紧凑一次性 claim。
+// PairingClaimOffer 是二维码和无摄像头输入使用的紧凑一次性 claim。
 // claim 固定 128-bit，只由 owning daemon 内存持有；消息不包含 PairingTicket、CapabilityGrant、scope 或 terminal 信息。
-message PairingClaimOfferV1 {
+message PairingClaimOffer {
   uint32 schema_version = 1;
   bytes claim = 2;
   string device_id = 3;

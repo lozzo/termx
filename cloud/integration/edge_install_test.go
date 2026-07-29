@@ -220,6 +220,15 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if len(registerResponse.GetIdentityCertificatePem()) == 0 || len(registerResponse.GetPublicCertificatePem()) == 0 || len(registerResponse.GetConfigSigningPublicKey()) != ed25519.PublicKeySize {
 		t.Fatalf("registration response is incomplete: %+v", registerResponse)
 	}
+	publicLeaf, remainder := pem.Decode(registerResponse.GetPublicCertificatePem())
+	publicCA, remainder := pem.Decode(remainder)
+	if publicLeaf == nil || publicCA == nil || len(bytes.TrimSpace(remainder)) != 0 {
+		t.Fatal("registration public certificate must contain exactly the leaf and Edge CA")
+	}
+	caBlock, _ := pem.Decode(registerResponse.GetEdgeCaCertificatePem())
+	if caBlock == nil || !bytes.Equal(publicCA.Bytes, caBlock.Bytes) {
+		t.Fatal("registration public certificate chain does not end in the advertised Edge CA")
+	}
 	doProtoRequest(t, handler, http.MethodPost, "/api/install/register", register, &cloudv1.RegisterEdgeResponse{}, false, http.StatusForbidden)
 
 	list := &cloudv1.ListEdgesResponse{}

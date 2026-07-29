@@ -3,7 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"errors"
 	"image/png"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	endpointdomain "github.com/anytty/anytty/client/endpoint"
 	corev2 "github.com/anytty/anytty/core"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/filelock"
 	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/anytty/anytty/shared/securefs"
@@ -24,22 +26,19 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
+func TestPairCreateAndImportUsesClaimThenClientBoundCredential(t *testing.T) {
 	runtimeDir, stateHome, configHome := configurePairCommandTest(t)
 	created := executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--raw", "--route", "direct", "--label", "Lab daemon", "--ttl", "1h", "--grant-ttl", "24h")
-	bundle, ticketClaims, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
-	if err != nil || !ticketClaims.ScopeCeiling.AllowDaemon || bundle.GetIdentity().GetDeviceId() == "" {
-		t.Fatalf("created pairing bundle = (%#v, %#v, %v)", bundle, ticketClaims, err)
-	}
-	canonicalBundle, err := endpointdomain.ParseEndpointBootstrapBundle(created)
-	if err != nil || canonicalBundle.GetBundleId() != bundle.GetBundleId() {
-		t.Fatalf("pair create did not emit canonical EndpointBootstrapBundleV2: bundle=%#v err=%v", canonicalBundle, err)
+	offer, err := remoteauth.ParsePairingClaimOffer(created, time.Now().UTC())
+	if err != nil || offer.GetDeviceId() == "" {
+		t.Fatalf("created pairing claim = (%#v, %v)", offer, err)
 	}
 	if strings.Contains(string(created), "capability_grant") || strings.Contains(string(created), "private_key") {
-		t.Fatalf("static pairing bundle leaked long-lived credential: %s", created)
+		t.Fatalf("static pairing claim leaked long-lived credential: %s", created)
 	}
 	registryPath := filepath.Join(configHome, "anytty", endpointdomain.DefaultFileName)
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayDirect)
+	identity := endpointdomain.DaemonIdentity{DeviceID: offer.GetDeviceId(), DeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))}
+	savePairTestManagedEndpoint(t, registryPath, "lab", identity, endpointdomain.RelayDirect)
 	pairSocket := filepath.Join(runtimeDir, "daemon.sock.pair")
 	imported := executePairCommand(t, created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", pairSocket, "-")
 	registryPayload, err := os.ReadFile(registryPath)
@@ -55,14 +54,14 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 	}
 	endpoint := registry.Endpoints["lab"]
 	route, ok := endpoint.Route("cloud")
-	if !ok || route.CredentialRef == "" || route.RelayMode != endpointdomain.RelayDirect || endpoint.DaemonIdentity.DeviceFingerprint != bundle.GetIdentity().GetDeviceFingerprint() {
+	if !ok || route.CredentialRef == "" || route.RelayMode != endpointdomain.RelayDirect || endpoint.DaemonIdentity.DeviceFingerprint != identity.DeviceFingerprint {
 		t.Fatalf("imported endpoint = %#v", endpoint)
 	}
 	credential, err := remoteauth.NewCredentialStore(filepath.Join(stateHome, "anytty", "remote-v2", "credentials")).Resolve(route.CredentialRef)
 	if err != nil {
 		t.Fatal(err)
 	}
-	grantClaims, err := remoteauth.Verify(credential.CapabilityGrant, bundle.GetIdentity().GetDeviceFingerprint(), time.Now().UTC(), nil)
+	grantClaims, err := remoteauth.Verify(credential.CapabilityGrant, identity.DeviceFingerprint, time.Now().UTC(), nil)
 	if err != nil || grantClaims.SubjectKeyFingerprint != credential.Identity.Fingerprint || grantClaims.Version != 2 {
 		t.Fatalf("stored bound grant = claims %#v credential %#v err=%v", grantClaims, credential, err)
 	}
@@ -75,7 +74,7 @@ func TestPairImportAddsAdvertisedDirectRouteToExistingSSHEndpoint(t *testing.T) 
 	runtimeDir, _, configHome := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--route", "direct", "--label", "Daemon label")
-	_, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
+	_, err := remoteauth.ParsePairingClaimOffer(created, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +112,7 @@ func TestPairInspectAndTerminalQRNeverPrintLongLivedGrant(t *testing.T) {
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--label", "Inspect daemon")
 	inspect := executePairCommand(t, created, "pair", "inspect", "--json", "-")
-	if !strings.Contains(string(inspect), `"ticket_id"`) || !strings.Contains(string(inspect), `"scope_ceiling"`) || strings.Contains(string(inspect), "pairing_ticket") || strings.Contains(string(inspect), "capability_grant") {
+	if !strings.Contains(string(inspect), `"kind":"pairing_claim"`) || strings.Contains(string(inspect), `"ticket_id"`) || strings.Contains(string(inspect), `"scope_ceiling"`) || strings.Contains(string(inspect), "pairing_ticket") || strings.Contains(string(inspect), "capability_grant") {
 		t.Fatalf("inspect projection = %s", inspect)
 	}
 	previousTerminal := v3PairOutputIsTerminal
@@ -139,7 +138,7 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 	if !strings.HasPrefix(portableURI, remoteauth.PairingClaimCodePrefix) {
 		t.Fatalf("pair text output = %q", portableURI)
 	}
-	payload, err := readV3PairingBundle(context.Background(), strings.NewReader(portableURI), "-")
+	payload, err := readV3PairingClaim(context.Background(), strings.NewReader(portableURI), "-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,6 +181,34 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestManagedPairingClaimStaysWithinQRBudget(t *testing.T) {
+	priority := int32(0)
+	offer := &remoteauthpb.PairingClaimOffer{
+		SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16),
+		DeviceId: "550e8400-e29b-41d4-a716-446655440000", DevicePublicKey: bytes.Repeat([]byte{0x32}, ed25519.PublicKeySize), ExpiresAtUnixNano: time.Now().Add(10 * time.Minute).UnixNano(),
+		Routes: []*remoteauthpb.PairingRouteSeed{{
+			RouteId: "cloud", DisplayName: "AnyTTY Cloud", Priority: &priority,
+			Route: &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{
+				DaemonId: "660e8400-e29b-41d4-a716-446655440000", EdgeId: "770e8400-e29b-41d4-a716-446655440000",
+				PublicEndpoint: "114.66.58.243:41102", ServerName: "cn1.edge.anytty.com", CaCertificateDerSha256: bytes.Repeat([]byte{0x33}, sha256.Size),
+			}},
+		}},
+	}
+	payload, err := remoteauth.EncodePairingClaimOffer(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codeText := remoteauth.EncodePairingClaimCode(payload)
+	code, err := qrcode.New(codeText, qrcode.Low)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("managed pairing QR payload=%d text=%d version=%d", len(payload), len(codeText), code.VersionNumber)
+	if len(payload) > 300 || len(codeText) > 400 || code.VersionNumber > 10 {
+		t.Fatalf("managed pairing QR exceeded budget: payload=%d text=%d version=%d", len(payload), len(codeText), code.VersionNumber)
+	}
+}
+
 func TestPairCreateCommandEmitsDirectlyImportableInlineClaim(t *testing.T) {
 	runtimeDir, _, _ := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
@@ -189,11 +216,11 @@ func TestPairCreateCommandEmitsDirectlyImportableInlineClaim(t *testing.T) {
 	if !strings.HasPrefix(commandOutput, "anytty pair import --id '") {
 		t.Fatalf("pair command output = %q", commandOutput)
 	}
-	match := regexp.MustCompile(`MXP1-[A-Za-z0-9_-]+`).FindString(commandOutput)
+	match := regexp.MustCompile(`MXP2-[A-Za-z0-9_-]+`).FindString(commandOutput)
 	if match == "" {
 		t.Fatalf("pair command has no inline claim: %q", commandOutput)
 	}
-	payload, err := readV3PairingBundle(context.Background(), nil, match)
+	payload, err := readV3PairingClaim(context.Background(), nil, match)
 	if err != nil {
 		t.Fatalf("read inline claim: %v", err)
 	}
@@ -203,10 +230,6 @@ func TestPairCreateCommandEmitsDirectlyImportableInlineClaim(t *testing.T) {
 	}
 	if !strings.Contains(commandOutput, "--id '"+offer.GetDeviceId()+"'") {
 		t.Fatalf("pair command does not bind the advertised device ID: %q", commandOutput)
-	}
-	legacyURI := pairingBootstrapURIPrefix + base64.RawURLEncoding.EncodeToString(payload)
-	if decoded, err := readV3PairingBundle(context.Background(), nil, legacyURI); err != nil || !bytes.Equal(decoded, payload) {
-		t.Fatalf("read bootstrap URI: equal=%v err=%v", bytes.Equal(decoded, payload), err)
 	}
 }
 
@@ -253,26 +276,25 @@ func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing
 	base := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
 	mapped := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw",
 		"--route", "direct", "--signaling-address", "frp.example:51020", "--ice-tcp-address", "frp.example:51021", "--server-name", "frp.example")
-	baseBundle, _, err := remoteauth.ParsePairingBundle(base, time.Now().UTC())
+	baseOffer, err := remoteauth.ParsePairingClaimOffer(base, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	mappedBundle, _, err := remoteauth.ParsePairingBundle(mapped, time.Now().UTC())
+	mappedOffer, err := remoteauth.ParsePairingClaimOffer(mapped, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseBundle.GetIdentity().GetDeviceId() != mappedBundle.GetIdentity().GetDeviceId() ||
-		baseBundle.GetIdentity().GetDeviceFingerprint() != mappedBundle.GetIdentity().GetDeviceFingerprint() {
-		t.Fatalf("locator override changed daemon identity: base=%v mapped=%v", baseBundle.GetIdentity(), mappedBundle.GetIdentity())
+	if baseOffer.GetDeviceId() != mappedOffer.GetDeviceId() || !bytes.Equal(baseOffer.GetDevicePublicKey(), mappedOffer.GetDevicePublicKey()) {
+		t.Fatalf("locator override changed daemon identity: base=%v mapped=%v", baseOffer, mappedOffer)
 	}
-	direct := mappedBundle.GetRoutes()[0].GetDirectWebrtcTcp()
-	if got := direct.GetSignalingAddresses(); len(got) != 1 || got[0] != "frp.example:51020" {
-		t.Fatalf("mapped signaling addresses = %#v", got)
+	direct := mappedOffer.GetRoutes()[0].GetDirectWebrtcTcp()
+	if direct.GetSignalingAddress() != "frp.example:51020" {
+		t.Fatalf("mapped signaling address = %q", direct.GetSignalingAddress())
 	}
-	if got := direct.GetIceTcpAddresses(); len(got) != 1 || got[0] != "frp.example:51021" {
-		t.Fatalf("mapped ICE-TCP addresses = %#v", got)
+	if direct.GetIceTcpAddress() != "frp.example:51021" {
+		t.Fatalf("mapped ICE-TCP address = %q", direct.GetIceTcpAddress())
 	}
-	if direct.GetServerName() != "frp.example" || len(direct.GetAdvertisedAddresses()) != 2 {
+	if direct.GetServerName() != "frp.example" {
 		t.Fatalf("mapped Direct route = %#v", direct)
 	}
 	inspect := executePairCommand(t, mapped, "pair", "inspect", "--json", "-")
@@ -290,24 +312,24 @@ func TestPairCreateDefaultsToDirectOnly(t *testing.T) {
 	}
 	defer releaseRecord()
 	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
-	bundle, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
+	offer, err := remoteauth.ParsePairingClaimOffer(created, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bundle.GetRoutes()) != 1 || bundle.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
-		t.Fatalf("pairing routes = %#v", bundle.GetRoutes())
+	if len(offer.GetRoutes()) != 1 || offer.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
+		t.Fatalf("pairing routes = %#v", offer.GetRoutes())
 	}
 	inspect := executePairCommand(t, created, "pair", "inspect", "--json", "-")
 	if !strings.Contains(string(inspect), `"kind":"direct-webrtc-tcp"`) || strings.Contains(string(inspect), `managed-webrtc`) {
 		t.Fatalf("Direct pair inspect = %s", inspect)
 	}
 	directOnly := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--route", "direct")
-	directBundle, _, err := remoteauth.ParsePairingBundle(directOnly, time.Now().UTC())
+	directOffer, err := remoteauth.ParsePairingClaimOffer(directOnly, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(directBundle.GetRoutes()) != 1 || directBundle.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
-		t.Fatalf("explicit Direct pairing routes = %#v", directBundle.GetRoutes())
+	if len(directOffer.GetRoutes()) != 1 || directOffer.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
+		t.Fatalf("explicit Direct pairing routes = %#v", directOffer.GetRoutes())
 	}
 }
 
@@ -358,13 +380,13 @@ func assertTerminalQRUsesSquareCells(t *testing.T, output []byte) {
 	}
 }
 
-func TestPairCreateWritesOwnerOnlyTicketBundle(t *testing.T) {
+func TestPairCreateWritesOwnerOnlyClaim(t *testing.T) {
 	runtimeDir, _, _ := configurePairCommandTest(t)
-	path := filepath.Join(t.TempDir(), "pair", "bundle.json")
+	path := filepath.Join(t.TempDir(), "pair", "claim.bin")
 	executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--out", path)
 	info, err := os.Stat(path)
 	if err != nil || !securefs.IsPrivateFile(path, info) {
-		t.Fatalf("pairing bundle permissions = %v err=%v", info, err)
+		t.Fatalf("pairing claim permissions = %v err=%v", info, err)
 	}
 }
 
@@ -372,12 +394,12 @@ func TestPairImportRegistryFailureKeepsRecoverableBoundCredential(t *testing.T) 
 	runtimeDir, _, configHome := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
-	bundle, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
+	offer, err := remoteauth.ParsePairingClaimOffer(created, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "anytty", endpointdomain.DefaultFileName)
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
+	savePairTestManagedClaimEndpoint(t, registryPath, "lab", offer, endpointdomain.RelayAuto)
 	wantErr := errors.New("injected registry write failure")
 	previousUpdate := updateV3ConnectionRegistry
 	updateV3ConnectionRegistry = func(_ context.Context, path string, _ bool, mutate func(endpointdomain.Registry) (endpointdomain.Registry, error)) (endpointdomain.Registry, error) {
@@ -410,12 +432,12 @@ func TestPairImportRequiresExplicitScopeExpansionConfirmation(t *testing.T) {
 	runtimeDir, _, configHome := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	narrow := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--terminal", "term-1")
-	bundle, _, err := remoteauth.ParsePairingBundle(narrow, time.Now().UTC())
+	offer, err := remoteauth.ParsePairingClaimOffer(narrow, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "anytty", endpointdomain.DefaultFileName)
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
+	savePairTestManagedClaimEndpoint(t, registryPath, "lab", offer, endpointdomain.RelayAuto)
 	pairSocket := v3PairingSocketPath(socket)
 	executePairCommand(t, narrow, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", pairSocket, "-")
 
@@ -429,79 +451,16 @@ func TestPairImportRequiresExplicitScopeExpansionConfirmation(t *testing.T) {
 	}
 }
 
-func TestPairImportRootTimeoutCancelsLockedDaemonHelloAndReleasesLocks(t *testing.T) {
-	runtimeDir, stateHome, configHome := configurePairCommandTest(t)
-	created := executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--raw")
-	bundle, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	registryPath := filepath.Join(configHome, "anytty", endpointdomain.DefaultFileName)
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
-
-	hungSocket := filepath.Join(t.TempDir(), "hung.sock")
-	previousStart := startV3Daemon
-	var listener *unixtransport.Listener
-	releaseServer := make(chan struct{})
-	accepted := make(chan struct{})
-	startV3Daemon = func(path string, _ string) error {
-		if path != hungSocket {
-			t.Fatalf("auto-start socket = %q, want %q", path, hungSocket)
-		}
-		var listenErr error
-		listener, listenErr = unixtransport.NewListener(path)
-		if listenErr != nil {
-			return listenErr
-		}
-		go func() {
-			conn, acceptErr := listener.Accept(context.Background())
-			if acceptErr != nil {
-				return
-			}
-			close(accepted)
-			<-releaseServer
-			_ = conn.Close()
-		}()
-		return nil
-	}
-	t.Cleanup(func() {
-		startV3Daemon = previousStart
-		close(releaseServer)
-		if listener != nil {
-			_ = listener.Close()
-		}
-	})
-
-	started := time.Now()
-	err = executePairCommandError(created,
-		"--timeout", "100ms", "--socket", hungSocket,
-		"pair", "import", "--id", "lab", "--registry", registryPath, "-",
-	)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("pair import stalled Hello error = %v", err)
-	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("pair import ignored root timeout: %s", elapsed)
-	}
-	select {
-	case <-accepted:
-	default:
-		t.Fatal("pair import did not reach the stalled daemon Hello path")
-	}
-
-	assertPairImportLocksReleased(t, stateHome, registryPath, "lab", bundle)
-}
-
 func TestPairImportRootTimeoutCancelsPairingSocketDialAndReleasesLocks(t *testing.T) {
 	runtimeDir, stateHome, configHome := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
-	bundle, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
+	offer, err := remoteauth.ParsePairingClaimOffer(created, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "anytty", endpointdomain.DefaultFileName)
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
+	savePairTestManagedClaimEndpoint(t, registryPath, "lab", offer, endpointdomain.RelayAuto)
 
 	previousDial := dialV3PairingTransport
 	dialStarted := make(chan struct{})
@@ -528,10 +487,10 @@ func TestPairImportRootTimeoutCancelsPairingSocketDialAndReleasesLocks(t *testin
 	default:
 		t.Fatal("pair import did not reach the stalled PairingExchange dial")
 	}
-	assertPairImportLocksReleased(t, stateHome, registryPath, "lab", bundle)
+	assertPairImportLocksReleased(t, stateHome, registryPath, "lab", offer.GetDeviceId())
 }
 
-func assertPairImportLocksReleased(t *testing.T, stateHome string, registryPath string, endpointID endpointdomain.EndpointID, bundle *remoteauth.PairingBundle) {
+func assertPairImportLocksReleased(t *testing.T, stateHome string, registryPath string, endpointID endpointdomain.EndpointID, deviceID string) {
 	t.Helper()
 	lockCtx, cancelLock := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	registryLock, lockErr := filelock.AcquireContext(lockCtx, registryPath+".lock", false)
@@ -543,7 +502,7 @@ func assertPairImportLocksReleased(t *testing.T, stateHome string, registryPath 
 		t.Fatal(err)
 	}
 
-	grantRef := v3PairingGrantRef(endpointID, bundle.GetIdentity().GetDeviceId())
+	grantRef := v3PairingGrantRef(endpointID, deviceID)
 	credentialStore := remoteauth.NewCredentialStore(filepath.Join(stateHome, "anytty", "remote-v2", "credentials"))
 	credentialCtx, cancelCredential := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	_, credentialErr := credentialStore.ResolveContext(credentialCtx, grantRef)
@@ -623,17 +582,21 @@ func configurePairCommandTest(t *testing.T) (string, string, string) {
 	return runtimeDir, stateHome, configHome
 }
 
-func savePairTestManagedEndpoint(t *testing.T, registryPath string, endpointID endpointdomain.EndpointID, bundle *remoteauth.PairingBundle, relayMode endpointdomain.RelayMode) {
+func savePairTestManagedEndpoint(t *testing.T, registryPath string, endpointID endpointdomain.EndpointID, identity endpointdomain.DaemonIdentity, relayMode endpointdomain.RelayMode) {
 	t.Helper()
-	identity := endpointdomain.DaemonIdentity{
-		DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
-	}
 	endpoint := endpointdomain.NewManagedEndpoint(endpointID, "Existing managed endpoint", identity, identity.DeviceID, "", relayMode, endpointdomain.ConnectOnDemand)
 	if err := endpointdomain.Save(registryPath, endpointdomain.Registry{
 		Version: endpointdomain.RegistryVersion, Default: endpointID, Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{endpointID: endpoint},
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func savePairTestManagedClaimEndpoint(t *testing.T, registryPath string, endpointID endpointdomain.EndpointID, offer *remoteauthpb.PairingClaimOffer, relayMode endpointdomain.RelayMode) {
+	t.Helper()
+	savePairTestManagedEndpoint(t, registryPath, endpointID, endpointdomain.DaemonIdentity{
+		DeviceID: offer.GetDeviceId(), DeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey())),
+	}, relayMode)
 }
 
 func executePairCommand(t *testing.T, stdin []byte, args ...string) []byte {

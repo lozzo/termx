@@ -234,7 +234,7 @@
     "scanCamera": "Scan QR with camera",
     "manual": "Enter content manually",
     "content": "Pairing code or share link",
-    "manualPlaceholder": "Enter MXP1 code or paste a AnyTTY share link",
+    "manualPlaceholder": "Enter MXP2 code or paste an AnyTTY share link",
     "cameraUnavailable": "This device cannot scan a QR code. Enter the same pairing code below.",
     "importConfig": "Import configuration",
     "connectModeChanged": "Connection mode changes.",

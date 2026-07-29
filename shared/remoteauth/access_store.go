@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/filelock"
 	"github.com/anytty/anytty/shared/securefs"
 )
@@ -25,11 +26,9 @@ import (
 const (
 	accessStoreFile             = "remote_client_access.json"
 	accessStoreLockFile         = "remote_client_access.lock"
-	accessStoreVersion          = 3
-	accessStateSignatureDomain  = "anytty.remoteauth.access-state.v2"
-	legacyAccessSignatureDomain = "muxvia.remoteauth.access-state.v2"
+	accessStoreVersion          = 4
+	accessStateSignatureDomain  = "anytty.remoteauth.access-state.v3"
 	pairingReceiptDomain        = "anytty.remoteauth.pairing-receipt.v1"
-	legacyPairingReceiptDomain  = "muxvia.remoteauth.pairing-receipt.v1"
 	defaultDeliveryGrace        = 24 * time.Hour
 	expiredTicketRetention      = 24 * time.Hour
 	expiredGrantRecordRetention = 30 * 24 * time.Hour
@@ -73,23 +72,23 @@ type AccessStoreOptions struct {
 // AccessStore 是 owning daemon 的 PairingTicket 摘要、客户端 key 绑定、grant claims、delivery receipt 摘要与撤销唯一持久真值。
 // 一个 state 目录只允许一个进程 owner；普通 capability 验证只读内存且不写磁盘，低频 mutation 才批量 compact 并原子替换签名 state。
 type AccessStore struct {
-	mu                        sync.RWMutex
-	pairingClaimsMu           sync.Mutex
-	path                      string
-	identity                  Identity
-	tickets                   map[string]storedPairingTicket
-	grants                    map[string]storedAccessGrant
-	pairingClaims             map[[sha256.Size]byte]storedPairingClaim
-	now                       func() time.Time
-	random                    io.Reader
-	owner                     *filelock.Lock
-	writeFile                 func(string, []byte) error
-	closed                    bool
-	accessProjectionRevision  uint64
-	changes                   chan struct{}
-	managedRouteGrantIssuer   func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, error)
-	managedPairingRouteIssuer func([]byte, time.Time, time.Time) ([]byte, []byte, error)
-	clientGrants              map[string]map[string]struct{}
+	mu                           sync.RWMutex
+	pairingClaimsMu              sync.Mutex
+	path                         string
+	identity                     Identity
+	tickets                      map[string]storedPairingTicket
+	grants                       map[string]storedAccessGrant
+	pairingClaims                map[[sha256.Size]byte]storedPairingClaim
+	now                          func() time.Time
+	random                       io.Reader
+	owner                        *filelock.Lock
+	writeFile                    func(string, []byte) error
+	closed                       bool
+	accessProjectionRevision     uint64
+	changes                      chan struct{}
+	managedRouteGrantIssuer      func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, []byte, error)
+	managedPairingBootstrapIssue func() (*remoteauthpb.PairingManagedRouteSeed, error)
+	clientGrants                 map[string]map[string]struct{}
 }
 
 // AccessSnapshot 是不取得 daemon mutation owner lock 的只读撤销快照。
@@ -109,23 +108,25 @@ type storedAccessState struct {
 }
 
 type storedPairingTicket struct {
-	Claims                PairingTicketClaims `json:"claims"`
-	TicketDigest          string              `json:"ticket_digest"`
-	SubjectKeyFingerprint string              `json:"subject_key_fingerprint,omitempty"`
-	ClientLabel           string              `json:"client_label,omitempty"`
-	GrantID               string              `json:"grant_id,omitempty"`
-	ResultGrantDigest     string              `json:"result_grant_digest,omitempty"`
-	DeliveryReceiptDigest string              `json:"delivery_receipt_digest,omitempty"`
-	RedeemedAt            time.Time           `json:"redeemed_at,omitempty"`
-	DeliveryGraceUntil    time.Time           `json:"delivery_grace_until,omitempty"`
-	CloudRouteGrantDigest string              `json:"cloud_route_grant_digest,omitempty"`
+	Claims                 PairingTicketClaims `json:"claims"`
+	TicketDigest           string              `json:"ticket_digest"`
+	SubjectKeyFingerprint  string              `json:"subject_key_fingerprint,omitempty"`
+	ClientLabel            string              `json:"client_label,omitempty"`
+	GrantID                string              `json:"grant_id,omitempty"`
+	ResultGrantDigest      string              `json:"result_grant_digest,omitempty"`
+	DeliveryReceiptDigest  string              `json:"delivery_receipt_digest,omitempty"`
+	RedeemedAt             time.Time           `json:"redeemed_at,omitempty"`
+	DeliveryGraceUntil     time.Time           `json:"delivery_grace_until,omitempty"`
+	CloudRouteGrantDigest  string              `json:"cloud_route_grant_digest,omitempty"`
+	CloudEdgeLocatorDigest string              `json:"cloud_edge_locator_digest,omitempty"`
 }
 
 type storedAccessGrant struct {
-	Claims          Claims    `json:"claims"`
-	ClientLabel     string    `json:"client_label,omitempty"`
-	RevokedAt       time.Time `json:"revoked_at,omitempty"`
-	CloudRouteGrant []byte    `json:"cloud_route_grant,omitempty"`
+	Claims           Claims    `json:"claims"`
+	ClientLabel      string    `json:"client_label,omitempty"`
+	RevokedAt        time.Time `json:"revoked_at,omitempty"`
+	CloudRouteGrant  []byte    `json:"cloud_route_grant,omitempty"`
+	CloudEdgeLocator []byte    `json:"cloud_edge_locator,omitempty"`
 }
 
 // LoadAccessStore 加载或创建 daemon-local client access store，并取得该目录的唯一进程 owner lock。
@@ -183,7 +184,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 
 // ConfigureManagedRouteGrantIssuer 安装 daemon Cloud owner 的可选 grant issuer。
 // issuer 只在 PairingExchange 原子事务内调用，必须返回 DeviceIdentity 签名的 Cloud Proto bytes；重复配置会失败。
-func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, error)) error {
+func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.PublicKey, uint32, time.Time, time.Time) ([]byte, []byte, error)) error {
 	if store == nil || issuer == nil {
 		return errors.New("managed Route grant issuer is required")
 	}
@@ -199,21 +200,21 @@ func (store *AccessStore) ConfigureManagedRouteGrantIssuer(issuer func(ed25519.P
 	return nil
 }
 
-// ConfigureManagedPairingRouteIssuer 安装同时签发 bootstrap grant 和公开 Edge locator 的 Cloud route issuer。
-// issuer 只接收 claim 摘要和时间窗，不能读取或返回 128-bit claim 本体。
-func (store *AccessStore) ConfigureManagedPairingRouteIssuer(issuer func([]byte, time.Time, time.Time) ([]byte, []byte, error)) error {
+// ConfigureManagedPairingBootstrapIssuer 安装紧凑 Cloud pairing 入口投影。
+// issuer 只能返回公开 Edge 入口与 CA pin，不能读取 claim 或签发 bearer grant。
+func (store *AccessStore) ConfigureManagedPairingBootstrapIssuer(issuer func() (*remoteauthpb.PairingManagedRouteSeed, error)) error {
 	if store == nil || issuer == nil {
-		return errors.New("managed pairing grant issuer is required")
+		return errors.New("managed pairing bootstrap issuer is required")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if err := store.ensureOpenLocked(); err != nil {
 		return err
 	}
-	if store.managedPairingRouteIssuer != nil {
-		return errors.New("managed pairing route issuer is already configured")
+	if store.managedPairingBootstrapIssue != nil {
+		return errors.New("managed pairing bootstrap issuer is already configured")
 	}
-	store.managedPairingRouteIssuer = issuer
+	store.managedPairingBootstrapIssue = issuer
 	return nil
 }
 
@@ -433,7 +434,7 @@ func (store *AccessStore) redeemPairingBundle(payload []byte, clientPublicKey ed
 		return PairingExchangeResult{}, err
 	}
 	receipt := pairingDeliveryReceipt(store.identity.PrivateKey, claims.TicketID, subjectFingerprint, grantID)
-	var cloudRouteGrant []byte
+	var cloudRouteGrant, cloudEdgeLocator []byte
 	hasManagedRoute := pairingBundleHasManagedRoute(bundle)
 	if hasManagedRoute && product == 0 {
 		return PairingExchangeResult{}, errors.New("managed Route pairing requires a client product")
@@ -442,12 +443,12 @@ func (store *AccessStore) redeemPairingBundle(payload []byte, clientPublicKey ed
 		if store.managedRouteGrantIssuer == nil {
 			return PairingExchangeResult{}, errors.New("managed Route grant issuer is unavailable")
 		}
-		cloudRouteGrant, err = store.managedRouteGrantIssuer(append(ed25519.PublicKey(nil), clientPublicKey...), product, now, grantClaims.ExpiresAt)
+		cloudRouteGrant, cloudEdgeLocator, err = store.managedRouteGrantIssuer(append(ed25519.PublicKey(nil), clientPublicKey...), product, now, grantClaims.ExpiresAt)
 		if err != nil {
 			return PairingExchangeResult{}, fmt.Errorf("issue managed Route grant: %w", err)
 		}
-		if len(cloudRouteGrant) == 0 {
-			return PairingExchangeResult{}, errors.New("managed Route grant issuer returned an empty grant")
+		if len(cloudRouteGrant) == 0 || len(cloudEdgeLocator) == 0 {
+			return PairingExchangeResult{}, errors.New("managed Route grant issuer returned incomplete route material")
 		}
 	}
 	updatedTicket := record
@@ -460,8 +461,9 @@ func (store *AccessStore) redeemPairingBundle(payload []byte, clientPublicKey ed
 	updatedTicket.DeliveryGraceUntil = now.Add(defaultDeliveryGrace)
 	if len(cloudRouteGrant) != 0 {
 		updatedTicket.CloudRouteGrantDigest = payloadDigest(cloudRouteGrant)
+		updatedTicket.CloudEdgeLocatorDigest = payloadDigest(cloudEdgeLocator)
 	}
-	grantRecord := storedAccessGrant{Claims: grantClaims, ClientLabel: clientLabel, CloudRouteGrant: append([]byte(nil), cloudRouteGrant...)}
+	grantRecord := storedAccessGrant{Claims: grantClaims, ClientLabel: clientLabel, CloudRouteGrant: append([]byte(nil), cloudRouteGrant...), CloudEdgeLocator: append([]byte(nil), cloudEdgeLocator...)}
 	oldTickets, oldGrants := cloneTicketRecords(store.tickets), cloneGrantRecords(store.grants)
 	oldRevision := store.accessProjectionRevision
 	store.compactLocked(now)
@@ -479,7 +481,7 @@ func (store *AccessStore) redeemPairingBundle(payload []byte, clientPublicKey ed
 	store.notifyAccessChangedLocked()
 	return PairingExchangeResult{
 		TicketID: claims.TicketID, Grant: boundGrant, GrantID: grantID, DeliveryReceipt: receipt,
-		SubjectKeyFingerprint: subjectFingerprint, Scope: grantClaims.Scope, ExpiresAt: grantClaims.ExpiresAt, CloudRouteGrant: append([]byte(nil), cloudRouteGrant...),
+		SubjectKeyFingerprint: subjectFingerprint, Scope: grantClaims.Scope, ExpiresAt: grantClaims.ExpiresAt, CloudRouteGrant: append([]byte(nil), cloudRouteGrant...), CloudEdgeLocator: append([]byte(nil), cloudEdgeLocator...),
 	}, nil
 }
 
@@ -647,12 +649,7 @@ func loadStoredAccessState(path string, identity Identity) (storedAccessState, b
 		return storedAccessState{}, false, fmt.Errorf("client access store signature is invalid")
 	}
 	signingBytes, err := accessStateSigningBytes(state)
-	validSignature := err == nil && ed25519.Verify(identity.PublicKey, signingBytes, signature)
-	if !validSignature {
-		legacySigningBytes, legacyErr := accessStateSigningBytesWithDomain(state, legacyAccessSignatureDomain)
-		validSignature = legacyErr == nil && ed25519.Verify(identity.PublicKey, legacySigningBytes, signature)
-	}
-	if !validSignature {
+	if err != nil || !ed25519.Verify(identity.PublicKey, signingBytes, signature) {
 		return storedAccessState{}, false, fmt.Errorf("client access store signature does not match daemon identity")
 	}
 	if state.Tickets == nil {
@@ -689,7 +686,7 @@ func (store *AccessStore) validateLoadedState() error {
 		}
 		if record.GrantID == "" {
 			if record.SubjectKeyFingerprint != "" || record.ClientLabel != "" || record.ResultGrantDigest != "" ||
-				record.DeliveryReceiptDigest != "" || !record.RedeemedAt.IsZero() || !record.DeliveryGraceUntil.IsZero() {
+				record.DeliveryReceiptDigest != "" || record.CloudRouteGrantDigest != "" || record.CloudEdgeLocatorDigest != "" || !record.RedeemedAt.IsZero() || !record.DeliveryGraceUntil.IsZero() {
 				return fmt.Errorf("client access store ticket %q has partial redemption", ticketID)
 			}
 			continue
@@ -699,6 +696,10 @@ func (store *AccessStore) validateLoadedState() error {
 			grant.ClientLabel != record.ClientLabel || !record.RedeemedAt.Equal(grant.Claims.IssuedAt) ||
 			!record.DeliveryGraceUntil.After(record.RedeemedAt) || !validPayloadDigest(record.ResultGrantDigest) || !validPayloadDigest(record.DeliveryReceiptDigest) {
 			return fmt.Errorf("client access store ticket %q grant link is invalid", ticketID)
+		}
+		hasManagedRouteMaterial := len(grant.CloudRouteGrant) != 0 || len(grant.CloudEdgeLocator) != 0 || record.CloudRouteGrantDigest != "" || record.CloudEdgeLocatorDigest != ""
+		if hasManagedRouteMaterial && (len(grant.CloudRouteGrant) == 0 || len(grant.CloudEdgeLocator) == 0 || !validPayloadDigest(record.CloudRouteGrantDigest) || !validPayloadDigest(record.CloudEdgeLocatorDigest)) {
+			return fmt.Errorf("client access store ticket %q managed route material is incomplete", ticketID)
 		}
 		result, err := store.pairingResultFromStored(record)
 		if err != nil || result.Scope != claims.ScopeCeiling {
@@ -733,24 +734,21 @@ func (store *AccessStore) pairingResultFromStored(ticket storedPairingTicket) (P
 		return PairingExchangeResult{}, fmt.Errorf("stored pairing grant cannot be reconstructed")
 	}
 	if subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(boundGrant))), []byte(ticket.ResultGrantDigest)) != 1 {
-		boundGrant, err = issueWithPrefix(store.identity.PrivateKey, grant.Claims, legacyGrantPrefix)
-		if err != nil || subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(boundGrant))), []byte(ticket.ResultGrantDigest)) != 1 {
-			return PairingExchangeResult{}, fmt.Errorf("stored pairing grant digest mismatch")
-		}
+		return PairingExchangeResult{}, fmt.Errorf("stored pairing grant digest mismatch")
 	}
 	receipt := pairingDeliveryReceipt(store.identity.PrivateKey, ticket.Claims.TicketID, ticket.SubjectKeyFingerprint, ticket.GrantID)
 	if subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(receipt))), []byte(ticket.DeliveryReceiptDigest)) != 1 {
-		receipt = pairingDeliveryReceiptWithFormat(store.identity.PrivateKey, legacyPairingReceiptDomain, "muxvia-pairing-receipt-v1", ticket.Claims.TicketID, ticket.SubjectKeyFingerprint, ticket.GrantID)
-		if subtle.ConstantTimeCompare([]byte(payloadDigest([]byte(receipt))), []byte(ticket.DeliveryReceiptDigest)) != 1 {
-			return PairingExchangeResult{}, fmt.Errorf("stored pairing receipt digest mismatch")
-		}
+		return PairingExchangeResult{}, fmt.Errorf("stored pairing receipt digest mismatch")
 	}
 	if ticket.CloudRouteGrantDigest != "" && subtle.ConstantTimeCompare([]byte(payloadDigest(grant.CloudRouteGrant)), []byte(ticket.CloudRouteGrantDigest)) != 1 {
 		return PairingExchangeResult{}, fmt.Errorf("stored managed Route grant digest mismatch")
 	}
+	if ticket.CloudEdgeLocatorDigest != "" && subtle.ConstantTimeCompare([]byte(payloadDigest(grant.CloudEdgeLocator)), []byte(ticket.CloudEdgeLocatorDigest)) != 1 {
+		return PairingExchangeResult{}, fmt.Errorf("stored managed Edge locator digest mismatch")
+	}
 	return PairingExchangeResult{
 		TicketID: ticket.Claims.TicketID, Grant: boundGrant, GrantID: ticket.GrantID, DeliveryReceipt: receipt,
-		SubjectKeyFingerprint: ticket.SubjectKeyFingerprint, Scope: grant.Claims.Scope, ExpiresAt: grant.Claims.ExpiresAt.UTC(), CloudRouteGrant: append([]byte(nil), grant.CloudRouteGrant...),
+		SubjectKeyFingerprint: ticket.SubjectKeyFingerprint, Scope: grant.Claims.Scope, ExpiresAt: grant.Claims.ExpiresAt.UTC(), CloudRouteGrant: append([]byte(nil), grant.CloudRouteGrant...), CloudEdgeLocator: append([]byte(nil), grant.CloudEdgeLocator...),
 	}, nil
 }
 
@@ -837,6 +835,7 @@ func cloneGrantRecords(source map[string]storedAccessGrant) map[string]storedAcc
 	cloned := make(map[string]storedAccessGrant, len(source))
 	for key, value := range source {
 		value.CloudRouteGrant = append([]byte(nil), value.CloudRouteGrant...)
+		value.CloudEdgeLocator = append([]byte(nil), value.CloudEdgeLocator...)
 		cloned[key] = value
 	}
 	return cloned

@@ -1,4 +1,4 @@
-// Package clientgateway 使用 daemon 签名 RouteGrant 完成客户端到 Edge 的离线准入和 P2P WebRTC 信令转发。
+// Package clientgateway 使用 daemon 长期 RouteGrant 或在线 pairing admission 完成客户端到 Edge 的准入和 P2P WebRTC 信令转发。
 // 本包不承载 DataChannel 或 terminal payload。
 package clientgateway
 
@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ type Config struct {
 	Relay         RelayBroker
 }
 
-// Service 只在 RouteGrant、proof、产品和 attempt generation 全部一致后发布客户端实时摘要。
+// Service 只在授权材料、proof、产品和 attempt generation 全部一致后发布客户端实时摘要。
 type Service struct {
 	cloudv1.UnimplementedClientGatewayServer
 	config Config
@@ -370,13 +371,25 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) 
 		return nil, errors.New("ClientHello envelope is invalid")
 	}
 	hello := event.GetHello()
-	grant := hello.GetRouteGrant()
-	if grant == nil || len(hello.GetClientPublicKey()) != ed25519.PublicKeySize || hello.GetAttemptGeneration() == 0 || hello.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || hello.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
-		return nil, errors.New("ClientHello RouteGrant identity is incomplete")
+	if len(hello.GetClientPublicKey()) != ed25519.PublicKeySize || hello.GetAttemptGeneration() == 0 || hello.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || hello.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+		return nil, errors.New("ClientHello identity is incomplete")
 	}
-	daemonID := routeGrantDaemonID(grant, hello.GetAccessMode())
+	var daemonID string
+	var accessMode cloudv1.CloudClientAccessMode
+	switch authorization := hello.GetAuthorization().(type) {
+	case *cloudv1.ClientHello_CloudRouteGrant:
+		daemonID = cloudRouteGrantDaemonID(authorization.CloudRouteGrant)
+		accessMode = cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY
+	case *cloudv1.ClientHello_PairingAdmission:
+		if authorization.PairingAdmission != nil {
+			daemonID = strings.TrimSpace(authorization.PairingAdmission.GetDaemonId())
+		}
+		accessMode = cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING
+	default:
+		return nil, errors.New("ClientHello authorization is missing")
+	}
 	if daemonID == "" {
-		return nil, errors.New("ClientHello RouteGrant payload is invalid")
+		return nil, errors.New("ClientHello authorization payload is invalid")
 	}
 	agent, err := service.config.Runtime.AuthenticatedAgentClaims(ctx, daemonID)
 	if err != nil || agent == nil {
@@ -385,27 +398,33 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) 
 	if agent.GetEdgeId() != service.config.EdgeID || agent.GetDaemonId() != daemonID {
 		return nil, errRouteStale
 	}
-	claims := &admissionClaims{accountID: agent.GetAccountId(), daemonID: daemonID, clientPublicKey: append([]byte(nil), hello.GetClientPublicKey()...), product: hello.GetProduct(), accessMode: hello.GetAccessMode()}
-	switch hello.GetAccessMode() {
-	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
-		verified, verifyErr := ticket.VerifyCloudRouteGrant(grant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
+	claims := &admissionClaims{accountID: agent.GetAccountId(), daemonID: daemonID, clientPublicKey: append([]byte(nil), hello.GetClientPublicKey()...), product: hello.GetProduct(), accessMode: accessMode}
+	switch authorization := hello.GetAuthorization().(type) {
+	case *cloudv1.ClientHello_CloudRouteGrant:
+		verified, verifyErr := ticket.VerifyCloudRouteGrant(authorization.CloudRouteGrant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
 		if verifyErr != nil {
 			return nil, verifyErr
 		}
 		if !bytes.Equal(verified.GetClientPublicKey(), hello.GetClientPublicKey()) || verified.GetProduct() != hello.GetProduct() {
 			return nil, errors.New("ClientHello identity or product does not match CloudRouteGrant")
 		}
-	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
-		verified, verifyErr := ticket.VerifyPairingRouteGrant(grant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
-		if verifyErr != nil {
-			return nil, verifyErr
+		if err := ticket.VerifyCloudRouteHelloProof(claims.clientPublicKey, hello.GetClientProof(), authorization.CloudRouteGrant, service.config.EdgeID, event.GetConnectionId(), hello.GetAttemptGeneration()); err != nil {
+			return nil, err
 		}
-		if verified.GetDeviceId() != agent.GetDeviceId() {
-			return nil, errors.New("PairingRouteGrant targets another device")
+	case *cloudv1.ClientHello_PairingAdmission:
+		admission := authorization.PairingAdmission
+		now := service.config.Now().UTC()
+		expiresAt := time.Unix(0, admission.GetExpiresAtUnixNano()).UTC()
+		if admission.GetDeviceId() != agent.GetDeviceId() || !bytes.Equal(admission.GetDevicePublicKey(), agent.GetDevicePublicKey()) || len(admission.GetPairingClaimSha256()) != sha256.Size ||
+			admission.GetExpiresAtUnixNano() <= 0 || !expiresAt.After(now) || expiresAt.After(now.Add(24*time.Hour)) {
+			return nil, errors.New("pairing admission does not match the online daemon or validity window")
 		}
-		claims.pairingClaimDigest = append([]byte(nil), verified.GetPairingClaimSha256()...)
+		if err := ticket.VerifyPairingHelloProof(claims.clientPublicKey, hello.GetClientProof(), admission, service.config.EdgeID, event.GetConnectionId(), hello.GetAttemptGeneration(), hello.GetProduct()); err != nil {
+			return nil, err
+		}
+		claims.pairingClaimDigest = append([]byte(nil), admission.GetPairingClaimSha256()...)
 	default:
-		return nil, errors.New("ClientHello RouteGrant access mode is invalid")
+		return nil, errors.New("ClientHello authorization mode is invalid")
 	}
 	claims.clientID = remoteauth.Fingerprint(claims.clientPublicKey)
 	if event.GetSenderId() != claims.clientID {
@@ -414,27 +433,16 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) 
 	if hello.GetRelayPreference() < cloudv1.RelayPreference_RELAY_PREFERENCE_UNSPECIFIED || hello.GetRelayPreference() > cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
 		return nil, errors.New("ClientHello Relay preference is invalid")
 	}
-	if err := ticket.VerifyCloudRouteHelloProof(claims.clientPublicKey, hello.GetClientProof(), grant, service.config.EdgeID, event.GetConnectionId(), hello.GetAttemptGeneration()); err != nil {
-		return nil, err
-	}
 	return claims, nil
 }
 
-func routeGrantDaemonID(grant *cloudv1.SignedEnvelope, mode cloudv1.CloudClientAccessMode) string {
+func cloudRouteGrantDaemonID(grant *cloudv1.SignedEnvelope) string {
 	if grant == nil {
 		return ""
 	}
-	switch mode {
-	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY:
-		claims := &cloudv1.CloudRouteGrantClaims{}
-		if proto.Unmarshal(grant.GetPayload(), claims) == nil {
-			return strings.TrimSpace(claims.GetDaemonId())
-		}
-	case cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING:
-		claims := &cloudv1.PairingRouteGrantClaims{}
-		if proto.Unmarshal(grant.GetPayload(), claims) == nil {
-			return strings.TrimSpace(claims.GetDaemonId())
-		}
+	claims := &cloudv1.CloudRouteGrantClaims{}
+	if proto.Unmarshal(grant.GetPayload(), claims) == nil {
+		return strings.TrimSpace(claims.GetDaemonId())
 	}
 	return ""
 }

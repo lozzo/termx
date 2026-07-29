@@ -79,16 +79,15 @@ AgentGateway 断开后，daemon 对同一 Edge 指数退避重连，不访问 Co
 
 ## 7. pairing
 
-daemon 生成 pairing claim 时同时生成短期 `PairingRouteGrantClaims`。grant 绑定：
+daemon 生成紧凑 `PairingClaimOffer`，其中只包含：
 
-- daemon 和 device identity。
-- pairing claim SHA-256，而不是 claim 本体。
-- Edge locator SHA-256。
-- 签发时间和过期时间。
+- 128-bit 一次性 claim、daemon ID、device public key 和过期时间。
+- 首次连接 owning Edge 所需的 edge ID、endpoint、server name。
+- Edge CA 根证书 DER 的 SHA-256 指纹，不包含 CA PEM。
 
-客户端离线验证 offer 的 device public key、grant 签名、claim 摘要和 locator 摘要，然后直接建立 ClientGateway pairing-only stream。claim 本体只在端到端通道兑换，Edge 和 Controller都不能据此生成 terminal 权限。
+客户端使用 CA 指纹校验 Edge 在 TLS handshake 中发送的完整证书链，然后直接建立 ClientGateway pairing stream。Edge 将 daemon identity、客户端公钥、claim 摘要、产品、session 和 generation 与当前在线 AgentGateway binding 对齐，并向 owning daemon 发起实时 `AgentAuthorize`。claim 本体只在通过 DTLS 建立的端到端通道中提交，Edge 和 Controller 都不能据此生成 terminal 权限。
 
-成功兑换后，客户端 secure credential 保存 CapabilityGrant、CloudRouteGrant、ClientAccessIdentity 和 Edge locator。
+daemon 原子把 claim 绑定到新的 ClientAccessIdentity，并通过 `PairingAccepted` 返回 CapabilityGrant、CloudRouteGrant 和完整 Edge locator。客户端验证 daemon identity 与签名后才写入 secure credential。
 
 ## 8. 已授权客户端连接
 

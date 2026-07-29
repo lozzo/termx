@@ -6,7 +6,7 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { SignedEnvelope } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
-import type { ClientProduct, CloudClientAccessMode } from "./runtime_pb";
+import type { ClientProduct } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { RelayICEConfig, RelayPreference } from "./usage_pb";
 import { file_cloud_v1_usage } from "./usage_pb";
@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/client_gateway.proto.
  */
 export const file_cloud_v1_client_gateway: GenFile = /*@__PURE__*/
-  fileDesc("Ch1jbG91ZC92MS9jbGllbnRfZ2F0ZXdheS5wcm90bxIPYW55dHR5LmNsb3VkLnYxImsKEUNsb3VkSUNFQ2FuZGlkYXRlEhEKCWNhbmRpZGF0ZRgBIAEoCRIPCgdzZHBfbWlkGAIgASgJEhcKD3NkcF9tbGluZV9pbmRleBgDIAEoDRIZChF1c2VybmFtZV9mcmFnbWVudBgEIAEoCSLUAgoLQ2xpZW50SGVsbG8SNAoLcm91dGVfZ3JhbnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmVkRW52ZWxvcGUSGQoRY2xpZW50X3B1YmxpY19rZXkYAiABKAwSFAoMY2xpZW50X3Byb29mGAMgASgMEi8KB3Byb2R1Y3QYBCABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBIYChBzb2Z0d2FyZV92ZXJzaW9uGAUgASgJEhoKEmF0dGVtcHRfZ2VuZXJhdGlvbhgGIAEoBBI6ChByZWxheV9wcmVmZXJlbmNlGAcgASgOMiAuYW55dHR5LmNsb3VkLnYxLlJlbGF5UHJlZmVyZW5jZRI7CgthY2Nlc3NfbW9kZRgIIAEoDjImLmFueXR0eS5jbG91ZC52MS5DbG91ZENsaWVudEFjY2Vzc01vZGUiZQoLQ2xpZW50UmVhZHkSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEi4KBXJlbGF5GAMgASgLMh8uYW55dHR5LmNsb3VkLnYxLlJlbGF5SUNFQ29uZmlnImwKC0NsaWVudE9mZmVyEhIKCnNlc3Npb25faWQYASABKAkSEQoJb2ZmZXJfc2RwGAIgASgJEjYKCmNhbmRpZGF0ZXMYAyADKAsyIi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRJQ0VDYW5kaWRhdGUibAoKRWRnZUFuc3dlchISCgpzZXNzaW9uX2lkGAEgASgJEhIKCmFuc3dlcl9zZHAYAiABKAkSNgoKY2FuZGlkYXRlcxgDIAMoCzIiLmFueXR0eS5jbG91ZC52MS5DbG91ZElDRUNhbmRpZGF0ZSJDCg5TaWduYWxSZWplY3RlZBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCSKhAgoMQ2xpZW50U2lnbmFsEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoFaGVsbG8YFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50SGVsbG9IABItCgVvZmZlchgVIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRPZmZlckgAQgkKB3BheWxvYWQi1AIKCkVkZ2VTaWduYWwSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgVyZWFkeRgUIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRSZWFkeUgAEi0KBmFuc3dlchgVIAEoCzIbLmFueXR0eS5jbG91ZC52MS5FZGdlQW5zd2VySAASMwoIcmVqZWN0ZWQYFiABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmFsUmVqZWN0ZWRIAEIJCgdwYXlsb2FkMloKDUNsaWVudEdhdGV3YXkSSQoHQ29ubmVjdBIdLmFueXR0eS5jbG91ZC52MS5DbGllbnRTaWduYWwaGy5hbnl0dHkuY2xvdWQudjEuRWRnZVNpZ25hbCgBMAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
+  fileDesc("Ch1jbG91ZC92MS9jbGllbnRfZ2F0ZXdheS5wcm90bxIPYW55dHR5LmNsb3VkLnYxImsKEUNsb3VkSUNFQ2FuZGlkYXRlEhEKCWNhbmRpZGF0ZRgBIAEoCRIPCgdzZHBfbWlkGAIgASgJEhcKD3NkcF9tbGluZV9pbmRleBgDIAEoDRIZChF1c2VybmFtZV9mcmFnbWVudBgEIAEoCSKPAQoQUGFpcmluZ0FkbWlzc2lvbhIRCglkYWVtb25faWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAMgASgMEhwKFHBhaXJpbmdfY2xhaW1fc2hhMjU2GAQgASgMEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAUgASgDIvACCgtDbGllbnRIZWxsbxIZChFjbGllbnRfcHVibGljX2tleRgCIAEoDBIUCgxjbGllbnRfcHJvb2YYAyABKAwSLwoHcHJvZHVjdBgEIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EhgKEHNvZnR3YXJlX3ZlcnNpb24YBSABKAkSGgoSYXR0ZW1wdF9nZW5lcmF0aW9uGAYgASgEEjoKEHJlbGF5X3ByZWZlcmVuY2UYByABKA4yIC5hbnl0dHkuY2xvdWQudjEuUmVsYXlQcmVmZXJlbmNlEjwKEWNsb3VkX3JvdXRlX2dyYW50GAogASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlSAASPgoRcGFpcmluZ19hZG1pc3Npb24YCyABKAsyIS5hbnl0dHkuY2xvdWQudjEuUGFpcmluZ0FkbWlzc2lvbkgAQg8KDWF1dGhvcml6YXRpb24iZQoLQ2xpZW50UmVhZHkSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEi4KBXJlbGF5GAMgASgLMh8uYW55dHR5LmNsb3VkLnYxLlJlbGF5SUNFQ29uZmlnImwKC0NsaWVudE9mZmVyEhIKCnNlc3Npb25faWQYASABKAkSEQoJb2ZmZXJfc2RwGAIgASgJEjYKCmNhbmRpZGF0ZXMYAyADKAsyIi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRJQ0VDYW5kaWRhdGUibAoKRWRnZUFuc3dlchISCgpzZXNzaW9uX2lkGAEgASgJEhIKCmFuc3dlcl9zZHAYAiABKAkSNgoKY2FuZGlkYXRlcxgDIAMoCzIiLmFueXR0eS5jbG91ZC52MS5DbG91ZElDRUNhbmRpZGF0ZSJDCg5TaWduYWxSZWplY3RlZBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCSKhAgoMQ2xpZW50U2lnbmFsEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoFaGVsbG8YFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50SGVsbG9IABItCgVvZmZlchgVIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRPZmZlckgAQgkKB3BheWxvYWQi1AIKCkVkZ2VTaWduYWwSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgVyZWFkeRgUIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRSZWFkeUgAEi0KBmFuc3dlchgVIAEoCzIbLmFueXR0eS5jbG91ZC52MS5FZGdlQW5zd2VySAASMwoIcmVqZWN0ZWQYFiABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmFsUmVqZWN0ZWRIAEIJCgdwYXlsb2FkMloKDUNsaWVudEdhdGV3YXkSSQoHQ29ubmVjdBIdLmFueXR0eS5jbG91ZC52MS5DbGllbnRTaWduYWwaGy5hbnl0dHkuY2xvdWQudjEuRWRnZVNpZ25hbCgBMAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
 
 /**
  * CloudICECandidate 是 Cloud 信令的中性 candidate；不携带授权或 terminal 数据。
@@ -55,16 +55,49 @@ export const CloudICECandidateSchema: GenMessage<CloudICECandidate> = /*@__PURE_
   messageDesc(file_cloud_v1_client_gateway, 0);
 
 /**
+ * PairingAdmission 是二维码材料的网络投影。Edge 必须将其与当前在线 daemon binding 对齐，
+ * 再向该 daemon 实时请求授权；它自身不是 grant，也不能兑换 capability。
+ *
+ * @generated from message anytty.cloud.v1.PairingAdmission
+ */
+export type PairingAdmission = Message<"anytty.cloud.v1.PairingAdmission"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: bytes device_public_key = 3;
+   */
+  devicePublicKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes pairing_claim_sha256 = 4;
+   */
+  pairingClaimSha256: Uint8Array;
+
+  /**
+   * @generated from field: int64 expires_at_unix_nano = 5;
+   */
+  expiresAtUnixNano: bigint;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.PairingAdmission.
+ * Use `create(PairingAdmissionSchema)` to create a new message.
+ */
+export const PairingAdmissionSchema: GenMessage<PairingAdmission> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_client_gateway, 1);
+
+/**
  * @generated from message anytty.cloud.v1.ClientHello
  */
 export type ClientHello = Message<"anytty.cloud.v1.ClientHello"> & {
-  /**
-   * route_grant 是 owning daemon 签发的 capability 或 pairing RouteGrant；Controller 不签客户端准入票。
-   *
-   * @generated from field: anytty.cloud.v1.SignedEnvelope route_grant = 1;
-   */
-  routeGrant?: SignedEnvelope | undefined;
-
   /**
    * @generated from field: bytes client_public_key = 2;
    */
@@ -96,9 +129,25 @@ export type ClientHello = Message<"anytty.cloud.v1.ClientHello"> & {
   relayPreference: RelayPreference;
 
   /**
-   * @generated from field: anytty.cloud.v1.CloudClientAccessMode access_mode = 8;
+   * @generated from oneof anytty.cloud.v1.ClientHello.authorization
    */
-  accessMode: CloudClientAccessMode;
+  authorization: {
+    /**
+     * cloud_route_grant 是 owning daemon 签发给已配对 ClientAccessIdentity 的长期发现和信令授权。
+     *
+     * @generated from field: anytty.cloud.v1.SignedEnvelope cloud_route_grant = 10;
+     */
+    value: SignedEnvelope;
+    case: "cloudRouteGrant";
+  } | {
+    /**
+     * pairing_admission 只允许 Edge 向在线 daemon 请求一次性 pairing 预检。
+     *
+     * @generated from field: anytty.cloud.v1.PairingAdmission pairing_admission = 11;
+     */
+    value: PairingAdmission;
+    case: "pairingAdmission";
+  } | { case: undefined; value?: undefined };
 };
 
 /**
@@ -106,7 +155,7 @@ export type ClientHello = Message<"anytty.cloud.v1.ClientHello"> & {
  * Use `create(ClientHelloSchema)` to create a new message.
  */
 export const ClientHelloSchema: GenMessage<ClientHello> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 1);
+  messageDesc(file_cloud_v1_client_gateway, 2);
 
 /**
  * @generated from message anytty.cloud.v1.ClientReady
@@ -133,7 +182,7 @@ export type ClientReady = Message<"anytty.cloud.v1.ClientReady"> & {
  * Use `create(ClientReadySchema)` to create a new message.
  */
 export const ClientReadySchema: GenMessage<ClientReady> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 2);
+  messageDesc(file_cloud_v1_client_gateway, 3);
 
 /**
  * @generated from message anytty.cloud.v1.ClientOffer
@@ -160,7 +209,7 @@ export type ClientOffer = Message<"anytty.cloud.v1.ClientOffer"> & {
  * Use `create(ClientOfferSchema)` to create a new message.
  */
 export const ClientOfferSchema: GenMessage<ClientOffer> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 3);
+  messageDesc(file_cloud_v1_client_gateway, 4);
 
 /**
  * @generated from message anytty.cloud.v1.EdgeAnswer
@@ -187,7 +236,7 @@ export type EdgeAnswer = Message<"anytty.cloud.v1.EdgeAnswer"> & {
  * Use `create(EdgeAnswerSchema)` to create a new message.
  */
 export const EdgeAnswerSchema: GenMessage<EdgeAnswer> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 4);
+  messageDesc(file_cloud_v1_client_gateway, 5);
 
 /**
  * @generated from message anytty.cloud.v1.SignalRejected
@@ -214,7 +263,7 @@ export type SignalRejected = Message<"anytty.cloud.v1.SignalRejected"> & {
  * Use `create(SignalRejectedSchema)` to create a new message.
  */
 export const SignalRejectedSchema: GenMessage<SignalRejected> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 5);
+  messageDesc(file_cloud_v1_client_gateway, 6);
 
 /**
  * @generated from message anytty.cloud.v1.ClientSignal
@@ -278,7 +327,7 @@ export type ClientSignal = Message<"anytty.cloud.v1.ClientSignal"> & {
  * Use `create(ClientSignalSchema)` to create a new message.
  */
 export const ClientSignalSchema: GenMessage<ClientSignal> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 6);
+  messageDesc(file_cloud_v1_client_gateway, 7);
 
 /**
  * @generated from message anytty.cloud.v1.EdgeSignal
@@ -348,7 +397,7 @@ export type EdgeSignal = Message<"anytty.cloud.v1.EdgeSignal"> & {
  * Use `create(EdgeSignalSchema)` to create a new message.
  */
 export const EdgeSignalSchema: GenMessage<EdgeSignal> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 7);
+  messageDesc(file_cloud_v1_client_gateway, 8);
 
 /**
  * ClientGateway 只承载 Cloud WebRTC 信令；DataChannel 建立后业务流量完全绕过该 stream。

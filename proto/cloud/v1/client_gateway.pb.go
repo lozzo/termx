@@ -91,24 +91,104 @@ func (x *CloudICECandidate) GetUsernameFragment() string {
 	return ""
 }
 
+// PairingAdmission 是二维码材料的网络投影。Edge 必须将其与当前在线 daemon binding 对齐，
+// 再向该 daemon 实时请求授权；它自身不是 grant，也不能兑换 capability。
+type PairingAdmission struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId           string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	DeviceId           string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DevicePublicKey    []byte                 `protobuf:"bytes,3,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
+	PairingClaimSha256 []byte                 `protobuf:"bytes,4,opt,name=pairing_claim_sha256,json=pairingClaimSha256,proto3" json:"pairing_claim_sha256,omitempty"`
+	ExpiresAtUnixNano  int64                  `protobuf:"varint,5,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PairingAdmission) Reset() {
+	*x = PairingAdmission{}
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingAdmission) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingAdmission) ProtoMessage() {}
+
+func (x *PairingAdmission) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingAdmission.ProtoReflect.Descriptor instead.
+func (*PairingAdmission) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PairingAdmission) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *PairingAdmission) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *PairingAdmission) GetDevicePublicKey() []byte {
+	if x != nil {
+		return x.DevicePublicKey
+	}
+	return nil
+}
+
+func (x *PairingAdmission) GetPairingClaimSha256() []byte {
+	if x != nil {
+		return x.PairingClaimSha256
+	}
+	return nil
+}
+
+func (x *PairingAdmission) GetExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixNano
+	}
+	return 0
+}
+
 type ClientHello struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// route_grant 是 owning daemon 签发的 capability 或 pairing RouteGrant；Controller 不签客户端准入票。
-	RouteGrant        *SignedEnvelope       `protobuf:"bytes,1,opt,name=route_grant,json=routeGrant,proto3" json:"route_grant,omitempty"`
-	ClientPublicKey   []byte                `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	ClientProof       []byte                `protobuf:"bytes,3,opt,name=client_proof,json=clientProof,proto3" json:"client_proof,omitempty"`
-	Product           ClientProduct         `protobuf:"varint,4,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
-	SoftwareVersion   string                `protobuf:"bytes,5,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
-	AttemptGeneration uint64                `protobuf:"varint,6,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
-	RelayPreference   RelayPreference       `protobuf:"varint,7,opt,name=relay_preference,json=relayPreference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
-	AccessMode        CloudClientAccessMode `protobuf:"varint,8,opt,name=access_mode,json=accessMode,proto3,enum=anytty.cloud.v1.CloudClientAccessMode" json:"access_mode,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ClientPublicKey   []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	ClientProof       []byte                 `protobuf:"bytes,3,opt,name=client_proof,json=clientProof,proto3" json:"client_proof,omitempty"`
+	Product           ClientProduct          `protobuf:"varint,4,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
+	SoftwareVersion   string                 `protobuf:"bytes,5,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
+	AttemptGeneration uint64                 `protobuf:"varint,6,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
+	RelayPreference   RelayPreference        `protobuf:"varint,7,opt,name=relay_preference,json=relayPreference,proto3,enum=anytty.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
+	// Types that are valid to be assigned to Authorization:
+	//
+	//	*ClientHello_CloudRouteGrant
+	//	*ClientHello_PairingAdmission
+	Authorization isClientHello_Authorization `protobuf_oneof:"authorization"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClientHello) Reset() {
 	*x = ClientHello{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[1]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -120,7 +200,7 @@ func (x *ClientHello) String() string {
 func (*ClientHello) ProtoMessage() {}
 
 func (x *ClientHello) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[1]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -133,14 +213,7 @@ func (x *ClientHello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientHello.ProtoReflect.Descriptor instead.
 func (*ClientHello) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ClientHello) GetRouteGrant() *SignedEnvelope {
-	if x != nil {
-		return x.RouteGrant
-	}
-	return nil
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ClientHello) GetClientPublicKey() []byte {
@@ -185,12 +258,48 @@ func (x *ClientHello) GetRelayPreference() RelayPreference {
 	return RelayPreference_RELAY_PREFERENCE_UNSPECIFIED
 }
 
-func (x *ClientHello) GetAccessMode() CloudClientAccessMode {
+func (x *ClientHello) GetAuthorization() isClientHello_Authorization {
 	if x != nil {
-		return x.AccessMode
+		return x.Authorization
 	}
-	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
+	return nil
 }
+
+func (x *ClientHello) GetCloudRouteGrant() *SignedEnvelope {
+	if x != nil {
+		if x, ok := x.Authorization.(*ClientHello_CloudRouteGrant); ok {
+			return x.CloudRouteGrant
+		}
+	}
+	return nil
+}
+
+func (x *ClientHello) GetPairingAdmission() *PairingAdmission {
+	if x != nil {
+		if x, ok := x.Authorization.(*ClientHello_PairingAdmission); ok {
+			return x.PairingAdmission
+		}
+	}
+	return nil
+}
+
+type isClientHello_Authorization interface {
+	isClientHello_Authorization()
+}
+
+type ClientHello_CloudRouteGrant struct {
+	// cloud_route_grant 是 owning daemon 签发给已配对 ClientAccessIdentity 的长期发现和信令授权。
+	CloudRouteGrant *SignedEnvelope `protobuf:"bytes,10,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3,oneof"`
+}
+
+type ClientHello_PairingAdmission struct {
+	// pairing_admission 只允许 Edge 向在线 daemon 请求一次性 pairing 预检。
+	PairingAdmission *PairingAdmission `protobuf:"bytes,11,opt,name=pairing_admission,json=pairingAdmission,proto3,oneof"`
+}
+
+func (*ClientHello_CloudRouteGrant) isClientHello_Authorization() {}
+
+func (*ClientHello_PairingAdmission) isClientHello_Authorization() {}
 
 type ClientReady struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -203,7 +312,7 @@ type ClientReady struct {
 
 func (x *ClientReady) Reset() {
 	*x = ClientReady{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[2]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -215,7 +324,7 @@ func (x *ClientReady) String() string {
 func (*ClientReady) ProtoMessage() {}
 
 func (x *ClientReady) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[2]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -228,7 +337,7 @@ func (x *ClientReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientReady.ProtoReflect.Descriptor instead.
 func (*ClientReady) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{2}
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ClientReady) GetSessionId() string {
@@ -263,7 +372,7 @@ type ClientOffer struct {
 
 func (x *ClientOffer) Reset() {
 	*x = ClientOffer{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[3]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -275,7 +384,7 @@ func (x *ClientOffer) String() string {
 func (*ClientOffer) ProtoMessage() {}
 
 func (x *ClientOffer) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[3]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -288,7 +397,7 @@ func (x *ClientOffer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientOffer.ProtoReflect.Descriptor instead.
 func (*ClientOffer) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{3}
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ClientOffer) GetSessionId() string {
@@ -323,7 +432,7 @@ type EdgeAnswer struct {
 
 func (x *EdgeAnswer) Reset() {
 	*x = EdgeAnswer{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[4]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -335,7 +444,7 @@ func (x *EdgeAnswer) String() string {
 func (*EdgeAnswer) ProtoMessage() {}
 
 func (x *EdgeAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[4]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -348,7 +457,7 @@ func (x *EdgeAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeAnswer.ProtoReflect.Descriptor instead.
 func (*EdgeAnswer) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EdgeAnswer) GetSessionId() string {
@@ -383,7 +492,7 @@ type SignalRejected struct {
 
 func (x *SignalRejected) Reset() {
 	*x = SignalRejected{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[5]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +504,7 @@ func (x *SignalRejected) String() string {
 func (*SignalRejected) ProtoMessage() {}
 
 func (x *SignalRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[5]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +517,7 @@ func (x *SignalRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalRejected.ProtoReflect.Descriptor instead.
 func (*SignalRejected) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SignalRejected) GetSessionId() string {
@@ -452,7 +561,7 @@ type ClientSignal struct {
 
 func (x *ClientSignal) Reset() {
 	*x = ClientSignal{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[6]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +573,7 @@ func (x *ClientSignal) String() string {
 func (*ClientSignal) ProtoMessage() {}
 
 func (x *ClientSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[6]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +586,7 @@ func (x *ClientSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientSignal.ProtoReflect.Descriptor instead.
 func (*ClientSignal) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ClientSignal) GetProtocolVersion() uint32 {
@@ -591,7 +700,7 @@ type EdgeSignal struct {
 
 func (x *EdgeSignal) Reset() {
 	*x = EdgeSignal{}
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[7]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -603,7 +712,7 @@ func (x *EdgeSignal) String() string {
 func (*EdgeSignal) ProtoMessage() {}
 
 func (x *EdgeSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_client_gateway_proto_msgTypes[7]
+	mi := &file_cloud_v1_client_gateway_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -616,7 +725,7 @@ func (x *EdgeSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeSignal.ProtoReflect.Descriptor instead.
 func (*EdgeSignal) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_client_gateway_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EdgeSignal) GetProtocolVersion() uint32 {
@@ -733,18 +842,24 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
 	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rR\rsdpMlineIndex\x12+\n" +
-	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xc8\x03\n" +
-	"\vClientHello\x12@\n" +
-	"\vroute_grant\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\n" +
-	"routeGrant\x12*\n" +
+	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xdb\x01\n" +
+	"\x10PairingAdmission\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12*\n" +
+	"\x11device_public_key\x18\x03 \x01(\fR\x0fdevicePublicKey\x120\n" +
+	"\x14pairing_claim_sha256\x18\x04 \x01(\fR\x12pairingClaimSha256\x12/\n" +
+	"\x14expires_at_unix_nano\x18\x05 \x01(\x03R\x11expiresAtUnixNano\"\xef\x03\n" +
+	"\vClientHello\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_proof\x18\x03 \x01(\fR\vclientProof\x128\n" +
 	"\aproduct\x18\x04 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12)\n" +
 	"\x10software_version\x18\x05 \x01(\tR\x0fsoftwareVersion\x12-\n" +
 	"\x12attempt_generation\x18\x06 \x01(\x04R\x11attemptGeneration\x12K\n" +
-	"\x10relay_preference\x18\a \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\x0frelayPreference\x12G\n" +
-	"\vaccess_mode\x18\b \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
-	"accessMode\"\x83\x01\n" +
+	"\x10relay_preference\x18\a \x01(\x0e2 .anytty.cloud.v1.RelayPreferenceR\x0frelayPreference\x12M\n" +
+	"\x11cloud_route_grant\x18\n" +
+	" \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeH\x00R\x0fcloudRouteGrant\x12P\n" +
+	"\x11pairing_admission\x18\v \x01(\v2!.anytty.cloud.v1.PairingAdmissionH\x00R\x10pairingAdmissionB\x0f\n" +
+	"\rauthorization\"\x83\x01\n" +
 	"\vClientReady\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
@@ -816,40 +931,40 @@ func file_cloud_v1_client_gateway_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_client_gateway_proto_rawDescData
 }
 
-var file_cloud_v1_client_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_cloud_v1_client_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_cloud_v1_client_gateway_proto_goTypes = []any{
 	(*CloudICECandidate)(nil),     // 0: anytty.cloud.v1.CloudICECandidate
-	(*ClientHello)(nil),           // 1: anytty.cloud.v1.ClientHello
-	(*ClientReady)(nil),           // 2: anytty.cloud.v1.ClientReady
-	(*ClientOffer)(nil),           // 3: anytty.cloud.v1.ClientOffer
-	(*EdgeAnswer)(nil),            // 4: anytty.cloud.v1.EdgeAnswer
-	(*SignalRejected)(nil),        // 5: anytty.cloud.v1.SignalRejected
-	(*ClientSignal)(nil),          // 6: anytty.cloud.v1.ClientSignal
-	(*EdgeSignal)(nil),            // 7: anytty.cloud.v1.EdgeSignal
-	(*SignedEnvelope)(nil),        // 8: anytty.cloud.v1.SignedEnvelope
+	(*PairingAdmission)(nil),      // 1: anytty.cloud.v1.PairingAdmission
+	(*ClientHello)(nil),           // 2: anytty.cloud.v1.ClientHello
+	(*ClientReady)(nil),           // 3: anytty.cloud.v1.ClientReady
+	(*ClientOffer)(nil),           // 4: anytty.cloud.v1.ClientOffer
+	(*EdgeAnswer)(nil),            // 5: anytty.cloud.v1.EdgeAnswer
+	(*SignalRejected)(nil),        // 6: anytty.cloud.v1.SignalRejected
+	(*ClientSignal)(nil),          // 7: anytty.cloud.v1.ClientSignal
+	(*EdgeSignal)(nil),            // 8: anytty.cloud.v1.EdgeSignal
 	(ClientProduct)(0),            // 9: anytty.cloud.v1.ClientProduct
 	(RelayPreference)(0),          // 10: anytty.cloud.v1.RelayPreference
-	(CloudClientAccessMode)(0),    // 11: anytty.cloud.v1.CloudClientAccessMode
+	(*SignedEnvelope)(nil),        // 11: anytty.cloud.v1.SignedEnvelope
 	(*RelayICEConfig)(nil),        // 12: anytty.cloud.v1.RelayICEConfig
 	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_cloud_v1_client_gateway_proto_depIdxs = []int32{
-	8,  // 0: anytty.cloud.v1.ClientHello.route_grant:type_name -> anytty.cloud.v1.SignedEnvelope
-	9,  // 1: anytty.cloud.v1.ClientHello.product:type_name -> anytty.cloud.v1.ClientProduct
-	10, // 2: anytty.cloud.v1.ClientHello.relay_preference:type_name -> anytty.cloud.v1.RelayPreference
-	11, // 3: anytty.cloud.v1.ClientHello.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	9,  // 0: anytty.cloud.v1.ClientHello.product:type_name -> anytty.cloud.v1.ClientProduct
+	10, // 1: anytty.cloud.v1.ClientHello.relay_preference:type_name -> anytty.cloud.v1.RelayPreference
+	11, // 2: anytty.cloud.v1.ClientHello.cloud_route_grant:type_name -> anytty.cloud.v1.SignedEnvelope
+	1,  // 3: anytty.cloud.v1.ClientHello.pairing_admission:type_name -> anytty.cloud.v1.PairingAdmission
 	12, // 4: anytty.cloud.v1.ClientReady.relay:type_name -> anytty.cloud.v1.RelayICEConfig
 	0,  // 5: anytty.cloud.v1.ClientOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
 	0,  // 6: anytty.cloud.v1.EdgeAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
 	13, // 7: anytty.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 8: anytty.cloud.v1.ClientSignal.hello:type_name -> anytty.cloud.v1.ClientHello
-	3,  // 9: anytty.cloud.v1.ClientSignal.offer:type_name -> anytty.cloud.v1.ClientOffer
+	2,  // 8: anytty.cloud.v1.ClientSignal.hello:type_name -> anytty.cloud.v1.ClientHello
+	4,  // 9: anytty.cloud.v1.ClientSignal.offer:type_name -> anytty.cloud.v1.ClientOffer
 	13, // 10: anytty.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 11: anytty.cloud.v1.EdgeSignal.ready:type_name -> anytty.cloud.v1.ClientReady
-	4,  // 12: anytty.cloud.v1.EdgeSignal.answer:type_name -> anytty.cloud.v1.EdgeAnswer
-	5,  // 13: anytty.cloud.v1.EdgeSignal.rejected:type_name -> anytty.cloud.v1.SignalRejected
-	6,  // 14: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
-	7,  // 15: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
+	3,  // 11: anytty.cloud.v1.EdgeSignal.ready:type_name -> anytty.cloud.v1.ClientReady
+	5,  // 12: anytty.cloud.v1.EdgeSignal.answer:type_name -> anytty.cloud.v1.EdgeAnswer
+	6,  // 13: anytty.cloud.v1.EdgeSignal.rejected:type_name -> anytty.cloud.v1.SignalRejected
+	7,  // 14: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
+	8,  // 15: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
 	15, // [15:16] is the sub-list for method output_type
 	14, // [14:15] is the sub-list for method input_type
 	14, // [14:14] is the sub-list for extension type_name
@@ -865,11 +980,15 @@ func file_cloud_v1_client_gateway_proto_init() {
 	file_cloud_v1_common_proto_init()
 	file_cloud_v1_runtime_proto_init()
 	file_cloud_v1_usage_proto_init()
-	file_cloud_v1_client_gateway_proto_msgTypes[6].OneofWrappers = []any{
+	file_cloud_v1_client_gateway_proto_msgTypes[2].OneofWrappers = []any{
+		(*ClientHello_CloudRouteGrant)(nil),
+		(*ClientHello_PairingAdmission)(nil),
+	}
+	file_cloud_v1_client_gateway_proto_msgTypes[7].OneofWrappers = []any{
 		(*ClientSignal_Hello)(nil),
 		(*ClientSignal_Offer)(nil),
 	}
-	file_cloud_v1_client_gateway_proto_msgTypes[7].OneofWrappers = []any{
+	file_cloud_v1_client_gateway_proto_msgTypes[8].OneofWrappers = []any{
 		(*EdgeSignal_Ready)(nil),
 		(*EdgeSignal_Answer)(nil),
 		(*EdgeSignal_Rejected)(nil),
@@ -880,7 +999,7 @@ func file_cloud_v1_client_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_client_gateway_proto_rawDesc), len(file_cloud_v1_client_gateway_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

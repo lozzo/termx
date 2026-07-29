@@ -44,18 +44,18 @@ func TestAuthEnvelopeHasSinglePayloadOneof(t *testing.T) {
 }
 
 func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T) {
-	offer := (&PairingClaimOfferV1{}).ProtoReflect().Descriptor()
+	offer := (&PairingClaimOffer{}).ProtoReflect().Descriptor()
 	want := map[protoreflect.Name]protoreflect.FieldNumber{
 		"schema_version": 1, "claim": 2, "device_id": 3, "device_public_key": 4, "expires_at_unix_nano": 5, "routes": 6,
 	}
 	for name, number := range want {
 		field := offer.Fields().ByName(name)
 		if field == nil || field.Number() != number {
-			t.Fatalf("PairingClaimOfferV1.%s field = %v, want number %d", name, field, number)
+			t.Fatalf("PairingClaimOffer.%s field = %v, want number %d", name, field, number)
 		}
 	}
 	if routes := offer.Fields().ByName("routes"); routes.Cardinality() != protoreflect.Repeated {
-		t.Fatalf("PairingClaimOfferV1.routes cardinality = %v, want repeated", routes.Cardinality())
+		t.Fatalf("PairingClaimOffer.routes cardinality = %v, want repeated", routes.Cardinality())
 	}
 	seed := (&PairingRouteSeed{}).ProtoReflect().Descriptor()
 	if route := seed.Oneofs().ByName("route"); route == nil || route.Fields().Len() != 3 || route.Fields().ByName("ssh_webrtc_tcp") == nil {
@@ -67,23 +67,30 @@ func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T
 		}
 	}
 	managedSeed := (&PairingManagedRouteSeed{}).ProtoReflect().Descriptor()
-	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"target_device_id": 1, "bootstrap_grant": 2, "edge_locator": 3} {
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"daemon_id": 1, "edge_id": 2, "public_endpoint": 3, "server_name": 4, "ca_certificate_der_sha256": 5} {
 		if field := managedSeed.Fields().ByName(name); field == nil || field.Number() != number {
 			t.Fatalf("PairingManagedRouteSeed.%s field = %v, want number %d", name, field, number)
 		}
 	}
 	for _, forbidden := range []protoreflect.Name{"pairing_ticket", "grant", "scope", "terminal_id", "client_public_key"} {
 		if offer.Fields().ByName(forbidden) != nil {
-			t.Fatalf("PairingClaimOfferV1 leaked authorization field %s", forbidden)
+			t.Fatalf("PairingClaimOffer leaked authorization field %s", forbidden)
 		}
 	}
 	open := (&PairingOpen{}).ProtoReflect().Descriptor()
-	if field := open.Fields().ByName("pairing_claim_offer"); field == nil || field.Number() != 6 {
-		t.Fatal("PairingOpen.pairing_claim_offer must remain field 6")
+	if field := open.Fields().ByName("pairing_claim_offer"); field == nil || field.Number() != 1 {
+		t.Fatal("PairingOpen.pairing_claim_offer must be field 1")
 	}
 	accepted := (&PairingAccepted{}).ProtoReflect().Descriptor()
 	if field := accepted.Fields().ByName("pairing_bundle"); field == nil || field.Number() != 5 {
 		t.Fatal("PairingAccepted.pairing_bundle must remain field 5")
+	}
+	if field := accepted.Fields().ByName("cloud_edge_locator"); field == nil || field.Number() != 7 {
+		t.Fatal("PairingAccepted.cloud_edge_locator must be field 7")
+	}
+	created := (&ClientAccessTicketCreateResult{}).ProtoReflect().Descriptor()
+	if created.Fields().ByName("bundle") != nil || created.Fields().Len() != 4 {
+		t.Fatal("ClientAccessTicketCreateResult must expose only the compact claim")
 	}
 }
 

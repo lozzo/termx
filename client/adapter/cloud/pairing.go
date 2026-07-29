@@ -54,9 +54,5 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err
 	}
-	result.CloudEdgeLocator, err = cloudclient.EncodeEdgeLocator(resolved.Locator())
-	if err != nil {
-		return remoteauth.PairingExchangeResult{}, fmt.Errorf("encode paired Cloud Edge locator: %w", err)
-	}
 	return result, nil
 }

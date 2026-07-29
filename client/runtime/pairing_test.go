@@ -16,7 +16,7 @@ func TestPairingServiceRejectsIdentityMismatchAndClosesPeerExactlyOnce(t *testin
 	peer := &fakePairingPeer{fingerprint: "SHA256:dtls"}
 	_, err := (PairingService{}).Redeem(context.Background(), request, peer, remoteauth.ClientPairingRequest{
 		ExpectedDeviceID: "different-device", ExpectedDeviceFingerprint: request.DaemonIdentity().DeviceFingerprint,
-		PairingBundle: []byte("bundle"), Signer: fakePairingSigner{},
+		PairingClaimOffer: []byte("claim"), Signer: fakePairingSigner{},
 	})
 	if CodeOf(err) != ErrorIdentity || peer.closeCalls.Load() != 1 {
 		t.Fatalf("pairing error=%v close_calls=%d", err, peer.closeCalls.Load())
@@ -28,7 +28,7 @@ func TestPairingServiceClosesPeerWhenFingerprintReadFails(t *testing.T) {
 	peer := &fakePairingPeer{connection: &fakePairingTransport{}, fingerprintErr: errors.New("fingerprint unavailable")}
 	_, err := (PairingService{}).Redeem(context.Background(), request, peer, remoteauth.ClientPairingRequest{
 		ExpectedDeviceID: request.DaemonIdentity().DeviceID, ExpectedDeviceFingerprint: request.DaemonIdentity().DeviceFingerprint,
-		PairingBundle: []byte("bundle"), Signer: fakePairingSigner{},
+		PairingClaimOffer: []byte("claim"), Signer: fakePairingSigner{},
 	})
 	if CodeOf(err) != ErrorIdentity || peer.closeCalls.Load() != 1 {
 		t.Fatalf("pairing error=%v close_calls=%d", err, peer.closeCalls.Load())

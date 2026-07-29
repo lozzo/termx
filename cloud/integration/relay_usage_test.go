@@ -162,13 +162,14 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	defer accessStore.Close()
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, error) {
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, []byte, error) {
 		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: cloudv1.ClientProduct(product), IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC())}
 		signed, signErr := ticket.SignCloudRouteGrant(daemonIdentity, claims)
 		if signErr != nil {
-			return nil, signErr
+			return nil, nil, signErr
 		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(signed)
+		grant, marshalErr := proto.MarshalOptions{Deterministic: true}.Marshal(signed)
+		return grant, append([]byte(nil), edgeLocatorPayload...), marshalErr
 	}); err != nil {
 		t.Fatal(err)
 	}

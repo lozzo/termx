@@ -61,6 +61,26 @@ func TestR5GatewayContracts(t *testing.T) {
 	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21, "authorize": 22})
 }
 
+func TestClientHelloSeparatesCapabilityAndPairingAdmission(t *testing.T) {
+	hello := (&ClientHello{}).ProtoReflect().Descriptor()
+	authorization := hello.Oneofs().ByName("authorization")
+	if authorization == nil || authorization.Fields().Len() != 2 {
+		t.Fatalf("ClientHello.authorization = %v, want exactly two variants", authorization)
+	}
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"cloud_route_grant": 10, "pairing_admission": 11} {
+		field := authorization.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("ClientHello.authorization.%s field = %v, want number %d", name, field, number)
+		}
+	}
+	if hello.Fields().ByName("route_grant") != nil || hello.Fields().ByName("access_mode") != nil {
+		t.Fatal("ClientHello must not restore generic route_grant or caller-selected access_mode")
+	}
+	if File_cloud_v1_ticket_proto.Messages().ByName("PairingRouteGrantClaims") != nil {
+		t.Fatal("PairingRouteGrantClaims must not remain in the Cloud protocol")
+	}
+}
+
 // TestEdgeControlIsBidirectionalStreaming 保证 Edge 连接数不会回退为轮询或一元 RPC。
 func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 	service := File_cloud_v1_edge_control_proto.Services().ByName("EdgeControl")

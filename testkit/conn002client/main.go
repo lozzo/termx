@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,7 +21,7 @@ import (
 
 func main() {
 	mode := flag.String("mode", "", "drop-response or verify")
-	bundlePath := flag.String("bundle", "", "pairing bundle path")
+	claimPath := flag.String("claim", "", "pairing claim path")
 	pairingSocket := flag.String("pair-socket", "", "pairing Unix socket")
 	credentialDir := flag.String("credential-dir", "", "client credential directory")
 	endpointID := flag.String("endpoint-id", "", "client-local endpoint id")
@@ -35,11 +36,11 @@ func main() {
 	var err error
 	switch strings.TrimSpace(*mode) {
 	case "drop-response":
-		err = dropPairingResponse(*bundlePath, *pairingSocket, *credentialDir, *endpointID, *clientLabel, *credentialRef)
+		err = dropPairingResponse(*claimPath, *pairingSocket, *credentialDir, *endpointID, *clientLabel, *credentialRef)
 	case "verify":
 		err = verifyCredential(*identityDir, *accessDir, *credentialDir, *endpointID, *credentialRef, *expect)
 	case "tamper-fingerprint":
-		err = tamperPairingFingerprint(*bundlePath, *outputPath)
+		err = tamperPairingIdentity(*claimPath, *outputPath)
 	default:
 		err = fmt.Errorf("unsupported mode %q", *mode)
 	}
@@ -49,17 +50,17 @@ func main() {
 	}
 }
 
-func tamperPairingFingerprint(bundlePath, outputPath string) error {
-	payload, err := os.ReadFile(strings.TrimSpace(bundlePath))
+func tamperPairingIdentity(claimPath, outputPath string) error {
+	payload, err := os.ReadFile(strings.TrimSpace(claimPath))
 	if err != nil {
 		return err
 	}
-	bundle, _, err := remoteauth.ParsePairingBundleForExchange(payload)
+	offer, err := remoteauth.ParsePairingClaimOfferForExchange(payload)
 	if err != nil {
 		return err
 	}
-	bundle.Identity.DeviceFingerprint = "ed25519-sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	tampered, err := (proto.MarshalOptions{Deterministic: true}).Marshal(bundle)
+	offer.DevicePublicKey[0] ^= 0xff
+	tampered, err := (proto.MarshalOptions{Deterministic: true}).Marshal(offer)
 	if err != nil {
 		return err
 	}
@@ -73,12 +74,12 @@ func tamperPairingFingerprint(bundlePath, outputPath string) error {
 	return os.Chmod(outputPath, 0o600)
 }
 
-func dropPairingResponse(bundlePath, pairingSocket, credentialDir, endpointID, clientLabel, credentialRef string) error {
-	payload, err := os.ReadFile(strings.TrimSpace(bundlePath))
+func dropPairingResponse(claimPath, pairingSocket, credentialDir, endpointID, clientLabel, credentialRef string) error {
+	payload, err := os.ReadFile(strings.TrimSpace(claimPath))
 	if err != nil {
 		return err
 	}
-	bundle, _, err := remoteauth.ParsePairingBundleForExchange(payload)
+	offer, err := remoteauth.ParsePairingClaimOfferForExchange(payload)
 	if err != nil {
 		return err
 	}
@@ -87,7 +88,7 @@ func dropPairingResponse(bundlePath, pairingSocket, credentialDir, endpointID, c
 		return fmt.Errorf("endpoint-id is required")
 	}
 	if credentialRef = strings.TrimSpace(credentialRef); credentialRef == "" {
-		credentialRef = pairingGrantRef(endpointID, bundle.GetIdentity().GetDeviceId())
+		credentialRef = pairingGrantRef(endpointID, offer.GetDeviceId())
 	}
 	store := remoteauth.NewCredentialStore(credentialDir)
 	credential, err := store.LoadOrCreateIdentity(credentialRef, endpointID, nil)
@@ -104,8 +105,8 @@ func dropPairingResponse(bundlePath, pairingSocket, credentialDir, endpointID, c
 	}
 	dropped := &dropAfterFirstSend{Transport: connection}
 	_, err = (remoteauth.ClientPairingHandshake{}).Redeem(context.Background(), dropped, remoteauth.ClientPairingRequest{
-		ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
-		PairingBundle: payload, Identity: credential.Identity,
+		ExpectedDeviceID: offer.GetDeviceId(), ExpectedDeviceFingerprint: remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey())),
+		PairingClaimOffer: payload, Identity: credential.Identity,
 		ClientLabel: strings.TrimSpace(clientLabel), ChannelBinding: binding,
 	})
 	if err == nil {

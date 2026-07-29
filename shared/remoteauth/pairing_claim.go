@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -19,14 +20,14 @@ import (
 
 const (
 	// PairingClaimOfferVersion 是二维码和手工输入使用的紧凑 claim schema 版本。
-	PairingClaimOfferVersion    uint32 = 1
+	PairingClaimOfferVersion    uint32 = 2
 	pairingClaimBytes                  = 16
 	maxPairingClaimOfferBytes          = 4 * 1024
 	maxPairingClaimRoutes              = 4
 	pairingClaimEnvelopeRaw     byte   = 0
 	pairingClaimEnvelopeDeflate byte   = 1
 	// PairingClaimCodePrefix 标识可以直接粘贴到无摄像头客户端的 portable claim code。
-	PairingClaimCodePrefix = "MXP1-"
+	PairingClaimCodePrefix = "MXP2-"
 )
 
 var (
@@ -39,7 +40,7 @@ var (
 // PairingClaimIssueResult 是 daemon 签发短码时返回给 API Layer 的完整本地结果。
 // OfferPayload 可以进入二维码；BundlePayload 只留在 daemon 内存，直到端到端 PairingAccepted 返回给目标客户端。
 type PairingClaimIssueResult struct {
-	Offer         *remoteauthpb.PairingClaimOfferV1
+	Offer         *remoteauthpb.PairingClaimOffer
 	OfferPayload  []byte
 	ClaimCode     string
 	BundlePayload []byte
@@ -98,26 +99,25 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	if len(seeds) == 0 {
 		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires at least one Direct, SSH, or Cloud pairing Route", ErrPairingClaimMalformed)
 	}
-	managedPairingIssuer := store.managedPairingRouteIssuer
+	managedPairingIssuer := store.managedPairingBootstrapIssue
 	for _, seed := range seeds {
 		managed := seed.GetManagedWebrtc()
 		if managed == nil {
 			continue
 		}
 		if managedPairingIssuer == nil {
-			return PairingClaimIssueResult{}, errors.New("managed pairing grant issuer is unavailable")
+			return PairingClaimIssueResult{}, errors.New("managed pairing bootstrap issuer is unavailable")
 		}
-		grant, locator, grantErr := managedPairingIssuer(append([]byte(nil), digest[:]...), claims.ExpiresAt, claims.IssuedAt)
-		if grantErr != nil {
-			return PairingClaimIssueResult{}, fmt.Errorf("issue managed pairing grant: %w", grantErr)
+		bootstrap, bootstrapErr := managedPairingIssuer()
+		if bootstrapErr != nil {
+			return PairingClaimIssueResult{}, fmt.Errorf("issue managed pairing bootstrap: %w", bootstrapErr)
 		}
-		if len(grant) == 0 || len(locator) == 0 {
-			return PairingClaimIssueResult{}, errors.New("managed pairing route issuer returned incomplete route material")
+		if bootstrap == nil {
+			return PairingClaimIssueResult{}, errors.New("managed pairing bootstrap issuer returned no route material")
 		}
-		managed.BootstrapGrant = append([]byte(nil), grant...)
-		managed.EdgeLocator = append([]byte(nil), locator...)
+		seed.Route = &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: proto.Clone(bootstrap).(*remoteauthpb.PairingManagedRouteSeed)}
 	}
-	offer := &remoteauthpb.PairingClaimOfferV1{
+	offer := &remoteauthpb.PairingClaimOffer{
 		SchemaVersion:     PairingClaimOfferVersion,
 		Claim:             append([]byte(nil), claim...),
 		DeviceId:          store.identity.DeviceID,
@@ -268,7 +268,7 @@ func (store *AccessStore) compactPairingClaimsLocked(now time.Time) {
 }
 
 // EncodePairingClaimOffer 严格校验并确定性编码二维码 claim；输出不得包含 bundle、grant、scope 或 credential。
-func EncodePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1) ([]byte, error) {
+func EncodePairingClaimOffer(offer *remoteauthpb.PairingClaimOffer) ([]byte, error) {
 	if err := validatePairingClaimOffer(offer, time.Time{}, false); err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func EncodePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1) ([]byte, e
 }
 
 // ParsePairingClaimOffer 校验 canonical offer 和当前有效期，供二维码导入前建立临时 Endpoint pin 与 pairing Route。
-func ParsePairingClaimOffer(payload []byte, now time.Time) (*remoteauthpb.PairingClaimOfferV1, error) {
+func ParsePairingClaimOffer(payload []byte, now time.Time) (*remoteauthpb.PairingClaimOffer, error) {
 	offer, err := parsePairingClaimOffer(payload)
 	if err != nil {
 		return nil, err
@@ -295,7 +295,7 @@ func ParsePairingClaimOffer(payload []byte, now time.Time) (*remoteauthpb.Pairin
 }
 
 // ParsePairingClaimOfferForExchange 校验 canonical offer，但把过期后的同 key 响应恢复交给 owning AccessStore 判断。
-func ParsePairingClaimOfferForExchange(payload []byte) (*remoteauthpb.PairingClaimOfferV1, error) {
+func ParsePairingClaimOfferForExchange(payload []byte) (*remoteauthpb.PairingClaimOffer, error) {
 	offer, err := parsePairingClaimOffer(payload)
 	if err != nil {
 		return nil, err
@@ -306,11 +306,11 @@ func ParsePairingClaimOfferForExchange(payload []byte) (*remoteauthpb.PairingCla
 	return offer, nil
 }
 
-func parsePairingClaimOffer(payload []byte) (*remoteauthpb.PairingClaimOfferV1, error) {
+func parsePairingClaimOffer(payload []byte) (*remoteauthpb.PairingClaimOffer, error) {
 	if len(payload) == 0 || len(payload) > maxPairingClaimOfferBytes {
 		return nil, ErrPairingClaimMalformed
 	}
-	offer := &remoteauthpb.PairingClaimOfferV1{}
+	offer := &remoteauthpb.PairingClaimOffer{}
 	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, offer); err != nil || len(offer.ProtoReflect().GetUnknown()) != 0 {
 		return nil, ErrPairingClaimMalformed
 	}
@@ -321,7 +321,7 @@ func parsePairingClaimOffer(payload []byte) (*remoteauthpb.PairingClaimOfferV1, 
 	return offer, nil
 }
 
-func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1, now time.Time, requireFresh bool) error {
+func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOffer, now time.Time, requireFresh bool) error {
 	if offer == nil || offer.GetSchemaVersion() != PairingClaimOfferVersion || len(offer.GetClaim()) != pairingClaimBytes || strings.TrimSpace(offer.GetDeviceId()) == "" || len(offer.GetDevicePublicKey()) != ed25519.PublicKeySize || offer.GetExpiresAtUnixNano() <= 0 {
 		return ErrPairingClaimMalformed
 	}
@@ -343,7 +343,12 @@ func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1, now time
 				return ErrPairingClaimMalformed
 			}
 		case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
-			if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) || len(route.ManagedWebrtc.GetBootstrapGrant()) == 0 || len(route.ManagedWebrtc.GetEdgeLocator()) == 0 {
+			managed := route.ManagedWebrtc
+			if managed == nil || strings.TrimSpace(managed.GetDaemonId()) == "" || strings.TrimSpace(managed.GetEdgeId()) == "" || strings.TrimSpace(managed.GetPublicEndpoint()) == "" || strings.TrimSpace(managed.GetServerName()) == "" || len(managed.GetCaCertificateDerSha256()) != sha256.Size {
+				return ErrPairingClaimMalformed
+			}
+			host, port, splitErr := net.SplitHostPort(managed.GetPublicEndpoint())
+			if splitErr != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" || strings.Contains(managed.GetPublicEndpoint(), "://") || strings.TrimSpace(managed.GetServerName()) != managed.GetServerName() {
 				return ErrPairingClaimMalformed
 			}
 		case *remoteauthpb.PairingRouteSeed_SshWebrtcTcp:
@@ -384,7 +389,7 @@ func pairingClaimRouteSeeds(routes []*remoteauthpb.EndpointRouteConfigV1) []*rem
 			continue
 		}
 		if managed := route.GetManagedWebrtc(); managed != nil && strings.TrimSpace(managed.GetTargetDeviceId()) != "" {
-			seed.Route = &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{TargetDeviceId: managed.GetTargetDeviceId()}}
+			seed.Route = &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{}}
 			seeds = append(seeds, seed)
 			continue
 		}
@@ -405,7 +410,7 @@ func pairingClaimRouteSeeds(routes []*remoteauthpb.EndpointRouteConfigV1) []*rem
 
 // PairingClaimEndpointCandidate 把紧凑 offer 投影为仅用于建立 pairing peer 的临时 Endpoint candidate。
 // 完整 label、Route 列表和授权配置必须以 PairingAccepted 返回的签名 bundle 为准。
-func PairingClaimEndpointCandidate(offer *remoteauthpb.PairingClaimOfferV1) (endpointdomain.EndpointCandidate, error) {
+func PairingClaimEndpointCandidate(offer *remoteauthpb.PairingClaimOffer) (endpointdomain.EndpointCandidate, error) {
 	if err := validatePairingClaimOffer(offer, time.Time{}, false); err != nil {
 		return endpointdomain.EndpointCandidate{}, err
 	}
@@ -426,7 +431,7 @@ func PairingClaimEndpointCandidate(offer *remoteauthpb.PairingClaimOfferV1) (end
 		case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
 			route.Kind = endpointdomain.RouteManagedWebRTC
 			route.Source = endpointdomain.SourceCloud
-			route.TargetDeviceID = value.ManagedWebrtc.GetTargetDeviceId()
+			route.TargetDeviceID = offer.GetDeviceId()
 			route.AccountProfileRef = "default"
 			route.RelayMode = endpointdomain.RelayAuto
 		case *remoteauthpb.PairingRouteSeed_SshWebrtcTcp:

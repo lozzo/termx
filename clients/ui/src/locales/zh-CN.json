@@ -234,7 +234,7 @@
     "scanCamera": "使用摄像头扫描",
     "manual": "手工输入",
     "content": "配对码或分享链接",
-    "manualPlaceholder": "输入 MXP1 配对码或粘贴 AnyTTY 分享链接",
+    "manualPlaceholder": "输入 MXP2 配对码或粘贴 AnyTTY 分享链接",
     "cameraUnavailable": "此设备无法扫描二维码，请在下方输入同一个配对码。",
     "importConfig": "导入配置",
     "connectModeChanged": "连接模式将发生变化。",

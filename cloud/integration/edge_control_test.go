@@ -474,6 +474,7 @@ func newCertificateFiles(t *testing.T, edgeID string) certificateFiles {
 		ipAddresses: []net.IP{net.ParseIP("127.0.0.1")},
 		extendedUse: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	})
+	edgePublicCert = append(edgePublicCert, rootPEM...)
 	return certificateFiles{
 		rootCA:           rootPath,
 		controllerCert:   writeTestFile(t, directory, "controller-cert.pem", controllerCert),

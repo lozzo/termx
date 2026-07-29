@@ -57,18 +57,6 @@ message CloudRouteGrantClaims {
   google.protobuf.Timestamp expires_at = 6;
 }
 
-// PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
-// pairing_claim_sha256 不足以兑换 claim，Cloud 不接收 128-bit claim 本体。
-message PairingRouteGrantClaims {
-  string grant_id = 1;
-  string daemon_id = 2;
-  string device_id = 3;
-  bytes pairing_claim_sha256 = 4;
-  google.protobuf.Timestamp issued_at = 5;
-  google.protobuf.Timestamp expires_at = 6;
-  bytes edge_locator_sha256 = 7;
-}
-
 // ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
 message ClientRouteProofInput {
   string challenge_id = 1;
@@ -84,4 +72,14 @@ message CloudRouteHelloProofInput {
   string edge_id = 2;
   string session_id = 3;
   uint64 attempt_generation = 4;
+}
+
+// PairingHelloProofInput 把紧凑 pairing admission 的全部安全字段绑定到目标 Edge 和单次 stream。
+// proof 由新建的 ClientAccessIdentity 签名；Edge 只接收 claim 摘要，不接收 128-bit claim 本体。
+message PairingHelloProofInput {
+  bytes pairing_admission_sha256 = 1;
+  string edge_id = 2;
+  string session_id = 3;
+  uint64 attempt_generation = 4;
+  ClientProduct product = 5;
 }

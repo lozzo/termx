@@ -73,7 +73,7 @@ func ClientAccessIdentityToProto(identity corev2.ClientAccessIdentity) *remoteau
 
 // ClientAccessTicketToProto 转为一次性 pairing claim result；官方 consumer 只能展示 claim_offer/claim_code。
 func ClientAccessTicketToProto(ticket corev2.ClientAccessTicket) *remoteauthpb.ClientAccessTicketCreateResult {
-	return &remoteauthpb.ClientAccessTicketCreateResult{Bundle: cloneBytes(ticket.Bundle), TicketId: ticket.TicketID, ExpiresAtUnixNano: unixNanoOrZero(ticket.ExpiresAt), ClaimOffer: cloneBytes(ticket.ClaimOffer), ClaimCode: ticket.ClaimCode}
+	return &remoteauthpb.ClientAccessTicketCreateResult{TicketId: ticket.TicketID, ExpiresAtUnixNano: unixNanoOrZero(ticket.ExpiresAt), ClaimOffer: cloneBytes(ticket.ClaimOffer), ClaimCode: ticket.ClaimCode}
 }
 
 // ClientAccessRecordToProto 转为不包含 grant body/public key 的脱敏记录。

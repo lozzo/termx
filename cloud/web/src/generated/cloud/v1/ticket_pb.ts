@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/ticket.proto.
  */
 export const file_cloud_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSJ7ChVEYWVtb25SZWxheURlbGVnYXRpb24SGwoTbWF4X2J5dGVzX3Blcl9sZWFzZRgBIAEoBBIhChltYXhfcmF0ZV9ieXRlc19wZXJfc2Vjb25kGAIgASgEEiIKGm1heF9jb25jdXJyZW50X2FsbG9jYXRpb25zGAMgASgNIpgDChNEYWVtb25CaW5kaW5nQ2xhaW1zEhIKCmJpbmRpbmdfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSDwoHZWRnZV9pZBgEIAEoCRIRCglkZXZpY2VfaWQYBSABKAkSGQoRZGV2aWNlX3B1YmxpY19rZXkYBiABKAwSNwoMY2FwYWJpbGl0aWVzGAcgAygOMiEuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkNhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJAChByZWxheV9kZWxlZ2F0aW9uGAogASgLMiYuYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlbGF5RGVsZWdhdGlvbhIQCghyZXZpc2lvbhgLIAEoBBIbChNlZGdlX2xvY2F0b3Jfc2hhMjU2GAwgASgMInEKFEFnZW50SGVsbG9Qcm9vZklucHV0Eh4KFmJpbmRpbmdfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4uYW55dHR5LmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLrAQoXUGFpcmluZ1JvdXRlR3JhbnRDbGFpbXMSEAoIZ3JhbnRfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIcChRwYWlyaW5nX2NsYWltX3NoYTI1NhgEIAEoDBItCglpc3N1ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhsKE2VkZ2VfbG9jYXRvcl9zaGEyNTYYByABKAwicgoVQ2xpZW50Um91dGVQcm9vZklucHV0EhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSHAoUZ3JhbnRfcGF5bG9hZF9zaGEyNTYYAyABKAwSEgoKcmVxdWVzdF9pZBgEIAEoCSKAAQoZQ2xvdWRSb3V0ZUhlbGxvUHJvb2ZJbnB1dBIiChpyb3V0ZV9ncmFudF9wYXlsb2FkX3NoYTI1NhgBIAEoDBIPCgdlZGdlX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSGgoSYXR0ZW1wdF9nZW5lcmF0aW9uGAQgASgEKlYKEERhZW1vbkNhcGFiaWxpdHkSIQodREFFTU9OX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIfChtEQUVNT05fQ0FQQUJJTElUWV9TSUdOQUxJTkcQAUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
+  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSJ7ChVEYWVtb25SZWxheURlbGVnYXRpb24SGwoTbWF4X2J5dGVzX3Blcl9sZWFzZRgBIAEoBBIhChltYXhfcmF0ZV9ieXRlc19wZXJfc2Vjb25kGAIgASgEEiIKGm1heF9jb25jdXJyZW50X2FsbG9jYXRpb25zGAMgASgNIpgDChNEYWVtb25CaW5kaW5nQ2xhaW1zEhIKCmJpbmRpbmdfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSDwoHZWRnZV9pZBgEIAEoCRIRCglkZXZpY2VfaWQYBSABKAkSGQoRZGV2aWNlX3B1YmxpY19rZXkYBiABKAwSNwoMY2FwYWJpbGl0aWVzGAcgAygOMiEuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkNhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJAChByZWxheV9kZWxlZ2F0aW9uGAogASgLMiYuYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlbGF5RGVsZWdhdGlvbhIQCghyZXZpc2lvbhgLIAEoBBIbChNlZGdlX2xvY2F0b3Jfc2hhMjU2GAwgASgMInEKFEFnZW50SGVsbG9Qcm9vZklucHV0Eh4KFmJpbmRpbmdfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4uYW55dHR5LmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJyChVDbGllbnRSb3V0ZVByb29mSW5wdXQSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhEKCWNoYWxsZW5nZRgCIAEoDBIcChRncmFudF9wYXlsb2FkX3NoYTI1NhgDIAEoDBISCgpyZXF1ZXN0X2lkGAQgASgJIoABChlDbG91ZFJvdXRlSGVsbG9Qcm9vZklucHV0EiIKGnJvdXRlX2dyYW50X3BheWxvYWRfc2hhMjU2GAEgASgMEg8KB2VkZ2VfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YBCABKAQirAEKFlBhaXJpbmdIZWxsb1Byb29mSW5wdXQSIAoYcGFpcmluZ19hZG1pc3Npb25fc2hhMjU2GAEgASgMEg8KB2VkZ2VfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YBCABKAQSLwoHcHJvZHVjdBgFIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0KlYKEERhZW1vbkNhcGFiaWxpdHkSIQodREFFTU9OX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIfChtEQUVNT05fQ0FQQUJJTElUWV9TSUdOQUxJTkcQAUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
 
 /**
  * DaemonRelayDelegation 是 Controller 授予 Edge 的 Relay 上限。
@@ -201,56 +201,6 @@ export const CloudRouteGrantClaimsSchema: GenMessage<CloudRouteGrantClaims> = /*
   messageDesc(file_cloud_v1_ticket, 3);
 
 /**
- * PairingRouteGrantClaims 由 owning daemon 签发，只允许 Cloud 为一个活动 claim 建立 pairing-only signaling。
- * pairing_claim_sha256 不足以兑换 claim，Cloud 不接收 128-bit claim 本体。
- *
- * @generated from message anytty.cloud.v1.PairingRouteGrantClaims
- */
-export type PairingRouteGrantClaims = Message<"anytty.cloud.v1.PairingRouteGrantClaims"> & {
-  /**
-   * @generated from field: string grant_id = 1;
-   */
-  grantId: string;
-
-  /**
-   * @generated from field: string daemon_id = 2;
-   */
-  daemonId: string;
-
-  /**
-   * @generated from field: string device_id = 3;
-   */
-  deviceId: string;
-
-  /**
-   * @generated from field: bytes pairing_claim_sha256 = 4;
-   */
-  pairingClaimSha256: Uint8Array;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 5;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 6;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: bytes edge_locator_sha256 = 7;
-   */
-  edgeLocatorSha256: Uint8Array;
-};
-
-/**
- * Describes the message anytty.cloud.v1.PairingRouteGrantClaims.
- * Use `create(PairingRouteGrantClaimsSchema)` to create a new message.
- */
-export const PairingRouteGrantClaimsSchema: GenMessage<PairingRouteGrantClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 4);
-
-/**
  * ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
  *
  * @generated from message anytty.cloud.v1.ClientRouteProofInput
@@ -282,7 +232,7 @@ export type ClientRouteProofInput = Message<"anytty.cloud.v1.ClientRouteProofInp
  * Use `create(ClientRouteProofInputSchema)` to create a new message.
  */
 export const ClientRouteProofInputSchema: GenMessage<ClientRouteProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 5);
+  messageDesc(file_cloud_v1_ticket, 4);
 
 /**
  * CloudRouteHelloProofInput 把 daemon 签名的长期 Route grant 绑定到当前 Edge 和单次 stream generation。
@@ -317,6 +267,46 @@ export type CloudRouteHelloProofInput = Message<"anytty.cloud.v1.CloudRouteHello
  * Use `create(CloudRouteHelloProofInputSchema)` to create a new message.
  */
 export const CloudRouteHelloProofInputSchema: GenMessage<CloudRouteHelloProofInput> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_ticket, 5);
+
+/**
+ * PairingHelloProofInput 把紧凑 pairing admission 的全部安全字段绑定到目标 Edge 和单次 stream。
+ * proof 由新建的 ClientAccessIdentity 签名；Edge 只接收 claim 摘要，不接收 128-bit claim 本体。
+ *
+ * @generated from message anytty.cloud.v1.PairingHelloProofInput
+ */
+export type PairingHelloProofInput = Message<"anytty.cloud.v1.PairingHelloProofInput"> & {
+  /**
+   * @generated from field: bytes pairing_admission_sha256 = 1;
+   */
+  pairingAdmissionSha256: Uint8Array;
+
+  /**
+   * @generated from field: string edge_id = 2;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: string session_id = 3;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 attempt_generation = 4;
+   */
+  attemptGeneration: bigint;
+
+  /**
+   * @generated from field: anytty.cloud.v1.ClientProduct product = 5;
+   */
+  product: ClientProduct;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.PairingHelloProofInput.
+ * Use `create(PairingHelloProofInputSchema)` to create a new message.
+ */
+export const PairingHelloProofInputSchema: GenMessage<PairingHelloProofInput> = /*@__PURE__*/
   messageDesc(file_cloud_v1_ticket, 6);
 
 /**

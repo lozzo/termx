@@ -41,7 +41,7 @@ func TestCapabilityAuthorizerAcceptsPublicCredentialWithPlatformSigner(t *testin
 	publicIdentity := clientIdentity
 	publicIdentity.PrivateKey = nil
 	credential := remoteauth.ClientAccessCredential{
-		Version: 1, EndpointID: "web", Identity: publicIdentity, CapabilityGrant: grant, UpdatedAt: now,
+		Version: 3, EndpointID: "web", Identity: publicIdentity, CapabilityGrant: grant, UpdatedAt: now,
 	}
 	attempt := authorizationAttempt(t, endpoint.DaemonIdentity{DeviceID: daemon.DeviceID, DeviceFingerprint: daemon.Fingerprint})
 	prepared, err := (peeradapter.CapabilityAuthorizer{

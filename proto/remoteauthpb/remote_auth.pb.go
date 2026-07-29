@@ -1055,17 +1055,16 @@ func (x *CapabilityOpen) GetProof() []byte {
 	return nil
 }
 
-// PairingOpen 只能兑换一次性 PairingTicket，不能访问 terminal、history、file 或普通 protocol method。
-// client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 ticket。
+// PairingOpen 只能兑换一次性 pairing claim，不能访问 terminal、history、file 或普通 protocol method。
+// client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 claim。
 type PairingOpen struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	PairingBundle     []byte                 `protobuf:"bytes,1,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
+	PairingClaimOffer []byte                 `protobuf:"bytes,1,opt,name=pairing_claim_offer,json=pairingClaimOffer,proto3" json:"pairing_claim_offer,omitempty"`
 	ClientPublicKey   []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
 	ClientLabel       string                 `protobuf:"bytes,3,opt,name=client_label,json=clientLabel,proto3" json:"client_label,omitempty"`
 	ClientNonce       []byte                 `protobuf:"bytes,4,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
 	Proof             []byte                 `protobuf:"bytes,5,opt,name=proof,proto3" json:"proof,omitempty"`
-	PairingClaimOffer []byte                 `protobuf:"bytes,6,opt,name=pairing_claim_offer,json=pairingClaimOffer,proto3" json:"pairing_claim_offer,omitempty"`
-	ClientProduct     uint32                 `protobuf:"varint,7,opt,name=client_product,json=clientProduct,proto3" json:"client_product,omitempty"`
+	ClientProduct     uint32                 `protobuf:"varint,6,opt,name=client_product,json=clientProduct,proto3" json:"client_product,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1100,9 +1099,9 @@ func (*PairingOpen) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *PairingOpen) GetPairingBundle() []byte {
+func (x *PairingOpen) GetPairingClaimOffer() []byte {
 	if x != nil {
-		return x.PairingBundle
+		return x.PairingClaimOffer
 	}
 	return nil
 }
@@ -1131,13 +1130,6 @@ func (x *PairingOpen) GetClientNonce() []byte {
 func (x *PairingOpen) GetProof() []byte {
 	if x != nil {
 		return x.Proof
-	}
-	return nil
-}
-
-func (x *PairingOpen) GetPairingClaimOffer() []byte {
-	if x != nil {
-		return x.PairingClaimOffer
 	}
 	return nil
 }
@@ -1527,13 +1519,11 @@ func (x *ClientAccessTicketCreateRequest) GetRoutes() []*EndpointRouteConfigV1 {
 }
 
 type ClientAccessTicketCreateResult struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// bundle 仅保留给 owner-only 兼容工具；官方二维码、文本导入和平台 binding 必须使用 claim_offer。
-	Bundle            []byte `protobuf:"bytes,1,opt,name=bundle,proto3" json:"bundle,omitempty"`
-	TicketId          string `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	ExpiresAtUnixNano int64  `protobuf:"varint,3,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
-	ClaimOffer        []byte `protobuf:"bytes,4,opt,name=claim_offer,json=claimOffer,proto3" json:"claim_offer,omitempty"`
-	ClaimCode         string `protobuf:"bytes,5,opt,name=claim_code,json=claimCode,proto3" json:"claim_code,omitempty"`
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	TicketId          string                 `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
+	ExpiresAtUnixNano int64                  `protobuf:"varint,2,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	ClaimOffer        []byte                 `protobuf:"bytes,3,opt,name=claim_offer,json=claimOffer,proto3" json:"claim_offer,omitempty"`
+	ClaimCode         string                 `protobuf:"bytes,4,opt,name=claim_code,json=claimCode,proto3" json:"claim_code,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1566,13 +1556,6 @@ func (x *ClientAccessTicketCreateResult) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ClientAccessTicketCreateResult.ProtoReflect.Descriptor instead.
 func (*ClientAccessTicketCreateResult) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *ClientAccessTicketCreateResult) GetBundle() []byte {
-	if x != nil {
-		return x.Bundle
-	}
-	return nil
 }
 
 func (x *ClientAccessTicketCreateResult) GetTicketId() string {
@@ -1862,6 +1845,7 @@ type PairingAccepted struct {
 	Scope                 *ScopeSummary          `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
 	PairingBundle         []byte                 `protobuf:"bytes,5,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
 	CloudRouteGrant       []byte                 `protobuf:"bytes,6,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3" json:"cloud_route_grant,omitempty"`
+	CloudEdgeLocator      []byte                 `protobuf:"bytes,7,opt,name=cloud_edge_locator,json=cloudEdgeLocator,proto3" json:"cloud_edge_locator,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1934,6 +1918,13 @@ func (x *PairingAccepted) GetPairingBundle() []byte {
 func (x *PairingAccepted) GetCloudRouteGrant() []byte {
 	if x != nil {
 		return x.CloudRouteGrant
+	}
+	return nil
+}
+
+func (x *PairingAccepted) GetCloudEdgeLocator() []byte {
+	if x != nil {
+		return x.CloudEdgeLocator
 	}
 	return nil
 }
@@ -3403,15 +3394,17 @@ func (x *PairingDirectRouteSeed) GetServerName() string {
 	return ""
 }
 
-// PairingManagedRouteSeed 标识 Cloud signaling 中的 owning daemon，并携带 daemon 签名的短期 bootstrap grant。
-// grant 只包含 claim 摘要；128-bit claim 本体仍只在端到端 PairingExchange 内发送。
+// PairingManagedRouteSeed 只携带首次直连 owning Edge 所需的公开入口和 CA pin。
+// 完整 CA、EdgeLocator 与长期 RouteGrant 只在端到端 PairingAccepted 中返回。
 type PairingManagedRouteSeed struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TargetDeviceId string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
-	BootstrapGrant []byte                 `protobuf:"bytes,2,opt,name=bootstrap_grant,json=bootstrapGrant,proto3" json:"bootstrap_grant,omitempty"`
-	EdgeLocator    []byte                 `protobuf:"bytes,3,opt,name=edge_locator,json=edgeLocator,proto3" json:"edge_locator,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId               string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	EdgeId                 string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	PublicEndpoint         string                 `protobuf:"bytes,3,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
+	ServerName             string                 `protobuf:"bytes,4,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
+	CaCertificateDerSha256 []byte                 `protobuf:"bytes,5,opt,name=ca_certificate_der_sha256,json=caCertificateDerSha256,proto3" json:"ca_certificate_der_sha256,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *PairingManagedRouteSeed) Reset() {
@@ -3444,23 +3437,37 @@ func (*PairingManagedRouteSeed) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *PairingManagedRouteSeed) GetTargetDeviceId() string {
+func (x *PairingManagedRouteSeed) GetDaemonId() string {
 	if x != nil {
-		return x.TargetDeviceId
+		return x.DaemonId
 	}
 	return ""
 }
 
-func (x *PairingManagedRouteSeed) GetBootstrapGrant() []byte {
+func (x *PairingManagedRouteSeed) GetEdgeId() string {
 	if x != nil {
-		return x.BootstrapGrant
+		return x.EdgeId
 	}
-	return nil
+	return ""
 }
 
-func (x *PairingManagedRouteSeed) GetEdgeLocator() []byte {
+func (x *PairingManagedRouteSeed) GetPublicEndpoint() string {
 	if x != nil {
-		return x.EdgeLocator
+		return x.PublicEndpoint
+	}
+	return ""
+}
+
+func (x *PairingManagedRouteSeed) GetServerName() string {
+	if x != nil {
+		return x.ServerName
+	}
+	return ""
+}
+
+func (x *PairingManagedRouteSeed) GetCaCertificateDerSha256() []byte {
+	if x != nil {
+		return x.CaCertificateDerSha256
 	}
 	return nil
 }
@@ -3690,9 +3697,9 @@ func (*PairingRouteSeed_ManagedWebrtc) isPairingRouteSeed_Route() {}
 
 func (*PairingRouteSeed_SshWebrtcTcp) isPairingRouteSeed_Route() {}
 
-// PairingClaimOfferV1 是二维码和无摄像头输入使用的紧凑一次性 claim。
+// PairingClaimOffer 是二维码和无摄像头输入使用的紧凑一次性 claim。
 // claim 固定 128-bit，只由 owning daemon 内存持有；消息不包含 PairingTicket、CapabilityGrant、scope 或 terminal 信息。
-type PairingClaimOfferV1 struct {
+type PairingClaimOffer struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	SchemaVersion     uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	Claim             []byte                 `protobuf:"bytes,2,opt,name=claim,proto3" json:"claim,omitempty"`
@@ -3704,20 +3711,20 @@ type PairingClaimOfferV1 struct {
 	sizeCache         protoimpl.SizeCache
 }
 
-func (x *PairingClaimOfferV1) Reset() {
-	*x = PairingClaimOfferV1{}
+func (x *PairingClaimOffer) Reset() {
+	*x = PairingClaimOffer{}
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PairingClaimOfferV1) String() string {
+func (x *PairingClaimOffer) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PairingClaimOfferV1) ProtoMessage() {}
+func (*PairingClaimOffer) ProtoMessage() {}
 
-func (x *PairingClaimOfferV1) ProtoReflect() protoreflect.Message {
+func (x *PairingClaimOffer) ProtoReflect() protoreflect.Message {
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3729,47 +3736,47 @@ func (x *PairingClaimOfferV1) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PairingClaimOfferV1.ProtoReflect.Descriptor instead.
-func (*PairingClaimOfferV1) Descriptor() ([]byte, []int) {
+// Deprecated: Use PairingClaimOffer.ProtoReflect.Descriptor instead.
+func (*PairingClaimOffer) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{37}
 }
 
-func (x *PairingClaimOfferV1) GetSchemaVersion() uint32 {
+func (x *PairingClaimOffer) GetSchemaVersion() uint32 {
 	if x != nil {
 		return x.SchemaVersion
 	}
 	return 0
 }
 
-func (x *PairingClaimOfferV1) GetClaim() []byte {
+func (x *PairingClaimOffer) GetClaim() []byte {
 	if x != nil {
 		return x.Claim
 	}
 	return nil
 }
 
-func (x *PairingClaimOfferV1) GetDeviceId() string {
+func (x *PairingClaimOffer) GetDeviceId() string {
 	if x != nil {
 		return x.DeviceId
 	}
 	return ""
 }
 
-func (x *PairingClaimOfferV1) GetDevicePublicKey() []byte {
+func (x *PairingClaimOffer) GetDevicePublicKey() []byte {
 	if x != nil {
 		return x.DevicePublicKey
 	}
 	return nil
 }
 
-func (x *PairingClaimOfferV1) GetExpiresAtUnixNano() int64 {
+func (x *PairingClaimOffer) GetExpiresAtUnixNano() int64 {
 	if x != nil {
 		return x.ExpiresAtUnixNano
 	}
 	return 0
 }
 
-func (x *PairingClaimOfferV1) GetRoutes() []*PairingRouteSeed {
+func (x *PairingClaimOffer) GetRoutes() []*PairingRouteSeed {
 	if x != nil {
 		return x.Routes
 	}
@@ -5167,15 +5174,14 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_nonce\x18\x03 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x04 \x01(\fR\x05proof\"\x93\x02\n" +
-	"\vPairingOpen\x12%\n" +
-	"\x0epairing_bundle\x18\x01 \x01(\fR\rpairingBundle\x12*\n" +
+	"\x05proof\x18\x04 \x01(\fR\x05proof\"\xec\x01\n" +
+	"\vPairingOpen\x12.\n" +
+	"\x13pairing_claim_offer\x18\x01 \x01(\fR\x11pairingClaimOffer\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_label\x18\x03 \x01(\tR\vclientLabel\x12!\n" +
 	"\fclient_nonce\x18\x04 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x05 \x01(\fR\x05proof\x12.\n" +
-	"\x13pairing_claim_offer\x18\x06 \x01(\fR\x11pairingClaimOffer\x12%\n" +
-	"\x0eclient_product\x18\a \x01(\rR\rclientProduct\"\x97\x01\n" +
+	"\x05proof\x18\x05 \x01(\fR\x05proof\x12%\n" +
+	"\x0eclient_product\x18\x06 \x01(\rR\rclientProduct\"\x97\x01\n" +
 	"\fScopeSummary\x124\n" +
 	"\x04kind\x18\x01 \x01(\x0e2 .anytty.remote.auth.v1.ScopeKindR\x04kind\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
@@ -5207,15 +5213,14 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x05scope\x18\x02 \x01(\v2(.anytty.remote.auth.v1.ClientAccessScopeR\x05scope\x12,\n" +
 	"\x12ticket_ttl_seconds\x18\x03 \x01(\x03R\x10ticketTtlSeconds\x124\n" +
 	"\x16grant_lifetime_seconds\x18\x04 \x01(\x03R\x14grantLifetimeSeconds\x12D\n" +
-	"\x06routes\x18\x05 \x03(\v2,.anytty.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\xc6\x01\n" +
-	"\x1eClientAccessTicketCreateResult\x12\x16\n" +
-	"\x06bundle\x18\x01 \x01(\fR\x06bundle\x12\x1b\n" +
-	"\tticket_id\x18\x02 \x01(\tR\bticketId\x12/\n" +
-	"\x14expires_at_unix_nano\x18\x03 \x01(\x03R\x11expiresAtUnixNano\x12\x1f\n" +
-	"\vclaim_offer\x18\x04 \x01(\fR\n" +
+	"\x06routes\x18\x05 \x03(\v2,.anytty.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\xae\x01\n" +
+	"\x1eClientAccessTicketCreateResult\x12\x1b\n" +
+	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12/\n" +
+	"\x14expires_at_unix_nano\x18\x02 \x01(\x03R\x11expiresAtUnixNano\x12\x1f\n" +
+	"\vclaim_offer\x18\x03 \x01(\fR\n" +
 	"claimOffer\x12\x1d\n" +
 	"\n" +
-	"claim_code\x18\x05 \x01(\tR\tclaimCode\"6\n" +
+	"claim_code\x18\x04 \x01(\tR\tclaimCode\"6\n" +
 	"\x19ClientAccessRevokeRequest\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\"\x80\x03\n" +
 	"\x12ClientAccessRecord\x12\x19\n" +
@@ -5232,14 +5237,15 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x12CapabilityAccepted\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x129\n" +
 	"\x05scope\x18\x02 \x01(\v2#.anytty.remote.auth.v1.ScopeSummaryR\x05scope\x126\n" +
-	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\x98\x02\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xc6\x02\n" +
 	"\x0fPairingAccepted\x12\x14\n" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12)\n" +
 	"\x10delivery_receipt\x18\x02 \x01(\tR\x0fdeliveryReceipt\x126\n" +
 	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x129\n" +
 	"\x05scope\x18\x04 \x01(\v2#.anytty.remote.auth.v1.ScopeSummaryR\x05scope\x12%\n" +
 	"\x0epairing_bundle\x18\x05 \x01(\fR\rpairingBundle\x12*\n" +
-	"\x11cloud_route_grant\x18\x06 \x01(\fR\x0fcloudRouteGrant\"h\n" +
+	"\x11cloud_route_grant\x18\x06 \x01(\fR\x0fcloudRouteGrant\x12,\n" +
+	"\x12cloud_edge_locator\x18\a \x01(\fR\x10cloudEdgeLocator\"h\n" +
 	"\x12CapabilityRejected\x128\n" +
 	"\x04code\x18\x01 \x01(\x0e2$.anytty.remote.auth.v1.AuthErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x93\x03\n" +
@@ -5362,11 +5368,14 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11signaling_address\x18\x01 \x01(\tR\x10signalingAddress\x12&\n" +
 	"\x0fice_tcp_address\x18\x02 \x01(\tR\riceTcpAddress\x12\x1f\n" +
 	"\vserver_name\x18\x03 \x01(\tR\n" +
-	"serverName\"\x8f\x01\n" +
-	"\x17PairingManagedRouteSeed\x12(\n" +
-	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12'\n" +
-	"\x0fbootstrap_grant\x18\x02 \x01(\fR\x0ebootstrapGrant\x12!\n" +
-	"\fedge_locator\x18\x03 \x01(\fR\vedgeLocator\"\xeb\x02\n" +
+	"serverName\"\xd4\x01\n" +
+	"\x17PairingManagedRouteSeed\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x17\n" +
+	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12'\n" +
+	"\x0fpublic_endpoint\x18\x03 \x01(\tR\x0epublicEndpoint\x12\x1f\n" +
+	"\vserver_name\x18\x04 \x01(\tR\n" +
+	"serverName\x129\n" +
+	"\x19ca_certificate_der_sha256\x18\x05 \x01(\fR\x16caCertificateDerSha256\"\xeb\x02\n" +
 	"\x13PairingSSHRouteSeed\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x12\n" +
@@ -5385,8 +5394,8 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12\x1f\n" +
 	"\bpriority\x18\x06 \x01(\x05H\x01R\bpriority\x88\x01\x01B\a\n" +
 	"\x05routeB\v\n" +
-	"\t_priority\"\x8d\x02\n" +
-	"\x13PairingClaimOfferV1\x12%\n" +
+	"\t_priority\"\x8b\x02\n" +
+	"\x11PairingClaimOffer\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x14\n" +
 	"\x05claim\x18\x02 \x01(\fR\x05claim\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12*\n" +
@@ -5644,7 +5653,7 @@ var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(*PairingManagedRouteSeed)(nil),             // 45: anytty.remote.auth.v1.PairingManagedRouteSeed
 	(*PairingSSHRouteSeed)(nil),                 // 46: anytty.remote.auth.v1.PairingSSHRouteSeed
 	(*PairingRouteSeed)(nil),                    // 47: anytty.remote.auth.v1.PairingRouteSeed
-	(*PairingClaimOfferV1)(nil),                 // 48: anytty.remote.auth.v1.PairingClaimOfferV1
+	(*PairingClaimOffer)(nil),                   // 48: anytty.remote.auth.v1.PairingClaimOffer
 	(*EndpointConfigV1)(nil),                    // 49: anytty.remote.auth.v1.EndpointConfigV1
 	(*EndpointRegistryV1)(nil),                  // 50: anytty.remote.auth.v1.EndpointRegistryV1
 	(*PairingTicketDescriptor)(nil),             // 51: anytty.remote.auth.v1.PairingTicketDescriptor
@@ -5703,7 +5712,7 @@ var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	44, // 37: anytty.remote.auth.v1.PairingRouteSeed.direct_webrtc_tcp:type_name -> anytty.remote.auth.v1.PairingDirectRouteSeed
 	45, // 38: anytty.remote.auth.v1.PairingRouteSeed.managed_webrtc:type_name -> anytty.remote.auth.v1.PairingManagedRouteSeed
 	46, // 39: anytty.remote.auth.v1.PairingRouteSeed.ssh_webrtc_tcp:type_name -> anytty.remote.auth.v1.PairingSSHRouteSeed
-	47, // 40: anytty.remote.auth.v1.PairingClaimOfferV1.routes:type_name -> anytty.remote.auth.v1.PairingRouteSeed
+	47, // 40: anytty.remote.auth.v1.PairingClaimOffer.routes:type_name -> anytty.remote.auth.v1.PairingRouteSeed
 	9,  // 41: anytty.remote.auth.v1.EndpointConfigV1.label_source:type_name -> anytty.remote.auth.v1.EndpointSource
 	36, // 42: anytty.remote.auth.v1.EndpointConfigV1.identity:type_name -> anytty.remote.auth.v1.EndpointDaemonIdentity
 	5,  // 43: anytty.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> anytty.remote.auth.v1.EndpointConnectMode

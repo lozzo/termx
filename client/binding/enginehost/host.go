@@ -33,8 +33,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const bootstrapPrefix = "anytty://bootstrap?payload="
-
 // Options 定义单个平台 generation 的 primitive 依赖。
 // Broker 与 peer factory 必须只属于当前 engine；关闭后不得复用到下一代。
 type Options struct {
@@ -556,7 +554,7 @@ func (source platformCredentials) ResolveClientCredential(ctx context.Context, e
 	if err := identity.ValidatePublic(); err != nil {
 		return remoteauth.ClientAccessCredential{}, err
 	}
-	return remoteauth.ClientAccessCredential{Version: 2, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), CloudEdgeLocator: append([]byte(nil), record.GetCloudEdgeLocator()...), UpdatedAt: time.Now().UTC()}, nil
+	return remoteauth.ClientAccessCredential{Version: 3, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), CloudEdgeLocator: append([]byte(nil), record.GetCloudEdgeLocator()...), UpdatedAt: time.Now().UTC()}, nil
 }
 
 func (source platformCredentials) UpdateCloudEdgeLocator(ctx context.Context, endpointID, reference string, locator []byte) error {
@@ -666,9 +664,6 @@ func decodeBootstrap(value string) ([]byte, error) {
 	encoded := strings.TrimSpace(value)
 	if strings.HasPrefix(encoded, remoteauth.PairingClaimCodePrefix) {
 		return remoteauth.DecodePairingClaimCode(encoded)
-	}
-	if strings.HasPrefix(encoded, bootstrapPrefix) {
-		encoded = strings.TrimPrefix(encoded, bootstrapPrefix)
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(payload) == 0 {

@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/anytty/anytty/shared/transport"
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestListenerDialRoundTrip(t *testing.T) {
@@ -84,6 +84,25 @@ func TestListenerDialRoundTrip(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for client done channel")
 	}
+}
+
+func TestNewListenerPreservesActiveSocket(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "anytty.sock")
+	listener, err := NewListener(path)
+	if err != nil {
+		t.Fatalf("new listener failed: %v", err)
+	}
+	defer listener.Close()
+
+	if second, err := NewListener(path); err == nil {
+		_ = second.Close()
+		t.Fatal("second listener replaced an active socket")
+	}
+	client, err := Dial(path)
+	if err != nil {
+		t.Fatalf("active listener became unreachable: %v", err)
+	}
+	_ = client.Close()
 }
 
 func TestListenerAcceptContextCancel(t *testing.T) {

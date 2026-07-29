@@ -20,7 +20,7 @@
 | enrollment 一次性访问 Controller | 已实现 | 完成后返回 daemon binding 与 Edge locator |
 | daemon 启动直连 Edge | 已实现 | runtime 只读取 version 2 record，不创建 Controller client |
 | Controller 离线时 daemon 重连原 Edge | 已实现 | 前提是 Edge 进程仍持有 verification keys |
-| pairing offer 直连 Edge | 已实现 | offer 内 grant 和 locator 由 daemon identity 绑定 |
+| pairing offer 直连 Edge | 已实现 | offer 只带 Edge 入口和 CA 指纹；Edge 向在线 daemon 实时预检 |
 | 已授权客户端 cache-first | 已实现 | credential locator 命中时 Controller RPC 为零 |
 | 精确 Controller fallback | 已实现 | 仅本地 typed transport error 或明确位置不存在触发 |
 | Relay 创建和续租 Edge-local | 已实现 | 每次租约最多五分钟，不能扩大 binding 委托 |
@@ -42,10 +42,10 @@ Controller binding signing key
 daemon DeviceIdentity
   -> AgentGateway proof of possession
   -> CloudRouteGrant for one ClientAccessIdentity
-  -> PairingRouteGrant for one claim digest
+  -> pairing claim atomic binding and long-term grants
 
 ClientAccessIdentity
-  -> ClientGateway stream proof
+  -> capability or pairing ClientGateway stream proof
   -> DataChannel capability authentication
 ```
 
@@ -89,21 +89,22 @@ load record
 
 ## 6. pairing 快路径
 
-pairing offer 包含 claim、daemon public identity、短期 pairing route grant 和 Edge locator。grant 同时绑定 claim digest 与 locator digest。
+pairing offer 包含 128-bit claim、daemon public identity、Edge 公开入口和 Edge CA DER SHA-256 指纹，不包含 CA PEM、route grant、完整 locator、scope 或长期凭据。
 
 ```text
 scan offer
-  -> verify daemon public identity
-  -> verify grant signature and expiry
-  -> verify claim and locator digests
-  -> TLS to Edge
-  -> pairing-only ClientGateway
-  -> daemon live precheck
-  -> DataChannel claim exchange
-  -> save capability + route grant + locator
+  -> validate daemon identity, route and expiry
+  -> TLS to Edge; verify server chain against pinned CA fingerprint
+  -> ClientGateway pairing admission + ClientAccessIdentity proof
+  -> Edge aligns admission with authenticated online daemon
+  -> daemon live AgentAuthorize precheck
+  -> DTLS DataChannel claim exchange
+  -> daemon atomically binds claim to client key
+  -> PairingAccepted returns capability + route grant + full locator
+  -> client verifies daemon and saves credential
 ```
 
-Controller 从头到尾不参与。集成测试在停止 public Controller 后执行完整 pairing 和 terminal I/O。
+Controller 从头到尾不参与。首次 pairing 没有 Controller fallback：客户端此时尚无可用于 Directory 的长期 CloudRouteGrant，公开按 daemon ID 查询 locator 会扩大信息泄露和滥用面。Edge 或 daemon 不可达时本次 pairing 明确失败；已授权客户端才按第 8 节的严格条件使用 Directory fallback。
 
 ## 7. 已授权客户端快路径
 
@@ -156,7 +157,7 @@ Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“
 | 已连接 Relay session | 是，至当前有效租约和可续委托边界 | Edge 本地转发和续租 |
 | 已授权客户端新建 P2P | 是 | credential 有 locator 与 route grant |
 | 已授权客户端新建 Relay | 是 | Edge 使用当前 daemon binding 委托 |
-| 新 pairing | 是 | offer 自带 daemon 签名 locator 路由材料 |
+| 新 pairing | 是 | offer 有 Edge 入口和 CA pin，Edge 向在线 daemon 实时预检 |
 | daemon 重连同一未重启 Edge | 是 | record 和 Edge 内存 key bundle 足够 |
 | 无 locator 的客户端 | 否 | 没有可信入口，只能 Directory fallback |
 | Edge 重启后 daemon admission | 否 | key bundle 未持久化，安全地拒绝 |
@@ -164,13 +165,13 @@ Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“
 
 ## 11. 已完成的安全收口
 
-- binding 和 route grant 全部使用确定性 protobuf、Ed25519 与独立签名 domain。
+- binding、长期 route grant 和客户端 proof 全部使用确定性 protobuf、Ed25519 与独立签名 domain。
 - binding 验 target Edge、validity、revision、device key、capability 和 locator digest。
 - AgentGateway 与 ClientGateway 保存精确 generation，迟到 detach/close 不能影响新连接。
 - binding 过期后，即使 writer 仍连接，`AuthenticatedAgentClaims` 也拒绝新 session。
 - Edge state 对 Agent、session、pending signaling、Relay、mailbox 和 claim 设置硬上限。
 - gRPC 单消息 1 MiB、并发 stream 256；SDP 和 candidate 在昂贵资源前校验。
-- locator 必须是合法 host:port、SNI 和非空 CA；私有 CA 不混入系统信任根。
+- 长期 locator 必须是合法 host:port、SNI 和非空 CA；pairing TLS 必须匹配二维码固定的 CA DER 指纹、证书有效期、server name/IP 和 server-auth EKU。
 - Directory 先验 route grant 和 client proof，再返回实时 locator。
 - claim 本体、CapabilityGrant、TURN credential、SDP/ICE 和 terminal/file payload 不进入 Controller 数据库或日志。
 
