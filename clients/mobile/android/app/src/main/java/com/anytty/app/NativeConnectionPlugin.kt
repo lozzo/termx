@@ -14,6 +14,9 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.anytty.app.goclient.AndroidGoClientEngine
+import com.anytty.app.goclient.AndroidClientAccessCredentialStore
+import com.anytty.app.goclient.AndroidEndpointRegistryStore
+import com.anytty.app.goclient.AndroidSSHCredentialStore
 import com.anytty.app.goclient.GoClientBridgeServer
 import java.security.SecureRandom
 import java.io.File
@@ -131,6 +134,20 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     }
 
     @PluginMethod
+    fun resetLocalPairings(call: PluginCall) {
+        runtimeScope.launch {
+            try {
+                resetLocalPairingState()
+                call.resolve()
+            } catch (failure: Exception) {
+                AnyTTYDebugLog.e(TAG, "resetLocalPairings failed", failure)
+                runCatching { restartGoBridgeServer() }
+                call.reject("failed to reset local pairings", failure)
+            }
+        }
+    }
+
+    @PluginMethod
     fun getBridgeEndpoint(call: PluginCall) {
         if (bridgePort <= 0) {
             call.reject("native bridge server is not ready")
@@ -198,6 +215,15 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     @Synchronized
     private fun restartGoBridgeServer() {
         suspendGoBridgeServer()
+        startGoBridgeServer()
+    }
+
+    @Synchronized
+    private fun resetLocalPairingState() {
+        suspendGoBridgeServer()
+        AndroidEndpointRegistryStore(context).clear()
+        AndroidClientAccessCredentialStore(context).clearAll()
+        AndroidSSHCredentialStore().clearAll()
         startGoBridgeServer()
     }
 

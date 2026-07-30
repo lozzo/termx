@@ -15,6 +15,7 @@ export interface NativeBridgeEndpoint {
 export interface NativeConnectionPlugin extends Plugin {
   addListener(eventName: 'generationChanging' | 'generationChanged' | 'generationChangeFailed', listener: (event: { reason: string; epoch: number }) => void): Promise<PluginListenerHandle>
   handleForegroundResume(): Promise<void>
+  resetLocalPairings(): Promise<void>
   getBridgeEndpoint(): Promise<NativeBridgeEndpoint>
   exportDebugLogs(): Promise<NativeDebugLogExport>
   writeDebugLog(opts: { level?: 'debug' | 'info' | 'warn' | 'error'; tag?: string; message: string }): Promise<void>

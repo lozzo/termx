@@ -98,6 +98,13 @@ class AndroidClientAccessCredentialStore(context: Context) {
         }
     }
 
+    fun clearAll() = synchronized(lock) {
+        if (!preferences.edit().clear().commit()) {
+            throw ClientPlatformFailure("temporary", "failed to clear client access credentials")
+        }
+        KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(KEY_ALIAS)
+    }
+
     /** prepareRecord 为 Go Client Engine 准备 public identity projection；private seed 不离开本 secure-store owner。 */
     fun prepareRecord(credentialRef: String, endpointId: String): ClientBinding.CredentialRecord = synchronized(lock) {
         val normalizedRef = validateRef(credentialRef)

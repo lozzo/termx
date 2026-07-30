@@ -21,6 +21,12 @@ class AndroidEndpointRegistryStore(context: Context) {
         }
     }
 
+    fun clear() = synchronized(lock) {
+        if (!preferences.edit().remove(REGISTRY_KEY).commit()) {
+            throw ClientPlatformFailure("temporary", "failed to clear endpoint registry")
+        }
+    }
+
     /**
      * store 先提交 registry bytes，再用一次 preferences commit 清理 Go 已判定不再引用的 credential refs。
      * credential commit 失败时恢复旧 registry，使 Go 只在整组平台写入成功后发布新 snapshot。

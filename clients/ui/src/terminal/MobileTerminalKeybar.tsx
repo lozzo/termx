@@ -185,7 +185,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   const ctrlToggle = useModifierToggle(activeModifierState.ctrl, (v) => setModifierState({ ...activeModifierState, ctrl: v }))
   const altToggle = useModifierToggle(activeModifierState.alt, (v) => setModifierState({ ...activeModifierState, alt: v }))
 
-  const cls = 'relative flex h-8 min-w-0 flex-[1_1_0] touch-manipulation select-none items-center justify-center overflow-visible border-x border-transparent text-center font-mono text-[10px] font-medium'
+  const cls = 'relative flex h-11 min-w-11 flex-none touch-manipulation select-none items-center justify-center overflow-visible border-x border-transparent text-center font-mono text-[10px] font-medium'
   const keyboardButtonClass = keyboardLocked
     ? 'bg-red-600 text-white'
     : keyboardVisible
@@ -242,9 +242,9 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
       ref={setBarRef}
       className={`min-w-0 shrink-0 overflow-x-hidden border-t border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] text-[var(--anytty-text)] md:hidden ${className || ''}`}
       data-testid="anytty-mobile-keybar"
-      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))', overflow: 'visible' }}
+      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))' }}
     >
-      <div className="flex min-w-0 gap-1 px-1.5 pt-1.5" style={{ overflow: 'visible' }}>
+      <div className="anytty-terminal-key-row flex min-w-0 touch-pan-x gap-1 overflow-x-auto px-1.5 pt-1.5">
         {btn('Esc', '\x1b')}
         {btn('/', '/')}
         {btn('|', '|')}
@@ -303,7 +303,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           {pressedKey === '⌨' && <KeyPopup label="⌨" />}
         </button>
       </div>
-      <div className="flex min-w-0 gap-1 px-1.5 pb-1.5 pt-1" style={{ overflow: 'visible' }}>
+      <div className="anytty-terminal-key-row flex min-w-0 touch-pan-x gap-1 overflow-x-auto px-1.5 pb-1.5 pt-1">
         {btn('⇥', '\t', t('terminal.tools.tabKey'))}
         {modBtn('Ctrl', activeModifierState.ctrl, ctrlToggle)}
         {modBtn('Alt', activeModifierState.alt, altToggle)}

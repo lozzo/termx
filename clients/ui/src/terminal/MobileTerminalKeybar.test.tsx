@@ -26,4 +26,17 @@ describe('MobileTerminalKeybar', () => {
     expect(keyboardButton.className).toContain('bg-red-600')
     expect(keyboardButton.className).not.toContain('bg-[var(--anytty-accent)]')
   })
+
+  it('keeps every shortcut target at least 44 pixels in both dimensions', () => {
+    render(<MobileTerminalKeybar onInput={vi.fn()} />)
+
+    const keybar = screen.getByTestId('anytty-mobile-keybar')
+    const buttons = Array.from(keybar.querySelectorAll('button'))
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const button of buttons) {
+      expect(button.className).toContain('h-11')
+      expect(button.className).toContain('min-w-11')
+    }
+    expect(keybar.querySelectorAll('.overflow-x-auto')).toHaveLength(2)
+  })
 })

@@ -64,6 +64,19 @@ export function terminalHistoryPrefetchThresholdRows(configuredRows: number, vie
   return Math.max(0, Math.trunc(configuredRows), Math.max(1, Math.trunc(viewportRows)) * 3)
 }
 
+export function createTerminalOptions(settings: TerminalSettings): ConstructorParameters<typeof XTerm>[0] {
+  return {
+    allowProposedApi: false,
+    cursorBlink: settings.cursorBlink,
+    convertEol: false,
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    screenReaderMode: true,
+    scrollback: settings.scrollback,
+    theme: resolveTerminalTheme(settings.themeId),
+  }
+}
+
 function prefersReducedTerminalMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 }
@@ -906,15 +919,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     lastSnapshotTextRef.current = ''
     recoveryRevisionAppliedRef.current = 0
 
-    const term = new XTerm({
-      allowProposedApi: false,
-      cursorBlink: settingsRef.current.cursorBlink,
-      convertEol: false,
-      fontFamily: settingsRef.current.fontFamily,
-      fontSize: settingsRef.current.fontSize,
-      scrollback: settingsRef.current.scrollback,
-      theme: resolveTerminalTheme(settingsRef.current.themeId),
-    })
+    const term = new XTerm(createTerminalOptions(settingsRef.current))
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.open(container)

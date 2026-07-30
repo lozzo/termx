@@ -45,6 +45,7 @@ import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 import { NativeForegroundBarrier, runAcrossNativePicker } from './NativeForegroundBarrier'
 import { NativeGenerationRecoveryFence } from './NativeGenerationRecoveryFence'
+import { RegistryStartupScreen, UnsupportedWebPreview } from './RegistryStartupScreen'
 
 const qrScannerRootId = 'anytty-camera-qr-scanner'
 const qrScannerReaderId = 'anytty-camera-qr-reader'
@@ -62,6 +63,11 @@ type NativeSessionEntry = {
 type NativeSessionLease = ProtoClientSession
 
 export function AnyTTYApp() {
+  if (!Capacitor.isNativePlatform()) return <UnsupportedWebPreview />
+  return <NativeAnyTTYApp />
+}
+
+function NativeAnyTTYApp() {
   useAndroidBackButton()
   useNativeKeyboardEvents()
   useNativeStatusBarSync()
@@ -106,19 +112,40 @@ export function AnyTTYApp() {
     () => nativeAppRuntime.fileTransfer,
     [nativeAppRuntime],
   )
+  const retryRegistry = useCallback(async () => {
+    setRegistryError(null)
+    try {
+      await NativeConnection.handleForegroundResume()
+      await replaceNativeGeneration(refreshRegistry, nativeAppRuntime.resetGeneration, true)
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : String(failure)
+      setRegistryError(message)
+      throw failure
+    }
+  }, [nativeAppRuntime.resetGeneration, refreshRegistry])
+  const resetLocalPairings = useCallback(async () => {
+    try {
+      await NativeConnection.resetLocalPairings()
+      networkRuntime.storage?.removeItem('anytty.app.machines.v2')
+      networkRuntime.storage?.removeItem('anytty.file-transfers.v2')
+      endpointRegistry.replace(create(AnyTTYRemoteAuth.EndpointRegistryV1Schema, { schemaVersion: 1 }))
+      await replaceNativeGeneration(refreshRegistry, nativeAppRuntime.resetGeneration, true)
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : String(failure)
+      setRegistryError(message)
+      throw failure
+    }
+  }, [endpointRegistry, nativeAppRuntime.resetGeneration, networkRuntime, refreshRegistry])
 
   if (!registryReady) {
     return (
-      <section
-        aria-live="polite"
-        className="anytty-app-page flex h-[100dvh] w-screen items-center justify-center bg-[var(--anytty-app-bg)]"
-      >
-        {registryError ? (
-          <span className="px-6 text-center text-sm font-medium text-red-600">{anyttyI18n.t('errors.generic')}</span>
-        ) : (
-          <span aria-label={anyttyI18n.t('common.loading')} className="anytty-square-spinner h-6 w-6 text-[var(--anytty-app-accent)]" role="status" />
-        )}
-      </section>
+      <RegistryStartupScreen
+        diagnosticsAvailable={Capacitor.isPluginAvailable('NativeConnection')}
+        error={registryError}
+        onExportDiagnostics={exportNativeDebugLogs}
+        onResetLocalPairings={resetLocalPairings}
+        onRetry={retryRegistry}
+      />
     )
   }
 
@@ -434,7 +461,7 @@ function createNativeNetworkRuntime(): RemoteNetworkRuntime {
   }
 }
 
-async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?: () => void }): Promise<string | null> {
+async function scanPairingCode(options?: { onCancel?: () => void }): Promise<string | null> {
   console.info('[anytty:scan] camera scan requested')
   const existing = document.getElementById(qrScannerRootId)
   existing?.remove()
@@ -483,26 +510,6 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   cancelButton.textContent = anyttyI18n.t('common.cancel')
   cancelButton.className = 'anytty-app-secondary-button px-4 text-[14px] font-semibold'
 
-  const manualContainer = document.createElement('div')
-  manualContainer.className = 'mt-auto flex flex-col gap-3'
-
-  const manualInput = document.createElement('textarea')
-  manualInput.placeholder = anyttyI18n.t('scanner.manualPlaceholder')
-  manualInput.className = 'h-[90px] w-full resize-none border border-[var(--anytty-app-line)] bg-white p-3 font-mono text-[13px] text-zinc-900 outline-none focus:border-[var(--anytty-app-accent)] focus:ring-1 focus:ring-[var(--anytty-app-accent)]'
-
-  const manualSubmit = document.createElement('button')
-  manualSubmit.type = 'button'
-  manualSubmit.textContent = anyttyI18n.t('pairing.add')
-  manualSubmit.className = 'anytty-app-primary-button min-h-12 w-full px-4 text-[15px] font-semibold disabled:opacity-50'
-  manualSubmit.disabled = true
-
-  manualInput.oninput = () => {
-    const hasValue = manualInput.value.trim().length > 0
-    manualSubmit.disabled = !hasValue
-  }
-
-  manualContainer.append(manualInput, manualSubmit)
-
   const reader = document.createElement('div')
   reader.id = qrScannerReaderId
   reader.className = 'mt-4 self-center overflow-hidden border border-[var(--anytty-app-line)] bg-black'
@@ -518,7 +525,7 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   hint.className = 'mt-4 px-4 text-center text-[13px] font-medium leading-[20px] text-zinc-500'
 
   header.append(title, cancelButton)
-  root.append(scannerStyle, header, reader, hint, manualContainer)
+  root.append(scannerStyle, header, reader, hint)
   document.body.append(root)
 
   // Android WebView 的 BarcodeDetector 可能在缺少 GMS provider 时让进程直接崩溃；扫码只使用库内 decoder。
@@ -534,7 +541,6 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
       if (settled) return
       settled = true
       cancelButton.disabled = true
-      manualSubmit.disabled = true
       root.remove()
 
       if (started) {
@@ -562,13 +568,6 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
       if (settled) return
       options?.onCancel?.()
       finish(null)
-    }
-    manualSubmit.onclick = () => {
-      if (settled) return
-      const value = manualInput.value.trim()
-      if (!value) return
-      options?.onManualEntry?.()
-      finish(value)
     }
     scanner.start(
       { facingMode: 'environment' },

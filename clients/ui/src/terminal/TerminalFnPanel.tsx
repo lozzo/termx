@@ -21,7 +21,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
           {programPreset ? (
             <button
               type="button"
-              className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)]'}`}
+              className={`min-h-11 px-3 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)]'}`}
               onClick={() => { hapticSelection(); setActiveTab('program') }}
             >
               {programPreset.name}
@@ -29,7 +29,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
           ) : null}
           <button
             type="button"
-            className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)]'}`}
+            className={`min-h-11 px-3 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]' : 'bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)]'}`}
             onClick={() => { hapticSelection(); setActiveTab('system') }}
           >
             System
@@ -56,7 +56,7 @@ function FnGroupView({ group, onSend }: { group: TerminalFnGroup; onSend: (data:
           <button
             key={`${group.name}:${item.label}:${item.data}`}
             type="button"
-            className="min-h-10 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-2 py-1.5 text-left active:opacity-80"
+            className="min-h-11 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-2 py-1.5 text-left active:opacity-80"
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => { hapticImpact(); onSend(item.data) }}
           >

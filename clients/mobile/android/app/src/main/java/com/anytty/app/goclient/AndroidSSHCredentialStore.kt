@@ -71,6 +71,11 @@ class AndroidSSHCredentialStore {
         credentialRefs.map(::validateRef).distinct().forEach { store.deleteEntry(alias(it)) }
     }
 
+    fun clearAll() = synchronized(lock) {
+        val store = keyStore()
+        store.aliases().toList().filter { it.startsWith(ALIAS_PREFIX) }.forEach(store::deleteEntry)
+    }
+
     private fun keyStore(): KeyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
 
     private fun validateRef(value: String): String {
