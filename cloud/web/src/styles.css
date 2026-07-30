@@ -210,6 +210,11 @@ h3 { font-size: 15px; line-height: 1.4; }
 .form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-error { color: var(--danger); line-height: 1.5; }
 .error-state { display: grid; justify-items: start; gap: 12px; }
+.route-resource-error { width: min(100%, 620px); min-width: 0; display: grid; justify-items: start; gap: 12px; }
+.route-resource-error .notice { width: 100%; min-width: 0; overflow-wrap: anywhere; }
+.route-resource-error .notice-error { color: var(--danger); }
+.route-resource-error h1 { font-size: 17px; color: inherit; }
+.route-resource-error p { margin-top: 6px; }
 .check-field { min-height: 44px; display: flex; align-items: center; gap: 9px; }
 .check-field input { width: 18px; height: 18px; accent-color: var(--accent); }
 .notice { padding: 12px 14px; border: 1px solid #b7cbee; border-radius: 3px; background: #edf4ff; color: #174883; line-height: 1.55; }
