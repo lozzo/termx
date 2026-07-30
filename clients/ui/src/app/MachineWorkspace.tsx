@@ -20,7 +20,8 @@ import { Terminal, type TerminalHandle } from '../terminal/Terminal'
 import { TerminalActionToolbar, type TerminalToolbarMode } from '../terminal/TerminalActionToolbar'
 import { TerminalEnvironmentEditor } from '../terminal/TerminalEnvironmentEditor'
 import { TerminalFnPanel } from '../terminal/TerminalFnPanel'
-import { addNativeBackHandler } from '../platform/nativeBack'
+import { NATIVE_BACK_PRIORITY } from '../platform/nativeBack'
+import { useNativeBackHandler } from '../platform/useNativeBackHandler'
 import { defaultTerminalResizeControl, type TerminalResizeControl } from '../terminal/terminalClient'
 import { TerminalList } from '../terminal/TerminalList'
 import { createTerminalManagementApi } from '../terminal/terminalManagementApi'
@@ -2123,17 +2124,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     )
   }
 
-  useEffect(() => addNativeBackHandler(() => {
+  const nestedOverlayOpen = Boolean(
+    pasteConfirmText || connectionInfoOpen || mobileSheet || terminalFnOpen || terminalToolbarOpen || splitTerminalId,
+  )
+  useNativeBackHandler(() => {
     if (pasteConfirmText) {
       setPasteConfirmText('')
       return true
     }
     if (connectionInfoOpen) {
       setConnectionInfoOpen(false)
-      return true
-    }
-    if (filesOpen) {
-      openTerminalPanel()
       return true
     }
     if (mobileSheet) {
@@ -2153,25 +2153,21 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       closeSplitTerminal()
       return true
     }
+    return false
+  }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, nestedOverlayOpen)
+
+  const workspaceNavigationOpen = filesOpen || page === 'terminal'
+  useNativeBackHandler(() => {
+    if (filesOpen) {
+      openTerminalPanel()
+      return true
+    }
     if (page === 'terminal') {
       showTerminalListPage()
       return true
     }
     return false
-  }, 20), [
-    closeSplitTerminal,
-    connectionInfoOpen,
-    filesOpen,
-    mobileSheet,
-    openTerminalPanel,
-    page,
-    pasteConfirmText,
-    setTerminalToolbarModeAndReset,
-    showTerminalListPage,
-    splitTerminalId,
-    terminalFnOpen,
-    terminalToolbarOpen,
-  ])
+  }, NATIVE_BACK_PRIORITY.WORKSPACE, workspaceNavigationOpen)
 
   const renderTerminalListPage = () => {
     if (!machine) return null

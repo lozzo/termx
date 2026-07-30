@@ -1,6 +1,12 @@
-export const ANYTTY_NATIVE_BACK_EVENT = 'anytty:native-back'
-
 export type AnyTTYNativeBackHandler = () => boolean
+
+export const NATIVE_BACK_PRIORITY = {
+  ROOT: 10,
+  WORKSPACE: 20,
+  TRANSFER: 30,
+  SCANNER: 40,
+  NESTED_OVERLAY: 50,
+} as const
 
 interface NativeBackHandlerEntry {
   id: number
@@ -41,8 +47,5 @@ export function dispatchNativeBack(): boolean {
     }
   }
 
-  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return false
-  const event = new Event(ANYTTY_NATIVE_BACK_EVENT, { cancelable: true })
-  window.dispatchEvent(event)
-  return event.defaultPrevented
+  return false
 }

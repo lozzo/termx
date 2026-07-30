@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { forwardRef, useImperativeHandle } from 'react'
@@ -12,6 +12,7 @@ import {
   TerminalRefSchema,
 } from '../generated/apipb/terminal_pb'
 import { anyttyI18n } from '../i18n'
+import { dispatchNativeBack } from '../platform/nativeBack'
 import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { MachineWorkspace } from './MachineWorkspace'
 
@@ -356,6 +357,42 @@ describe('MachineWorkspace terminal creation', () => {
     const onInput = (terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }).onInput
     expect(onInput('shortcut')).toBe(true)
     expect(terminalSendInput).toHaveBeenLastCalledWith('term-shell', 'shortcut')
+  })
+
+  it('closes a nested workspace sheet before navigating the workspace itself', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', (command) => {
+      if (command.command.case === 'terminalDefaults') {
+        return protoResult('terminalDefaults', create(TerminalDefaultsResultSchema, {
+          defaults: create(TerminalDefaultsSchema, { defaultCommand: ['/bin/zsh'], defaultCwd: '/tmp' }),
+        }))
+      }
+      return protoResult('acknowledge', create(AcknowledgeResultSchema))
+    })
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Create terminal' }))
+    expect(await screen.findByTestId('anytty-terminal-editor-sheet')).toBeTruthy()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-terminal-editor-sheet')).toBeNull()
+    expect(screen.getByTestId('anytty-terminal-list-page')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Shell' }))
+    expect(await screen.findByTestId('anytty-terminal-page')).toBeTruthy()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.getByTestId('anytty-terminal-list-page')).toBeTruthy()
+    expect(dispatchNativeBack()).toBe(false)
   })
 
   it('refreshes daemon inventory after a list-page manual reconnect', async () => {

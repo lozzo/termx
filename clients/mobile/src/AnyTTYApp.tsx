@@ -4,12 +4,10 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 import { Network } from '@capacitor/network'
 import { create } from '@bufbuild/protobuf'
-import { Html5Qrcode } from 'html5-qrcode'
 import {
   RemoteControlApp,
   createMachineStore,
   dispatchNativeKeyboardEvent,
-  dispatchNativeBack,
   normalizeTerminalInventory,
   openProtoEventSubscription,
   AnyTTYClientBinding,
@@ -17,7 +15,6 @@ import {
   AnyTTYApiEvents,
   AnyTTYApiTerminal,
   AnyTTYRemoteAuth,
-  anyttyI18n,
 } from '@anytty/ui'
 import type {
   FileTransferContext,
@@ -46,9 +43,9 @@ import { useNativeStatusBarSync } from './nativeStatusBar'
 import { NativeForegroundBarrier, runAcrossNativePicker } from './NativeForegroundBarrier'
 import { NativeGenerationRecoveryFence } from './NativeGenerationRecoveryFence'
 import { RegistryStartupScreen, UnsupportedWebPreview } from './RegistryStartupScreen'
+import { useAndroidBackButton } from './androidBack'
+import { scanPairingCode } from './nativeQrScanner'
 
-const qrScannerRootId = 'anytty-camera-qr-scanner'
-const qrScannerReaderId = 'anytty-camera-qr-reader'
 const nativeHttpConnectTimeoutMs = 8_000
 const nativeHttpReadTimeoutMs = 15_000
 let goBindingClient = new GoBindingClient()
@@ -429,28 +426,6 @@ function useAppResumeSync(
   }
 }
 
-function useAndroidBackButton(): void {
-  useEffect(() => {
-    const promise = CapApp.addListener('backButton', () => {
-      if (dispatchNativeBack()) return
-      const backButton = document.querySelector<HTMLButtonElement>(
-        [
-          'button[aria-label="Back to machines"]',
-          'button[aria-label="Close pairing"]',
-          'button[aria-label="Close"]',
-        ].join(','),
-      )
-      if (backButton) {
-        backButton.click()
-        return
-      }
-    })
-    return () => {
-      void promise.then((subscription) => subscription.remove())
-    }
-  }, [])
-}
-
 function createNativeNetworkRuntime(): RemoteNetworkRuntime {
   return {
     fetch: nativeFetch,
@@ -459,139 +434,6 @@ function createNativeNetworkRuntime(): RemoteNetworkRuntime {
       return new URLSearchParams(globalThis.location?.search ?? '').get(name)
     },
   }
-}
-
-async function scanPairingCode(options?: { onCancel?: () => void }): Promise<string | null> {
-  console.info('[anytty:scan] camera scan requested')
-  const existing = document.getElementById(qrScannerRootId)
-  existing?.remove()
-  const scannerSize = scannerSquareSize()
-  const qrboxSize = Math.min(220, Math.max(180, scannerSize - 32))
-
-  const root = document.createElement('div')
-  root.id = qrScannerRootId
-  root.className = 'anytty-app-page fixed inset-0 z-[2147483647] flex flex-col items-stretch px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-[calc(env(safe-area-inset-top)+12px)]'
-
-  const scannerStyle = document.createElement('style')
-  scannerStyle.textContent = `
-    #${qrScannerReaderId} {
-      width: ${scannerSize}px !important;
-      height: ${scannerSize}px !important;
-      aspect-ratio: 1 / 1 !important;
-      overflow: hidden !important;
-      border: none !important;
-    }
-    #${qrScannerReaderId} > div,
-    #${qrScannerReaderId}__scan_region,
-    #${qrScannerReaderId}__scan_region > div,
-    #${qrScannerReaderId} video,
-    #${qrScannerReaderId} canvas {
-      width: 100% !important;
-      height: 100% !important;
-    }
-    #${qrScannerReaderId} video,
-    #${qrScannerReaderId} canvas {
-      object-fit: cover !important;
-    }
-    #${qrScannerReaderId} img {
-      display: none !important;
-    }
-  `
-
-  const header = document.createElement('div')
-  header.className = 'flex items-center justify-between gap-3 min-h-[44px]'
-
-  const title = document.createElement('div')
-  title.textContent = anyttyI18n.t('scanner.title')
-  title.className = 'text-[17px] font-bold tracking-tight text-zinc-900'
-
-  const cancelButton = document.createElement('button')
-  cancelButton.type = 'button'
-  cancelButton.textContent = anyttyI18n.t('common.cancel')
-  cancelButton.className = 'anytty-app-secondary-button px-4 text-[14px] font-semibold'
-
-  const reader = document.createElement('div')
-  reader.id = qrScannerReaderId
-  reader.className = 'mt-4 self-center overflow-hidden border border-[var(--anytty-app-line)] bg-black'
-  reader.style.width = `${scannerSize}px`
-  reader.style.height = `${scannerSize}px`
-  reader.style.minWidth = `${scannerSize}px`
-  reader.style.minHeight = `${scannerSize}px`
-  reader.style.maxWidth = `${scannerSize}px`
-  reader.style.maxHeight = `${scannerSize}px`
-
-  const hint = document.createElement('div')
-  hint.textContent = anyttyI18n.t('scanner.hint')
-  hint.className = 'mt-4 px-4 text-center text-[13px] font-medium leading-[20px] text-zinc-500'
-
-  header.append(title, cancelButton)
-  root.append(scannerStyle, header, reader, hint)
-  document.body.append(root)
-
-  // Android WebView 的 BarcodeDetector 可能在缺少 GMS provider 时让进程直接崩溃；扫码只使用库内 decoder。
-  const scanner = new Html5Qrcode(qrScannerReaderId, {
-    verbose: false,
-    useBarCodeDetectorIfSupported: false,
-  })
-  let settled = false
-  let started = false
-
-  return new Promise((resolve, reject) => {
-    const finish = (value: string | null, error?: unknown) => {
-      if (settled) return
-      settled = true
-      cancelButton.disabled = true
-      root.remove()
-
-      if (started) {
-        void scanner.stop()
-          .catch(() => {})
-          .then(() => {
-            scanner.clear()
-          })
-          .catch(() => {})
-      } else {
-        try {
-          scanner.clear()
-        } catch {}
-      }
-      if (error) {
-        console.warn('[anytty:scan] camera scan failed', error instanceof Error ? error.message : String(error))
-        reject(error instanceof Error ? error : new Error(String(error)))
-        return
-      }
-      console.info(value ? '[anytty:scan] QR decoded' : '[anytty:scan] scan cancelled')
-      resolve(value)
-    }
-
-  cancelButton.onclick = () => {
-      if (settled) return
-      options?.onCancel?.()
-      finish(null)
-    }
-    scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: qrboxSize, height: qrboxSize }, aspectRatio: 1.0 },
-      (decodedText) => {
-        if (!settled) {
-          try {
-            scanner.pause(true)
-          } catch {}
-        }
-        finish(decodedText)
-      },
-      () => {},
-    ).then(() => {
-      started = true
-    }).catch((error) => finish(null, error))
-  })
-}
-
-function scannerSquareSize(): number {
-  const width = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 360)
-  const height = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 640)
-  const availableHeight = Math.max(180, height - 340)
-  return Math.floor(Math.max(220, Math.min(width * 0.78, availableHeight, 280)))
 }
 
 const nativeFetch: RemoteRuntimeFetch = async (input, init = {}) => {

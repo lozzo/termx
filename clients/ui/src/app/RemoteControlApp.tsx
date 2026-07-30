@@ -7,7 +7,8 @@ import { createMachineStore, type StoredMachineRecord } from '../state/machineSt
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../platform/haptics'
-import { addNativeBackHandler } from '../platform/nativeBack'
+import { NATIVE_BACK_PRIORITY } from '../platform/nativeBack'
+import { useNativeBackHandler } from '../platform/useNativeBackHandler'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
 import type { MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcConnectOptions, TerminalInventoryEvents } from '../core/transport'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
@@ -104,7 +105,7 @@ const emptyMachineConnectionSnapshot: MachineConnectionSnapshot = {
 const getEmptyMachineConnectionSnapshot = () => emptyMachineConnectionSnapshot
 const localHubReachabilityProbeTimeoutMs = 2_500
 export interface ScanPairingCodeOptions {
-  onCancel?: (() => void) | undefined
+  signal?: AbortSignal | undefined
 }
 
 /** ExternalPairingImportResult 是平台 secure-store 导入成功后可进入共享 UI 的非秘密机器投影。 */
@@ -225,6 +226,7 @@ export function RemoteControlApp({
   const effectiveConnectionReady = connectionReady && remoteNetworkState.networkReady
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const cameraScanInFlightRef = useRef(false)
+  const cameraScanAbortRef = useRef<AbortController | null>(null)
   const runtimeCacheRef = useRef<{
     networkRuntime: RemoteNetworkRuntime
     runtimeFactory: MachineRuntimeFactory
@@ -282,6 +284,7 @@ export function RemoteControlApp({
 
   useEffect(() => {
     return () => {
+      cameraScanAbortRef.current?.abort()
       const cache = runtimeCacheRef.current
       if (!cache) return
       runtimeCacheRef.current = null
@@ -432,6 +435,21 @@ export function RemoteControlApp({
     openPairSheet(machine.id)
   }, [openPairSheet])
 
+  const closePairSheet = useCallback(() => {
+    setSharePreview(null)
+    setSSHCredentialNotice(null)
+    setScanOpen(false)
+  }, [])
+
+  const requestPairSheetClose = useCallback(() => {
+    const activeScan = cameraScanAbortRef.current
+    if (activeScan) {
+      activeScan.abort()
+      return
+    }
+    closePairSheet()
+  }, [closePairSheet])
+
   const selectMachine = useCallback((machine: DisplayMachine) => {
     hapticImpact()
     setSelectedMachineId(machine.id)
@@ -530,25 +548,30 @@ export function RemoteControlApp({
   const scanWithCamera = useCallback(async () => {
     if (!scanPairingCode) return
     if (cameraScanInFlightRef.current) return
+    const controller = new AbortController()
     cameraScanInFlightRef.current = true
+    cameraScanAbortRef.current = controller
     hapticImpact()
     setCameraScanning(true)
     setScanFlowState('scanning')
     setError(null)
     try {
-      const value = await scanPairingCode({
-        onCancel: () => setScanOpen(false),
-      })
-      if (!value) return
+      const value = await scanPairingCode({ signal: controller.signal })
+      if (cameraScanAbortRef.current === controller) cameraScanAbortRef.current = null
+      if (!value) {
+        closePairSheet()
+        return
+      }
       await pairScannedValue(value)
     } catch (err) {
       setError(isCameraUnavailableError(err) ? t('pairing.cameraUnavailable') : localizedAppError(err, t))
     } finally {
+      if (cameraScanAbortRef.current === controller) cameraScanAbortRef.current = null
       cameraScanInFlightRef.current = false
       setCameraScanning(false)
       setScanFlowState((current) => current === 'scanning' ? 'idle' : current)
     }
-  }, [pairScannedValue, scanPairingCode, t])
+  }, [closePairSheet, pairScannedValue, scanPairingCode, t])
 
   const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
     if (!storage) return
@@ -583,12 +606,12 @@ export function RemoteControlApp({
     await runtime.disconnect()
   }, [])
 
-  useEffect(() => addNativeBackHandler(() => {
-    if (scanOpen) {
-      setSSHCredentialNotice(null)
-      setScanOpen(false)
-      return true
-    }
+  useNativeBackHandler(() => {
+    requestPairSheetClose()
+    return true
+  }, NATIVE_BACK_PRIORITY.SCANNER, scanOpen)
+
+  useNativeBackHandler(() => {
     if (view === 'settings') {
       setView('home')
       return true
@@ -599,7 +622,7 @@ export function RemoteControlApp({
       return true
     }
     return false
-  }, 10), [scanOpen, view])
+  }, NATIVE_BACK_PRIORITY.ROOT, view !== 'home')
 
   return (
     <main
@@ -666,8 +689,8 @@ export function RemoteControlApp({
           pairIntent={pairIntent}
           selectedMachine={selectedMachine}
           canScanWithCamera={Boolean(scanPairingCode)}
-		  onCommitShare={() => void commitEndpointShare()}
-          onClose={() => { hapticSelection(); setSharePreview(null); setSSHCredentialNotice(null); setScanOpen(false) }}
+          onCommitShare={() => void commitEndpointShare()}
+          onClose={() => { hapticSelection(); requestPairSheetClose() }}
           onScanWithCamera={() => void scanWithCamera()}
         />
       ) : null}

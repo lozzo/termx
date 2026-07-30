@@ -3,7 +3,7 @@ export { anyttyI18n, anyttyIntlLocale, anyttyLanguages, normalizeAnyTTYLanguage 
 export type { AnyTTYLanguage } from './i18n'
 export * from './connection/eventQueue'
 export {
-  ANYTTY_NATIVE_BACK_EVENT,
+  NATIVE_BACK_PRIORITY,
   addNativeBackHandler,
   dispatchNativeBack,
 } from './platform/nativeBack'

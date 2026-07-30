@@ -3,6 +3,8 @@ import { ArrowDownToLine, ArrowUpFromLine, CheckSquare, Download, Pause, Play, R
 import { useTranslation } from 'react-i18next'
 import '../i18n'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
+import { NATIVE_BACK_PRIORITY } from '../platform/nativeBack'
+import { useNativeBackHandler } from '../platform/useNativeBackHandler'
 import { ModalSurface } from '../ui/ModalSurface'
 import type { TransferInfo } from './fileApi'
 
@@ -173,6 +175,11 @@ function TransferCenterDialog({
   const summaryId = useId()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [selectionMode, setSelectionMode] = useState(false)
+
+  useNativeBackHandler(() => {
+    onClose()
+    return true
+  }, NATIVE_BACK_PRIORITY.TRANSFER)
 
   useEffect(() => {
     setSelectedIds((current) => {

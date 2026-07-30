@@ -1,9 +1,10 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { anyttyI18n } from '../i18n'
 import type { RemoteNetworkRuntime, RemoteRuntimeStorage } from '../core/transport'
 import { createMachineStore } from '../state/machineStore'
+import { dispatchNativeBack } from '../platform/nativeBack'
 import { RemoteControlApp, type ExternalPairingAdapter } from './RemoteControlApp'
 
 describe('RemoteControlApp accountless product shell', () => {
@@ -11,7 +12,10 @@ describe('RemoteControlApp accountless product shell', () => {
     await anyttyI18n.changeLanguage('en')
   })
 
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    document.querySelector('[data-testid="english-back-label-decoy"]')?.remove()
+  })
 
   it('starts with service pairing and no retired account action', async () => {
     renderApp()
@@ -86,6 +90,27 @@ describe('RemoteControlApp accountless product shell', () => {
 
     expect(onRefreshMachines).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('Device status updated')).toBeTruthy()
+  })
+
+  it('closes the Chinese pairing surface without querying English aria labels', async () => {
+    await anyttyI18n.changeLanguage('zh-CN')
+    const englishLabelDecoy = document.createElement('button')
+    const decoyClick = vi.fn()
+    englishLabelDecoy.dataset.testid = 'english-back-label-decoy'
+    englishLabelDecoy.setAttribute('aria-label', 'Close pairing')
+    englishLabelDecoy.onclick = decoyClick
+    document.body.append(englishLabelDecoy)
+    renderApp()
+
+    await userEvent.click(await screen.findByRole('button', { name: anyttyI18n.t('machines.scanService') }))
+    expect(screen.getByTestId('anytty-pair-sheet')).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-pair-sheet')).toBeNull()
+    expect(decoyClick).not.toHaveBeenCalled()
+    expect(dispatchNativeBack()).toBe(false)
+    expect(decoyClick).not.toHaveBeenCalled()
+    englishLabelDecoy.remove()
   })
 })
 

@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { anyttyI18n } from '../i18n'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
 import type { RemoteNetworkRuntime, RemoteRuntimeStorage } from '../core/transport'
 import { createMachineStore } from '../state/machineStore'
+import { dispatchNativeBack } from '../platform/nativeBack'
 import { RemoteControlApp, type ExternalPairingAdapter, type MachineRuntime } from './RemoteControlApp'
 
 vi.mock('./MachineWorkspace', () => ({
@@ -76,7 +77,7 @@ describe('RemoteControlApp native session pool', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open Build host' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Back to devices' }))
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
 
     expect(await screen.findByText('Connected')).toBeTruthy()
     expect(screen.getByText(/Single relay/)).toBeTruthy()

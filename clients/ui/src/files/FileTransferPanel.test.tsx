@@ -1,6 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
+import { dispatchNativeBack } from '../platform/nativeBack'
 import { FileTransferPanel } from './FileTransferPanel'
 import type { TransferInfo } from './fileApi'
 
@@ -181,7 +183,63 @@ describe('FileTransferPanel', () => {
     expect(onDismiss).toHaveBeenCalledWith('failed-1')
     expect(onDismiss).toHaveBeenCalledWith('missing-1')
   })
+
+  it('puts both transfer centers in one LIFO Back stack and closes one surface per event', () => {
+    const firstClosed = vi.fn()
+    const secondClosed = vi.fn()
+    const view = render(<TwoTransferCenters firstClosed={firstClosed} secondClosed={secondClosed} />)
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+
+    view.rerender(<TwoTransferCenters firstClosed={firstClosed} secondClosed={secondClosed} />)
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(secondClosed).toHaveBeenCalledOnce()
+    expect(firstClosed).not.toHaveBeenCalled()
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(screen.getByText('first.txt')).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(firstClosed).toHaveBeenCalledOnce()
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(0)
+    expect(dispatchNativeBack()).toBe(false)
+  })
 })
+
+function TwoTransferCenters({
+  firstClosed,
+  secondClosed,
+}: {
+  firstClosed: () => void
+  secondClosed: () => void
+}) {
+  const [firstOpen, setFirstOpen] = useState(true)
+  const [secondOpen, setSecondOpen] = useState(true)
+  return (
+    <>
+      <FileTransferPanel
+        transfers={[transfer({ id: 'first', name: 'first.txt' })]}
+        hasActiveTransfers
+        onCancel={vi.fn()}
+        onDismiss={vi.fn()}
+        open={firstOpen}
+        onOpenChange={(open) => {
+          setFirstOpen(open)
+          if (!open) firstClosed()
+        }}
+      />
+      <FileTransferPanel
+        transfers={[transfer({ id: 'second', name: 'second.txt' })]}
+        hasActiveTransfers
+        onCancel={vi.fn()}
+        onDismiss={vi.fn()}
+        open={secondOpen}
+        onOpenChange={(open) => {
+          setSecondOpen(open)
+          if (!open) secondClosed()
+        }}
+      />
+    </>
+  )
+}
 
 function transfer(overrides: Partial<TransferInfo>): TransferInfo {
   return {

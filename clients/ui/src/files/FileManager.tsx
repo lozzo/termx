@@ -7,7 +7,8 @@ import type { ProtoClientSession } from '../core/protoClientSession'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PathBookmark } from './pathBookmarks'
 import 'highlight.js/styles/github.css'
-import { addNativeBackHandler } from '../platform/nativeBack'
+import { NATIVE_BACK_PRIORITY } from '../platform/nativeBack'
+import { useNativeBackHandler } from '../platform/useNativeBackHandler'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { ActionSheet, type ActionSheetItem } from '../ui/ActionSheet'
 import { ModalSurface } from '../ui/ModalSurface'
@@ -157,9 +158,7 @@ export function FileManager({
     }
   }), [manager, t])
 
-  useEffect(() => {
-    if (!active) return undefined
-    return addNativeBackHandler(() => {
+  useNativeBackHandler(() => {
     if (deletePath) {
       setDeletePath(null)
       return true
@@ -206,21 +205,7 @@ export function FileManager({
       return true
     }
     return false
-    }, 30)
-  }, [
-    active,
-    deletePath,
-    entryMenuPath,
-    manager,
-    manager.clipboard,
-    manager.currentPath,
-    manager.previewPath,
-    manager.selectionMode,
-    newDirOpen,
-    renamePath,
-    sortMenuOpen,
-    bookmarksOpen,
-  ])
+  }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, active)
 
   const editingBookmark = useMemo(() => (
     editingBookmarkId ? manager.pathBookmarks.find((bookmark) => bookmark.id === editingBookmarkId) ?? null : null
