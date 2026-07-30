@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/filepublish"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -49,7 +51,7 @@ func New(config Config, loader *securetransport.ReloadableCertificate) (*Manager
 		config.StateFile = absolute
 	}
 	if config.EdgeID == "" || config.StateFile == "." || loader == nil {
-		return nil, errors.New("Edge ID, absolute certificate state file, and TLS loader are required")
+		return nil, errors.New("edge ID, absolute certificate state file, and TLS loader are required")
 	}
 	if config.Now == nil {
 		config.Now = func() time.Time { return time.Now().UTC() }
@@ -124,8 +126,29 @@ func (manager *Manager) validate(bundle *cloudv1.EdgeCertificateBundle, requireC
 }
 
 func atomicWrite(path string, payload []byte) error {
+	return atomicWriteWithFault(path, payload, nil)
+}
+
+type atomicWriteStage string
+
+const (
+	atomicWriteStageWrite         atomicWriteStage = "write"
+	atomicWriteStageFileSync      atomicWriteStage = "file_sync"
+	atomicWriteStageFileClose     atomicWriteStage = "file_close"
+	atomicWriteStageRename        atomicWriteStage = "rename"
+	atomicWriteStageDirectorySync atomicWriteStage = "directory_sync"
+)
+
+type atomicWriteFault func(atomicWriteStage) error
+
+func atomicWriteWithFault(path string, payload []byte, inject atomicWriteFault) error {
 	directoryPath := filepath.Dir(path)
-	if err := os.MkdirAll(directoryPath, 0o700); err != nil {
+	err := os.MkdirAll(directoryPath, 0o700)
+	if err != nil {
+		return err
+	}
+	previousPayload, previousMode, previousExists, err := readCurrentFile(path)
+	if err != nil {
 		return err
 	}
 	temporary, err := os.CreateTemp(directoryPath, ".managed-certificate-")
@@ -134,29 +157,109 @@ func atomicWrite(path string, payload []byte) error {
 	}
 	temporaryPath := temporary.Name()
 	defer func() { _ = os.Remove(temporaryPath) }()
-	if err := temporary.Chmod(0o600); err != nil {
+	err = temporary.Chmod(0o600)
+	if err != nil {
 		_ = temporary.Close()
 		return err
 	}
-	if _, err := temporary.Write(payload); err == nil {
+	err = injectedAtomicWriteError(inject, atomicWriteStageWrite)
+	written := 0
+	if err == nil {
+		written, err = temporary.Write(payload)
+		if err == nil && written != len(payload) {
+			err = io.ErrShortWrite
+		}
+	}
+	if err == nil {
+		err = injectedAtomicWriteError(inject, atomicWriteStageFileSync)
+	}
+	if err == nil {
 		err = temporary.Sync()
 	}
-	if closeErr := temporary.Close(); err == nil {
-		err = closeErr
+	closeErr := temporary.Close()
+	if closeErr == nil {
+		closeErr = injectedAtomicWriteError(inject, atomicWriteStageFileClose)
+	}
+	err = errors.Join(err, closeErr)
+	if err != nil {
+		return err
+	}
+	err = injectedAtomicWriteError(inject, atomicWriteStageRename)
+	if err == nil {
+		err = filepublish.Rename(temporaryPath, path)
 	}
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return err
+	err = injectedAtomicWriteError(inject, atomicWriteStageDirectorySync)
+	if err == nil {
+		err = filepublish.SyncDirectory(directoryPath)
 	}
-	directory, err := os.Open(directoryPath)
 	if err != nil {
-		return err
+		restoreErr := restoreCurrentFile(path, previousPayload, previousMode, previousExists)
+		return errors.Join(err, restoreErr)
 	}
-	err = directory.Sync()
-	if closeErr := directory.Close(); err == nil {
-		err = closeErr
+	return nil
+}
+
+func injectedAtomicWriteError(inject atomicWriteFault, stage atomicWriteStage) error {
+	if inject == nil {
+		return nil
 	}
-	return err
+	return inject(stage)
+}
+
+func readCurrentFile(path string) ([]byte, os.FileMode, bool, error) {
+	payload, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, false, nil
+	}
+	if err != nil {
+		return nil, 0, false, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return payload, info.Mode().Perm(), true, nil
+}
+
+func restoreCurrentFile(path string, payload []byte, mode os.FileMode, existed bool) error {
+	directoryPath := filepath.Dir(path)
+	if !existed {
+		removeErr := os.Remove(path)
+		if errors.Is(removeErr, os.ErrNotExist) {
+			removeErr = nil
+		}
+		return errors.Join(removeErr, filepublish.SyncDirectory(directoryPath))
+	}
+	temporary, err := os.CreateTemp(directoryPath, ".managed-certificate-rollback-")
+	if err != nil {
+		return fmt.Errorf("restore previous managed certificate: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	err = temporary.Chmod(mode)
+	written := 0
+	if err == nil {
+		written, err = temporary.Write(payload)
+		if err == nil && written != len(payload) {
+			err = io.ErrShortWrite
+		}
+	}
+	if err == nil {
+		err = temporary.Sync()
+	}
+	closeErr := temporary.Close()
+	err = errors.Join(err, closeErr)
+	if err == nil {
+		err = filepublish.Rename(temporaryPath, path)
+	}
+	if err == nil {
+		err = filepublish.SyncDirectory(directoryPath)
+	}
+	if err != nil {
+		return fmt.Errorf("restore previous managed certificate: %w", err)
+	}
+	return nil
 }

@@ -88,6 +88,59 @@ func TestManagerHotReloadAndFailureKeepsCurrentCertificate(t *testing.T) {
 	}
 }
 
+func TestAtomicWriteFailuresPreserveCurrentFile(t *testing.T) {
+	stages := []atomicWriteStage{
+		atomicWriteStageWrite,
+		atomicWriteStageFileSync,
+		atomicWriteStageFileClose,
+		atomicWriteStageRename,
+		atomicWriteStageDirectorySync,
+	}
+	for _, stage := range stages {
+		t.Run(string(stage), func(t *testing.T) {
+			directory := t.TempDir()
+			path := filepath.Join(directory, "managed-certificate.pb")
+			if err := os.WriteFile(path, []byte("current"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			injected := errors.New("injected " + string(stage) + " failure")
+			err := atomicWriteWithFault(path, []byte("replacement"), func(current atomicWriteStage) error {
+				if current == stage {
+					return injected
+				}
+				return nil
+			})
+			if !errors.Is(err, injected) {
+				t.Fatalf("atomic write error = %v, want injected failure", err)
+			}
+			payload, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(payload) != "current" {
+				t.Fatalf("current file changed after %s failure: %q", stage, payload)
+			}
+		})
+	}
+}
+
+func TestAtomicWriteDirectorySyncFailureRestoresMissingState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "managed-certificate.pb")
+	injected := errors.New("injected directory sync failure")
+	err := atomicWriteWithFault(path, []byte("replacement"), func(stage atomicWriteStage) error {
+		if stage == atomicWriteStageDirectorySync {
+			return injected
+		}
+		return nil
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("atomic write error = %v, want injected failure", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("failed first write left state file: %v", statErr)
+	}
+}
+
 func handshakeSerial(t *testing.T, serverConfig *tls.Config, roots *x509.CertPool) int64 {
 	t.Helper()
 	serverConnection, clientConnection := net.Pipe()
