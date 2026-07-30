@@ -8,28 +8,72 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+internal const val BRIDGE_RESPONSE_HEADER_BYTES = 21
+
+internal fun bridgeResponseFrameBytes(payloadBytes: Int): Int? {
+    if (payloadBytes < 0) return null
+    val frameBytes = BRIDGE_RESPONSE_HEADER_BYTES.toLong() + payloadBytes.toLong()
+    return if (frameBytes <= BRIDGE_MAX_MESSAGE_BYTES) frameBytes.toInt() else null
+}
+
+internal interface GoClientBridgeEngine : AutoCloseable {
+    fun openSession(payload: ByteArray): Long
+    fun execute(session: Long, payload: ByteArray): Long
+    fun openResourceStream(session: Long, payload: ByteArray): Long
+    fun sendResourceStreamFrame(stream: Long, payload: ByteArray)
+    fun closeResourceStream(stream: Long)
+    fun engineCommand(payload: ByteArray): Long
+    fun cancel(operation: Long)
+    fun closeSession(session: Long)
+    fun release(handle: Long)
+    fun nextEvent(): ByteArray
+}
+
+private class NativeGoClientBridgeEngine(
+    private val engine: AndroidGoClientEngine,
+) : GoClientBridgeEngine {
+    override fun openSession(payload: ByteArray) = GoClientNative.openSession(engine.handle, payload)
+    override fun execute(session: Long, payload: ByteArray) = GoClientNative.execute(engine.handle, session, payload)
+    override fun openResourceStream(session: Long, payload: ByteArray) =
+        GoClientNative.openResourceStream(engine.handle, session, payload)
+    override fun sendResourceStreamFrame(stream: Long, payload: ByteArray) =
+        GoClientNative.sendResourceStreamFrame(engine.handle, stream, payload)
+    override fun closeResourceStream(stream: Long) = GoClientNative.closeResourceStream(engine.handle, stream)
+    override fun engineCommand(payload: ByteArray) = GoClientNative.engineCommand(engine.handle, payload)
+    override fun cancel(operation: Long) = GoClientNative.cancel(engine.handle, operation)
+    override fun closeSession(session: Long) = GoClientNative.closeSession(engine.handle, session)
+    override fun release(handle: Long) = GoClientNative.release(engine.handle, handle)
+    override fun nextEvent() = GoClientNative.nextEvent(engine.handle, 0)
+    override fun close() = engine.close()
+}
 
 /**
  * GoClientBridgeServer 是 WebView 到 Go binding 的唯一二进制数据面。
  * 它只解释固定 operation header 和 opaque Proto bytes，不解析任何 terminal/history/file/storage 字段。
  */
-class GoClientBridgeServer(
-    private val engine: AndroidGoClientEngine,
+class GoClientBridgeServer internal constructor(
+    private val engine: GoClientBridgeEngine,
     authToken: String,
-) : WebSocketServer(InetSocketAddress("127.0.0.1", 0)), AutoCloseable {
+) : WebSocketServer(InetSocketAddress("127.0.0.1", 0), 1, listOf(BridgeDraft6455())), AutoCloseable {
+    constructor(engine: AndroidGoClientEngine, authToken: String) : this(NativeGoClientBridgeEngine(engine), authToken)
+
     private val active = AtomicBoolean(true)
     private val token = authToken.toByteArray(Charsets.UTF_8)
-    private val authenticated = ConcurrentHashMap.newKeySet<WebSocket>()
-    private val current = AtomicReference<WebSocket?>(null)
+    private val connections = BridgeConnectionRegistry()
     private val pendingEvents = ArrayBlockingQueue<ByteArray>(EVENT_CAPACITY)
-    private val sendLock = Any()
     private val eventThread = Thread(::pumpEvents, "anytty-go-events").apply { isDaemon = true }
     private val started = CountDownLatch(1)
+
+    init {
+        require(token.size == AUTH_TOKEN_BYTES && authToken.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
+            "bridge token must be 43-byte base64url"
+        }
+        setWebSocketFactory(BridgeWebSocketFactory(connections))
+    }
 
     override fun onStart() {
         started.countDown()
@@ -38,41 +82,41 @@ class GoClientBridgeServer(
 
     fun awaitStarted(timeoutMillis: Long): Boolean = started.await(timeoutMillis, TimeUnit.MILLISECONDS)
 
+    internal fun slotSnapshot(): Triple<Int, Int, Boolean> = connections.snapshot()
+
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) = Unit
 
     override fun onMessage(conn: WebSocket, message: String) {
-        conn.close(CLOSE_PROTOCOL, "binary binding protocol required")
+        conn.close(CLOSE_PROTOCOL, "text frames are not supported")
     }
 
     override fun onMessage(conn: WebSocket, message: ByteBuffer) {
         val bytes = ByteArray(message.remaining()).also(message::get)
+        val bridge = conn as? BridgeWebSocketImpl ?: run {
+            conn.close(CLOSE_PROTOCOL, "invalid binding transport")
+            return
+        }
+        if (connections.withAuthenticated(bridge) { true } != true) {
+            authenticate(bridge, bytes)
+            return
+        }
         if (bytes.isEmpty()) {
             conn.close(CLOSE_PROTOCOL, "empty binding frame")
             return
         }
-        if (!authenticated.contains(conn)) {
-            authenticate(conn, bytes)
-            return
-        }
-        try {
-            handleRequest(conn, bytes)
-        } catch (error: Throwable) {
-            val requestId = if (bytes.size >= 9) ByteBuffer.wrap(bytes, 1, 8).order(ByteOrder.BIG_ENDIAN).long else 0L
-            sendError(conn, requestId, error.message ?: "native binding request failed")
+        connections.withAuthenticated(bridge) {
+            try {
+                handleRequest(bridge, bytes)
+            } catch (error: Throwable) {
+                val requestId = if (bytes.size >= 9) ByteBuffer.wrap(bytes, 1, 8).order(ByteOrder.BIG_ENDIAN).long else 0L
+                sendError(bridge, requestId, error.message ?: "native binding request failed")
+            }
         }
     }
 
-    override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) {
-        authenticated.remove(conn)
-        current.compareAndSet(conn, null)
-    }
+    override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) = Unit
 
-    override fun onError(conn: WebSocket?, ex: Exception?) {
-        if (conn != null) {
-            authenticated.remove(conn)
-            current.compareAndSet(conn, null)
-        }
-    }
+    override fun onError(conn: WebSocket?, ex: Exception?) = Unit
 
     override fun close() {
         if (!active.compareAndSet(true, false)) return
@@ -81,20 +125,25 @@ class GoClientBridgeServer(
         eventThread.interrupt()
     }
 
-    private fun authenticate(conn: WebSocket, frame: ByteArray) {
-        if (frame[0] != OP_AUTH || !MessageDigest.isEqual(frame.copyOfRange(1, frame.size), token)) {
-            conn.close(CLOSE_POLICY, "binding authentication failed")
+    private fun authenticate(conn: BridgeWebSocketImpl, frame: ByteArray) {
+        if (frame.size != AUTH_FRAME_BYTES) {
+            connections.authenticate(conn, false, {}, {})
             return
         }
-        synchronized(sendLock) {
-            current.getAndSet(conn)?.takeIf { it != conn }?.close(CLOSE_REPLACED, "binding client replaced")
-            authenticated.add(conn)
-            sendAck(conn, 0)
-            while (true) {
-                val event = pendingEvents.poll() ?: break
-                sendFrame(conn, OP_EVENT, 0, 0, event)
-            }
-        }
+        val candidate = frame.copyOfRange(1, AUTH_FRAME_BYTES)
+        val tokenMatches = MessageDigest.isEqual(candidate, token)
+        val valid = frame[0] == OP_AUTH && tokenMatches
+        connections.authenticate(
+            connection = conn,
+            valid = valid,
+            acknowledge = { sendAck(conn, 0) },
+            afterAcknowledge = {
+                while (true) {
+                    val event = pendingEvents.poll() ?: break
+                    sendFrame(conn, OP_EVENT, 0, 0, event)
+                }
+            },
+        )
     }
 
     private fun handleRequest(conn: WebSocket, frame: ByteArray) {
@@ -102,35 +151,35 @@ class GoClientBridgeServer(
         val operation = input.get()
         val requestId = input.long
         when (operation) {
-            OP_OPEN_SESSION -> accept(conn, requestId, GoClientNative.openSession(engine.handle, remaining(input)))
+            OP_OPEN_SESSION -> accept(conn, requestId, engine.openSession(remaining(input)))
             OP_EXECUTE -> {
                 val session = input.long
-                accept(conn, requestId, GoClientNative.execute(engine.handle, session, remaining(input)))
+                accept(conn, requestId, engine.execute(session, remaining(input)))
             }
             OP_OPEN_RESOURCE_STREAM -> {
                 val session = input.long
-                accept(conn, requestId, GoClientNative.openResourceStream(engine.handle, session, remaining(input)))
+                accept(conn, requestId, engine.openResourceStream(session, remaining(input)))
             }
             OP_SEND_RESOURCE_STREAM_FRAME -> {
                 val stream = input.long
-                GoClientNative.sendResourceStreamFrame(engine.handle, stream, remaining(input))
+                engine.sendResourceStreamFrame(stream, remaining(input))
                 sendAck(conn, requestId)
             }
             OP_CLOSE_RESOURCE_STREAM -> {
-                GoClientNative.closeResourceStream(engine.handle, input.long)
+                engine.closeResourceStream(input.long)
                 sendAck(conn, requestId)
             }
-            OP_ENGINE_COMMAND -> accept(conn, requestId, GoClientNative.engineCommand(engine.handle, remaining(input)))
+            OP_ENGINE_COMMAND -> accept(conn, requestId, engine.engineCommand(remaining(input)))
             OP_CANCEL -> {
-                GoClientNative.cancel(engine.handle, input.long)
+                engine.cancel(input.long)
                 sendAck(conn, requestId)
             }
             OP_CLOSE_SESSION -> {
-                GoClientNative.closeSession(engine.handle, input.long)
+                engine.closeSession(input.long)
                 sendAck(conn, requestId)
             }
             OP_RELEASE -> {
-                GoClientNative.release(engine.handle, input.long)
+                engine.release(input.long)
                 sendAck(conn, requestId)
             }
             else -> sendError(conn, requestId, "unsupported binding operation")
@@ -140,18 +189,15 @@ class GoClientBridgeServer(
     private fun pumpEvents() {
         while (active.get()) {
             val event = try {
-                GoClientNative.nextEvent(engine.handle, 0)
+                engine.nextEvent()
+            } catch (_: InterruptedException) {
+                return
             } catch (_: IllegalStateException) {
                 return
             }
-            val delivered = synchronized(sendLock) {
-                val client = current.get()
-                if (client != null && client.isOpen && authenticated.contains(client)) {
-                    runCatching { sendFrame(client, OP_EVENT, 0, 0, event) }.isSuccess
-                } else {
-                    false
-                }
-            }
+            val delivered = connections.withCurrent { client ->
+                runCatching { sendFrame(client, OP_EVENT, 0, 0, event) }.isSuccess
+            } ?: false
             if (!delivered) {
                 try {
                     pendingEvents.put(event)
@@ -172,7 +218,12 @@ class GoClientBridgeServer(
         sendFrame(conn, OP_ERROR, requestId, 0, message.toByteArray(Charsets.UTF_8))
 
     private fun sendFrame(conn: WebSocket, operation: Byte, requestId: Long, handle: Long, payload: ByteArray) {
-        val output = ByteBuffer.allocate(1 + 8 + 8 + 4 + payload.size).order(ByteOrder.BIG_ENDIAN)
+        val frameBytes = bridgeResponseFrameBytes(payload.size)
+        if (frameBytes == null) {
+            conn.close(CLOSE_TOO_BIG, "binding message exceeds limit")
+            return
+        }
+        val output = ByteBuffer.allocate(frameBytes).order(ByteOrder.BIG_ENDIAN)
         output.put(operation).putLong(requestId).putLong(handle).putInt(payload.size).put(payload).flip()
         conn.send(output)
     }
@@ -195,8 +246,9 @@ class GoClientBridgeServer(
         const val OP_ERROR: Byte = 0x22
         const val OP_EVENT: Byte = 0x30
         private const val EVENT_CAPACITY = 256
+        private const val AUTH_TOKEN_BYTES = 43
+        private const val AUTH_FRAME_BYTES = 44
         private const val CLOSE_PROTOCOL = 1002
-        private const val CLOSE_POLICY = 1008
-        private const val CLOSE_REPLACED = 4001
+        private const val CLOSE_TOO_BIG = 1009
     }
 }

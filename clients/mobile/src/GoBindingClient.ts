@@ -13,6 +13,9 @@ const OP_ACK = 0x21
 const OP_ERROR = 0x22
 const OP_EVENT = 0x30
 const RESPONSE_HEADER_BYTES = 21
+const BRIDGE_PROTOCOL = 'anytty.binding.v1'
+const MAX_BRIDGE_MESSAGE_BYTES = 4 * 1024 * 1024
+const AUTH_TOKEN_BYTES = 43
 
 type PendingBridgeRequest = {
   resolve(handle: bigint): void
@@ -41,16 +44,7 @@ export class AndroidBindingBackend implements ProtoBindingBackend {
     const requestId = ++this.nextRequestId
     const socket = this.socket
     if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Go binding bridge is unavailable')
-    const frame = new Uint8Array(1 + 8 + (handle === undefined ? 0 : 8) + payload.byteLength)
-    const view = new DataView(frame.buffer)
-    view.setUint8(0, operation)
-    view.setBigUint64(1, requestId)
-    let offset = 9
-    if (handle !== undefined) {
-      view.setBigUint64(offset, handle)
-      offset += 8
-    }
-    frame.set(payload, offset)
+    const frame = encodeBridgeRequestFrame(operation, requestId, payload, handle)
     const result = new Promise<bigint>((resolve, reject) => this.pending.set(requestId, { resolve, reject }))
     try {
       socket.send(frame)
@@ -85,7 +79,7 @@ export class AndroidBindingBackend implements ProtoBindingBackend {
 
   private async connect(): Promise<void> {
     const endpoint = await NativeConnection.getBridgeEndpoint()
-    const socket = new WebSocket(`ws://127.0.0.1:${endpoint.port}`)
+    const socket = new WebSocket(`ws://127.0.0.1:${endpoint.port}`, BRIDGE_PROTOCOL)
     socket.binaryType = 'arraybuffer'
     this.socket = socket
     await new Promise<void>((resolve, reject) => {
@@ -102,14 +96,24 @@ export class AndroidBindingBackend implements ProtoBindingBackend {
         }
         resolve()
       }
-      // 网络切换期间 WebView 可能拿到刚创建但无法完成认证的 loopback socket；没有 deadline
-      // 会永久阻塞整个 native generation replacement 队列。
-      const timeout = globalThis.setTimeout(() => finish(new Error('Go binding bridge authentication timed out')), 5_000)
+      const timeout = globalThis.setTimeout(() => finish(new Error('Go binding bridge authentication timed out')), 2_000)
       socket.onerror = () => finish(new Error('Go binding bridge connection failed'))
       socket.onclose = () => finish(new Error('Go binding bridge closed during authentication'))
       socket.onopen = () => {
+        if (socket.protocol !== BRIDGE_PROTOCOL) {
+          finish(new Error('Go binding bridge protocol negotiation failed'))
+          return
+        }
+        if (!/^[A-Za-z0-9_-]{43}$/.test(endpoint.token)) {
+          finish(new Error('Go binding bridge credential is invalid'))
+          return
+        }
         const token = new TextEncoder().encode(endpoint.token)
-        const auth = new Uint8Array(1 + token.byteLength)
+        if (token.byteLength !== AUTH_TOKEN_BYTES) {
+          finish(new Error('Go binding bridge credential is invalid'))
+          return
+        }
+        const auth = new Uint8Array(1 + AUTH_TOKEN_BYTES)
         auth[0] = OP_AUTH
         auth.set(token, 1)
         try {
@@ -185,7 +189,27 @@ export class GoBindingClient extends ProtoBindingClient {
 export { ProtoBindingConnector as GoBindingConnector }
 export type GoEndpointInput = EndpointInput
 
-function decodeBridgeFrame(bytes: Uint8Array): { operation: number; requestId: bigint; handle: bigint; payload: Uint8Array } {
+export function encodeBridgeRequestFrame(
+  operation: BindingOperationCode,
+  requestId: bigint,
+  payload: Uint8Array,
+  handle?: bigint,
+): Uint8Array {
+  const headerBytes = handle === undefined ? 9 : 17
+  if (payload.byteLength > MAX_BRIDGE_MESSAGE_BYTES - headerBytes) {
+    throw new Error('native binding request exceeds bridge message limit')
+  }
+  const frame = new Uint8Array(headerBytes + payload.byteLength)
+  const view = new DataView(frame.buffer)
+  view.setUint8(0, operation)
+  view.setBigUint64(1, requestId)
+  if (handle !== undefined) view.setBigUint64(9, handle)
+  frame.set(payload, headerBytes)
+  return frame
+}
+
+export function decodeBridgeFrame(bytes: Uint8Array): { operation: number; requestId: bigint; handle: bigint; payload: Uint8Array } {
+  if (bytes.byteLength > MAX_BRIDGE_MESSAGE_BYTES) throw new Error('native binding response exceeds bridge message limit')
   if (bytes.byteLength < RESPONSE_HEADER_BYTES) throw new Error('native binding response is truncated')
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const length = view.getUint32(17)
