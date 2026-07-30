@@ -1718,10 +1718,12 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 	_ = server
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
 	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
+	resizeStart := process.resizeCount()
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
 		Cols:         100,
@@ -1736,26 +1738,38 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		return root.Session.Cols == 98 && root.Session.Rows == 26
 	}, "initial attach content rect correction")
-	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
-	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 98, Rows: 26}, resizeStart)
 
+	resizeStart = process.resizeCount()
 	if err := host.SendResize(120, 40); err != nil {
 		t.Fatalf("host resize: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 118 && root.Surface.Rows == 36
+	}, "host resize content rect")
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellSetHeaderVisibleMsg{Visible: false}); err != nil {
 		t.Fatalf("post header hide: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 37}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 37}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 118 && root.Surface.Rows == 37
+	}, "header hide content rect")
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellSetFooterVisibleMsg{Visible: false}); err != nil {
 		t.Fatalf("post footer hide: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 118 && root.Surface.Rows == 38
+	}, "footer hide content rect")
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action:         tuistate.PaneCommandSplit,
 		SplitDirection: tuistate.SplitDirectionVertical,
@@ -1766,8 +1780,12 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	}
 	drainV3RuntimeForCLITest(t, runtime)
 	attachV3PaneOwnerForCLITest(t, runtime, "term-1", "pane-2", 58, 38)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 58, Rows: 38}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 58, Rows: 38}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 58 && root.Surface.Rows == 38
+	}, "split pane content rect")
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action:          tuistate.PaneCommandResize,
 		Target:          tuistate.PaneCommandTarget{PaneID: "pane-2"},
@@ -1778,8 +1796,12 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("post keyboard resize: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 64 && root.Surface.Rows == 38
+	}, "keyboard resize content rect")
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action: tuistate.PaneCommandZoom,
 		Target: tuistate.PaneCommandTarget{PaneID: "pane-2"},
@@ -1788,8 +1810,12 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("post zoom: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 118 && root.Surface.Rows == 38
+	}, "zoom content rect")
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action: tuistate.PaneCommandUnzoom,
 		Source: tuistate.PaneCommandSourceTest,
@@ -1797,8 +1823,12 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("post unzoom: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 64 && root.Surface.Rows == 38
+	}, "unzoom content rect")
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action: tuistate.PaneCommandClose,
 		Target: tuistate.PaneCommandTarget{PaneID: "pane-2"},
@@ -1810,7 +1840,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		return root.Session.Cols == 118 && root.Session.Rows == 38
 	}, "close pane content rect restore")
-	waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 118, Rows: 38})
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, resizeStart)
 }
 
 func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T) {
@@ -1826,10 +1856,12 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 		t.Fatalf("create terminal: %v", err)
 	}
 	_ = server
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
 	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
+	resizeStart := process.resizeCount()
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
 		Cols:         100,
@@ -1844,9 +1876,9 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		return root.Session.Cols == 98 && root.Session.Rows == 26
 	}, "initial attach content rect correction")
-	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
-	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 98, Rows: 26}, resizeStart)
 
+	resizeStart = process.resizeCount()
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action:         tuistate.PaneCommandSplit,
 		SplitDirection: tuistate.SplitDirectionVertical,
@@ -1857,7 +1889,10 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	}
 	drainV3RuntimeForCLITest(t, runtime)
 	attachV3PaneOwnerForCLITest(t, runtime, "term-1", "pane-2", 48, 26)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 48, Rows: 26}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 48, Rows: 26}, resizeStart)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Surface.Cols == 48 && root.Surface.Rows == 26
+	}, "split pane content rect")
 	inputsBefore, _ := process.snapshot()
 
 	divider := lastFramePaneResizeRegionForCLITest(t, host, tuistate.DefaultPaneID, tuistate.PaneResizeRight)
@@ -1869,11 +1904,12 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	drag := start
 	drag.Mouse = tuiinput.MouseLeftDrag
 	drag.Col += 6
+	resizeStart = process.resizeCount()
 	if err := host.SendInput(drag); err != nil {
 		t.Fatalf("send mouse drag move: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 42, Rows: 26}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 42, Rows: 26}, resizeStart)
 
 	inputsAfter, _ := process.snapshot()
 	if len(inputsAfter) != len(inputsBefore) {
@@ -2884,6 +2920,12 @@ func (process *coreV2ResizeRecordingProcess) setResizeErr(err error) {
 	process.mu.Lock()
 	defer process.mu.Unlock()
 	process.resizeErr = err
+}
+
+func (process *coreV2ResizeRecordingProcess) resizeCount() int {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	return len(process.resizes)
 }
 
 func (process *coreV2ResizeRecordingProcess) snapshot() ([][]byte, []corev2.Size) {
