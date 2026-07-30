@@ -3,14 +3,20 @@ package com.anytty.app.goclient
 import org.java_websocket.WebSocket
 import org.java_websocket.WebSocketAdapter
 import org.java_websocket.WebSocketImpl
+import org.java_websocket.WebSocketServerFactory
+import org.java_websocket.drafts.Draft
 import org.java_websocket.enums.Opcode
 import org.java_websocket.exceptions.InvalidDataException
+import org.java_websocket.exceptions.InvalidHandshakeException
 import org.java_websocket.framing.BinaryFrame
 import org.java_websocket.framing.CloseFrame
 import org.java_websocket.framing.ContinuousFrame
 import org.java_websocket.framing.PongFrame
 import org.java_websocket.framing.TextFrame
 import org.java_websocket.handshake.Handshakedata
+import org.java_websocket.handshake.ClientHandshake
+import org.java_websocket.handshake.ServerHandshakeBuilder
+import org.java_websocket.server.WebSocketServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,15 +28,18 @@ import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.EOFException
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
+import java.nio.channels.ByteChannel
 import java.nio.charset.StandardCharsets
 import java.nio.channels.SelectableChannel
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
 import java.nio.channels.SocketChannel
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -46,16 +55,12 @@ class BridgeTransportTest {
     }
 
     @Test
-    fun `eight slow accepts reserve physical slots ninth is closed and actual close permits replacement`() {
+    fun `eight slow accepts reserve physical slots and ninth is closed`() {
         val server = startServer()
-        val accepted = List(BRIDGE_PHYSICAL_LIMIT) { raw(server) }
+        List(BRIDGE_PHYSICAL_LIMIT) { raw(server) }
 
         val rejected = raw(server)
         assertEquals(-1, rejected.readByte())
-
-        accepted.first().close()
-        val replacement = eventuallyUpgrade(server)
-        assertTrue(replacement.lastHttpResponse.startsWith("HTTP/1.1 101"))
     }
 
     @Test
@@ -64,12 +69,19 @@ class BridgeTransportTest {
         val factory = BridgeWebSocketFactory(registry)
         val closeEntered = CountDownLatch(BRIDGE_PHYSICAL_LIMIT)
         val closeRelease = CountDownLatch(1)
-        val closingListener = testWebSocketListener {
+        val closingListener = testWebSocketListener(onClose = {
             closeEntered.countDown()
             closeRelease.await(5, TimeUnit.SECONDS)
-        }
+        })
         val closing = List(BRIDGE_PHYSICAL_LIMIT) {
             factory.createWebSocket(closingListener, listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+        }
+        val channels = closing.map { connection ->
+            SocketChannel.open().also { channel ->
+                val key = AttachedSelectionKey(channel, connection)
+                connection.setSelectionKey(key)
+                connection.setChannel(factory.wrapChannel(channel, key))
+            }
         }
         val closeThreads = closing.map { connection ->
             Thread {
@@ -91,6 +103,7 @@ class BridgeTransportTest {
                 thread.join(1_000)
                 assertFalse(thread.isAlive)
             }
+            channels.forEach { assertFalse(it.isOpen) }
 
             val replacement = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
             SocketChannel.open().use { channel ->
@@ -101,6 +114,84 @@ class BridgeTransportTest {
         } finally {
             closeRelease.countDown()
             closeThreads.forEach { it.join(1_000) }
+            factory.close()
+        }
+    }
+
+    @Test
+    fun `channel bound while close callback is blocked closes without releasing slot early`() {
+        val registry = BridgeConnectionRegistry()
+        val factory = BridgeWebSocketFactory(registry)
+        val closeEntered = CountDownLatch(1)
+        val closeRelease = CountDownLatch(1)
+        val target = factory.createWebSocket(
+            testWebSocketListener(onClose = {
+                closeEntered.countDown()
+                closeRelease.await(5, TimeUnit.SECONDS)
+            }),
+            listOf(BridgeDraft6455()),
+        ) as BridgeWebSocketImpl
+        val fillers = List(BRIDGE_PHYSICAL_LIMIT - 1) {
+            factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+        }
+        val fillerChannels = fillers.map { bind(factory, it) }
+        val closeThread = Thread {
+            target.closeConnection(CloseFrame.GOING_AWAY, "test close", false)
+        }.apply { start() }
+
+        try {
+            assertTrue(closeEntered.await(1, TimeUnit.SECONDS))
+            SocketChannel.open().use { channel ->
+                val key = AttachedSelectionKey(channel, target)
+                target.setSelectionKey(key)
+                factory.wrapChannel(channel, key)
+                assertFalse(channel.isOpen)
+            }
+            assertRejected(factory)
+
+            closeRelease.countDown()
+            closeThread.join(1_000)
+            assertFalse(closeThread.isAlive)
+
+            val replacement = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+            bind(factory, replacement).use { assertTrue(it.isOpen) }
+            replacement.closeConnection(CloseFrame.NORMAL, "test complete", false)
+        } finally {
+            closeRelease.countDown()
+            closeThread.join(1_000)
+            fillers.forEach { it.closeConnection(CloseFrame.NORMAL, "test complete", false) }
+            fillerChannels.forEach { runCatching { it.close() } }
+            factory.close()
+        }
+    }
+
+    @Test
+    fun `close completed before channel binding retains slot until late channel closes`() {
+        val registry = BridgeConnectionRegistry()
+        val factory = BridgeWebSocketFactory(registry)
+        val target = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+        val fillers = List(BRIDGE_PHYSICAL_LIMIT - 1) {
+            factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+        }
+        val fillerChannels = fillers.map { bind(factory, it) }
+
+        try {
+            target.closeConnection(CloseFrame.GOING_AWAY, "test close", false)
+            assertRejected(factory)
+
+            SocketChannel.open().use { channel ->
+                val key = AttachedSelectionKey(channel, target)
+                target.setSelectionKey(key)
+                factory.wrapChannel(channel, key)
+                assertFalse(channel.isOpen)
+            }
+
+            val replacement = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+            bind(factory, replacement).use { assertTrue(it.isOpen) }
+            replacement.closeConnection(CloseFrame.NORMAL, "test complete", false)
+        } finally {
+            fillers.forEach { it.closeConnection(CloseFrame.NORMAL, "test complete", false) }
+            fillerChannels.forEach { runCatching { it.close() } }
             factory.close()
         }
     }
@@ -149,16 +240,48 @@ class BridgeTransportTest {
     }
 
     @Test
-    fun `upgrade at 1_9 seconds does not reset accept-to-auth deadline`() {
-        val server = startServer()
-        val socket = raw(server)
-        Thread.sleep(1_900)
-        socket.writeAscii(handshakeBytes())
-        assertTrue(socket.readHttpResponse().startsWith("HTTP/1.1 101"))
-        Thread.sleep(150)
-        runCatching { socket.sendFrame(Opcode.BINARY, authFrame(TOKEN), true) }
-        val frame = socket.readFrameOrNull()
-        assertTrue(frame == null || frame.opcode == 8)
+    fun `upgrade acquisition rejects elapsed deadline while scheduler is blocked`() {
+        val registry = BridgeConnectionRegistry()
+        val factory = BridgeWebSocketFactory(registry)
+        val deadlineEntered = CountDownLatch(1)
+        val deadlineRelease = CountDownLatch(1)
+        val deadlineReturned = CountDownLatch(1)
+        val blocker = factory.createWebSocket(
+            testWebSocketListener(onWriteDemand = {
+                deadlineEntered.countDown()
+                deadlineRelease.await(5, TimeUnit.SECONDS)
+                deadlineReturned.countDown()
+            }),
+            listOf(BridgeDraft6455()),
+        ) as BridgeWebSocketImpl
+        val targetCreated = CountDownLatch(1)
+        val server = DeadlineHandshakeServer(registry, factory, targetCreated)
+        server.start()
+        assertTrue(server.awaitStarted())
+        val target = RawSocket(server.port, 2_500).also(sockets::add)
+        assertTrue(targetCreated.await(1, TimeUnit.SECONDS))
+        val elapsed = CountDownLatch(1)
+        val testClock = Executors.newSingleThreadScheduledExecutor()
+        testClock.schedule(
+            elapsed::countDown,
+            BRIDGE_AUTH_DEADLINE_NANOS + TimeUnit.MILLISECONDS.toNanos(1),
+            TimeUnit.NANOSECONDS,
+        )
+
+        try {
+            assertTrue(deadlineEntered.await(3, TimeUnit.SECONDS))
+            assertTrue(elapsed.await(1, TimeUnit.SECONDS))
+            target.writeAscii(handshakeBytes())
+            assertFalse(target.readUntilClose().contains("HTTP/1.1 101"))
+        } finally {
+            testClock.shutdownNow()
+            deadlineRelease.countDown()
+            assertTrue(deadlineReturned.await(1, TimeUnit.SECONDS))
+            server.stop(1_000)
+            blocker.closeConnection(CloseFrame.POLICY_VALIDATION, "test complete", false)
+            bind(factory, blocker).close()
+            factory.close()
+        }
     }
 
     @Test
@@ -272,7 +395,7 @@ class BridgeTransportTest {
         socketsAtLimit.first().sendFrame(Opcode.CONTINUOUS, byteArrayOf(1), true)
         assertEquals(CloseFrame.TOOBIG, socketsAtLimit.first().readFrame().closeCode())
         assertEquals(-1, socketsAtLimit.first().readByte())
-        assertTrue(eventuallyUpgrade(server).lastHttpResponse.startsWith("HTTP/1.1 101"))
+        assertTrue(upgraded(server).lastHttpResponse.startsWith("HTTP/1.1 101"))
     }
 
     @Test
@@ -282,6 +405,27 @@ class BridgeTransportTest {
             bridgeResponseFrameBytes(BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES),
         )
         assertNull(bridgeResponseFrameBytes(BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES + 1))
+    }
+
+    @Test
+    fun `error UTF-8 size is bounded before response allocation`() {
+        val maxPayloadBytes = BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES
+        assertEquals(0, protobufUtf8PayloadBytes(""))
+        assertEquals(2, protobufUtf8PayloadBytes("\u00e9"))
+        assertEquals(maxPayloadBytes, protobufUtf8PayloadBytes("x".repeat(maxPayloadBytes)))
+        assertNull(protobufUtf8PayloadBytes("x".repeat(maxPayloadBytes + 1)))
+    }
+
+    @Test
+    fun `oversized engine error closes 1009 before response encoding`() {
+        val message = "x".repeat(BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES + 1)
+        val server = startServer(FakeEngine(openSessionError = message))
+        val socket = authenticated(server)
+        socket.sendFrame(Opcode.BINARY, openSessionFrame(9), true)
+
+        val close = socket.readFrame()
+        assertEquals(8, close.opcode)
+        assertEquals(CloseFrame.TOOBIG, close.closeCode())
     }
 
     @Test
@@ -392,24 +536,10 @@ class BridgeTransportTest {
         assertEquals(GoClientBridgeServer.OP_ACK, ack.payload[0])
     }
 
-    private fun eventuallyUpgrade(server: GoClientBridgeServer): RawSocket {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-        var lastFailure: Throwable? = null
-        while (System.nanoTime() < deadline) {
-            val candidate = raw(server, 100)
-            try {
-                candidate.writeAscii(handshakeBytes())
-                if (candidate.readHttpResponse().startsWith("HTTP/1.1 101")) return candidate
-            } catch (error: Throwable) {
-                lastFailure = error
-            }
-            candidate.close()
-            Thread.sleep(10)
-        }
-        throw AssertionError("replacement did not upgrade", lastFailure)
-    }
-
-    private fun testWebSocketListener(onClose: () -> Unit = {}): WebSocketAdapter = object : WebSocketAdapter() {
+    private fun testWebSocketListener(
+        onClose: () -> Unit = {},
+        onWriteDemand: () -> Unit = {},
+    ): WebSocketAdapter = object : WebSocketAdapter() {
         override fun onWebsocketMessage(conn: WebSocket, message: String) = Unit
         override fun onWebsocketMessage(conn: WebSocket, blob: ByteBuffer) = Unit
         override fun onWebsocketOpen(conn: WebSocket, handshake: Handshakedata) = Unit
@@ -417,9 +547,26 @@ class BridgeTransportTest {
         override fun onWebsocketClosing(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
         override fun onWebsocketCloseInitiated(conn: WebSocket, code: Int, reason: String) = Unit
         override fun onWebsocketError(conn: WebSocket, ex: Exception) = Unit
-        override fun onWriteDemand(conn: WebSocket) = Unit
+        override fun onWriteDemand(conn: WebSocket) = onWriteDemand()
         override fun getLocalSocketAddress(conn: WebSocket) = null
         override fun getRemoteSocketAddress(conn: WebSocket) = null
+    }
+
+    private fun bind(factory: BridgeWebSocketFactory, connection: BridgeWebSocketImpl): SocketChannel =
+        SocketChannel.open().also { channel ->
+            val key = AttachedSelectionKey(channel, connection)
+            connection.setSelectionKey(key)
+            connection.setChannel(factory.wrapChannel(channel, key))
+        }
+
+    private fun assertRejected(factory: BridgeWebSocketFactory) {
+        val rejected = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+        SocketChannel.open().use { channel ->
+            val key = AttachedSelectionKey(channel, rejected)
+            rejected.setSelectionKey(key)
+            factory.wrapChannel(channel, key)
+            assertFalse(channel.isOpen)
+        }
     }
 
     private class AttachedSelectionKey(
@@ -443,10 +590,54 @@ class BridgeTransportTest {
         override fun readyOps(): Int = 0
     }
 
+    private class DeadlineHandshakeServer(
+        private val registry: BridgeConnectionRegistry,
+        factory: BridgeWebSocketFactory,
+        targetCreated: CountDownLatch,
+    ) : WebSocketServer(InetSocketAddress("127.0.0.1", 0), 1, listOf(BridgeDraft6455())) {
+        private val started = CountDownLatch(1)
+
+        init {
+            setWebSocketFactory(object : WebSocketServerFactory {
+                override fun createWebSocket(listener: WebSocketAdapter, draft: Draft): WebSocketImpl =
+                    factory.createWebSocket(listener, draft).also { targetCreated.countDown() }
+
+                override fun createWebSocket(listener: WebSocketAdapter, drafts: List<Draft>): WebSocketImpl =
+                    factory.createWebSocket(listener, drafts).also { targetCreated.countDown() }
+
+                override fun wrapChannel(channel: SocketChannel, key: SelectionKey): ByteChannel =
+                    factory.wrapChannel(channel, key)
+
+                override fun close() = factory.close()
+            })
+        }
+
+        fun awaitStarted(): Boolean = started.await(2, TimeUnit.SECONDS)
+
+        override fun onStart() = started.countDown()
+        override fun onOpen(conn: WebSocket, handshake: ClientHandshake) = Unit
+        override fun onMessage(conn: WebSocket, message: String) = Unit
+        override fun onMessage(conn: WebSocket, message: ByteBuffer) = Unit
+        override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
+        override fun onError(conn: WebSocket?, ex: Exception?) = Unit
+
+        override fun onWebsocketHandshakeReceivedAsServer(
+            conn: WebSocket,
+            draft: Draft,
+            request: ClientHandshake,
+        ): ServerHandshakeBuilder {
+            val bridge = conn as? BridgeWebSocketImpl ?: throw InvalidHandshakeException("invalid binding transport")
+            if (!registry.acquireUpgrade(bridge)) throw InvalidHandshakeException("binding upgrade limit")
+            return super.onWebsocketHandshakeReceivedAsServer(conn, draft, request)
+        }
+    }
+
     private class FakeEngine(
         private val blockExecute: Boolean = false,
+        private val openSessionError: String? = null,
     ) : GoClientBridgeEngine {
         private val closed = AtomicBoolean(false)
+        private val closedSignal = CountDownLatch(1)
         val executeEntered = CountDownLatch(1)
         val executeRelease = CountDownLatch(if (blockExecute) 1 else 0)
         val closeCalled = CountDownLatch(1)
@@ -459,6 +650,7 @@ class BridgeTransportTest {
 
         override fun openSession(payload: ByteArray): Long {
             enter()
+            openSessionError?.let { throw IllegalStateException(it) }
             return 1L
         }
 
@@ -487,12 +679,13 @@ class BridgeTransportTest {
         override fun release(handle: Long) = enter()
 
         override fun nextEvent(): ByteArray {
-            while (!closed.get()) Thread.sleep(25)
+            closedSignal.await()
             throw IllegalStateException("closed")
         }
 
         override fun close() {
             closed.set(true)
+            closedSignal.countDown()
             closeCalled.countDown()
         }
     }
@@ -631,6 +824,11 @@ class BridgeTransportTest {
             put(GoClientBridgeServer.OP_EXECUTE)
             putLong(requestId)
             putLong(1)
+        }.array()
+
+        fun openSessionFrame(requestId: Long): ByteArray = ByteBuffer.allocate(9).apply {
+            put(GoClientBridgeServer.OP_OPEN_SESSION)
+            putLong(requestId)
         }.array()
 
         fun handshakeBytes(

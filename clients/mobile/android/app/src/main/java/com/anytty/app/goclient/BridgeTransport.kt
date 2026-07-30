@@ -68,7 +68,7 @@ internal class BridgeConnectionRegistry {
     fun registerPhysical(connection: BridgeWebSocketImpl): Boolean {
         val acceptedAtNanos = System.nanoTime()
         val state = State(acceptedAtNanos = acceptedAtNanos)
-        val registered = synchronized(lock) {
+        return synchronized(lock) {
             if (stopped || states.size >= BRIDGE_PHYSICAL_LIMIT) {
                 false
             } else {
@@ -76,9 +76,14 @@ internal class BridgeConnectionRegistry {
                 true
             }
         }
-        if (!registered) return false
+    }
 
-        val elapsedNanos = System.nanoTime() - acceptedAtNanos
+    fun armDeadline(connection: BridgeWebSocketImpl): Boolean {
+        val state = synchronized(lock) {
+            val registered = states[connection] ?: return@synchronized null
+            if (stopped || registered.phase == Phase.CLOSING || registered.phase == Phase.CLOSED) null else registered
+        } ?: return false
+        val elapsedNanos = System.nanoTime() - state.acceptedAtNanos
         val delayNanos = (BRIDGE_AUTH_DEADLINE_NANOS - elapsedNanos).coerceAtLeast(0L)
         val timeout = try {
             deadlines.schedule(
@@ -105,15 +110,24 @@ internal class BridgeConnectionRegistry {
         return armed
     }
 
-    fun acquireUpgrade(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
-        val state = states[connection] ?: return@synchronized false
-        if (stopped || state.phase == Phase.CLOSING || state.phase == Phase.CLOSED) return@synchronized false
-        if (state.phase == Phase.UPGRADED) return@synchronized true
-        if (upgradeCount >= BRIDGE_UPGRADE_LIMIT) return@synchronized false
-        state.phase = Phase.UPGRADED
-        state.holdsUpgrade = true
-        upgradeCount += 1
-        true
+    fun acquireUpgrade(connection: BridgeWebSocketImpl): Boolean {
+        var timeout: ScheduledFuture<*>? = null
+        val acquired = synchronized(lock) {
+            val state = states[connection] ?: return@synchronized false
+            if (stopped || state.phase == Phase.CLOSING || state.phase == Phase.CLOSED) return@synchronized false
+            if (deadlineElapsed(state, System.nanoTime())) {
+                timeout = beginClosingLocked(state)
+                return@synchronized false
+            }
+            if (state.phase == Phase.UPGRADED) return@synchronized true
+            if (upgradeCount >= BRIDGE_UPGRADE_LIMIT) return@synchronized false
+            state.phase = Phase.UPGRADED
+            state.holdsUpgrade = true
+            upgradeCount += 1
+            true
+        }
+        timeout?.cancel(false)
+        return acquired
     }
 
     fun mayAuthenticate(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
@@ -246,23 +260,24 @@ internal class BridgeWebSocketFactory(
 
     private fun create(listener: WebSocketAdapter, drafts: List<Draft>): BridgeWebSocketImpl {
         val connection = BridgeWebSocketImpl(listener, drafts, registry)
-        connection.physicalAccepted = registry.registerPhysical(connection)
+        connection.registerPhysical()
         return connection
     }
 
     @Throws(IOException::class)
     override fun wrapChannel(channel: SocketChannel, key: SelectionKey): ByteChannel {
         val connection = key.attachment() as? BridgeWebSocketImpl
-        if (connection != null && !connection.physicalAccepted) {
+        if (connection != null && !connection.bindPhysicalChannel(channel)) {
             key.cancel()
-            channel.close()
             connection.closeConnection(CloseFrame.POLICY_VALIDATION, "bridge connection limit")
         }
         return channel
     }
 
     override fun close() {
-        registry.stop()
+        registry.stop().forEach { connection ->
+            runCatching { connection.closeConnection(CloseFrame.GOING_AWAY, "bridge stopped") }
+        }
     }
 }
 
@@ -272,13 +287,46 @@ internal class BridgeWebSocketImpl(
     drafts: List<Draft>,
     private val registry: BridgeConnectionRegistry,
 ) : WebSocketImpl(listener, drafts) {
-    internal var physicalAccepted: Boolean = false
+    private val transportLock = Any()
+    private var physicalRegistered = false
+    private var physicalChannel: SocketChannel? = null
+    private var transportClosing = false
+    private var closeConnectionStarted = false
+    private var closeConnectionComplete = false
+    private var slotReleased = false
     private var headerComplete = false
     private var headerBytes = 0
     private var delimiterState = 0
 
+    internal fun registerPhysical(): Boolean {
+        val accepted = synchronized(transportLock) {
+            registry.registerPhysical(this).also { physicalRegistered = it }
+        }
+        if (accepted && !registry.armDeadline(this)) closeForPolicy()
+        return accepted
+    }
+
+    internal fun bindPhysicalChannel(channel: SocketChannel): Boolean {
+        val shouldClose = synchronized(transportLock) {
+            if (physicalChannel == null) physicalChannel = channel
+            !physicalRegistered || transportClosing || closeConnectionComplete || physicalChannel !== channel
+        }
+        if (shouldClose) {
+            runCatching { channel.close() }
+            releaseSlotAfterClose()
+            return false
+        }
+        return true
+    }
+
+    override fun setSelectionKey(key: SelectionKey) {
+        (key.channel() as? SocketChannel)?.let(::bindPhysicalChannel)
+        super.setSelectionKey(key)
+    }
+
     override fun decode(socketBuffer: ByteBuffer) {
-        if (!physicalAccepted || isClosed) return
+        val acceptsInput = synchronized(transportLock) { physicalRegistered && !transportClosing }
+        if (!acceptsInput || isClosed) return
         if (!headerComplete) {
             val input = socketBuffer.duplicate()
             while (input.hasRemaining() && !headerComplete) {
@@ -297,25 +345,67 @@ internal class BridgeWebSocketImpl(
     }
 
     override fun close(code: Int, message: String, remote: Boolean) {
+        markTransportClosing()
         registry.beginClosing(this)
         super.close(code, message, remote)
     }
 
     override fun flushAndClose(code: Int, message: String, remote: Boolean) {
+        markTransportClosing()
         registry.beginClosing(this)
         super.flushAndClose(code, message, remote)
     }
 
     override fun closeConnection(code: Int, message: String, remote: Boolean) {
+        val shouldClose = synchronized(transportLock) {
+            transportClosing = true
+            if (closeConnectionStarted) {
+                false
+            } else {
+                closeConnectionStarted = true
+                true
+            }
+        }
         registry.beginClosing(this)
+        if (!shouldClose) return
+        closeOwnedChannel()
         try {
             super.closeConnection(code, message, remote)
         } finally {
-            registry.closed(this)
+            synchronized(transportLock) { closeConnectionComplete = true }
+            closeOwnedChannel()
+            releaseSlotAfterClose()
         }
     }
 
     internal fun closeForPolicy() = close(CloseFrame.POLICY_VALIDATION, "binding authentication failed")
+
+    private fun markTransportClosing() {
+        synchronized(transportLock) { transportClosing = true }
+    }
+
+    private fun closeOwnedChannel() {
+        val keyChannel = runCatching { selectionKey?.channel() as? SocketChannel }.getOrNull()
+        val channel = synchronized(transportLock) {
+            if (physicalChannel == null && keyChannel != null) physicalChannel = keyChannel
+            physicalChannel
+        }
+        if (channel != null && channel.isOpen) runCatching { channel.close() }
+    }
+
+    private fun releaseSlotAfterClose() {
+        val release = synchronized(transportLock) {
+            val channel = physicalChannel
+            if (physicalRegistered && closeConnectionComplete && channel != null && !channel.isOpen && !slotReleased) {
+                slotReleased = true
+                physicalRegistered = false
+                true
+            } else {
+                false
+            }
+        }
+        if (release) registry.closed(this)
+    }
 
     private fun nextDelimiterState(state: Int, byte: Byte): Int = when (state) {
         0 -> if (byte == CR) 1 else 0

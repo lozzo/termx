@@ -1,5 +1,6 @@
 package com.anytty.app.goclient
 
+import com.google.protobuf.CodedOutputStream
 import org.java_websocket.WebSocket
 import org.java_websocket.drafts.Draft
 import org.java_websocket.exceptions.InvalidHandshakeException
@@ -22,6 +23,19 @@ internal fun bridgeResponseFrameBytes(payloadBytes: Int): Int? {
     if (payloadBytes < 0) return null
     val frameBytes = BRIDGE_RESPONSE_HEADER_BYTES.toLong() + payloadBytes.toLong()
     return if (frameBytes <= BRIDGE_MAX_MESSAGE_BYTES) frameBytes.toInt() else null
+}
+
+internal fun protobufUtf8PayloadBytes(value: String): Int? {
+    val maxPayloadBytes = BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES
+    if (value.length > maxPayloadBytes) return null
+    val fieldBytes = CodedOutputStream.computeStringSizeNoTag(value)
+    for (prefixBytes in 1..5) {
+        val payloadBytes = fieldBytes - prefixBytes
+        if (payloadBytes >= 0 && CodedOutputStream.computeUInt32SizeNoTag(payloadBytes) == prefixBytes) {
+            return payloadBytes.takeIf { it <= maxPayloadBytes }
+        }
+    }
+    return null
 }
 
 internal interface GoClientBridgeEngine : AutoCloseable {
@@ -260,11 +274,13 @@ class GoClientBridgeServer internal constructor(
         sendFrame(conn, OP_ACK, requestId, 0, ByteArray(0))
 
     private fun sendError(conn: WebSocket, requestId: Long, message: String) {
-        val encoded = message.toByteArray(Charsets.UTF_8)
-        if (bridgeResponseFrameBytes(encoded.size) == null) {
+        val encodedBytes = protobufUtf8PayloadBytes(message)
+        if (encodedBytes == null || bridgeResponseFrameBytes(encodedBytes) == null) {
             conn.close(CLOSE_TOO_BIG, "binding message exceeds limit")
             return
         }
+        val encoded = message.toByteArray(Charsets.UTF_8)
+        check(encoded.size == encodedBytes)
         sendFrame(conn, OP_ERROR, requestId, 0, encoded)
     }
 
