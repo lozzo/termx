@@ -44,7 +44,11 @@ type serverConfig struct {
 	protocolLimits      ProtocolSessionLimits
 	grantNow            func() time.Time
 	grantAfterFunc      func(time.Duration, func()) grantTimer
+
+	protocolRequestBudget int
 }
+
+const defaultProtocolRequestBudget = 512
 
 // ProtocolSessionLimits bounds connection-owned goroutines and long-lived resources.
 // Each resource kind has a concrete cap in addition to the aggregate resource cap.
@@ -174,6 +178,8 @@ type Server struct {
 	events                 *eventBroker
 	closed                 atomic.Bool
 	nextProtocolSessionID  atomic.Uint64
+	protocolRequestMu      sync.Mutex
+	protocolRequestSlots   chan struct{}
 	lifecycleMu            sync.Mutex
 	protocolAttachmentMu   sync.Mutex
 	protocolAttachments    map[string]protocolAttachment
@@ -220,6 +226,8 @@ func NewServer(opts ...ServerOption) *Server {
 		grantAfterFunc: func(delay time.Duration, callback func()) grantTimer {
 			return time.AfterFunc(delay, callback)
 		},
+
+		protocolRequestBudget: defaultProtocolRequestBudget,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -241,6 +249,9 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	cfg.historyStorage = cfg.historyStorage.normalized()
 	cfg.protocolLimits = cfg.protocolLimits.normalized()
+	if cfg.protocolRequestBudget <= 0 {
+		cfg.protocolRequestBudget = defaultProtocolRequestBudget
+	}
 	return &Server{
 		cfg:                  cfg,
 		registry:             newTerminalRegistry(),
@@ -259,6 +270,7 @@ func NewServer(opts ...ServerOption) *Server {
 		grantAfterFunc:       cfg.grantAfterFunc,
 		transports:           make(map[*trackedTransport]struct{}),
 		outputBudget:         newTerminalOutputResidentBudget(cfg.outputResidentBytes),
+		protocolRequestSlots: make(chan struct{}, cfg.protocolRequestBudget),
 	}
 }
 
@@ -1046,10 +1058,13 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	server.wgMu.Lock()
+	server.protocolRequestMu.Lock()
 	if !server.closed.CompareAndSwap(false, true) {
+		server.protocolRequestMu.Unlock()
 		server.wgMu.Unlock()
 		return nil
 	}
+	server.protocolRequestMu.Unlock()
 	server.stopGrantOperations()
 	server.outputBudget.close()
 	server.mu.Lock()

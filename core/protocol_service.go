@@ -31,6 +31,8 @@ const (
 	protocolErrorInternal    = 500
 )
 
+const protocolRequestCapacityExhaustedMessage = "protocol in-flight request capacity is exhausted"
+
 const daemonBoundaryReclaimMinHeapMBEnv = "ANYTTY_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 const daemonBoundaryReclaimDefaultMinHeapBytes = 0
 
@@ -337,17 +339,23 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 		case session.requestSlots <- struct{}{}:
 		default:
 			session.releaseActiveRequest(req.ID)
-			return session.sendError(req.ID, protocolErrorExhausted, "protocol in-flight request capacity is exhausted")
+			return session.sendError(req.ID, protocolErrorExhausted, protocolRequestCapacityExhaustedMessage)
 		}
 		// 中文说明：control request 不能在同一 client 上互相 head-of-line blocking。
 		// history.window latest 可能短暂等待 history 追平，普通 input ack 仍要能并发处理。
 		session.requests.Add(1)
-		go func() {
+		if !session.server.startProtocolRequest(func() {
 			defer session.requests.Done()
-			defer func() { <-session.requestSlots }()
 			defer session.releaseActiveRequest(req.ID)
+			defer func() { <-session.requestSlots }()
+			defer session.server.releaseProtocolRequest()
 			_ = session.handleRequest(ctx, req)
-		}()
+		}) {
+			session.requests.Done()
+			<-session.requestSlots
+			session.releaseActiveRequest(req.ID)
+			return session.sendError(req.ID, protocolErrorExhausted, protocolRequestCapacityExhaustedMessage)
+		}
 		return nil
 	case wire.TypeSessionClose:
 		if err := protocol.DecodeSessionClosePayload(payload); err != nil {
@@ -357,6 +365,26 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 	default:
 		return session.sendError(0, protocolErrorBadRequest, fmt.Sprintf("unsupported control frame type %d", typ))
 	}
+}
+
+// startProtocolRequest linearizes non-blocking admission and goroutine creation with Shutdown.
+func (server *Server) startProtocolRequest(run func()) bool {
+	server.protocolRequestMu.Lock()
+	defer server.protocolRequestMu.Unlock()
+	if server.closed.Load() {
+		return false
+	}
+	select {
+	case server.protocolRequestSlots <- struct{}{}:
+		go run()
+		return true
+	default:
+		return false
+	}
+}
+
+func (server *Server) releaseProtocolRequest() {
+	<-server.protocolRequestSlots
 }
 
 func (session *protocolSession) claimActiveRequest(id uint64) bool {
