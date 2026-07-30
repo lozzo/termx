@@ -553,15 +553,6 @@ func (session *protocolSession) publishUpload(id string) error {
 	session.server.fileTransferMu.Unlock()
 	return nil
 }
-func (session *protocolSession) removeUpload(id string) {
-	session.server.fileTransferMu.Lock()
-	record := session.server.fileUploads[id]
-	delete(session.server.fileUploads, id)
-	session.server.fileTransferMu.Unlock()
-	if record != nil {
-		_ = os.Remove(record.TempPath)
-	}
-}
 func (server *Server) removeExpiredUploadsLocked(now time.Time) {
 	for id, record := range server.fileUploads {
 		if record.AttachedSessionID == 0 && !now.Before(record.ExpiresAt) {

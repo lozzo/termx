@@ -27,10 +27,9 @@ import (
 )
 
 type fileCommandRuntime struct {
-	socket   *string
-	logFile  *string
-	timeout  time.Duration
-	endpoint string
+	socket  *string
+	logFile *string
+	timeout time.Duration
 }
 
 const maxCLIFileChunkBytes = 1 << 20

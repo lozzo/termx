@@ -289,12 +289,6 @@ func cloneFastSGRLine(line uv.Line, width int) uv.Line {
 	return out
 }
 
-func fastSGRBlankLine(width int, style uv.Style) uv.Line {
-	line := make(uv.Line, width)
-	fillFastSGRLine(line, style)
-	return line
-}
-
 func fillFastSGRLine(line uv.Line, style uv.Style) {
 	cell := uv.EmptyCell
 	cell.Style.Bg = style.Bg

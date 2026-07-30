@@ -27,8 +27,6 @@ type v3TerminalHostLogger interface {
 	SetLogger(*slog.Logger)
 }
 
-type v3AttachRunner func(context.Context, v3AttachConfig) error
-
 type v3AttachConfig struct {
 	EndpointID         state.EndpointID
 	TerminalID         string

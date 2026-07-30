@@ -41,13 +41,6 @@ func resolveWorkspaceStatePath() string {
 	return filepath.Join(userdirs.StateHome(), "anytty", "workspace-state.json")
 }
 
-func resolveConfigFilePath(explicit string) string {
-	if strings.TrimSpace(explicit) != "" {
-		return explicit
-	}
-	return filepath.Join(userdirs.ConfigHome(), "anytty", "anytty.yaml")
-}
-
 func resolveStateFilePath(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {

@@ -39,18 +39,6 @@ var safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (
 	return n, err, nil, false
 }
 
-var safeEmulatorWriteWithScrollbackDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
-	type scrollbackDamageWriter interface {
-		WriteWithScrollbackDamage([]byte) (int, error, []charmvt.Damage)
-	}
-	if writer, ok := any(emu).(scrollbackDamageWriter); ok {
-		n, err, damages := writer.WriteWithScrollbackDamage(data)
-		return n, err, damages, true
-	}
-	n, err := emu.Write(data)
-	return n, err, nil, false
-}
-
 var safeEmulatorWriteWithSemanticDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
 	type semanticDamageWriter interface {
 		WriteWithSemanticDamage([]byte) (int, error, []charmvt.Damage)
@@ -3393,10 +3381,6 @@ func (v *VTerm) semanticBoundaryOpsFromCharmVTDamagesLocked(damages []charmvt.Da
 		return nil
 	}
 	return ops
-}
-
-func recordSemanticTailFill(rows map[int]*CellStyle, x int, y int, cells []Cell) {
-	recordSemanticTailFillForPayload(rows, x, y, cells, nil)
 }
 
 func recordSemanticTailFillForPayload(rows map[int]*CellStyle, x int, y int, cells []Cell, runs []CellRun) {

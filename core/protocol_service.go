@@ -96,7 +96,6 @@ type protocolSession struct {
 	application                   ApplicationExecutor
 	sessionID                     uint64
 	sendMu                        sync.Mutex
-	nextSnapshot                  atomic.Uint64
 	attachmentMu                  sync.Mutex
 	mu                            sync.RWMutex
 	attachments                   map[uint16]protocolAttachment
@@ -1257,29 +1256,4 @@ func normalizeAttachMode(mode string) string {
 		return "collaborator"
 	}
 	return mode
-}
-
-func tokenPartHasNumericPrefix(part string, prefix string) bool {
-	return strings.HasPrefix(part, prefix) && len(part) > len(prefix) && part[len(prefix)] >= '0' && part[len(prefix)] <= '9'
-}
-
-func fileProtocolErrorCode(err error) int {
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return protocolErrorNotFound
-	case errors.Is(err, os.ErrPermission):
-		return protocolErrorForbidden
-	case strings.Contains(err.Error(), "must be absolute"), strings.Contains(err.Error(), "cursor"), strings.Contains(err.Error(), "regular file"):
-		return protocolErrorBadRequest
-	default:
-		return protocolErrorInternal
-	}
-}
-
-func copyIntPtr(value *int) *int {
-	if value == nil {
-		return nil
-	}
-	out := *value
-	return &out
 }

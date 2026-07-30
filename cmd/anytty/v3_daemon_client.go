@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	localadapter "github.com/anytty/anytty/client/adapter/local"
 	protocoladapter "github.com/anytty/anytty/client/adapter/protocol"
@@ -70,29 +69,6 @@ func connectLocalApplicationClient(ctx context.Context, path, logFile, configPat
 		return nil, err
 	}
 	return client, nil
-}
-
-func dialOrStartV3TransportWithConfig(path, logFile, configPath string, logger *slog.Logger) (*localadapter.Transport, error) {
-	transport, err := localadapter.DialTransport(context.Background(), path)
-	if err == nil {
-		return transport, nil
-	}
-	if logger != nil {
-		logger.Warn("core-v2 transport dial failed; starting current daemon", "socket", path, "error", err)
-	}
-	if err := startCoreV2DaemonForConfig(path, logFile, configPath); err != nil {
-		return nil, fmt.Errorf("start core-v2 daemon: %w", err)
-	}
-	if err := waitForSocket(path, 5*time.Second, func() error {
-		probe, probeErr := localadapter.DialTransport(context.Background(), path)
-		if probe != nil {
-			_ = probe.Close()
-		}
-		return probeErr
-	}); err != nil {
-		return nil, err
-	}
-	return localadapter.DialTransport(context.Background(), path)
 }
 
 func startCoreV2Daemon(path string, logFile string) error {

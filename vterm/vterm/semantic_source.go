@@ -478,20 +478,6 @@ func terminalSemanticDamageHasSyncMode(damage WriteDamage, enabled bool) bool {
 	return false
 }
 
-func cloneSemanticOps(ops []DamageOp) []DamageOp {
-	if len(ops) == 0 {
-		return nil
-	}
-	out := make([]DamageOp, len(ops))
-	copy(out, ops)
-	for i := range out {
-		out[i].Cells = cloneCellSlice(out[i].Cells)
-		out[i].Runs = cloneCellRuns(out[i].Runs)
-		out[i].ScrollOut = cloneScrollbackRowAppends(out[i].ScrollOut)
-	}
-	return out
-}
-
 func terminalSemanticDamageHasClearScrollback(damage WriteDamage) bool {
 	for _, op := range semanticOpsForTransactionDamage(damage) {
 		if op.Code == ScreenOpControl && op.Control == "ed" && op.Mode == 3 {

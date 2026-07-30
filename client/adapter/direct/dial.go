@@ -439,13 +439,6 @@ func (peer *openedDirectPeer) Close() error {
 	return peer.closeErr
 }
 
-func (dialer *Dialer) currentTime() time.Time {
-	if dialer != nil && dialer.Now != nil {
-		return dialer.Now().UTC()
-	}
-	return time.Now().UTC()
-}
-
 func (dialer *Dialer) reportPhase(phase clientruntime.EndpointPhase) {
 	if dialer != nil && dialer.Phase != nil {
 		dialer.Phase(phase)

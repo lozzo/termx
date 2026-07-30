@@ -17,9 +17,6 @@ import (
 
 const v3RootTerminalID = "anytty-main"
 
-type v3RootRunner func(context.Context, v3RootConfig) error
-type v3RootEmptyRunner func(context.Context, v3RootEmptyConfig) error
-
 type v3RootConfig struct {
 	SocketPath         string
 	LogFile            string

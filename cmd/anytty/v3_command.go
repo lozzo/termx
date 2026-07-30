@@ -240,10 +240,6 @@ func v3VisualSnapshotCommand() *cobra.Command {
 	return cmd
 }
 
-func v3VisualReviewFrame(ctx context.Context) (render.Frame, error) {
-	return v3VisualSmokeCaseFrame(ctx, "visual-audit-current")
-}
-
 func v3VisualSmokeCaseFrame(ctx context.Context, caseName string) (render.Frame, error) {
 	caseName = strings.TrimSpace(caseName)
 	if caseName == "" {

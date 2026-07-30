@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
 	"strings"
 	"time"
 )
@@ -54,27 +53,4 @@ func coreTraceTime(value time.Time) string {
 		return ""
 	}
 	return value.UTC().Format(time.RFC3339)
-}
-
-func coreTerminalListSummary(items []TerminalInfo) string {
-	if len(items) == 0 {
-		return ""
-	}
-	ordered := append([]TerminalInfo(nil), items...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		return ordered[i].ID < ordered[j].ID
-	})
-	parts := make([]string, 0, len(ordered))
-	for _, item := range ordered {
-		exitCode := ""
-		if item.ExitCode != nil {
-			exitCode = fmt.Sprintf(" code=%d", *item.ExitCode)
-		}
-		exitedAt := ""
-		if !item.ExitedAt.IsZero() {
-			exitedAt = " exited_at=" + item.ExitedAt.UTC().Format(time.RFC3339)
-		}
-		parts = append(parts, fmt.Sprintf("%s:%s%s%s", item.ID, item.State, exitCode, exitedAt))
-	}
-	return strings.Join(parts, ",")
 }
