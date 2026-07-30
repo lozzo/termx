@@ -425,7 +425,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           owner.nextIndex += 1
           owner.queuedBytes -= message.byteLength
         }
-        if (isCurrentInputRecoveryOwner(owner) && !owner.overflowed) {
+        if (isCurrentInputRecoveryOwner(owner) && owner.nextIndex === owner.messages.length) {
           clearInputRecoveryFailureForOwner(owner)
         }
       } catch (error) {

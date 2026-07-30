@@ -138,7 +138,7 @@ describe('useTerminalSession input recovery owner', () => {
     view.unmount()
   })
 
-  it('keeps overflow visible through drain and clears it on the next locally accepted input', async () => {
+  it('keeps overflow visible while recovery is blocked and clears it after a successful drain', async () => {
     const session = new MockProtoSession('session-bounded')
     let current: UseTerminalSessionResult | undefined
     const view = render(<Harness session={session} onChange={(value) => { current = value }} />)
@@ -157,17 +157,11 @@ describe('useTerminalSession input recovery owner', () => {
       expect(current?.inputRecoveryFailure).toBe('Terminal input is blocked because the recovery buffer is full')
     })
     await waitForRecoveryOpen('session-bounded')
+    expect(current?.inputRecoveryFailure).toBe('Terminal input is blocked because the recovery buffer is full')
     await resolveRecoveryOpen('session-bounded')
     await waitFor(() => expect(recoveryHarness.sent).toHaveLength(64))
     expect(recoveryHarness.sent.some(({ data }) => data === 'entry-overflow')).toBe(false)
-    expect(current?.inputRecoveryFailure).toBe('Terminal input is blocked because the recovery buffer is full')
-
-    act(() => { expect(current!.sendInput('accepted-after-overflow')).toBe(true) })
     await waitFor(() => expect(current?.inputRecoveryFailure).toBeNull())
-    expect(recoveryHarness.sent.at(-1)).toEqual({
-      sessionId: 'session-bounded',
-      data: 'accepted-after-overflow',
-    })
     view.unmount()
   })
 
