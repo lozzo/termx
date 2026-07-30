@@ -53,8 +53,10 @@ func TestTerminalLiveIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T) {
 func TestTerminalLiveIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	queue := newTerminalLiveIngestQueue()
 	chunk := strings.Repeat("x", terminalLiveIngestBatchMaxBytes/2+1)
-	if !queue.Enqueue(chunk) || !queue.Enqueue(chunk) || !queue.Enqueue("tail") {
-		t.Fatal("expected enqueue before close")
+	for _, payload := range []string{chunk, chunk, "tail"} {
+		if !queue.Enqueue(payload) {
+			t.Fatal("expected enqueue before close")
+		}
 	}
 	first, ok := queue.nextBatch()
 	if !ok || len(first) != 1 {

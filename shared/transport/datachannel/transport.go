@@ -177,7 +177,7 @@ func (transport *Transport) Close() error {
 			transport.closeErr = transport.channel.Close()
 		}
 		transport.sendMu.Lock()
-		transport.sendMu.Unlock()
+		defer transport.sendMu.Unlock()
 	})
 	return transport.closeErr
 }

@@ -1773,7 +1773,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("post unzoom: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, seenResize)
 
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action: tuistate.PaneCommandClose,

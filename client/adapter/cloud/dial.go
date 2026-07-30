@@ -118,9 +118,8 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 			_ = opened.Close()
 			return nil, fmt.Errorf("encode authenticated Cloud Edge locator: %w", err)
 		}
-		if err := signaling.StoreCloudEdgeLocator(ctx, locator); err != nil {
-			// Locator 是公开位置缓存；持久化故障不能杀死已经完成端到端认证的会话。
-		}
+		// Locator 是公开位置缓存；持久化故障不能杀死已经完成端到端认证的会话。
+		_ = signaling.StoreCloudEdgeLocator(ctx, locator)
 	}
 	dialer.report(clientruntime.EndpointPhaseReady)
 	peer, signalSession := opened.Release()

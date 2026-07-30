@@ -415,7 +415,7 @@ func readFastSGRStyle(params []int, pen *uv.Style) {
 		case 3:
 			pen.Attrs |= uv.AttrItalic
 		case 4:
-			pen.Underline = uv.UnderlineStyleSingle
+			pen.Underline = uv.UnderlineSingle
 		case 5:
 			pen.Attrs |= uv.AttrBlink
 		case 6:
@@ -431,7 +431,7 @@ func readFastSGRStyle(params []int, pen *uv.Style) {
 		case 23:
 			pen.Attrs &^= uv.AttrItalic
 		case 24:
-			pen.Underline = uv.UnderlineStyleNone
+			pen.Underline = uv.UnderlineNone
 		case 25:
 			pen.Attrs &^= (uv.AttrBlink | uv.AttrRapidBlink)
 		case 27:

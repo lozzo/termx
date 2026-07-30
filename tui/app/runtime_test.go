@@ -54,14 +54,8 @@ type retainingMsg struct {
 func (retainingMsg) isMsg() {}
 
 func TestRuntimeContractsDoNotUseBubbleTea(t *testing.T) {
-	var msg Msg = NoopMsg{}
-	var effect Effect = NoopEffect{}
-	if msg == nil {
-		t.Fatal("expected msg contract")
-	}
-	if effect == nil {
-		t.Fatal("expected effect contract")
-	}
+	var _ Msg = NoopMsg{}
+	var _ Effect = NoopEffect{}
 }
 
 func TestAsyncEffectRunnerSerialKeyPreservesEffectOrder(t *testing.T) {

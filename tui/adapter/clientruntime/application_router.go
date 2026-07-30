@@ -64,78 +64,76 @@ func (router *EndpointApplicationRouter) application(ctx context.Context, endpoi
 	if router == nil || endpointID == "" {
 		return nil, fmt.Errorf("endpoint application request requires endpoint_id")
 	}
-	for {
-		router.mu.Lock()
-		if router.closed {
-			router.mu.Unlock()
-			return nil, fmt.Errorf("endpoint application router is closed")
-		}
-		if cached, ok := router.clients[endpointID]; ok && applicationClientReady(cached.client) {
-			router.mu.Unlock()
-			return cached.client, nil
-		} else if ok {
-			delete(router.clients, endpointID)
-			delete(router.attachments, endpointID)
-			if cached.owned && cached.client != nil {
-				_ = cached.client.Close()
-			}
-		}
-		if router.disabled[endpointID] {
-			router.mu.Unlock()
-			return nil, fmt.Errorf("endpoint %q is disabled", endpointID)
-		}
-		if pending := router.opening[endpointID]; pending != nil {
-			router.mu.Unlock()
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-pending.done:
-				if pending.err != nil {
-					return nil, pending.err
-				}
-				return pending.client, nil
-			}
-		}
-		pending := &applicationOpen{done: make(chan struct{})}
-		router.opening[endpointID] = pending
+	router.mu.Lock()
+	if router.closed {
 		router.mu.Unlock()
-
-		ready, err := router.runtime.AcquireSession(ctx, clientruntime.ConnectRequest{
-			EndpointID: clientendpoint.EndpointID(endpointID),
-			Intent:     clientruntime.ConnectIntentInteractive,
-		})
-		var client *clientprotocol.ApplicationClient
-		if err == nil {
-			client, err = clientprotocol.NewRuntimeApplicationClient(ready, router.runtime)
-			if err != nil {
-				_ = ready.Close()
-			}
-		}
-
-		var rejected *clientprotocol.ApplicationClient
-		router.mu.Lock()
-		delete(router.opening, endpointID)
-		if err == nil && router.closed {
-			err = fmt.Errorf("endpoint application router is closed")
-			rejected = client
-			client = nil
-		}
-		if err == nil && router.disabled[endpointID] {
-			err = fmt.Errorf("endpoint %q is disabled", endpointID)
-			rejected = client
-			client = nil
-		}
-		if err == nil {
-			router.clients[endpointID] = routedApplicationClient{client: client, owned: true}
-		}
-		pending.client, pending.err = client, err
-		close(pending.done)
-		router.mu.Unlock()
-		if rejected != nil {
-			_ = router.disconnectApplication(ctx, rejected)
-		}
-		return client, err
+		return nil, fmt.Errorf("endpoint application router is closed")
 	}
+	if cached, ok := router.clients[endpointID]; ok && applicationClientReady(cached.client) {
+		router.mu.Unlock()
+		return cached.client, nil
+	} else if ok {
+		delete(router.clients, endpointID)
+		delete(router.attachments, endpointID)
+		if cached.owned && cached.client != nil {
+			_ = cached.client.Close()
+		}
+	}
+	if router.disabled[endpointID] {
+		router.mu.Unlock()
+		return nil, fmt.Errorf("endpoint %q is disabled", endpointID)
+	}
+	if pending := router.opening[endpointID]; pending != nil {
+		router.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-pending.done:
+			if pending.err != nil {
+				return nil, pending.err
+			}
+			return pending.client, nil
+		}
+	}
+	pending := &applicationOpen{done: make(chan struct{})}
+	router.opening[endpointID] = pending
+	router.mu.Unlock()
+
+	ready, err := router.runtime.AcquireSession(ctx, clientruntime.ConnectRequest{
+		EndpointID: clientendpoint.EndpointID(endpointID),
+		Intent:     clientruntime.ConnectIntentInteractive,
+	})
+	var client *clientprotocol.ApplicationClient
+	if err == nil {
+		client, err = clientprotocol.NewRuntimeApplicationClient(ready, router.runtime)
+		if err != nil {
+			_ = ready.Close()
+		}
+	}
+
+	var rejected *clientprotocol.ApplicationClient
+	router.mu.Lock()
+	delete(router.opening, endpointID)
+	if err == nil && router.closed {
+		err = fmt.Errorf("endpoint application router is closed")
+		rejected = client
+		client = nil
+	}
+	if err == nil && router.disabled[endpointID] {
+		err = fmt.Errorf("endpoint %q is disabled", endpointID)
+		rejected = client
+		client = nil
+	}
+	if err == nil {
+		router.clients[endpointID] = routedApplicationClient{client: client, owned: true}
+	}
+	pending.client, pending.err = client, err
+	close(pending.done)
+	router.mu.Unlock()
+	if rejected != nil {
+		_ = router.disconnectApplication(ctx, rejected)
+	}
+	return client, err
 }
 
 // SetEndpointEnabled applies an already-persisted Endpoint switch to this TUI's cached sessions.

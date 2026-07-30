@@ -7,6 +7,7 @@ import (
 
 	"github.com/anytty/anytty/cloud/edge/policy"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,9 +28,9 @@ func TestCredentialMaterialIsSessionSpecificAndRestartBound(t *testing.T) {
 	if material.GetUsername() != "v1:lease-r6:session-r6" {
 		t.Fatalf("credential username = %q", material.GetUsername())
 	}
-	renewedClaims := *claims
+	renewedClaims := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
 	renewedClaims.ExpiresAt = timestamppb.New(now.Add(2 * time.Minute))
-	renewed, err := first.Material(&renewedClaims)
+	renewed, err := first.Material(renewedClaims)
 	if err != nil {
 		t.Fatal(err)
 	}

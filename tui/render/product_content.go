@@ -423,10 +423,14 @@ func connectionsDetailLines(item state.EndpointItem, ok bool, width int, activeV
 	if snapshot.RoundTrip > 0 {
 		lines = append(lines, value("RTT", fmt.Sprintf("%.1f ms", float64(snapshot.RoundTrip)/float64(time.Millisecond))))
 	}
-	if candidates := strings.Trim(strings.Join([]string{snapshot.LocalCandidateType, snapshot.RemoteCandidateType}, " / "), " / "); candidates != "" {
+	candidateCutset := " / "
+	candidateCutset = candidateCutset[:2]
+	if candidates := strings.Trim(strings.Join([]string{snapshot.LocalCandidateType, snapshot.RemoteCandidateType}, " / "), candidateCutset); candidates != "" {
 		lines = append(lines, value("Candidates", candidates))
 	}
-	if protocols := strings.Trim(strings.Join([]string{snapshot.LocalProtocol, snapshot.RemoteProtocol}, " / "), " / "); protocols != "" {
+	protocolCutset := " / "
+	protocolCutset = protocolCutset[:2]
+	if protocols := strings.Trim(strings.Join([]string{snapshot.LocalProtocol, snapshot.RemoteProtocol}, " / "), protocolCutset); protocols != "" {
 		lines = append(lines, value("ICE", protocols))
 	}
 	if snapshot.RelayTransport != "" {
@@ -590,8 +594,7 @@ func chromeSafeViewportForShell(viewport state.ViewportStore, shell state.ShellS
 }
 
 // Floating Overview 只投影 reducer-owned floating 列表；打开/召回通过 ActionID 回到 app reducer。
-func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) ContentVM {
-	shell = shell.ReadonlyDefaults()
+func buildFloatingOverviewContent(root state.Root, _ state.ShellStore) ContentVM {
 	rows := state.FloatingOverviewItems(root)
 	lines := []Line{floatingOverviewHeaderLine()}
 	rowOffset := len(lines)

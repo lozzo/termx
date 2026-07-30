@@ -151,12 +151,10 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {
 		return err
 	}
-	for {
-		if err := runtime.Run(ctx); err != nil {
-			return err
-		}
-		return ctx.Err()
+	if err := runtime.Run(ctx); err != nil {
+		return err
 	}
+	return ctx.Err()
 }
 
 func selectV3RootAttachTerminal(ctx context.Context, client *protocoladapter.ApplicationClient) (string, bool, error) {

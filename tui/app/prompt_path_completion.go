@@ -11,7 +11,7 @@ import (
 
 const (
 	promptPathCompletionToken        CancelToken = "prompt.path.completion"
-	defaultPromptPathCompletionLimit             = 100
+	defaultPromptPathCompletionLimit int         = 100
 )
 
 // PromptPathCompletionRequestMsg 请求对当前 prompt workdir 字段做 endpoint-scoped 目录补全。

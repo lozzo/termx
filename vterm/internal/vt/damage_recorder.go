@@ -450,9 +450,6 @@ func compactASCIIColorEqual(a, b color.Color) bool {
 	case ansi.IndexedColor:
 		bv, ok := b.(ansi.IndexedColor)
 		return ok && av == bv
-	case ansi.TrueColor:
-		bv, ok := b.(ansi.TrueColor)
-		return ok && av == bv
 	case ansi.RGBColor:
 		bv, ok := b.(ansi.RGBColor)
 		return ok && av == bv

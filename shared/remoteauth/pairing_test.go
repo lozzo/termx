@@ -52,7 +52,6 @@ func TestPairingBundleRejectsUnknownFieldExpiryAndIdentityMismatch(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, _ := EncodePairingBundle(bundle)
 	unknownBundle := proto.Clone(bundle).(*PairingBundle)
 	unknownBundle.ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
 	unknown, _ := proto.Marshal(unknownBundle)
@@ -60,7 +59,7 @@ func TestPairingBundleRejectsUnknownFieldExpiryAndIdentityMismatch(t *testing.T)
 		t.Fatal("unknown Hub field was accepted")
 	}
 	bundle.Identity.DeviceId = "device-other"
-	payload, _ = proto.Marshal(bundle)
+	payload, _ := proto.Marshal(bundle)
 	if _, _, err := ParsePairingBundle(payload, now); err == nil {
 		t.Fatal("pairing identity mismatch was accepted")
 	}

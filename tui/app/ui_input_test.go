@@ -304,7 +304,7 @@ func TestShortcutPassthroughLockSendsRootShortcutToTerminal(t *testing.T) {
 	if root.Shell.InteractionMode != state.InteractionModeGlobal || len(effects) == 0 {
 		t.Fatalf("ctrl-g should enter global mode before lock toggle, shell=%#v effects=%#v", root.Shell, effects)
 	}
-	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}})
 	if !root.Shell.ShortcutPassthroughLocked || root.Shell.InteractionMode != state.InteractionModeNormal {
 		t.Fatalf("global l should enable shortcut passthrough lock and exit mode, shell=%#v", root.Shell)
 	}

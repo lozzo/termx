@@ -4989,7 +4989,7 @@ func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
 	var fg color.Color
 	var bg color.Color
 	var attrs uint8
-	var underline uv.UnderlineStyle
+	var underline uv.Underline
 	link := uv.Link{}
 	if cell != nil {
 		content = cell.Content

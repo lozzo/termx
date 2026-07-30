@@ -119,12 +119,10 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}}); err != nil {
 		return err
 	}
-	for {
-		if err := runtime.Run(ctx); err != nil {
-			return err
-		}
-		return ctx.Err()
+	if err := runtime.Run(ctx); err != nil {
+		return err
 	}
+	return ctx.Err()
 }
 
 func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocoladapter.ApplicationClient, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {

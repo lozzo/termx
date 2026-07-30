@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/proto/remoteauthpb"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDirectSignalingAnswerSignatureBindsPinCorrelationAndLifetime(t *testing.T) {
@@ -32,9 +33,9 @@ func TestDirectSignalingAnswerSignatureBindsPinCorrelationAndLifetime(t *testing
 	if err := VerifyDirectSignalingAnswer(answer, answer.GetRequestId(), identity.DeviceID, identity.Fingerprint, now); err != nil {
 		t.Fatal(err)
 	}
-	tampered := *answer
+	tampered := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1)
 	tampered.AnswerSdp = "v=0\r\na=tampered\r\n"
-	if err := VerifyDirectSignalingAnswer(&tampered, answer.GetRequestId(), identity.DeviceID, identity.Fingerprint, now); err == nil {
+	if err := VerifyDirectSignalingAnswer(tampered, answer.GetRequestId(), identity.DeviceID, identity.Fingerprint, now); err == nil {
 		t.Fatal("tampered Direct signaling answer must fail signature verification")
 	}
 	if err := VerifyDirectSignalingAnswer(answer, "other-request", identity.DeviceID, identity.Fingerprint, now); err == nil {

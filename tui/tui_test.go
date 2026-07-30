@@ -151,7 +151,6 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("visual audit smoke must use fixed 140x40 viewport, got lines=%d width=%d", len(cases["visual-audit-current"].Lines), render.DisplayWidth(cases["visual-audit-current"].Lines[0]))
 	}
 	if !frameContains(cases["visual-audit-current"].Lines, "visual review") ||
-		!frameContains(cases["visual-audit-current"].Lines, "visual review") ||
 		!frameContains(cases["visual-audit-current"].Lines, paneChromeCompactActionMarker()) {
 		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/account"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -121,8 +122,8 @@ func (store *accountStoreFake) ListAccountSessions(_ context.Context, accountID 
 }
 func (store *accountStoreFake) UpdatePassword(_ context.Context, accountID, keepSessionID string, hash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
 	store.passwordAccountID, store.passwordKeepSessionID, store.passwordHash = accountID, keepSessionID, append([]byte(nil), hash...)
-	profile := *store.records[accountID].Profile
+	profile := proto.Clone(store.records[accountID].Profile).(*cloudv1.AccountProfile)
 	profile.Revision++
 	profile.UpdatedAt = timestamppb.New(now)
-	return &profile, nil
+	return profile, nil
 }

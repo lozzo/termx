@@ -747,7 +747,7 @@ func TestEngineResourceStreamUsesProtoFramesAndOpaqueHandle(t *testing.T) {
 	}
 	var finish wirepb.FileTransferFinish
 	if err := proto.Unmarshal(stream.sentPayload, &finish); err != nil || finish.GetSize() != 6 || len(finish.GetSha256()) != sha256.Size {
-		t.Fatalf("automatic finish = %#v err=%v", finish, err)
+		t.Fatalf("automatic finish = %#v err=%v", &finish, err)
 	}
 	stream.frames <- bindingResourceFrame{typ: 0x24, payload: []byte("done")}
 	event := nextBindingEvent(t, engine)

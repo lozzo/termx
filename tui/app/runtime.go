@@ -430,7 +430,6 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			return nil
 		}
 	}
-	return nil
 }
 
 func (runtime *AppRuntime) messageBatchLimit() int {

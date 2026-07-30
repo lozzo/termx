@@ -88,11 +88,7 @@ func anytty_android_spike_engine_create(out *C.anytty_handle_t) C.anytty_status_
 	androidLibrary.Lock()
 	runtimeDir := androidLibrary.runtimeDir
 	androidLibrary.Unlock()
-	host, err := newAndroidSpikeHost(runtimeDir)
-	if err != nil {
-		return status(err)
-	}
-	return createAndroidEngine(host, nil, out)
+	return status(androidSpikeUnavailable(runtimeDir))
 }
 
 func createAndroidEngine(host androidHost, broker *binding.PlatformBroker, out *C.anytty_handle_t) C.anytty_status_v1 {

@@ -2,6 +2,10 @@
 
 buildscript {
 
+    configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+
     repositories {
         google()
         mavenCentral()
@@ -23,6 +27,11 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+    }
+    def lockName = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '-')
+    dependencyLocking {
+        lockAllConfigurations()
+        lockFile = rootProject.file("gradle/dependency-locks/${lockName}.lockfile")
     }
 }
 
