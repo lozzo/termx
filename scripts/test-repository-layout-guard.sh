@@ -57,9 +57,11 @@ create_fixture() {
 }
 
 create_android_ignore_fixture() {
-  local fixture="$tmp_dir/android-ignore"
+  local name="${1:-android-ignore}"
+  local fixture="$tmp_dir/$name"
   mkdir -p "$fixture/clients/mobile/android/app"
   cp "$repo_root/.gitignore" "$fixture/.gitignore"
+  cp "$repo_root/clients/mobile/.gitignore" "$fixture/clients/mobile/.gitignore"
   cp "$repo_root/clients/mobile/android/.gitignore" "$fixture/clients/mobile/android/.gitignore"
   cp "$repo_root/clients/mobile/android/app/.gitignore" "$fixture/clients/mobile/android/app/.gitignore"
   git -C "$fixture" init -q
@@ -96,6 +98,29 @@ expect_visible() {
     exit 1
   fi
   echo "PASS: visible $path"
+}
+
+expect_recursive_build_mutation_detected() {
+  local label="$1"
+  local ignore_file="$2"
+  local recursive_rule="$3"
+  local fixture
+  local path="clients/mobile/android/app/src/test/resources/build/fixture.json"
+  local output
+  fixture="$(create_android_ignore_fixture "android-ignore-mutation-$label")"
+  printf '%s\n' "$recursive_rule" >>"$fixture/$ignore_file"
+  mkdir -p "$fixture/$(dirname "$path")"
+  printf 'fixture\n' >"$fixture/$path"
+  if ! output="$(git -C "$fixture" check-ignore --no-index -v "$path" 2>&1)"; then
+    echo "FAIL: recursive build mutation was not detected in $ignore_file" >&2
+    exit 1
+  fi
+  if ! grep -Fq -- "$recursive_rule" <<<"$output"; then
+    echo "FAIL: $ignore_file mutation did not cause the visibility failure" >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  echo "PASS: recursive build mutation detected in $ignore_file"
 }
 
 expect_pass "current repository" "$guard"
@@ -164,5 +189,8 @@ done
 for path in "${visible_paths[@]}"; do
   expect_visible "$android_ignore" "$path"
 done
+expect_recursive_build_mutation_detected root .gitignore '/clients/mobile/android/**/build/'
+expect_recursive_build_mutation_detected mobile clients/mobile/.gitignore '/android/**/build/'
+expect_recursive_build_mutation_detected android clients/mobile/android/.gitignore '**/build/'
 
 echo "repository layout guard fixtures passed"
