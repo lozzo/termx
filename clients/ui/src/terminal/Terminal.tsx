@@ -522,6 +522,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
   const showConnectingOverlay = !suppressConnectingOverlay && (channelState !== 'open' || !surfaceReady)
+  const inputFailureVisible = terminalSession.snapshot.phase === 'failed' &&
+    terminalSession.snapshot.visibleError?.surface === 'banner'
 
   useEffect(() => {
     if (!isOpen || !surfaceReady) return
@@ -1045,13 +1047,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (event.type !== 'keydown') return true
       const currentModifiers = modifierStateRef.current
       if (!currentModifiers || (currentModifiers.ctrl === 'off' && currentModifiers.alt === 'off')) return true
+      if (event.isComposing || event.keyCode === 229) return true
       if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return true
-      if (event.key.length !== 1) return true
+      if (event.key.length !== 1 || event.key.charCodeAt(0) < 0x20 || event.key.charCodeAt(0) > 0x7e) return true
 
       const result = applyTerminalModifiers(event.key, currentModifiers)
       if (result.data === event.key) return true
       const accepted = sendUserInput(result.data)
-      if (accepted && (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt)) {
+      if (!accepted) return true
+      if (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt) {
         const nextModifiers = { ctrl: result.ctrl, alt: result.alt }
         modifierStateRef.current = nextModifiers
         onModifierStateChangeRef.current?.(nextModifiers)
@@ -2427,6 +2431,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             <span className="anytty-square-spinner text-[var(--anytty-text)]" aria-hidden="true" />
             Connecting terminal...
           </div>
+        </div>
+      ) : null}
+      {inputFailureVisible ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-50 border-b border-red-500/40 bg-red-950/95 px-3 py-2 text-sm text-red-100"
+          role="alert"
+        >
+          {t('connectionStatus.inputPaused')}
         </div>
       ) : null}
       {historyLoadingVisible && !showConnectingOverlay ? (

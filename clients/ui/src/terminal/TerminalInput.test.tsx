@@ -1,16 +1,19 @@
-import { act, cleanup, createEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { Terminal, type TerminalHandle } from './Terminal'
 
 interface FakeXTermInstance {
+  textarea: HTMLTextAreaElement | null
+  emitBinary(data: string): void
   emitData(data: string): void
   emitKey(event: KeyboardEvent): boolean
 }
 
 const terminalHarness = vi.hoisted(() => ({
   instances: [] as unknown[],
+  inputBlocked: false,
   sessionSendInput: vi.fn(),
 }))
 
@@ -43,7 +46,9 @@ vi.mock('@xterm/xterm', () => ({
       coreService: { decPrivateModes: { applicationCursorKeys: false } },
     }
     dataHandler: ((data: string) => void) | null = null
+    binaryHandler: ((data: string) => void) | null = null
     keyHandler: ((event: KeyboardEvent) => boolean) | null = null
+    textarea: HTMLTextAreaElement | null = null
 
     constructor(options: Record<string, unknown>) {
       this.options = { ...options }
@@ -61,15 +66,20 @@ vi.mock('@xterm/xterm', () => ({
       element.append(screen, textarea)
       container.append(element)
       this.element = element
+      this.textarea = textarea
     }
     onData(handler: (data: string) => void) {
       this.dataHandler = handler
       return { dispose: () => { this.dataHandler = null } }
     }
-    onBinary() { return { dispose() {} } }
+    onBinary(handler: (data: string) => void) {
+      this.binaryHandler = handler
+      return { dispose: () => { this.binaryHandler = null } }
+    }
     onCursorMove() { return { dispose() {} } }
     onRender() { return { dispose() {} } }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) { this.keyHandler = handler }
+    emitBinary(data: string) { this.binaryHandler?.(data) }
     emitData(data: string) { this.dataHandler?.(data) }
     emitKey(event: KeyboardEvent) { return this.keyHandler?.(event) ?? true }
     resize(cols: number, rows: number) { this.cols = cols; this.rows = rows }
@@ -92,7 +102,13 @@ vi.mock('@xterm/xterm', () => ({
 
 vi.mock('./useTerminalSession', () => ({
   useTerminalSession: ({ terminalId }: { terminalId: string }) => ({
-    snapshot: { phase: 'connected', terminalChannels: { [terminalId]: { state: 'open' } } },
+    snapshot: terminalHarness.inputBlocked
+      ? {
+          phase: 'failed',
+          terminalChannels: { [terminalId]: { state: 'open' } },
+          visibleError: { message: 'input blocked', recoverable: true, surface: 'banner' },
+        }
+      : { phase: 'connected', terminalChannels: { [terminalId]: { state: 'open' } } },
     terminalSnapshot: null,
     terminalText: '',
     terminalInfo: null,
@@ -117,6 +133,7 @@ const session = {} as ProtoClientSession
 describe('Terminal input modifier boundary', () => {
   beforeEach(() => {
     terminalHarness.instances.length = 0
+    terminalHarness.inputBlocked = false
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -161,6 +178,7 @@ describe('Terminal input modifier boundary', () => {
     const onInput = vi.fn()
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true)
     const onModifierStateChange = vi.fn()
     render(<Terminal
       machineId="studio"
@@ -175,12 +193,15 @@ describe('Terminal input modifier boundary', () => {
     const xterm = terminalHarness.instances[0] as FakeXTermInstance
     const event = () => createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent
 
-    act(() => expect(xterm.emitKey(event())).toBe(false))
-    expect(onInput).toHaveBeenLastCalledWith('\x03')
+    act(() => {
+      expect(xterm.emitKey(event())).toBe(true)
+      xterm.emitData('c')
+    })
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x03', 'c'])
     expect(onModifierStateChange).not.toHaveBeenCalled()
 
     act(() => expect(xterm.emitKey(event())).toBe(false))
-    expect(onInput).toHaveBeenCalledTimes(2)
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x03', 'c', '\x03'])
     expect(onModifierStateChange).toHaveBeenCalledOnce()
     expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
   })
@@ -282,6 +303,71 @@ describe('Terminal input modifier boundary', () => {
       '\x1b[1;7D',
     ])
     expect(onModifierStateChange).not.toHaveBeenCalled()
+  })
+
+  it('leaves composition keyCode 229 and Unicode custom keys to onData without consuming once', async () => {
+    const onInput = vi.fn(() => true)
+    const onModifierStateChange = vi.fn()
+    render(<Terminal
+      machineId="studio"
+      terminalId="term-shell"
+      session={session}
+      modifierState={{ ctrl: 'once', alt: 'once' }}
+      onModifierStateChange={onModifierStateChange}
+      onInput={onInput}
+      renderer="dom"
+    />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+
+    fireEvent.compositionStart(xterm.textarea!, { data: '' })
+    expect(xterm.emitKey(createEvent.keyDown(xterm.textarea!, {
+      key: 'a',
+      keyCode: 65,
+      isComposing: true,
+    }) as KeyboardEvent)).toBe(true)
+    expect(xterm.emitKey(createEvent.keyDown(xterm.textarea!, {
+      key: 'Process',
+      keyCode: 229,
+      isComposing: false,
+    }) as KeyboardEvent)).toBe(true)
+    act(() => xterm.emitData('中'))
+    fireEvent.compositionEnd(xterm.textarea!, { data: '中' })
+
+    expect(xterm.emitKey(createEvent.keyDown(xterm.textarea!, { key: '中' }) as KeyboardEvent)).toBe(true)
+    act(() => xterm.emitData('中'))
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['中', '中'])
+    expect(onModifierStateChange).not.toHaveBeenCalled()
+
+    act(() => expect(xterm.emitKey(createEvent.keyDown(xterm.textarea!, { key: 'c' }) as KeyboardEvent)).toBe(false))
+    expect(onInput).toHaveBeenLastCalledWith('\x1b\x03')
+    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
+  })
+
+  it('reports rejected onData and binary sends through the same owner boundary without consuming once', async () => {
+    const onInput = vi.fn(() => false)
+    const onModifierStateChange = vi.fn()
+    terminalHarness.inputBlocked = true
+    render(<Terminal
+      machineId="studio"
+      terminalId="term-shell"
+      session={session}
+      modifierState={{ ctrl: 'once', alt: 'off' }}
+      onModifierStateChange={onModifierStateChange}
+      onInput={onInput}
+      renderer="dom"
+    />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+
+    act(() => {
+      xterm.emitData('paste')
+      xterm.emitBinary('binary')
+    })
+
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['paste', 'binary'])
+    expect(onModifierStateChange).not.toHaveBeenCalled()
+    expect((await screen.findByRole('alert')).textContent).toBe('Input is paused until the connection recovers.')
   })
 
   it('returns the underlying acceptance result from imperative input and paste handles', async () => {
