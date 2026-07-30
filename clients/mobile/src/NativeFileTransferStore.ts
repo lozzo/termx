@@ -51,6 +51,7 @@ type CleanupConfirmation = { confirmed: boolean, error?: Error }
 
 type ActiveTransfer = {
   epoch: number
+  storeEpoch: number
   machineId: string
   direction: TransferInfo['direction']
   cancel: AbortController
@@ -68,8 +69,9 @@ export class NativeFileTransferStore {
   private transfers: TransferInfo[] = []
   private readonly listeners = new Set<() => void>()
   private readonly active = new Map<string, ActiveTransfer>()
+  private readonly taskOwners = new Set<ActiveTransfer>()
   private readonly downloadChunks = new Map<string, Uint8Array[]>()
-  private readonly taskTeardowns = new WeakMap<ActiveTransfer, Promise<void>>()
+  private taskTeardowns = new WeakMap<ActiveTransfer, Promise<void>>()
   private readonly pendingTeardowns = new Map<string, Promise<void>>()
   private readonly failedCleanupOwners = new Map<string, ActiveTransfer>()
   private readonly detachedCleanupOwners = new Map<string, ActiveTransfer>()
@@ -84,6 +86,9 @@ export class NativeFileTransferStore {
   private cachedVersion = -1
   private cachedSnapshot: FileTransferStoreSnapshot | null = null
   private readonly cachedMachineSnapshots = new Map<string, FileTransferStoreSnapshot>()
+  private storeEpoch = 0
+  private discarding = false
+  private discardPromise: Promise<void> | null = null
 
   constructor(storage: Storage | null = transferStorage()) {
     this.storage = storage
@@ -93,6 +98,7 @@ export class NativeFileTransferStore {
   setSessionResolver(resolver: NativeTransferSessionResolver | null): void { this.resolver = resolver }
 
   startDownload(machineId: string, fileName: string, fileSize: number, filePath: string, offset = 0): void {
+    if (this.discarding) return
     const existing = this.transfers.find((item) => item.direction === 'download' && item.machineId === machineId && item.filePath === filePath && item.totalSize === fileSize && item.status !== 'completed' && item.status !== 'cancelled')
     if (existing) {
       if (existing.status === 'pending' || existing.status === 'transferring') return
@@ -101,9 +107,10 @@ export class NativeFileTransferStore {
       return
     }
     const id = transferID('download', machineId, filePath)
+    const storeEpoch = this.storeEpoch
     this.advanceTransition(id)
     this.upsert({ id, machineId, name: fileName, direction: 'download', totalSize: fileSize, transferredSize: offset, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), filePath, pausedByUser: false })
-    void this.runDownload(id).catch((error) => this.fail(id, error))
+    void this.runDownload(id).catch((error) => this.fail(id, error, storeEpoch))
   }
 
   async getDownloadResumeOffset(machineId?: string, filePath?: string, fileSize?: number): Promise<number> {
@@ -116,17 +123,21 @@ export class NativeFileTransferStore {
   }
 
   startUpload(machineId: string, contentUri: string, fileName: string, fileSize: number, targetDir: string): void {
+    if (this.discarding) return
     const id = transferID('upload', machineId, `${targetDir}/${fileName}`)
+    const storeEpoch = this.storeEpoch
     this.advanceTransition(id)
     this.upsert({ id, machineId, name: fileName, direction: 'upload', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), localUri: contentUri, targetDir, pausedByUser: false })
-    void this.runUpload(id).catch((error) => this.fail(id, error))
+    void this.runUpload(id).catch((error) => this.fail(id, error, storeEpoch))
   }
 
   cancelTransfer(id: string): void {
+    if (!this.transfers.some((item) => item.id === id)) return
     void this.requestCancel(id)?.catch(() => undefined)
   }
 
   private requestCancel(id: string): Promise<void> | null {
+    const storeEpoch = this.storeEpoch
     this.advanceTransition(id)
     const task = this.active.get(id) ?? this.failedCleanupOwners.get(id) ?? this.detachedCleanupOwners.get(id)
     task?.cancel.abort()
@@ -147,8 +158,8 @@ export class NativeFileTransferStore {
       : discardPartial?.() ?? null
     if (cancellation) {
       void cancellation.then(
-        () => this.update(id, { status: 'cancelled', error: undefined, updatedAt: Date.now(), bytesPerSecond: 0 }),
-        (error) => this.fail(id, error),
+        () => this.update(id, { status: 'cancelled', error: undefined, updatedAt: Date.now(), bytesPerSecond: 0 }, true, storeEpoch),
+        (error) => this.fail(id, error, storeEpoch),
       )
     } else {
       this.update(id, { status: 'cancelled', updatedAt: Date.now(), bytesPerSecond: 0 })
@@ -157,20 +168,24 @@ export class NativeFileTransferStore {
   }
 
   pauseTransfer(id: string): void {
+    if (!this.transfers.some((item) => item.id === id)) return
+    const storeEpoch = this.storeEpoch
     this.advanceTransition(id)
     const task = this.active.get(id)
     task?.cancel.abort()
-    if (task) void this.closeTask(id, task).catch((error) => this.fail(id, error))
+    if (task) void this.closeTask(id, task).catch((error) => this.fail(id, error, storeEpoch))
     this.update(id, { status: 'paused', pausedByUser: true, updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
   async resumeTransfer(id: string): Promise<void> {
+    if (this.discarding) return
     const transfer = this.transfers.find((item) => item.id === id)
     if (!transfer || !canResume(transfer.status)) return
     const requestEpoch = this.transitionEpochs.get(id) ?? 0
+    const storeEpoch = this.storeEpoch
     const previous = this.resumeTransitions.get(id) ?? Promise.resolve()
     let transition!: Promise<void>
-    transition = previous.catch(() => undefined).then(() => this.runResumeTransition(id, requestEpoch))
+    transition = previous.catch(() => undefined).then(() => this.runResumeTransition(id, requestEpoch, storeEpoch))
     this.resumeTransitions.set(id, transition)
     try {
       await transition
@@ -179,30 +194,33 @@ export class NativeFileTransferStore {
     }
   }
 
-  private async runResumeTransition(id: string, requestEpoch: number): Promise<void> {
+  private async runResumeTransition(id: string, requestEpoch: number, storeEpoch: number): Promise<void> {
     try {
       let transfer = this.transfers.find((item) => item.id === id)
-      if (!transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
+      if (this.storeEpoch !== storeEpoch || !transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
       const teardown = this.pendingTeardowns.get(id)
       if (teardown) await teardown
       transfer = this.transfers.find((item) => item.id === id)
-      if (!transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
+      if (this.storeEpoch !== storeEpoch || !transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
       this.advanceTransition(id)
       this.update(id, { status: 'pending', pausedByUser: false, error: undefined, updatedAt: Date.now() })
       if (transfer.direction === 'download') await this.runDownload(id)
       else await this.runUpload(id)
     } catch (error) {
+      if (this.storeEpoch !== storeEpoch) return
       if (this.transfers.find((item) => item.id === id)?.status === 'cancelled') return
-      this.fail(id, error)
+      this.fail(id, error, storeEpoch)
     }
   }
 
   async resumeAllTransfers(machineId?: string): Promise<void> {
+    if (this.discarding) return
     const transfers = this.transfers.filter((transfer) => (!machineId || transfer.machineId === machineId) && canResume(transfer.status))
     await Promise.allSettled(transfers.map((transfer) => this.resumeTransfer(transfer.id)))
   }
 
   async suspendForRuntimeReset(): Promise<void> {
+    if (this.discardPromise) await this.discardPromise
     const teardowns: Promise<void>[] = []
     for (const [id, task] of this.active) {
       this.advanceTransition(id)
@@ -216,12 +234,56 @@ export class NativeFileTransferStore {
     await Promise.allSettled(teardowns)
   }
 
+  discardForLocalReset(): Promise<void> {
+    if (this.discardPromise) return this.discardPromise
+    this.discarding = true
+    this.storeEpoch += 1
+    const discard = this.performLocalResetDiscard()
+    let tracked!: Promise<void>
+    tracked = discard.finally(() => {
+      if (this.discardPromise === tracked) this.discardPromise = null
+      this.discarding = false
+    })
+    this.discardPromise = tracked
+    return tracked
+  }
+
+  private async performLocalResetDiscard(): Promise<void> {
+    const tasks = new Set<ActiveTransfer>([
+      ...this.taskOwners,
+      ...this.active.values(),
+      ...this.failedCleanupOwners.values(),
+      ...this.detachedCleanupOwners.values(),
+    ])
+    for (const task of tasks) task.cancel.abort()
+
+    this.transfers = []
+    this.active.clear()
+    this.taskOwners.clear()
+    this.downloadChunks.clear()
+    this.pendingTeardowns.clear()
+    this.failedCleanupOwners.clear()
+    this.detachedCleanupOwners.clear()
+    this.destructiveRetries.clear()
+    this.pendingDismissals.clear()
+    this.resumeTransitions.clear()
+    this.transitionEpochs.clear()
+    this.progressSamples.clear()
+    this.taskTeardowns = new WeakMap<ActiveTransfer, Promise<void>>()
+    this.publishEmptyResetSnapshot()
+
+    await Promise.allSettled([...tasks].map((task) => this.closeDiscardedTask(task)))
+    removePersistedTransfers(this.storage)
+  }
+
   async resumeInterruptedTransfers(machineId?: string): Promise<void> {
+    if (this.discarding) return
     const transfers = this.transfers.filter((transfer) => (!machineId || transfer.machineId === machineId) && !transfer.pausedByUser && canResume(transfer.status))
     await Promise.allSettled(transfers.map((transfer) => this.resumeTransfer(transfer.id)))
   }
 
   dismissTransfer(id: string): void {
+    if (!this.transfers.some((item) => item.id === id)) return
     this.pendingDismissals.add(id)
     const cleanup = this.requestCancel(id)
     if (!cleanup) {
@@ -315,7 +377,7 @@ export class NativeFileTransferStore {
       const resource = remote.resource
       if (!resource) throw new Error('download returned no resource handle')
       task.resource = resource
-      this.detachedCleanupOwners.delete(id)
+      this.forgetDetachedCleanupOwner(id)
       this.assertCurrentAttempt(id, task)
       const stream = await awaitAbortable(
         session.openResourceStream(resource, { signal: task.cancel.signal }),
@@ -340,7 +402,7 @@ export class NativeFileTransferStore {
             mimeType: 'application/octet-stream',
           },
           task.cancel.signal,
-          (received) => this.progress(id, received),
+          (received) => this.progress(id, received, task),
         )
         this.assertCurrentAttempt(id, task)
         if (saved.bytes !== Number(remote.size)) throw new Error('Android download persistence size mismatch')
@@ -350,7 +412,7 @@ export class NativeFileTransferStore {
         })
       } else {
         const retained = this.downloadChunks.get(id) ?? []
-        const blob = await receiveDownload(stream, remote, retained, task.cancel.signal, (received) => this.progress(id, received))
+        const blob = await receiveDownload(stream, remote, retained, task.cancel.signal, (received) => this.progress(id, received, task))
         this.assertCurrentAttempt(id, task)
         const url = URL.createObjectURL(blob)
         const anchor = document.createElement('a')
@@ -386,7 +448,7 @@ export class NativeFileTransferStore {
       if (!resource) throw new Error('upload returned no resource handle')
       task.resource = resource
       task.uploadResume = remote.resume
-      this.detachedCleanupOwners.delete(id)
+      this.forgetDetachedCleanupOwner(id)
       this.assertCurrentAttempt(id, task)
       const stream = await awaitAbortable(
         session.openResourceStream(resource, { initialUploadOffset: remote.offset, signal: task.cancel.signal }),
@@ -400,14 +462,14 @@ export class NativeFileTransferStore {
         uploadResumeToken: remote.resume?.opaqueToken.slice(), updatedAt: Date.now(),
       })
       if (Capacitor.isNativePlatform()) {
-        await sendNativeUpload(stream, remote, transfer.localUri, task.cancel.signal, (sent) => this.progress(id, sent))
+        await sendNativeUpload(stream, remote, transfer.localUri, task.cancel.signal, (sent) => this.progress(id, sent, task))
       } else {
         const response = await fetch(Capacitor.convertFileSrc(transfer.localUri), { signal: task.cancel.signal })
         this.assertCurrentAttempt(id, task)
         if (!response.ok) throw new Error(`local upload file could not be read (${response.status})`)
         const blob = await response.blob()
         this.assertCurrentAttempt(id, task)
-        await sendUpload(stream, remote, blob, task.cancel.signal, (sent) => this.progress(id, sent))
+        await sendUpload(stream, remote, blob, task.cancel.signal, (sent) => this.progress(id, sent, task))
       }
       this.assertCurrentAttempt(id, task)
       this.update(id, { status: 'completed', transferredSize: transfer.totalSize, savedPath: target, updatedAt: Date.now(), bytesPerSecond: 0 })
@@ -462,13 +524,17 @@ export class NativeFileTransferStore {
   }
 
   private closeTask(id: string, task: ActiveTransfer): Promise<void> {
+    if (task.storeEpoch !== this.storeEpoch) return this.closeDiscardedTask(task)
     const existing = this.taskTeardowns.get(task)
     if (existing) return existing
     const teardown = this.finishCloseTask(id, task)
     this.taskTeardowns.set(task, teardown)
     this.pendingTeardowns.set(id, teardown)
     void teardown.then(
-      () => this.clearPendingTeardown(id, teardown),
+      () => {
+        this.clearPendingTeardown(id, teardown)
+        if (this.failedCleanupOwners.get(id) !== task && this.detachedCleanupOwners.get(id) !== task) this.taskOwners.delete(task)
+      },
       () => undefined,
     )
     return teardown
@@ -476,6 +542,10 @@ export class NativeFileTransferStore {
 
   private async finishCloseTask(id: string, task: ActiveTransfer): Promise<void> {
     await task.readyForClose
+    if (task.storeEpoch !== this.storeEpoch) {
+      await this.closeDiscardedTask(task)
+      return
+    }
     let cleanupError: unknown
     let destructiveConfirmed = false
     let destructiveAttempted = false
@@ -493,6 +563,10 @@ export class NativeFileTransferStore {
       cleanupError = cancellation.confirmed ? undefined : cancellation.error
     }
     await task.stream?.close().catch(() => undefined)
+    if (task.storeEpoch !== this.storeEpoch) {
+      await this.closeDiscardedTask(task)
+      return
+    }
     if (task.destructiveCancel && !destructiveAttempted && task.session && task.resource) {
       const cancellation = await this.cancelRemote(task)
       destructiveConfirmed = cancellation.confirmed
@@ -511,14 +585,26 @@ export class NativeFileTransferStore {
     }
     this.failedCleanupOwners.delete(id)
     await task.session?.close().catch(() => undefined)
+    if (task.storeEpoch !== this.storeEpoch) {
+      await this.closeDiscardedTask(task)
+      return
+    }
     task.session = undefined
     task.stream = undefined
     if (task.destructiveCancel && !destructiveConfirmed) {
       try {
         const cancellation = await this.cancelWithFreshSession(task)
+        if (task.storeEpoch !== this.storeEpoch) {
+          await this.closeDiscardedTask(task)
+          return
+        }
         destructiveConfirmed = cancellation.confirmed
         cleanupError = cancellation.error
       } catch (error) {
+        if (task.storeEpoch !== this.storeEpoch) {
+          await this.closeDiscardedTask(task)
+          return
+        }
         if (this.active.get(id) === task) this.active.delete(id)
         this.failedCleanupOwners.set(id, task)
         throw error
@@ -548,6 +634,7 @@ export class NativeFileTransferStore {
       () => {
         if (this.destructiveRetries.get(id) === retry) this.destructiveRetries.delete(id)
         this.clearPendingTeardown(id, retry)
+        this.taskOwners.delete(task)
       },
       () => {
         if (this.destructiveRetries.get(id) === retry) this.destructiveRetries.delete(id)
@@ -557,7 +644,15 @@ export class NativeFileTransferStore {
   }
 
   private async finishDestructiveCleanup(id: string, task: ActiveTransfer): Promise<void> {
+    if (task.storeEpoch !== this.storeEpoch) {
+      await this.closeDiscardedTask(task)
+      return
+    }
     const cancellation = await this.cancelWithFreshSession(task)
+    if (task.storeEpoch !== this.storeEpoch) {
+      await this.closeDiscardedTask(task)
+      return
+    }
     if (!cancellation.confirmed) throw cancellation.error ?? new Error('remote file transfer cancellation was not confirmed')
     this.failedCleanupOwners.delete(id)
     this.detachedCleanupOwners.delete(id)
@@ -596,8 +691,12 @@ export class NativeFileTransferStore {
     this.transitionEpochs.delete(id)
     this.resumeTransitions.delete(id)
     this.pendingTeardowns.delete(id)
+    const failedOwner = this.failedCleanupOwners.get(id)
+    const detachedOwner = this.detachedCleanupOwners.get(id)
     this.failedCleanupOwners.delete(id)
     this.detachedCleanupOwners.delete(id)
+    if (failedOwner) this.taskOwners.delete(failedOwner)
+    if (detachedOwner) this.taskOwners.delete(detachedOwner)
     this.progressSamples.delete(id)
     this.notify()
   }
@@ -614,6 +713,7 @@ export class NativeFileTransferStore {
     const readyForClose = new Promise<void>((resolve) => { markReadyForClose = resolve })
     const task: ActiveTransfer = {
       epoch: this.transitionEpochs.get(id) ?? 0,
+      storeEpoch: this.storeEpoch,
       machineId: transfer.machineId,
       direction: transfer.direction,
       cancel: new AbortController(),
@@ -622,12 +722,19 @@ export class NativeFileTransferStore {
       markReadyForClose,
     }
     this.active.set(id, task)
+    this.taskOwners.add(task)
     return task
+  }
+
+  private forgetDetachedCleanupOwner(id: string): void {
+    const owner = this.detachedCleanupOwners.get(id)
+    this.detachedCleanupOwners.delete(id)
+    if (owner) this.taskOwners.delete(owner)
   }
 
   private assertCurrentAttempt(id: string, task: ActiveTransfer): void {
     const transfer = this.transfers.find((item) => item.id === id)
-    if (this.active.get(id) !== task || (this.transitionEpochs.get(id) ?? 0) !== task.epoch || task.cancel.signal.aborted || !transfer || transfer.status === 'paused' || transfer.status === 'cancelled') {
+    if (task.storeEpoch !== this.storeEpoch || this.active.get(id) !== task || (this.transitionEpochs.get(id) ?? 0) !== task.epoch || task.cancel.signal.aborted || !transfer || transfer.status === 'paused' || transfer.status === 'cancelled') {
       throw new DOMException('Aborted', 'AbortError')
     }
   }
@@ -655,7 +762,8 @@ export class NativeFileTransferStore {
     return transfer
   }
 
-  private progress(id: string, transferredSize: number): void {
+  private progress(id: string, transferredSize: number, task: ActiveTransfer): void {
+    if (task.storeEpoch !== this.storeEpoch || this.active.get(id) !== task) return
     const current = this.transfers.find((item) => item.id === id)
     if (!current) return
     const now = Date.now()
@@ -680,7 +788,8 @@ export class NativeFileTransferStore {
     this.update(id, { transferredSize, bytesPerSecond: speed, updatedAt: now }, shouldNotify)
   }
 
-  private fail(id: string, error: unknown): void {
+  private fail(id: string, error: unknown, storeEpoch: number): void {
+    if (storeEpoch !== this.storeEpoch) return
     if (error instanceof DOMException && error.name === 'AbortError') return
     const current = this.transfers.find((item) => item.id === id)
     if (current?.status === 'cancelled' && !this.failedCleanupOwners.has(id)) return
@@ -693,7 +802,8 @@ export class NativeFileTransferStore {
     this.notify()
   }
 
-  private update(id: string, patch: Partial<TransferInfo>, notify = true): void {
+  private update(id: string, patch: Partial<TransferInfo>, notify = true, storeEpoch = this.storeEpoch): void {
+    if (storeEpoch !== this.storeEpoch || !this.transfers.some((item) => item.id === id)) return
     this.transfers = this.transfers.map((item) => item.id === id ? { ...item, ...patch } : item)
     if (notify) this.notify()
   }
@@ -704,6 +814,26 @@ export class NativeFileTransferStore {
     this.cachedMachineSnapshots.clear()
     persistTransfers(this.storage, this.transfers)
     for (const listener of this.listeners) listener()
+  }
+
+  private publishEmptyResetSnapshot(): void {
+    this.version += 1
+    this.cachedSnapshot = null
+    this.cachedMachineSnapshots.clear()
+    removePersistedTransfers(this.storage)
+    for (const listener of this.listeners) listener()
+  }
+
+  private async closeDiscardedTask(task: ActiveTransfer): Promise<void> {
+    task.cancel.abort()
+    const stream = task.stream
+    const session = task.session
+    task.stream = undefined
+    task.session = undefined
+    await Promise.allSettled([
+      stream?.close(),
+      session?.close(),
+    ])
   }
 }
 
@@ -775,6 +905,15 @@ function persistTransfers(storage: Storage | null, transfers: TransferInfo[]): v
     }))))
   } catch {
     // A full/disabled WebView storage must not break an active transfer.
+  }
+}
+
+function removePersistedTransfers(storage: Storage | null): void {
+  if (!storage) return
+  try {
+    storage.removeItem(transferStorageKey)
+  } catch {
+    // A disabled WebView storage must not block local recovery.
   }
 }
 

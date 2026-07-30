@@ -125,9 +125,9 @@ function NativeAnyTTYApp() {
   }, [nativeAppRuntime.resetGeneration, refreshRegistry])
   const resetLocalPairings = useCallback(async () => {
     try {
+      await nativeAppRuntime.discardLocalState()
       await NativeConnection.resetLocalPairings()
       networkRuntime.storage?.removeItem('anytty.app.machines.v2')
-      networkRuntime.storage?.removeItem('anytty.file-transfers.v2')
       endpointRegistry.replace(create(AnyTTYRemoteAuth.EndpointRegistryV1Schema, { schemaVersion: 1 }))
       await replaceNativeGeneration(refreshRegistry, nativeAppRuntime.resetGeneration, true)
     } catch (failure) {
@@ -135,7 +135,7 @@ function NativeAnyTTYApp() {
       setRegistryError(message)
       throw failure
     }
-  }, [endpointRegistry, nativeAppRuntime.resetGeneration, networkRuntime, refreshRegistry])
+  }, [endpointRegistry, nativeAppRuntime.discardLocalState, nativeAppRuntime.resetGeneration, networkRuntime, refreshRegistry])
 
   if (!registryReady) {
     return (
@@ -635,6 +635,7 @@ function browserStorage(): RemoteRuntimeStorage | undefined {
 function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjection): {
   createMachineRuntime: MachineRuntimeFactory
   fileTransfer: FileTransferContext
+  discardLocalState: () => Promise<void>
   resetGeneration: () => Promise<void>
   resumeInterruptedTransfers: () => void
 } {
@@ -647,6 +648,9 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
 
   return {
     fileTransfer: createFileTransferContext(undefined, transferStore),
+    discardLocalState() {
+      return transferStore.discardForLocalReset()
+    },
     resumeInterruptedTransfers() {
       void transferStore.resumeInterruptedTransfers()
     },

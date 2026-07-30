@@ -20,9 +20,12 @@ import com.anytty.app.goclient.AndroidSSHCredentialStore
 import com.anytty.app.goclient.GoClientBridgeServer
 import java.security.SecureRandom
 import java.io.File
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -43,80 +46,74 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     private var goClientEngine: AndroidGoClientEngine? = null
     private var goBridgeServer: GoClientBridgeServer? = null
     private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var lifecycleReady = false
     private val connectivityManager by lazy { context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
-    @Volatile private var activeNetwork: Network? = null
-    @Volatile private var networkChangeEpoch: Long = 0
+    private val runtimeCoordinator = NativeConnectionRuntimeCoordinator(
+        scheduleNetworkRestart = { delayMillis, task ->
+            val job = runtimeScope.launch {
+                delay(delayMillis)
+                task()
+            }
+            PendingRuntimeWork { job.cancel() }
+        },
+        isApplicationStarted = {
+            ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        },
+        startRuntime = ::startGoBridgeServer,
+        restartRuntime = ::restartGoBridgeServer,
+        suspendRuntime = ::suspendGoBridgeServer,
+        resetRuntime = ::resetLocalPairingState,
+        generationChanging = { reason, epoch ->
+            notifyListeners("generationChanging", JSObject().put("reason", reason).put("epoch", epoch))
+        },
+        generationChanged = { reason, epoch ->
+            notifyListeners("generationChanged", JSObject().put("reason", reason).put("epoch", epoch))
+        },
+        generationChangeFailed = { reason, epoch, failure ->
+            AnyTTYDebugLog.e(TAG, "Go client engine could not follow Android network epoch", failure)
+            notifyListeners("generationChangeFailed", JSObject().put("reason", reason).put("epoch", epoch))
+        },
+    )
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onLost(network: Network) {
-            if (activeNetwork != network) return
-            val epoch = networkChangeEpoch + 1
-            networkChangeEpoch = epoch
-            activeNetwork = null
-            suspendGoBridgeServer()
-            notifyListeners("generationChanging", JSObject().put("reason", "network_lost").put("epoch", epoch))
+            runtimeCoordinator.onNetworkLost(network)
         }
 
         override fun onAvailable(network: Network) {
-            val previous = activeNetwork
-            activeNetwork = network
-            if (previous == network || !lifecycleReady) return
-            if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
-            val epoch = networkChangeEpoch + 1
-            networkChangeEpoch = epoch
-            notifyListeners("generationChanging", JSObject().put("reason", "network_available").put("epoch", epoch))
-            runtimeScope.launch {
-                // Wi-Fi -> cellular -> Wi-Fi 会连续发布多个 onAvailable。只允许最终 active network
-                // 创建 generation，避免后一个 bridge 在 JS 正读取前一个 registry 时将其关闭。
-                delay(300)
-                if (networkChangeEpoch != epoch || activeNetwork != network || !lifecycleReady) return@launch
-                if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
-                runCatching { restartGoBridgeServer() }
-                    .onSuccess {
-                        notifyListeners("generationChanged", JSObject().put("reason", "network_available").put("epoch", epoch))
-                    }
-                    .onFailure {
-                        AnyTTYDebugLog.e(TAG, "Go client engine could not follow Android network epoch", it)
-                        notifyListeners("generationChangeFailed", JSObject().put("reason", "network_available").put("epoch", epoch))
-                    }
-            }
+            runtimeCoordinator.onNetworkAvailable(network)
         }
     }
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(receiverContext: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_SCREEN_OFF) suspendGoBridgeServer()
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) runtimeCoordinator.suspendForLifecycle()
         }
     }
 
     override fun load() {
         AnyTTYDebugLog.init(context)
-        startGoBridgeServer()
+        runtimeCoordinator.load(connectivityManager.activeNetwork)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         context.registerReceiver(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
-        activeNetwork = connectivityManager.activeNetwork
         connectivityManager.registerDefaultNetworkCallback(networkCallback)
-        lifecycleReady = true
         Log.i(TAG, "NativeConnectionPlugin loaded")
         AnyTTYDebugLog.i(TAG, "NativeConnectionPlugin loaded")
     }
 
     override fun onStart(owner: LifecycleOwner) {
-        if (!lifecycleReady) return
+        if (!runtimeCoordinator.isReady()) return
         // WebView 的 appStateChange 会调用 handleForegroundResume，并在新 bridge 就绪后原子替换 JS generation。
         // 这里不得抢先启动临时 bridge，否则旧 JS 请求可能连入随后立即被关闭的 generation。
     }
 
     override fun onStop(owner: LifecycleOwner) {
-        if (!lifecycleReady) return
-        suspendGoBridgeServer()
+        runtimeCoordinator.suspendForLifecycle()
     }
 
     override fun handleOnDestroy() {
-        lifecycleReady = false
+        runtimeCoordinator.destroy()
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
         runCatching { context.unregisterReceiver(screenReceiver) }
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
-        suspendGoBridgeServer()
+        runtimeScope.cancel("NativeConnectionPlugin destroyed")
         super.handleOnDestroy()
     }
 
@@ -126,7 +123,7 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     fun handleForegroundResume(call: PluginCall) {
         try {
             // WebView 恢复时无条件切换 generation；冻结前的 JS handle 即使 socket 尚未观察到 close 也必须失效。
-            restartGoBridgeServer()
+            runtimeCoordinator.restartForForeground()
             call.resolve()
         } catch (failure: Exception) {
             call.reject("Go client engine could not resume", failure)
@@ -135,14 +132,24 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
 
     @PluginMethod
     fun resetLocalPairings(call: PluginCall) {
-        runtimeScope.launch {
+        if (!runtimeCoordinator.isReady()) {
+            call.reject("native runtime is not available")
+            return
+        }
+        val settled = AtomicBoolean(false)
+        val reset = runtimeScope.launch {
             try {
-                resetLocalPairingState()
-                call.resolve()
+                runtimeCoordinator.resetLocalPairings()
+                if (settled.compareAndSet(false, true)) call.resolve()
             } catch (failure: Exception) {
                 AnyTTYDebugLog.e(TAG, "resetLocalPairings failed", failure)
-                runCatching { restartGoBridgeServer() }
-                call.reject("failed to reset local pairings", failure)
+                runCatching { runtimeCoordinator.restartForForeground() }
+                if (settled.compareAndSet(false, true)) call.reject("failed to reset local pairings", failure)
+            }
+        }
+        reset.invokeOnCompletion { failure ->
+            if (failure is CancellationException && settled.compareAndSet(false, true)) {
+                call.reject("native runtime was destroyed during reset", failure)
             }
         }
     }

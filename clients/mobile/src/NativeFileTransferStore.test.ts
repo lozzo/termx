@@ -8,6 +8,7 @@ import * as AnyTTYApiFile from '../../ui/src/generated/apipb/file_pb'
 import * as AnyTTYClientBinding from '../../ui/src/generated/bindingpb/client_binding_pb'
 import { ErrorEnvelopeSchema, FileTransferResultSchema, ProtocolErrorSchema } from '../../ui/src/generated/wirepb/terminal_pb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { FileTransferStoreSnapshot } from './NativeFileTransferStore'
 import NativeFilePicker from './plugins/nativeFilePicker'
 
 vi.mock('./plugins/nativeFilePicker', () => ({
@@ -46,6 +47,71 @@ describe('NativeFileTransferStore', () => {
       status: 'paused',
       pausedByUser: true,
     })
+  })
+
+  it('discards seeded recovery history and ignores late transfer work after reset', async () => {
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const storage = memoryStorage()
+    storage.setItem('anytty.file-transfers.v2', JSON.stringify([{
+      id: 'seeded-upload',
+      machineId: 'studio',
+      name: 'seeded.bin',
+      direction: 'upload',
+      totalSize: 8,
+      transferredSize: 4,
+      status: 'transferring',
+      startedAt: 1,
+      updatedAt: 2,
+      localUri: 'content://seeded',
+      targetDir: '/tmp',
+    }]))
+    const resolverEntered = deferred<void>()
+    const sessionResult = deferred<ProtoClientSession>()
+    const lateSessionClosed = deferred<void>()
+    const stream: ProtoResourceStream = {
+      handle: 1n,
+      send: async () => undefined,
+      subscribe: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
+      close: async () => undefined,
+    }
+    let lateSessionCloses = 0
+    const lateSession: ProtoClientSession = {
+      ...uploadSession(stream, 8, 4, 4),
+      close: async () => {
+        lateSessionCloses += 1
+        lateSessionClosed.resolve()
+      },
+    }
+    const store = new NativeFileTransferStore(storage)
+    store.setSessionResolver(async () => {
+      resolverEntered.resolve()
+      return await sessionResult.promise
+    })
+    const snapshots: FileTransferStoreSnapshot[] = []
+    store.subscribe(() => snapshots.push(store.getSnapshot()))
+
+    const resume = store.resumeInterruptedTransfers()
+    await resolverEntered.promise
+    expect(store.getSnapshot().transfers[0]?.status).toBe('pending')
+    await store.discardForLocalReset()
+    await store.suspendForRuntimeReset()
+
+    expect(store.getSnapshot()).toEqual({ transfers: [], hasActiveTransfers: false })
+    expect(snapshots.at(-1)).toEqual({ transfers: [], hasActiveTransfers: false })
+    expect(storage.getItem('anytty.file-transfers.v2')).toBeNull()
+    const notificationsAfterReset = snapshots.length
+
+    sessionResult.resolve(lateSession)
+    await lateSessionClosed.promise
+    await resume
+    store.pauseTransfer('seeded-upload')
+    store.cancelTransfer('seeded-upload')
+    store.dismissTransfer('seeded-upload')
+
+    expect(lateSessionCloses).toBe(1)
+    expect(snapshots).toHaveLength(notificationsAfterReset)
+    expect(storage.getItem('anytty.file-transfers.v2')).toBeNull()
   })
 
   it('commits a native download after FILE_FINISH even when the resource stream closes immediately', async () => {
