@@ -3,6 +3,7 @@ package apihttp
 import (
 	"crypto/sha256"
 	"net/netip"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -112,6 +113,114 @@ func TestLoginLimiterRejectedAttemptsDoNotConsumeOrCreateSiblingBuckets(t *testi
 	}
 }
 
+func TestLoginLimiterFullBucketFastRejectDoesNotPruneOrMutate(t *testing.T) {
+	now := time.Unix(1_800, 0).UTC()
+	client := netip.MustParseAddr("192.0.2.10")
+	login := "target@example.com"
+	digest := sha256.Sum256([]byte(account.NormalizeLogin(login)))
+	fullBucket := loginBucket{count: 1, windowStart: now.Add(-30 * time.Second), lastSeen: now.Add(-30 * time.Second)}
+	expiredBucket := loginBucket{count: 1, windowStart: now.Add(-10 * time.Minute), lastSeen: now.Add(-10 * time.Minute)}
+	tests := []struct {
+		name string
+		seed func(*loginLimiter)
+	}{
+		{name: "global full", seed: func(limiter *loginLimiter) { limiter.global = fullBucket }},
+		{name: "existing client full", seed: func(limiter *loginLimiter) { limiter.clients[client] = fullBucket }},
+		{name: "existing account full", seed: func(limiter *loginLimiter) { limiter.accounts[digest] = fullBucket }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			limiter := testLoginLimiter(t, loginLimiterConfig{
+				globalLimit: 1, clientLimit: 1, accountLimit: 1,
+				window: time.Minute, bucketTTL: 5 * time.Minute,
+				maxClientBuckets: 10, maxAccountBuckets: 10, now: func() time.Time { return now },
+			})
+			limiter.clients[netip.MustParseAddr("192.0.2.200")] = expiredBucket
+			limiter.accounts[sha256.Sum256([]byte("expired@example.com"))] = expiredBucket
+			test.seed(limiter)
+			before := captureLoginLimiterState(limiter)
+			if limiter.allow(client, login) {
+				t.Fatal("full bucket accepted login")
+			}
+			after := captureLoginLimiterState(limiter)
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("fast rejection mutated limiter:\nbefore: %+v\nafter:  %+v", before, after)
+			}
+		})
+	}
+}
+
+func TestLoginLimiterWindowResetAllowsAndPrunesBeforeCommit(t *testing.T) {
+	now := time.Unix(1_900, 0).UTC()
+	client := netip.MustParseAddr("192.0.2.10")
+	login := "target@example.com"
+	digest := sha256.Sum256([]byte(account.NormalizeLogin(login)))
+	limiter := testLoginLimiter(t, loginLimiterConfig{
+		globalLimit: 1, clientLimit: 1, accountLimit: 1,
+		window: time.Minute, bucketTTL: 5 * time.Minute,
+		maxClientBuckets: 3, maxAccountBuckets: 3, now: func() time.Time { return now },
+	})
+	previousWindow := loginBucket{count: 1, windowStart: now.Add(-time.Minute), lastSeen: now.Add(-time.Minute)}
+	expiredBucket := loginBucket{count: 1, windowStart: now.Add(-5 * time.Minute), lastSeen: now.Add(-5 * time.Minute)}
+	limiter.global = previousWindow
+	limiter.clients[client] = previousWindow
+	limiter.accounts[digest] = previousWindow
+	limiter.clients[netip.MustParseAddr("192.0.2.200")] = expiredBucket
+	limiter.accounts[sha256.Sum256([]byte("expired@example.com"))] = expiredBucket
+
+	if !limiter.allow(client, login) {
+		t.Fatal("reset window rejected login")
+	}
+	state := captureLoginLimiterState(limiter)
+	wantBucket := loginBucket{count: 1, windowStart: now, lastSeen: now}
+	if state.global != wantBucket || len(state.clients) != 1 || state.clients[client] != wantBucket || len(state.accounts) != 1 || state.accounts[digest] != wantBucket {
+		t.Fatalf("reset and prune state = %+v, want only current buckets at count 1", state)
+	}
+}
+
+func TestLoginLimiterCapacityPrunesBeforeFailClosedDecision(t *testing.T) {
+	now := time.Unix(1_950, 0).UTC()
+	client := netip.MustParseAddr("192.0.2.10")
+	login := "target@example.com"
+	digest := sha256.Sum256([]byte(account.NormalizeLogin(login)))
+	newLimiter := func() *loginLimiter {
+		return testLoginLimiter(t, loginLimiterConfig{
+			globalLimit: 10, clientLimit: 10, accountLimit: 10,
+			window: time.Minute, bucketTTL: 5 * time.Minute,
+			maxClientBuckets: 1, maxAccountBuckets: 1, now: func() time.Time { return now },
+		})
+	}
+
+	t.Run("expired capacity is reclaimed", func(t *testing.T) {
+		limiter := newLimiter()
+		expiredBucket := loginBucket{count: 1, windowStart: now.Add(-5 * time.Minute), lastSeen: now.Add(-5 * time.Minute)}
+		limiter.clients[netip.MustParseAddr("192.0.2.200")] = expiredBucket
+		limiter.accounts[sha256.Sum256([]byte("expired@example.com"))] = expiredBucket
+		if !limiter.allow(client, login) {
+			t.Fatal("expired capacity was not reclaimed")
+		}
+		state := captureLoginLimiterState(limiter)
+		if state.global.count != 1 || len(state.clients) != 1 || state.clients[client].count != 1 || len(state.accounts) != 1 || state.accounts[digest].count != 1 {
+			t.Fatalf("reclaimed capacity state = %+v", state)
+		}
+	})
+
+	t.Run("active capacity fails closed", func(t *testing.T) {
+		limiter := newLimiter()
+		activeBucket := loginBucket{windowStart: now, lastSeen: now}
+		limiter.clients[netip.MustParseAddr("192.0.2.200")] = activeBucket
+		limiter.accounts[sha256.Sum256([]byte("active@example.com"))] = activeBucket
+		before := captureLoginLimiterState(limiter)
+		if limiter.allow(client, login) {
+			t.Fatal("full active capacity accepted new buckets")
+		}
+		after := captureLoginLimiterState(limiter)
+		if !reflect.DeepEqual(after, before) {
+			t.Fatalf("capacity rejection consumed or created buckets:\nbefore: %+v\nafter:  %+v", before, after)
+		}
+	})
+}
+
 func TestLoginLimiterWindowAndBucketTTL(t *testing.T) {
 	now := time.Unix(2_000, 0).UTC()
 	limiter := testLoginLimiter(t, loginLimiterConfig{
@@ -202,4 +311,24 @@ func captureLoginLimiter(limiter *loginLimiter, client netip.Addr, login string)
 		clientFound: clientFound, accountFound: accountFound,
 		clientBuckets: len(limiter.clients), accountBuckets: len(limiter.accounts),
 	}
+}
+
+type loginLimiterState struct {
+	global   loginBucket
+	clients  map[netip.Addr]loginBucket
+	accounts map[[sha256.Size]byte]loginBucket
+}
+
+func captureLoginLimiterState(limiter *loginLimiter) loginLimiterState {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	return loginLimiterState{global: limiter.global, clients: cloneLoginBuckets(limiter.clients), accounts: cloneLoginBuckets(limiter.accounts)}
+}
+
+func cloneLoginBuckets[K comparable](source map[K]loginBucket) map[K]loginBucket {
+	result := make(map[K]loginBucket, len(source))
+	for key, bucket := range source {
+		result[key] = bucket
+	}
+	return result
 }

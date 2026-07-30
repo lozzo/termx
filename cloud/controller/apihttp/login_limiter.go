@@ -71,11 +71,26 @@ func (limiter *loginLimiter) allow(client netip.Addr, login string) bool {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 
-	pruneLoginBuckets(limiter.clients, now, limiter.config.bucketTTL)
-	pruneLoginBuckets(limiter.accounts, now, limiter.config.bucketTTL)
 	globalBucket := advanceLoginBucket(limiter.global, now, limiter.config.window)
+	if globalBucket.count >= limiter.config.globalLimit {
+		return false
+	}
 	clientBucket, clientFound := limiter.clients[client]
 	accountBucket, accountFound := limiter.accounts[accountDigest]
+	if clientFound {
+		clientBucket = advanceLoginBucket(clientBucket, now, limiter.config.window)
+	}
+	if accountFound {
+		accountBucket = advanceLoginBucket(accountBucket, now, limiter.config.window)
+	}
+	if (clientFound && clientBucket.count >= limiter.config.clientLimit) || (accountFound && accountBucket.count >= limiter.config.accountLimit) {
+		return false
+	}
+
+	pruneLoginBuckets(limiter.clients, now, limiter.config.bucketTTL)
+	pruneLoginBuckets(limiter.accounts, now, limiter.config.bucketTTL)
+	clientBucket, clientFound = limiter.clients[client]
+	accountBucket, accountFound = limiter.accounts[accountDigest]
 	if (!clientFound && len(limiter.clients) >= limiter.config.maxClientBuckets) || (!accountFound && len(limiter.accounts) >= limiter.config.maxAccountBuckets) {
 		return false
 	}
