@@ -417,6 +417,26 @@ class BridgeTransportTest {
     }
 
     @Test
+    fun `isolated surrogate replacement matches response UTF-8 encoding`() {
+        val malformed = "\uD800x\uDC00"
+        assertEquals(
+            malformed.toByteArray(Charsets.UTF_8).size,
+            protobufUtf8PayloadBytes(malformed),
+        )
+    }
+
+    @Test
+    fun `multibyte error is rejected at the response allocation boundary`() {
+        val maxPayloadBytes = BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES
+        val completeThreeByteCharacters = maxPayloadBytes / 3
+        assertEquals(
+            completeThreeByteCharacters * 3,
+            protobufUtf8PayloadBytes("\u20ac".repeat(completeThreeByteCharacters)),
+        )
+        assertNull(protobufUtf8PayloadBytes("\u20ac".repeat(completeThreeByteCharacters + 1)))
+    }
+
+    @Test
     fun `oversized engine error closes 1009 before response encoding`() {
         val message = "x".repeat(BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES + 1)
         val server = startServer(FakeEngine(openSessionError = message))

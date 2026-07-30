@@ -1,6 +1,5 @@
 package com.anytty.app.goclient
 
-import com.google.protobuf.CodedOutputStream
 import org.java_websocket.WebSocket
 import org.java_websocket.drafts.Draft
 import org.java_websocket.exceptions.InvalidHandshakeException
@@ -11,6 +10,8 @@ import org.java_websocket.server.WebSocketServer
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,6 +19,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 internal const val BRIDGE_RESPONSE_HEADER_BYTES = 21
+private const val UTF8_SIZE_SCRATCH_BYTES = 256
 
 internal fun bridgeResponseFrameBytes(payloadBytes: Int): Int? {
     if (payloadBytes < 0) return null
@@ -28,14 +30,35 @@ internal fun bridgeResponseFrameBytes(payloadBytes: Int): Int? {
 internal fun protobufUtf8PayloadBytes(value: String): Int? {
     val maxPayloadBytes = BRIDGE_MAX_MESSAGE_BYTES - BRIDGE_RESPONSE_HEADER_BYTES
     if (value.length > maxPayloadBytes) return null
-    val fieldBytes = CodedOutputStream.computeStringSizeNoTag(value)
-    for (prefixBytes in 1..5) {
-        val payloadBytes = fieldBytes - prefixBytes
-        if (payloadBytes >= 0 && CodedOutputStream.computeUInt32SizeNoTag(payloadBytes) == prefixBytes) {
-            return payloadBytes.takeIf { it <= maxPayloadBytes }
+
+    val encoder = Charsets.UTF_8.newEncoder()
+        .onMalformedInput(CodingErrorAction.REPLACE)
+        .onUnmappableCharacter(CodingErrorAction.REPLACE)
+    val input = CharBuffer.wrap(value)
+    val scratch = ByteBuffer.allocate(UTF8_SIZE_SCRATCH_BYTES)
+    var encodedBytes = 0
+
+    while (true) {
+        scratch.clear()
+        val result = encoder.encode(input, scratch, true)
+        encodedBytes += scratch.position()
+        if (encodedBytes > maxPayloadBytes || (encodedBytes == maxPayloadBytes && input.hasRemaining())) {
+            return null
         }
+        if (result.isOverflow) continue
+        check(result.isUnderflow)
+        break
     }
-    return null
+
+    while (true) {
+        scratch.clear()
+        val result = encoder.flush(scratch)
+        encodedBytes += scratch.position()
+        if (encodedBytes > maxPayloadBytes) return null
+        if (result.isOverflow) continue
+        check(result.isUnderflow)
+        return encodedBytes
+    }
 }
 
 internal interface GoClientBridgeEngine : AutoCloseable {
