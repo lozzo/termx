@@ -28,7 +28,8 @@ export function UserSubscriptionPage() {
   const pay = useMutation({ mutationFn: () => protoSend('/api/commerce/payments/development', CompleteDevelopmentPaymentRequestSchema, create(CompleteDevelopmentPaymentRequestSchema, { orderId: checkout?.orderId, paymentAttemptId: checkout?.attemptId }), ApplyPaymentEventResponseSchema), onSuccess: () => { setCheckout(undefined); invalidateCommerce(client) } })
   const change = useMutation({ mutationFn: (transition: SubscriptionTransition) => protoSend('/api/commerce/subscription', ChangeMySubscriptionRequestSchema, create(ChangeMySubscriptionRequestSchema, { transition, expectedRevision: commerce.data?.subscription?.revision }), TransitionSubscriptionResponseSchema), onSuccess: () => { setCancelOpen(false); invalidateCommerce(client) } })
   if (plans.isPending || commerce.isPending) return <><PageHeader title="订阅套餐" /><Skeleton rows={8} /></>
-  if (plans.error || commerce.error) return <ErrorState error={plans.error ?? commerce.error} />
+  const failedQuery = plans.error ? plans : commerce.error ? commerce : undefined
+  if (failedQuery) return <ErrorState error={failedQuery.error} onRetry={() => void failedQuery.refetch()} />
   const subscription = commerce.data?.subscription
   return <>
     <PageHeader title="选择适合你的套餐" meta="Direct 与 SSH 始终免费；订阅只增加托管设备、P2P 和 Relay 容量" actions={<div className="segmented" role="group" aria-label="计费周期"><button className={!yearly ? 'active' : ''} onClick={() => setYearly(false)}>月付</button><button className={yearly ? 'active' : ''} onClick={() => setYearly(true)}>年付</button></div>} />

@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileKey2, Link2, RefreshCw, Upload } from 'lucide-react'
 import { FormEvent, useState } from 'react'
-import { protoSend } from '../api'
+import { APIError, protoSend } from '../api'
 import { compactID, dateTime } from '../format'
 import {
   BindCertificateProfileRequestSchema,
@@ -91,10 +91,10 @@ export function CertificatesPage() {
   }
 
   const pending = profiles.isPending || edges.isPending
-  const error = profiles.error || edges.error
+  const failedQuery = profiles.error ? profiles : edges.error ? edges : undefined
   return <>
     <PageHeader title="证书" meta="上传当前证书文件，绑定后由 Controller 自动同步到 Edge" actions={<Button tone="primary" onClick={() => openUpload(null)}><Upload size={17} />上传证书</Button>} />
-    {pending ? <Skeleton /> : error ? <ErrorState error={error} /> : <div className="certificate-workspace">
+    {pending ? <Skeleton /> : failedQuery ? <ErrorState error={failedQuery.error} onRetry={() => void failedQuery.refetch()} /> : <div className="certificate-workspace">
       <section className="plain-section">
         <header><div><h2>证书档案</h2><p>档案只保留当前内容；替换后 revision 自动递增</p></div><FileKey2 size={19} /></header>
         {!profiles.data?.profiles.length ? <Empty>尚未上传证书档案</Empty> : <TableFrame><table><thead><tr><th>档案</th><th>DNS 域名</th><th>Revision</th><th>有效期</th><th>绑定状态</th><th>指纹</th><th /></tr></thead><tbody>{profiles.data.profiles.map((profile) => {
@@ -126,7 +126,7 @@ export function CertificatesPage() {
             <td><Button className="table-button" disabled={bind.isPending || selected === currentProfile} onClick={() => bind.mutate({ edgeID, profileID: selected, revision: edge.certificate?.bindingRevision ?? 0n })}>保存</Button></td>
           </tr>
         })}</tbody></table></TableFrame>}
-        {bind.error && <div className="section-notice"><Notice tone="error">{bind.error.message}</Notice></div>}
+        {bind.error && <div className="section-notice"><Notice tone="error">无法保存 Edge 证书绑定，请刷新后重试。{bind.error instanceof APIError && bind.error.correlationID ? ` 关联 ID：${bind.error.correlationID}` : ''}</Notice></div>}
       </section>
     </div>}
     <Dialog title={editing ? `替换 ${editing.name}` : '上传证书'} open={editing !== undefined} onClose={closeUpload} footer={<><Button tone="quiet" onClick={closeUpload}>取消</Button><Button tone="primary" type="submit" form="certificate-upload" disabled={upload.isPending}>{upload.isPending ? '正在校验' : editing ? '替换并自动更新' : '上传证书'}</Button></>}>
@@ -135,7 +135,8 @@ export function CertificatesPage() {
         <Field label="证书链文件" hint="选择 PEM 格式的 fullchain.pem"><Input required type="file" accept=".pem,.crt,.cer,application/x-pem-file" onChange={(event) => setCertificateFile(event.target.files?.[0])} /></Field>
         <Field label="私钥文件" hint="选择与证书匹配的 privkey.pem；文件内容不会在页面回显"><Input required type="file" accept=".pem,.key,application/x-pem-file" onChange={(event) => setPrivateKeyFile(event.target.files?.[0])} /></Field>
         <Notice tone="warning">上传后会自动同步所有已绑定 Edge。无效证书不会替换当前在用证书。</Notice>
-        {(formError || upload.error) && <p className="form-error">{formError || upload.error?.message}</p>}
+        {formError && <p className="form-error" role="alert">{formError}</p>}
+        {upload.error && <p className="form-error" role="alert">无法上传证书，请检查证书链与私钥后重试。{upload.error instanceof APIError && upload.error.correlationID ? ` 关联 ID：${upload.error.correlationID}` : ''}</p>}
       </form>
     </Dialog>
   </>

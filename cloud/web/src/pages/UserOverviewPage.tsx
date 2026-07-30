@@ -13,7 +13,8 @@ export function UserOverviewPage() {
   const daemons = useProtoQuery(['user', 'daemons'], '/api/daemons', ListMyDaemonsResponseSchema, 8_000)
   const plans = useProtoQuery(['user', 'plans'], '/api/commerce/plans', ListPlansResponseSchema, 60_000)
   if (commerce.isPending || daemons.isPending || plans.isPending) return <><PageHeader title={`你好，${current.account?.displayName ?? ''}`} meta="正在读取你的 Cloud 状态" /><Skeleton rows={7} /></>
-  if (commerce.error || daemons.error || plans.error) return <ErrorState error={commerce.error ?? daemons.error ?? plans.error} />
+  const failedQuery = commerce.error ? commerce : daemons.error ? daemons : plans.error ? plans : undefined
+  if (failedQuery) return <ErrorState error={failedQuery.error} onRetry={() => void failedQuery.refetch()} />
   const online = daemons.data?.daemons.filter((value) => value.runtime?.online).length ?? 0
   const total = daemons.data?.daemons.filter((value) => !value.daemon?.revoked).length ?? 0
   const pending = commerce.data?.orders.filter((value) => value.status === OrderStatus.PENDING).length ?? 0

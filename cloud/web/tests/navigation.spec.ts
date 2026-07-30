@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 import { Buffer } from 'node:buffer'
 
 const now = '2026-07-27T12:00:00Z'
@@ -280,12 +281,68 @@ test('证书页在响应式视口完成对话框生命周期与双文件选择',
   await invalidDialog.getByLabel('证书链文件').setInputFiles({ name: 'fullchain.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n') })
   await invalidDialog.getByLabel('私钥文件').setInputFiles({ name: 'privkey.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('-----BEGIN PRIVATE KEY-----\nwrong\n-----END PRIVATE KEY-----\n') })
   await invalidDialog.getByRole('button', { name: '上传证书', exact: true }).click()
-  await expect(invalidDialog).toContainText('证书与私钥不匹配')
+  await expect(invalidDialog).toContainText('无法上传证书，请检查证书链与私钥后重试。 关联 ID：certificate-conflict')
+  await expect(invalidDialog).not.toContainText('证书与私钥不匹配')
   await invalidDialog.getByRole('button', { name: '取消' }).click()
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('certificates.png'), fullPage: testInfo.project.name === 'desktop-chromium' })
   expect(errors.filter((value) => !value.includes('status of 409'))).toEqual([])
   expect(errors.filter((value) => value.includes('status of 409'))).toHaveLength(1)
+})
+
+test('query 重试只刷新失败项并保留已打开的证书 dialog 与 draft', async ({ page }) => {
+  const requests = await mockAPI(page, true)
+  let edgeRequests = 0
+  await page.route('**/api/operator/edges', async (route) => {
+    edgeRequests++
+    if (edgeRequests === 1) return json(route, { code: 'temporary_failure', message: 'private edge query detail', request_id: 'edge-query-retry' }, 401)
+    await route.fallback()
+  })
+
+  await page.goto('/app/admin/certificates')
+  await expect(page.getByRole('alert')).toContainText('edge-query-retry')
+  await page.getByRole('button', { name: '上传证书', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '上传证书' })
+  await dialog.getByLabel('档案名称').fill('保留中的证书草稿')
+
+  await page.locator('.error-state button').evaluate((button: HTMLButtonElement) => button.click())
+
+  await expect(page.locator('.error-state')).toHaveCount(0)
+  await expect(page.locator('.certificate-workspace')).toContainText('中国区 Edge 证书')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByLabel('档案名称')).toHaveValue('保留中的证书草稿')
+  expect(edgeRequests).toBe(2)
+  expect(requests.get('/api/operator/certificates')).toBe(1)
+})
+
+test('@axe 公开页、登录、普通用户 Shell、管理员表格与打开的 dialog 满足 WCAG A/AA', async ({ page }, testInfo) => {
+  const colorScheme = testInfo.project.name === 'mobile-320-chromium' ? 'dark' : 'light'
+  await page.emulateMedia({ colorScheme })
+  await mockAPI(page)
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
+  await assertNoAxeViolations(page, '公开页')
+
+  await page.goto('/login')
+  await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible()
+  await assertNoAxeViolations(page, '登录页')
+
+  await page.goto('/app/overview')
+  await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
+  await assertNoAxeViolations(page, '普通用户 Shell')
+
+  const adminPage = await page.context().newPage()
+  await adminPage.emulateMedia({ colorScheme })
+  await mockAPI(adminPage, true)
+  await adminPage.goto('/app/admin/certificates')
+  await expect(adminPage.getByRole('region', { name: '数据表格' }).first()).toBeVisible()
+  await assertNoAxeViolations(adminPage, '管理员表格')
+
+  await adminPage.getByRole('button', { name: '上传证书', exact: true }).click()
+  await expect(adminPage.getByRole('dialog', { name: '上传证书' })).toBeVisible()
+  await assertNoAxeViolations(adminPage, '打开的 dialog')
+  await adminPage.close()
 })
 
 test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) => {
@@ -390,4 +447,16 @@ async function assertMinimumHitArea(page: Page, selector: string) {
     expect(box.width, `${box.label} hit-area width`).toBeGreaterThanOrEqual(44)
     expect(box.height, `${box.label} hit-area height`).toBeGreaterThanOrEqual(44)
   }
+}
+
+async function assertNoAxeViolations(page: Page, surface: string) {
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  const violations = results.violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    targets: violation.nodes.map((node) => node.target),
+  }))
+  expect(violations, `${surface} 存在 axe violations`).toEqual([])
 }

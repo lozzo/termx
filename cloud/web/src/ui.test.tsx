@@ -9,7 +9,7 @@ function render(element: ReactNode): Document {
   return new DOMParser().parseFromString(renderToStaticMarkup(element), 'text/html')
 }
 
-function errorAction(error: unknown, onRetry?: () => void) {
+function errorAction(error: unknown, onRetry: () => void) {
   const state = ErrorState({ error, onRetry }) as ReactElement<{ children: ReactNode }>
   return Children.toArray(state.props.children)[1] as ReactElement<{ onClick: () => void }>
 }
@@ -46,18 +46,17 @@ describe('Cloud UI semantics', () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
-  it('always exposes and triggers the default reload recovery', () => {
+  it('only exposes the caller-provided recovery action', () => {
+    const retry = vi.fn()
     const internal = Object.assign(new Error('private request detail'), { status: 500, correlationID: 'request-public-456' })
-    const document = render(<ErrorState error={internal} />)
-    const virtualConsole = (window as unknown as { _virtualConsole: { emit: (event: string, error: Error) => boolean } })._virtualConsole
-    const navigation = vi.spyOn(virtualConsole, 'emit').mockReturnValue(true)
+    const document = render(<ErrorState error={internal} onRetry={retry} />)
 
     expect(document.body.textContent).toContain('服务暂时不可用，请稍后重试。')
     expect(document.body.textContent).toContain('request-public-456')
     expect(document.body.textContent).not.toContain('private request detail')
-    expect(document.querySelector('button')?.textContent).toBe('重新加载')
-    errorAction(internal).props.onClick()
-    expect(navigation).toHaveBeenCalledWith('jsdomError', expect.objectContaining({ message: expect.stringContaining('Not implemented: navigation') }))
-    navigation.mockRestore()
+    expect(document.body.textContent).not.toContain('重新加载')
+    expect(document.querySelector('button')?.textContent).toBe('重试')
+    errorAction(internal, retry).props.onClick()
+    expect(retry).toHaveBeenCalledTimes(1)
   })
 })

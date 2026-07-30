@@ -59,7 +59,7 @@ export function Dialog({ title, open, onClose, children, footer }: { title: stri
   </div>
 }
 
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 0
   const correlationID = typeof error === 'object' && error !== null && 'correlationID' in error && typeof error.correlationID === 'string' ? error.correlationID : ''
   const message = status === 403
@@ -71,6 +71,5 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
         : status >= 500
           ? '服务暂时不可用，请稍后重试。'
           : '加载失败，请稍后重试。'
-  const retry = onRetry ?? (() => window.location.reload())
-  return <div className="error-state"><Notice tone="error"><span>{message}</span>{correlationID && <small>关联 ID：{correlationID}</small>}</Notice><Button onClick={retry}>{onRetry ? '重试' : '重新加载'}</Button></div>
+  return <div className="error-state"><Notice tone="error"><span>{message}</span>{correlationID && <small>关联 ID：{correlationID}</small>}</Notice><Button onClick={onRetry}>重试</Button></div>
 }

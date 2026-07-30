@@ -11,6 +11,7 @@ export default defineConfig({
   outputDir: '../../.artifacts/cloud-web-playwright',
   fullyParallel: false,
   reporter: 'line',
+  grepInvert: /@axe/,
   use: {
     baseURL: onlineOrigin ?? 'http://127.0.0.1:4177',
     trace: 'retain-on-failure',

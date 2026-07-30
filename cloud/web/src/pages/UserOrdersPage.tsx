@@ -19,7 +19,7 @@ export function UserOrdersPage() {
     onSuccess: () => { setPendingPayment(undefined); void client.invalidateQueries({ queryKey: ['user', 'commerce'] }) },
   })
   if (query.isPending) return <><PageHeader title="我的订单" /><Skeleton /></>
-  if (query.error) return <ErrorState error={query.error} />
+  if (query.error) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />
   const attempts = new Map(query.data?.paymentAttempts.map((value) => [value.orderId, value]))
   return <>
     <PageHeader title="我的订单" meta="查看套餐订单、金额和支付处理结果" />

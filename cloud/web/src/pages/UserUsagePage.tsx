@@ -7,7 +7,7 @@ import { ErrorState, PageHeader, Skeleton } from '../ui'
 export function UserUsagePage() {
   const query = useProtoQuery(['user', 'commerce'], '/api/commerce/me', GetAccountCommerceResponseSchema, 15_000)
   if (query.isPending) return <><PageHeader title="用量" /><Skeleton rows={5} /></>
-  if (query.error || !query.data?.usage) return <ErrorState error={query.error} />
+  if (query.error || !query.data?.usage) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />
   const value = query.data.usage
   const percentage = value.quotaBytes > 0n ? Math.min(100, Number(value.relayTotalBytes * 100n / value.quotaBytes)) : 0
   return <>

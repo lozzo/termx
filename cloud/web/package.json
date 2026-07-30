@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && node scripts/check-build.mjs",
     "test": "vitest run src",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:axe": "playwright test --config playwright.axe.config.ts"
   },
   "dependencies": {
     "@anytty/ui": "0.0.0",
@@ -21,6 +22,7 @@
     "react-router": "8.3.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@bufbuild/protoc-gen-es": "2.12.0",
     "@playwright/test": "1.62.0",
     "@types/react": "19.2.14",

@@ -8,7 +8,7 @@ import { ErrorState, PageHeader, Skeleton, Status } from '../ui'
 export function OverviewPage() {
   const query = useProtoQuery(['overview'], '/api/operator/overview', GetOperatorOverviewResponseSchema, 5_000)
   if (query.isPending) return <><PageHeader title="总览" /><Skeleton rows={8} /></>
-  if (query.error || !query.data?.overview) return <ErrorState error={query.error} />
+  if (query.error || !query.data?.overview) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />
   const value = query.data.overview
   const metrics = [
     { label: '在线 Edge', value: `${value.edgeOnline}/${value.edgeTotal}`, icon: Server, to: '/app/admin/edges' },
