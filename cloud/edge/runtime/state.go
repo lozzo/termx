@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anytty/anytty/cloud/edge/policy"
 	"github.com/anytty/anytty/cloud/runtimesnapshot"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
@@ -78,26 +77,21 @@ const (
 )
 
 type stateData struct {
-	revision           uint64
-	agents             map[string]*cloudv1.AgentPresence
-	agentClaims        map[string]*cloudv1.DaemonBindingClaims
-	agentWriters       map[string]agentWriter
-	agentNextGen       map[string]uint64
-	sessions           map[string]*cloudv1.ClientSessionSummary
-	sessionClosers     map[string]sessionCloser
-	pendingSignals     map[string]pendingSignal
-	relayLeases        map[string]relayLease
-	relayReservations  map[string]relayReservation
-	allocations        map[string]relayAllocation
-	allocationNextGen  map[string]uint64
-	accountAllocations map[string]uint32
-	leaseAllocations   map[string]uint32
-	sessionAllocations map[string]uint32
-	accountRates       map[string]*policy.RateLimiter
-	sessionRates       map[string]*policy.RateLimiter
-	subscribers        map[uint64]chan *cloudv1.RuntimeDelta
-	nextSubscriber     uint64
-	deltaBuffer        int
+	revision       uint64
+	agents         map[string]*cloudv1.AgentPresence
+	agentClaims    map[string]*cloudv1.DaemonBindingClaims
+	agentWriters   map[string]agentWriter
+	agentNextGen   map[string]uint64
+	sessions       map[string]*cloudv1.ClientSessionSummary
+	sessionClosers map[string]sessionCloser
+	pendingSignals map[string]pendingSignal
+	relayGroups    map[string]*relayGroup
+	relayAuth      map[string]string
+	relayPending   map[string]relayPendingAllocation
+	allocations    map[string]relayAllocation
+	subscribers    map[uint64]chan *cloudv1.RuntimeDelta
+	nextSubscriber uint64
+	deltaBuffer    int
 }
 
 type pendingSignal struct {
@@ -534,9 +528,7 @@ func (state *State) run(deltaBuffer int) {
 	defer close(state.done)
 	data := &stateData{
 		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
-		relayLeases: make(map[string]relayLease), relayReservations: make(map[string]relayReservation), allocations: make(map[string]relayAllocation), allocationNextGen: make(map[string]uint64),
-		accountAllocations: make(map[string]uint32), leaseAllocations: make(map[string]uint32), sessionAllocations: make(map[string]uint32),
-		accountRates: make(map[string]*policy.RateLimiter), sessionRates: make(map[string]*policy.RateLimiter),
+		relayGroups: make(map[string]*relayGroup), relayAuth: make(map[string]string), relayPending: make(map[string]relayPendingAllocation), allocations: make(map[string]relayAllocation),
 		subscribers: make(map[uint64]chan *cloudv1.RuntimeDelta), deltaBuffer: deltaBuffer,
 	}
 	for request := range state.mailbox {
@@ -605,15 +597,12 @@ func (state *State) unsubscribe(id uint64) {
 }
 
 func (data *stateData) snapshot() (*cloudv1.RuntimeSnapshot, error) {
-	snapshot := &cloudv1.RuntimeSnapshot{Revision: data.revision, Agents: make([]*cloudv1.AgentPresence, 0, len(data.agents)), Sessions: make([]*cloudv1.ClientSessionSummary, 0, len(data.sessions)), Allocations: make([]*cloudv1.RelayAllocationSummary, 0, len(data.allocations))}
+	snapshot := &cloudv1.RuntimeSnapshot{Revision: data.revision, Agents: make([]*cloudv1.AgentPresence, 0, len(data.agents)), Sessions: make([]*cloudv1.ClientSessionSummary, 0, len(data.sessions))}
 	for _, agent := range data.agents {
 		snapshot.Agents = append(snapshot.Agents, proto.Clone(agent).(*cloudv1.AgentPresence))
 	}
 	for _, session := range data.sessions {
 		snapshot.Sessions = append(snapshot.Sessions, proto.Clone(session).(*cloudv1.ClientSessionSummary))
-	}
-	for _, allocation := range data.allocations {
-		snapshot.Allocations = append(snapshot.Allocations, proto.Clone(allocation.summary).(*cloudv1.RelayAllocationSummary))
 	}
 	normalized, err := runtimesnapshot.NormalizeClone(snapshot)
 	if err != nil {

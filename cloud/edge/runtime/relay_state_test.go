@@ -1,258 +1,141 @@
-package runtime_test
+package runtime
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
-	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	"github.com/anytty/anytty/cloud/edge/policy"
+	"github.com/anytty/anytty/cloud/relayquota"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestRelayRuntimeEnforcesConcurrencyAndFreezesUsage(t *testing.T) {
-	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
-	clock := now
-	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 32, DeltaBuffer: 32, Now: func() time.Time { return clock }})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRelayReservationGroupCapsPhysicalAllocationsAndSettlesOnce(t *testing.T) {
+	now := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
+	state := newRelayTestState(t, now)
 	defer state.Close()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: "lease-r6", AccountId: "account-r6", EdgeId: "edge-r6", DaemonId: "daemon-r6", ClientId: "client-r6", SessionId: "session-r6",
-		MaxBytes: 4096, MaxRateBytesPerSecond: 1024, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)),
-	}
-	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "username-r6", Credential: "credential-r6", ExpiresAt: claims.GetExpiresAt()}
-	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
+	grant, material := relayTestGrant(t, now, 1000)
+	if err := state.RegisterRelayGrant(context.Background(), grant, material); err != nil {
 		t.Fatal(err)
 	}
-	verified, password, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), now)
-	if err != nil || !ok || password != material.GetCredential() || verified.GetSessionId() != claims.GetSessionId() {
-		t.Fatalf("RelayAuth claims=%v password=%q ok=%v err=%v", verified, password, ok, err)
+
+	for index := 0; index < MaxPhysicalAllocationsPerReservation; index++ {
+		physicalID, allocationID := "physical-"+string(rune('a'+index)), "allocation-"+string(rune('a'+index))
+		admission, err := state.ReserveRelayAllocation(context.Background(), physicalID, material.GetUsername(), now)
+		if err != nil {
+			t.Fatalf("reserve %d: %v", index, err)
+		}
+		if admission.ReservationID != grant.GetReservationId() || admission.Limiter == nil {
+			t.Fatalf("admission %d = %+v", index, admission)
+		}
+		if err := state.ActivateRelayAllocation(context.Background(), physicalID, allocationID, cloudv1.RelayTransport_RELAY_TRANSPORT_UDP, now); err != nil {
+			t.Fatalf("activate %d: %v", index, err)
+		}
 	}
-	admission, err := state.ReserveRelayAllocation(context.Background(), "reservation-a", material.GetUsername(), now)
-	if err != nil || admission.MaxBytes != claims.GetMaxBytes() {
-		t.Fatalf("admission=%+v err=%v", admission, err)
+	if _, err := state.ReserveRelayAllocation(context.Background(), "physical-fifth", material.GetUsername(), now); err == nil {
+		t.Fatal("fifth physical allocation was admitted")
 	}
-	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-b", material.GetUsername(), now); err == nil {
-		t.Fatal("second allocation exceeded the lease concurrency limit")
-	}
-	if err := state.ActivateRelayAllocation(context.Background(), "reservation-a", "allocation-a", cloudv1.RelayTransport_RELAY_TRANSPORT_UDP, now); err != nil {
+	if err := state.BeginRelaySessionClose(context.Background(), grant.GetSessionId()); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := state.Snapshot(context.Background())
-	if err != nil || len(snapshot.GetAllocations()) != 1 {
-		t.Fatalf("snapshot=%v err=%v", snapshot, err)
+	if _, err := state.ReserveRelayAllocation(context.Background(), "physical-after-close", material.GetUsername(), now); err == nil {
+		t.Fatal("closing group admitted a new allocation")
 	}
-	feed, err := state.OpenFeed(context.Background())
+	for index := 0; index < MaxPhysicalAllocationsPerReservation; index++ {
+		allocationID := "allocation-" + string(rune('a'+index))
+		if err := state.BeginRelayAllocationClose(context.Background(), allocationID); err != nil {
+			t.Fatal(err)
+		}
+		assertRelayCounts(t, state, 0, uint32(MaxPhysicalAllocationsPerReservation-index-1), uint32(index+1))
+	}
+	for index := 0; index < MaxPhysicalAllocationsPerReservation; index++ {
+		allocationID := "allocation-" + string(rune('a'+index))
+		if err := state.CloseRelayAllocation(context.Background(), allocationID, uint64(index+1), uint64(index+2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settlement, err := state.RelaySessionSettlement(context.Background(), grant.GetSessionId(), now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer feed.Close()
-	clock = now.Add(time.Second)
-	event, err := state.FreezeRelayAllocationUsage(context.Background(), "allocation-a", 120, 240)
-	if err != nil || event.GetIngressBytes() != 120 || event.GetEgressBytes() != 240 || event.GetEventId() == "" {
-		t.Fatalf("usage=%v err=%v", event, err)
+	if settlement.GetReservationId() != grant.GetReservationId() || settlement.GetIngressBytes() != 10 || settlement.GetEgressBytes() != 14 || settlement.GetKind() != cloudv1.RelaySettlementKind_RELAY_SETTLEMENT_KIND_EXACT {
+		t.Fatalf("aggregate settlement = %v", settlement)
 	}
-	firstPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(event)
-	if err != nil {
-		t.Fatal(err)
-	}
-	event.IngressBytes++
-	clock = now.Add(2 * time.Second)
-	retried, err := state.FreezeRelayAllocationUsage(context.Background(), "allocation-a", 999, 999)
-	if err != nil {
-		t.Fatal(err)
-	}
-	retryPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(retried)
-	if err != nil || string(firstPayload) != string(retryPayload) {
-		t.Fatalf("freeze retry changed event: first=%v retry=%v err=%v", event, retried, err)
-	}
-	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-c", material.GetUsername(), clock); err == nil {
-		t.Fatal("frozen allocation released concurrency before finalize")
-	}
-	select {
-	case delta := <-feed.Deltas:
-		t.Fatalf("freeze emitted projection delta: %v", delta)
-	default:
-	}
-	wrong := proto.Clone(retried).(*cloudv1.UsageEvent)
-	wrong.EgressBytes++
-	if err := state.FinalizeRelayAllocation(context.Background(), wrong); err == nil {
-		t.Fatal("finalize accepted a different event")
-	}
-	if err := state.FinalizeRelayAllocation(context.Background(), retried); err != nil {
-		t.Fatal(err)
-	}
-	removed := <-feed.Deltas
-	if removed.GetAllocationRemoved().GetAllocationId() != "allocation-a" {
-		t.Fatalf("finalize delta = %v", removed)
-	}
-	if err := state.FinalizeRelayAllocation(context.Background(), retried); err == nil {
-		t.Fatal("second finalize unexpectedly succeeded")
-	}
-	select {
-	case delta := <-feed.Deltas:
-		t.Fatalf("second finalize emitted another delta: %v", delta)
-	default:
-	}
-	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-c", material.GetUsername(), clock); err != nil {
-		t.Fatalf("finalized allocation did not release concurrency: %v", err)
+	replayed, err := state.RelaySessionSettlement(context.Background(), grant.GetSessionId(), now.Add(time.Second))
+	if err != nil || !proto.Equal(replayed, settlement) {
+		t.Fatalf("settlement replay = %v, %v", replayed, err)
 	}
 }
 
-func TestRelayRuntimeInjectedClockControlsRegisterRenewAndExpiry(t *testing.T) {
-	clock := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 16, DeltaBuffer: 16, Now: func() time.Time { return clock }})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRelayRenewOnlyAdvancesExpiryAndSequence(t *testing.T) {
+	now := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
+	state := newRelayTestState(t, now)
 	defer state.Close()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: "lease-clock", AccountId: "account-clock", EdgeId: "edge-clock", DaemonId: "daemon-clock", ClientId: "client-clock", SessionId: "session-clock",
-		MaxBytes: 100, MaxRateBytesPerSecond: 100, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(clock), ExpiresAt: timestamppb.New(clock.Add(time.Minute)),
-	}
-	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "username-clock", Credential: "secret-clock", ExpiresAt: claims.GetExpiresAt()}
-	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
-		t.Fatalf("historical injected clock was ignored during register: %v", err)
-	}
-	clock = clock.Add(30 * time.Second)
-	renewedClaims := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
-	renewedClaims.IssuedAt = timestamppb.New(clock)
-	renewedClaims.ExpiresAt = timestamppb.New(clock.Add(time.Minute))
-	if _, err := state.RenewRelayLease(context.Background(), material.GetUsername(), renewedClaims); err != nil {
-		t.Fatalf("historical injected clock was ignored during renewal: %v", err)
-	}
-	clock = clock.Add(45 * time.Second)
-	if _, _, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), clock); err != nil || !ok {
-		t.Fatalf("renewed lease expired at old boundary: ok=%v err=%v", ok, err)
-	}
-	clock = clock.Add(16 * time.Second)
-	if _, _, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), clock); err != nil || ok {
-		t.Fatalf("lease remained active past injected expiry: ok=%v err=%v", ok, err)
-	}
-}
-
-func TestRelayRuntimeRejectsExpiredCredential(t *testing.T) {
-	state, _ := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 8, DeltaBuffer: 8})
-	defer state.Close()
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{LeaseId: "lease", AccountId: "account", EdgeId: "edge", DaemonId: "daemon", ClientId: "client", SessionId: "session", MaxBytes: 1, MaxRateBytesPerSecond: 1, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(now.Add(-2 * time.Minute)), ExpiresAt: timestamppb.New(now.Add(-time.Minute))}
-	material := &cloudv1.RelayICEConfig{LeaseId: "lease", Username: "expired", Credential: "secret", ExpiresAt: claims.GetExpiresAt()}
-	if err := state.RegisterRelayLease(context.Background(), claims, material); err == nil {
-		t.Fatal("expired credential was registered")
-	}
-}
-
-func TestRelayRuntimeRenewsExistingCredentialAndLimiter(t *testing.T) {
-	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 32, DeltaBuffer: 32})
-	if err != nil {
+	grant, material := relayTestGrant(t, now, 100)
+	if err := state.RegisterRelayGrant(context.Background(), grant, material); err != nil {
 		t.Fatal(err)
 	}
-	defer state.Close()
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: "lease-renew", AccountId: "account-renew", EdgeId: "edge-renew", DaemonId: "daemon-renew", ClientId: "client-renew", SessionId: "session-renew",
-		MaxBytes: 100, MaxRateBytesPerSecond: 1000, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Second)),
-	}
-	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "credential-renew", Credential: "secret-renew", ExpiresAt: claims.GetExpiresAt()}
-	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
-		t.Fatal(err)
-	}
-	admission, err := state.ReserveRelayAllocation(context.Background(), "reservation-renew", material.GetUsername(), now)
-	if err != nil {
-		t.Fatal(err)
-	}
+	admission := mustAdmission(t, state, material.GetUsername(), now)
 	if !admission.Limiter.Reserve(60, now) {
-		t.Fatal("initial Relay usage was rejected")
+		t.Fatal("initial byte use failed")
 	}
-	if err := state.ActivateRelayAllocation(context.Background(), "reservation-renew", "allocation-renew", cloudv1.RelayTransport_RELAY_TRANSPORT_UDP, now); err != nil {
-		t.Fatal(err)
-	}
-	renewedClaims := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
-	renewedClaims.IssuedAt = timestamppb.New(now.Add(500 * time.Millisecond))
-	renewedClaims.ExpiresAt = timestamppb.New(now.Add(time.Minute))
-	renewed, err := state.RenewRelayLease(context.Background(), material.GetUsername(), renewedClaims)
+	renewedGrant := proto.Clone(grant).(*cloudv1.RelayGrant)
+	renewedGrant.RenewSequence = 1
+	renewedGrant.AuthorizedUntil = timestamppb.New(now.Add(2 * time.Minute))
+	renewed, err := state.RenewRelayGrant(context.Background(), material.GetUsername(), renewedGrant)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if renewed.GetUsername() != material.GetUsername() || renewed.GetCredential() != material.GetCredential() || !renewed.GetExpiresAt().AsTime().Equal(renewedClaims.GetExpiresAt().AsTime()) {
-		t.Fatalf("renewed material = %+v", renewed)
+	if renewed.GetReservationId() != material.GetReservationId() || !renewed.GetExpiresAt().AsTime().After(material.GetExpiresAt().AsTime()) {
+		t.Fatalf("renewed material = %v", renewed)
 	}
-	afterOldExpiry := now.Add(2 * time.Second)
-	verified, password, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), afterOldExpiry)
-	if err != nil || !ok || password != material.GetCredential() || !verified.GetExpiresAt().AsTime().Equal(renewedClaims.GetExpiresAt().AsTime()) {
-		t.Fatalf("renewed RelayAuth claims=%v password=%q ok=%v err=%v", verified, password, ok, err)
-	}
-	if admission.Limiter.Reserve(41, afterOldExpiry) || !admission.Limiter.Reserve(40, afterOldExpiry) {
-		t.Fatal("renewed active allocation did not preserve its cumulative byte budget")
-	}
-	mismatched := proto.Clone(renewedClaims).(*cloudv1.RelayLeaseClaims)
-	mismatched.ClientId = "another-client"
-	mismatched.ExpiresAt = timestamppb.New(now.Add(2 * time.Minute))
-	if _, err := state.RenewRelayLease(context.Background(), material.GetUsername(), mismatched); err == nil {
-		t.Fatal("RelayLease renewal changed its bound client identity")
+	_, _, _, _ = state.RelayAuth(context.Background(), material.GetUsername(), now)
+	if admission.Limiter.Reserve(41, now) {
+		t.Fatal("renewal reset the shared held byte budget")
 	}
 }
 
-func TestRelayRuntimeRevokesClosedSessionCredential(t *testing.T) {
-	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 16, DeltaBuffer: 16})
-	if err != nil {
+func assertRelayCounts(t *testing.T, state *State, pending, active, closing uint32) {
+	t.Helper()
+	if err := state.call(context.Background(), func(data *stateData) error {
+		group := data.relayGroups["00000000-0000-4000-8000-000000000001"]
+		if group == nil || group.pending != pending || group.active != active || group.closeActive != closing {
+			t.Fatalf("group counts = %+v, want pending=%d active=%d closing=%d", group, pending, active, closing)
+		}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
-	}
-	defer state.Close()
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: "lease-revoke", AccountId: "account-revoke", EdgeId: "edge-revoke", DaemonId: "daemon-revoke", ClientId: "client-revoke", SessionId: "session-revoke",
-		MaxBytes: 100, MaxRateBytesPerSecond: 100, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)),
-	}
-	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "credential-revoke", Credential: "secret-revoke", ExpiresAt: claims.GetExpiresAt()}
-	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
-		t.Fatal(err)
-	}
-	if err := state.RevokeRelaySession(context.Background(), claims.GetSessionId()); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), now); err != nil || ok {
-		t.Fatalf("revoked Relay credential remained usable: ok=%v err=%v", ok, err)
-	}
-	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-revoked", material.GetUsername(), now); err == nil {
-		t.Fatal("revoked Relay credential created a new allocation")
 	}
 }
 
-func TestRelayRuntimeAllowsUDPAndTCPAllocationForBothPeers(t *testing.T) {
-	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 32, DeltaBuffer: 32})
+func mustAdmission(t *testing.T, state *State, username string, now time.Time) policy.RelayAdmission {
+	t.Helper()
+	admission, err := state.ReserveRelayAllocation(context.Background(), "physical-budget", username, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer state.Close()
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: "lease-four", AccountId: "account-four", EdgeId: "edge-four", DaemonId: "daemon-four", ClientId: "client-four", SessionId: "session-four",
-		MaxBytes: 4096, MaxRateBytesPerSecond: 4096, MaxConcurrentAllocations: 4, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)),
-	}
-	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "username-four", Credential: "credential-four", ExpiresAt: claims.GetExpiresAt()}
-	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
+	return admission
+}
+
+func newRelayTestState(t *testing.T, now time.Time) *State {
+	t.Helper()
+	state, err := NewState(StateConfig{MailboxSize: 32, DeltaBuffer: 32, MaxSessions: 32, MaxPendingSignals: 32, Now: func() time.Time { return now }})
+	if err != nil {
 		t.Fatal(err)
 	}
-	for index := 0; index < 4; index++ {
-		reservationID := fmt.Sprintf("reservation-%d", index)
-		allocationID := fmt.Sprintf("allocation-%d", index)
-		if _, err := state.ReserveRelayAllocation(context.Background(), reservationID, material.GetUsername(), now); err != nil {
-			t.Fatalf("reserve allocation %d: %v", index, err)
-		}
-		transport := cloudv1.RelayTransport_RELAY_TRANSPORT_UDP
-		if index%2 == 1 {
-			transport = cloudv1.RelayTransport_RELAY_TRANSPORT_TCP
-		}
-		if err := state.ActivateRelayAllocation(context.Background(), reservationID, allocationID, transport, now); err != nil {
-			t.Fatalf("activate allocation %d: %v", index, err)
-		}
+	return state
+}
+
+func relayTestGrant(t *testing.T, now time.Time, reserved uint64) (*cloudv1.RelayGrant, *cloudv1.RelayICEConfig) {
+	t.Helper()
+	policySnapshot := &cloudv1.RelayPolicySnapshot{AccountId: "account", SubscriptionId: "subscription", PlanId: "plan", RelayEnabled: true, EdgeId: "edge", DaemonId: "daemon"}
+	digest, err := relayquota.PolicyDigest(policySnapshot)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-over-limit", material.GetUsername(), now); err == nil {
-		t.Fatal("fifth allocation exceeded the shared RelayLease concurrency limit")
-	}
+	grant := &cloudv1.RelayGrant{ReservationId: "00000000-0000-4000-8000-000000000001", SessionId: "session", ReservedBytes: reserved, MaxRateBytesPerSecond: 1000, AuthorizedUntil: timestamppb.New(now.Add(time.Minute)), PolicyDigest: digest, Policy: policySnapshot}
+	material := &cloudv1.RelayICEConfig{ReservationId: grant.GetReservationId(), Username: "v2:" + grant.GetReservationId() + ":session", Credential: "secret", ExpiresAt: grant.GetAuthorizedUntil()}
+	return grant, material
 }

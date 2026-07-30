@@ -1,5 +1,5 @@
 // Package relay 把 Pion STUN/TURN 数据面装配进同一个 Edge 进程。
-// 本包只转发字节并执行 Runtime 已冻结的租约上限，不解析 terminal 或 DataChannel payload。
+// 本包只转发字节并执行 Controller grant 的本地上限，不解析 terminal 或 DataChannel payload。
 package relay
 
 import (
@@ -18,31 +18,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/pion/transport/v4/stdnet"
 	turn "github.com/pion/turn/v4"
-	"google.golang.org/protobuf/proto"
 )
 
 // Runtime 是 TURN callback 提交到 Edge 唯一 State actor 的窄边界。
 type Runtime interface {
-	RelayAuth(context.Context, string, time.Time) (*cloudv1.RelayLeaseClaims, string, bool, error)
+	RelayAuth(context.Context, string, time.Time) (*cloudv1.RelayGrant, string, bool, error)
 	ReserveRelayAllocation(context.Context, string, string, time.Time) (policy.RelayAdmission, error)
 	ActivateRelayAllocation(context.Context, string, string, cloudv1.RelayTransport, time.Time) error
 	CancelRelayAllocationReservation(context.Context, string) error
-	FreezeRelayAllocationUsage(context.Context, string, uint64, uint64) (*cloudv1.UsageEvent, error)
-	FinalizeRelayAllocation(context.Context, *cloudv1.UsageEvent) error
+	BeginRelayAllocationClose(context.Context, string) error
+	CloseRelayAllocation(context.Context, string, uint64, uint64) error
 }
 
-// UsageOutbox 是 allocation 关闭后的先落盘边界。
-type UsageOutbox interface {
-	Put(*cloudv1.UsageEvent) error
-}
-
-// Config 提供由部署生成的 TURN listener/public endpoint、realm、Runtime 和 durable outbox。
+// Config 提供由部署生成的 TURN listener/public endpoint、realm 和 Runtime。
 type Config struct {
 	ListenAddress  string
 	PublicEndpoint string
 	Realm          string
 	Runtime        Runtime
-	Outbox         UsageOutbox
 	Now            func() time.Time
 }
 
@@ -53,7 +46,6 @@ type Server struct {
 	listener          net.Listener
 	generator         *trackedGenerator
 	runtime           Runtime
-	outbox            UsageOutbox
 	realm             string
 	now               func() time.Time
 	errors            chan error
@@ -68,7 +60,6 @@ type Server struct {
 	settlementTimeout time.Duration
 	pending           map[string]pendingReservation
 	active            map[string]activeAllocation
-	frozenPending     map[string]*cloudv1.UsageEvent
 	callbackFIFO      map[string][]string
 }
 
@@ -93,8 +84,8 @@ type claimedAllocation struct {
 // Start 在同一端口启动 UDP/TCP STUN/TURN listener；公网域名可以与 gRPC 相同。
 func Start(config Config) (*Server, error) {
 	config.ListenAddress, config.PublicEndpoint, config.Realm = strings.TrimSpace(config.ListenAddress), strings.TrimSpace(config.PublicEndpoint), strings.TrimSpace(config.Realm)
-	if config.ListenAddress == "" || config.PublicEndpoint == "" || config.Realm == "" || config.Runtime == nil || config.Outbox == nil {
-		return nil, errors.New("TURN listener, public endpoint, realm, Runtime, and usage outbox are required")
+	if config.ListenAddress == "" || config.PublicEndpoint == "" || config.Realm == "" || config.Runtime == nil {
+		return nil, errors.New("TURN listener, public endpoint, realm, and Runtime are required")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -118,8 +109,8 @@ func Start(config Config) (*Server, error) {
 	}
 	generator := newTrackedGenerator(publicIP, listenHost)
 	server := &Server{
-		packetConn: packetConn, listener: listener, generator: generator, runtime: config.Runtime, outbox: config.Outbox, realm: config.Realm, now: config.Now,
-		errors: make(chan error, 1), closed: make(chan struct{}), pending: make(map[string]pendingReservation), active: make(map[string]activeAllocation), frozenPending: make(map[string]*cloudv1.UsageEvent), callbackFIFO: make(map[string][]string),
+		packetConn: packetConn, listener: listener, generator: generator, runtime: config.Runtime, realm: config.Realm, now: config.Now,
+		errors: make(chan error, 1), closed: make(chan struct{}), pending: make(map[string]pendingReservation), active: make(map[string]activeAllocation), callbackFIFO: make(map[string][]string),
 	}
 	turnServer, err := turn.NewServer(turn.ServerConfig{
 		Realm: config.Realm,
@@ -148,13 +139,13 @@ func Start(config Config) (*Server, error) {
 // Address 返回实际绑定的 TURN UDP/TCP 共用地址。
 func (server *Server) Address() string { return server.packetConn.LocalAddr().String() }
 
-// Errors 报告 outbox 或 allocation lifecycle 的致命计费失败。
+// Errors 报告 allocation lifecycle 的致命失败。
 func (server *Server) Errors() <-chan error { return server.errors }
 
-// Degraded 表示 Relay 已因 allocation/usage 失败停止接受新分配；同进程 P2P 不受影响。
+// Degraded 表示 Relay 已因 allocation lifecycle 失败停止接受新分配；同进程 P2P 不受影响。
 func (server *Server) Degraded() bool { return server != nil && server.degraded.Load() }
 
-// Close 关闭 TURN allocation 和 listener；删除 callback 会先冻结并持久化 usage。
+// Close 关闭 TURN allocation 和 listener，并在 socket 静止后累加 group counters。
 func (server *Server) Close() error {
 	if server == nil {
 		return nil
@@ -201,17 +192,6 @@ func (server *Server) stop() error {
 
 func (server *Server) drain() error {
 	var drainErrors []error
-	for _, eventID := range server.frozenPendingEventIDs() {
-		ctx, cancel := context.WithTimeout(context.Background(), server.allocationSettlementTimeout())
-		err := server.persistFrozenPending(ctx, eventID)
-		cancel()
-		if err != nil {
-			settlementErr := fmt.Errorf("retry frozen Relay usage %s during shutdown: %w", eventID, err)
-			drainErrors = append(drainErrors, settlementErr)
-			server.fail(settlementErr)
-		}
-	}
-
 	server.mu.Lock()
 	pending := make([]pendingReservation, 0, len(server.pending))
 	for key, reservation := range server.pending {
@@ -231,11 +211,6 @@ func (server *Server) drain() error {
 	}
 	for _, claimed := range active {
 		allocation := claimed.allocation
-		if allocation.conn != nil {
-			if err := allocation.conn.Close(); err != nil {
-				drainErrors = append(drainErrors, fmt.Errorf("close Relay allocation %s socket during shutdown: %w", allocation.id, err))
-			}
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), server.allocationSettlementTimeout())
 		err := server.settleClaimedAllocation(ctx, claimed)
 		cancel()
@@ -248,14 +223,14 @@ func (server *Server) drain() error {
 	return errors.Join(drainErrors...)
 }
 
-// StateCloseSafe reports whether every allocation is frozen and every frozen event is durable.
+// StateCloseSafe reports whether no pending or active allocation remains in the data plane.
 func (server *Server) StateCloseSafe() bool {
 	if server == nil {
 		return true
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	return len(server.active) == 0 && len(server.frozenPending) == 0
+	return len(server.pending) == 0 && len(server.active) == 0
 }
 
 // CloseSessionAllocations 释放 ClientGateway session 申请中的 reservation 和已激活 allocation。
@@ -295,12 +270,6 @@ func (server *Server) CloseSessionAllocations(ctx context.Context, sessionID str
 		}
 	}
 	for _, claimed := range active {
-		allocation := claimed.allocation
-		if allocation.conn != nil {
-			if err := allocation.conn.Close(); err != nil {
-				recordFailure(fmt.Errorf("close Relay allocation %s socket: %w", allocation.id, err))
-			}
-		}
 		if err := server.settleClaimedAllocation(ctx, claimed); err != nil {
 			recordFailure(err)
 		}
@@ -427,20 +396,29 @@ func (server *Server) settleClaimedAllocation(ctx context.Context, claimed claim
 	allocation := claimed.allocation
 	if allocation.conn == nil {
 		server.releaseAllocationClaim(claimed)
-		return fmt.Errorf("settle Relay allocation %s: missing relay socket", allocation.id)
+		return fmt.Errorf("close Relay allocation %s: missing relay socket", allocation.id)
+	}
+	if err := server.runtime.BeginRelayAllocationClose(ctx, allocation.id); err != nil {
+		server.releaseAllocationClaim(claimed)
+		return fmt.Errorf("begin Relay allocation %s close: %w", allocation.id, err)
+	}
+	if err := allocation.conn.Close(); err != nil {
+		server.releaseAllocationClaim(claimed)
+		return fmt.Errorf("close Relay allocation %s socket: %w", allocation.id, err)
 	}
 	ingress, egress := allocation.conn.counts()
-	event, err := server.runtime.FreezeRelayAllocationUsage(ctx, allocation.id, ingress, egress)
-	if err != nil {
+	if err := server.runtime.CloseRelayAllocation(ctx, allocation.id, ingress, egress); err != nil {
 		server.releaseAllocationClaim(claimed)
-		return fmt.Errorf("freeze Relay allocation %s usage: %w", allocation.id, err)
+		return fmt.Errorf("record Relay allocation %s counters: %w", allocation.id, err)
 	}
-	if err := server.retainFrozenAllocation(claimed, event); err != nil {
-		return err
+	server.mu.Lock()
+	current, exists := server.active[allocation.id]
+	if !exists || !current.settling {
+		server.mu.Unlock()
+		return fmt.Errorf("Relay allocation %s lost its active ownership", allocation.id)
 	}
-	if err := server.persistFrozenPending(ctx, event.GetEventId()); err != nil {
-		return err
-	}
+	delete(server.active, allocation.id)
+	server.mu.Unlock()
 	return nil
 }
 
@@ -506,76 +484,6 @@ func (server *Server) releaseAllocationClaim(claimed claimedAllocation) {
 		allocation.settling = false
 		server.active[claimed.allocation.id] = allocation
 	}
-}
-
-func (server *Server) retainFrozenAllocation(claimed claimedAllocation, event *cloudv1.UsageEvent) error {
-	if event == nil || strings.TrimSpace(event.GetEventId()) == "" || event.GetAllocationId() != claimed.allocation.id {
-		server.releaseAllocationClaim(claimed)
-		return fmt.Errorf("freeze Relay allocation %s returned invalid usage identity", claimed.allocation.id)
-	}
-	event = proto.Clone(event).(*cloudv1.UsageEvent)
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	allocation, exists := server.active[claimed.allocation.id]
-	if !exists || allocation.id != claimed.allocation.id || !allocation.settling {
-		return fmt.Errorf("freeze Relay allocation %s lost its active ownership", claimed.allocation.id)
-	}
-	if server.frozenPending == nil {
-		server.frozenPending = make(map[string]*cloudv1.UsageEvent)
-	}
-	if existing := server.frozenPending[event.GetEventId()]; existing != nil && !proto.Equal(existing, event) {
-		allocation.settling = false
-		server.active[claimed.allocation.id] = allocation
-		return fmt.Errorf("frozen Relay usage event %s conflicts with pending payload", event.GetEventId())
-	}
-	for eventID, existing := range server.frozenPending {
-		if eventID != event.GetEventId() && existing.GetAllocationId() == event.GetAllocationId() {
-			allocation.settling = false
-			server.active[claimed.allocation.id] = allocation
-			return fmt.Errorf("Relay allocation %s has conflicting frozen event IDs", event.GetAllocationId())
-		}
-	}
-	server.frozenPending[event.GetEventId()] = event
-	delete(server.active, claimed.allocation.id)
-	return nil
-}
-
-func (server *Server) frozenPendingEventIDs() []string {
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	eventIDs := make([]string, 0, len(server.frozenPending))
-	for eventID := range server.frozenPending {
-		eventIDs = append(eventIDs, eventID)
-	}
-	sort.Strings(eventIDs)
-	return eventIDs
-}
-
-func (server *Server) persistFrozenPending(ctx context.Context, eventID string) error {
-	server.mu.Lock()
-	event := server.frozenPending[eventID]
-	if event != nil {
-		event = proto.Clone(event).(*cloudv1.UsageEvent)
-	}
-	server.mu.Unlock()
-	if event == nil {
-		return nil
-	}
-	if err := server.outbox.Put(proto.Clone(event).(*cloudv1.UsageEvent)); err != nil {
-		return fmt.Errorf("persist Relay allocation %s usage: %w", event.GetAllocationId(), err)
-	}
-	server.mu.Lock()
-	current := server.frozenPending[eventID]
-	if current == nil || !proto.Equal(current, event) {
-		server.mu.Unlock()
-		return fmt.Errorf("durable Relay usage event %s no longer matches pending payload", eventID)
-	}
-	delete(server.frozenPending, eventID)
-	server.mu.Unlock()
-	if err := server.runtime.FinalizeRelayAllocation(ctx, event); err != nil {
-		return fmt.Errorf("finalize Relay allocation %s: %w", event.GetAllocationId(), err)
-	}
-	return nil
 }
 
 func (server *Server) allocationSettlementTimeout() time.Duration {
@@ -725,7 +633,7 @@ func (generator *trackedGenerator) take(address net.Addr) *trackedPacketConn {
 type trackedPacketConn struct {
 	net.PacketConn
 	mu       sync.Mutex
-	limiter  *policy.AdmissionLimiter
+	limiter  *policy.GroupLimiter
 	ingress  uint64
 	egress   uint64
 	onClose  func()
@@ -756,7 +664,7 @@ func (connection *trackedPacketConn) ReadFrom(payload []byte) (int, net.Addr, er
 		return count, address, err
 	}
 	if !connection.allow(uint64(count), true, time.Now()) {
-		return 0, address, errors.New("Relay ingress exceeded lease byte or rate limit")
+		return 0, address, errors.New("Relay ingress exceeded grant byte or rate limit")
 	}
 	return count, address, nil
 }
@@ -767,7 +675,7 @@ func (connection *trackedPacketConn) WriteTo(payload []byte, address net.Addr) (
 	limiter := connection.limiter
 	connection.mu.Unlock()
 	if limiter == nil || !limiter.Reserve(requested, time.Now()) {
-		return 0, errors.New("Relay egress exceeded lease byte or rate limit")
+		return 0, errors.New("Relay egress exceeded grant byte or rate limit")
 	}
 	written, err := connection.PacketConn.WriteTo(payload, address)
 	actual := uint64(written)

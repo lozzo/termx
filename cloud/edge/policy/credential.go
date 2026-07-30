@@ -1,4 +1,4 @@
-// Package policy 实现 Edge 对 Controller 签发 RelayLease 的本地收缩和临时 credential 派生。
+// Package policy executes a committed Controller Relay grant on one Edge.
 package policy
 
 import (
@@ -20,15 +20,11 @@ type CredentialDeriver struct {
 	urls   []string
 }
 
-// RelayAdmission 是 Runtime actor 为 TURN allocation 冻结的执行上限。
-// Limiter 由同一 RelayLease 的所有 allocation 共享；Relay 数据层不读取 Controller、订单或账号表。
+// RelayAdmission binds one physical allocation to a shared reservation group limiter.
 type RelayAdmission struct {
-	LeaseID                  string
-	SessionID                string
-	MaxBytes                 uint64
-	MaxRateBytesPerSecond    uint64
-	MaxConcurrentAllocations uint32
-	Limiter                  *AdmissionLimiter
+	ReservationID string
+	SessionID     string
+	Limiter       *GroupLimiter
 }
 
 // NewCredentialDeriver 要求至少 32 字节进程 secret 和至少一个版本化 TURN URL。
@@ -47,18 +43,16 @@ func NewCredentialDeriver(secret []byte, urls []string) (*CredentialDeriver, err
 	return &CredentialDeriver{secret: append([]byte(nil), secret...), urls: cleanURLs}, nil
 }
 
-// Material 从已验证 RelayLease 生成只在当前信令 attempt 中返回的 ICE 参数。
-func (deriver *CredentialDeriver) Material(claims *cloudv1.RelayLeaseClaims) (*cloudv1.RelayICEConfig, error) {
-	if deriver == nil || claims == nil || claims.GetExpiresAt() == nil || claims.GetExpiresAt().CheckValid() != nil ||
-		strings.TrimSpace(claims.GetLeaseId()) == "" || strings.TrimSpace(claims.GetSessionId()) == "" {
-		return nil, errors.New("verified RelayLease is required")
+// Material derives process-local TURN credentials from a committed grant.
+func (deriver *CredentialDeriver) Material(grant *cloudv1.RelayGrant) (*cloudv1.RelayICEConfig, error) {
+	if deriver == nil || grant == nil || grant.GetAuthorizedUntil() == nil || grant.GetAuthorizedUntil().CheckValid() != nil ||
+		strings.TrimSpace(grant.GetReservationId()) == "" || strings.TrimSpace(grant.GetSessionId()) == "" {
+		return nil, errors.New("verified Relay grant is required")
 	}
-	// Expiry deliberately stays out of the username: renewal extends the
-	// Runtime authorization attached to this stable physical TURN session.
-	username := "v1:" + claims.GetLeaseId() + ":" + claims.GetSessionId()
+	username := "v2:" + grant.GetReservationId() + ":" + grant.GetSessionId()
 	return &cloudv1.RelayICEConfig{
-		LeaseId: claims.GetLeaseId(), Urls: append([]string(nil), deriver.urls...), Username: username, Credential: deriver.Password(username),
-		ExpiresAt: timestamppb.New(claims.GetExpiresAt().AsTime()),
+		ReservationId: grant.GetReservationId(), Urls: append([]string(nil), deriver.urls...), Username: username, Credential: deriver.Password(username),
+		ExpiresAt: timestamppb.New(grant.GetAuthorizedUntil().AsTime()),
 	}, nil
 }
 

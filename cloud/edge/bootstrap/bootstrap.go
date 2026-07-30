@@ -67,7 +67,7 @@ type Resolved struct {
 	TURNListenAddress           string
 	TURNPublicEndpoint          string
 	TURNRealm                   string
-	UsageOutboxFile             string
+	RelayJournalFile            string
 	BindingKeyBundleCacheFile   string
 }
 
@@ -222,7 +222,7 @@ func resolvedPaths(config FileConfig) Resolved {
 		ConfigSigningPublicKeyFile: filepath.Join(config.StateDirectory, "config-signing-public.key"), DesiredConfigCacheFile: filepath.Join(config.StateDirectory, "desired-config.pb"),
 		ManagedCertificateStateFile: filepath.Join(config.StateDirectory, "managed-certificate.pb"),
 		BindingKeyBundleCacheFile:   filepath.Join(config.StateDirectory, "binding-key-bundle.pb"),
-		TURNListenAddress:           config.TURNListenOverride, TURNPublicEndpoint: net.JoinHostPort(publicHost, "3478"), TURNRealm: publicHost, UsageOutboxFile: filepath.Join(config.StateDirectory, "usage-outbox.db"),
+		TURNListenAddress:           config.TURNListenOverride, TURNPublicEndpoint: net.JoinHostPort(publicHost, "3478"), TURNRealm: publicHost, RelayJournalFile: filepath.Join(config.StateDirectory, "relay-reservations.db"),
 	}
 }
 

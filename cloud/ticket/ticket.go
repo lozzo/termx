@@ -386,9 +386,6 @@ func validateDaemonBinding(claims *cloudv1.DaemonBindingClaims, now time.Time, s
 	if len(claims.GetCapabilities()) == 0 {
 		return errors.New("daemon binding has no capability")
 	}
-	if relay := claims.GetRelayDelegation(); relay != nil && (relay.GetMaxBytesPerLease() == 0 || relay.GetMaxRateBytesPerSecond() == 0 || relay.GetMaxConcurrentAllocations() == 0) {
-		return errors.New("daemon binding Relay delegation is incomplete")
-	}
 	if !now.IsZero() {
 		now = now.UTC()
 		if claims.GetIssuedAt().AsTime().After(now.Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.Add(-skew)) {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -308,6 +307,28 @@ func TestCleanupSessionClosesRelayBeforeRemovingRuntimeSession(t *testing.T) {
 	}
 }
 
+func TestOfflineRelayPreferenceFailsClosedWithoutNewAuthority(t *testing.T) {
+	service := &Service{}
+	request := &RelayRequest{SessionID: "session", AccountID: "account", DaemonID: "daemon", ClientID: "client"}
+	relay, err := service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, request)
+	if err != nil || relay != nil {
+		t.Fatalf("offline AUTO relay=%v err=%v", relay, err)
+	}
+	if _, err := service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY, request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("offline RELAY_ONLY error=%v", err)
+	}
+
+	broker := failingRelayBroker{err: errors.New("Controller generation unavailable")}
+	service.config.Relay = broker
+	relay, err = service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, request)
+	if err != nil || relay != nil {
+		t.Fatalf("failed AUTO reserve relay=%v err=%v", relay, err)
+	}
+	if _, err := service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY, request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("failed RELAY_ONLY reserve error=%v", err)
+	}
+}
+
 type cleanupRuntime struct{ order *[]string }
 
 func (*cleanupRuntime) UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error {
@@ -330,10 +351,10 @@ func (*cleanupRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloud
 
 type cleanupRelay struct{ order *[]string }
 
-func (*cleanupRelay) RequestRelayLease(context.Context, *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error) {
+func (*cleanupRelay) RequestRelay(context.Context, *RelayRequest) (*cloudv1.RelayICEConfig, error) {
 	return nil, nil
 }
-func (*cleanupRelay) RenewRelayLease(context.Context, *cloudv1.RelayLeaseSpec, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+func (*cleanupRelay) RenewRelay(context.Context, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
 	return nil, nil
 }
 func (relay *cleanupRelay) CloseRelaySession(_ context.Context, sessionID string) error {
@@ -341,105 +362,11 @@ func (relay *cleanupRelay) CloseRelaySession(_ context.Context, sessionID string
 	return nil
 }
 
-func TestMaintainRelayLeaseRenewsWithoutChangingCredential(t *testing.T) {
-	broker := &recordingRenewalBroker{calls: make(chan renewalCall, 1)}
-	service := &Service{config: Config{Now: time.Now, Relay: broker}}
-	now := time.Now().UTC()
-	initial := &cloudv1.RelayICEConfig{
-		LeaseId: "lease-renew", Username: "username-renew", Credential: "credential-renew", ExpiresAt: timestamppb.New(now.Add(80 * time.Millisecond)),
-	}
-	ctx, cancel := context.WithCancelCause(context.Background())
-	done := make(chan struct{})
-	go func() {
-		service.maintainRelayLease(ctx, &cloudv1.RelayLeaseSpec{SessionId: "session-renew"}, initial, cancel)
-		close(done)
-	}()
+type failingRelayBroker struct{ err error }
 
-	select {
-	case call := <-broker.calls:
-		if call.request.GetRenewLeaseId() != initial.GetLeaseId() || call.current.GetUsername() != initial.GetUsername() {
-			t.Fatalf("renewal call = %+v", call)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("RelayLease renewal was not requested")
-	}
-	cancel(context.Canceled)
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("RelayLease renewal loop did not stop with its session")
-	}
+func (broker failingRelayBroker) RequestRelay(context.Context, *RelayRequest) (*cloudv1.RelayICEConfig, error) {
+	return nil, broker.err
 }
-
-func TestMaintainRelayLeaseCancelsSessionWhenRenewalCannotComplete(t *testing.T) {
-	broker := &recordingRenewalBroker{renewErr: errors.New("controller unavailable")}
-	service := &Service{config: Config{Now: time.Now, Relay: broker}}
-	now := time.Now().UTC()
-	initial := &cloudv1.RelayICEConfig{
-		LeaseId: "lease-expire", Username: "username-expire", Credential: "credential-expire", ExpiresAt: timestamppb.New(now.Add(80 * time.Millisecond)),
-	}
-	ctx, cancel := context.WithCancelCause(context.Background())
-	go service.maintainRelayLease(ctx, &cloudv1.RelayLeaseSpec{SessionId: "session-expire"}, initial, cancel)
-
-	select {
-	case <-ctx.Done():
-		if cause := context.Cause(ctx); cause == nil || !strings.Contains(cause.Error(), "expired") {
-			t.Fatalf("session cancellation cause = %v", cause)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("expired RelayLease did not cancel its session")
-	}
-}
-
-func TestMaintainRelayLeaseStopsBeforeRenewalAfterSessionClose(t *testing.T) {
-	broker := &recordingRenewalBroker{calls: make(chan renewalCall, 1)}
-	service := &Service{config: Config{Now: time.Now, Relay: broker}}
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(context.Canceled)
-	done := make(chan struct{})
-	go func() {
-		service.maintainRelayLease(ctx, &cloudv1.RelayLeaseSpec{SessionId: "session-closed"}, &cloudv1.RelayICEConfig{
-			LeaseId: "lease-closed", Username: "username-closed", Credential: "credential-closed", ExpiresAt: timestamppb.New(time.Now().Add(time.Minute)),
-		}, cancel)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("closed session left its RelayLease renewal loop running")
-	}
-	select {
-	case call := <-broker.calls:
-		t.Fatalf("closed session renewed its RelayLease: %+v", call)
-	default:
-	}
-}
-
-type renewalCall struct {
-	request *cloudv1.RelayLeaseSpec
-	current *cloudv1.RelayICEConfig
-}
-
-type recordingRenewalBroker struct {
-	mu       sync.Mutex
-	calls    chan renewalCall
-	renewErr error
-}
-
-func (*recordingRenewalBroker) RequestRelayLease(context.Context, *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error) {
-	return nil, nil
-}
-
-func (broker *recordingRenewalBroker) RenewRelayLease(_ context.Context, request *cloudv1.RelayLeaseSpec, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
-	broker.mu.Lock()
-	defer broker.mu.Unlock()
-	if broker.calls != nil {
-		broker.calls <- renewalCall{request: proto.Clone(request).(*cloudv1.RelayLeaseSpec), current: cloneRelay(current)}
-	}
-	if broker.renewErr != nil {
-		return nil, broker.renewErr
-	}
-	renewed := cloneRelay(current)
-	renewed.ExpiresAt = timestamppb.New(time.Now().UTC().Add(time.Minute))
-	return renewed, nil
+func (broker failingRelayBroker) RenewRelay(context.Context, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+	return nil, broker.err
 }

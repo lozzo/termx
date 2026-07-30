@@ -22,6 +22,7 @@ import (
 )
 
 const snapshotChunkSize = 256
+const maxRelayWaiters = 4096
 
 // RuntimeFeed 是在同一 Edge actor 事务中取得的快照和后续增量。
 type RuntimeFeed struct {
@@ -66,8 +67,8 @@ type Session struct {
 	readyOnce    sync.Once
 	closeOnce    sync.Once
 	outbound     chan any
-	usageAcks    chan *cloudv1.UsageAck
-	usageMu      sync.Mutex
+	waiterMu     sync.Mutex
+	waiters      map[string]chan any
 }
 
 // Open 建立 mTLS 流并完成 Hello/Welcome；SnapshotAccepted 由 WaitReady 单独等待。
@@ -126,7 +127,7 @@ func Open(parent context.Context, config Config) (*Session, error) {
 	}
 	session := &Session{
 		connectionID: connectionID, welcome: welcome, stream: stream, connection: connection, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}),
-		outbound: make(chan any, config.WriterQueueSize), usageAcks: make(chan *cloudv1.UsageAck, 1),
+		outbound: make(chan any, config.WriterQueueSize), waiters: make(map[string]chan any),
 	}
 	go session.run(ctx, config, command.GetSenderId(), command.GetBootId(), config.WriterQueueSize)
 	return session, nil
@@ -159,7 +160,7 @@ func (session *Session) Wait() error {
 	return session.err()
 }
 
-// Done 在当前 EdgeControl generation 结束时关闭，供 usage pump 停止重试。
+// Done closes when the current EdgeControl generation can no longer answer requests.
 func (session *Session) Done() <-chan struct{} { return session.done }
 
 // Close 取消 reader/writer/coordinator 并关闭底层连接；重复调用安全。
@@ -172,29 +173,94 @@ func (session *Session) Close() error {
 	return err
 }
 
-// CommitUsageBatch 发送一个 outbox 批次并等待数据库提交后的精确 ACK。
-// 调用方同一时间只能有一个未完成批次，避免 UsageAck 与本地读取窗口错配。
-func (session *Session) CommitUsageBatch(ctx context.Context, batch *cloudv1.UsageBatch) (*cloudv1.UsageAck, error) {
-	if session == nil || batch == nil || strings.TrimSpace(batch.GetBatchId()) == "" || len(batch.GetEvents()) == 0 {
-		return nil, errors.New("non-empty UsageBatch is required")
+func (session *Session) ReserveRelay(ctx context.Context, request *cloudv1.RelayReserveRequest) (*cloudv1.RelayReserveResponse, error) {
+	if request == nil || strings.TrimSpace(request.GetReservationId()) == "" {
+		return nil, errors.New("Relay reserve request is required")
 	}
-	session.usageMu.Lock()
-	defer session.usageMu.Unlock()
-	select {
-	case stale := <-session.usageAcks:
-		_ = stale
-	default:
+	response, err := session.relayCall(ctx, waiterKey("reserve", request.GetReservationId()), &cloudv1.EdgeEvent_RelayReserve{RelayReserve: request})
+	if err != nil {
+		return nil, err
 	}
-	if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_UsageBatch{UsageBatch: batch}); err != nil {
+	return response.(*cloudv1.RelayReserveResponse), nil
+}
+
+func (session *Session) RenewRelay(ctx context.Context, request *cloudv1.RelayRenewRequest) (*cloudv1.RelayRenewResponse, error) {
+	if request == nil || strings.TrimSpace(request.GetReservationId()) == "" {
+		return nil, errors.New("Relay renewal request is required")
+	}
+	response, err := session.relayCall(ctx, waiterKey("renew", request.GetReservationId()), &cloudv1.EdgeEvent_RelayRenew{RelayRenew: request})
+	if err != nil {
+		return nil, err
+	}
+	return response.(*cloudv1.RelayRenewResponse), nil
+}
+
+func (session *Session) SettleRelay(ctx context.Context, settlement *cloudv1.RelaySettlement) (*cloudv1.RelaySettlementAck, error) {
+	if settlement == nil || strings.TrimSpace(settlement.GetReservationId()) == "" {
+		return nil, errors.New("Relay settlement is required")
+	}
+	response, err := session.relayCall(ctx, waiterKey("settle", settlement.GetReservationId()), &cloudv1.EdgeEvent_RelaySettle{RelaySettle: settlement})
+	if err != nil {
+		return nil, err
+	}
+	return response.(*cloudv1.RelaySettlementAck), nil
+}
+
+func (session *Session) QueryRelay(ctx context.Context, request *cloudv1.RelayQueryRequest) (*cloudv1.RelayQueryResponse, error) {
+	if request == nil || strings.TrimSpace(request.GetReservationId()) == "" {
+		return nil, errors.New("Relay query is required")
+	}
+	response, err := session.relayCall(ctx, waiterKey("query", request.GetReservationId()), &cloudv1.EdgeEvent_RelayQuery{RelayQuery: request})
+	if err != nil {
+		return nil, err
+	}
+	return response.(*cloudv1.RelayQueryResponse), nil
+}
+
+func (session *Session) relayCall(ctx context.Context, key string, payload any) (any, error) {
+	if session == nil {
+		return nil, errors.New("EdgeControl generation is unavailable")
+	}
+	waiter := make(chan any, 1)
+	session.waiterMu.Lock()
+	if len(session.waiters) >= maxRelayWaiters {
+		session.waiterMu.Unlock()
+		return nil, errors.New("EdgeControl Relay waiter limit reached")
+	}
+	if _, exists := session.waiters[key]; exists {
+		session.waiterMu.Unlock()
+		return nil, errors.New("Relay request is already pending")
+	}
+	session.waiters[key] = waiter
+	session.waiterMu.Unlock()
+	defer func() {
+		session.waiterMu.Lock()
+		delete(session.waiters, key)
+		session.waiterMu.Unlock()
+	}()
+	if err := queueEvent(ctx, session.outbound, payload); err != nil {
 		return nil, err
 	}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-session.done:
-		return nil, errors.New("EdgeControl closed before UsageAck")
-	case ack := <-session.usageAcks:
-		return ack, nil
+		return nil, errors.New("EdgeControl generation closed before Relay response")
+	case response := <-waiter:
+		return response, nil
+	}
+}
+
+func (session *Session) deliverRelayResponse(key string, response any) {
+	session.waiterMu.Lock()
+	waiter := session.waiters[key]
+	session.waiterMu.Unlock()
+	if waiter == nil {
+		return
+	}
+	select {
+	case waiter <- response:
+	default:
 	}
 }
 
@@ -301,13 +367,14 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 					session.finish(err)
 					return
 				}
-			case *cloudv1.ControllerCommand_UsageAck:
-				select {
-				case session.usageAcks <- payload.UsageAck:
-				default:
-					session.finish(errors.New("unexpected or duplicate UsageAck"))
-					return
-				}
+			case *cloudv1.ControllerCommand_RelayReserve:
+				session.deliverRelayResponse(waiterKey("reserve", payload.RelayReserve.GetReservationId()), payload.RelayReserve)
+			case *cloudv1.ControllerCommand_RelayRenew:
+				session.deliverRelayResponse(waiterKey("renew", payload.RelayRenew.GetReservationId()), payload.RelayRenew)
+			case *cloudv1.ControllerCommand_RelaySettle:
+				session.deliverRelayResponse(waiterKey("settle", payload.RelaySettle.GetReservationId()), payload.RelaySettle)
+			case *cloudv1.ControllerCommand_RelayQuery:
+				session.deliverRelayResponse(waiterKey("query", payload.RelayQuery.GetReservationId()), payload.RelayQuery)
 			case *cloudv1.ControllerCommand_CloseDaemon:
 				result := executeRuntimeCommand(ctx, payload.CloseDaemon.GetCommandId(), payload.CloseDaemon.GetCorrelationId(), payload.CloseDaemon.GetDeadline(), func(commandContext context.Context) error {
 					if config.CloseDaemon == nil {
@@ -444,7 +511,7 @@ func queueSnapshot(ctx context.Context, output chan<- any, snapshot *cloudv1.Run
 		return err
 	}
 	chunkIndex := uint32(0)
-	for agentIndex, sessionIndex, allocationIndex := 0, 0, 0; agentIndex < len(normalized.Agents) || sessionIndex < len(normalized.Sessions) || allocationIndex < len(normalized.Allocations); chunkIndex++ {
+	for agentIndex, sessionIndex := 0, 0; agentIndex < len(normalized.Agents) || sessionIndex < len(normalized.Sessions); chunkIndex++ {
 		chunk := &cloudv1.SnapshotChunk{SnapshotId: snapshotID, ChunkIndex: chunkIndex}
 		remaining := snapshotChunkSize
 		for agentIndex < len(normalized.Agents) && remaining > 0 {
@@ -455,11 +522,6 @@ func queueSnapshot(ctx context.Context, output chan<- any, snapshot *cloudv1.Run
 		for sessionIndex < len(normalized.Sessions) && remaining > 0 {
 			chunk.Sessions = append(chunk.Sessions, normalized.Sessions[sessionIndex])
 			sessionIndex++
-			remaining--
-		}
-		for allocationIndex < len(normalized.Allocations) && remaining > 0 {
-			chunk.Allocations = append(chunk.Allocations, normalized.Allocations[allocationIndex])
-			allocationIndex++
 			remaining--
 		}
 		if err := queueEvent(ctx, output, &cloudv1.EdgeEvent_SnapshotChunk{SnapshotChunk: chunk}); err != nil {
@@ -497,7 +559,13 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_ConfigApplied:
 		event.Payload = typed
-	case *cloudv1.EdgeEvent_UsageBatch:
+	case *cloudv1.EdgeEvent_RelayReserve:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_RelayRenew:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_RelaySettle:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_RelayQuery:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_CommandResult:
 		event.Payload = typed
@@ -507,6 +575,10 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 		panic("unsupported EdgeEvent payload")
 	}
 	return event
+}
+
+func waiterKey(operation, reservationID string) string {
+	return operation + "\x00" + reservationID
 }
 
 func validateWelcome(command *cloudv1.ControllerCommand, connectionID string) (*cloudv1.EdgeWelcome, error) {

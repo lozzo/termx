@@ -5,13 +5,11 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/anytty/anytty/cloud/edge/usage"
 	"github.com/anytty/anytty/cloud/processhealth"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/grpc"
@@ -19,76 +17,7 @@ import (
 	grpc_health "google.golang.org/grpc/health"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-func TestRuntimeShutdownJoinsReconnectUsagePumpsBeforeClosingOutbox(t *testing.T) {
-	outbox, err := usage.Open(t.TempDir()+"/usage.db", time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := outbox.Put(runtimeUsageEvent("event")); err != nil {
-		t.Fatal(err)
-	}
-	runtimeUnderTest := newLifecycleRuntime(t, grpc.NewServer(), outbox)
-	first := newBlockingUsageSession()
-	second := newBlockingUsageSession()
-	if !runtimeUnderTest.startUsagePump(first) || !runtimeUnderTest.startUsagePump(second) {
-		t.Fatal("reconnect usage pumps were not admitted")
-	}
-	waitEitherClosed(t, first.entered, second.entered, "no usage pump entered CommitUsageBatch")
-
-	depthStop := make(chan struct{})
-	depthDone := make(chan struct{})
-	depthErrors := make(chan error, 1)
-	go func() {
-		defer close(depthDone)
-		for {
-			select {
-			case <-depthStop:
-				return
-			default:
-			}
-			if _, err := runtimeUnderTest.UsageOutboxDepth(); err != nil {
-				select {
-				case depthErrors <- err:
-				default:
-				}
-				return
-			}
-			runtime.Gosched()
-		}
-	}()
-
-	if err := runtimeUnderTest.Shutdown(context.Background()); err != nil {
-		t.Fatalf("Shutdown: %v", err)
-	}
-	close(depthStop)
-	waitClosed(t, depthDone, "UsageOutboxDepth did not finish after shutdown")
-	select {
-	case err := <-depthErrors:
-		t.Fatalf("UsageOutboxDepth raced with outbox close: %v", err)
-	default:
-	}
-	if first.calls.Load() == 0 || second.calls.Load() == 0 {
-		t.Fatalf("usage pump calls = first:%d second:%d", first.calls.Load(), second.calls.Load())
-	}
-	if runtimeUnderTest.startUsagePump(newBlockingUsageSession()) {
-		t.Fatal("usage pump was admitted after shutdown wait began")
-	}
-	if depth, err := runtimeUnderTest.UsageOutboxDepth(); err != nil || depth != 0 {
-		t.Fatalf("closed UsageOutboxDepth = %d, %v", depth, err)
-	}
-	runtimeUnderTest.usagePumpMu.Lock()
-	remaining := runtimeUnderTest.usageOutbox
-	runtimeUnderTest.usagePumpMu.Unlock()
-	if remaining != nil {
-		t.Fatal("usage outbox reference was not cleared under the pump lock")
-	}
-	if err := runtimeUnderTest.Shutdown(context.Background()); err != nil {
-		t.Fatalf("repeated Shutdown: %v", err)
-	}
-}
 
 func TestRuntimeShutdownDrainsStateOwnedGRPCStream(t *testing.T) {
 	runtimeUnderTest, stream := startLifecycleStream(t, true)
@@ -125,26 +54,6 @@ func TestRuntimeShutdownStopsGRPCStreamAtDeadline(t *testing.T) {
 	if repeated := runtimeUnderTest.Shutdown(context.Background()); !errors.Is(repeated, context.DeadlineExceeded) {
 		t.Fatalf("repeated Shutdown error = %v", repeated)
 	}
-}
-
-type blockingUsageSession struct {
-	done    chan struct{}
-	entered chan struct{}
-	once    sync.Once
-	calls   atomic.Int32
-}
-
-func newBlockingUsageSession() *blockingUsageSession {
-	return &blockingUsageSession{done: make(chan struct{}), entered: make(chan struct{})}
-}
-
-func (session *blockingUsageSession) Done() <-chan struct{} { return session.done }
-
-func (session *blockingUsageSession) CommitUsageBatch(ctx context.Context, _ *cloudv1.UsageBatch) (*cloudv1.UsageAck, error) {
-	session.calls.Add(1)
-	session.once.Do(func() { close(session.entered) })
-	<-ctx.Done()
-	return nil, ctx.Err()
 }
 
 type lifecycleStreamServer interface {
@@ -252,35 +161,16 @@ func startLifecycleStream(t *testing.T, releaseOnClose bool) (*Runtime, *lifecyc
 		t.Fatal(err)
 	}
 	waitClosed(t, stream.started, "gRPC stream did not start")
-	return newLifecycleRuntimeWithState(grpcServer, state, nil), stream
+	return newLifecycleRuntimeWithState(grpcServer, state), stream
 }
 
-func newLifecycleRuntime(t *testing.T, grpcServer *grpc.Server, outbox *usage.Outbox) *Runtime {
-	t.Helper()
-	state, err := NewState(StateConfig{MailboxSize: 8, DeltaBuffer: 8})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(state.Close)
-	return newLifecycleRuntimeWithState(grpcServer, state, outbox)
-}
-
-func newLifecycleRuntimeWithState(grpcServer *grpc.Server, state *State, outbox *usage.Outbox) *Runtime {
+func newLifecycleRuntimeWithState(grpcServer *grpc.Server, state *State) *Runtime {
 	runCtx, cancel := context.WithCancel(context.Background())
 	health := &processhealth.State{}
 	health.SetAlive(true)
 	return &Runtime{
 		ctx: runCtx, cancel: cancel, readyChanges: make(chan struct{}, 1), state: state, health: health,
-		grpcHealth: grpc_health.NewServer(), grpcServer: grpcServer, httpServer: &http.Server{}, usageOutbox: outbox,
-	}
-}
-
-func runtimeUsageEvent(eventID string) *cloudv1.UsageEvent {
-	started := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
-	return &cloudv1.UsageEvent{
-		SchemaVersion: 1, EventId: eventID, EdgeId: "edge", LeaseId: "lease", AccountId: "account", DaemonId: "daemon",
-		ClientId: "client", SessionId: "session", AllocationId: "allocation", Transport: cloudv1.RelayTransport_RELAY_TRANSPORT_UDP,
-		StartedAt: timestamppb.New(started), EndedAt: timestamppb.New(started.Add(time.Second)),
+		grpcHealth: grpc_health.NewServer(), grpcServer: grpcServer, httpServer: &http.Server{},
 	}
 }
 
@@ -288,16 +178,6 @@ func waitClosed(t *testing.T, channel <-chan struct{}, message string) {
 	t.Helper()
 	select {
 	case <-channel:
-	case <-time.After(2 * time.Second):
-		t.Fatal(message)
-	}
-}
-
-func waitEitherClosed(t *testing.T, first, second <-chan struct{}, message string) {
-	t.Helper()
-	select {
-	case <-first:
-	case <-second:
 	case <-time.After(2 * time.Second):
 		t.Fatal(message)
 	}

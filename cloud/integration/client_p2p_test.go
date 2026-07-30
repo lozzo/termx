@@ -172,7 +172,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	})
 	loopbackAPI := r5LoopbackWebRTCAPI()
 	daemonRuntime, err := clouddaemon.NewRuntime(clouddaemon.Config{
-		Record:   r5DaemonEnrollmentRecord(t, daemonRecord, daemonIdentity, bindingKeyID, bindingPrivateKey, edgeLocatorPayload, nil),
+		Record:   r5DaemonEnrollmentRecord(t, daemonRecord, daemonIdentity, bindingKeyID, bindingPrivateKey, edgeLocatorPayload),
 		Identity: daemonIdentity, AccessStore: accessStore, SoftwareVersion: "r5-integration",
 		Answerer: remotewebrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: coreServer, Identity: daemonIdentity, AccessStore: accessStore}, PeerConnections: loopbackAPI.NewPeerConnection},
 	})
@@ -442,7 +442,7 @@ func r5LoopbackWebRTCAPI() *pionwebrtc.API {
 	return pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings))
 }
 
-func r5DaemonEnrollmentRecord(t *testing.T, daemon enrollment.Daemon, identity remoteauth.Identity, keyID string, privateKey ed25519.PrivateKey, locatorPayload []byte, delegation *cloudv1.DaemonRelayDelegation) clouddaemon.EnrollmentRecord {
+func r5DaemonEnrollmentRecord(t *testing.T, daemon enrollment.Daemon, identity remoteauth.Identity, keyID string, privateKey ed25519.PrivateKey, locatorPayload []byte) clouddaemon.EnrollmentRecord {
 	t.Helper()
 	locator := &cloudv1.EdgeLocator{}
 	if err := proto.Unmarshal(locatorPayload, locator); err != nil {
@@ -453,7 +453,7 @@ func r5DaemonEnrollmentRecord(t *testing.T, daemon enrollment.Daemon, identity r
 	claims := &cloudv1.DaemonBindingClaims{
 		BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: locator.GetEdgeId(), DeviceId: identity.DeviceID,
 		DevicePublicKey: append([]byte(nil), identity.PublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING},
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(365 * 24 * time.Hour)), RelayDelegation: delegation, Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:],
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(365 * 24 * time.Hour)), Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:],
 	}
 	binding, err := ticket.SignDaemonBinding(keyID, privateKey, claims)
 	if err != nil {

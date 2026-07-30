@@ -21,7 +21,7 @@ func TestDaemonBindingBindsEdgeAndRejectsTamper(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	claims := &cloudv1.DaemonBindingClaims{BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), RelayDelegation: &cloudv1.DaemonRelayDelegation{MaxBytesPerLease: 1024, MaxRateBytesPerSecond: 512, MaxConcurrentAllocations: 2}, Revision: 1, EdgeLocatorSha256: bytes.Repeat([]byte{0x41}, sha256.Size)}
+	claims := &cloudv1.DaemonBindingClaims{BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), Revision: 1, EdgeLocatorSha256: bytes.Repeat([]byte{0x41}, sha256.Size)}
 	envelope, err := ticket.SignDaemonBinding("key", privateKey, claims)
 	if err != nil {
 		t.Fatal(err)
@@ -31,8 +31,8 @@ func TestDaemonBindingBindsEdgeAndRejectsTamper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verified.GetRelayDelegation().GetMaxBytesPerLease() != 1024 {
-		t.Fatalf("daemon binding Relay delegation = %v", verified.GetRelayDelegation())
+	if verified.GetBindingId() != claims.GetBindingId() {
+		t.Fatal("verified daemon binding changed identity")
 	}
 	if _, err := ticket.VerifyDaemonBinding(envelope, keys, "edge-b", now, 30*time.Second); err == nil {
 		t.Fatal("binding accepted on another Edge")

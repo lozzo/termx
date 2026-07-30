@@ -26,8 +26,9 @@ import (
 	"github.com/anytty/anytty/cloud/edge/controllerlink"
 	"github.com/anytty/anytty/cloud/edge/policy"
 	"github.com/anytty/anytty/cloud/edge/relay"
-	"github.com/anytty/anytty/cloud/edge/usage"
+	"github.com/anytty/anytty/cloud/edge/reservation"
 	"github.com/anytty/anytty/cloud/processhealth"
+	"github.com/anytty/anytty/cloud/relayquota"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
@@ -59,7 +60,7 @@ type Config struct {
 	TURNListenAddress           string
 	TURNPublicEndpoint          string
 	TURNRealm                   string
-	UsageOutboxFile             string
+	RelayJournalFile            string
 	BindingKeyBundleCacheFile   string
 }
 
@@ -71,9 +72,12 @@ type relayLifecycle interface {
 	StateCloseSafe() bool
 }
 
-type usageSession interface {
+type relayControlSession interface {
 	Done() <-chan struct{}
-	CommitUsageBatch(context.Context, *cloudv1.UsageBatch) (*cloudv1.UsageAck, error)
+	ReserveRelay(context.Context, *cloudv1.RelayReserveRequest) (*cloudv1.RelayReserveResponse, error)
+	RenewRelay(context.Context, *cloudv1.RelayRenewRequest) (*cloudv1.RelayRenewResponse, error)
+	SettleRelay(context.Context, *cloudv1.RelaySettlement) (*cloudv1.RelaySettlementAck, error)
+	QueryRelay(context.Context, *cloudv1.RelayQueryRequest) (*cloudv1.RelayQueryResponse, error)
 }
 
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
@@ -101,15 +105,19 @@ type Runtime struct {
 	bindingKeyChanges   chan struct{}
 	controllerConnected atomic.Bool
 	credentialDeriver   *policy.CredentialDeriver
-	usageOutbox         *usage.Outbox
+	relayJournal        *reservation.Journal
 	relayServer         relayLifecycle
 	controlSessionMu    sync.RWMutex
-	controlSession      usageSession
-	usagePumpMu         sync.Mutex
-	usagePumpGate       sync.Mutex
-	usagePumpClosing    bool
-	usagePumpWait       sync.WaitGroup
-	usageDegraded       atomic.Bool
+	controlSession      relayControlSession
+	replayMu            sync.Mutex
+	replayRunMu         sync.Mutex
+	relayOperationLocks [256]sync.Mutex
+	replayGate          sync.Mutex
+	replayClosing       bool
+	replayWait          sync.WaitGroup
+	beforeReplayLock    func(string)
+	relayDegraded       atomic.Bool
+	shuttingDown        atomic.Bool
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -181,14 +189,14 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		bindingKeyChanges:  make(chan struct{}, 1),
 	}
 	if config.TURNListenAddress != "" {
-		outbox, openErr := usage.Open(config.UsageOutboxFile, 2*time.Second)
+		journal, openErr := reservation.Open(config.RelayJournalFile, 2*time.Second)
 		if openErr != nil {
-			// usage outbox 是 Relay 的计费真值；损坏或不可写只关闭收费 Relay，P2P 信令仍可运行。
-			runtime.usageDegraded.Store(true)
+			// Journal 损坏或不可写只关闭收费 Relay；P2P 信令仍可运行。
+			runtime.relayDegraded.Store(true)
 		} else {
 			secret := make([]byte, 32)
 			if _, err := rand.Read(secret); err != nil {
-				_ = outbox.Close()
+				_ = journal.Close()
 				_ = listener.Close()
 				state.Close()
 				cancel()
@@ -199,13 +207,13 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 				"turn:" + config.TURNPublicEndpoint + "?transport=tcp",
 			})
 			if err != nil {
-				_ = outbox.Close()
+				_ = journal.Close()
 				_ = listener.Close()
 				state.Close()
 				cancel()
 				return nil, err
 			}
-			runtime.usageOutbox, runtime.credentialDeriver = outbox, deriver
+			runtime.relayJournal, runtime.credentialDeriver = journal, deriver
 		}
 	}
 	agentService, err := agentgateway.NewService(agentgateway.Config{
@@ -214,8 +222,8 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	})
 	if err != nil {
 		_ = listener.Close()
-		if runtime.usageOutbox != nil {
-			_ = runtime.usageOutbox.Close()
+		if runtime.relayJournal != nil {
+			_ = runtime.relayJournal.Close()
 		}
 		state.Close()
 		cancel()
@@ -228,19 +236,19 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	})
 	if err != nil {
 		_ = listener.Close()
-		if runtime.usageOutbox != nil {
-			_ = runtime.usageOutbox.Close()
+		if runtime.relayJournal != nil {
+			_ = runtime.relayJournal.Close()
 		}
 		state.Close()
 		cancel()
 		return nil, err
 	}
 	cloudv1.RegisterClientGatewayServer(grpcServer, clientService)
-	if runtime.usageOutbox != nil {
-		relayServer, relayErr := relay.Start(relay.Config{ListenAddress: config.TURNListenAddress, PublicEndpoint: config.TURNPublicEndpoint, Realm: config.TURNRealm, Runtime: state, Outbox: runtime.usageOutbox})
+	if runtime.relayJournal != nil {
+		relayServer, relayErr := relay.Start(relay.Config{ListenAddress: config.TURNListenAddress, PublicEndpoint: config.TURNPublicEndpoint, Realm: config.TURNRealm, Runtime: state})
 		if relayErr != nil {
 			_ = listener.Close()
-			_ = runtime.usageOutbox.Close()
+			_ = runtime.relayJournal.Close()
 			state.Close()
 			cancel()
 			return nil, relayErr
@@ -268,31 +276,31 @@ func (runtime *Runtime) TURNAddress() string {
 	return runtime.relayServer.Address()
 }
 
-// RelayDegraded 表示 usage outbox 不可用或 Relay 数据面已发生不可继续计费的错误。
+// RelayDegraded 表示 reservation journal 不可用或 Relay 数据面已发生不可继续授权的错误。
 // 该状态只关闭新 Relay 分配，不影响同一 Edge 上的 P2P 信令和健康存活。
 func (runtime *Runtime) RelayDegraded() bool {
 	if runtime == nil {
 		return false
 	}
-	return runtime.usageDegraded.Load() || (runtime.relayServer != nil && runtime.relayServer.Degraded())
+	return runtime.relayDegraded.Load() || (runtime.relayServer != nil && runtime.relayServer.Degraded())
 }
 
-// UsageOutboxDepth 返回未确认 Relay usage 数量，供健康检查和 R6 故障恢复门禁使用。
-func (runtime *Runtime) UsageOutboxDepth() (int, error) {
+// RelayJournalDepth returns the bounded count of unsettled durable reservations.
+func (runtime *Runtime) RelayJournalDepth() (int, error) {
 	if runtime == nil {
 		return 0, nil
 	}
-	runtime.usagePumpMu.Lock()
-	defer runtime.usagePumpMu.Unlock()
-	if runtime.usageOutbox == nil {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	if runtime.relayJournal == nil {
 		return 0, nil
 	}
-	return runtime.usageOutbox.Len()
+	return runtime.relayJournal.Len()
 }
 
 // Ready requires both an accepted Controller generation and a currently usable binding key bundle.
 func (runtime *Runtime) Ready() bool {
-	return runtime.ControllerConnected() && runtime.BindingKeysUsable()
+	return !runtime.shuttingDown.Load() && runtime.ControllerConnected() && runtime.BindingKeysUsable()
 }
 
 // ControllerConnected reports whether the current EdgeControl generation completed snapshot synchronization.
@@ -362,7 +370,8 @@ func (runtime *Runtime) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	runtime.health.ServeHTTP(writer, request)
 }
 
-// Shutdown 进入 not-ready，取消 ControllerLink，关闭公网 listener 并等待有界 goroutine 退出。
+// Shutdown 先停止新 Relay authority，把现存 allocation 冻结为 durable aggregate，
+// 再取消 ControllerLink、关闭公网 listener 并等待有界 goroutine 退出。
 func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	runtime.shutdownMu.Lock()
 	defer runtime.shutdownMu.Unlock()
@@ -370,20 +379,29 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 		return runtime.shutdownErr
 	}
 
+	runtime.shuttingDown.Store(true)
 	runtime.setControllerConnected(false)
+	runtime.replayGate.Lock()
+	runtime.replayClosing = true
+	runtime.replayGate.Unlock()
+	if err := runtime.waitRelayReplay(ctx); err != nil {
+		return err
+	}
+	closingRecords, err := runtime.prepareRelayShutdown(ctx)
+	if err != nil {
+		return err
+	}
 	var shutdownErr error
 	if runtime.relayServer != nil {
 		shutdownErr = runtime.relayServer.Close()
 		if !runtime.relayServer.StateCloseSafe() {
-			return errors.Join(shutdownErr, errors.New("Relay shutdown retained undurable allocation usage in Runtime State"))
+			return errors.Join(shutdownErr, errors.New("Relay shutdown retained a live allocation in Runtime State"))
 		}
-		_ = runtime.flushUsage(ctx)
 	}
-	runtime.usagePumpGate.Lock()
-	runtime.usagePumpClosing = true
-	runtime.usagePumpGate.Unlock()
+	if err := runtime.finishRelayShutdown(ctx, closingRecords); err != nil {
+		return errors.Join(shutdownErr, err)
+	}
 	runtime.cancel()
-	runtime.usagePumpWait.Wait()
 	runtime.state.Close()
 	shutdownErr = errors.Join(shutdownErr, stopGRPC(ctx, runtime.grpcServer))
 	if err := runtime.httpServer.Shutdown(ctx); err != nil {
@@ -399,16 +417,105 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		shutdownErr = errors.Join(shutdownErr, ctx.Err())
 	}
-	runtime.usagePumpMu.Lock()
-	if runtime.usageOutbox != nil {
-		shutdownErr = errors.Join(shutdownErr, runtime.usageOutbox.Close())
-		runtime.usageOutbox = nil
+	runtime.replayMu.Lock()
+	if runtime.relayJournal != nil {
+		shutdownErr = errors.Join(shutdownErr, runtime.relayJournal.Close())
+		runtime.relayJournal = nil
 	}
-	runtime.usagePumpMu.Unlock()
+	runtime.replayMu.Unlock()
 	runtime.health.SetAlive(false)
 	runtime.shutdownComplete = true
 	runtime.shutdownErr = shutdownErr
 	return shutdownErr
+}
+
+func (runtime *Runtime) waitRelayReplay(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		runtime.replayWait.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (runtime *Runtime) prepareRelayShutdown(ctx context.Context) ([]*cloudv1.RelayJournalRecord, error) {
+	if runtime.relayJournal == nil {
+		return nil, nil
+	}
+	records, err := runtime.journalRecords(reservation.MaxDurableRecords)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		switch record.GetStage() {
+		case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_EXPOSED,
+			cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_RENEW_PENDING,
+			cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_CLOSING:
+			grant := record.GetGrant()
+			if grant == nil {
+				return nil, errors.New("Relay journal grant is missing during shutdown")
+			}
+			if err := runtime.state.BeginRelaySessionClose(ctx, grant.GetSessionId()); err != nil {
+				return nil, err
+			}
+			if err := runtime.journalMarkClosing(grant.GetReservationId()); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return records, nil
+}
+
+func (runtime *Runtime) finishRelayShutdown(ctx context.Context, records []*cloudv1.RelayJournalRecord) error {
+	session := runtime.currentControlSession()
+	for _, record := range records {
+		var settlement *cloudv1.RelaySettlement
+		grant := record.GetGrant()
+		switch record.GetStage() {
+		case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_HELD_UNEXPOSED:
+			settlement = exactZeroSettlement(grant, time.Now().UTC())
+		case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_EXPOSED,
+			cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_RENEW_PENDING,
+			cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_CLOSING:
+			var err error
+			settlement, err = runtime.state.RelaySessionSettlement(ctx, grant.GetSessionId(), time.Now().UTC())
+			if err != nil || settlement == nil {
+				return errors.Join(err, errors.New("Relay group did not become static during shutdown"))
+			}
+		case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE:
+			settlement = record.GetSettlement()
+		default:
+			// REQUESTED remains uncertain until the next ready Controller generation.
+			continue
+		}
+		if settlement == nil {
+			return errors.New("Relay shutdown settlement is missing")
+		}
+		if record.GetStage() != cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE {
+			if err := runtime.journalPutSettlement(settlement); err != nil {
+				return err
+			}
+		}
+		if grant != nil {
+			if live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId()); err != nil {
+				return err
+			} else if live {
+				if err := runtime.state.ForgetRelayGroup(ctx, grant.GetReservationId()); err != nil {
+					return err
+				}
+			}
+		}
+		if session != nil {
+			// The durable fact is sufficient for shutdown safety; a lost ACK is replayed.
+			_ = runtime.deliverSettlement(ctx, session, settlement)
+		}
+	}
+	return nil
 }
 
 func stopGRPC(ctx context.Context, server *grpc.Server) error {
@@ -447,8 +554,8 @@ func (runtime *Runtime) runControllerLink() {
 		}
 		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
 		capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD)
-		if runtime.relayServer != nil && runtime.usageOutbox != nil && !runtime.RelayDegraded() {
-			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_USAGE_OUTBOX)
+		if runtime.relayServer != nil && runtime.relayJournal != nil && !runtime.RelayDegraded() {
+			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_RESERVATION_JOURNAL)
 		}
 		certificateProfileID, certificateRevision := runtime.certificateManager.Current()
 		session, err := controllerlink.Open(runtime.ctx, controllerlink.Config{
@@ -593,7 +700,7 @@ func normalizeConfig(config Config) Config {
 	config.TURNListenAddress = strings.TrimSpace(config.TURNListenAddress)
 	config.TURNPublicEndpoint = strings.TrimSpace(config.TURNPublicEndpoint)
 	config.TURNRealm = strings.TrimSpace(config.TURNRealm)
-	config.UsageOutboxFile = strings.TrimSpace(config.UsageOutboxFile)
+	config.RelayJournalFile = strings.TrimSpace(config.RelayJournalFile)
 	config.BindingKeyBundleCacheFile = strings.TrimSpace(config.BindingKeyBundleCacheFile)
 	return config
 }
@@ -634,7 +741,7 @@ func validateConfig(config Config) error {
 	if _, err := securetransport.EdgeIdentityURI(config.EdgeID); err != nil {
 		return err
 	}
-	r6Values := []string{config.TURNListenAddress, config.TURNPublicEndpoint, config.TURNRealm, config.UsageOutboxFile}
+	r6Values := []string{config.TURNListenAddress, config.TURNPublicEndpoint, config.TURNRealm, config.RelayJournalFile}
 	configured := 0
 	for _, value := range r6Values {
 		if value != "" {
@@ -642,199 +749,502 @@ func validateConfig(config Config) error {
 		}
 	}
 	if configured != 0 && configured != len(r6Values) {
-		return errors.New("TURN listener, public endpoint, realm, and usage outbox must be configured together")
+		return errors.New("TURN listener, public endpoint, realm, and reservation journal must be configured together")
 	}
 	return nil
 }
 
 func (runtime *Runtime) relayBroker() clientgateway.RelayBroker {
-	if runtime.credentialDeriver == nil || runtime.usageOutbox == nil {
+	if runtime.credentialDeriver == nil || runtime.relayJournal == nil || runtime.relayServer == nil || runtime.RelayDegraded() {
 		return nil
 	}
 	return runtime
 }
 
-// RequestRelayLease 始终使用 daemon binding 的 Relay 委托在 Edge 本地签发。
-func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error) {
-	if request == nil || strings.TrimSpace(request.GetRenewLeaseId()) != "" {
-		return nil, errors.New("initial RelayLease request must not contain a renewal identity")
+func (runtime *Runtime) RequestRelay(ctx context.Context, identity *clientgateway.RelayRequest) (*cloudv1.RelayICEConfig, error) {
+	if runtime == nil || runtime.credentialDeriver == nil || runtime.relayJournal == nil || runtime.RelayDegraded() || identity == nil ||
+		strings.TrimSpace(identity.SessionID) == "" || strings.TrimSpace(identity.AccountID) == "" || strings.TrimSpace(identity.DaemonID) == "" || strings.TrimSpace(identity.ClientID) == "" {
+		return nil, errors.New("Edge Relay control is unavailable or request identity is incomplete")
 	}
-	claims, err := runtime.requestRelayLeaseClaims(ctx, request)
+	if runtime.shuttingDown.Load() || !runtime.ControllerConnected() {
+		return nil, errors.New("ready Controller generation is unavailable for Relay reservation")
+	}
+	session := runtime.currentControlSession()
+	if session == nil {
+		return nil, errors.New("ready Controller generation is unavailable for Relay reservation")
+	}
+	now := time.Now().UTC()
+	request := &cloudv1.RelayReserveRequest{
+		ReservationId: uuid.NewString(), AccountId: strings.TrimSpace(identity.AccountID), DaemonId: strings.TrimSpace(identity.DaemonID),
+		ClientId: strings.TrimSpace(identity.ClientID), SessionId: strings.TrimSpace(identity.SessionID), ObservedAt: timestamppb.New(now),
+	}
+	digest, err := relayquota.ReserveRequestDigest(request)
 	if err != nil {
 		return nil, err
 	}
-	material, err := runtime.credentialDeriver.Material(claims)
+	request.RequestDigest = digest
+	operationLock := runtime.relayOperationLock(request.GetReservationId())
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	if err := runtime.journalCreateRequested(request); err != nil {
+		return nil, err
+	}
+	response, err := session.ReserveRelay(ctx, request)
+	if err != nil {
+		runtime.startRelayReplay(session)
+		return nil, err
+	}
+	grant, err := runtime.acceptReserveResponse(request, response)
 	if err != nil {
 		return nil, err
 	}
-	if err := runtime.state.RegisterRelayLease(ctx, claims, material); err != nil {
-		return nil, err
+	material, err := runtime.credentialDeriver.Material(grant)
+	if err != nil {
+		return nil, runtime.abandonUnexposed(session, grant, err)
+	}
+	if err := runtime.state.RegisterRelayGrant(ctx, grant, material); err != nil {
+		return nil, runtime.abandonUnexposed(session, grant, err)
+	}
+	// This is the last durable transition before credentials may leave the Edge.
+	if err := runtime.journalMarkExposed(grant.GetReservationId()); err != nil {
+		_ = runtime.state.BeginRelaySessionClose(context.Background(), grant.GetSessionId())
+		_ = runtime.state.ForgetRelayGroup(context.Background(), grant.GetReservationId())
+		return nil, runtime.abandonUnexposed(session, grant, err)
 	}
 	return material, nil
 }
 
-// RenewRelayLease 在当前 binding 上限内延长同一个 credential，不触发 Controller RPC 或 ICE restart。
-func (runtime *Runtime) RenewRelayLease(ctx context.Context, request *cloudv1.RelayLeaseSpec, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
-	if request == nil || current == nil || strings.TrimSpace(current.GetUsername()) == "" ||
-		strings.TrimSpace(request.GetRenewLeaseId()) == "" || request.GetRenewLeaseId() != current.GetLeaseId() {
-		return nil, errors.New("RelayLease renewal must identify the current credential")
+func (runtime *Runtime) RenewRelay(ctx context.Context, current *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error) {
+	if runtime == nil || current == nil || strings.TrimSpace(current.GetReservationId()) == "" || strings.TrimSpace(current.GetUsername()) == "" {
+		return nil, errors.New("current Relay reservation credential is required")
 	}
-	claims, err := runtime.requestRelayLeaseClaims(ctx, request)
-	if err != nil {
+	if runtime.shuttingDown.Load() || !runtime.ControllerConnected() {
+		return nil, errors.New("ready Controller generation is unavailable for Relay renewal")
+	}
+	operationLock := runtime.relayOperationLock(current.GetReservationId())
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	session := runtime.currentControlSession()
+	if session == nil {
+		return nil, errors.New("ready Controller generation is unavailable for Relay renewal")
+	}
+	record, exists, err := runtime.journalRecord(current.GetReservationId())
+	if err != nil || !exists || record.GetGrant() == nil || record.GetGrant().GetReservationId() != current.GetReservationId() {
+		return nil, errors.New("durable Relay reservation is unavailable for renewal")
+	}
+	sequence := record.GetGrant().GetRenewSequence() + 1
+	if record.GetStage() == cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_RENEW_PENDING {
+		sequence = record.GetPendingRenewSequence()
+	} else if err := runtime.journalMarkRenewPending(current.GetReservationId(), sequence); err != nil {
 		return nil, err
 	}
-	if claims.GetLeaseId() != current.GetLeaseId() {
-		return nil, errors.New("Edge RelayLease renewal changed lease identity")
+	request := &cloudv1.RelayRenewRequest{ReservationId: current.GetReservationId(), RenewSequence: sequence, PolicyDigest: append([]byte(nil), record.GetGrant().GetPolicyDigest()...), ObservedAt: timestamppb.Now()}
+	response, err := session.RenewRelay(ctx, request)
+	if err != nil {
+		runtime.startRelayReplay(session)
+		return nil, err
 	}
-	return runtime.state.RenewRelayLease(ctx, current.GetUsername(), claims)
-}
-
-func (runtime *Runtime) requestRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseSpec) (*cloudv1.RelayLeaseClaims, error) {
-	if runtime == nil || runtime.credentialDeriver == nil || runtime.RelayDegraded() {
-		return nil, errors.New("Edge Relay control is unavailable")
-	}
-	if request == nil || strings.TrimSpace(request.GetSessionId()) == "" || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetDaemonId()) == "" || strings.TrimSpace(request.GetClientId()) == "" {
-		return nil, errors.New("Relay lease request is incomplete")
-	}
-	return runtime.issueDelegatedRelayLeaseClaims(ctx, request)
-}
-
-func (runtime *Runtime) issueDelegatedRelayLeaseClaims(ctx context.Context, request *cloudv1.RelayLeaseSpec) (*cloudv1.RelayLeaseClaims, error) {
-	agent, err := runtime.state.AuthenticatedAgentClaims(ctx, request.GetDaemonId())
-	if err != nil || agent == nil || agent.GetAccountId() != request.GetAccountId() || agent.GetEdgeId() != runtime.config.EdgeID ||
-		agent.GetExpiresAt() == nil || agent.GetExpiresAt().CheckValid() != nil {
-		return nil, errors.New("authenticated daemon Relay delegation is unavailable")
-	}
-	delegation := agent.GetRelayDelegation()
-	if delegation == nil || delegation.GetMaxBytesPerLease() == 0 || delegation.GetMaxRateBytesPerSecond() == 0 || delegation.GetMaxConcurrentAllocations() == 0 {
-		return nil, errors.New("authenticated daemon is not delegated Relay access")
-	}
-	now := time.Now().UTC()
-	expiresAt := now.Add(5 * time.Minute)
-	if ticketExpiry := agent.GetExpiresAt().AsTime(); ticketExpiry.Before(expiresAt) {
-		expiresAt = ticketExpiry
-	}
-	if !expiresAt.After(now) {
-		return nil, errors.New("authenticated daemon Relay delegation has expired")
-	}
-	leaseID := strings.TrimSpace(request.GetRenewLeaseId())
-	if leaseID == "" {
-		leaseID = uuid.NewString()
-	} else if _, err := uuid.Parse(leaseID); err != nil {
-		return nil, errors.New("delegated RelayLease renewal identity is invalid")
-	}
-	claims := &cloudv1.RelayLeaseClaims{
-		LeaseId: leaseID, AccountId: request.GetAccountId(), EdgeId: runtime.config.EdgeID, DaemonId: request.GetDaemonId(), ClientId: request.GetClientId(), SessionId: request.GetSessionId(),
-		MaxBytes: delegation.GetMaxBytesPerLease(), MaxRateBytesPerSecond: delegation.GetMaxRateBytesPerSecond(), MaxConcurrentAllocations: delegation.GetMaxConcurrentAllocations(),
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(expiresAt),
-	}
-	return claims, nil
+	return runtime.acceptRenewResponse(ctx, current.GetUsername(), request, response)
 }
 
 // CloseRelaySession 把 ClientGateway session 生命周期绑定到同进程 TURN allocations。
 func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string) error {
-	if runtime == nil {
+	if runtime == nil || strings.TrimSpace(sessionID) == "" || runtime.relayJournal == nil {
 		return nil
 	}
-	var revokeErr error
-	if runtime.state != nil {
-		revokeErr = runtime.state.RevokeRelaySession(ctx, sessionID)
+	record, err := runtime.journalRecordForSession(sessionID)
+	if err != nil || record == nil {
+		return err
 	}
-	var closeErr error
+	reservationID := record.GetReserveRequest().GetReservationId()
+	operationLock := runtime.relayOperationLock(reservationID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	record, exists, err := runtime.journalRecord(reservationID)
+	if err != nil || !exists || record.GetReserveRequest().GetSessionId() != sessionID {
+		return err
+	}
+	if record.GetStage() == cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_REQUESTED {
+		if session := runtime.currentControlSession(); session != nil {
+			runtime.startRelayReplay(session)
+		}
+		return nil
+	}
+	if record.GetStage() == cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE {
+		return runtime.deliverSettlement(ctx, runtime.currentControlSession(), record.GetSettlement())
+	}
+	grant := record.GetGrant()
+	if grant == nil {
+		return errors.New("Relay journal grant is missing during close")
+	}
+	if record.GetStage() == cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_HELD_UNEXPOSED {
+		settlement := exactZeroSettlement(grant, time.Now().UTC())
+		if err := runtime.journalPutSettlement(settlement); err != nil {
+			return err
+		}
+		return runtime.deliverSettlement(ctx, runtime.currentControlSession(), settlement)
+	}
+	live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId())
+	if err != nil {
+		return err
+	}
+	if !live {
+		settlement := recoverySettlement(grant, time.Now().UTC())
+		if err := runtime.journalPutSettlement(settlement); err != nil {
+			return err
+		}
+		return runtime.deliverSettlement(ctx, runtime.currentControlSession(), settlement)
+	}
+	if err := runtime.state.BeginRelaySessionClose(ctx, sessionID); err != nil {
+		return err
+	}
+	if err := runtime.journalMarkClosing(grant.GetReservationId()); err != nil {
+		return err
+	}
 	if runtime.relayServer != nil {
-		closeErr = runtime.relayServer.CloseSessionAllocations(ctx, sessionID)
+		if err := runtime.relayServer.CloseSessionAllocations(ctx, sessionID); err != nil {
+			return err
+		}
 	}
-	return errors.Join(revokeErr, closeErr)
+	settlement, err := runtime.state.RelaySessionSettlement(ctx, sessionID, time.Now().UTC())
+	if err != nil || settlement == nil {
+		return errors.Join(err, errors.New("Relay group did not produce a static aggregate settlement"))
+	}
+	if err := runtime.journalPutSettlement(settlement); err != nil {
+		return err
+	}
+	if err := runtime.state.ForgetRelayGroup(ctx, grant.GetReservationId()); err != nil {
+		return err
+	}
+	return runtime.deliverSettlement(ctx, runtime.currentControlSession(), settlement)
 }
 
-func (runtime *Runtime) setControlSession(session *controllerlink.Session) {
+func (runtime *Runtime) setControlSession(session relayControlSession) {
 	runtime.controlSessionMu.Lock()
 	runtime.controlSession = session
 	runtime.controlSessionMu.Unlock()
 	if session != nil {
-		runtime.startUsagePump(session)
+		runtime.startRelayReplay(session)
 	}
 }
 
-func (runtime *Runtime) startUsagePump(session usageSession) bool {
-	runtime.usagePumpMu.Lock()
-	available := runtime.usageOutbox != nil
-	runtime.usagePumpMu.Unlock()
-	if !available {
+func (runtime *Runtime) currentControlSession() relayControlSession {
+	runtime.controlSessionMu.RLock()
+	defer runtime.controlSessionMu.RUnlock()
+	return runtime.controlSession
+}
+
+func (runtime *Runtime) startRelayReplay(session relayControlSession) bool {
+	if session == nil || runtime.relayJournal == nil {
 		return false
 	}
-	runtime.usagePumpGate.Lock()
-	if runtime.usagePumpClosing {
-		runtime.usagePumpGate.Unlock()
+	runtime.replayGate.Lock()
+	if runtime.replayClosing {
+		runtime.replayGate.Unlock()
 		return false
 	}
-	runtime.usagePumpWait.Add(1)
-	runtime.usagePumpGate.Unlock()
+	runtime.replayWait.Add(1)
+	runtime.replayGate.Unlock()
 	go func() {
-		defer runtime.usagePumpWait.Done()
-		runtime.runUsagePump(session)
+		defer runtime.replayWait.Done()
+		runtime.replayRelayJournal(session)
 	}()
 	return true
 }
 
-func (runtime *Runtime) runUsagePump(session usageSession) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		ctx, cancel := context.WithTimeout(runtime.ctx, 5*time.Second)
-		err := runtime.flushUsageWithSession(ctx, session)
-		cancel()
-		if err != nil {
-			select {
-			case <-runtime.ctx.Done():
-				return
-			case <-session.Done():
-				return
-			case <-time.After(time.Second):
-			}
-		}
+func (runtime *Runtime) replayRelayJournal(session relayControlSession) {
+	runtime.replayRunMu.Lock()
+	defer runtime.replayRunMu.Unlock()
+	records, err := runtime.journalRecords(reservation.MaxDurableRecords)
+	if err != nil {
+		runtime.relayDegraded.Store(true)
+		return
+	}
+	for _, record := range records {
 		select {
 		case <-runtime.ctx.Done():
 			return
 		case <-session.Done():
 			return
-		case <-ticker.C:
+		default:
+		}
+		ctx, cancel := context.WithTimeout(runtime.ctx, 5*time.Second)
+		err = runtime.replayRelayRecord(ctx, session, record)
+		cancel()
+		if err != nil {
+			return
 		}
 	}
 }
 
-func (runtime *Runtime) flushUsage(ctx context.Context) error {
-	runtime.controlSessionMu.RLock()
-	session := runtime.controlSession
-	runtime.controlSessionMu.RUnlock()
-	if session == nil {
-		return errors.New("EdgeControl is unavailable for usage flush")
+func (runtime *Runtime) replayRelayRecord(ctx context.Context, session relayControlSession, record *cloudv1.RelayJournalRecord) error {
+	if record == nil {
+		return errors.New("Relay journal record is required for replay")
 	}
-	return runtime.flushUsageWithSession(ctx, session)
-}
-
-func (runtime *Runtime) flushUsageWithSession(ctx context.Context, session usageSession) error {
-	runtime.usagePumpMu.Lock()
-	defer runtime.usagePumpMu.Unlock()
-	if runtime.usageOutbox == nil {
-		return nil
+	reservationID := record.GetReserveRequest().GetReservationId()
+	if reservationID == "" {
+		reservationID = record.GetGrant().GetReservationId()
 	}
-	events, err := runtime.usageOutbox.Batch(128)
-	if err != nil || len(events) == 0 {
+	if reservationID == "" {
+		return errors.New("Relay journal record has no reservation identity")
+	}
+	if runtime.beforeReplayLock != nil {
+		runtime.beforeReplayLock(reservationID)
+	}
+	operationLock := runtime.relayOperationLock(reservationID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	record, exists, err := runtime.journalRecord(reservationID)
+	if err != nil || !exists {
 		return err
 	}
-	ack, err := session.CommitUsageBatch(ctx, &cloudv1.UsageBatch{BatchId: uuid.NewString(), Events: events})
+	grant := record.GetGrant()
+	switch record.GetStage() {
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_REQUESTED:
+		query, err := session.QueryRelay(ctx, &cloudv1.RelayQueryRequest{ReservationId: record.GetReserveRequest().GetReservationId()})
+		if err != nil {
+			return err
+		}
+		if query.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED {
+			response, reserveErr := session.ReserveRelay(ctx, record.GetReserveRequest())
+			if reserveErr != nil {
+				return reserveErr
+			}
+			grant, err = runtime.acceptReserveResponse(record.GetReserveRequest(), response)
+			if err != nil {
+				return err
+			}
+		} else if query.GetTerminal() != nil && query.GetGrant() != nil {
+			if err := runtime.journalApplyGrant(query.GetGrant()); err != nil {
+				return err
+			}
+			return runtime.journalAck(query.GetTerminal())
+		} else if query.GetGrant() != nil {
+			grant = query.GetGrant()
+			if err := runtime.journalApplyGrant(grant); err != nil {
+				return err
+			}
+		} else {
+			return errors.New("Controller returned an invalid Relay query replay")
+		}
+		settlement := exactZeroSettlement(grant, time.Now().UTC())
+		if err := runtime.journalPutSettlement(settlement); err != nil {
+			return err
+		}
+		return runtime.deliverSettlement(ctx, session, settlement)
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_HELD_UNEXPOSED:
+		settlement := exactZeroSettlement(grant, time.Now().UTC())
+		if err := runtime.journalPutSettlement(settlement); err != nil {
+			return err
+		}
+		return runtime.deliverSettlement(ctx, session, settlement)
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_EXPOSED:
+		live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId())
+		if err != nil || live {
+			return err
+		}
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_RENEW_PENDING:
+		live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId())
+		if err != nil {
+			return err
+		}
+		if live {
+			request := &cloudv1.RelayRenewRequest{ReservationId: grant.GetReservationId(), RenewSequence: record.GetPendingRenewSequence(), PolicyDigest: append([]byte(nil), grant.GetPolicyDigest()...), ObservedAt: timestamppb.Now()}
+			response, err := session.RenewRelay(ctx, request)
+			if err != nil {
+				return err
+			}
+			_, err = runtime.acceptRenewResponse(ctx, "v2:"+grant.GetReservationId()+":"+grant.GetSessionId(), request, response)
+			return err
+		}
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_CLOSING:
+		live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId())
+		if err != nil || live {
+			return err
+		}
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE:
+		return runtime.deliverSettlement(ctx, session, record.GetSettlement())
+	default:
+		return errors.New("Relay journal contains an invalid stage")
+	}
+	settlement := recoverySettlement(grant, time.Now().UTC())
+	if err := runtime.journalPutSettlement(settlement); err != nil {
+		return err
+	}
+	return runtime.deliverSettlement(ctx, session, settlement)
+}
+
+func (runtime *Runtime) relayOperationLock(reservationID string) *sync.Mutex {
+	const offset32 = uint32(2166136261)
+	const prime32 = uint32(16777619)
+	hash := offset32
+	for index := 0; index < len(reservationID); index++ {
+		hash ^= uint32(reservationID[index])
+		hash *= prime32
+	}
+	return &runtime.relayOperationLocks[hash%uint32(len(runtime.relayOperationLocks))]
+}
+
+func (runtime *Runtime) acceptReserveResponse(request *cloudv1.RelayReserveRequest, response *cloudv1.RelayReserveResponse) (*cloudv1.RelayGrant, error) {
+	if response == nil || response.GetReservationId() != request.GetReservationId() || !relayquota.EqualDigest(response.GetRequestDigest(), request.GetRequestDigest()) {
+		return nil, errors.New("Controller Relay reserve response identity is invalid")
+	}
+	if response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED || response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_CONFLICT || response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_UNAVAILABLE {
+		_ = runtime.journalDropRequested(request.GetReservationId(), request.GetRequestDigest())
+		return nil, errors.New(response.GetErrorMessage())
+	}
+	if response.GetTerminal() != nil {
+		if response.GetGrant() == nil {
+			return nil, errors.New("terminal Relay reserve replay omitted its grant")
+		}
+		if err := runtime.journalApplyGrant(response.GetGrant()); err != nil {
+			return nil, err
+		}
+		if err := runtime.journalAck(response.GetTerminal()); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("Relay reservation is already terminal")
+	}
+	if response.GetGrant() == nil || (response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_APPLIED && response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REPLAY) {
+		return nil, errors.New("Controller Relay reserve response omitted a committed grant")
+	}
+	if err := runtime.journalApplyGrant(response.GetGrant()); err != nil {
+		return nil, err
+	}
+	return response.GetGrant(), nil
+}
+
+func (runtime *Runtime) acceptRenewResponse(ctx context.Context, username string, request *cloudv1.RelayRenewRequest, response *cloudv1.RelayRenewResponse) (*cloudv1.RelayICEConfig, error) {
+	if response == nil || response.GetReservationId() != request.GetReservationId() || response.GetRenewSequence() != request.GetRenewSequence() {
+		return nil, errors.New("Controller Relay renewal response identity is invalid")
+	}
+	if response.GetTerminal() != nil {
+		record, _, err := runtime.journalRecord(request.GetReservationId())
+		if err != nil || record.GetGrant() == nil {
+			return nil, errors.Join(err, errors.New("terminal Relay renewal lost its durable grant"))
+		}
+		if err := runtime.state.BeginRelaySessionClose(ctx, record.GetGrant().GetSessionId()); err != nil {
+			return nil, err
+		}
+		if runtime.relayServer != nil {
+			if err := runtime.relayServer.CloseSessionAllocations(ctx, record.GetGrant().GetSessionId()); err != nil {
+				return nil, err
+			}
+		}
+		if err := runtime.state.ForgetRelayGroup(ctx, request.GetReservationId()); err != nil {
+			return nil, err
+		}
+		if err := runtime.journalAck(response.GetTerminal()); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("Relay reservation became terminal during renewal")
+	}
+	if response.GetGrant() == nil || (response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_APPLIED && response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REPLAY) {
+		return nil, errors.New(response.GetErrorMessage())
+	}
+	if err := runtime.journalApplyRenewedGrant(response.GetGrant()); err != nil {
+		return nil, err
+	}
+	return runtime.state.RenewRelayGrant(ctx, username, response.GetGrant())
+}
+
+func (runtime *Runtime) abandonUnexposed(session relayControlSession, grant *cloudv1.RelayGrant, cause error) error {
+	settlement := exactZeroSettlement(grant, time.Now().UTC())
+	if err := runtime.journalPutSettlement(settlement); err != nil {
+		return errors.Join(cause, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err := runtime.deliverSettlement(ctx, session, settlement)
+	cancel()
+	return errors.Join(cause, err)
+}
+
+func (runtime *Runtime) deliverSettlement(ctx context.Context, session relayControlSession, settlement *cloudv1.RelaySettlement) error {
+	if session == nil {
+		return errors.New("ready Controller generation is unavailable for Relay settlement")
+	}
+	ack, err := session.SettleRelay(ctx, settlement)
 	if err != nil {
 		return err
 	}
-	known := make(map[string]struct{}, len(events))
-	for _, event := range events {
-		known[event.GetEventId()] = struct{}{}
+	if ack.GetReservationId() != settlement.GetReservationId() || ack.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED || ack.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_CONFLICT || ack.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_UNAVAILABLE {
+		return errors.New("Controller rejected Relay settlement: " + ack.GetErrorMessage())
 	}
-	for _, eventID := range ack.GetEventIds() {
-		if _, exists := known[eventID]; !exists {
-			return errors.New("Controller UsageAck contains an event outside the sent batch")
+	return runtime.journalAck(ack)
+}
+
+func exactZeroSettlement(grant *cloudv1.RelayGrant, observedAt time.Time) *cloudv1.RelaySettlement {
+	return &cloudv1.RelaySettlement{ReservationId: grant.GetReservationId(), Kind: cloudv1.RelaySettlementKind_RELAY_SETTLEMENT_KIND_EXACT, PolicyDigest: append([]byte(nil), grant.GetPolicyDigest()...), ObservedAt: timestamppb.New(observedAt.UTC())}
+}
+
+func recoverySettlement(grant *cloudv1.RelayGrant, observedAt time.Time) *cloudv1.RelaySettlement {
+	return &cloudv1.RelaySettlement{ReservationId: grant.GetReservationId(), Kind: cloudv1.RelaySettlementKind_RELAY_SETTLEMENT_KIND_RECOVERY_MAX, PolicyDigest: append([]byte(nil), grant.GetPolicyDigest()...), ObservedAt: timestamppb.New(observedAt.UTC())}
+}
+
+func (runtime *Runtime) journalCreateRequested(request *cloudv1.RelayReserveRequest) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.CreateRequested(request)
+}
+func (runtime *Runtime) journalApplyGrant(grant *cloudv1.RelayGrant) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.ApplyGrant(grant)
+}
+func (runtime *Runtime) journalMarkExposed(id string) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.MarkExposed(id)
+}
+func (runtime *Runtime) journalMarkRenewPending(id string, sequence uint64) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.MarkRenewPending(id, sequence)
+}
+func (runtime *Runtime) journalApplyRenewedGrant(grant *cloudv1.RelayGrant) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.ApplyRenewedGrant(grant)
+}
+func (runtime *Runtime) journalMarkClosing(id string) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.MarkClosing(id)
+}
+func (runtime *Runtime) journalPutSettlement(settlement *cloudv1.RelaySettlement) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.PutSettlement(settlement)
+}
+func (runtime *Runtime) journalAck(ack *cloudv1.RelaySettlementAck) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.Ack(ack)
+}
+func (runtime *Runtime) journalDropRequested(id string, digest []byte) error {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.DropRequested(id, digest)
+}
+func (runtime *Runtime) journalRecord(id string) (*cloudv1.RelayJournalRecord, bool, error) {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.Record(id)
+}
+func (runtime *Runtime) journalRecords(limit int) ([]*cloudv1.RelayJournalRecord, error) {
+	runtime.replayMu.Lock()
+	defer runtime.replayMu.Unlock()
+	return runtime.relayJournal.Records(limit)
+}
+func (runtime *Runtime) journalRecordForSession(sessionID string) (*cloudv1.RelayJournalRecord, error) {
+	records, err := runtime.journalRecords(reservation.MaxDurableRecords)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		if record.GetReserveRequest().GetSessionId() == sessionID {
+			return record, nil
 		}
 	}
-	return runtime.usageOutbox.Ack(ack.GetEventIds())
+	return nil, nil
 }

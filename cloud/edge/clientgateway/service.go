@@ -45,10 +45,19 @@ type Runtime interface {
 
 var errRouteStale = errors.New("cached Edge no longer owns the target daemon")
 
-// RelayBroker 从当前 daemon binding 委托创建并登记 Edge 本地短期 ICE 参数。
+// RelayRequest is the authenticated identity used for one Controller reservation.
+type RelayRequest struct {
+	SessionID  string
+	AccountID  string
+	DaemonID   string
+	ClientID   string
+	Preference cloudv1.RelayPreference
+}
+
+// RelayBroker requests and renews Controller-committed Relay authority.
 type RelayBroker interface {
-	RequestRelayLease(context.Context, *cloudv1.RelayLeaseSpec) (*cloudv1.RelayICEConfig, error)
-	RenewRelayLease(context.Context, *cloudv1.RelayLeaseSpec, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error)
+	RequestRelay(context.Context, *RelayRequest) (*cloudv1.RelayICEConfig, error)
+	RenewRelay(context.Context, *cloudv1.RelayICEConfig) (*cloudv1.RelayICEConfig, error)
 }
 
 // RelaySessionCloser 在信令 stream 结束时释放同 session 的 TURN reservation/allocation。
@@ -145,27 +154,14 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 	var relay *cloudv1.RelayICEConfig
 	if preference != cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY {
-		if service.config.Relay == nil {
-			return status.Error(codes.FailedPrecondition, "Relay is not allowed for this Cloud attempt")
-		}
-		relay, err = service.config.Relay.RequestRelayLease(sessionContext, &cloudv1.RelayLeaseSpec{
-			SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
+		relay, err = service.requestRelay(sessionContext, preference, &RelayRequest{
+			SessionID: sessionID, AccountID: claims.accountID, DaemonID: claims.daemonID, ClientID: claims.clientID, Preference: preference,
 		})
-		if err != nil || relay == nil {
-			if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
-				if err == nil {
-					err = errors.New("Relay authorization is unavailable")
-				}
-				return status.Error(codes.Unavailable, err.Error())
-			}
-			// AUTO 在 Relay 授权不可用时仍允许纯 P2P。
-			relay = nil
+		if err != nil {
+			return err
 		}
 		if relay != nil {
-			renewRequest := &cloudv1.RelayLeaseSpec{
-				SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Preference: preference,
-			}
-			go service.maintainRelayLease(sessionContext, renewRequest, relay, cancelSession)
+			go service.maintainRelayReservation(sessionContext, relay, cancelSession)
 		}
 	}
 	if err := stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
@@ -227,12 +223,33 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 }
 
-func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *cloudv1.RelayLeaseSpec, initial *cloudv1.RelayICEConfig, cancel context.CancelCauseFunc) {
+func (service *Service) requestRelay(ctx context.Context, preference cloudv1.RelayPreference, request *RelayRequest) (*cloudv1.RelayICEConfig, error) {
+	if service.config.Relay == nil {
+		if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
+			return nil, status.Error(codes.Unavailable, "Relay authorization is unavailable")
+		}
+		return nil, nil
+	}
+	relay, err := service.config.Relay.RequestRelay(ctx, request)
+	if err == nil && relay != nil {
+		return relay, nil
+	}
+	if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
+		if err == nil {
+			err = errors.New("Relay authorization is unavailable")
+		}
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	// AUTO remains a pure P2P attempt when no ready Controller grant exists.
+	return nil, nil
+}
+
+func (service *Service) maintainRelayReservation(ctx context.Context, initial *cloudv1.RelayICEConfig, cancel context.CancelCauseFunc) {
 	current := cloneRelay(initial)
 	retryDelay := time.Duration(0)
 	for ctx.Err() == nil {
 		now := service.config.Now().UTC()
-		remaining, err := relayLeaseRemaining(current, now)
+		remaining, err := relayGrantRemaining(current, now)
 		if err != nil {
 			cancel(err)
 			return
@@ -250,19 +267,17 @@ func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *clo
 		}
 
 		now = service.config.Now().UTC()
-		remaining, err = relayLeaseRemaining(current, now)
+		remaining, err = relayGrantRemaining(current, now)
 		if err != nil {
 			cancel(err)
 			return
 		}
-		request := proto.Clone(baseRequest).(*cloudv1.RelayLeaseSpec)
-		request.RenewLeaseId = current.GetLeaseId()
 		timeout := 10 * time.Second
 		if half := remaining / 2; half < timeout {
 			timeout = half
 		}
 		renewContext, stopRenewal := context.WithTimeout(ctx, timeout)
-		renewed, renewErr := service.config.Relay.RenewRelayLease(renewContext, request, current)
+		renewed, renewErr := service.config.Relay.RenewRelay(renewContext, current)
 		stopRenewal()
 		if renewErr == nil {
 			if err := validateRelayRenewal(current, renewed, now); err != nil {
@@ -277,25 +292,25 @@ func (service *Service) maintainRelayLease(ctx context.Context, baseRequest *clo
 	}
 }
 
-func relayLeaseRemaining(relay *cloudv1.RelayICEConfig, now time.Time) (time.Duration, error) {
-	if relay == nil || strings.TrimSpace(relay.GetLeaseId()) == "" || strings.TrimSpace(relay.GetUsername()) == "" ||
+func relayGrantRemaining(relay *cloudv1.RelayICEConfig, now time.Time) (time.Duration, error) {
+	if relay == nil || strings.TrimSpace(relay.GetReservationId()) == "" || strings.TrimSpace(relay.GetUsername()) == "" ||
 		strings.TrimSpace(relay.GetCredential()) == "" || relay.GetExpiresAt() == nil || relay.GetExpiresAt().CheckValid() != nil {
-		return 0, errors.New("RelayLease renewal state is incomplete")
+		return 0, errors.New("Relay reservation renewal state is incomplete")
 	}
 	remaining := relay.GetExpiresAt().AsTime().Sub(now.UTC())
 	if remaining <= 0 {
-		return 0, errors.New("RelayLease expired before renewal completed")
+		return 0, errors.New("Relay grant expired before renewal completed")
 	}
 	return remaining, nil
 }
 
 func validateRelayRenewal(current, renewed *cloudv1.RelayICEConfig, now time.Time) error {
-	if _, err := relayLeaseRemaining(renewed, now); err != nil {
+	if _, err := relayGrantRemaining(renewed, now); err != nil {
 		return err
 	}
-	if current == nil || renewed.GetLeaseId() != current.GetLeaseId() || renewed.GetUsername() != current.GetUsername() || renewed.GetCredential() != current.GetCredential() ||
+	if current == nil || renewed.GetReservationId() != current.GetReservationId() || renewed.GetUsername() != current.GetUsername() || renewed.GetCredential() != current.GetCredential() ||
 		!renewed.GetExpiresAt().AsTime().After(current.GetExpiresAt().AsTime()) {
-		return errors.New("RelayLease renewal changed credential identity or did not extend expiry")
+		return errors.New("Relay renewal changed credential identity or did not extend expiry")
 	}
 	return nil
 }

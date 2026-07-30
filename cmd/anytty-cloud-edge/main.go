@@ -41,7 +41,7 @@ type options struct {
 	turnListen              string
 	turnPublicEndpoint      string
 	turnRealm               string
-	usageOutbox             string
+	relayJournal            string
 	bindingKeyBundleCache   string
 }
 
@@ -84,7 +84,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		config.turnListen = resolved.TURNListenAddress
 		config.turnPublicEndpoint = resolved.TURNPublicEndpoint
 		config.turnRealm = resolved.TURNRealm
-		config.usageOutbox = resolved.UsageOutboxFile
+		config.relayJournal = resolved.RelayJournalFile
 		config.bindingKeyBundleCache = resolved.BindingKeyBundleCacheFile
 	}
 	if strings.TrimSpace(config.edgeID) == "" {
@@ -112,7 +112,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		TURNListenAddress:           config.turnListen,
 		TURNPublicEndpoint:          config.turnPublicEndpoint,
 		TURNRealm:                   config.turnRealm,
-		UsageOutboxFile:             config.usageOutbox,
+		RelayJournalFile:            config.relayJournal,
 		BindingKeyBundleCacheFile:   config.bindingKeyBundleCache,
 	})
 	if err != nil {
@@ -156,7 +156,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.turnListen, "turn-listen", "", "generated TURN UDP/TCP listen address")
 	flags.StringVar(&config.turnPublicEndpoint, "turn-public-endpoint", "", "generated public TURN host and port")
 	flags.StringVar(&config.turnRealm, "turn-realm", "", "generated TURN authentication realm")
-	flags.StringVar(&config.usageOutbox, "usage-outbox", "", "durable unacknowledged Relay usage outbox")
+	flags.StringVar(&config.relayJournal, "relay-journal", "", "durable unsettled Relay reservation journal")
 	flags.StringVar(&config.managedCertificateState, "managed-certificate-state", "", "atomic Edge managed certificate state file")
 	flags.StringVar(&config.bindingKeyBundleCache, "binding-key-bundle-cache", "", "durable Controller binding key bundle cache file")
 	if err := flags.Parse(arguments); err != nil {

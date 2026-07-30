@@ -7,59 +7,39 @@ import (
 	"github.com/anytty/anytty/cloud/edge/policy"
 )
 
-func TestLeaseLimiterSharesBudgetAndStopsAtExpiry(t *testing.T) {
-	now := time.Now().UTC()
-	limiter, err := policy.NewLeaseLimiter(now.Add(time.Second), 100, 100, now)
+func TestGroupLimiterSharesBudgetAndStopsAtExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
+	limiter, err := policy.NewGroupLimiter(now.Add(time.Second), 100, 100, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !limiter.Reserve(60, now) || limiter.Reserve(41, now) {
-		t.Fatal("shared lease byte budget was not enforced")
+		t.Fatal("shared reservation byte budget was not enforced")
 	}
 	limiter.Refund(10)
 	if !limiter.Reserve(40, now.Add(500*time.Millisecond)) {
-		t.Fatal("refunded shared lease budget was not reusable")
+		t.Fatal("refunded group budget was not reusable")
 	}
 	if limiter.Reserve(1, now.Add(time.Second)) {
-		t.Fatal("expired lease continued forwarding")
+		t.Fatal("expired grant continued forwarding")
 	}
 }
 
-func TestLeaseLimiterRenewalExtendsExpiryWithoutResettingUsage(t *testing.T) {
-	now := time.Now().UTC()
+func TestGroupLimiterRenewalOnlyExtendsExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
 	oldExpiry := now.Add(time.Second)
-	limiter, err := policy.NewLeaseLimiter(oldExpiry, 100, 1000, now)
+	limiter, err := policy.NewGroupLimiter(oldExpiry, 100, 1000, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !limiter.Reserve(60, now) {
-		t.Fatal("initial lease usage was rejected")
+		t.Fatal("initial group usage was rejected")
 	}
-	if err := limiter.Renew(now.Add(time.Minute), 100, 1000, now.Add(500*time.Millisecond)); err != nil {
+	if err := limiter.Renew(now.Add(time.Minute), now.Add(500*time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
 	afterOldExpiry := oldExpiry.Add(time.Millisecond)
-	if limiter.Reserve(41, afterOldExpiry) {
-		t.Fatal("renewal reset the cumulative lease byte budget")
-	}
-	if !limiter.Reserve(40, afterOldExpiry) {
-		t.Fatal("renewed lease rejected its remaining byte budget")
-	}
-}
-
-func TestAdmissionLimiterTakesStrictestAccountSessionAndLeaseRate(t *testing.T) {
-	now := time.Now().UTC()
-	account, _ := policy.NewRateLimiter(now.Add(time.Minute), 100, now)
-	firstSession, _ := policy.NewRateLimiter(now.Add(time.Minute), 100, now)
-	secondSession, _ := policy.NewRateLimiter(now.Add(time.Minute), 100, now)
-	firstLease, _ := policy.NewLeaseLimiter(now.Add(time.Minute), 1000, 100, now)
-	secondLease, _ := policy.NewLeaseLimiter(now.Add(time.Minute), 1000, 100, now)
-	first, _ := policy.NewAdmissionLimiter(account, firstSession, firstLease)
-	second, _ := policy.NewAdmissionLimiter(account, secondSession, secondLease)
-	if !first.Reserve(80, now) || second.Reserve(30, now) {
-		t.Fatal("separate sessions exceeded their shared account rate")
-	}
-	if !second.Reserve(30, now.Add(time.Second)) {
-		t.Fatal("shared account rate did not refill")
+	if limiter.Reserve(41, afterOldExpiry) || !limiter.Reserve(40, afterOldExpiry) {
+		t.Fatal("renewal changed the held byte budget")
 	}
 }

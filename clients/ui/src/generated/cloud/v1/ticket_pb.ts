@@ -18,37 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/ticket.proto.
  */
 export const file_cloud_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSJ7ChVEYWVtb25SZWxheURlbGVnYXRpb24SGwoTbWF4X2J5dGVzX3Blcl9sZWFzZRgBIAEoBBIhChltYXhfcmF0ZV9ieXRlc19wZXJfc2Vjb25kGAIgASgEEiIKGm1heF9jb25jdXJyZW50X2FsbG9jYXRpb25zGAMgASgNIpgDChNEYWVtb25CaW5kaW5nQ2xhaW1zEhIKCmJpbmRpbmdfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSDwoHZWRnZV9pZBgEIAEoCRIRCglkZXZpY2VfaWQYBSABKAkSGQoRZGV2aWNlX3B1YmxpY19rZXkYBiABKAwSNwoMY2FwYWJpbGl0aWVzGAcgAygOMiEuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkNhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJAChByZWxheV9kZWxlZ2F0aW9uGAogASgLMiYuYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlbGF5RGVsZWdhdGlvbhIQCghyZXZpc2lvbhgLIAEoBBIbChNlZGdlX2xvY2F0b3Jfc2hhMjU2GAwgASgMItUCChRBZ2VudEhlbGxvUHJvb2ZJbnB1dBIfChdiaW5kaW5nX2VudmVsb3BlX3NoYTI1NhgBIAEoDBIRCglkYWVtb25faWQYAiABKAkSFgoOZGFlbW9uX2Jvb3RfaWQYAyABKAkSGQoRZGFlbW9uX3Nlc3Npb25faWQYBCABKAkSMQoJY2hhbGxlbmdlGAUgASgLMh4uYW55dHR5LmNsb3VkLnYxLkVkZ2VDaGFsbGVuZ2USGAoQcHJvdG9jb2xfdmVyc2lvbhgGIAEoDRISCgptZXNzYWdlX2lkGAcgASgJEhIKCnN0cmVhbV9zZXEYCCABKAQSKwoHc2VudF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGAoQc29mdHdhcmVfdmVyc2lvbhgKIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YCyABKAQi5wEKFUNsb3VkUm91dGVHcmFudENsYWltcxIQCghncmFudF9pZBgBIAEoCRIRCglkYWVtb25faWQYAiABKAkSGQoRY2xpZW50X3B1YmxpY19rZXkYAyABKAwSLwoHcHJvZHVjdBgEIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0Ei0KCWlzc3VlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAicgoVQ2xpZW50Um91dGVQcm9vZklucHV0EhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSHAoUZ3JhbnRfcGF5bG9hZF9zaGEyNTYYAyABKAwSEgoKcmVxdWVzdF9pZBgEIAEoCSKfBAocR2F0ZXdheUNsaWVudEhlbGxvUHJvb2ZJbnB1dBIxCgljaGFsbGVuZ2UYASABKAsyHi5hbnl0dHkuY2xvdWQudjEuRWRnZUNoYWxsZW5nZRIcChRhdXRob3JpemF0aW9uX3NoYTI1NhgCIAEoDBI7CgthY2Nlc3NfbW9kZRgDIAEoDjImLmFueXR0eS5jbG91ZC52MS5DbG91ZENsaWVudEFjY2Vzc01vZGUSGAoQcHJvdG9jb2xfdmVyc2lvbhgEIAEoDRISCgptZXNzYWdlX2lkGAUgASgJEhEKCWNsaWVudF9pZBgGIAEoCRIWCg5jbGllbnRfYm9vdF9pZBgHIAEoCRIZChFjbGllbnRfc2Vzc2lvbl9pZBgIIAEoCRISCgpzdHJlYW1fc2VxGAkgASgEEisKB3NlbnRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhkKEWNsaWVudF9wdWJsaWNfa2V5GAsgASgMEi8KB3Byb2R1Y3QYDCABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBIYChBzb2Z0d2FyZV92ZXJzaW9uGA0gASgJEhoKEmF0dGVtcHRfZ2VuZXJhdGlvbhgOIAEoBBI6ChByZWxheV9wcmVmZXJlbmNlGA8gASgOMiAuYW55dHR5LmNsb3VkLnYxLlJlbGF5UHJlZmVyZW5jZSpWChBEYWVtb25DYXBhYmlsaXR5EiEKHURBRU1PTl9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASHwobREFFTU9OX0NBUEFCSUxJVFlfU0lHTkFMSU5HEAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_google_protobuf_timestamp, file_cloud_v1_runtime, file_cloud_v1_usage]);
-
-/**
- * DaemonRelayDelegation 是 Controller 授予 Edge 的 Relay 上限。
- * Edge 只能在这些上限内为已由 daemon 批准的客户端创建本地短租约。
- *
- * @generated from message anytty.cloud.v1.DaemonRelayDelegation
- */
-export type DaemonRelayDelegation = Message<"anytty.cloud.v1.DaemonRelayDelegation"> & {
-  /**
-   * @generated from field: uint64 max_bytes_per_lease = 1;
-   */
-  maxBytesPerLease: bigint;
-
-  /**
-   * @generated from field: uint64 max_rate_bytes_per_second = 2;
-   */
-  maxRateBytesPerSecond: bigint;
-
-  /**
-   * @generated from field: uint32 max_concurrent_allocations = 3;
-   */
-  maxConcurrentAllocations: number;
-};
-
-/**
- * Describes the message anytty.cloud.v1.DaemonRelayDelegation.
- * Use `create(DaemonRelayDelegationSchema)` to create a new message.
- */
-export const DaemonRelayDelegationSchema: GenMessage<DaemonRelayDelegation> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 0);
+  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSLcAgoTRGFlbW9uQmluZGluZ0NsYWltcxISCgpiaW5kaW5nX2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEg8KB2VkZ2VfaWQYBCABKAkSEQoJZGV2aWNlX2lkGAUgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAYgASgMEjcKDGNhcGFiaWxpdGllcxgHIAMoDjIhLmFueXR0eS5jbG91ZC52MS5EYWVtb25DYXBhYmlsaXR5Ei0KCWlzc3VlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIcmV2aXNpb24YCyABKAQSGwoTZWRnZV9sb2NhdG9yX3NoYTI1NhgMIAEoDEoECAoQCyLVAgoUQWdlbnRIZWxsb1Byb29mSW5wdXQSHwoXYmluZGluZ19lbnZlbG9wZV9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEhYKDmRhZW1vbl9ib290X2lkGAMgASgJEhkKEWRhZW1vbl9zZXNzaW9uX2lkGAQgASgJEjEKCWNoYWxsZW5nZRgFIAEoCzIeLmFueXR0eS5jbG91ZC52MS5FZGdlQ2hhbGxlbmdlEhgKEHByb3RvY29sX3ZlcnNpb24YBiABKA0SEgoKbWVzc2FnZV9pZBgHIAEoCRISCgpzdHJlYW1fc2VxGAggASgEEisKB3NlbnRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhgKEHNvZnR3YXJlX3ZlcnNpb24YCiABKAkSGgoSYXR0ZW1wdF9nZW5lcmF0aW9uGAsgASgEIucBChVDbG91ZFJvdXRlR3JhbnRDbGFpbXMSEAoIZ3JhbnRfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhkKEWNsaWVudF9wdWJsaWNfa2V5GAMgASgMEi8KB3Byb2R1Y3QYBCABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBItCglpc3N1ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInIKFUNsaWVudFJvdXRlUHJvb2ZJbnB1dBIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEhwKFGdyYW50X3BheWxvYWRfc2hhMjU2GAMgASgMEhIKCnJlcXVlc3RfaWQYBCABKAkinwQKHEdhdGV3YXlDbGllbnRIZWxsb1Byb29mSW5wdXQSMQoJY2hhbGxlbmdlGAEgASgLMh4uYW55dHR5LmNsb3VkLnYxLkVkZ2VDaGFsbGVuZ2USHAoUYXV0aG9yaXphdGlvbl9zaGEyNTYYAiABKAwSOwoLYWNjZXNzX21vZGUYAyABKA4yJi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRDbGllbnRBY2Nlc3NNb2RlEhgKEHByb3RvY29sX3ZlcnNpb24YBCABKA0SEgoKbWVzc2FnZV9pZBgFIAEoCRIRCgljbGllbnRfaWQYBiABKAkSFgoOY2xpZW50X2Jvb3RfaWQYByABKAkSGQoRY2xpZW50X3Nlc3Npb25faWQYCCABKAkSEgoKc3RyZWFtX3NlcRgJIAEoBBIrCgdzZW50X2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIZChFjbGllbnRfcHVibGljX2tleRgLIAEoDBIvCgdwcm9kdWN0GAwgASgOMh4uYW55dHR5LmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSGAoQc29mdHdhcmVfdmVyc2lvbhgNIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YDiABKAQSOgoQcmVsYXlfcHJlZmVyZW5jZRgPIAEoDjIgLmFueXR0eS5jbG91ZC52MS5SZWxheVByZWZlcmVuY2UqVgoQRGFlbW9uQ2FwYWJpbGl0eRIhCh1EQUVNT05fQ0FQQUJJTElUWV9VTlNQRUNJRklFRBAAEh8KG0RBRU1PTl9DQVBBQklMSVRZX1NJR05BTElORxABQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_google_protobuf_timestamp, file_cloud_v1_runtime, file_cloud_v1_usage]);
 
 /**
  * DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和 owning Edge，
@@ -103,11 +73,6 @@ export type DaemonBindingClaims = Message<"anytty.cloud.v1.DaemonBindingClaims">
   expiresAt?: Timestamp | undefined;
 
   /**
-   * @generated from field: anytty.cloud.v1.DaemonRelayDelegation relay_delegation = 10;
-   */
-  relayDelegation?: DaemonRelayDelegation | undefined;
-
-  /**
    * @generated from field: uint64 revision = 11;
    */
   revision: bigint;
@@ -123,7 +88,7 @@ export type DaemonBindingClaims = Message<"anytty.cloud.v1.DaemonBindingClaims">
  * Use `create(DaemonBindingClaimsSchema)` to create a new message.
  */
 export const DaemonBindingClaimsSchema: GenMessage<DaemonBindingClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 1);
+  messageDesc(file_cloud_v1_ticket, 0);
 
 /**
  * AgentHelloProofInput 覆盖 Edge 单次 challenge、完整 binding envelope 摘要和 AgentHello 中除 proof 自身外的全部字段。
@@ -192,7 +157,7 @@ export type AgentHelloProofInput = Message<"anytty.cloud.v1.AgentHelloProofInput
  * Use `create(AgentHelloProofInputSchema)` to create a new message.
  */
 export const AgentHelloProofInputSchema: GenMessage<AgentHelloProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 2);
+  messageDesc(file_cloud_v1_ticket, 1);
 
 /**
  * CloudRouteGrantClaims 由 owning daemon 的 DeviceIdentity 签发，只授权发现和信令。
@@ -237,7 +202,7 @@ export type CloudRouteGrantClaims = Message<"anytty.cloud.v1.CloudRouteGrantClai
  * Use `create(CloudRouteGrantClaimsSchema)` to create a new message.
  */
 export const CloudRouteGrantClaimsSchema: GenMessage<CloudRouteGrantClaims> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 3);
+  messageDesc(file_cloud_v1_ticket, 2);
 
 /**
  * ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
@@ -271,7 +236,7 @@ export type ClientRouteProofInput = Message<"anytty.cloud.v1.ClientRouteProofInp
  * Use `create(ClientRouteProofInputSchema)` to create a new message.
  */
 export const ClientRouteProofInputSchema: GenMessage<ClientRouteProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 4);
+  messageDesc(file_cloud_v1_ticket, 3);
 
 /**
  * GatewayClientHelloProofInput 对两种 authorization 使用同一 v2 transcript。
@@ -361,7 +326,7 @@ export type GatewayClientHelloProofInput = Message<"anytty.cloud.v1.GatewayClien
  * Use `create(GatewayClientHelloProofInputSchema)` to create a new message.
  */
 export const GatewayClientHelloProofInputSchema: GenMessage<GatewayClientHelloProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 5);
+  messageDesc(file_cloud_v1_ticket, 4);
 
 /**
  * DaemonCapability 是 enrollment 时授予 daemon 的 Edge 侧能力，不表达 terminal 权限。

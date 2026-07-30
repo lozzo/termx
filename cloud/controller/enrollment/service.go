@@ -210,27 +210,12 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	}
 	locatorDigest := sha256.Sum256(locatorPayload)
 	now := service.now()
-	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), RelayDelegation: daemonRelayDelegation(entitlement), Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:]}
+	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:]}
 	signed, err := ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &cloudv1.CompleteDaemonEnrollmentResponse{Daemon: projectDaemon(daemon), DaemonBinding: signed, EdgeLocator: locator}, nil
-}
-
-func daemonRelayDelegation(entitlement *cloudv1.EffectiveEntitlement) *cloudv1.DaemonRelayDelegation {
-	capability := entitlement.GetCapability()
-	if entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || capability == nil || !capability.GetRelayEnabled() {
-		return nil
-	}
-	maxBytes := capability.GetRelayMaxBytesPerLease()
-	if remaining := entitlement.GetRelayRemainingBytes(); remaining < maxBytes {
-		maxBytes = remaining
-	}
-	if maxBytes == 0 || capability.GetRelayMaxRateBytesPerSecond() == 0 || capability.GetRelayMaxConcurrency() == 0 {
-		return nil
-	}
-	return &cloudv1.DaemonRelayDelegation{MaxBytesPerLease: maxBytes, MaxRateBytesPerSecond: capability.GetRelayMaxRateBytesPerSecond(), MaxConcurrentAllocations: capability.GetRelayMaxConcurrency()}
 }
 
 func (service *Service) selectEdge(ctx context.Context) (edgeconfig.Edge, error) {

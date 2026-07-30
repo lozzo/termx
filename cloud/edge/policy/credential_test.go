@@ -11,26 +11,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestCredentialMaterialIsSessionSpecificAndRestartBound(t *testing.T) {
-	now := time.Now().UTC()
-	claims := &cloudv1.RelayLeaseClaims{LeaseId: "lease-r6", SessionId: "session-r6", ExpiresAt: timestamppb.New(now.Add(time.Minute))}
+func TestCredentialMaterialIsReservationSpecificAndRestartBound(t *testing.T) {
+	now := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
+	grant := &cloudv1.RelayGrant{ReservationId: "reservation-r6", SessionId: "session-r6", AuthorizedUntil: timestamppb.New(now.Add(time.Minute))}
 	first, err := policy.NewCredentialDeriver(bytes.Repeat([]byte{0x11}, 32), []string{"turn:edge.example:3478?transport=udp"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	material, err := first.Material(claims)
+	material, err := first.Material(grant)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if material.GetUsername() == "" || material.GetCredential() == "" || material.GetExpiresAt().AsTime() != claims.GetExpiresAt().AsTime() {
-		t.Fatalf("incomplete material: %v", material)
+	if material.GetReservationId() != grant.GetReservationId() || material.GetUsername() != "v2:reservation-r6:session-r6" || material.GetCredential() == "" || !material.GetExpiresAt().AsTime().Equal(grant.GetAuthorizedUntil().AsTime()) {
+		t.Fatalf("incomplete credential material: %v", material)
 	}
-	if material.GetUsername() != "v1:lease-r6:session-r6" {
-		t.Fatalf("credential username = %q", material.GetUsername())
-	}
-	renewedClaims := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
-	renewedClaims.ExpiresAt = timestamppb.New(now.Add(2 * time.Minute))
-	renewed, err := first.Material(renewedClaims)
+	renewedGrant := proto.Clone(grant).(*cloudv1.RelayGrant)
+	renewedGrant.AuthorizedUntil = timestamppb.New(now.Add(2 * time.Minute))
+	renewed, err := first.Material(renewedGrant)
 	if err != nil {
 		t.Fatal(err)
 	}

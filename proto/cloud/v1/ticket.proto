@@ -15,14 +15,6 @@ enum DaemonCapability {
   DAEMON_CAPABILITY_SIGNALING = 1;
 }
 
-// DaemonRelayDelegation 是 Controller 授予 Edge 的 Relay 上限。
-// Edge 只能在这些上限内为已由 daemon 批准的客户端创建本地短租约。
-message DaemonRelayDelegation {
-  uint64 max_bytes_per_lease = 1;
-  uint64 max_rate_bytes_per_second = 2;
-  uint32 max_concurrent_allocations = 3;
-}
-
 // DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和 owning Edge，
 // 不是 bearer token；每次 AgentGateway 连接仍必须证明 DeviceIdentity 私钥持有权。
 message DaemonBindingClaims {
@@ -35,7 +27,7 @@ message DaemonBindingClaims {
   repeated DaemonCapability capabilities = 7;
   google.protobuf.Timestamp issued_at = 8;
   google.protobuf.Timestamp expires_at = 9;
-  DaemonRelayDelegation relay_delegation = 10;
+  reserved 10;
   uint64 revision = 11;
   bytes edge_locator_sha256 = 12;
 }
