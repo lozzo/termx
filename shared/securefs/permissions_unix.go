@@ -4,6 +4,7 @@
 package securefs
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
@@ -24,4 +25,19 @@ func IsPrivateFile(_ string, info os.FileInfo) bool {
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && int(stat.Uid) == os.Geteuid()
+}
+
+// ValidatePrivateFileHandle checks the metadata of the already-open file descriptor.
+func ValidatePrivateFileHandle(file *os.File) error {
+	if file == nil {
+		return errors.New("private file handle is required")
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !IsPrivateFile(file.Name(), info) {
+		return errors.New("file is not private to the current user")
+	}
+	return nil
 }

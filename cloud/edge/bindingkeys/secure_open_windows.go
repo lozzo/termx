@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/anytty/anytty/shared/securefs"
 	"golang.org/x/sys/windows"
 )
 
@@ -41,23 +42,5 @@ func validateOpenedBundleFile(file *os.File) error {
 	if information.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
 		return errors.New("binding key bundle cache must be a regular file")
 	}
-	descriptor, err := windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
-	if err != nil {
-		return err
-	}
-	if descriptor == nil {
-		return errors.New("binding key bundle cache has no security descriptor")
-	}
-	owner, _, err := descriptor.Owner()
-	if err != nil {
-		return err
-	}
-	currentUser, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		return err
-	}
-	if owner == nil || !owner.Equals(currentUser.User.Sid) {
-		return errors.New("binding key bundle cache must be owned by the current user")
-	}
-	return nil
+	return securefs.ValidatePrivateFileHandle(file)
 }

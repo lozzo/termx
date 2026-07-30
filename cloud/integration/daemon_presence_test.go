@@ -7,9 +7,11 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -317,6 +320,90 @@ func TestControllerDoesNotPublishWelcomeForStaleBindingOwner(t *testing.T) {
 	}
 }
 
+func TestPostgresStaleOwnerPermanentlyRevokesControllerReadiness(t *testing.T) {
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	database, err := postgres.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	publicA, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerA, err := controllerbindingkeys.New(ctx, controllerbindingkeys.Config{
+		Store: database, TTL: 2 * time.Hour,
+		Keys: []*cloudv1.VerificationKey{{KeyId: "health-key-a", Algorithm: "Ed25519", PublicKey: publicA}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificates := newCertificateFiles(t, testEdgeID)
+	controllerRuntime, directoryState := startPresenceControllerWithOwnership(t, certificates, "127.0.0.1:0", ownerA.Bundle, ownerA)
+	defer func() {
+		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelShutdown()
+		_ = controllerRuntime.Shutdown(shutdownContext)
+		directoryState.Close()
+	}()
+	assertHTTPStatus(t, http.DefaultClient, "http://"+controllerRuntime.HealthAddress()+"/readyz", http.StatusOK)
+	assertControllerGRPCHealth(t, controllerRuntime, certificates, grpc_health_v1.HealthCheckResponse_SERVING)
+
+	publicB, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controllerbindingkeys.New(ctx, controllerbindingkeys.Config{
+		Store: database, TTL: 2 * time.Hour,
+		Keys: []*cloudv1.VerificationKey{{KeyId: "health-key-b", Algorithm: "Ed25519", PublicKey: publicB}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errorsOut := make(chan error, 32)
+	var group sync.WaitGroup
+	for range 32 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			_, bundleErr := ownerA.Bundle(ctx)
+			errorsOut <- bundleErr
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(errorsOut)
+	for bundleErr := range errorsOut {
+		if !errors.Is(bundleErr, controllerbindingkeys.ErrKeySetReplay) {
+			t.Fatalf("stale owner error=%v", bundleErr)
+		}
+	}
+	assertHTTPStatus(t, http.DefaultClient, "http://"+controllerRuntime.HealthAddress()+"/readyz", http.StatusServiceUnavailable)
+	assertControllerGRPCHealth(t, controllerRuntime, certificates, grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	if _, err := ownerA.Bundle(ctx); !errors.Is(err, controllerbindingkeys.ErrKeySetReplay) {
+		t.Fatalf("latched stale owner error=%v", err)
+	}
+	assertHTTPStatus(t, http.DefaultClient, "http://"+controllerRuntime.HealthAddress()+"/readyz", http.StatusServiceUnavailable)
+
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+	if err := controllerRuntime.Shutdown(shutdownContext); err != nil {
+		t.Fatal(err)
+	}
+	if err := controllerRuntime.Shutdown(shutdownContext); err != nil {
+		t.Fatalf("idempotent shutdown: %v", err)
+	}
+}
+
 func restartBinding(t *testing.T, privateKey ed25519.PrivateKey) (remoteauth.Identity, *cloudv1.SignedEnvelope, *cloudv1.DaemonBindingClaims) {
 	return restartBindingForKey(t, "binding-restart", privateKey)
 }
@@ -383,6 +470,10 @@ func startPresenceController(t *testing.T, certificates certificateFiles, listen
 }
 
 func startPresenceControllerWithProvider(t *testing.T, certificates certificateFiles, listen string, provider func(context.Context) (*cloudv1.KeyBundle, error)) (*controllerruntime.Runtime, *directory.Directory) {
+	return startPresenceControllerWithOwnership(t, certificates, listen, provider, nil)
+}
+
+func startPresenceControllerWithOwnership(t *testing.T, certificates certificateFiles, listen string, provider func(context.Context) (*cloudv1.KeyBundle, error), ownership interface{ SetOwnershipLostHandler(func()) }) (*controllerruntime.Runtime, *directory.Directory) {
 	t.Helper()
 	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
 	if err != nil {
@@ -393,10 +484,34 @@ func startPresenceControllerWithProvider(t *testing.T, certificates certificateF
 		directoryState.Close()
 		t.Fatal(err)
 	}
-	runtime, err := controllerruntime.Start(controllerruntime.Config{GRPCListenAddress: listen, HealthListenAddress: "127.0.0.1:0", TLSCertificateFile: certificates.controllerCert, TLSPrivateKeyFile: certificates.controllerKey, EdgeCAFile: certificates.rootCA}, service)
+	runtime, err := controllerruntime.Start(controllerruntime.Config{GRPCListenAddress: listen, HealthListenAddress: "127.0.0.1:0", TLSCertificateFile: certificates.controllerCert, TLSPrivateKeyFile: certificates.controllerKey, EdgeCAFile: certificates.rootCA, BindingKeyOwnership: ownership}, service)
 	if err != nil {
 		directoryState.Close()
 		t.Fatal(err)
 	}
 	return runtime, directoryState
+}
+
+func assertControllerGRPCHealth(t *testing.T, controllerRuntime *controllerruntime.Runtime, certificates certificateFiles, expected grpc_health_v1.HealthCheckResponse_ServingStatus) {
+	t.Helper()
+	clientCertificate, err := tls.LoadX509KeyPair(certificates.edgeIdentityCert, certificates.edgeIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(controllerRuntime.GRPCAddress(), grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+		MinVersion: tls.VersionTLS13, RootCAs: certificates.rootPool, ServerName: testControllerServer, Certificates: []tls.Certificate{clientCertificate},
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	checkContext, cancelCheck := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelCheck()
+	response, err := grpc_health_v1.NewHealthClient(connection).Check(checkContext, &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetStatus() != expected {
+		t.Fatalf("Controller gRPC health=%v want=%v", response.GetStatus(), expected)
+	}
 }

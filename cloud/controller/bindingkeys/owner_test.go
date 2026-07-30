@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -145,5 +146,50 @@ func TestOwnerNeverMovesSameRevisionExpiryBackward(t *testing.T) {
 	}
 	if refreshed.GetRevision() != original.GetRevision() || refreshed.GetExpiresAt().AsTime().Before(original.GetExpiresAt().AsTime()) {
 		t.Fatalf("same revision expiry moved backward: original=%v refreshed=%v", original, refreshed)
+	}
+}
+
+func TestOwnerOwnershipLossLatchIsLateSafeConcurrentAndIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store := &revisionStore{}
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	keyA := &cloudv1.VerificationKey{KeyId: "key-a", Algorithm: "Ed25519", PublicKey: make([]byte, ed25519.PublicKeySize)}
+	owner, err := New(ctx, Config{Store: store, TTL: time.Hour, Now: func() time.Time { return now }, Keys: []*cloudv1.VerificationKey{keyA}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyB := &cloudv1.VerificationKey{KeyId: "key-b", Algorithm: "Ed25519", PublicKey: append(make([]byte, ed25519.PublicKeySize-1), 1)}
+	if _, err := New(ctx, Config{Store: store, TTL: time.Hour, Now: func() time.Time { return now }, Keys: []*cloudv1.VerificationKey{keyB}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Bundle(ctx); !errors.Is(err, ErrKeySetReplay) {
+		t.Fatalf("first stale error=%v", err)
+	}
+	var notifications atomic.Int32
+	owner.SetOwnershipLostHandler(func() { notifications.Add(1) })
+	owner.SetOwnershipLostHandler(func() { notifications.Add(100) })
+
+	start := make(chan struct{})
+	errorsOut := make(chan error, 32)
+	var group sync.WaitGroup
+	for range 32 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			_, bundleErr := owner.Bundle(ctx)
+			errorsOut <- bundleErr
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(errorsOut)
+	for bundleErr := range errorsOut {
+		if !errors.Is(bundleErr, ErrKeySetReplay) {
+			t.Fatalf("concurrent stale error=%v", bundleErr)
+		}
+	}
+	if notifications.Load() != 1 {
+		t.Fatalf("ownership loss notifications=%d want=1", notifications.Load())
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/securefs"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -342,6 +343,12 @@ func writeBytes(t *testing.T, path string, payload []byte, mode os.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(path, payload, mode); err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		if err := securefs.SecureFile(path); err != nil {
+			t.Fatal(err)
+		}
+		return
 	}
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatal(err)

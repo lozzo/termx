@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anytty/anytty/cloud/ticket"
@@ -46,6 +48,11 @@ type Owner struct {
 	keys   []*cloudv1.VerificationKey
 	ttl    time.Duration
 	now    func() time.Time
+
+	ownershipLost atomic.Bool
+	handlerMu     sync.Mutex
+	lostHandler   func()
+	notifyOnce    sync.Once
 }
 
 // New validates and canonicalizes the keyset before reconciling its persistent revision.
@@ -76,9 +83,18 @@ func New(ctx context.Context, config Config) (*Owner, error) {
 
 // Bundle verifies that this Owner's digest is still current and returns database-owned metadata.
 func (owner *Owner) Bundle(ctx context.Context) (*cloudv1.KeyBundle, error) {
+	if owner.ownershipLost.Load() {
+		return nil, ErrKeySetReplay
+	}
 	metadata, err := owner.store.ReconcileBindingKeySet(ctx, owner.digest, owner.now().UTC(), owner.ttl)
 	if err != nil {
+		if errors.Is(err, ErrKeySetReplay) {
+			owner.markOwnershipLost()
+		}
 		return nil, err
+	}
+	if owner.ownershipLost.Load() {
+		return nil, ErrKeySetReplay
 	}
 	if !bytes.Equal(metadata.KeySetSHA256, owner.digest) {
 		return nil, errors.New("binding key revision store returned a different current digest")
@@ -92,6 +108,38 @@ func (owner *Owner) Bundle(ctx context.Context) (*cloudv1.KeyBundle, error) {
 		return nil, fmt.Errorf("binding key revision store returned invalid metadata: %w", err)
 	}
 	return canonical, nil
+}
+
+// SetOwnershipLostHandler registers the process-level readiness callback.
+// A loss detected before registration is delivered synchronously during registration.
+func (owner *Owner) SetOwnershipLostHandler(handler func()) {
+	if handler == nil {
+		return
+	}
+	owner.handlerMu.Lock()
+	if owner.lostHandler == nil {
+		owner.lostHandler = handler
+	}
+	lost := owner.ownershipLost.Load()
+	owner.handlerMu.Unlock()
+	if lost {
+		owner.notifyOwnershipLost()
+	}
+}
+
+func (owner *Owner) markOwnershipLost() {
+	if owner.ownershipLost.CompareAndSwap(false, true) {
+		owner.notifyOwnershipLost()
+	}
+}
+
+func (owner *Owner) notifyOwnershipLost() {
+	owner.handlerMu.Lock()
+	handler := owner.lostHandler
+	owner.handlerMu.Unlock()
+	if handler != nil {
+		owner.notifyOnce.Do(handler)
+	}
 }
 
 func cloneKeys(keys []*cloudv1.VerificationKey) []*cloudv1.VerificationKey {

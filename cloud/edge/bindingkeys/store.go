@@ -14,6 +14,7 @@ import (
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/filepublish"
+	"github.com/anytty/anytty/shared/securefs"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -143,6 +144,9 @@ func (store *Store) publish(payload []byte) error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
+	if err := securefs.SecureDirectory(directory); err != nil {
+		return err
+	}
 	if err := validateExistingTarget(store.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -152,7 +156,11 @@ func (store *Store) publish(payload []byte) error {
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
+	if err := securefs.SecureFile(temporaryPath); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := validateOpenedBundleFile(temporary); err != nil {
 		_ = temporary.Close()
 		return err
 	}

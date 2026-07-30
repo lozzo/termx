@@ -238,6 +238,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		TLSCertificateFile:  config.tlsCertificate,
 		TLSPrivateKeyFile:   config.tlsPrivateKey,
 		EdgeCAFile:          config.edgeCA,
+		BindingKeyOwnership: bindingKeyOwner,
 	}, service)
 	if err != nil {
 		return err

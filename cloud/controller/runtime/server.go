@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anytty/anytty/cloud/processhealth"
@@ -28,6 +29,7 @@ type Config struct {
 	TLSCertificateFile  string
 	TLSPrivateKeyFile   string
 	EdgeCAFile          string
+	BindingKeyOwnership interface{ SetOwnershipLostHandler(func()) }
 }
 
 // Runtime 拥有 Controller 的 gRPC/health listener 和优雅关闭顺序。
@@ -41,6 +43,7 @@ type Runtime struct {
 	drainer        interface{ BeginShutdown() }
 	errors         chan error
 	shutdownOnce   sync.Once
+	notReady       atomic.Bool
 }
 
 // Start 绑定 listener，注册 EdgeControl 并在两个独立 goroutine 中启动 gRPC 与 loopback health。
@@ -91,6 +94,9 @@ func Start(config Config, service cloudv1.EdgeControlServer) (*Runtime, error) {
 		grpcListener: grpcListener, healthListener: healthListener, health: healthState,
 		errors: make(chan error, 2),
 	}
+	if config.BindingKeyOwnership != nil {
+		config.BindingKeyOwnership.SetOwnershipLostHandler(runtime.markNotReady)
+	}
 	if drainer, ok := service.(interface{ BeginShutdown() }); ok {
 		runtime.drainer = drainer
 	}
@@ -118,8 +124,7 @@ func (runtime *Runtime) Errors() <-chan error {
 func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	var shutdownErr error
 	runtime.shutdownOnce.Do(func() {
-		runtime.health.SetReady(false)
-		runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		runtime.markNotReady()
 		if runtime.drainer != nil {
 			runtime.drainer.BeginShutdown()
 		}
@@ -140,6 +145,13 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 		runtime.health.SetAlive(false)
 	})
 	return shutdownErr
+}
+
+func (runtime *Runtime) markNotReady() {
+	if runtime.notReady.CompareAndSwap(false, true) {
+		runtime.health.SetReady(false)
+		runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	}
 }
 
 func (runtime *Runtime) serveGRPC() {
