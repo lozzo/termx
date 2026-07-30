@@ -112,7 +112,7 @@ export interface TerminalProps {
   session: ProtoClientSession
   className?: string
   onReady?: () => void
-  onInput?: ((data: string) => void) | undefined
+  onInput?: ((data: string) => boolean) | undefined
   onCursorMove?: (() => void) | undefined
   onBufferChange?: ((isAlternate: boolean) => void) | undefined
   onResizeControl?: ((control: TerminalResizeControl) => void) | undefined
@@ -126,7 +126,7 @@ export interface TerminalProps {
 }
 
 export interface TerminalHandle {
-  sendInput(data: string): void
+  sendInput(data: string): boolean
   sendResize(cols: number, rows: number): void
   requestResizeOwner(): Promise<TerminalResizeControl>
   releaseResizeOwner(): Promise<TerminalResizeControl>
@@ -134,7 +134,7 @@ export interface TerminalHandle {
   focus(): void
   blur(): void
   fit(): void
-  pasteText(text: string): void
+  pasteText(text: string): boolean
   selectAll(): void
   selectVisible(): void
   getSelection(): string
@@ -244,7 +244,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const settingsRef = useRef(settings)
   const modifierStateRef = useRef<TerminalModifierState | undefined>(undefined)
   const onModifierStateChangeRef = useRef<((state: TerminalModifierState) => void) | undefined>(undefined)
-  const onInputRef = useRef<((data: string) => void) | undefined>(undefined)
+  const onInputRef = useRef<((data: string) => boolean) | undefined>(undefined)
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
   const onBufferChangeRef = useRef<((isAlternate: boolean) => void) | undefined>(undefined)
   const onResizeControlRef = useRef<((control: TerminalResizeControl) => void) | undefined>(undefined)
@@ -711,17 +711,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
   }, [])
 
-  const sendInputAtCurrentSize = useCallback((data: string) => {
-    terminalSession.sendInput(data, currentTerminalSize())
+  const sendInputAtCurrentSize = useCallback((data: string): boolean => {
+    return terminalSession.sendInput(data, currentTerminalSize())
   }, [currentTerminalSize, terminalSession.sendInput])
 
-  const sendUserInput = useCallback((data: string) => {
+  const sendUserInput = useCallback((data: string): boolean => {
     const delegateInput = onInputRef.current
     if (delegateInput) {
-      delegateInput(data)
-      return
+      return delegateInput(data)
     }
-    sendInputAtCurrentSize(data)
+    return sendInputAtCurrentSize(data)
   }, [sendInputAtCurrentSize])
 
   const scheduleFit = useCallback(() => {
@@ -777,7 +776,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     },
     pasteText: (text: string) => {
       const isMultiline = text.includes('\n') || text.includes('\r')
-      sendInputAtCurrentSize(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
+      return sendInputAtCurrentSize(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
     },
     selectAll: () => {
       if (terminalDisposedRef.current) return
@@ -1024,8 +1023,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const currentModifiers = modifierStateRef.current
       if (currentModifiers && (currentModifiers.ctrl !== 'off' || currentModifiers.alt !== 'off')) {
         const result = applyTerminalModifiers(data, currentModifiers)
-        onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
-        sendUserInput(result.data)
+        const accepted = sendUserInput(result.data)
+        if (accepted && (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt)) {
+          onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
+        }
         return
       }
       sendUserInput(data)
@@ -1042,8 +1043,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (event.key.length !== 1) return true
 
       const result = applyTerminalModifiers(event.key, currentModifiers)
-      onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
-      sendUserInput(result.data)
+      if (result.data === event.key) return true
+      const accepted = sendUserInput(result.data)
+      if (accepted && (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt)) {
+        onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
+      }
       return false
     })
     const cursorDisposable = term.onCursorMove(() => {

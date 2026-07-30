@@ -17,17 +17,22 @@ import { MachineWorkspace } from './MachineWorkspace'
 
 const terminalRender = vi.hoisted(() => vi.fn())
 const terminalSendInput = vi.hoisted(() => vi.fn())
+const terminalPasteText = vi.hoisted(() => vi.fn())
+const terminalFocus = vi.hoisted(() => vi.fn())
+const terminalBlur = vi.hoisted(() => vi.fn())
+const terminalHarness = vi.hoisted(() => ({ exposeHandle: true }))
 
 vi.mock('../terminal/Terminal', () => ({
   Terminal: forwardRef(function MockTerminal(props: unknown, ref) {
     terminalRender(props)
-    useImperativeHandle(ref, () => ({
-      sendInput: terminalSendInput,
+    const terminalId = (props as { terminalId: string }).terminalId
+    useImperativeHandle(ref, () => terminalHarness.exposeHandle ? ({
+      sendInput: (data: string) => terminalSendInput(terminalId, data),
       sendResize: () => {},
       requestResizeOwner: async () => ({ canResize: true, reason: 'owner' }),
       releaseResizeOwner: async () => ({ canResize: false, reason: 'follower' }),
-      focus: () => {},
-      blur: () => {},
+      focus: () => terminalFocus(terminalId),
+      blur: () => terminalBlur(terminalId),
       fit: () => {},
       reattach: () => {},
       selectAll: () => {},
@@ -35,20 +40,24 @@ vi.mock('../terminal/Terminal', () => ({
       getSelection: () => '',
       hasSelection: () => false,
       clearSelection: () => {},
-      pasteText: () => {},
+      pasteText: (text: string) => terminalPasteText(terminalId, text),
       getCursorInfo: () => null,
       adjustInputPosition: () => {},
       getBufferType: () => 'normal',
       updateOptions: () => {},
-    }))
-    return <div data-testid="mock-terminal" />
+    }) : null)
+    return <div data-terminal-id={terminalId} data-testid="mock-terminal" />
   }),
 }))
 
 describe('MachineWorkspace terminal creation', () => {
   beforeEach(async () => {
     terminalRender.mockReset()
-    terminalSendInput.mockReset()
+    terminalSendInput.mockReset().mockReturnValue(true)
+    terminalPasteText.mockReset().mockReturnValue(true)
+    terminalFocus.mockReset()
+    terminalBlur.mockReset()
+    terminalHarness.exposeHandle = true
     await anyttyI18n.changeLanguage('en')
   })
   afterEach(() => {
@@ -187,12 +196,14 @@ describe('MachineWorkspace terminal creation', () => {
     view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline={false} connectionReady={false} />)
     await screen.findByText('Your phone is offline')
 
-    const latestProps = terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => void }
-    latestProps.onInput('whoami\n')
+    const latestProps = terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }
+    expect(latestProps.onInput('whoami\n')).toBe(false)
     expect(terminalSendInput).not.toHaveBeenCalled()
 
     view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline connectionReady={false} />)
     await screen.findByText('Connection interrupted. Reconnecting')
+    expect((terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }).onInput('blocked')).toBe(false)
+    expect(terminalSendInput).not.toHaveBeenCalled()
     expect(connector.reconnect).not.toHaveBeenCalled()
     expect(connector.connect).toHaveBeenCalledTimes(1)
 
@@ -218,6 +229,133 @@ describe('MachineWorkspace terminal creation', () => {
     view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline={false} connectionReady={false} />)
     await screen.findByText('Your phone is offline')
     expect(screen.queryByText('Connection restored')).toBeNull()
+  })
+
+  it('returns false without a terminal handle and for a rejected single-target send', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+
+    terminalHarness.exposeHandle = false
+    const view = render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    let onInput = (terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }).onInput
+    expect(onInput('no-handle')).toBe(false)
+    expect(terminalSendInput).not.toHaveBeenCalled()
+
+    view.unmount()
+    terminalHarness.exposeHandle = true
+    terminalSendInput.mockReturnValue(false)
+    const rejectedSession = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => rejectedSession) }}
+      initialMachine={machine}
+    />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    onInput = (terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }).onInput
+    expect(onInput('rejected')).toBe(false)
+    expect(terminalSendInput).toHaveBeenLastCalledWith('term-shell', 'rejected')
+  })
+
+  it('accepts synchronized split input when either target succeeds and never resends to a successful target', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminals = [
+      {
+        terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+        command: '/bin/zsh', cols: 80, rows: 24,
+      },
+      {
+        terminalId: 'term-logs', machineId: 'studio', title: 'Logs', state: 'running' as const,
+        command: 'tail -f app.log', cols: 80, rows: 24,
+      },
+    ]
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => terminals),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open terminal menu' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Split terminal' }))
+    const splitSheet = await screen.findByTestId('anytty-split-terminal-sheet')
+    await userEvent.click(within(splitSheet).getByRole('button', { name: 'Open Logs' }))
+    await waitFor(() => expect(screen.getAllByTestId('mock-terminal')).toHaveLength(2))
+    await userEvent.click(screen.getByRole('button', { name: 'Open terminal menu' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync input' }))
+
+    const onInput = (terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }).onInput
+    const assertOneAttemptPerTarget = (data: string) => {
+      expect(terminalSendInput.mock.calls.filter(([, sent]) => sent === data)).toEqual([
+        ['term-shell', data],
+        ['term-logs', data],
+      ])
+    }
+
+    terminalSendInput.mockClear()
+    terminalSendInput.mockReturnValue(false)
+    expect(onInput('all-fail')).toBe(false)
+    assertOneAttemptPerTarget('all-fail')
+
+    terminalSendInput.mockClear()
+    terminalSendInput.mockImplementation((terminalId: string) => terminalId === 'term-shell')
+    expect(onInput('partial-success')).toBe(true)
+    assertOneAttemptPerTarget('partial-success')
+
+    terminalSendInput.mockClear()
+    terminalSendInput.mockReturnValue(true)
+    expect(onInput('all-success')).toBe(true)
+    assertOneAttemptPerTarget('all-success')
+  })
+
+  it('uses keyboard focus lock only to prevent soft-keyboard focus while shortcuts remain sendable', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Prevent the system keyboard from opening' }))
+    await waitFor(() => {
+      const props = terminalRender.mock.calls.at(-1)?.[0] as { preventFocus: boolean }
+      expect(props.preventFocus).toBe(true)
+    })
+    expect(terminalBlur).toHaveBeenCalledWith('term-shell')
+
+    const onInput = (terminalRender.mock.calls.at(-1)?.[0] as { onInput: (data: string) => boolean }).onInput
+    expect(onInput('shortcut')).toBe(true)
+    expect(terminalSendInput).toHaveBeenLastCalledWith('term-shell', 'shortcut')
   })
 
   it('refreshes daemon inventory after a list-page manual reconnect', async () => {

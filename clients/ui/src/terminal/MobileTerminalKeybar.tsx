@@ -11,16 +11,16 @@ import { useTranslation } from 'react-i18next'
 import '../i18n'
 
 export interface MobileTerminalKeybarProps {
-  onInput: (data: string) => void
+  onInput: (data: string) => boolean
   onFocusKeyboard?: (() => void) | undefined
   onBlurKeyboard?: (() => void) | undefined
-  onToggleKeyboardLock?: (() => void) | undefined
+  onToggleKeyboardFocusLock?: (() => void) | undefined
   fnOpen?: boolean | undefined
   onToggleFn?: (() => void) | undefined
   modifierState?: TerminalModifierState | undefined
   onModifierStateChange?: ((state: TerminalModifierState) => void) | undefined
   keyboardVisible?: boolean | undefined
-  keyboardLocked?: boolean | undefined
+  keyboardFocusLocked?: boolean | undefined
   className?: string | undefined
 }
 
@@ -28,13 +28,13 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   onInput,
   onFocusKeyboard,
   onBlurKeyboard,
-  onToggleKeyboardLock,
+  onToggleKeyboardFocusLock,
   fnOpen = false,
   onToggleFn,
   modifierState,
   onModifierStateChange,
   keyboardVisible = false,
-  keyboardLocked = false,
+  keyboardFocusLocked = false,
   className,
 }: MobileTerminalKeybarProps, forwardedRef: Ref<HTMLDivElement>) {
   const { t } = useTranslation()
@@ -42,17 +42,23 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   const activeModifierState = modifierState ?? internalModifierState
   const setModifierState = onModifierStateChange ?? setInternalModifierState
 
-  const send = useCallback((data: string) => {
+  const send = useCallback((data: string): boolean => {
     const result = applyTerminalModifiers(data, activeModifierState)
-    setModifierState({ ctrl: result.ctrl, alt: result.alt })
-    onInput(result.data)
+    const accepted = onInput(result.data)
+    if (!accepted) return false
+    hapticSelection()
+    if (result.ctrl !== activeModifierState.ctrl || result.alt !== activeModifierState.alt) {
+      setModifierState({ ctrl: result.ctrl, alt: result.alt })
+    }
+    return true
   }, [activeModifierState, onInput, setModifierState])
 
-  const cls = 'relative flex h-11 w-11 min-w-11 flex-none touch-manipulation select-none items-center justify-center overflow-hidden border-x border-transparent text-center font-mono text-[10px] font-medium'
+  const buttonBaseClass = 'relative flex h-11 flex-none touch-manipulation select-none items-center justify-center overflow-hidden border-x border-transparent text-center font-mono text-[10px] font-medium'
+  const cls = `${buttonBaseClass} w-11 min-w-11`
   const keyboardButtonClass = keyboardVisible
     ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]'
     : 'bg-transparent text-[var(--anytty-muted)] active:bg-[var(--anytty-surface-raised)]'
-  const keyboardLockButtonClass = keyboardLocked
+  const keyboardFocusLockButtonClass = keyboardFocusLocked
     ? 'bg-amber-300 text-zinc-950'
     : 'bg-transparent text-[var(--anytty-muted)] active:bg-[var(--anytty-surface-raised)]'
 
@@ -65,7 +71,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
         type="button"
         aria-label={ariaLabel}
         className={`${cls} bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)] active:opacity-70`}
-        onPointerDown={(e) => { e.preventDefault(); hapticSelection() }}
+        onPointerDown={(e) => e.preventDefault()}
         onClick={() => send(data)}
       >
         {label}
@@ -127,7 +133,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           aria-label={t(keyboardVisible ? 'terminal.tools.hideKeyboard' : 'terminal.tools.showKeyboard')}
           aria-pressed={keyboardVisible}
           className={`${cls} ${keyboardButtonClass} disabled:opacity-45`}
-          disabled={keyboardLocked}
+          disabled={keyboardFocusLocked}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => {
             hapticSelection()
@@ -138,18 +144,22 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           <Keyboard aria-hidden="true" className="h-4 w-4" />
         </button>
         <button
-          data-key-id="keyboard-lock"
+          data-key-id="keyboard-focus-lock"
           type="button"
-          aria-label={t(keyboardLocked ? 'terminal.tools.unlockKeyboard' : 'terminal.tools.lockKeyboard')}
-          aria-pressed={keyboardLocked}
-          className={`${cls} ${keyboardLockButtonClass}`}
+          aria-label={t(keyboardFocusLocked ? 'terminal.tools.allowKeyboardPopup' : 'terminal.tools.preventKeyboardPopup')}
+          aria-pressed={keyboardFocusLocked}
+          title={t(keyboardFocusLocked ? 'terminal.tools.allowKeyboardPopup' : 'terminal.tools.preventKeyboardPopup')}
+          className={`${buttonBaseClass} w-24 min-w-24 flex-col gap-0.5 px-1 ${keyboardFocusLockButtonClass}`}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => {
             hapticImpact()
-            onToggleKeyboardLock?.()
+            onToggleKeyboardFocusLock?.()
           }}
         >
-          <LockKeyhole aria-hidden="true" className="h-4 w-4" />
+          <LockKeyhole aria-hidden="true" className="h-3.5 w-3.5" />
+          <span className="max-w-[5.5rem] text-[8px] font-semibold leading-[9px] whitespace-normal">
+            {t(keyboardFocusLocked ? 'terminal.tools.allowKeyboardPopup' : 'terminal.tools.preventKeyboardPopup')}
+          </span>
         </button>
       </div>
       <div className="anytty-terminal-key-row flex min-w-0 touch-pan-x gap-1 overflow-x-auto px-1.5 pb-1.5 pt-1">

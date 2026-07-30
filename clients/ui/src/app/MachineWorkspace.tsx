@@ -195,7 +195,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const terminalWrapperRef = useRef<HTMLDivElement | null>(null)
   const mobileKeybarRef = useRef<HTMLDivElement | null>(null)
   const activeTerminalSlotRef = useRef<TerminalSlot>(0)
-  const [keyboardLocked, setKeyboardLocked] = useState(false)
+  const [keyboardFocusLocked, setKeyboardFocusLocked] = useState(false)
   const machineSessionRef = useRef<{
     connector: MachineWorkspaceConnector
     machineId: string
@@ -1143,24 +1143,24 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return terminalRef.current
   }, [activeTerminalSlot, splitTerminalId])
 
-  const sendTerminalInput = useCallback((data: string) => {
-    if (connectionInputBlocked) return
+  const sendTerminalInput = useCallback((data: string): boolean => {
+    if (connectionInputBlocked) return false
     if (syncSplitInput && splitTerminalId) {
-      terminalRef.current?.sendInput(data)
-      splitTerminalRef.current?.sendInput(data)
-      return
+      const primaryAccepted = terminalRef.current?.sendInput(data) ?? false
+      const splitAccepted = splitTerminalRef.current?.sendInput(data) ?? false
+      return primaryAccepted || splitAccepted
     }
-    activeTerminalHandle()?.sendInput(data)
+    return activeTerminalHandle()?.sendInput(data) ?? false
   }, [activeTerminalHandle, connectionInputBlocked, splitTerminalId, syncSplitInput])
 
-  const pasteTerminalText = useCallback((text: string) => {
-    if (connectionInputBlocked) return
+  const pasteTerminalText = useCallback((text: string): boolean => {
+    if (connectionInputBlocked) return false
     if (syncSplitInput && splitTerminalId) {
-      terminalRef.current?.pasteText(text)
-      splitTerminalRef.current?.pasteText(text)
-      return
+      const primaryAccepted = terminalRef.current?.pasteText(text) ?? false
+      const splitAccepted = splitTerminalRef.current?.pasteText(text) ?? false
+      return primaryAccepted || splitAccepted
     }
-    activeTerminalHandle()?.pasteText(text)
+    return activeTerminalHandle()?.pasteText(text) ?? false
   }, [activeTerminalHandle, connectionInputBlocked, splitTerminalId, syncSplitInput])
 
   const handleTerminalBufferChange = useCallback((slot: TerminalSlot, isAlternate: boolean) => {
@@ -1749,11 +1749,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     retryConnectionPolicy()
   }, [applyConnectionPolicy, retryConnectionPolicy])
 
-  const toggleKeyboardLock = useCallback(() => {
-    const next = !keyboardLocked
-    setKeyboardLocked(next)
+  const toggleKeyboardFocusLock = useCallback(() => {
+    const next = !keyboardFocusLocked
+    setKeyboardFocusLocked(next)
     if (next) blurActiveTerminal()
-  }, [blurActiveTerminal, keyboardLocked])
+  }, [blurActiveTerminal, keyboardFocusLocked])
 
   const setTerminalToolbarModeAndReset = useCallback((mode: TerminalToolbarMode) => {
     setTerminalToolbarMode(mode)
@@ -2658,7 +2658,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   onResizeControl={setTerminalResizeControl}
                   selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
                   settings={effectiveTerminalSettings}
-                  preventFocus={keyboardLocked || connectionInputBlocked}
+                  preventFocus={keyboardFocusLocked || connectionInputBlocked}
                   suppressConnectingOverlay={showInitialNetworkOverlay}
                 />
               ) : (
@@ -2705,7 +2705,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     onBufferChange={(isAlternate) => handleTerminalBufferChange(1, isAlternate)}
                     selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
                     settings={effectiveTerminalSettings}
-                    preventFocus={keyboardLocked || connectionInputBlocked}
+                    preventFocus={keyboardFocusLocked || connectionInputBlocked}
                     suppressConnectingOverlay={showInitialNetworkOverlay}
                   />
                 ) : (
@@ -2724,7 +2724,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onInput={sendTerminalInput}
           onFocusKeyboard={focusActiveTerminal}
           onBlurKeyboard={blurActiveTerminal}
-          onToggleKeyboardLock={toggleKeyboardLock}
+          onToggleKeyboardFocusLock={toggleKeyboardFocusLock}
           fnOpen={terminalFnOpen}
           onToggleFn={() => {
             setTerminalFnOpen((current) => !current)
@@ -2733,7 +2733,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           modifierState={modifierState}
           onModifierStateChange={setModifierState}
           keyboardVisible={keyboardVisible}
-          keyboardLocked={keyboardLocked}
+          keyboardFocusLocked={keyboardFocusLocked}
         />
 
         {pasteConfirmText ? (
