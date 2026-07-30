@@ -8,14 +8,15 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rootPackage = readPackage('package.json')
-const workspaces = [
+const productWorkspaces = [
   { path: 'clients/ui', name: '@anytty/ui' },
   { path: 'clients/mobile', name: '@anytty/mobile' },
   { path: 'cloud/web', name: '@anytty/cloud-web' },
-].map((workspace) => ({
-  ...workspace,
-  package: readPackage(join(workspace.path, 'package.json')),
-}))
+]
+const rootWorkspaces = rootPackage.workspaces.map((path) => {
+  const workspacePackage = readPackage(join(path, 'package.json'))
+  return { path, name: workspacePackage.name, package: workspacePackage }
+})
 
 function readPackage(relativePath) {
   return JSON.parse(readFileSync(join(repoRoot, relativePath), 'utf8'))
@@ -34,10 +35,16 @@ function workspaceInvocations(command, lifecycle) {
   })
 }
 
+test('root workspaces match the UI, Mobile, and Cloud product contract', () => {
+  const byPathAndName = (left, right) => `${left.path}\0${left.name}`.localeCompare(`${right.path}\0${right.name}`)
+  const expected = [...productWorkspaces].sort(byPathAndName)
+  const actual = rootWorkspaces.map(({ path, name }) => ({ path, name })).sort(byPathAndName)
+  assert.deepEqual(actual, expected)
+})
+
 for (const lifecycle of ['typecheck', 'test', 'build']) {
   test(`root ${lifecycle} covers every client workspace`, () => {
-    for (const workspace of workspaces) {
-      assert.equal(workspace.package.name, workspace.name)
+    for (const workspace of rootWorkspaces) {
       assert.equal(
         typeof workspace.package.scripts?.[lifecycle],
         'string',
@@ -45,7 +52,7 @@ for (const lifecycle of ['typecheck', 'test', 'build']) {
       )
     }
 
-    const expectedPackages = workspaces.map(({ name }) => name).sort()
+    const expectedPackages = rootWorkspaces.map(({ name }) => name).sort()
     const actualPackages = workspaceInvocations(rootPackage.scripts[lifecycle], lifecycle).sort()
     assert.deepEqual(actualPackages, expectedPackages)
   })
