@@ -20,6 +20,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, '../controller/apihttp/web'),
     emptyOutDir: true,
+    manifest: '.build-manifest.json',
     // Controller 的严格 CSP 不允许 data: 图片；产品图标必须作为同源静态文件交付。
     assetsInlineLimit: 0,
     rollupOptions: {

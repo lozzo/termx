@@ -7,7 +7,7 @@
     "dev": "vite",
     "proto": "node scripts/generate-proto.mjs",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/check-build.mjs",
     "test": "vitest run src",
     "test:e2e": "playwright test"
   },
