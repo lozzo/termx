@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 
+import { Children, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ErrorState, IconButton, Skeleton } from './ui'
 
 function render(element: ReactNode): Document {
   return new DOMParser().parseFromString(renderToStaticMarkup(element), 'text/html')
+}
+
+function errorAction(error: unknown, onRetry?: () => void) {
+  const state = ErrorState({ error, onRetry }) as ReactElement<{ children: ReactNode }>
+  return Children.toArray(state.props.children)[1] as ReactElement<{ onClick: () => void }>
 }
 
 describe('Cloud UI semantics', () => {
@@ -28,13 +33,31 @@ describe('Cloud UI semantics', () => {
     expect(status?.querySelector('[aria-hidden="true"]')?.querySelectorAll('i')).toHaveLength(3)
   })
 
-  it('keeps error output stable and exposes only a correlation ID', () => {
+  it('runs an explicit retry exactly once without exposing internal error details', () => {
+    const retry = vi.fn()
     const internal = Object.assign(new Error('database connection string'), { status: 503, correlationID: 'corr-public-123' })
-    const document = render(<ErrorState error={internal} onRetry={vi.fn()} />)
+    const document = render(<ErrorState error={internal} onRetry={retry} />)
 
     expect(document.body.textContent).toContain('服务暂时不可用，请稍后重试。')
     expect(document.body.textContent).toContain('corr-public-123')
     expect(document.body.textContent).not.toContain('database connection string')
     expect(document.querySelector('button')?.textContent).toBe('重试')
+    errorAction(internal, retry).props.onClick()
+    expect(retry).toHaveBeenCalledTimes(1)
+  })
+
+  it('always exposes and triggers the default reload recovery', () => {
+    const internal = Object.assign(new Error('private request detail'), { status: 500, correlationID: 'request-public-456' })
+    const document = render(<ErrorState error={internal} />)
+    const virtualConsole = (window as unknown as { _virtualConsole: { emit: (event: string, error: Error) => boolean } })._virtualConsole
+    const navigation = vi.spyOn(virtualConsole, 'emit').mockReturnValue(true)
+
+    expect(document.body.textContent).toContain('服务暂时不可用，请稍后重试。')
+    expect(document.body.textContent).toContain('request-public-456')
+    expect(document.body.textContent).not.toContain('private request detail')
+    expect(document.querySelector('button')?.textContent).toBe('重新加载')
+    errorAction(internal).props.onClick()
+    expect(navigation).toHaveBeenCalledWith('jsdomError', expect.objectContaining({ message: expect.stringContaining('Not implemented: navigation') }))
+    navigation.mockRestore()
   })
 })

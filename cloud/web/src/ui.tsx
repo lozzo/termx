@@ -71,5 +71,6 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
         : status >= 500
           ? '服务暂时不可用，请稍后重试。'
           : '加载失败，请稍后重试。'
-  return <div className="error-state"><Notice tone="error"><span>{message}</span>{correlationID && <small>关联 ID：{correlationID}</small>}</Notice>{onRetry && <Button onClick={onRetry}>重试</Button>}</div>
+  const retry = onRetry ?? (() => window.location.reload())
+  return <div className="error-state"><Notice tone="error"><span>{message}</span>{correlationID && <small>关联 ID：{correlationID}</small>}</Notice><Button onClick={retry}>{onRetry ? '重试' : '重新加载'}</Button></div>
 }
