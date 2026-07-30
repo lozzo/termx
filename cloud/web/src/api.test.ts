@@ -31,4 +31,16 @@ describe('账号 session 轮换', () => {
     expect(resourceCalls).toBe(4)
     expect(refreshHeader).toBe('csrf-proof')
   })
+
+  it('preserves a public correlation ID on API failures', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'internal storage detail', correlation_id: 'corr-public-123' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    })))
+
+    await expect(protoGet('/api/account/current', GetCurrentAccountResponseSchema)).rejects.toMatchObject({
+      status: 503,
+      correlationID: 'corr-public-123',
+    })
+  })
 })

@@ -83,7 +83,7 @@ test.describe('R7 线上运营后台', () => {
     }
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
-    await page.getByRole('textbox', { name: '账号名称、邮箱或 ID' }).fill(login ?? '')
+    await page.getByRole('textbox', { name: '搜索账号' }).fill(login ?? '')
     await page.getByRole('button', { name: '查询' }).click()
     const accountRow = page.getByRole('row').filter({ hasText: login ?? '' })
     await expect(accountRow).toBeVisible({ timeout: 30_000 })

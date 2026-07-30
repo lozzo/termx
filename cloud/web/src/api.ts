@@ -1,7 +1,7 @@
 import { create, fromJson, toJson, type DescMessage, type JsonValue, type MessageShape } from '@bufbuild/protobuf'
 
 export class APIError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(public readonly status: number, message: string, public readonly correlationID = '') {
     super(message)
   }
 }
@@ -39,8 +39,9 @@ async function decode<Schema extends DescMessage>(response: Response, schema: Sc
   const body = await response.text()
   const json = body ? JSON.parse(body) as JsonValue : {}
   if (!response.ok) {
-    const error = json as { error?: string; message?: string }
-    throw new APIError(response.status, error.error ?? error.message ?? `请求失败（${response.status}）`)
+    const error = json as { error?: string; message?: string; correlation_id?: string; request_id?: string }
+    const correlationID = error.correlation_id ?? error.request_id ?? response.headers.get('X-Correlation-ID') ?? response.headers.get('X-Request-ID') ?? ''
+    throw new APIError(response.status, error.error ?? error.message ?? `请求失败（${response.status}）`, correlationID)
   }
   return fromJson(schema, json)
 }

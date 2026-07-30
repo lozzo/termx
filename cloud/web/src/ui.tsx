@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { ArrowLeftRight, X } from 'lucide-react'
 import { ModalSurface } from '@anytty/ui/modal'
 import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 
@@ -33,9 +33,20 @@ export function Status({ active, children }: { active: boolean; children: ReactN
   return <span className={`status ${active ? 'status-active' : 'status-muted'}`}><i />{children}</span>
 }
 
-export function TableFrame({ children }: { children: ReactNode }) { return <div className="table-frame">{children}</div> }
+export function TableFrame({ children }: { children: ReactNode }) {
+  const hintID = useId()
+  return <div className="table-region">
+    <p className="table-scroll-hint" id={hintID}><ArrowLeftRight size={15} aria-hidden="true" />横向滚动查看更多列</p>
+    <div className="table-frame" role="region" aria-label="数据表格" aria-describedby={hintID} tabIndex={0}>{children}</div>
+  </div>
+}
 export function Empty({ children = '暂无数据' }: { children?: ReactNode }) { return <div className="empty-state">{children}</div> }
-export function Skeleton({ rows = 6 }: { rows?: number }) { return <div className="skeleton-list" aria-label="正在加载">{Array.from({ length: rows }, (_, index) => <i key={index} />)}</div> }
+export function Skeleton({ rows = 6 }: { rows?: number }) {
+  return <div className="skeleton-list" role="status" aria-live="polite" aria-busy="true">
+    <span className="visually-hidden">正在加载</span>
+    <span className="skeleton-decoration" aria-hidden="true">{Array.from({ length: rows }, (_, index) => <i key={index} />)}</span>
+  </div>
+}
 
 export function Dialog({ title, open, onClose, children, footer }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   if (!open) return null
@@ -48,4 +59,17 @@ export function Dialog({ title, open, onClose, children, footer }: { title: stri
   </div>
 }
 
-export function ErrorState({ error }: { error: unknown }) { return <div className="error-state"><Notice tone="error">{error instanceof Error ? error.message : '加载失败，请稍后重试。'}</Notice><Button onClick={() => window.location.reload()}>重新加载</Button></div> }
+export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 0
+  const correlationID = typeof error === 'object' && error !== null && 'correlationID' in error && typeof error.correlationID === 'string' ? error.correlationID : ''
+  const message = status === 403
+    ? '没有权限读取此内容。'
+    : status === 404
+      ? '请求的内容不存在或已被移除。'
+      : status === 429
+        ? '请求过于频繁，请稍后重试。'
+        : status >= 500
+          ? '服务暂时不可用，请稍后重试。'
+          : '加载失败，请稍后重试。'
+  return <div className="error-state"><Notice tone="error"><span>{message}</span>{correlationID && <small>关联 ID：{correlationID}</small>}</Notice>{onRetry && <Button onClick={onRetry}>重试</Button>}</div>
+}
