@@ -37,12 +37,14 @@ type RequestAdmission interface {
 
 // OperationController 是 API Layer 取消 core-owned operation 的窄内部边界。
 // 跨层参数仍使用 generated proto，controller adapter 不得另建 Go request DTO。
+// Proto 参数仅在调用期间借用，controller 必须只读且不得保留。
 type OperationController interface {
 	CancelOperation(context.Context, *apipb.OperationStamp) error
 }
 
 // ResourceController 是 API Layer 释放 core-owned 长期资源的窄内部边界。
 // 跨层参数仍使用 generated proto；实现必须通过 owning registry 验证 opaque token、kind、generation 与 session ownership。
+// Proto 参数仅在调用期间借用，controller 必须只读且不得保留。
 type ResourceController interface {
 	ReleaseResource(context.Context, *apipb.ResourceHandle) error
 }
@@ -131,8 +133,7 @@ func (service *Service) cancelOperation(ctx context.Context, originSession *apip
 	if service == nil || service.operations == nil {
 		return unavailable(requestID, originSession, "operation controller is unavailable")
 	}
-	operation := proto.Clone(command.GetOperation()).(*apipb.OperationStamp)
-	if err := service.operations.CancelOperation(ctx, operation); err != nil {
+	if err := service.operations.CancelOperation(ctx, command.GetOperation()); err != nil {
 		return errorResult(requestID, originSession, apimapping.ErrorToProto(err, true))
 	}
 	return acknowledge(requestID, originSession)
@@ -149,8 +150,7 @@ func (service *Service) releaseResource(ctx context.Context, originSession *apip
 	if service == nil || service.resources == nil {
 		return unavailable(requestID, originSession, "resource controller is unavailable")
 	}
-	resource := proto.Clone(command.GetResource()).(*apipb.ResourceHandle)
-	if err := service.resources.ReleaseResource(ctx, resource); err != nil {
+	if err := service.resources.ReleaseResource(ctx, command.GetResource()); err != nil {
 		return errorResult(requestID, originSession, apimapping.ErrorToProto(err, true))
 	}
 	return acknowledge(requestID, originSession)

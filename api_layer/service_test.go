@@ -72,6 +72,11 @@ func (controller *fakeResourceController) ReleaseResource(_ context.Context, res
 
 func TestServiceExecutesTypedCancelUnderAdmissionLease(t *testing.T) {
 	admission := admissionWith(apipb.ApiCapability_API_CAPABILITY_OPERATION_CANCELLATION)
+	var snapshotOperation *apipb.OperationStamp
+	admission.authorize = func(command *apipb.CommandEnvelope) error {
+		snapshotOperation = command.GetCancelOperation().GetOperation()
+		return nil
+	}
 	operations := &fakeOperationController{onCancel: func() {
 		if admission.acquired != 1 || admission.released != 0 {
 			t.Fatalf("admission lease not held during controller call: %d/%d", admission.acquired, admission.released)
@@ -86,6 +91,9 @@ func TestServiceExecutesTypedCancelUnderAdmissionLease(t *testing.T) {
 		operations.operations[0].GetSession().GetRouteId() != "ssh" || operations.operations[0].GetSession().GetGeneration() != 7 ||
 		operations.operations[0].GetOperationId() != "operation-1" {
 		t.Fatalf("cancel operations=%#v", operations.operations)
+	}
+	if operations.operations[0] != snapshotOperation {
+		t.Fatalf("cancel cloned private snapshot operation: controller=%p admission=%p", operations.operations[0], snapshotOperation)
 	}
 	if admission.acquired != 1 || admission.released != 1 {
 		t.Fatalf("admission acquire/release=%d/%d", admission.acquired, admission.released)
@@ -177,12 +185,21 @@ func TestServiceRejectsResourceFromDifferentSession(t *testing.T) {
 	}
 }
 
-func TestServiceReleasesClonedProtoResource(t *testing.T) {
+func TestServiceReleasesResourceFromPrivateEnvelopeSnapshot(t *testing.T) {
 	resources := &fakeResourceController{}
 	command := releaseCommand("request-resource", 1)
-	result := NewService(admissionWith(apipb.ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE), nil, resources, nil).Execute(context.Background(), command)
+	admission := admissionWith(apipb.ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE)
+	var snapshotResource *apipb.ResourceHandle
+	admission.authorize = func(command *apipb.CommandEnvelope) error {
+		snapshotResource = command.GetReleaseResource().GetResource()
+		return nil
+	}
+	result := NewService(admission, nil, resources, nil).Execute(context.Background(), command)
 	if result.GetAcknowledge() == nil || len(resources.resources) != 1 {
 		t.Fatalf("release result=%#v resources=%#v", result, resources.resources)
+	}
+	if resources.resources[0] != snapshotResource {
+		t.Fatalf("release cloned private snapshot resource: controller=%p admission=%p", resources.resources[0], snapshotResource)
 	}
 	resources.resources[0].OpaqueToken[0] = 'X'
 	if string(command.GetReleaseResource().GetResource().GetOpaqueToken()) != "resource-1" {

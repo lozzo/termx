@@ -242,6 +242,7 @@ func generateAPILayer(specs []commandSpec) []byte {
 	writeGeneratedHeader(&out, "apilayer")
 	out.WriteString("\nimport (\n\t\"context\"\n\n\tapimapping \"github.com/anytty/anytty/api_mapping\"\n\t\"github.com/anytty/anytty/proto/apipb\"\n)\n\n")
 	out.WriteString("// TerminalController is the typed Proto boundary for terminal and path commands.\n")
+	out.WriteString("// Proto pointer parameters are borrowed read-only for the duration of each call and must not be retained.\n")
 	out.WriteString("type TerminalController interface {\n")
 	for _, spec := range specs {
 		if spec.ValidatorGroup == "terminal" {
@@ -250,6 +251,7 @@ func generateAPILayer(specs []commandSpec) []byte {
 	}
 	out.WriteString("}\n\n")
 	out.WriteString("// PlatformController is the typed Proto boundary for non-terminal application commands.\n")
+	out.WriteString("// Proto pointer parameters are borrowed read-only for the duration of each call and must not be retained.\n")
 	out.WriteString("type PlatformController interface {\n")
 	for _, spec := range specs {
 		if spec.ValidatorGroup != "terminal" && spec.ValidatorGroup != "operation" && spec.ValidatorGroup != "resource" {
@@ -343,18 +345,18 @@ func writeDispatchCase(out *bytes.Buffer, spec commandSpec, controller string, t
 	switch spec.ResponseKind {
 	case "ack":
 		if terminal {
-			fmt.Fprintf(out, "\t\terr := %s.%s(ctx, cloneSession(session), cloneMessage(value.%s))\n", controller, spec.ControllerMethod, commandGoName)
+			fmt.Fprintf(out, "\t\terr := %s.%s(ctx, session, value.%s)\n", controller, spec.ControllerMethod, commandGoName)
 			out.WriteString("\t\tif err != nil {\n\t\t\treturn errorResult(requestID, session, apimapping.ErrorToProto(err, true))\n\t\t}\n\t\treturn acknowledge(requestID, session)\n")
 		} else {
-			fmt.Fprintf(out, "\t\tresult, err := %s.%s(ctx, cloneSession(session), cloneMessage(value.%s))\n", controller, spec.ControllerMethod, commandGoName)
+			fmt.Fprintf(out, "\t\tresult, err := %s.%s(ctx, session, value.%s)\n", controller, spec.ControllerMethod, commandGoName)
 			out.WriteString("\t\tif err != nil || result == nil {\n\t\t\treturn errorResult(requestID, session, apimapping.ErrorToProto(err, true))\n\t\t}\n")
 			fmt.Fprintf(out, "\t\treturn &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_%s{%s: result}}\n", resultGoName, resultGoName)
 		}
 	case "transaction":
-		fmt.Fprintf(out, "\t\ttransaction, err := %s.%s(ctx, cloneSession(session), cloneMessage(value.%s))\n", controller, spec.ControllerMethod, commandGoName)
+		fmt.Fprintf(out, "\t\ttransaction, err := %s.%s(ctx, session, value.%s)\n", controller, spec.ControllerMethod, commandGoName)
 		fmt.Fprintf(out, "\t\treturn service.terminalAttachResult(ctx, requestID, session, value.%s, transaction, err)\n", commandGoName)
 	default:
-		fmt.Fprintf(out, "\t\tresult, err := %s.%s(ctx, cloneSession(session), cloneMessage(value.%s))\n", controller, spec.ControllerMethod, commandGoName)
+		fmt.Fprintf(out, "\t\tresult, err := %s.%s(ctx, session, value.%s)\n", controller, spec.ControllerMethod, commandGoName)
 		if terminal {
 			out.WriteString("\t\tif err != nil || result == nil {\n\t\t\treturn terminalResultError(requestID, session, err)\n\t\t}\n")
 			fmt.Fprintf(out, "\t\treturn &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_%s{%s: cloneMessage(result)}}\n", resultGoName, resultGoName)

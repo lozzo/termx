@@ -51,9 +51,6 @@ func (service *Service) terminalAttachResult(ctx context.Context, requestID stri
 		return terminalResultError(requestID, session, err)
 	}
 	result := transaction.Result()
-	if result != nil {
-		result = cloneMessage(result)
-	}
 	if err := apimapping.ValidateTerminalAttachResult(command, result, session); err != nil {
 		if rollbackErr := rollbackAttachment(ctx, transaction); rollbackErr != nil {
 			return errorResult(requestID, session, &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "terminal attachment publication failed and rollback failed", Attempted: true})

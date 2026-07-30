@@ -10,6 +10,7 @@ import (
 
 type fakeTerminalController struct {
 	creates           []*apipb.TerminalCreateCommand
+	onCreate          func(*apipb.EndpointSessionStamp, *apipb.TerminalCreateCommand)
 	inputs            []*apipb.TerminalInputCommand
 	inputErr          error
 	createResult      *apipb.TerminalCreateResult
@@ -22,7 +23,10 @@ func (*fakeTerminalController) TerminalDefaults(context.Context, *apipb.Endpoint
 	return &apipb.TerminalDefaultsResult{Defaults: &apipb.TerminalDefaults{DefaultCommand: []string{"sh"}, DefaultCwd: "/tmp"}}, nil
 }
 
-func (controller *fakeTerminalController) TerminalCreate(_ context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error) {
+func (controller *fakeTerminalController) TerminalCreate(_ context.Context, session *apipb.EndpointSessionStamp, command *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error) {
+	if controller.onCreate != nil {
+		controller.onCreate(session, command)
+	}
 	controller.creates = append(controller.creates, command)
 	if controller.returnNilCreate {
 		return nil, nil
@@ -114,7 +118,7 @@ func (*fakeTerminalController) PathListDirectories(context.Context, *apipb.Endpo
 	return &apipb.PathListDirectoriesResult{}, nil
 }
 
-func TestServiceDispatchesValidatedTerminalCreateWithClonedProto(t *testing.T) {
+func TestServiceDispatchesValidatedTerminalCreateFromPrivateSnapshot(t *testing.T) {
 	controller := &fakeTerminalController{}
 	command := terminalCreateCommand()
 	result := NewService(admissionWith(apipb.ApiCapability_API_CAPABILITY_TERMINAL_LIFECYCLE), nil, nil, controller).Execute(context.Background(), command)
@@ -128,13 +132,21 @@ func TestServiceDispatchesValidatedTerminalCreateWithClonedProto(t *testing.T) {
 }
 
 func TestServiceUsesOnePrivateEnvelopeSnapshotForAdmissionAndDispatch(t *testing.T) {
-	controller := &fakeTerminalController{}
 	command := terminalCreateCommand()
+	var snapshotSession *apipb.EndpointSessionStamp
+	var snapshotCommand *apipb.TerminalCreateCommand
+	controller := &fakeTerminalController{onCreate: func(session *apipb.EndpointSessionStamp, command *apipb.TerminalCreateCommand) {
+		if session != snapshotSession || command != snapshotCommand {
+			t.Fatalf("dispatch cloned private snapshot fields: session=%p/%p command=%p/%p", session, snapshotSession, command, snapshotCommand)
+		}
+	}}
 	admission := admissionWith(apipb.ApiCapability_API_CAPABILITY_TERMINAL_LIFECYCLE)
 	admission.authorize = func(snapshot *apipb.CommandEnvelope) error {
 		if snapshot.GetTerminalCreate().GetTerminal().GetTerminalId() != "term-1" {
 			t.Fatalf("admission received unexpected snapshot: %#v", snapshot)
 		}
+		snapshotSession = snapshot.GetContext().GetSession()
+		snapshotCommand = snapshot.GetTerminalCreate()
 		command.GetTerminalCreate().Terminal.TerminalId = "mutated-after-entry"
 		return nil
 	}

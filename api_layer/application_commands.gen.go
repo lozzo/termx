@@ -10,6 +10,7 @@ import (
 )
 
 // TerminalController is the typed Proto boundary for terminal and path commands.
+// Proto pointer parameters are borrowed read-only for the duration of each call and must not be retained.
 type TerminalController interface {
 	TerminalDefaults(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalDefaultsCommand) (*apipb.TerminalDefaultsResult, error)
 	TerminalCreate(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error)
@@ -29,6 +30,7 @@ type TerminalController interface {
 }
 
 // PlatformController is the typed Proto boundary for non-terminal application commands.
+// Proto pointer parameters are borrowed read-only for the duration of each call and must not be retained.
 type PlatformController interface {
 	HistoryWindow(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error)
 	HistoryCopy(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error)
@@ -147,88 +149,88 @@ func validateApplicationCommand(command *apipb.CommandEnvelope) error {
 func (service *Service) dispatchTerminalCommand(ctx context.Context, requestID string, session *apipb.EndpointSessionStamp, command *apipb.CommandEnvelope) *apipb.ResultEnvelope {
 	switch value := command.GetCommand().(type) {
 	case *apipb.CommandEnvelope_TerminalDefaults:
-		result, err := service.terminals.TerminalDefaults(ctx, cloneSession(session), cloneMessage(value.TerminalDefaults))
+		result, err := service.terminals.TerminalDefaults(ctx, session, value.TerminalDefaults)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalDefaults{TerminalDefaults: cloneMessage(result)}}
 	case *apipb.CommandEnvelope_TerminalCreate:
-		result, err := service.terminals.TerminalCreate(ctx, cloneSession(session), cloneMessage(value.TerminalCreate))
+		result, err := service.terminals.TerminalCreate(ctx, session, value.TerminalCreate)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalCreate{TerminalCreate: cloneMessage(result)}}
 	case *apipb.CommandEnvelope_TerminalList:
-		result, err := service.terminals.TerminalList(ctx, cloneSession(session), cloneMessage(value.TerminalList))
+		result, err := service.terminals.TerminalList(ctx, session, value.TerminalList)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalList{TerminalList: cloneMessage(result)}}
 	case *apipb.CommandEnvelope_TerminalGet:
-		result, err := service.terminals.TerminalGet(ctx, cloneSession(session), cloneMessage(value.TerminalGet))
+		result, err := service.terminals.TerminalGet(ctx, session, value.TerminalGet)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalGet{TerminalGet: cloneMessage(result)}}
 	case *apipb.CommandEnvelope_TerminalRestart:
-		err := service.terminals.TerminalRestart(ctx, cloneSession(session), cloneMessage(value.TerminalRestart))
+		err := service.terminals.TerminalRestart(ctx, session, value.TerminalRestart)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalKill:
-		err := service.terminals.TerminalKill(ctx, cloneSession(session), cloneMessage(value.TerminalKill))
+		err := service.terminals.TerminalKill(ctx, session, value.TerminalKill)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalRemove:
-		err := service.terminals.TerminalRemove(ctx, cloneSession(session), cloneMessage(value.TerminalRemove))
+		err := service.terminals.TerminalRemove(ctx, session, value.TerminalRemove)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalSetMetadata:
-		err := service.terminals.TerminalSetMetadata(ctx, cloneSession(session), cloneMessage(value.TerminalSetMetadata))
+		err := service.terminals.TerminalSetMetadata(ctx, session, value.TerminalSetMetadata)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalSetTags:
-		err := service.terminals.TerminalSetTags(ctx, cloneSession(session), cloneMessage(value.TerminalSetTags))
+		err := service.terminals.TerminalSetTags(ctx, session, value.TerminalSetTags)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalAttach:
-		transaction, err := service.terminals.TerminalAttach(ctx, cloneSession(session), cloneMessage(value.TerminalAttach))
+		transaction, err := service.terminals.TerminalAttach(ctx, session, value.TerminalAttach)
 		return service.terminalAttachResult(ctx, requestID, session, value.TerminalAttach, transaction, err)
 	case *apipb.CommandEnvelope_TerminalDetach:
-		err := service.terminals.TerminalDetach(ctx, cloneSession(session), cloneMessage(value.TerminalDetach))
+		err := service.terminals.TerminalDetach(ctx, session, value.TerminalDetach)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalInput:
-		err := service.terminals.TerminalInput(ctx, cloneSession(session), cloneMessage(value.TerminalInput))
+		err := service.terminals.TerminalInput(ctx, session, value.TerminalInput)
 		if err != nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return acknowledge(requestID, session)
 	case *apipb.CommandEnvelope_TerminalResize:
-		result, err := service.terminals.TerminalResize(ctx, cloneSession(session), cloneMessage(value.TerminalResize))
+		result, err := service.terminals.TerminalResize(ctx, session, value.TerminalResize)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalResize{TerminalResize: cloneMessage(result)}}
 	case *apipb.CommandEnvelope_TerminalResizeLock:
-		result, err := service.terminals.TerminalResizeLock(ctx, cloneSession(session), cloneMessage(value.TerminalResizeLock))
+		result, err := service.terminals.TerminalResizeLock(ctx, session, value.TerminalResizeLock)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalResize{TerminalResize: cloneMessage(result)}}
 	case *apipb.CommandEnvelope_PathListDirectories:
-		result, err := service.terminals.PathListDirectories(ctx, cloneSession(session), cloneMessage(value.PathListDirectories))
+		result, err := service.terminals.PathListDirectories(ctx, session, value.PathListDirectories)
 		if err != nil || result == nil {
 			return terminalResultError(requestID, session, err)
 		}
@@ -241,187 +243,187 @@ func (service *Service) dispatchTerminalCommand(ctx context.Context, requestID s
 func (service *Service) dispatchPlatformCommand(ctx context.Context, requestID string, session *apipb.EndpointSessionStamp, command *apipb.CommandEnvelope) *apipb.ResultEnvelope {
 	switch value := command.GetCommand().(type) {
 	case *apipb.CommandEnvelope_HistoryWindow:
-		result, err := service.platform.HistoryWindow(ctx, cloneSession(session), cloneMessage(value.HistoryWindow))
+		result, err := service.platform.HistoryWindow(ctx, session, value.HistoryWindow)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_HistoryWindow{HistoryWindow: result}}
 	case *apipb.CommandEnvelope_HistoryCopy:
-		result, err := service.platform.HistoryCopy(ctx, cloneSession(session), cloneMessage(value.HistoryCopy))
+		result, err := service.platform.HistoryCopy(ctx, session, value.HistoryCopy)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_HistoryCopy{HistoryCopy: result}}
 	case *apipb.CommandEnvelope_HistoryRelease:
-		result, err := service.platform.HistoryRelease(ctx, cloneSession(session), cloneMessage(value.HistoryRelease))
+		result, err := service.platform.HistoryRelease(ctx, session, value.HistoryRelease)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_Acknowledge{Acknowledge: result}}
 	case *apipb.CommandEnvelope_HistoryBacklogStatus:
-		result, err := service.platform.HistoryBacklogStatus(ctx, cloneSession(session), cloneMessage(value.HistoryBacklogStatus))
+		result, err := service.platform.HistoryBacklogStatus(ctx, session, value.HistoryBacklogStatus)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_HistoryBacklogStatus{HistoryBacklogStatus: result}}
 	case *apipb.CommandEnvelope_LiveScreenGet:
-		result, err := service.platform.LiveScreen(ctx, cloneSession(session), cloneMessage(value.LiveScreenGet))
+		result, err := service.platform.LiveScreen(ctx, session, value.LiveScreenGet)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_LiveScreen{LiveScreen: result}}
 	case *apipb.CommandEnvelope_LiveInvalidationNext:
-		result, err := service.platform.LiveInvalidation(ctx, cloneSession(session), cloneMessage(value.LiveInvalidationNext))
+		result, err := service.platform.LiveInvalidation(ctx, session, value.LiveInvalidationNext)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_LiveInvalidation{LiveInvalidation: result}}
 	case *apipb.CommandEnvelope_EventSubscribe:
-		result, err := service.platform.EventSubscribe(ctx, cloneSession(session), cloneMessage(value.EventSubscribe))
+		result, err := service.platform.EventSubscribe(ctx, session, value.EventSubscribe)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_EventSubscription{EventSubscription: result}}
 	case *apipb.CommandEnvelope_FileList:
-		result, err := service.platform.FileList(ctx, cloneSession(session), cloneMessage(value.FileList))
+		result, err := service.platform.FileList(ctx, session, value.FileList)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileList{FileList: result}}
 	case *apipb.CommandEnvelope_FileStat:
-		result, err := service.platform.FileStat(ctx, cloneSession(session), cloneMessage(value.FileStat))
+		result, err := service.platform.FileStat(ctx, session, value.FileStat)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileStat{FileStat: result}}
 	case *apipb.CommandEnvelope_FilePreview:
-		result, err := service.platform.FilePreview(ctx, cloneSession(session), cloneMessage(value.FilePreview))
+		result, err := service.platform.FilePreview(ctx, session, value.FilePreview)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FilePreview{FilePreview: result}}
 	case *apipb.CommandEnvelope_FileMkdir:
-		result, err := service.platform.FileMkdir(ctx, cloneSession(session), cloneMessage(value.FileMkdir))
+		result, err := service.platform.FileMkdir(ctx, session, value.FileMkdir)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileOperation{FileOperation: result}}
 	case *apipb.CommandEnvelope_FileRename:
-		result, err := service.platform.FileRename(ctx, cloneSession(session), cloneMessage(value.FileRename))
+		result, err := service.platform.FileRename(ctx, session, value.FileRename)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileOperation{FileOperation: result}}
 	case *apipb.CommandEnvelope_FileDelete:
-		result, err := service.platform.FileDelete(ctx, cloneSession(session), cloneMessage(value.FileDelete))
+		result, err := service.platform.FileDelete(ctx, session, value.FileDelete)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileOperation{FileOperation: result}}
 	case *apipb.CommandEnvelope_FileCopy:
-		result, err := service.platform.FileCopy(ctx, cloneSession(session), cloneMessage(value.FileCopy))
+		result, err := service.platform.FileCopy(ctx, session, value.FileCopy)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileBatch{FileBatch: result}}
 	case *apipb.CommandEnvelope_FileMove:
-		result, err := service.platform.FileMove(ctx, cloneSession(session), cloneMessage(value.FileMove))
+		result, err := service.platform.FileMove(ctx, session, value.FileMove)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileBatch{FileBatch: result}}
 	case *apipb.CommandEnvelope_FileDownloadOpen:
-		result, err := service.platform.FileDownloadOpen(ctx, cloneSession(session), cloneMessage(value.FileDownloadOpen))
+		result, err := service.platform.FileDownloadOpen(ctx, session, value.FileDownloadOpen)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: result}}
 	case *apipb.CommandEnvelope_FileUploadOpen:
-		result, err := service.platform.FileUploadOpen(ctx, cloneSession(session), cloneMessage(value.FileUploadOpen))
+		result, err := service.platform.FileUploadOpen(ctx, session, value.FileUploadOpen)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: result}}
 	case *apipb.CommandEnvelope_FileTransferCancel:
-		result, err := service.platform.FileTransferCancel(ctx, cloneSession(session), cloneMessage(value.FileTransferCancel))
+		result, err := service.platform.FileTransferCancel(ctx, session, value.FileTransferCancel)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_FileTransferCancel{FileTransferCancel: result}}
 	case *apipb.CommandEnvelope_StorageGet:
-		result, err := service.platform.StorageGet(ctx, cloneSession(session), cloneMessage(value.StorageGet))
+		result, err := service.platform.StorageGet(ctx, session, value.StorageGet)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_StorageGet{StorageGet: result}}
 	case *apipb.CommandEnvelope_StoragePut:
-		result, err := service.platform.StoragePut(ctx, cloneSession(session), cloneMessage(value.StoragePut))
+		result, err := service.platform.StoragePut(ctx, session, value.StoragePut)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_StoragePut{StoragePut: result}}
 	case *apipb.CommandEnvelope_StorageDelete:
-		result, err := service.platform.StorageDelete(ctx, cloneSession(session), cloneMessage(value.StorageDelete))
+		result, err := service.platform.StorageDelete(ctx, session, value.StorageDelete)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_StorageDelete{StorageDelete: result}}
 	case *apipb.CommandEnvelope_StorageList:
-		result, err := service.platform.StorageList(ctx, cloneSession(session), cloneMessage(value.StorageList))
+		result, err := service.platform.StorageList(ctx, session, value.StorageList)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_StorageList{StorageList: result}}
 	case *apipb.CommandEnvelope_ClientAccessIdentity:
-		result, err := service.platform.ClientAccessIdentity(ctx, cloneSession(session), cloneMessage(value.ClientAccessIdentity))
+		result, err := service.platform.ClientAccessIdentity(ctx, session, value.ClientAccessIdentity)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_ClientAccessIdentity{ClientAccessIdentity: result}}
 	case *apipb.CommandEnvelope_ClientAccessList:
-		result, err := service.platform.ClientAccessList(ctx, cloneSession(session), cloneMessage(value.ClientAccessList))
+		result, err := service.platform.ClientAccessList(ctx, session, value.ClientAccessList)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_ClientAccessList{ClientAccessList: result}}
 	case *apipb.CommandEnvelope_ClientAccessTicketCreate:
-		result, err := service.platform.ClientAccessTicketCreate(ctx, cloneSession(session), cloneMessage(value.ClientAccessTicketCreate))
+		result, err := service.platform.ClientAccessTicketCreate(ctx, session, value.ClientAccessTicketCreate)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_ClientAccessTicketCreate{ClientAccessTicketCreate: result}}
 	case *apipb.CommandEnvelope_ClientAccessRevoke:
-		result, err := service.platform.ClientAccessRevoke(ctx, cloneSession(session), cloneMessage(value.ClientAccessRevoke))
+		result, err := service.platform.ClientAccessRevoke(ctx, session, value.ClientAccessRevoke)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_ClientAccessRevoke{ClientAccessRevoke: result}}
 	case *apipb.CommandEnvelope_RemoteStatus:
-		result, err := service.platform.RemoteStatus(ctx, cloneSession(session), cloneMessage(value.RemoteStatus))
+		result, err := service.platform.RemoteStatus(ctx, session, value.RemoteStatus)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteStatus{RemoteStatus: result}}
 	case *apipb.CommandEnvelope_RemotePairStart:
-		result, err := service.platform.RemotePairStart(ctx, cloneSession(session), cloneMessage(value.RemotePairStart))
+		result, err := service.platform.RemotePairStart(ctx, session, value.RemotePairStart)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemotePairStart{RemotePairStart: result}}
 	case *apipb.CommandEnvelope_RemoteLocalEnable:
-		result, err := service.platform.RemoteLocalEnable(ctx, cloneSession(session), cloneMessage(value.RemoteLocalEnable))
+		result, err := service.platform.RemoteLocalEnable(ctx, session, value.RemoteLocalEnable)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteLocalStatus{RemoteLocalStatus: result}}
 	case *apipb.CommandEnvelope_RemoteLocalStatus:
-		result, err := service.platform.RemoteLocalStatus(ctx, cloneSession(session), cloneMessage(value.RemoteLocalStatus))
+		result, err := service.platform.RemoteLocalStatus(ctx, session, value.RemoteLocalStatus)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteLocalStatus{RemoteLocalStatus: result}}
 	case *apipb.CommandEnvelope_RemoteLocalDisable:
-		result, err := service.platform.RemoteLocalDisable(ctx, cloneSession(session), cloneMessage(value.RemoteLocalDisable))
+		result, err := service.platform.RemoteLocalDisable(ctx, session, value.RemoteLocalDisable)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
