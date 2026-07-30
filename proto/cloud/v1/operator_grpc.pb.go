@@ -22,6 +22,7 @@ const (
 	OperatorService_GetOverview_FullMethodName              = "/anytty.cloud.v1.OperatorService/GetOverview"
 	OperatorService_ListAccounts_FullMethodName             = "/anytty.cloud.v1.OperatorService/ListAccounts"
 	OperatorService_GetAccount_FullMethodName               = "/anytty.cloud.v1.OperatorService/GetAccount"
+	OperatorService_ProvisionAccount_FullMethodName         = "/anytty.cloud.v1.OperatorService/ProvisionAccount"
 	OperatorService_ListRuntimeSessions_FullMethodName      = "/anytty.cloud.v1.OperatorService/ListRuntimeSessions"
 	OperatorService_ListOrders_FullMethodName               = "/anytty.cloud.v1.OperatorService/ListOrders"
 	OperatorService_ListSubscriptions_FullMethodName        = "/anytty.cloud.v1.OperatorService/ListSubscriptions"
@@ -45,6 +46,7 @@ type OperatorServiceClient interface {
 	GetOverview(ctx context.Context, in *GetOperatorOverviewRequest, opts ...grpc.CallOption) (*GetOperatorOverviewResponse, error)
 	ListAccounts(ctx context.Context, in *ListOperatorAccountsRequest, opts ...grpc.CallOption) (*ListOperatorAccountsResponse, error)
 	GetAccount(ctx context.Context, in *GetOperatorAccountRequest, opts ...grpc.CallOption) (*GetOperatorAccountResponse, error)
+	ProvisionAccount(ctx context.Context, in *ProvisionAccountRequest, opts ...grpc.CallOption) (*ProvisionAccountResponse, error)
 	ListRuntimeSessions(ctx context.Context, in *ListRuntimeSessionsRequest, opts ...grpc.CallOption) (*ListRuntimeSessionsResponse, error)
 	ListOrders(ctx context.Context, in *ListOperatorOrdersRequest, opts ...grpc.CallOption) (*ListOperatorOrdersResponse, error)
 	ListSubscriptions(ctx context.Context, in *ListOperatorSubscriptionsRequest, opts ...grpc.CallOption) (*ListOperatorSubscriptionsResponse, error)
@@ -91,6 +93,16 @@ func (c *operatorServiceClient) GetAccount(ctx context.Context, in *GetOperatorA
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetOperatorAccountResponse)
 	err := c.cc.Invoke(ctx, OperatorService_GetAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorServiceClient) ProvisionAccount(ctx context.Context, in *ProvisionAccountRequest, opts ...grpc.CallOption) (*ProvisionAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProvisionAccountResponse)
+	err := c.cc.Invoke(ctx, OperatorService_ProvisionAccount_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +238,7 @@ type OperatorServiceServer interface {
 	GetOverview(context.Context, *GetOperatorOverviewRequest) (*GetOperatorOverviewResponse, error)
 	ListAccounts(context.Context, *ListOperatorAccountsRequest) (*ListOperatorAccountsResponse, error)
 	GetAccount(context.Context, *GetOperatorAccountRequest) (*GetOperatorAccountResponse, error)
+	ProvisionAccount(context.Context, *ProvisionAccountRequest) (*ProvisionAccountResponse, error)
 	ListRuntimeSessions(context.Context, *ListRuntimeSessionsRequest) (*ListRuntimeSessionsResponse, error)
 	ListOrders(context.Context, *ListOperatorOrdersRequest) (*ListOperatorOrdersResponse, error)
 	ListSubscriptions(context.Context, *ListOperatorSubscriptionsRequest) (*ListOperatorSubscriptionsResponse, error)
@@ -256,6 +269,9 @@ func (UnimplementedOperatorServiceServer) ListAccounts(context.Context, *ListOpe
 }
 func (UnimplementedOperatorServiceServer) GetAccount(context.Context, *GetOperatorAccountRequest) (*GetOperatorAccountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAccount not implemented")
+}
+func (UnimplementedOperatorServiceServer) ProvisionAccount(context.Context, *ProvisionAccountRequest) (*ProvisionAccountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProvisionAccount not implemented")
 }
 func (UnimplementedOperatorServiceServer) ListRuntimeSessions(context.Context, *ListRuntimeSessionsRequest) (*ListRuntimeSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRuntimeSessions not implemented")
@@ -364,6 +380,24 @@ func _OperatorService_GetAccount_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OperatorServiceServer).GetAccount(ctx, req.(*GetOperatorAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorService_ProvisionAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProvisionAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).ProvisionAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_ProvisionAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).ProvisionAccount(ctx, req.(*ProvisionAccountRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -602,6 +636,10 @@ var OperatorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAccount",
 			Handler:    _OperatorService_GetAccount_Handler,
+		},
+		{
+			MethodName: "ProvisionAccount",
+			Handler:    _OperatorService_ProvisionAccount_Handler,
 		},
 		{
 			MethodName: "ListRuntimeSessions",

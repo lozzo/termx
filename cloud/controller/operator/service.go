@@ -39,6 +39,7 @@ type Config struct {
 	Directory    *directory.Directory
 	Control      *control.Service
 	Certificates *certificate.Service
+	Accounts     *account.Service
 	Now          func() time.Time
 }
 
@@ -50,13 +51,18 @@ type Service struct {
 
 // New 创建 OperatorService，任一真值 owner 缺失时 fail closed。
 func New(config Config) (*Service, error) {
-	if config.Store == nil || config.Edges == nil || config.Enrollment == nil || config.Directory == nil || config.Control == nil || config.Certificates == nil {
+	if config.Store == nil || config.Edges == nil || config.Enrollment == nil || config.Directory == nil || config.Control == nil || config.Certificates == nil || config.Accounts == nil {
 		return nil, errors.New("operator stores and runtime owners are required")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
 	return &Service{config: config}, nil
+}
+
+// ProvisionAccount 把管理员受权的 credential 创建委托给账号领域。
+func (service *Service) ProvisionAccount(ctx context.Context, request *cloudv1.ProvisionAccountRequest) (*cloudv1.ProvisionAccountResponse, error) {
+	return service.config.Accounts.ProvisionAccount(ctx, request)
 }
 
 // ListCertificateProfiles 返回当前档案、绑定和真实在线投影，不包含 PEM。

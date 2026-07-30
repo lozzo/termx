@@ -115,7 +115,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edges, Enrollment: enrollmentService, Directory: directoryState, Control: controlService, Certificates: certificateService})
+	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edges, Enrollment: enrollmentService, Directory: directoryState, Control: controlService, Certificates: certificateService, Accounts: accounts})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,19 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registered, err := accounts.Register(ctx, &cloudv1.RegisterAccountRequest{Email: "r4-" + uuid.NewString() + "@example.com", Password: "r4-test-password", DisplayName: "R4 测试账号"})
+	adminLogin := "r4-admin-" + uuid.NewString() + "@example.com"
+	if _, err := accounts.EnsureBootstrapOperator(ctx, adminLogin, "r4-admin-password"); err != nil {
+		t.Fatal(err)
+	}
+	adminSession, err := accounts.Login(ctx, &cloudv1.LoginAccountRequest{Login: adminLogin, Password: "r4-admin-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminIdentity, err := accounts.AuthenticateAccess(ctx, adminSession.GetSession().GetAccessToken())
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, err := accounts.ProvisionAccount(account.ContextWithIdentity(ctx, adminIdentity), &cloudv1.ProvisionAccountRequest{Email: "r4-" + uuid.NewString() + "@example.com", Password: "r4-test-password", DisplayName: "R4 测试账号"})
 	if err != nil {
 		t.Fatal(err)
 	}

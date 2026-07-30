@@ -68,6 +68,64 @@ func TestAccountSelfServiceUsesAuthenticatedAccountAndCurrentSession(t *testing.
 	}
 }
 
+func TestUnknownLoginPerformsDummyBcryptTimingContract(t *testing.T) {
+	now := time.Unix(2_000, 0).UTC()
+	hash, err := bcrypt.GenerateFromPassword([]byte("known-password"), 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &accountStoreFake{loginRecords: map[string]account.Record{
+		"known@example.com": {Profile: &cloudv1.AccountProfile{AccountId: "known", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE}, PasswordHash: hash},
+	}}
+	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: 6, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	measure := func(login string) time.Duration {
+		start := time.Now()
+		for index := 0; index < 4; index++ {
+			if _, err := service.Login(context.Background(), &cloudv1.LoginAccountRequest{Login: login, Password: "wrong-password"}); !errors.Is(err, account.ErrUnauthenticated) {
+				t.Fatalf("login %q error = %v", login, err)
+			}
+		}
+		return time.Since(start)
+	}
+	knownDuration := measure("known@example.com")
+	unknownDuration := measure("  UNKNOWN@Example.com ")
+	if store.lastLogin != "unknown@example.com" {
+		t.Fatalf("normalized lookup = %q", store.lastLogin)
+	}
+	if knownDuration > 4*unknownDuration || unknownDuration > 4*knownDuration {
+		t.Fatalf("known wrong-password duration=%v unknown duration=%v", knownDuration, unknownDuration)
+	}
+}
+
+func TestProvisionAccountRequiresRecentAdmin(t *testing.T) {
+	now := time.Unix(3_000, 0).UTC()
+	store := &accountStoreFake{}
+	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &cloudv1.AccountProfile{AccountId: "admin"}
+	request := &cloudv1.ProvisionAccountRequest{Email: " User@Example.com ", Password: "new-password", DisplayName: " New User "}
+	userContext := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, SessionID: "session", RecentAuthExpiresAt: now.Add(time.Minute)})
+	if _, err := service.ProvisionAccount(userContext, request); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("non-admin provision error = %v", err)
+	}
+	adminContext := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN}, SessionID: "session", RecentAuthExpiresAt: now.Add(time.Minute)})
+	response, err := service.ProvisionAccount(adminContext, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetAccount().GetEmail() != "user@example.com" || response.GetAccount().GetDisplayName() != "New User" || store.provisionActor != "admin" {
+		t.Fatalf("response=%+v actor=%q", response, store.provisionActor)
+	}
+	if bcrypt.CompareHashAndPassword(store.provisioned.PasswordHash, []byte("new-password")) != nil {
+		t.Fatal("provisioned password hash does not verify")
+	}
+}
+
 type accountStoreFake struct {
 	records                                  map[string]account.Record
 	sessions                                 []account.Session
@@ -75,15 +133,25 @@ type accountStoreFake struct {
 	revokedAccountID, revokedSessionID       string
 	passwordAccountID, passwordKeepSessionID string
 	passwordHash                             []byte
+	loginRecords                             map[string]account.Record
+	lastLogin                                string
+	provisioned                              account.Record
+	provisionActor                           string
 }
 
-func (store *accountStoreFake) CreateAccount(context.Context, account.Record, account.Session) error {
-	return nil
-}
 func (store *accountStoreFake) EnsureBootstrapOperator(_ context.Context, record account.Record) (account.Record, error) {
 	return record, nil
 }
-func (store *accountStoreFake) AccountByLogin(context.Context, string) (account.Record, error) {
+
+func (store *accountStoreFake) ProvisionAccount(_ context.Context, record account.Record, actor string, _ time.Time) error {
+	store.provisioned, store.provisionActor = record, actor
+	return nil
+}
+func (store *accountStoreFake) AccountByLogin(_ context.Context, login string) (account.Record, error) {
+	store.lastLogin = login
+	if record, ok := store.loginRecords[login]; ok {
+		return record, nil
+	}
 	return account.Record{}, errors.New("not found")
 }
 func (store *accountStoreFake) AccountByID(_ context.Context, accountID string) (account.Record, error) {

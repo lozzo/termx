@@ -6,11 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -44,8 +45,8 @@ type Session struct {
 
 // Store 是账号写事务和 session CAS 的持久边界。
 type Store interface {
-	CreateAccount(context.Context, Record, Session) error
 	EnsureBootstrapOperator(context.Context, Record) (Record, error)
+	ProvisionAccount(context.Context, Record, string, time.Time) error
 	AccountByLogin(context.Context, string) (Record, error)
 	AccountByID(context.Context, string) (Record, error)
 	PutSession(context.Context, Session) error
@@ -68,14 +69,14 @@ type Config struct {
 	Now                     func() time.Time
 }
 
-// Service 是 AccountService 的应用实现，不拥有 HTTP cookie 或 transport 状态。
+// Service 是账号应用边界，不拥有 HTTP cookie、公开 gRPC 注册或 transport 状态。
 type Service struct {
-	cloudv1.UnimplementedAccountServiceServer
 	store                   Store
 	accessTTL               time.Duration
 	refreshTTL              time.Duration
 	recentAuthenticationTTL time.Duration
 	bcryptCost              int
+	dummyPasswordHash       []byte
 	now                     func() time.Time
 }
 
@@ -90,12 +91,16 @@ func New(config Config) (*Service, error) {
 	if config.BcryptCost == 0 {
 		config.BcryptCost = bcrypt.DefaultCost
 	}
-	return &Service{store: config.Store, accessTTL: config.AccessTTL, refreshTTL: config.RefreshTTL, recentAuthenticationTTL: config.RecentAuthenticationTTL, bcryptCost: config.BcryptCost, now: config.Now}, nil
+	dummyPasswordHash, err := bcrypt.GenerateFromPassword([]byte("anytty-cloud-dummy-password"), config.BcryptCost)
+	if err != nil {
+		return nil, fmt.Errorf("create dummy password verifier: %w", err)
+	}
+	return &Service{store: config.Store, accessTTL: config.AccessTTL, refreshTTL: config.RefreshTTL, recentAuthenticationTTL: config.RecentAuthenticationTTL, bcryptCost: config.BcryptCost, dummyPasswordHash: dummyPasswordHash, now: config.Now}, nil
 }
 
 // EnsureBootstrapOperator 首次创建部署管理员；已存在账号不会因 Controller 重启而轮换密码或撤销 session。
 func (service *Service) EnsureBootstrapOperator(ctx context.Context, login, password string) (*cloudv1.AccountProfile, error) {
-	login = strings.TrimSpace(strings.ToLower(login))
+	login = NormalizeLogin(login)
 	if login == "" || len(password) < 8 {
 		return nil, errors.New("bootstrap operator login and password are required")
 	}
@@ -111,12 +116,16 @@ func (service *Service) EnsureBootstrapOperator(ctx context.Context, login, pass
 	return record.Profile, nil
 }
 
-// Register 创建普通账号、基础角色、首个 session；初始 Subscription 由 Store 同事务创建。
-func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterAccountRequest) (*cloudv1.RegisterAccountResponse, error) {
+// ProvisionAccount 只允许最近验证过的管理员创建可登录普通账号。
+func (service *Service) ProvisionAccount(ctx context.Context, request *cloudv1.ProvisionAccountRequest) (*cloudv1.ProvisionAccountResponse, error) {
+	identity, ok := IdentityFromContext(ctx)
+	if !ok || !identity.HasRole(cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN) || !service.now().UTC().Before(identity.RecentAuthExpiresAt) {
+		return nil, ErrUnauthenticated
+	}
 	if request == nil {
 		return nil, ErrAccountConflict
 	}
-	email := strings.TrimSpace(strings.ToLower(request.GetEmail()))
+	email := NormalizeLogin(request.GetEmail())
 	displayName := strings.TrimSpace(request.GetDisplayName())
 	if !strings.Contains(email, "@") || len(request.GetPassword()) < 8 || displayName == "" {
 		return nil, ErrAccountConflict
@@ -127,14 +136,10 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterA
 	}
 	now := service.now().UTC()
 	record := Record{Profile: &cloudv1.AccountProfile{AccountId: uuid.NewString(), Email: email, DisplayName: displayName, State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1, CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}, PasswordHash: hash, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}}
-	credential, session, err := service.newSession(record.Profile.GetAccountId(), 1, now)
-	if err != nil {
+	if err := service.store.ProvisionAccount(ctx, record, identity.Account.GetAccountId(), now); err != nil {
 		return nil, err
 	}
-	if err := service.store.CreateAccount(ctx, record, session); err != nil {
-		return nil, err
-	}
-	return &cloudv1.RegisterAccountResponse{Account: record.Profile, Session: credential}, nil
+	return &cloudv1.ProvisionAccountResponse{Account: record.Profile}, nil
 }
 
 // Login 验证密码并创建持久 session；禁用账号不能创建新 session。
@@ -142,8 +147,20 @@ func (service *Service) Login(ctx context.Context, request *cloudv1.LoginAccount
 	if request == nil {
 		return nil, ErrUnauthenticated
 	}
-	record, err := service.store.AccountByLogin(ctx, strings.TrimSpace(strings.ToLower(request.GetLogin())))
-	if err != nil || bcrypt.CompareHashAndPassword(record.PasswordHash, []byte(request.GetPassword())) != nil {
+	record, lookupErr := service.store.AccountByLogin(ctx, NormalizeLogin(request.GetLogin()))
+	passwordHash := record.PasswordHash
+	recordValid := lookupErr == nil && record.Profile != nil
+	if _, err := bcrypt.Cost(passwordHash); err != nil {
+		recordValid = false
+	}
+	if !recordValid {
+		passwordHash = service.dummyPasswordHash
+	}
+	passwordErr := bcrypt.CompareHashAndPassword(passwordHash, []byte(request.GetPassword()))
+	if !recordValid || passwordErr != nil {
+		if lookupErr != nil {
+			return nil, fmt.Errorf("%w: account lookup failed: %v", ErrUnauthenticated, lookupErr)
+		}
 		return nil, ErrUnauthenticated
 	}
 	if record.Profile.GetState() != cloudv1.AccountState_ACCOUNT_STATE_ACTIVE {
@@ -158,6 +175,11 @@ func (service *Service) Login(ctx context.Context, request *cloudv1.LoginAccount
 		return nil, err
 	}
 	return &cloudv1.LoginAccountResponse{Account: record.Profile, Roles: record.Roles, Session: credential}, nil
+}
+
+// NormalizeLogin 是密码登录与登录限流共用的唯一账号规范化规则。
+func NormalizeLogin(login string) string {
+	return strings.ToLower(strings.TrimSpace(login))
 }
 
 // Refresh 单次轮换 refresh token；旧 session 在同一事务内撤销。

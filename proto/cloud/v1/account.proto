@@ -42,17 +42,6 @@ message AccountSessionCredential {
   bytes csrf_token = 6;
 }
 
-message RegisterAccountRequest {
-  string email = 1;
-  string password = 2;
-  string display_name = 3;
-}
-
-message RegisterAccountResponse {
-  AccountProfile account = 1;
-  AccountSessionCredential session = 2;
-}
-
 message LoginAccountRequest {
   string login = 1;
   string password = 2;
@@ -118,7 +107,6 @@ message RevokeAccountSessionResponse {}
 
 // AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
 service AccountService {
-  rpc Register(RegisterAccountRequest) returns (RegisterAccountResponse);
   rpc Login(LoginAccountRequest) returns (LoginAccountResponse);
   rpc Refresh(RefreshAccountSessionRequest) returns (RefreshAccountSessionResponse);
   rpc Logout(LogoutAccountSessionRequest) returns (LogoutAccountSessionResponse);

@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	pathpkg "path"
 	"strings"
 	"sync"
@@ -28,6 +30,7 @@ import (
 	operatorservice "github.com/anytty/anytty/cloud/controller/operator"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -54,6 +57,8 @@ type Config struct {
 	Commerce           *commerce.Service
 	Operator           *operatorservice.Service
 	Certificates       *certificate.Service
+	TrustedProxyCIDRs  []netip.Prefix
+	Logger             *slog.Logger
 }
 
 // Server 拥有原生 HTTPS listener 生命周期，不拥有 Edge 配置或实时目录。
@@ -112,6 +117,9 @@ func NewHandler(config Config) (http.Handler, error) {
 	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Operator == nil || config.Certificates == nil {
 		return nil, errors.New("HTTP handler and R7 application services are required")
 	}
+	if config.Logger == nil {
+		config.Logger = slog.Default()
+	}
 	var grpcServer *grpc.Server
 	if config.Enrollment != nil {
 		grpcServer = grpc.NewServer(grpc.UnaryInterceptor(accountUnaryInterceptor(config.Accounts)))
@@ -122,17 +130,19 @@ func NewHandler(config Config) (http.Handler, error) {
 		if config.ClientDirectory != nil {
 			cloudv1.RegisterDirectoryServiceServer(grpcServer, config.ClientDirectory)
 		}
-		cloudv1.RegisterAccountServiceServer(grpcServer, config.Accounts)
 		cloudv1.RegisterCommerceServiceServer(grpcServer, config.Commerce)
 		cloudv1.RegisterOperatorServiceServer(grpcServer, config.Operator)
 	}
-	handler := &handler{config: config, grpcServer: grpcServer}
+	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger}
 	return handler, nil
 }
 
 type handler struct {
-	config     Config
-	grpcServer *grpc.Server
+	config            Config
+	grpcServer        *grpc.Server
+	loginLimiter      *loginLimiter
+	trustedProxyCIDRs []netip.Prefix
+	logger            *slog.Logger
 }
 
 func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -143,6 +153,9 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		handler.grpcServer.ServeHTTP(writer, request)
 		return
 	}
+	requestID := uuid.NewString()
+	writer.Header().Set("X-Request-ID", requestID)
+	writer = &apiResponseWriter{ResponseWriter: writer, request: request, logger: handler.logger}
 	switch {
 	case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/install/edge/"):
 		handler.installScript(writer, request)
@@ -155,7 +168,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		// 已发布套餐是公开产品目录；未登录请求不能设置 include_unpublished。
 		response, err := handler.config.Commerce.ListPlans(request.Context(), &cloudv1.ListPlansRequest{})
 		writeServiceResult(writer, response, err)
-	case request.URL.Path == "/api/account/login" || request.URL.Path == "/api/account/register" || request.URL.Path == "/api/account/refresh":
+	case request.URL.Path == "/api/account/login" || request.URL.Path == "/api/account/refresh":
 		if !handler.allowMutationOrigin(writer, request) {
 			return
 		}
@@ -183,7 +196,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 			}
 			handler.operator(writer, request)
 		default:
-			http.NotFound(writer, request)
+			writeError(writer, http.StatusNotFound, errors.New("API endpoint was not found"))
 		}
 	default:
 		// SPA shell 与静态资源不包含业务数据；统一公开后，深链刷新也能先轮换 HttpOnly session，再由 API/RBAC 守住数据边界。
@@ -243,7 +256,7 @@ func (handler *handler) operator(writer http.ResponseWriter, request *http.Reque
 			}
 			writeProto(writer, http.StatusCreated, response)
 		default:
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("operator daemon endpoint method is not allowed"))
 		}
 		return
 	}
@@ -254,7 +267,7 @@ func (handler *handler) operator(writer http.ResponseWriter, request *http.Reque
 		case http.MethodPost:
 			handler.createEdge(writer, request)
 		default:
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("operator edge endpoint method is not allowed"))
 		}
 		return
 	}
@@ -262,7 +275,7 @@ func (handler *handler) operator(writer http.ResponseWriter, request *http.Reque
 		handler.updateEdge(writer, request)
 		return
 	}
-	http.NotFound(writer, request)
+	writeError(writer, http.StatusNotFound, errors.New("operator endpoint was not found"))
 }
 
 func (handler *handler) listEdges(writer http.ResponseWriter, request *http.Request) {
@@ -385,7 +398,7 @@ func (handler *handler) allowMutationOrigin(writer http.ResponseWriter, request 
 			writeError(writer, http.StatusForbidden, errors.New("CSRF proof is invalid"))
 			return false
 		}
-	} else if strings.HasPrefix(request.URL.Path, "/api/") && request.URL.Path != "/api/account/login" && request.URL.Path != "/api/account/register" {
+	} else if strings.HasPrefix(request.URL.Path, "/api/") && request.URL.Path != "/api/account/login" {
 		identity, ok := account.IdentityFromContext(request.Context())
 		csrfCookie, err := request.Cookie(csrfCookieName)
 		csrfHeader := strings.TrimSpace(request.Header.Get("X-AnyTTY-CSRF"))
@@ -399,7 +412,7 @@ func (handler *handler) allowMutationOrigin(writer http.ResponseWriter, request 
 
 func accountUnaryInterceptor(accounts *account.Service) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if strings.HasSuffix(info.FullMethod, "/Register") || strings.HasSuffix(info.FullMethod, "/Login") || strings.HasSuffix(info.FullMethod, "/Refresh") || strings.Contains(info.FullMethod, "EnrollmentService") || strings.Contains(info.FullMethod, "DirectoryService") {
+		if strings.Contains(info.FullMethod, "EnrollmentService") || strings.Contains(info.FullMethod, "DirectoryService") {
 			return handler(ctx, request)
 		}
 		values := metadata.ValueFromIncomingContext(ctx, "authorization")
@@ -432,9 +445,12 @@ func readProto(request *http.Request, message proto.Message) error {
 
 func readProtoLimit(request *http.Request, message proto.Message, limit int64) error {
 	defer request.Body.Close()
-	payload, err := io.ReadAll(io.LimitReader(request.Body, limit))
+	payload, err := io.ReadAll(io.LimitReader(request.Body, limit+1))
 	if err != nil {
 		return err
+	}
+	if int64(len(payload)) > limit {
+		return errRequestBodyTooLarge
 	}
 	return (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, message)
 }
@@ -452,8 +468,66 @@ func writeProto(writer http.ResponseWriter, status int, message proto.Message) {
 }
 
 func writeError(writer http.ResponseWriter, status int, err error) {
+	if errors.Is(err, errRequestBodyTooLarge) {
+		status = http.StatusRequestEntityTooLarge
+	}
+	if errors.Is(err, errLoginRateLimited) {
+		status = http.StatusTooManyRequests
+	}
+	code, message := publicHTTPError(status)
+	requestID := writer.Header().Get("X-Request-ID")
+	if requestID == "" {
+		requestID = uuid.NewString()
+		writer.Header().Set("X-Request-ID", requestID)
+	}
+	if wrapped, ok := writer.(*apiResponseWriter); ok && wrapped.logger != nil {
+		wrapped.logger.Warn("Cloud HTTP request failed", "request_id", requestID, "method", wrapped.request.Method, "path", wrapped.request.URL.Path, "status", status, "error", err)
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(map[string]string{"error": err.Error()})
+	_ = json.NewEncoder(writer).Encode(map[string]string{"code": code, "message": message, "request_id": requestID})
+}
+
+var errRequestBodyTooLarge = errors.New("request body exceeds limit")
+
+type apiResponseWriter struct {
+	http.ResponseWriter
+	request *http.Request
+	logger  *slog.Logger
+}
+
+func (writer *apiResponseWriter) Flush() {
+	if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func publicHTTPError(status int) (string, string) {
+	switch status {
+	case http.StatusBadRequest:
+		return "invalid_request", "请求无效。"
+	case http.StatusUnauthorized:
+		return "unauthenticated", "账号或凭据无效。"
+	case http.StatusForbidden:
+		return "forbidden", "无权执行此操作。"
+	case http.StatusNotFound:
+		return "not_found", "请求的资源不存在。"
+	case http.StatusMethodNotAllowed:
+		return "method_not_allowed", "请求方法不受支持。"
+	case http.StatusConflict:
+		return "conflict", "请求与当前状态冲突。"
+	case http.StatusGone:
+		return "gone", "请求的资源已失效。"
+	case http.StatusRequestEntityTooLarge:
+		return "payload_too_large", "请求体超过大小限制。"
+	case http.StatusUnsupportedMediaType:
+		return "unsupported_media_type", "请求内容类型不受支持。"
+	case http.StatusTooManyRequests:
+		return "login_rate_limited", "登录尝试过于频繁，请稍后重试。"
+	case http.StatusServiceUnavailable:
+		return "service_unavailable", "服务暂时不可用。"
+	default:
+		return "internal_error", "服务暂时无法处理请求。"
+	}
 }

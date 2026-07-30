@@ -303,118 +303,6 @@ func (x *AccountSessionCredential) GetCsrfToken() []byte {
 	return nil
 }
 
-type RegisterAccountRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RegisterAccountRequest) Reset() {
-	*x = RegisterAccountRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterAccountRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterAccountRequest) ProtoMessage() {}
-
-func (x *RegisterAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterAccountRequest.ProtoReflect.Descriptor instead.
-func (*RegisterAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *RegisterAccountRequest) GetEmail() string {
-	if x != nil {
-		return x.Email
-	}
-	return ""
-}
-
-func (x *RegisterAccountRequest) GetPassword() string {
-	if x != nil {
-		return x.Password
-	}
-	return ""
-}
-
-func (x *RegisterAccountRequest) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
-	}
-	return ""
-}
-
-type RegisterAccountResponse struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Account       *AccountProfile           `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	Session       *AccountSessionCredential `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RegisterAccountResponse) Reset() {
-	*x = RegisterAccountResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterAccountResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterAccountResponse) ProtoMessage() {}
-
-func (x *RegisterAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterAccountResponse.ProtoReflect.Descriptor instead.
-func (*RegisterAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *RegisterAccountResponse) GetAccount() *AccountProfile {
-	if x != nil {
-		return x.Account
-	}
-	return nil
-}
-
-func (x *RegisterAccountResponse) GetSession() *AccountSessionCredential {
-	if x != nil {
-		return x.Session
-	}
-	return nil
-}
-
 type LoginAccountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Login         string                 `protobuf:"bytes,1,opt,name=login,proto3" json:"login,omitempty"`
@@ -425,7 +313,7 @@ type LoginAccountRequest struct {
 
 func (x *LoginAccountRequest) Reset() {
 	*x = LoginAccountRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[4]
+	mi := &file_cloud_v1_account_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +325,7 @@ func (x *LoginAccountRequest) String() string {
 func (*LoginAccountRequest) ProtoMessage() {}
 
 func (x *LoginAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[4]
+	mi := &file_cloud_v1_account_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +338,7 @@ func (x *LoginAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginAccountRequest.ProtoReflect.Descriptor instead.
 func (*LoginAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *LoginAccountRequest) GetLogin() string {
@@ -478,7 +366,7 @@ type LoginAccountResponse struct {
 
 func (x *LoginAccountResponse) Reset() {
 	*x = LoginAccountResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[5]
+	mi := &file_cloud_v1_account_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -490,7 +378,7 @@ func (x *LoginAccountResponse) String() string {
 func (*LoginAccountResponse) ProtoMessage() {}
 
 func (x *LoginAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[5]
+	mi := &file_cloud_v1_account_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -503,7 +391,7 @@ func (x *LoginAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginAccountResponse.ProtoReflect.Descriptor instead.
 func (*LoginAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LoginAccountResponse) GetAccount() *AccountProfile {
@@ -536,7 +424,7 @@ type RefreshAccountSessionRequest struct {
 
 func (x *RefreshAccountSessionRequest) Reset() {
 	*x = RefreshAccountSessionRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[6]
+	mi := &file_cloud_v1_account_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -548,7 +436,7 @@ func (x *RefreshAccountSessionRequest) String() string {
 func (*RefreshAccountSessionRequest) ProtoMessage() {}
 
 func (x *RefreshAccountSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[6]
+	mi := &file_cloud_v1_account_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -561,7 +449,7 @@ func (x *RefreshAccountSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshAccountSessionRequest.ProtoReflect.Descriptor instead.
 func (*RefreshAccountSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RefreshAccountSessionRequest) GetRefreshToken() []byte {
@@ -582,7 +470,7 @@ type RefreshAccountSessionResponse struct {
 
 func (x *RefreshAccountSessionResponse) Reset() {
 	*x = RefreshAccountSessionResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[7]
+	mi := &file_cloud_v1_account_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +482,7 @@ func (x *RefreshAccountSessionResponse) String() string {
 func (*RefreshAccountSessionResponse) ProtoMessage() {}
 
 func (x *RefreshAccountSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[7]
+	mi := &file_cloud_v1_account_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +495,7 @@ func (x *RefreshAccountSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshAccountSessionResponse.ProtoReflect.Descriptor instead.
 func (*RefreshAccountSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RefreshAccountSessionResponse) GetAccount() *AccountProfile {
@@ -641,7 +529,7 @@ type LogoutAccountSessionRequest struct {
 
 func (x *LogoutAccountSessionRequest) Reset() {
 	*x = LogoutAccountSessionRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[8]
+	mi := &file_cloud_v1_account_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +541,7 @@ func (x *LogoutAccountSessionRequest) String() string {
 func (*LogoutAccountSessionRequest) ProtoMessage() {}
 
 func (x *LogoutAccountSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[8]
+	mi := &file_cloud_v1_account_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +554,7 @@ func (x *LogoutAccountSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutAccountSessionRequest.ProtoReflect.Descriptor instead.
 func (*LogoutAccountSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{8}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LogoutAccountSessionRequest) GetSessionId() string {
@@ -691,7 +579,7 @@ type LogoutAccountSessionResponse struct {
 
 func (x *LogoutAccountSessionResponse) Reset() {
 	*x = LogoutAccountSessionResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[9]
+	mi := &file_cloud_v1_account_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -703,7 +591,7 @@ func (x *LogoutAccountSessionResponse) String() string {
 func (*LogoutAccountSessionResponse) ProtoMessage() {}
 
 func (x *LogoutAccountSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[9]
+	mi := &file_cloud_v1_account_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -716,7 +604,7 @@ func (x *LogoutAccountSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutAccountSessionResponse.ProtoReflect.Descriptor instead.
 func (*LogoutAccountSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{9}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{7}
 }
 
 type GetCurrentAccountRequest struct {
@@ -727,7 +615,7 @@ type GetCurrentAccountRequest struct {
 
 func (x *GetCurrentAccountRequest) Reset() {
 	*x = GetCurrentAccountRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[10]
+	mi := &file_cloud_v1_account_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +627,7 @@ func (x *GetCurrentAccountRequest) String() string {
 func (*GetCurrentAccountRequest) ProtoMessage() {}
 
 func (x *GetCurrentAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[10]
+	mi := &file_cloud_v1_account_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +640,7 @@ func (x *GetCurrentAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentAccountRequest.ProtoReflect.Descriptor instead.
 func (*GetCurrentAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{8}
 }
 
 type GetCurrentAccountResponse struct {
@@ -766,7 +654,7 @@ type GetCurrentAccountResponse struct {
 
 func (x *GetCurrentAccountResponse) Reset() {
 	*x = GetCurrentAccountResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[11]
+	mi := &file_cloud_v1_account_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -778,7 +666,7 @@ func (x *GetCurrentAccountResponse) String() string {
 func (*GetCurrentAccountResponse) ProtoMessage() {}
 
 func (x *GetCurrentAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[11]
+	mi := &file_cloud_v1_account_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -791,7 +679,7 @@ func (x *GetCurrentAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentAccountResponse.ProtoReflect.Descriptor instead.
 func (*GetCurrentAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{11}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetCurrentAccountResponse) GetAccount() *AccountProfile {
@@ -824,7 +712,7 @@ type VerifyRecentAuthenticationRequest struct {
 
 func (x *VerifyRecentAuthenticationRequest) Reset() {
 	*x = VerifyRecentAuthenticationRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[12]
+	mi := &file_cloud_v1_account_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -836,7 +724,7 @@ func (x *VerifyRecentAuthenticationRequest) String() string {
 func (*VerifyRecentAuthenticationRequest) ProtoMessage() {}
 
 func (x *VerifyRecentAuthenticationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[12]
+	mi := &file_cloud_v1_account_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -849,7 +737,7 @@ func (x *VerifyRecentAuthenticationRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use VerifyRecentAuthenticationRequest.ProtoReflect.Descriptor instead.
 func (*VerifyRecentAuthenticationRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{12}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *VerifyRecentAuthenticationRequest) GetPassword() string {
@@ -868,7 +756,7 @@ type VerifyRecentAuthenticationResponse struct {
 
 func (x *VerifyRecentAuthenticationResponse) Reset() {
 	*x = VerifyRecentAuthenticationResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[13]
+	mi := &file_cloud_v1_account_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -880,7 +768,7 @@ func (x *VerifyRecentAuthenticationResponse) String() string {
 func (*VerifyRecentAuthenticationResponse) ProtoMessage() {}
 
 func (x *VerifyRecentAuthenticationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[13]
+	mi := &file_cloud_v1_account_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -893,7 +781,7 @@ func (x *VerifyRecentAuthenticationResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use VerifyRecentAuthenticationResponse.ProtoReflect.Descriptor instead.
 func (*VerifyRecentAuthenticationResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{13}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *VerifyRecentAuthenticationResponse) GetExpiresAt() *timestamppb.Timestamp {
@@ -919,7 +807,7 @@ type AccountSessionProjection struct {
 
 func (x *AccountSessionProjection) Reset() {
 	*x = AccountSessionProjection{}
-	mi := &file_cloud_v1_account_proto_msgTypes[14]
+	mi := &file_cloud_v1_account_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +819,7 @@ func (x *AccountSessionProjection) String() string {
 func (*AccountSessionProjection) ProtoMessage() {}
 
 func (x *AccountSessionProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[14]
+	mi := &file_cloud_v1_account_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +832,7 @@ func (x *AccountSessionProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountSessionProjection.ProtoReflect.Descriptor instead.
 func (*AccountSessionProjection) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{14}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AccountSessionProjection) GetSessionId() string {
@@ -1004,7 +892,7 @@ type ListAccountSessionsRequest struct {
 
 func (x *ListAccountSessionsRequest) Reset() {
 	*x = ListAccountSessionsRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[15]
+	mi := &file_cloud_v1_account_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1016,7 +904,7 @@ func (x *ListAccountSessionsRequest) String() string {
 func (*ListAccountSessionsRequest) ProtoMessage() {}
 
 func (x *ListAccountSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[15]
+	mi := &file_cloud_v1_account_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1029,7 +917,7 @@ func (x *ListAccountSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListAccountSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{15}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{13}
 }
 
 type ListAccountSessionsResponse struct {
@@ -1041,7 +929,7 @@ type ListAccountSessionsResponse struct {
 
 func (x *ListAccountSessionsResponse) Reset() {
 	*x = ListAccountSessionsResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[16]
+	mi := &file_cloud_v1_account_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1053,7 +941,7 @@ func (x *ListAccountSessionsResponse) String() string {
 func (*ListAccountSessionsResponse) ProtoMessage() {}
 
 func (x *ListAccountSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[16]
+	mi := &file_cloud_v1_account_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1066,7 +954,7 @@ func (x *ListAccountSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListAccountSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{16}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListAccountSessionsResponse) GetSessions() []*AccountSessionProjection {
@@ -1086,7 +974,7 @@ type ChangeAccountPasswordRequest struct {
 
 func (x *ChangeAccountPasswordRequest) Reset() {
 	*x = ChangeAccountPasswordRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[17]
+	mi := &file_cloud_v1_account_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1098,7 +986,7 @@ func (x *ChangeAccountPasswordRequest) String() string {
 func (*ChangeAccountPasswordRequest) ProtoMessage() {}
 
 func (x *ChangeAccountPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[17]
+	mi := &file_cloud_v1_account_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1111,7 +999,7 @@ func (x *ChangeAccountPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeAccountPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ChangeAccountPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{17}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ChangeAccountPasswordRequest) GetCurrentPassword() string {
@@ -1137,7 +1025,7 @@ type ChangeAccountPasswordResponse struct {
 
 func (x *ChangeAccountPasswordResponse) Reset() {
 	*x = ChangeAccountPasswordResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[18]
+	mi := &file_cloud_v1_account_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1037,7 @@ func (x *ChangeAccountPasswordResponse) String() string {
 func (*ChangeAccountPasswordResponse) ProtoMessage() {}
 
 func (x *ChangeAccountPasswordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[18]
+	mi := &file_cloud_v1_account_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1050,7 @@ func (x *ChangeAccountPasswordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeAccountPasswordResponse.ProtoReflect.Descriptor instead.
 func (*ChangeAccountPasswordResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{18}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ChangeAccountPasswordResponse) GetAccount() *AccountProfile {
@@ -1181,7 +1069,7 @@ type RevokeAccountSessionRequest struct {
 
 func (x *RevokeAccountSessionRequest) Reset() {
 	*x = RevokeAccountSessionRequest{}
-	mi := &file_cloud_v1_account_proto_msgTypes[19]
+	mi := &file_cloud_v1_account_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1193,7 +1081,7 @@ func (x *RevokeAccountSessionRequest) String() string {
 func (*RevokeAccountSessionRequest) ProtoMessage() {}
 
 func (x *RevokeAccountSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[19]
+	mi := &file_cloud_v1_account_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1206,7 +1094,7 @@ func (x *RevokeAccountSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeAccountSessionRequest.ProtoReflect.Descriptor instead.
 func (*RevokeAccountSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{19}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RevokeAccountSessionRequest) GetSessionId() string {
@@ -1224,7 +1112,7 @@ type RevokeAccountSessionResponse struct {
 
 func (x *RevokeAccountSessionResponse) Reset() {
 	*x = RevokeAccountSessionResponse{}
-	mi := &file_cloud_v1_account_proto_msgTypes[20]
+	mi := &file_cloud_v1_account_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1236,7 +1124,7 @@ func (x *RevokeAccountSessionResponse) String() string {
 func (*RevokeAccountSessionResponse) ProtoMessage() {}
 
 func (x *RevokeAccountSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_account_proto_msgTypes[20]
+	mi := &file_cloud_v1_account_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1249,7 +1137,7 @@ func (x *RevokeAccountSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeAccountSessionResponse.ProtoReflect.Descriptor instead.
 func (*RevokeAccountSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_account_proto_rawDescGZIP(), []int{20}
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{18}
 }
 
 var File_cloud_v1_account_proto protoreflect.FileDescriptor
@@ -1276,14 +1164,7 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\x11access_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0faccessExpiresAt\x12H\n" +
 	"\x12refresh_expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x10refreshExpiresAt\x12\x1d\n" +
 	"\n" +
-	"csrf_token\x18\x06 \x01(\fR\tcsrfToken\"m\n" +
-	"\x16RegisterAccountRequest\x12\x14\n" +
-	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\"\x99\x01\n" +
-	"\x17RegisterAccountResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x12C\n" +
-	"\asession\x18\x02 \x01(\v2).anytty.cloud.v1.AccountSessionCredentialR\asession\"G\n" +
+	"csrf_token\x18\x06 \x01(\fR\tcsrfToken\"G\n" +
 	"\x13LoginAccountRequest\x12\x14\n" +
 	"\x05login\x18\x01 \x01(\tR\x05login\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xca\x01\n" +
@@ -1342,9 +1223,8 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\x18ACCOUNT_ROLE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11ACCOUNT_ROLE_USER\x10\x01\x12\x19\n" +
 	"\x15ACCOUNT_ROLE_OPERATOR\x10\x02\x12\x16\n" +
-	"\x12ACCOUNT_ROLE_ADMIN\x10\x032\xcd\a\n" +
-	"\x0eAccountService\x12]\n" +
-	"\bRegister\x12'.anytty.cloud.v1.RegisterAccountRequest\x1a(.anytty.cloud.v1.RegisterAccountResponse\x12T\n" +
+	"\x12ACCOUNT_ROLE_ADMIN\x10\x032\xee\x06\n" +
+	"\x0eAccountService\x12T\n" +
 	"\x05Login\x12$.anytty.cloud.v1.LoginAccountRequest\x1a%.anytty.cloud.v1.LoginAccountResponse\x12h\n" +
 	"\aRefresh\x12-.anytty.cloud.v1.RefreshAccountSessionRequest\x1a..anytty.cloud.v1.RefreshAccountSessionResponse\x12e\n" +
 	"\x06Logout\x12,.anytty.cloud.v1.LogoutAccountSessionRequest\x1a-.anytty.cloud.v1.LogoutAccountSessionResponse\x12c\n" +
@@ -1368,80 +1248,74 @@ func file_cloud_v1_account_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloud_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_cloud_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_cloud_v1_account_proto_goTypes = []any{
 	(AccountState)(0),                          // 0: anytty.cloud.v1.AccountState
 	(AccountRole)(0),                           // 1: anytty.cloud.v1.AccountRole
 	(*AccountProfile)(nil),                     // 2: anytty.cloud.v1.AccountProfile
 	(*AccountSessionCredential)(nil),           // 3: anytty.cloud.v1.AccountSessionCredential
-	(*RegisterAccountRequest)(nil),             // 4: anytty.cloud.v1.RegisterAccountRequest
-	(*RegisterAccountResponse)(nil),            // 5: anytty.cloud.v1.RegisterAccountResponse
-	(*LoginAccountRequest)(nil),                // 6: anytty.cloud.v1.LoginAccountRequest
-	(*LoginAccountResponse)(nil),               // 7: anytty.cloud.v1.LoginAccountResponse
-	(*RefreshAccountSessionRequest)(nil),       // 8: anytty.cloud.v1.RefreshAccountSessionRequest
-	(*RefreshAccountSessionResponse)(nil),      // 9: anytty.cloud.v1.RefreshAccountSessionResponse
-	(*LogoutAccountSessionRequest)(nil),        // 10: anytty.cloud.v1.LogoutAccountSessionRequest
-	(*LogoutAccountSessionResponse)(nil),       // 11: anytty.cloud.v1.LogoutAccountSessionResponse
-	(*GetCurrentAccountRequest)(nil),           // 12: anytty.cloud.v1.GetCurrentAccountRequest
-	(*GetCurrentAccountResponse)(nil),          // 13: anytty.cloud.v1.GetCurrentAccountResponse
-	(*VerifyRecentAuthenticationRequest)(nil),  // 14: anytty.cloud.v1.VerifyRecentAuthenticationRequest
-	(*VerifyRecentAuthenticationResponse)(nil), // 15: anytty.cloud.v1.VerifyRecentAuthenticationResponse
-	(*AccountSessionProjection)(nil),           // 16: anytty.cloud.v1.AccountSessionProjection
-	(*ListAccountSessionsRequest)(nil),         // 17: anytty.cloud.v1.ListAccountSessionsRequest
-	(*ListAccountSessionsResponse)(nil),        // 18: anytty.cloud.v1.ListAccountSessionsResponse
-	(*ChangeAccountPasswordRequest)(nil),       // 19: anytty.cloud.v1.ChangeAccountPasswordRequest
-	(*ChangeAccountPasswordResponse)(nil),      // 20: anytty.cloud.v1.ChangeAccountPasswordResponse
-	(*RevokeAccountSessionRequest)(nil),        // 21: anytty.cloud.v1.RevokeAccountSessionRequest
-	(*RevokeAccountSessionResponse)(nil),       // 22: anytty.cloud.v1.RevokeAccountSessionResponse
-	(*timestamppb.Timestamp)(nil),              // 23: google.protobuf.Timestamp
+	(*LoginAccountRequest)(nil),                // 4: anytty.cloud.v1.LoginAccountRequest
+	(*LoginAccountResponse)(nil),               // 5: anytty.cloud.v1.LoginAccountResponse
+	(*RefreshAccountSessionRequest)(nil),       // 6: anytty.cloud.v1.RefreshAccountSessionRequest
+	(*RefreshAccountSessionResponse)(nil),      // 7: anytty.cloud.v1.RefreshAccountSessionResponse
+	(*LogoutAccountSessionRequest)(nil),        // 8: anytty.cloud.v1.LogoutAccountSessionRequest
+	(*LogoutAccountSessionResponse)(nil),       // 9: anytty.cloud.v1.LogoutAccountSessionResponse
+	(*GetCurrentAccountRequest)(nil),           // 10: anytty.cloud.v1.GetCurrentAccountRequest
+	(*GetCurrentAccountResponse)(nil),          // 11: anytty.cloud.v1.GetCurrentAccountResponse
+	(*VerifyRecentAuthenticationRequest)(nil),  // 12: anytty.cloud.v1.VerifyRecentAuthenticationRequest
+	(*VerifyRecentAuthenticationResponse)(nil), // 13: anytty.cloud.v1.VerifyRecentAuthenticationResponse
+	(*AccountSessionProjection)(nil),           // 14: anytty.cloud.v1.AccountSessionProjection
+	(*ListAccountSessionsRequest)(nil),         // 15: anytty.cloud.v1.ListAccountSessionsRequest
+	(*ListAccountSessionsResponse)(nil),        // 16: anytty.cloud.v1.ListAccountSessionsResponse
+	(*ChangeAccountPasswordRequest)(nil),       // 17: anytty.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),      // 18: anytty.cloud.v1.ChangeAccountPasswordResponse
+	(*RevokeAccountSessionRequest)(nil),        // 19: anytty.cloud.v1.RevokeAccountSessionRequest
+	(*RevokeAccountSessionResponse)(nil),       // 20: anytty.cloud.v1.RevokeAccountSessionResponse
+	(*timestamppb.Timestamp)(nil),              // 21: google.protobuf.Timestamp
 }
 var file_cloud_v1_account_proto_depIdxs = []int32{
 	0,  // 0: anytty.cloud.v1.AccountProfile.state:type_name -> anytty.cloud.v1.AccountState
-	23, // 1: anytty.cloud.v1.AccountProfile.created_at:type_name -> google.protobuf.Timestamp
-	23, // 2: anytty.cloud.v1.AccountProfile.updated_at:type_name -> google.protobuf.Timestamp
-	23, // 3: anytty.cloud.v1.AccountSessionCredential.access_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 4: anytty.cloud.v1.AccountSessionCredential.refresh_expires_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: anytty.cloud.v1.RegisterAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	3,  // 6: anytty.cloud.v1.RegisterAccountResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
-	2,  // 7: anytty.cloud.v1.LoginAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	1,  // 8: anytty.cloud.v1.LoginAccountResponse.roles:type_name -> anytty.cloud.v1.AccountRole
-	3,  // 9: anytty.cloud.v1.LoginAccountResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
-	2,  // 10: anytty.cloud.v1.RefreshAccountSessionResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	1,  // 11: anytty.cloud.v1.RefreshAccountSessionResponse.roles:type_name -> anytty.cloud.v1.AccountRole
-	3,  // 12: anytty.cloud.v1.RefreshAccountSessionResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
-	2,  // 13: anytty.cloud.v1.GetCurrentAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	1,  // 14: anytty.cloud.v1.GetCurrentAccountResponse.roles:type_name -> anytty.cloud.v1.AccountRole
-	23, // 15: anytty.cloud.v1.GetCurrentAccountResponse.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 16: anytty.cloud.v1.VerifyRecentAuthenticationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	23, // 17: anytty.cloud.v1.AccountSessionProjection.created_at:type_name -> google.protobuf.Timestamp
-	23, // 18: anytty.cloud.v1.AccountSessionProjection.access_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 19: anytty.cloud.v1.AccountSessionProjection.refresh_expires_at:type_name -> google.protobuf.Timestamp
-	23, // 20: anytty.cloud.v1.AccountSessionProjection.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
-	16, // 21: anytty.cloud.v1.ListAccountSessionsResponse.sessions:type_name -> anytty.cloud.v1.AccountSessionProjection
-	2,  // 22: anytty.cloud.v1.ChangeAccountPasswordResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	4,  // 23: anytty.cloud.v1.AccountService.Register:input_type -> anytty.cloud.v1.RegisterAccountRequest
-	6,  // 24: anytty.cloud.v1.AccountService.Login:input_type -> anytty.cloud.v1.LoginAccountRequest
-	8,  // 25: anytty.cloud.v1.AccountService.Refresh:input_type -> anytty.cloud.v1.RefreshAccountSessionRequest
-	10, // 26: anytty.cloud.v1.AccountService.Logout:input_type -> anytty.cloud.v1.LogoutAccountSessionRequest
-	12, // 27: anytty.cloud.v1.AccountService.GetCurrent:input_type -> anytty.cloud.v1.GetCurrentAccountRequest
-	14, // 28: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> anytty.cloud.v1.VerifyRecentAuthenticationRequest
-	17, // 29: anytty.cloud.v1.AccountService.ListSessions:input_type -> anytty.cloud.v1.ListAccountSessionsRequest
-	19, // 30: anytty.cloud.v1.AccountService.ChangePassword:input_type -> anytty.cloud.v1.ChangeAccountPasswordRequest
-	21, // 31: anytty.cloud.v1.AccountService.RevokeSession:input_type -> anytty.cloud.v1.RevokeAccountSessionRequest
-	5,  // 32: anytty.cloud.v1.AccountService.Register:output_type -> anytty.cloud.v1.RegisterAccountResponse
-	7,  // 33: anytty.cloud.v1.AccountService.Login:output_type -> anytty.cloud.v1.LoginAccountResponse
-	9,  // 34: anytty.cloud.v1.AccountService.Refresh:output_type -> anytty.cloud.v1.RefreshAccountSessionResponse
-	11, // 35: anytty.cloud.v1.AccountService.Logout:output_type -> anytty.cloud.v1.LogoutAccountSessionResponse
-	13, // 36: anytty.cloud.v1.AccountService.GetCurrent:output_type -> anytty.cloud.v1.GetCurrentAccountResponse
-	15, // 37: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> anytty.cloud.v1.VerifyRecentAuthenticationResponse
-	18, // 38: anytty.cloud.v1.AccountService.ListSessions:output_type -> anytty.cloud.v1.ListAccountSessionsResponse
-	20, // 39: anytty.cloud.v1.AccountService.ChangePassword:output_type -> anytty.cloud.v1.ChangeAccountPasswordResponse
-	22, // 40: anytty.cloud.v1.AccountService.RevokeSession:output_type -> anytty.cloud.v1.RevokeAccountSessionResponse
-	32, // [32:41] is the sub-list for method output_type
-	23, // [23:32] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	21, // 1: anytty.cloud.v1.AccountProfile.created_at:type_name -> google.protobuf.Timestamp
+	21, // 2: anytty.cloud.v1.AccountProfile.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 3: anytty.cloud.v1.AccountSessionCredential.access_expires_at:type_name -> google.protobuf.Timestamp
+	21, // 4: anytty.cloud.v1.AccountSessionCredential.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: anytty.cloud.v1.LoginAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	1,  // 6: anytty.cloud.v1.LoginAccountResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	3,  // 7: anytty.cloud.v1.LoginAccountResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
+	2,  // 8: anytty.cloud.v1.RefreshAccountSessionResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	1,  // 9: anytty.cloud.v1.RefreshAccountSessionResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	3,  // 10: anytty.cloud.v1.RefreshAccountSessionResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
+	2,  // 11: anytty.cloud.v1.GetCurrentAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	1,  // 12: anytty.cloud.v1.GetCurrentAccountResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	21, // 13: anytty.cloud.v1.GetCurrentAccountResponse.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
+	21, // 14: anytty.cloud.v1.VerifyRecentAuthenticationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	21, // 15: anytty.cloud.v1.AccountSessionProjection.created_at:type_name -> google.protobuf.Timestamp
+	21, // 16: anytty.cloud.v1.AccountSessionProjection.access_expires_at:type_name -> google.protobuf.Timestamp
+	21, // 17: anytty.cloud.v1.AccountSessionProjection.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	21, // 18: anytty.cloud.v1.AccountSessionProjection.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
+	14, // 19: anytty.cloud.v1.ListAccountSessionsResponse.sessions:type_name -> anytty.cloud.v1.AccountSessionProjection
+	2,  // 20: anytty.cloud.v1.ChangeAccountPasswordResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	4,  // 21: anytty.cloud.v1.AccountService.Login:input_type -> anytty.cloud.v1.LoginAccountRequest
+	6,  // 22: anytty.cloud.v1.AccountService.Refresh:input_type -> anytty.cloud.v1.RefreshAccountSessionRequest
+	8,  // 23: anytty.cloud.v1.AccountService.Logout:input_type -> anytty.cloud.v1.LogoutAccountSessionRequest
+	10, // 24: anytty.cloud.v1.AccountService.GetCurrent:input_type -> anytty.cloud.v1.GetCurrentAccountRequest
+	12, // 25: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> anytty.cloud.v1.VerifyRecentAuthenticationRequest
+	15, // 26: anytty.cloud.v1.AccountService.ListSessions:input_type -> anytty.cloud.v1.ListAccountSessionsRequest
+	17, // 27: anytty.cloud.v1.AccountService.ChangePassword:input_type -> anytty.cloud.v1.ChangeAccountPasswordRequest
+	19, // 28: anytty.cloud.v1.AccountService.RevokeSession:input_type -> anytty.cloud.v1.RevokeAccountSessionRequest
+	5,  // 29: anytty.cloud.v1.AccountService.Login:output_type -> anytty.cloud.v1.LoginAccountResponse
+	7,  // 30: anytty.cloud.v1.AccountService.Refresh:output_type -> anytty.cloud.v1.RefreshAccountSessionResponse
+	9,  // 31: anytty.cloud.v1.AccountService.Logout:output_type -> anytty.cloud.v1.LogoutAccountSessionResponse
+	11, // 32: anytty.cloud.v1.AccountService.GetCurrent:output_type -> anytty.cloud.v1.GetCurrentAccountResponse
+	13, // 33: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> anytty.cloud.v1.VerifyRecentAuthenticationResponse
+	16, // 34: anytty.cloud.v1.AccountService.ListSessions:output_type -> anytty.cloud.v1.ListAccountSessionsResponse
+	18, // 35: anytty.cloud.v1.AccountService.ChangePassword:output_type -> anytty.cloud.v1.ChangeAccountPasswordResponse
+	20, // 36: anytty.cloud.v1.AccountService.RevokeSession:output_type -> anytty.cloud.v1.RevokeAccountSessionResponse
+	29, // [29:37] is the sub-list for method output_type
+	21, // [21:29] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_account_proto_init() }
@@ -1455,7 +1329,7 @@ func file_cloud_v1_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_account_proto_rawDesc), len(file_cloud_v1_account_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -6,30 +6,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/anytty/anytty/cloud/controller/account"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-// CreateAccount 在同一事务创建账号、角色、基础订阅和首个 session。
-func (database *Database) CreateAccount(ctx context.Context, record account.Record, session account.Session) error {
-	tx, err := database.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := insertAccount(ctx, tx, record); err != nil {
-		return err
-	}
-	if err := insertStarterSubscription(ctx, tx, record.Profile.GetAccountId(), record.Profile.GetCreatedAt().AsTime()); err != nil {
-		return err
-	}
-	if err := insertAccountSession(ctx, tx, session); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
 
 // EnsureBootstrapOperator 首次创建部署管理员；存在时只读取，不在重启时修改 verifier。
 func (database *Database) EnsureBootstrapOperator(ctx context.Context, desired account.Record) (account.Record, error) {
@@ -58,6 +39,25 @@ func (database *Database) EnsureBootstrapOperator(ctx context.Context, desired a
 		return account.Record{}, err
 	}
 	return desired, nil
+}
+
+// ProvisionAccount 原子创建管理员受权的普通账号、初始订阅和安全审计。
+func (database *Database) ProvisionAccount(ctx context.Context, record account.Record, actorID string, now time.Time) error {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := insertAccount(ctx, tx, record); err != nil {
+		return err
+	}
+	if err := insertStarterSubscription(ctx, tx, record.Profile.GetAccountId(), now); err != nil {
+		return err
+	}
+	if err := insertOperatorAudit(ctx, tx, actorID, "account.provision", "account", record.Profile.GetAccountId(), "administrator provisioning", "applied", now); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // AccountByLogin 按规范化 email/部署 login 查询账号和完整角色集合。

@@ -1,24 +1,25 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const origin = process.env.ANYTTY_CLOUD_ONLINE_ORIGIN
+const accountLogin = process.env.ANYTTY_CLOUD_E2E_LOGIN
+const accountPassword = process.env.ANYTTY_CLOUD_E2E_PASSWORD
 
 test.describe('AnyTTY Cloud 线上普通用户产品', () => {
-  test.skip(!origin, '需要显式提供线上地址')
+  test.skip(!origin || !accountLogin || !accountPassword, '需要显式提供线上地址和既有测试账号')
   test.describe.configure({ timeout: 180_000 })
 
-  test('桌面端完成注册、设备命令、订阅支付和权限隔离', async ({ page }, testInfo) => {
+  test('桌面端完成登录、设备命令、订阅支付和权限隔离', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium')
     const errors = captureErrors(page)
-    const identity = uniqueIdentity(testInfo.project.name)
 
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
     await expect(page.getByLabel('扫码配对后的 AnyTTY Cloud 连接路径')).toContainText('anytty-cloud-ok')
-    await page.getByRole('link', { name: '创建 Cloud 账号' }).first().click()
-    await register(page, identity)
+    await page.getByRole('link', { name: '登录 Cloud' }).click()
+    await login(page, accountLogin!, accountPassword!)
 
     await expect(page).toHaveURL(/\/app\/overview$/)
-    await expect(page.getByRole('heading', { name: `你好，${identity.displayName}` })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: /^你好，/ })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('navigation', { name: '运营管理' })).toHaveCount(0)
 
     await page.getByRole('navigation', { name: '用户功能' }).getByRole('link', { name: 'Daemon 管理' }).click()
@@ -47,7 +48,7 @@ test.describe('AnyTTY Cloud 线上普通用户产品', () => {
     await expect(page.getByRole('heading', { name: '我的订单' })).toBeVisible()
 
     await page.getByRole('navigation', { name: '用户功能' }).getByRole('link', { name: '账号安全' }).click()
-    await expect(page.locator('#main-content').getByText(identity.email, { exact: true })).toBeVisible()
+    await expect(page.locator('#main-content').getByText(accountLogin!, { exact: true })).toBeVisible()
     await expect(page.getByText('当前会话', { exact: true })).toBeVisible()
 
     await page.goto('/app/admin/edges')
@@ -56,19 +57,18 @@ test.describe('AnyTTY Cloud 线上普通用户产品', () => {
     expect(errors).toEqual([])
   })
 
-  test('移动布局注册后使用用户主导航且页面不横向溢出', async ({ page }, testInfo) => {
+  test('移动布局登录后使用用户主导航且页面不横向溢出', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === 'desktop-chromium')
     const errors = captureErrors(page)
-    const identity = uniqueIdentity(testInfo.project.name)
 
-    await page.goto('/register')
-    await register(page, identity)
+    await page.goto('/login')
+    await login(page, accountLogin!, accountPassword!)
     const navigation = page.getByRole('navigation', { name: '手机主导航' })
     await expect(navigation).toBeVisible()
     await navigation.getByRole('link', { name: 'Daemon 管理' }).click()
     await expect(page.getByRole('heading', { name: 'Daemon 管理' })).toBeVisible()
     await navigation.getByRole('link', { name: '账号安全' }).click()
-    await expect(page.locator('#main-content').getByText(identity.email, { exact: true })).toBeVisible()
+    await expect(page.locator('#main-content').getByText(accountLogin!, { exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
 
     await page.goto('/app/admin/accounts')
@@ -78,21 +78,11 @@ test.describe('AnyTTY Cloud 线上普通用户产品', () => {
   })
 })
 
-async function register(page: Page, identity: ReturnType<typeof uniqueIdentity>) {
-  await page.getByLabel('你的称呼').fill(identity.displayName)
-  await page.getByLabel('邮箱').fill(identity.email)
-  await page.getByLabel('密码', { exact: true }).fill(identity.password)
-  await page.getByRole('button', { name: '创建账号', exact: true }).click()
+async function login(page: Page, account: string, password: string) {
+  await page.getByLabel('邮箱或账号').fill(account)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page).toHaveURL(/\/app\/overview$/, { timeout: 30_000 })
-}
-
-function uniqueIdentity(project: string) {
-  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  return {
-    displayName: project === 'desktop-chromium' ? '桌面验收用户' : '移动验收用户',
-    email: `cloud-e2e-${project}-${suffix}@example.com`,
-    password: `AnyTTY-e2e-${suffix}`,
-  }
 }
 
 function captureErrors(page: Page): string[] {

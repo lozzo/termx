@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -66,6 +67,7 @@ type options struct {
 	developmentPayments  bool
 	startupTimeout       time.Duration
 	shutdownTimeout      time.Duration
+	trustedProxyCIDRs    []netip.Prefix
 }
 
 func main() {
@@ -217,7 +219,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edgeService, Enrollment: enrollmentService, Directory: directoryState, Control: service, Certificates: certificateService})
+	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edgeService, Enrollment: enrollmentService, Directory: directoryState, Control: service, Certificates: certificateService, Accounts: accountService})
 	if err != nil {
 		return err
 	}
@@ -231,7 +233,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService, Certificates: certificateService})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService, Certificates: certificateService, TrustedProxyCIDRs: config.trustedProxyCIDRs, Logger: logger})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()
@@ -293,6 +295,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.BoolVar(&config.developmentPayments, "development-payments", false, "enable the Development-only self-service payment adapter")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")
+	flags.Var((*trustedProxyCIDRFlag)(&config.trustedProxyCIDRs), "trusted-proxy-cidr", "trusted direct HTTP proxy CIDR; repeat for each proxy network")
 	if err := flags.Parse(arguments); err != nil {
 		return options{}, fmt.Errorf("parse Controller flags: %w", err)
 	}
@@ -300,4 +303,23 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 		return options{}, fmt.Errorf("unexpected Controller arguments: %s", strings.Join(flags.Args(), " "))
 	}
 	return config, nil
+}
+
+type trustedProxyCIDRFlag []netip.Prefix
+
+func (values *trustedProxyCIDRFlag) String() string {
+	parts := make([]string, 0, len(*values))
+	for _, prefix := range *values {
+		parts = append(parts, prefix.String())
+	}
+	return strings.Join(parts, ",")
+}
+
+func (values *trustedProxyCIDRFlag) Set(value string) error {
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("invalid trusted proxy CIDR %q: %w", value, err)
+	}
+	*values = append(*values, prefix.Masked())
+	return nil
 }

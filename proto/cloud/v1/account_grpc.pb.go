@@ -19,7 +19,6 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_Register_FullMethodName                   = "/anytty.cloud.v1.AccountService/Register"
 	AccountService_Login_FullMethodName                      = "/anytty.cloud.v1.AccountService/Login"
 	AccountService_Refresh_FullMethodName                    = "/anytty.cloud.v1.AccountService/Refresh"
 	AccountService_Logout_FullMethodName                     = "/anytty.cloud.v1.AccountService/Logout"
@@ -36,7 +35,6 @@ const (
 //
 // AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
 type AccountServiceClient interface {
-	Register(ctx context.Context, in *RegisterAccountRequest, opts ...grpc.CallOption) (*RegisterAccountResponse, error)
 	Login(ctx context.Context, in *LoginAccountRequest, opts ...grpc.CallOption) (*LoginAccountResponse, error)
 	Refresh(ctx context.Context, in *RefreshAccountSessionRequest, opts ...grpc.CallOption) (*RefreshAccountSessionResponse, error)
 	Logout(ctx context.Context, in *LogoutAccountSessionRequest, opts ...grpc.CallOption) (*LogoutAccountSessionResponse, error)
@@ -53,16 +51,6 @@ type accountServiceClient struct {
 
 func NewAccountServiceClient(cc grpc.ClientConnInterface) AccountServiceClient {
 	return &accountServiceClient{cc}
-}
-
-func (c *accountServiceClient) Register(ctx context.Context, in *RegisterAccountRequest, opts ...grpc.CallOption) (*RegisterAccountResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RegisterAccountResponse)
-	err := c.cc.Invoke(ctx, AccountService_Register_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *accountServiceClient) Login(ctx context.Context, in *LoginAccountRequest, opts ...grpc.CallOption) (*LoginAccountResponse, error) {
@@ -151,7 +139,6 @@ func (c *accountServiceClient) RevokeSession(ctx context.Context, in *RevokeAcco
 //
 // AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
 type AccountServiceServer interface {
-	Register(context.Context, *RegisterAccountRequest) (*RegisterAccountResponse, error)
 	Login(context.Context, *LoginAccountRequest) (*LoginAccountResponse, error)
 	Refresh(context.Context, *RefreshAccountSessionRequest) (*RefreshAccountSessionResponse, error)
 	Logout(context.Context, *LogoutAccountSessionRequest) (*LogoutAccountSessionResponse, error)
@@ -170,9 +157,6 @@ type AccountServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAccountServiceServer struct{}
 
-func (UnimplementedAccountServiceServer) Register(context.Context, *RegisterAccountRequest) (*RegisterAccountResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Register not implemented")
-}
 func (UnimplementedAccountServiceServer) Login(context.Context, *LoginAccountRequest) (*LoginAccountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Login not implemented")
 }
@@ -216,24 +200,6 @@ func RegisterAccountServiceServer(s grpc.ServiceRegistrar, srv AccountServiceSer
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&AccountService_ServiceDesc, srv)
-}
-
-func _AccountService_Register_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegisterAccountRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AccountServiceServer).Register(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AccountService_Register_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).Register(ctx, req.(*RegisterAccountRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _AccountService_Login_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -387,10 +353,6 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "anytty.cloud.v1.AccountService",
 	HandlerType: (*AccountServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Register",
-			Handler:    _AccountService_Register_Handler,
-		},
 		{
 			MethodName: "Login",
 			Handler:    _AccountService_Login_Handler,

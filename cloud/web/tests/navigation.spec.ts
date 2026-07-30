@@ -23,7 +23,6 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     requests.set(path, (requests.get(path) ?? 0) + 1)
     if (path === '/api/commerce/plans') return json(route, { plans })
     if (path === '/api/account/current') return json(route, { account, roles: operator ? ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'] : ['ACCOUNT_ROLE_USER'], recent_auth_expires_at: periodEnd })
-    if (path === '/api/account/register') return json(route, { account, session: { session_id: 'register-session', access_expires_at: periodEnd, refresh_expires_at: periodEnd } }, 201)
     if (path === '/api/account/login') return failLogin ? json(route, { code: 'invalid_credentials' }, 401) : json(route, { account, roles: operator ? ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'] : ['ACCOUNT_ROLE_USER'], session: { session_id: 'login-session', access_expires_at: periodEnd, refresh_expires_at: periodEnd } })
     if (path === '/api/account/sessions') return json(route, { sessions: [{ session_id: 'current-session', current: true, created_at: now, access_expires_at: periodEnd, refresh_expires_at: periodEnd, recent_auth_expires_at: periodEnd, revision: '1' }, { session_id: 'other-session', current: false, created_at: now, access_expires_at: periodEnd, refresh_expires_at: periodEnd, revision: '1' }] })
     if (path === '/api/commerce/me') return json(route, withPendingOrder ? { ...commerce, orders: [pendingOrder], payment_attempts: [pendingAttempt] } : commerce)
@@ -39,7 +38,7 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     ] })
     if (path === '/api/operator/certificates' && route.request().method() === 'GET') return json(route, { profiles: [certificateProfile] })
     if (path === '/api/operator/certificates' && route.request().method() === 'POST') {
-      if (route.request().postDataJSON()?.name === '无效证书') return json(route, { error: '证书与私钥不匹配' }, 409)
+      if (route.request().postDataJSON()?.name === '无效证书') return json(route, { code: 'conflict', message: '证书与私钥不匹配', request_id: 'certificate-conflict' }, 409)
       return json(route, { profile: certificateProfile })
     }
     if (path.startsWith('/api/operator/certificates/') && route.request().method() === 'PUT') return json(route, { profile: certificateProfile })
@@ -79,7 +78,7 @@ test('公开落地页展示真实连接路径和套餐', async ({ page }, testIn
   if (testInfo.project.name === 'mobile-landscape-chromium') {
     expect(viewport).toEqual({ width: 844, height: 390 })
     const nextSectionTop = await page.locator('.product-band').evaluate((element) => element.getBoundingClientRect().top)
-    const primaryCTA = page.getByRole('link', { name: '管理 Cloud 服务' })
+    const primaryCTA = page.getByRole('link', { name: '登录 Cloud 控制台' }).first()
     await expect(page.locator('.hero-copy > p')).toBeInViewport({ ratio: 1 })
     await expect(primaryCTA).toBeInViewport({ ratio: 1 })
     const ctaBox = await primaryCTA.boundingBox()
@@ -318,17 +317,6 @@ test('手机横屏保持导航和主要内容可用', async ({ page }, testInfo)
   await expect(page.getByRole('navigation', { name: '手机主导航' })).toBeVisible()
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('user-overview-landscape.png') })
-})
-
-test('注册后直接进入普通用户概览', async ({ page }) => {
-  await mockAPI(page)
-  await page.goto('/register')
-  await page.getByLabel('你的称呼').fill('测试用户')
-  await page.getByLabel('邮箱').fill('user@anytty.com')
-  await page.getByLabel('密码', { exact: true }).fill('anytty-test-password')
-  await page.getByRole('button', { name: '创建账号' }).click()
-  await expect(page).toHaveURL(/\/app\/overview$/)
-  await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
 })
 
 test('统一登录页提供字段约束和明确错误反馈', async ({ page }) => {

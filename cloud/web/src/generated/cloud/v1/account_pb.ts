@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/account.proto.
  */
 export const file_cloud_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChZjbG91ZC92MS9hY2NvdW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEi6QEKDkFjY291bnRQcm9maWxlEhIKCmFjY291bnRfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgFIAEoBBIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLeAQoYQWNjb3VudFNlc3Npb25DcmVkZW50aWFsEhIKCnNlc3Npb25faWQYASABKAkSFAoMYWNjZXNzX3Rva2VuGAIgASgMEhUKDXJlZnJlc2hfdG9rZW4YAyABKAwSNQoRYWNjZXNzX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKEnJlZnJlc2hfZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKY3NyZl90b2tlbhgGIAEoDCJPChZSZWdpc3RlckFjY291bnRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCSKHAQoXUmVnaXN0ZXJBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRI6CgdzZXNzaW9uGAIgASgLMikuYW55dHR5LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCI2ChNMb2dpbkFjY291bnRSZXF1ZXN0Eg0KBWxvZ2luGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJIrEBChRMb2dpbkFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwuYW55dHR5LmNsb3VkLnYxLkFjY291bnRSb2xlEjoKB3Nlc3Npb24YAyABKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25DcmVkZW50aWFsIjUKHFJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoDCK6AQodUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI6CgdzZXNzaW9uGAMgASgLMikuYW55dHR5LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCJHChtMb2dvdXRBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIUCgxhbGxfc2Vzc2lvbnMYAiABKAgiHgocTG9nb3V0QWNjb3VudFNlc3Npb25SZXNwb25zZSIaChhHZXRDdXJyZW50QWNjb3VudFJlcXVlc3QitgEKGUdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFWZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlcXVlc3QSEAoIcGFzc3dvcmQYASABKAkiVAoiVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXNwb25zZRIuCgpleHBpcmVzX2F0GAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKsAgoYQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uEhIKCnNlc3Npb25faWQYASABKAkSDwoHY3VycmVudBgCIAEoCBIuCgpjcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1ChFhY2Nlc3NfZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNgoScmVmcmVzaF9leHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghyZXZpc2lvbhgHIAEoBCIcChpMaXN0QWNjb3VudFNlc3Npb25zUmVxdWVzdCJaChtMaXN0QWNjb3VudFNlc3Npb25zUmVzcG9uc2USOwoIc2Vzc2lvbnMYASADKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uIk4KHENoYW5nZUFjY291bnRQYXNzd29yZFJlcXVlc3QSGAoQY3VycmVudF9wYXNzd29yZBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiUQodQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZSIxChtSZXZva2VBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIeChxSZXZva2VBY2NvdW50U2Vzc2lvblJlc3BvbnNlKmMKDEFjY291bnRTdGF0ZRIdChlBQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASGAoUQUNDT1VOVF9TVEFURV9BQ1RJVkUQARIaChZBQ0NPVU5UX1NUQVRFX0RJU0FCTEVEEAIqdQoLQWNjb3VudFJvbGUSHAoYQUNDT1VOVF9ST0xFX1VOU1BFQ0lGSUVEEAASFQoRQUNDT1VOVF9ST0xFX1VTRVIQARIZChVBQ0NPVU5UX1JPTEVfT1BFUkFUT1IQAhIWChJBQ0NPVU5UX1JPTEVfQURNSU4QAzLNBwoOQWNjb3VudFNlcnZpY2USXQoIUmVnaXN0ZXISJy5hbnl0dHkuY2xvdWQudjEuUmVnaXN0ZXJBY2NvdW50UmVxdWVzdBooLmFueXR0eS5jbG91ZC52MS5SZWdpc3RlckFjY291bnRSZXNwb25zZRJUCgVMb2dpbhIkLmFueXR0eS5jbG91ZC52MS5Mb2dpbkFjY291bnRSZXF1ZXN0GiUuYW55dHR5LmNsb3VkLnYxLkxvZ2luQWNjb3VudFJlc3BvbnNlEmgKB1JlZnJlc2gSLS5hbnl0dHkuY2xvdWQudjEuUmVmcmVzaEFjY291bnRTZXNzaW9uUmVxdWVzdBouLmFueXR0eS5jbG91ZC52MS5SZWZyZXNoQWNjb3VudFNlc3Npb25SZXNwb25zZRJlCgZMb2dvdXQSLC5hbnl0dHkuY2xvdWQudjEuTG9nb3V0QWNjb3VudFNlc3Npb25SZXF1ZXN0Gi0uYW55dHR5LmNsb3VkLnYxLkxvZ291dEFjY291bnRTZXNzaW9uUmVzcG9uc2USYwoKR2V0Q3VycmVudBIpLmFueXR0eS5jbG91ZC52MS5HZXRDdXJyZW50QWNjb3VudFJlcXVlc3QaKi5hbnl0dHkuY2xvdWQudjEuR2V0Q3VycmVudEFjY291bnRSZXNwb25zZRKFAQoaVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb24SMi5hbnl0dHkuY2xvdWQudjEuVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXF1ZXN0GjMuYW55dHR5LmNsb3VkLnYxLlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uUmVzcG9uc2USaQoMTGlzdFNlc3Npb25zEisuYW55dHR5LmNsb3VkLnYxLkxpc3RBY2NvdW50U2Vzc2lvbnNSZXF1ZXN0GiwuYW55dHR5LmNsb3VkLnYxLkxpc3RBY2NvdW50U2Vzc2lvbnNSZXNwb25zZRJvCg5DaGFuZ2VQYXNzd29yZBItLmFueXR0eS5jbG91ZC52MS5DaGFuZ2VBY2NvdW50UGFzc3dvcmRSZXF1ZXN0Gi4uYW55dHR5LmNsb3VkLnYxLkNoYW5nZUFjY291bnRQYXNzd29yZFJlc3BvbnNlEmwKDVJldm9rZVNlc3Npb24SLC5hbnl0dHkuY2xvdWQudjEuUmV2b2tlQWNjb3VudFNlc3Npb25SZXF1ZXN0Gi0uYW55dHR5LmNsb3VkLnYxLlJldm9rZUFjY291bnRTZXNzaW9uUmVzcG9uc2VCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChZjbG91ZC92MS9hY2NvdW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEi6QEKDkFjY291bnRQcm9maWxlEhIKCmFjY291bnRfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgFIAEoBBIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLeAQoYQWNjb3VudFNlc3Npb25DcmVkZW50aWFsEhIKCnNlc3Npb25faWQYASABKAkSFAoMYWNjZXNzX3Rva2VuGAIgASgMEhUKDXJlZnJlc2hfdG9rZW4YAyABKAwSNQoRYWNjZXNzX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKEnJlZnJlc2hfZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKY3NyZl90b2tlbhgGIAEoDCI2ChNMb2dpbkFjY291bnRSZXF1ZXN0Eg0KBWxvZ2luGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJIrEBChRMb2dpbkFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwuYW55dHR5LmNsb3VkLnYxLkFjY291bnRSb2xlEjoKB3Nlc3Npb24YAyABKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25DcmVkZW50aWFsIjUKHFJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoDCK6AQodUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI6CgdzZXNzaW9uGAMgASgLMikuYW55dHR5LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCJHChtMb2dvdXRBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIUCgxhbGxfc2Vzc2lvbnMYAiABKAgiHgocTG9nb3V0QWNjb3VudFNlc3Npb25SZXNwb25zZSIaChhHZXRDdXJyZW50QWNjb3VudFJlcXVlc3QitgEKGUdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFWZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlcXVlc3QSEAoIcGFzc3dvcmQYASABKAkiVAoiVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXNwb25zZRIuCgpleHBpcmVzX2F0GAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKsAgoYQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uEhIKCnNlc3Npb25faWQYASABKAkSDwoHY3VycmVudBgCIAEoCBIuCgpjcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1ChFhY2Nlc3NfZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNgoScmVmcmVzaF9leHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghyZXZpc2lvbhgHIAEoBCIcChpMaXN0QWNjb3VudFNlc3Npb25zUmVxdWVzdCJaChtMaXN0QWNjb3VudFNlc3Npb25zUmVzcG9uc2USOwoIc2Vzc2lvbnMYASADKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uIk4KHENoYW5nZUFjY291bnRQYXNzd29yZFJlcXVlc3QSGAoQY3VycmVudF9wYXNzd29yZBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiUQodQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZSIxChtSZXZva2VBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIeChxSZXZva2VBY2NvdW50U2Vzc2lvblJlc3BvbnNlKmMKDEFjY291bnRTdGF0ZRIdChlBQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASGAoUQUNDT1VOVF9TVEFURV9BQ1RJVkUQARIaChZBQ0NPVU5UX1NUQVRFX0RJU0FCTEVEEAIqdQoLQWNjb3VudFJvbGUSHAoYQUNDT1VOVF9ST0xFX1VOU1BFQ0lGSUVEEAASFQoRQUNDT1VOVF9ST0xFX1VTRVIQARIZChVBQ0NPVU5UX1JPTEVfT1BFUkFUT1IQAhIWChJBQ0NPVU5UX1JPTEVfQURNSU4QAzLuBgoOQWNjb3VudFNlcnZpY2USVAoFTG9naW4SJC5hbnl0dHkuY2xvdWQudjEuTG9naW5BY2NvdW50UmVxdWVzdBolLmFueXR0eS5jbG91ZC52MS5Mb2dpbkFjY291bnRSZXNwb25zZRJoCgdSZWZyZXNoEi0uYW55dHR5LmNsb3VkLnYxLlJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QaLi5hbnl0dHkuY2xvdWQudjEuUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USZQoGTG9nb3V0EiwuYW55dHR5LmNsb3VkLnYxLkxvZ291dEFjY291bnRTZXNzaW9uUmVxdWVzdBotLmFueXR0eS5jbG91ZC52MS5Mb2dvdXRBY2NvdW50U2Vzc2lvblJlc3BvbnNlEmMKCkdldEN1cnJlbnQSKS5hbnl0dHkuY2xvdWQudjEuR2V0Q3VycmVudEFjY291bnRSZXF1ZXN0GiouYW55dHR5LmNsb3VkLnYxLkdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2UShQEKGlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uEjIuYW55dHR5LmNsb3VkLnYxLlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uUmVxdWVzdBozLmFueXR0eS5jbG91ZC52MS5WZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlc3BvbnNlEmkKDExpc3RTZXNzaW9ucxIrLmFueXR0eS5jbG91ZC52MS5MaXN0QWNjb3VudFNlc3Npb25zUmVxdWVzdBosLmFueXR0eS5jbG91ZC52MS5MaXN0QWNjb3VudFNlc3Npb25zUmVzcG9uc2USbwoOQ2hhbmdlUGFzc3dvcmQSLS5hbnl0dHkuY2xvdWQudjEuQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVxdWVzdBouLmFueXR0eS5jbG91ZC52MS5DaGFuZ2VBY2NvdW50UGFzc3dvcmRSZXNwb25zZRJsCg1SZXZva2VTZXNzaW9uEiwuYW55dHR5LmNsb3VkLnYxLlJldm9rZUFjY291bnRTZXNzaW9uUmVxdWVzdBotLmFueXR0eS5jbG91ZC52MS5SZXZva2VBY2NvdW50U2Vzc2lvblJlc3BvbnNlQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * AccountProfile 是账号持久投影，不包含密码 verifier 或 session secret。
@@ -108,55 +108,6 @@ export const AccountSessionCredentialSchema: GenMessage<AccountSessionCredential
   messageDesc(file_cloud_v1_account, 1);
 
 /**
- * @generated from message anytty.cloud.v1.RegisterAccountRequest
- */
-export type RegisterAccountRequest = Message<"anytty.cloud.v1.RegisterAccountRequest"> & {
-  /**
-   * @generated from field: string email = 1;
-   */
-  email: string;
-
-  /**
-   * @generated from field: string password = 2;
-   */
-  password: string;
-
-  /**
-   * @generated from field: string display_name = 3;
-   */
-  displayName: string;
-};
-
-/**
- * Describes the message anytty.cloud.v1.RegisterAccountRequest.
- * Use `create(RegisterAccountRequestSchema)` to create a new message.
- */
-export const RegisterAccountRequestSchema: GenMessage<RegisterAccountRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 2);
-
-/**
- * @generated from message anytty.cloud.v1.RegisterAccountResponse
- */
-export type RegisterAccountResponse = Message<"anytty.cloud.v1.RegisterAccountResponse"> & {
-  /**
-   * @generated from field: anytty.cloud.v1.AccountProfile account = 1;
-   */
-  account?: AccountProfile | undefined;
-
-  /**
-   * @generated from field: anytty.cloud.v1.AccountSessionCredential session = 2;
-   */
-  session?: AccountSessionCredential | undefined;
-};
-
-/**
- * Describes the message anytty.cloud.v1.RegisterAccountResponse.
- * Use `create(RegisterAccountResponseSchema)` to create a new message.
- */
-export const RegisterAccountResponseSchema: GenMessage<RegisterAccountResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 3);
-
-/**
  * @generated from message anytty.cloud.v1.LoginAccountRequest
  */
 export type LoginAccountRequest = Message<"anytty.cloud.v1.LoginAccountRequest"> & {
@@ -176,7 +127,7 @@ export type LoginAccountRequest = Message<"anytty.cloud.v1.LoginAccountRequest">
  * Use `create(LoginAccountRequestSchema)` to create a new message.
  */
 export const LoginAccountRequestSchema: GenMessage<LoginAccountRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 4);
+  messageDesc(file_cloud_v1_account, 2);
 
 /**
  * @generated from message anytty.cloud.v1.LoginAccountResponse
@@ -203,7 +154,7 @@ export type LoginAccountResponse = Message<"anytty.cloud.v1.LoginAccountResponse
  * Use `create(LoginAccountResponseSchema)` to create a new message.
  */
 export const LoginAccountResponseSchema: GenMessage<LoginAccountResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 5);
+  messageDesc(file_cloud_v1_account, 3);
 
 /**
  * @generated from message anytty.cloud.v1.RefreshAccountSessionRequest
@@ -220,7 +171,7 @@ export type RefreshAccountSessionRequest = Message<"anytty.cloud.v1.RefreshAccou
  * Use `create(RefreshAccountSessionRequestSchema)` to create a new message.
  */
 export const RefreshAccountSessionRequestSchema: GenMessage<RefreshAccountSessionRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 6);
+  messageDesc(file_cloud_v1_account, 4);
 
 /**
  * @generated from message anytty.cloud.v1.RefreshAccountSessionResponse
@@ -247,7 +198,7 @@ export type RefreshAccountSessionResponse = Message<"anytty.cloud.v1.RefreshAcco
  * Use `create(RefreshAccountSessionResponseSchema)` to create a new message.
  */
 export const RefreshAccountSessionResponseSchema: GenMessage<RefreshAccountSessionResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 7);
+  messageDesc(file_cloud_v1_account, 5);
 
 /**
  * @generated from message anytty.cloud.v1.LogoutAccountSessionRequest
@@ -269,7 +220,7 @@ export type LogoutAccountSessionRequest = Message<"anytty.cloud.v1.LogoutAccount
  * Use `create(LogoutAccountSessionRequestSchema)` to create a new message.
  */
 export const LogoutAccountSessionRequestSchema: GenMessage<LogoutAccountSessionRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 8);
+  messageDesc(file_cloud_v1_account, 6);
 
 /**
  * @generated from message anytty.cloud.v1.LogoutAccountSessionResponse
@@ -282,7 +233,7 @@ export type LogoutAccountSessionResponse = Message<"anytty.cloud.v1.LogoutAccoun
  * Use `create(LogoutAccountSessionResponseSchema)` to create a new message.
  */
 export const LogoutAccountSessionResponseSchema: GenMessage<LogoutAccountSessionResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 9);
+  messageDesc(file_cloud_v1_account, 7);
 
 /**
  * @generated from message anytty.cloud.v1.GetCurrentAccountRequest
@@ -295,7 +246,7 @@ export type GetCurrentAccountRequest = Message<"anytty.cloud.v1.GetCurrentAccoun
  * Use `create(GetCurrentAccountRequestSchema)` to create a new message.
  */
 export const GetCurrentAccountRequestSchema: GenMessage<GetCurrentAccountRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 10);
+  messageDesc(file_cloud_v1_account, 8);
 
 /**
  * @generated from message anytty.cloud.v1.GetCurrentAccountResponse
@@ -322,7 +273,7 @@ export type GetCurrentAccountResponse = Message<"anytty.cloud.v1.GetCurrentAccou
  * Use `create(GetCurrentAccountResponseSchema)` to create a new message.
  */
 export const GetCurrentAccountResponseSchema: GenMessage<GetCurrentAccountResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 11);
+  messageDesc(file_cloud_v1_account, 9);
 
 /**
  * @generated from message anytty.cloud.v1.VerifyRecentAuthenticationRequest
@@ -339,7 +290,7 @@ export type VerifyRecentAuthenticationRequest = Message<"anytty.cloud.v1.VerifyR
  * Use `create(VerifyRecentAuthenticationRequestSchema)` to create a new message.
  */
 export const VerifyRecentAuthenticationRequestSchema: GenMessage<VerifyRecentAuthenticationRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 12);
+  messageDesc(file_cloud_v1_account, 10);
 
 /**
  * @generated from message anytty.cloud.v1.VerifyRecentAuthenticationResponse
@@ -356,7 +307,7 @@ export type VerifyRecentAuthenticationResponse = Message<"anytty.cloud.v1.Verify
  * Use `create(VerifyRecentAuthenticationResponseSchema)` to create a new message.
  */
 export const VerifyRecentAuthenticationResponseSchema: GenMessage<VerifyRecentAuthenticationResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 13);
+  messageDesc(file_cloud_v1_account, 11);
 
 /**
  * AccountSessionProjection 是用户可见的 session 元数据，不包含任何 token 摘要或原始 credential。
@@ -405,7 +356,7 @@ export type AccountSessionProjection = Message<"anytty.cloud.v1.AccountSessionPr
  * Use `create(AccountSessionProjectionSchema)` to create a new message.
  */
 export const AccountSessionProjectionSchema: GenMessage<AccountSessionProjection> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 14);
+  messageDesc(file_cloud_v1_account, 12);
 
 /**
  * @generated from message anytty.cloud.v1.ListAccountSessionsRequest
@@ -418,7 +369,7 @@ export type ListAccountSessionsRequest = Message<"anytty.cloud.v1.ListAccountSes
  * Use `create(ListAccountSessionsRequestSchema)` to create a new message.
  */
 export const ListAccountSessionsRequestSchema: GenMessage<ListAccountSessionsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 15);
+  messageDesc(file_cloud_v1_account, 13);
 
 /**
  * @generated from message anytty.cloud.v1.ListAccountSessionsResponse
@@ -435,7 +386,7 @@ export type ListAccountSessionsResponse = Message<"anytty.cloud.v1.ListAccountSe
  * Use `create(ListAccountSessionsResponseSchema)` to create a new message.
  */
 export const ListAccountSessionsResponseSchema: GenMessage<ListAccountSessionsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 16);
+  messageDesc(file_cloud_v1_account, 14);
 
 /**
  * @generated from message anytty.cloud.v1.ChangeAccountPasswordRequest
@@ -457,7 +408,7 @@ export type ChangeAccountPasswordRequest = Message<"anytty.cloud.v1.ChangeAccoun
  * Use `create(ChangeAccountPasswordRequestSchema)` to create a new message.
  */
 export const ChangeAccountPasswordRequestSchema: GenMessage<ChangeAccountPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 17);
+  messageDesc(file_cloud_v1_account, 15);
 
 /**
  * @generated from message anytty.cloud.v1.ChangeAccountPasswordResponse
@@ -474,7 +425,7 @@ export type ChangeAccountPasswordResponse = Message<"anytty.cloud.v1.ChangeAccou
  * Use `create(ChangeAccountPasswordResponseSchema)` to create a new message.
  */
 export const ChangeAccountPasswordResponseSchema: GenMessage<ChangeAccountPasswordResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 18);
+  messageDesc(file_cloud_v1_account, 16);
 
 /**
  * @generated from message anytty.cloud.v1.RevokeAccountSessionRequest
@@ -491,7 +442,7 @@ export type RevokeAccountSessionRequest = Message<"anytty.cloud.v1.RevokeAccount
  * Use `create(RevokeAccountSessionRequestSchema)` to create a new message.
  */
 export const RevokeAccountSessionRequestSchema: GenMessage<RevokeAccountSessionRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 19);
+  messageDesc(file_cloud_v1_account, 17);
 
 /**
  * @generated from message anytty.cloud.v1.RevokeAccountSessionResponse
@@ -504,7 +455,7 @@ export type RevokeAccountSessionResponse = Message<"anytty.cloud.v1.RevokeAccoun
  * Use `create(RevokeAccountSessionResponseSchema)` to create a new message.
  */
 export const RevokeAccountSessionResponseSchema: GenMessage<RevokeAccountSessionResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_account, 20);
+  messageDesc(file_cloud_v1_account, 18);
 
 /**
  * AccountState 是账号持久状态；禁用后所有新的 Cloud 准入都必须拒绝。
@@ -573,14 +524,6 @@ export const AccountRoleSchema: GenEnum<AccountRole> = /*@__PURE__*/
  * @generated from service anytty.cloud.v1.AccountService
  */
 export const AccountService: GenService<{
-  /**
-   * @generated from rpc anytty.cloud.v1.AccountService.Register
-   */
-  register: {
-    methodKind: "unary";
-    input: typeof RegisterAccountRequestSchema;
-    output: typeof RegisterAccountResponseSchema;
-  },
   /**
    * @generated from rpc anytty.cloud.v1.AccountService.Login
    */

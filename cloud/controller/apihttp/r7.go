@@ -25,12 +25,17 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 	switch request.URL.Path {
 	case "/api/account/login":
 		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("login requires POST"))
 			return
 		}
 		input := &cloudv1.LoginAccountRequest{}
 		if err := readProto(request, input); err != nil {
 			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		if handler.loginLimiter == nil || !handler.loginLimiter.allow(clientAddress(request, handler.trustedProxyCIDRs), input.GetLogin()) {
+			writer.Header().Set("Retry-After", "60")
+			writeError(writer, http.StatusTooManyRequests, errLoginRateLimited)
 			return
 		}
 		response, err := handler.config.Accounts.Login(request.Context(), input)
@@ -41,27 +46,9 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 		handler.setSessionCookies(writer, response.GetSession())
 		response.Session = redactedSession(response.GetSession())
 		writeProto(writer, http.StatusOK, response)
-	case "/api/account/register":
-		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		input := &cloudv1.RegisterAccountRequest{}
-		if err := readProto(request, input); err != nil {
-			writeError(writer, http.StatusBadRequest, err)
-			return
-		}
-		response, err := handler.config.Accounts.Register(request.Context(), input)
-		if err != nil {
-			writeError(writer, http.StatusConflict, err)
-			return
-		}
-		handler.setSessionCookies(writer, response.GetSession())
-		response.Session = redactedSession(response.GetSession())
-		writeProto(writer, http.StatusCreated, response)
 	case "/api/account/refresh":
 		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("refresh requires POST"))
 			return
 		}
 		cookie, err := request.Cookie(refreshCookieName)
@@ -83,7 +70,7 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 		response.Session = redactedSession(response.GetSession())
 		writeProto(writer, http.StatusOK, response)
 	default:
-		http.NotFound(writer, request)
+		writeError(writer, http.StatusNotFound, errors.New("account endpoint was not found"))
 	}
 }
 
@@ -91,14 +78,14 @@ func (handler *handler) accountPrivate(writer http.ResponseWriter, request *http
 	switch request.URL.Path {
 	case "/api/account/current":
 		if request.Method != http.MethodGet {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("current account requires GET"))
 			return
 		}
 		response, err := handler.config.Accounts.GetCurrent(request.Context(), &cloudv1.GetCurrentAccountRequest{})
 		writeServiceResult(writer, response, err)
 	case "/api/account/recent-auth":
 		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("recent authentication requires POST"))
 			return
 		}
 		input := &cloudv1.VerifyRecentAuthenticationRequest{}
@@ -110,7 +97,7 @@ func (handler *handler) accountPrivate(writer http.ResponseWriter, request *http
 		writeServiceResult(writer, response, err)
 	case "/api/account/logout":
 		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("logout requires POST"))
 			return
 		}
 		identity, _ := account.IdentityFromContext(request.Context())
@@ -135,11 +122,11 @@ func (handler *handler) accountPrivate(writer http.ResponseWriter, request *http
 			response, err := handler.config.Accounts.RevokeSession(request.Context(), input)
 			writeServiceResult(writer, response, err)
 		default:
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("account sessions require GET or DELETE"))
 		}
 	case "/api/account/password":
 		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("password change requires POST"))
 			return
 		}
 		input := &cloudv1.ChangeAccountPasswordRequest{}
@@ -150,7 +137,7 @@ func (handler *handler) accountPrivate(writer http.ResponseWriter, request *http
 		response, err := handler.config.Accounts.ChangePassword(request.Context(), input)
 		writeServiceResult(writer, response, err)
 	default:
-		http.NotFound(writer, request)
+		writeError(writer, http.StatusNotFound, errors.New("account endpoint was not found"))
 	}
 }
 
@@ -198,13 +185,13 @@ func (handler *handler) commerce(writer http.ResponseWriter, request *http.Reque
 		response, err := handler.config.Commerce.CompleteDevelopmentPayment(request.Context(), input)
 		writeServiceResult(writer, response, err)
 	default:
-		http.NotFound(writer, request)
+		writeError(writer, http.StatusNotFound, errors.New("commerce endpoint was not found"))
 	}
 }
 
 func (handler *handler) daemons(writer http.ResponseWriter, request *http.Request) {
 	if handler.config.DaemonManagement == nil {
-		http.NotFound(writer, request)
+		writeError(writer, http.StatusNotFound, errors.New("daemon endpoint is unavailable"))
 		return
 	}
 	switch {
@@ -230,7 +217,7 @@ func (handler *handler) daemons(writer http.ResponseWriter, request *http.Reques
 		response, err := handler.config.DaemonManagement.RevokeMyDaemon(request.Context(), input)
 		writeServiceResult(writer, response, err)
 	default:
-		http.NotFound(writer, request)
+		writeError(writer, http.StatusNotFound, errors.New("daemon endpoint was not found"))
 	}
 }
 
@@ -248,6 +235,19 @@ func (handler *handler) operatorR7(writer http.ResponseWriter, request *http.Req
 	case path == "/accounts" && request.Method == http.MethodGet:
 		response, err := handler.config.Operator.ListAccounts(request.Context(), &cloudv1.ListOperatorAccountsRequest{Page: pageRequest(request)})
 		writeServiceResult(writer, response, err)
+		return true
+	case path == "/accounts" && request.Method == http.MethodPost:
+		input := &cloudv1.ProvisionAccountRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return true
+		}
+		response, err := handler.config.Operator.ProvisionAccount(request.Context(), input)
+		if err != nil {
+			writeError(writer, serviceHTTPStatus(err), err)
+			return true
+		}
+		writeProto(writer, http.StatusCreated, response)
 		return true
 	case strings.HasPrefix(path, "/accounts/"):
 		return handler.operatorAccount(writer, request, strings.TrimPrefix(path, "/accounts/"))

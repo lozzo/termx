@@ -57,11 +57,15 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	}
 	adminContext := account.ContextWithIdentity(ctx, adminIdentity)
 	email := "r7-" + uuid.NewString() + "@example.com"
-	registered, err := accounts.Register(ctx, &cloudv1.RegisterAccountRequest{Email: email, Password: "r7-user-password", DisplayName: "R7 交易测试"})
+	registered, err := accounts.ProvisionAccount(adminContext, &cloudv1.ProvisionAccountRequest{Email: email, Password: "r7-user-password", DisplayName: "R7 交易测试"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	userIdentity, err := accounts.AuthenticateAccess(ctx, registered.GetSession().GetAccessToken())
+	userLogin, err := accounts.Login(ctx, &cloudv1.LoginAccountRequest{Login: email, Password: "r7-user-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	userIdentity, err := accounts.AuthenticateAccess(ctx, userLogin.GetSession().GetAccessToken())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,11 +107,15 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	}
 
 	otherEmail := "r7-other-" + uuid.NewString() + "@example.com"
-	otherRegistered, err := accounts.Register(ctx, &cloudv1.RegisterAccountRequest{Email: otherEmail, Password: "r7-other-password", DisplayName: "R7 隔离测试"})
+	otherRegistered, err := accounts.ProvisionAccount(adminContext, &cloudv1.ProvisionAccountRequest{Email: otherEmail, Password: "r7-other-password", DisplayName: "R7 隔离测试"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherIdentity, err := accounts.AuthenticateAccess(ctx, otherRegistered.GetSession().GetAccessToken())
+	otherLogin, err := accounts.Login(ctx, &cloudv1.LoginAccountRequest{Login: otherEmail, Password: "r7-other-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherIdentity, err := accounts.AuthenticateAccess(ctx, otherLogin.GetSession().GetAccessToken())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +233,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	}
 
 	clock = clock.Add(11 * time.Minute)
-	refreshed, err := accounts.Refresh(ctx, &cloudv1.RefreshAccountSessionRequest{RefreshToken: registered.GetSession().GetRefreshToken()})
+	refreshed, err := accounts.Refresh(ctx, &cloudv1.RefreshAccountSessionRequest{RefreshToken: userLogin.GetSession().GetRefreshToken()})
 	if err != nil {
 		t.Fatal(err)
 	}

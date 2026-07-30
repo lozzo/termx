@@ -83,6 +83,12 @@ message ListOperatorAccountsResponse {
 }
 message GetOperatorAccountRequest { string account_id = 1; }
 message GetOperatorAccountResponse { AccountSummary account = 1; }
+message ProvisionAccountRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+}
+message ProvisionAccountResponse { AccountProfile account = 1; }
 message ListRuntimeSessionsRequest { PageRequest page = 1; }
 message ListRuntimeSessionsResponse { repeated RuntimeSessionProjection sessions = 1; }
 message ListOperatorOrdersRequest { PageRequest page = 1; }
@@ -167,6 +173,7 @@ service OperatorService {
   rpc GetOverview(GetOperatorOverviewRequest) returns (GetOperatorOverviewResponse);
   rpc ListAccounts(ListOperatorAccountsRequest) returns (ListOperatorAccountsResponse);
   rpc GetAccount(GetOperatorAccountRequest) returns (GetOperatorAccountResponse);
+  rpc ProvisionAccount(ProvisionAccountRequest) returns (ProvisionAccountResponse);
   rpc ListRuntimeSessions(ListRuntimeSessionsRequest) returns (ListRuntimeSessionsResponse);
   rpc ListOrders(ListOperatorOrdersRequest) returns (ListOperatorOrdersResponse);
   rpc ListSubscriptions(ListOperatorSubscriptionsRequest) returns (ListOperatorSubscriptionsResponse);
