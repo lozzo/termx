@@ -8,6 +8,7 @@ import (
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/proto/apipb"
+	"google.golang.org/protobuf/proto"
 )
 
 // CoreApplicationExecutorFactory 为一条 ready protocol connection 装配 API Layer。
@@ -121,7 +122,11 @@ func (adapter *coreApplicationAdapter) TerminalAttach(ctx context.Context, origi
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &coreAttachmentTransaction{transaction: transaction, origin: origin, command: command}, nil
+	return &coreAttachmentTransaction{
+		transaction: transaction,
+		origin:      proto.Clone(origin).(*apipb.EndpointSessionStamp),
+		command:     proto.Clone(command).(*apipb.TerminalAttachCommand),
+	}, nil
 }
 
 func (adapter *coreApplicationAdapter) TerminalDetach(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalDetachCommand) error {
@@ -204,8 +209,9 @@ func (adapter *coreApplicationAdapter) LiveInvalidation(ctx context.Context, ori
 }
 
 func (adapter *coreApplicationAdapter) EventSubscribe(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error) {
+	eventOrigin := proto.Clone(origin).(*apipb.EndpointSessionStamp)
 	token, err := adapter.port.ApplicationEventSubscribe(ctx, apimapping.EventFilterFromProto(command), func(event corev2.Event, subscriptionToken []byte) ([]byte, error) {
-		return apimapping.EncodeEventEnvelope(origin.GetEndpointId(), origin, subscriptionToken, event)
+		return apimapping.EncodeEventEnvelope(eventOrigin.GetEndpointId(), eventOrigin, subscriptionToken, event)
 	})
 	if err != nil {
 		return nil, apimapping.CoreError(err)
