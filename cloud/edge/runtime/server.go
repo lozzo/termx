@@ -174,7 +174,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		}
 		configPublicKey = ed25519.PublicKey(append([]byte(nil), payload...))
 	}
-	state, err := NewState(StateConfig{MailboxSize: 1024, DeltaBuffer: 4096, MaxSessions: 4096, MaxPendingSignals: 4096})
+	state, err := NewState(StateConfig{MailboxSize: 1024, DeltaBuffer: 4096, MaxAgents: 4096, MaxSessions: 4096, MaxPendingSignals: 4096})
 	if err != nil {
 		return nil, err
 	}

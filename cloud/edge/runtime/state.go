@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,12 +20,17 @@ var (
 	ErrStateClosed = errors.New("Edge runtime state is closed")
 	// ErrStaleGeneration 表示迟到事件不能修改较新的实时对象。
 	ErrStaleGeneration = errors.New("runtime object generation is stale")
+	// ErrAgentCapacityExhausted 表示新的 daemon 不能进入已满的在线 Agent 集合。
+	ErrAgentCapacityExhausted = errors.New("runtime agent capacity is exhausted")
+	// ErrAgentGenerationExhausted 表示 Agent generation 已耗尽，不能安全回绕。
+	ErrAgentGenerationExhausted = errors.New("runtime agent generation is exhausted")
 )
 
 // StateConfig 约束 Edge runtime actor 的 mailbox 和每条 Controller 流的增量缓冲。
 type StateConfig struct {
 	MailboxSize       int
 	DeltaBuffer       int
+	MaxAgents         int
 	MaxSessions       int
 	MaxPendingSignals int
 	Now               func() time.Time
@@ -43,6 +49,7 @@ type State struct {
 }
 
 type stateLimits struct {
+	maxAgents         int
 	maxSessions       int
 	maxPendingSignals int
 }
@@ -77,21 +84,21 @@ const (
 )
 
 type stateData struct {
-	revision       uint64
-	agents         map[string]*cloudv1.AgentPresence
-	agentClaims    map[string]*cloudv1.DaemonBindingClaims
-	agentWriters   map[string]agentWriter
-	agentNextGen   map[string]uint64
-	sessions       map[string]*cloudv1.ClientSessionSummary
-	sessionClosers map[string]sessionCloser
-	pendingSignals map[string]pendingSignal
-	relayGroups    map[string]*relayGroup
-	relayAuth      map[string]string
-	relayPending   map[string]relayPendingAllocation
-	allocations    map[string]relayAllocation
-	subscribers    map[uint64]chan *cloudv1.RuntimeDelta
-	nextSubscriber uint64
-	deltaBuffer    int
+	revision            uint64
+	agents              map[string]*cloudv1.AgentPresence
+	agentClaims         map[string]*cloudv1.DaemonBindingClaims
+	agentWriters        map[string]agentWriter
+	nextAgentGeneration uint64
+	sessions            map[string]*cloudv1.ClientSessionSummary
+	sessionClosers      map[string]sessionCloser
+	pendingSignals      map[string]pendingSignal
+	relayGroups         map[string]*relayGroup
+	relayAuth           map[string]string
+	relayPending        map[string]relayPendingAllocation
+	allocations         map[string]relayAllocation
+	subscribers         map[uint64]chan *cloudv1.RuntimeDelta
+	nextSubscriber      uint64
+	deltaBuffer         int
 }
 
 type pendingSignal struct {
@@ -116,6 +123,9 @@ func NewState(config StateConfig) (*State, error) {
 	if config.MailboxSize <= 0 || config.DeltaBuffer <= 0 {
 		return nil, errors.New("runtime mailbox and delta buffer must be positive")
 	}
+	if config.MaxAgents <= 0 {
+		config.MaxAgents = 4096
+	}
 	if config.MaxSessions <= 0 {
 		config.MaxSessions = 4096
 	}
@@ -127,7 +137,7 @@ func NewState(config StateConfig) (*State, error) {
 	}
 	state := &State{
 		mailbox: make(chan *stateRequest, config.MailboxSize), done: make(chan struct{}), now: config.Now,
-		limits: stateLimits{maxSessions: config.MaxSessions, maxPendingSignals: config.MaxPendingSignals},
+		limits: stateLimits{maxAgents: config.MaxAgents, maxSessions: config.MaxSessions, maxPendingSignals: config.MaxPendingSignals},
 	}
 	go state.run(config.DeltaBuffer)
 	return state, nil
@@ -140,12 +150,16 @@ func (state *State) UpsertAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 	}
 	clone := proto.Clone(agent).(*cloudv1.AgentPresence)
 	return state.mutate(ctx, func(data *stateData) error {
-		if current := data.agents[clone.GetDaemonId()]; current != nil && clone.GetGeneration() < current.GetGeneration() {
+		current := data.agents[clone.GetDaemonId()]
+		if current == nil && len(data.agents) >= state.limits.maxAgents {
+			return ErrAgentCapacityExhausted
+		}
+		if current != nil && clone.GetGeneration() < current.GetGeneration() {
 			return ErrStaleGeneration
 		}
 		data.agents[clone.GetDaemonId()] = clone
-		if clone.GetGeneration() > data.agentNextGen[clone.GetDaemonId()] {
-			data.agentNextGen[clone.GetDaemonId()] = clone.GetGeneration()
+		if clone.GetGeneration() > data.nextAgentGeneration {
+			data.nextAgentGeneration = clone.GetGeneration()
 		}
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: proto.Clone(clone).(*cloudv1.AgentPresence)}})
@@ -168,11 +182,18 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 	state.gate.RLock()
 	defer state.gate.RUnlock()
 	if err := state.callUnderGate(ctx, func(data *stateData) error {
-		data.agentNextGen[clone.GetDaemonId()]++
-		clone.Generation = data.agentNextGen[clone.GetDaemonId()]
+		if data.agents[clone.GetDaemonId()] == nil && len(data.agents) >= state.limits.maxAgents {
+			return ErrAgentCapacityExhausted
+		}
+		if data.nextAgentGeneration == math.MaxUint64 {
+			return ErrAgentGenerationExhausted
+		}
+		candidateGeneration := data.nextAgentGeneration + 1
+		clone.Generation = candidateGeneration
 		if _, err := runtimesnapshot.NormalizeClone(&cloudv1.RuntimeSnapshot{Agents: []*cloudv1.AgentPresence{clone}}); err != nil {
 			return err
 		}
+		data.nextAgentGeneration = candidateGeneration
 		if old := data.agentWriters[clone.GetDaemonId()]; old.close != nil {
 			oldClose = old.close
 			data.cancelAgentSignals(clone.GetDaemonId(), old.generation)
@@ -527,7 +548,7 @@ func (state *State) Close() {
 func (state *State) run(deltaBuffer int) {
 	defer close(state.done)
 	data := &stateData{
-		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
+		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
 		relayGroups: make(map[string]*relayGroup), relayAuth: make(map[string]string), relayPending: make(map[string]relayPendingAllocation), allocations: make(map[string]relayAllocation),
 		subscribers: make(map[uint64]chan *cloudv1.RuntimeDelta), deltaBuffer: deltaBuffer,
 	}
