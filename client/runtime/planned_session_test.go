@@ -437,30 +437,99 @@ func TestClientRuntimeEnsureSessionReusesOwnerWinner(t *testing.T) {
 }
 
 func TestSessionOwnerPlannedEntryPointsReclaimEndpointLocks(t *testing.T) {
-	for _, name := range []string{"connect", "acquire", "ensure"} {
-		t.Run(name, func(t *testing.T) {
+	type entryPointResult struct {
+		stamp   EndpointSessionStamp
+		session ApplicationReadyPeerSession
+		err     error
+	}
+	tests := []struct {
+		name      string
+		wantCalls int
+		wantReuse bool
+		call      func(*SessionOwner, endpoint.Endpoint, PeerConnectorMap) entryPointResult
+	}{
+		{
+			name: "connect", wantCalls: 2,
+			call: func(owner *SessionOwner, target endpoint.Endpoint, resolver PeerConnectorMap) entryPointResult {
+				lease, err := owner.ConnectPlanned(context.Background(), target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
+				return entryPointResult{stamp: lease.Stamp, err: err}
+			},
+		},
+		{
+			name: "acquire", wantCalls: 1, wantReuse: true,
+			call: func(owner *SessionOwner, target endpoint.Endpoint, resolver PeerConnectorMap) entryPointResult {
+				session, err := owner.AcquirePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+				result := entryPointResult{session: session, err: err}
+				if session != nil {
+					result.stamp = session.Stamp()
+				}
+				return result
+			},
+		},
+		{
+			name: "ensure", wantCalls: 1, wantReuse: true,
+			call: func(owner *SessionOwner, target endpoint.Endpoint, resolver PeerConnectorMap) entryPointResult {
+				lease, err := owner.EnsurePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+				return entryPointResult{stamp: lease.Stamp, err: err}
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			owner := NewSessionOwner()
 			defer owner.Close()
 			target := plannedEndpoint(false)
-			dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {}})
+			release := make(chan struct{})
+			dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {release: release}})
 			resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{endpoint.RouteSSHWebRTCTCP: dialer})
 			if err != nil {
 				t.Fatal(err)
 			}
-			switch name {
-			case "connect":
-				_, err = owner.ConnectPlanned(context.Background(), target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
-			case "acquire":
-				var lease ApplicationReadyPeerSession
-				lease, err = owner.AcquirePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
-				if lease != nil {
-					defer lease.Close()
-				}
-			case "ensure":
-				_, err = owner.EnsurePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+
+			results := make(chan entryPointResult, 2)
+			go func() { results <- testCase.call(owner, target, resolver) }()
+			if route := waitPlannedStart(t, dialer.started); route != "ssh" {
+				t.Fatalf("first route = %q", route)
 			}
-			if err != nil {
-				t.Fatal(err)
+			go func() { results <- testCase.call(owner, target, resolver) }()
+			entry := waitForEndpointAcquireRefs(t, owner, target.ID, 2)
+			if calls := dialer.calls("ssh"); calls != 1 {
+				t.Fatalf("dial calls with registered waiter = %d, want 1", calls)
+			}
+
+			close(release)
+			receive := func() entryPointResult {
+				select {
+				case result := <-results:
+					return result
+				case <-time.After(time.Second):
+					t.Fatal("planned entry point deadlocked after release")
+					return entryPointResult{}
+				}
+			}
+			first, second := receive(), receive()
+			for _, result := range []entryPointResult{first, second} {
+				if result.err != nil {
+					t.Fatal(result.err)
+				}
+				if result.session != nil {
+					defer result.session.Close()
+				}
+			}
+			if testCase.wantReuse && first.stamp != second.stamp {
+				t.Fatalf("%s stamps = %#v/%#v, want reuse", testCase.name, first.stamp, second.stamp)
+			}
+			if !testCase.wantReuse && first.stamp.Generation == second.stamp.Generation {
+				t.Fatalf("%s generations = %d/%d, want distinct", testCase.name, first.stamp.Generation, second.stamp.Generation)
+			}
+			if calls := dialer.calls("ssh"); calls != testCase.wantCalls {
+				t.Fatalf("final dial calls = %d, want %d", calls, testCase.wantCalls)
+			}
+			owner.mu.Lock()
+			refs := entry.refs
+			owner.mu.Unlock()
+			if refs != 0 {
+				t.Fatalf("released entry refs = %d, want 0", refs)
 			}
 			assertEndpointAcquireLocksEmpty(t, owner)
 		})

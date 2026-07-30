@@ -417,6 +417,69 @@ func TestSessionOwnerEndpointAcquireLockSurvivesCloseWithWaiter(t *testing.T) {
 	assertEndpointAcquireLocksEmpty(t, owner)
 }
 
+func TestSessionOwnerEndpointAcquireLockReleaseKeepsWaiterEntry(t *testing.T) {
+	owner := NewSessionOwner()
+	const endpointID endpoint.EndpointID = "lock-window"
+	holderUnlock := owner.lockEndpoint(endpointID)
+	owner.mu.Lock()
+	entry := owner.acquireLocks[endpointID]
+	initialRefs := entry.refs
+	owner.mu.Unlock()
+	if initialRefs != 1 {
+		t.Fatalf("holder refs = %d, want 1", initialRefs)
+	}
+
+	waiterUnlocks := make(chan func())
+	releaseWaiter := make(chan struct{})
+	waiterDone := make(chan struct{})
+	go func() {
+		unlock := owner.lockEndpoint(endpointID)
+		waiterUnlocks <- unlock
+		<-releaseWaiter
+		unlock()
+		close(waiterDone)
+	}()
+	retained := waitForEndpointAcquireRefs(t, owner, endpointID, 2)
+	if retained != entry {
+		t.Fatalf("waiter entry = %p, want holder entry %p", retained, entry)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	holderUnlock()
+	select {
+	case unlock := <-waiterUnlocks:
+		if unlock == nil {
+			t.Fatal("waiter returned nil unlock closure")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter did not acquire endpoint lock")
+	}
+	owner.mu.Lock()
+	current := owner.acquireLocks[endpointID]
+	waiterRefs := entry.refs
+	closed := owner.closed
+	owner.mu.Unlock()
+
+	close(releaseWaiter)
+	select {
+	case <-waiterDone:
+	case <-time.After(time.Second):
+		t.Fatal("waiter release deadlocked")
+	}
+	if !closed || current != entry || waiterRefs != 1 {
+		t.Fatalf("waiter window: closed=%v entry=%p refs=%d, want closed and entry=%p refs=1", closed, current, waiterRefs, entry)
+	}
+	owner.mu.Lock()
+	finalRefs := entry.refs
+	owner.mu.Unlock()
+	if finalRefs != 0 {
+		t.Fatalf("released entry refs = %d, want 0", finalRefs)
+	}
+	assertEndpointAcquireLocksEmpty(t, owner)
+}
+
 func TestSessionOwnerEndpointAcquireLocksReclaimedAcrossOutcomes(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		owner := NewSessionOwner()
