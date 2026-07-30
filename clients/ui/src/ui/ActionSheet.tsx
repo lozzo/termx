@@ -1,5 +1,7 @@
 import { useId, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { ModalSurface } from './ModalSurface'
 
@@ -31,7 +33,9 @@ export interface ActionSheetProps {
 }
 
 export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: ActionSheetProps) {
+  const { t } = useTranslation()
   const titleId = useId()
+  const subtitleId = useId()
   const firstActionRef = useRef<HTMLButtonElement>(null)
   if (!isOpen) return null
   const closeWithHaptic = () => {
@@ -46,8 +50,9 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
       data-testid="action-sheet-backdrop"
     >
       <ModalSurface
-        aria-label={title ? undefined : subtitle || 'Actions'}
+        aria-label={title ? undefined : subtitle || t('common.actions')}
         aria-labelledby={title ? titleId : undefined}
+        aria-describedby={title && subtitle ? subtitleId : undefined}
         className="w-full max-w-xl animate-slide-up border-t border-[var(--anytty-app-line)] bg-[var(--anytty-app-surface)] pb-[env(safe-area-inset-bottom,20px)] md:border md:pb-4"
         initialFocusRef={firstActionRef}
         onRequestClose={closeWithHaptic}
@@ -59,11 +64,11 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
             <div className="flex flex-col">
               {title && <h3 id={titleId} className="text-[17px] font-bold text-zinc-900">{title}</h3>}
-              {subtitle && <p className="text-[13px] font-medium text-zinc-500">{subtitle}</p>}
+              {subtitle && <p id={subtitleId} className="text-[13px] font-medium text-zinc-500">{subtitle}</p>}
             </div>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={t('common.close')}
               className="anytty-app-icon-button border-transparent bg-transparent"
               onClick={closeWithHaptic}
             >

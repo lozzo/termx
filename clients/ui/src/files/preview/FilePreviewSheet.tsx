@@ -1,3 +1,5 @@
+import { useId } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
 import { ModalSurface } from '../../ui/ModalSurface'
@@ -22,21 +24,24 @@ interface FilePreviewSheetProps {
 
 export function FilePreviewSheet({ path, preview, loading, error, streamPreview, onClose }: FilePreviewSheetProps) {
   const { t } = useTranslation()
+  const titleId = useId()
+  const subtitleId = useId()
   const title = preview?.name ?? basename(path)
   const subtitle = preview ? `${formatBytes(preview.size)} · ${preview.mimeType}` : path
   const isMediaPreview = preview?.category === 'image' || preview?.category === 'video' || preview?.category === 'model'
 
-  return (
+  const sheet = (
     <ModalSurface
       className="fixed inset-0 z-[80] flex h-[100dvh] flex-col bg-white"
       data-testid="anytty-file-preview"
-      aria-labelledby="anytty-file-preview-title"
+      aria-labelledby={titleId}
+      aria-describedby={subtitleId}
       onRequestClose={onClose}
     >
       <header className="anytty-app-header flex shrink-0 items-center gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
         <div className="min-w-0 flex-1">
-          <h2 id="anytty-file-preview-title" className="truncate text-[17px] font-bold tracking-tight text-zinc-950">{title}</h2>
-          <p className="mt-0.5 truncate text-[12px] font-medium text-zinc-500">{subtitle}</p>
+          <h2 id={titleId} className="truncate text-[17px] font-bold tracking-tight text-zinc-950">{title}</h2>
+          <p id={subtitleId} className="mt-0.5 truncate text-[12px] font-medium text-zinc-500">{subtitle}</p>
         </div>
         <button
           type="button"
@@ -61,6 +66,8 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
       </div>
     </ModalSurface>
   )
+
+  return typeof document === 'undefined' ? sheet : createPortal(sheet, document.body)
 }
 
 function PreviewContent({

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, CheckSquare, Download, Pause, Play, RotateCw, Square, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import '../i18n'
@@ -169,6 +169,8 @@ function TransferCenterDialog({
   onClose: () => void
 }) {
   const { t: translate } = useTranslation()
+  const titleId = useId()
+  const summaryId = useId()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [selectionMode, setSelectionMode] = useState(false)
 
@@ -255,7 +257,8 @@ function TransferCenterDialog({
   return (
     <div className="anytty-app-page fixed inset-0 z-50 flex">
       <ModalSurface
-        aria-labelledby="anytty-transfer-center-title"
+        aria-labelledby={titleId}
+        aria-describedby={summaryId}
         className="flex h-full min-h-0 w-full flex-col bg-white"
         onRequestClose={onClose}
       >
@@ -269,8 +272,8 @@ function TransferCenterDialog({
               {translate('common.cancel')}
             </button>
             <div className="min-w-0 text-center">
-              <h2 id="anytty-transfer-center-title" className="truncate text-[17px] font-semibold text-zinc-950">{translate('files.transfer.selected', { count: selectedIds.size })}</h2>
-              <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
+              <h2 id={titleId} className="truncate text-[17px] font-semibold text-zinc-950">{translate('files.transfer.selected', { count: selectedIds.size })}</h2>
+              <p id={summaryId} className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
             </div>
             <button
               type="button"
@@ -284,8 +287,8 @@ function TransferCenterDialog({
         ) : (
           <header className="anytty-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
             <div className="min-w-0">
-              <h2 id="anytty-transfer-center-title" className="text-[18px] font-semibold text-zinc-950">{translate('files.transfer.center')}</h2>
-              <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
+              <h2 id={titleId} className="text-[18px] font-semibold text-zinc-950">{translate('files.transfer.center')}</h2>
+              <p id={summaryId} className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {onResumeAll && resumableCount > 0 ? (

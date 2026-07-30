@@ -4,7 +4,7 @@ import { extension, fileEntryMenuSubtitle, fileEntryMeta, fileEntryPath, isMarkd
 import { isModelPreviewFile } from './modelFileTypes'
 import { FilePreviewSheet } from './preview/FilePreviewSheet'
 import type { ProtoClientSession } from '../core/protoClientSession'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PathBookmark } from './pathBookmarks'
 import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from '../platform/nativeBack'
@@ -49,6 +49,10 @@ export function FileManager({
   const [editingBookmarkId, setEditingBookmarkId] = useState<string | null>(null)
   const [bookmarkAlias, setBookmarkAlias] = useState('')
   const [transferError, setTransferError] = useState<string | null>(null)
+  const deleteConfirmTitleId = useId()
+  const deleteConfirmDescriptionId = useId()
+  const bookmarkEditorTitleId = useId()
+  const bookmarkEditorDescriptionId = useId()
   const pathBarRef = useRef<HTMLDivElement>(null)
   const webUploadRef = useRef<HTMLInputElement>(null)
   const bookmarkAliasInputRef = useRef<HTMLInputElement>(null)
@@ -521,13 +525,14 @@ export function FileManager({
       {deletePath ? (
         <div className="absolute inset-0 z-[110] flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
           <ModalSurface
-            aria-labelledby="anytty-file-delete-confirm-title"
+            aria-labelledby={deleteConfirmTitleId}
+            aria-describedby={deleteConfirmDescriptionId}
             className="anytty-app-panel w-full p-4 md:max-w-sm"
             onClick={(event) => event.stopPropagation()}
             onRequestClose={() => setDeletePath(null)}
           >
-            <h2 id="anytty-file-delete-confirm-title" className="text-[17px] font-bold text-zinc-950">{t('files.deleteConfirm')}</h2>
-            <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
+            <h2 id={deleteConfirmTitleId} className="text-[17px] font-bold text-zinc-950">{t('files.deleteConfirm')}</h2>
+            <p id={deleteConfirmDescriptionId} className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button type="button" className="anytty-app-secondary-button h-11 text-sm font-semibold" onClick={() => { hapticSelection(); setDeletePath(null) }}>
                 {t('common.cancel')}
@@ -764,7 +769,8 @@ export function FileManager({
       {bookmarksOpen && editingBookmark ? (
         <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center" onClick={closeBookmarkEditor}>
           <ModalSurface
-            aria-labelledby="anytty-bookmark-editor-title"
+            aria-labelledby={bookmarkEditorTitleId}
+            aria-describedby={bookmarkEditorDescriptionId}
             className="w-full max-w-xl animate-slide-up border-t border-[var(--anytty-app-line)] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] md:border"
             initialFocusRef={bookmarkAliasInputRef}
             onClick={(event) => event.stopPropagation()}
@@ -772,8 +778,8 @@ export function FileManager({
           >
             <div className="mx-auto mt-3 h-1 w-12 bg-[var(--anytty-app-line-strong)] md:hidden" />
             <div className="px-5 pb-2 pt-4">
-              <h3 id="anytty-bookmark-editor-title" className="text-[17px] font-bold text-zinc-900">{t('files.bookmarks.edit')}</h3>
-              <p className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
+              <h3 id={bookmarkEditorTitleId} className="text-[17px] font-bold text-zinc-900">{t('files.bookmarks.edit')}</h3>
+              <p id={bookmarkEditorDescriptionId} className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
             </div>
             <div className="px-5 py-3">
               <label className="flex flex-col gap-2 text-[13px] font-semibold text-zinc-600">

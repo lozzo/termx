@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MachineList, type MachineListProps } from './MachineList'
@@ -111,6 +111,32 @@ describe('MachineList', () => {
     expect(onSelectMachine).not.toHaveBeenCalled()
   })
 
+  it('keeps title and detail associations unique across two device sheets', () => {
+    render(
+      <>
+        <MachineList
+          machines={[machine({ machineId: 'machine-first', name: 'First Mac' })]}
+          onScanMachine={vi.fn()}
+          onSelectMachine={vi.fn()}
+        />
+        <MachineList
+          machines={[machine({ machineId: 'machine-second', name: 'Second Mac' })]}
+          onScanMachine={vi.fn()}
+          onSelectMachine={vi.fn()}
+        />
+      </>,
+    )
+
+    const firstTrigger = screen.getByRole('button', { name: /connect to first mac/i })
+    const secondTrigger = screen.getByRole('button', { name: /connect to second mac/i })
+    fireEvent.contextMenu(firstTrigger)
+    fireEvent.contextMenu(secondTrigger)
+
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="anytty-machine-detail-sheet"] [role="dialog"]'))
+    expect(dialogs).toHaveLength(2)
+    expectUniqueAssociations(dialogs, ['First Mac', 'Second Mac'], ['Device details', 'Device details'])
+  })
+
   it('shows a QR-only empty state without account or manual-add actions', () => {
     render(
       <MachineList
@@ -143,6 +169,25 @@ describe('MachineList', () => {
     expect(screen.getAllByRole('button').every((button) => /scan|close/i.test(button.getAttribute('aria-label') ?? button.textContent ?? ''))).toBe(true)
   })
 })
+
+function expectUniqueAssociations(dialogs: HTMLElement[], titles: string[], descriptions: string[]) {
+  const ids: string[] = []
+  dialogs.forEach((dialog, index) => {
+    const titleId = dialog.getAttribute('aria-labelledby')
+    const descriptionId = dialog.getAttribute('aria-describedby')
+    expect(titleId).toBeTruthy()
+    expect(descriptionId).toBeTruthy()
+    ids.push(titleId!, descriptionId!)
+
+    const title = document.getElementById(titleId!)
+    const description = document.getElementById(descriptionId!)
+    expect(dialog.contains(title)).toBe(true)
+    expect(dialog.contains(description)).toBe(true)
+    expect(title?.textContent).toBe(titles[index])
+    expect(description?.textContent).toBe(descriptions[index])
+  })
+  expect(new Set(ids).size).toBe(ids.length)
+}
 
 function machine(overrides: Partial<AppMachineRecord>): AppMachineRecord {
   return {

@@ -74,6 +74,46 @@ describe('FileTransferPanel', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('keeps title and summary associations unique across two transfer centers', () => {
+    render(
+      <>
+        <FileTransferPanel
+          transfers={[transfer({ id: 'first', name: 'first.txt' })]}
+          hasActiveTransfers
+          onCancel={vi.fn()}
+          onDismiss={vi.fn()}
+          open
+        />
+        <FileTransferPanel
+          transfers={[transfer({ id: 'second', name: 'second.txt' })]}
+          hasActiveTransfers
+          onCancel={vi.fn()}
+          onDismiss={vi.fn()}
+          open
+        />
+      </>,
+    )
+
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+    expect(dialogs).toHaveLength(2)
+    const ids: string[] = []
+    dialogs.forEach((dialog) => {
+      const titleId = dialog.getAttribute('aria-labelledby')
+      const summaryId = dialog.getAttribute('aria-describedby')
+      expect(titleId).toBeTruthy()
+      expect(summaryId).toBeTruthy()
+      ids.push(titleId!, summaryId!)
+
+      const title = document.getElementById(titleId!)
+      const summary = document.getElementById(summaryId!)
+      expect(dialog.contains(title)).toBe(true)
+      expect(dialog.contains(summary)).toBe(true)
+      expect(title?.textContent).toBe('Data Transfer Center')
+      expect(summary?.textContent).not.toBe('')
+    })
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it('sorts newest transfer tasks first by added time', () => {
     render(
       <FileTransferPanel

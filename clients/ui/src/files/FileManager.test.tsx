@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProtoClientSession } from '../core/protoClientSession'
@@ -38,6 +38,7 @@ describe('FileManager overlays', () => {
 
     const confirmation = screen.getByRole('dialog', { name: 'Delete this entry?' })
     expect(confirmation.getAttribute('aria-modal')).toBe('true')
+    expectAssociation(confirmation, 'aria-describedby', '/tmp/notes.txt')
     expect(actions.closest('[inert]')).toBeTruthy()
     expect(document.activeElement).toBe(within(confirmation).getByRole('button', { name: 'Cancel' }))
 
@@ -80,6 +81,7 @@ describe('FileManager overlays', () => {
     const editor = screen.getByRole('dialog', { name: 'Edit bookmark' })
     const alias = within(editor).getByRole('textbox', { name: 'Alias' })
     expect(editor.getAttribute('aria-modal')).toBe('true')
+    expectAssociation(editor, 'aria-describedby', '/srv/app')
     expect(document.activeElement).toBe(alias)
     await user.clear(alias)
     await user.type(alias, 'Production servers')
@@ -97,7 +99,76 @@ describe('FileManager overlays', () => {
     expect(removePathBookmark).toHaveBeenCalledWith('bookmark-1')
     expect(screen.queryByRole('dialog', { name: 'Edit bookmark' })).toBeNull()
   })
+
+  it('keeps delete confirmation associations unique across two file managers', () => {
+    useFileManagerMock.mockReturnValue(createManager({
+      currentPath: '/tmp',
+      entries: [fileEntry],
+      visibleEntries: [fileEntry],
+      total: 1,
+    }))
+    renderTwoFileManagers()
+
+    const triggers = screen.getAllByRole('button', { name: 'More actions for notes.txt' })
+    fireEvent.click(triggers[0]!)
+    fireEvent.click(triggers[1]!)
+    const actionSheets = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="action-sheet-backdrop"] [role="dialog"]'))
+    expect(actionSheets).toHaveLength(2)
+    actionSheets.forEach((sheet) => {
+      const deleteButton = Array.from(sheet.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.trim() === 'Delete')
+      expect(deleteButton).toBeTruthy()
+      fireEvent.click(deleteButton!)
+    })
+
+    const confirmations = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="anytty-file-delete-confirm"] [role="dialog"]'))
+    expect(confirmations).toHaveLength(2)
+    expectUniqueAssociations(confirmations, ['Delete this entry?', 'Delete this entry?'], ['/tmp/notes.txt', '/tmp/notes.txt'])
+  })
+
+  it('keeps bookmark editor associations unique across two file managers', () => {
+    useFileManagerMock.mockReturnValue(createManager({
+      pathBookmarks: [{
+        id: 'bookmark-1',
+        path: '/srv/app',
+        label: 'Production',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        version: 1,
+      }],
+    }))
+    renderTwoFileManagers()
+
+    const bookmarkTriggers = screen.getAllByRole('button', { name: 'Path bookmarks' })
+    fireEvent.click(bookmarkTriggers[0]!)
+    fireEvent.click(bookmarkTriggers[1]!)
+    const editButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[aria-label="Edit bookmark Production"]'))
+    expect(editButtons).toHaveLength(2)
+    fireEvent.click(editButtons[0]!)
+    fireEvent.click(editButtons[1]!)
+
+    const editors = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+    expect(editors).toHaveLength(2)
+    expectUniqueAssociations(editors, ['Edit bookmark', 'Edit bookmark'], ['/srv/app', '/srv/app'])
+  })
 })
+
+function expectAssociation(dialog: HTMLElement, attribute: 'aria-labelledby' | 'aria-describedby', text: string) {
+  const id = dialog.getAttribute(attribute)
+  expect(id).toBeTruthy()
+  const target = document.getElementById(id!)
+  expect(dialog.contains(target)).toBe(true)
+  expect(target?.textContent).toBe(text)
+  return id!
+}
+
+function expectUniqueAssociations(dialogs: HTMLElement[], titles: string[], descriptions: string[]) {
+  const ids = dialogs.flatMap((dialog, index) => [
+    expectAssociation(dialog, 'aria-labelledby', titles[index]!),
+    expectAssociation(dialog, 'aria-describedby', descriptions[index]!),
+  ])
+  expect(new Set(ids).size).toBe(ids.length)
+}
 
 const fileEntry = {
   name: 'notes.txt',
@@ -111,6 +182,15 @@ function renderFileManager() {
       machineId="machine-1"
       session={{} as ProtoClientSession}
     />,
+  )
+}
+
+function renderTwoFileManagers() {
+  return render(
+    <>
+      <FileManager machineId="machine-1" session={{} as ProtoClientSession} />
+      <FileManager machineId="machine-2" session={{} as ProtoClientSession} />
+    </>,
   )
 }
 

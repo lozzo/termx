@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, LaptopMinimal, QrCode, Server, X } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
@@ -230,6 +230,8 @@ function MachineRow({
 
 function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; onClose: () => void }) {
   const { t } = useTranslation()
+  const titleId = useId()
+  const descriptionId = useId()
   const fields = [
     [t('machines.fields.name'), machine.name],
     [t('machines.fields.id'), machine.machineId],
@@ -245,7 +247,8 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
       <ModalSurface
-        aria-labelledby="anytty-machine-detail-title"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--anytty-app-line)] bg-white md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}
         onRequestClose={onClose}
@@ -253,8 +256,8 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
       >
         <header className="flex h-16 items-center justify-between border-b border-zinc-200 px-4">
           <div className="min-w-0">
-            <h2 id="anytty-machine-detail-title" className="truncate text-[17px] font-bold text-zinc-950">{machine.name}</h2>
-            <p className="truncate text-xs font-medium text-zinc-500">{t('machines.details')}</p>
+            <h2 id={titleId} className="truncate text-[17px] font-bold text-zinc-950">{machine.name}</h2>
+            <p id={descriptionId} className="truncate text-xs font-medium text-zinc-500">{t('machines.details')}</p>
           </div>
           <button
             type="button"
