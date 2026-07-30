@@ -1663,22 +1663,22 @@ func (x *HistoryCopyResult) GetText() string {
 }
 
 type HistoryBacklogStatusResult struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Terminal              *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	HistoryEnabled        bool                   `protobuf:"varint,2,opt,name=history_enabled,json=historyEnabled,proto3" json:"history_enabled,omitempty"`
-	AppliedSeq            uint64                 `protobuf:"varint,3,opt,name=applied_seq,json=appliedSeq,proto3" json:"applied_seq,omitempty"`
-	TargetSeq             uint64                 `protobuf:"varint,4,opt,name=target_seq,json=targetSeq,proto3" json:"target_seq,omitempty"`
-	CatchupPending        bool                   `protobuf:"varint,5,opt,name=catchup_pending,json=catchupPending,proto3" json:"catchup_pending,omitempty"`
-	PendingTransactions   int32                  `protobuf:"varint,6,opt,name=pending_transactions,json=pendingTransactions,proto3" json:"pending_transactions,omitempty"`
-	PendingBytes          int64                  `protobuf:"varint,7,opt,name=pending_bytes,json=pendingBytes,proto3" json:"pending_bytes,omitempty"`
-	BackpressureMode      string                 `protobuf:"bytes,8,opt,name=backpressure_mode,json=backpressureMode,proto3" json:"backpressure_mode,omitempty"`
-	BufferLimitBytes      int64                  `protobuf:"varint,9,opt,name=buffer_limit_bytes,json=bufferLimitBytes,proto3" json:"buffer_limit_bytes,omitempty"`
-	BackpressureEvents    uint64                 `protobuf:"varint,10,opt,name=backpressure_events,json=backpressureEvents,proto3" json:"backpressure_events,omitempty"`
-	BackpressureWaitNanos int64                  `protobuf:"varint,11,opt,name=backpressure_wait_nanos,json=backpressureWaitNanos,proto3" json:"backpressure_wait_nanos,omitempty"`
-	InFlight              bool                   `protobuf:"varint,12,opt,name=in_flight,json=inFlight,proto3" json:"in_flight,omitempty"`
-	Closed                bool                   `protobuf:"varint,13,opt,name=closed,proto3" json:"closed,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Terminal               *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	HistoryEnabled         bool                   `protobuf:"varint,2,opt,name=history_enabled,json=historyEnabled,proto3" json:"history_enabled,omitempty"`
+	OutputBufferPolicy     string                 `protobuf:"bytes,3,opt,name=output_buffer_policy,json=outputBufferPolicy,proto3" json:"output_buffer_policy,omitempty"`
+	BufferCapacityBytes    int64                  `protobuf:"varint,4,opt,name=buffer_capacity_bytes,json=bufferCapacityBytes,proto3" json:"buffer_capacity_bytes,omitempty"`
+	ResidentBytes          int64                  `protobuf:"varint,5,opt,name=resident_bytes,json=residentBytes,proto3" json:"resident_bytes,omitempty"`
+	AggregateResidentBytes int64                  `protobuf:"varint,6,opt,name=aggregate_resident_bytes,json=aggregateResidentBytes,proto3" json:"aggregate_resident_bytes,omitempty"`
+	AggregateBudgetBytes   int64                  `protobuf:"varint,7,opt,name=aggregate_budget_bytes,json=aggregateBudgetBytes,proto3" json:"aggregate_budget_bytes,omitempty"`
+	DroppedBytes           uint64                 `protobuf:"varint,8,opt,name=dropped_bytes,json=droppedBytes,proto3" json:"dropped_bytes,omitempty"`
+	GapCount               uint64                 `protobuf:"varint,9,opt,name=gap_count,json=gapCount,proto3" json:"gap_count,omitempty"`
+	OutputBufferWaitNanos  int64                  `protobuf:"varint,10,opt,name=output_buffer_wait_nanos,json=outputBufferWaitNanos,proto3" json:"output_buffer_wait_nanos,omitempty"`
+	Unavailable            bool                   `protobuf:"varint,11,opt,name=unavailable,proto3" json:"unavailable,omitempty"`
+	UnavailableReason      string                 `protobuf:"bytes,12,opt,name=unavailable_reason,json=unavailableReason,proto3" json:"unavailable_reason,omitempty"`
+	Closed                 bool                   `protobuf:"varint,13,opt,name=closed,proto3" json:"closed,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *HistoryBacklogStatusResult) Reset() {
@@ -1725,74 +1725,74 @@ func (x *HistoryBacklogStatusResult) GetHistoryEnabled() bool {
 	return false
 }
 
-func (x *HistoryBacklogStatusResult) GetAppliedSeq() uint64 {
+func (x *HistoryBacklogStatusResult) GetOutputBufferPolicy() string {
 	if x != nil {
-		return x.AppliedSeq
-	}
-	return 0
-}
-
-func (x *HistoryBacklogStatusResult) GetTargetSeq() uint64 {
-	if x != nil {
-		return x.TargetSeq
-	}
-	return 0
-}
-
-func (x *HistoryBacklogStatusResult) GetCatchupPending() bool {
-	if x != nil {
-		return x.CatchupPending
-	}
-	return false
-}
-
-func (x *HistoryBacklogStatusResult) GetPendingTransactions() int32 {
-	if x != nil {
-		return x.PendingTransactions
-	}
-	return 0
-}
-
-func (x *HistoryBacklogStatusResult) GetPendingBytes() int64 {
-	if x != nil {
-		return x.PendingBytes
-	}
-	return 0
-}
-
-func (x *HistoryBacklogStatusResult) GetBackpressureMode() string {
-	if x != nil {
-		return x.BackpressureMode
+		return x.OutputBufferPolicy
 	}
 	return ""
 }
 
-func (x *HistoryBacklogStatusResult) GetBufferLimitBytes() int64 {
+func (x *HistoryBacklogStatusResult) GetBufferCapacityBytes() int64 {
 	if x != nil {
-		return x.BufferLimitBytes
+		return x.BufferCapacityBytes
 	}
 	return 0
 }
 
-func (x *HistoryBacklogStatusResult) GetBackpressureEvents() uint64 {
+func (x *HistoryBacklogStatusResult) GetResidentBytes() int64 {
 	if x != nil {
-		return x.BackpressureEvents
+		return x.ResidentBytes
 	}
 	return 0
 }
 
-func (x *HistoryBacklogStatusResult) GetBackpressureWaitNanos() int64 {
+func (x *HistoryBacklogStatusResult) GetAggregateResidentBytes() int64 {
 	if x != nil {
-		return x.BackpressureWaitNanos
+		return x.AggregateResidentBytes
 	}
 	return 0
 }
 
-func (x *HistoryBacklogStatusResult) GetInFlight() bool {
+func (x *HistoryBacklogStatusResult) GetAggregateBudgetBytes() int64 {
 	if x != nil {
-		return x.InFlight
+		return x.AggregateBudgetBytes
+	}
+	return 0
+}
+
+func (x *HistoryBacklogStatusResult) GetDroppedBytes() uint64 {
+	if x != nil {
+		return x.DroppedBytes
+	}
+	return 0
+}
+
+func (x *HistoryBacklogStatusResult) GetGapCount() uint64 {
+	if x != nil {
+		return x.GapCount
+	}
+	return 0
+}
+
+func (x *HistoryBacklogStatusResult) GetOutputBufferWaitNanos() int64 {
+	if x != nil {
+		return x.OutputBufferWaitNanos
+	}
+	return 0
+}
+
+func (x *HistoryBacklogStatusResult) GetUnavailable() bool {
+	if x != nil {
+		return x.Unavailable
 	}
 	return false
+}
+
+func (x *HistoryBacklogStatusResult) GetUnavailableReason() string {
+	if x != nil {
+		return x.UnavailableReason
+	}
+	return ""
 }
 
 func (x *HistoryBacklogStatusResult) GetClosed() bool {
@@ -2248,23 +2248,21 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x06cursor\x18\x12 \x01(\v2\x1c.anytty.api.v1.HistoryCursorR\x06cursor\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x13 \x01(\x03R\x11timestampUnixNano\"'\n" +
 	"\x11HistoryCopyResult\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xb7\x04\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xde\x04\n" +
 	"\x1aHistoryBacklogStatusResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12'\n" +
-	"\x0fhistory_enabled\x18\x02 \x01(\bR\x0ehistoryEnabled\x12\x1f\n" +
-	"\vapplied_seq\x18\x03 \x01(\x04R\n" +
-	"appliedSeq\x12\x1d\n" +
-	"\n" +
-	"target_seq\x18\x04 \x01(\x04R\ttargetSeq\x12'\n" +
-	"\x0fcatchup_pending\x18\x05 \x01(\bR\x0ecatchupPending\x121\n" +
-	"\x14pending_transactions\x18\x06 \x01(\x05R\x13pendingTransactions\x12#\n" +
-	"\rpending_bytes\x18\a \x01(\x03R\fpendingBytes\x12+\n" +
-	"\x11backpressure_mode\x18\b \x01(\tR\x10backpressureMode\x12,\n" +
-	"\x12buffer_limit_bytes\x18\t \x01(\x03R\x10bufferLimitBytes\x12/\n" +
-	"\x13backpressure_events\x18\n" +
-	" \x01(\x04R\x12backpressureEvents\x126\n" +
-	"\x17backpressure_wait_nanos\x18\v \x01(\x03R\x15backpressureWaitNanos\x12\x1b\n" +
-	"\tin_flight\x18\f \x01(\bR\binFlight\x12\x16\n" +
+	"\x0fhistory_enabled\x18\x02 \x01(\bR\x0ehistoryEnabled\x120\n" +
+	"\x14output_buffer_policy\x18\x03 \x01(\tR\x12outputBufferPolicy\x122\n" +
+	"\x15buffer_capacity_bytes\x18\x04 \x01(\x03R\x13bufferCapacityBytes\x12%\n" +
+	"\x0eresident_bytes\x18\x05 \x01(\x03R\rresidentBytes\x128\n" +
+	"\x18aggregate_resident_bytes\x18\x06 \x01(\x03R\x16aggregateResidentBytes\x124\n" +
+	"\x16aggregate_budget_bytes\x18\a \x01(\x03R\x14aggregateBudgetBytes\x12#\n" +
+	"\rdropped_bytes\x18\b \x01(\x04R\fdroppedBytes\x12\x1b\n" +
+	"\tgap_count\x18\t \x01(\x04R\bgapCount\x127\n" +
+	"\x18output_buffer_wait_nanos\x18\n" +
+	" \x01(\x03R\x15outputBufferWaitNanos\x12 \n" +
+	"\vunavailable\x18\v \x01(\bR\vunavailable\x12-\n" +
+	"\x12unavailable_reason\x18\f \x01(\tR\x11unavailableReason\x12\x16\n" +
 	"\x06closed\x18\r \x01(\bR\x06closed\"T\n" +
 	"\x14LiveScreenGetCommand\x126\n" +
 	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\x88\x01\n" +

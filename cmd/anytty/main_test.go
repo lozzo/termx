@@ -626,23 +626,27 @@ func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
 	}
 }
 
-func TestR446DaemonConfiguresHistoryBackpressureFromEnv(t *testing.T) {
+func TestDaemonConfiguresTerminalOutputBufferFromEnv(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	oldNewCoreV2Server := newCoreV2Server
 	t.Cleanup(func() {
 		newCoreV2Server = oldNewCoreV2Server
 	})
-	t.Setenv("ANYTTY_HISTORY_BACKPRESSURE_MODE", "bounded")
-	t.Setenv("ANYTTY_HISTORY_BACKPRESSURE_BUFFER_MB", "12")
+	t.Setenv("ANYTTY_OUTPUT_BUFFER_OVERFLOW", "block")
+	t.Setenv("ANYTTY_OUTPUT_BUFFER_CAPACITY_BYTES", "12582912")
+	t.Setenv("ANYTTY_OUTPUT_RESIDENT_BUDGET_BYTES", "268435456")
 
 	fakeV3 := &fakeCoreV2Server{}
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
 		server := newCoreV2TestServer(opts...)
-		got := server.HistoryBackpressureConfig()
-		if got.Mode != corev2.HistoryBackpressureBounded || got.BufferBytes != 12<<20 {
-			t.Fatalf("daemon did not pass history backpressure env to core: %#v", got)
+		got := server.TerminalOutputBufferConfig()
+		if got.Overflow != corev2.TerminalOutputOverflowBlock || got.CapacityBytes != 12<<20 {
+			t.Fatalf("daemon did not pass output buffer env to core: %#v", got)
+		}
+		if budget := server.TerminalOutputResidentBudget(); budget != 256<<20 {
+			t.Fatalf("daemon did not pass resident budget env to core: %d", budget)
 		}
 		return fakeV3
 	}
@@ -1141,9 +1145,9 @@ func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 	server := newCoreV2TestServer(
 		corev2.WithSocketPath(socketPath),
 		corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()),
-		corev2.WithHistoryBackpressureConfig(corev2.HistoryBackpressureConfig{
-			Mode:        corev2.HistoryBackpressureBounded,
-			BufferBytes: 4096,
+		corev2.WithTerminalOutputBufferConfig(corev2.TerminalOutputBufferConfig{
+			Overflow:      corev2.TerminalOutputOverflowBlock,
+			CapacityBytes: 64 << 10,
 		}),
 	)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1201,7 +1205,7 @@ func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 	for _, want := range []string{
 		"terminal_id\thistory_enabled",
 		"term-backlog\ttrue",
-		"\tbounded\t4096\t",
+		"\tblock\t65536\t",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("history backlog output missing %q:\n%s", want, text)

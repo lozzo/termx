@@ -7,6 +7,7 @@ import (
 	"time"
 
 	corev2 "github.com/anytty/anytty/core"
+	corehistory "github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/proto/apipb"
 )
 
@@ -463,12 +464,30 @@ func CoreError(err error) error {
 		return nil
 	}
 	classified := &ClassifiedError{Err: err, Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL}
+	var outputErr *corev2.TerminalOutputError
+	if errors.As(err, &outputErr) {
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE
+		classified.Retryable = outputErr.DroppedBytes == 0
+		classified.SyncLost = &apipb.OutputSyncLostErrorDetail{
+			TerminalId: outputErr.TerminalID, Consumer: outputErr.Consumer,
+			ParserEpoch: outputErr.Epoch, DroppedBytes: outputErr.DroppedBytes,
+		}
+		return classified
+	}
+	var gapErr *corehistory.SyncGapError
+	if errors.As(err, &gapErr) {
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE
+		classified.SyncLost = &apipb.OutputSyncLostErrorDetail{
+			Consumer: "history", GapAfterLine: uint64(gapErr.GapAfterLine),
+		}
+		return classified
+	}
 	switch {
 	case errors.Is(err, corev2.ErrApplicationForbidden):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_FORBIDDEN
 	case errors.Is(err, corev2.ErrApplicationUnsupportedCapability):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY
-	case errors.Is(err, corev2.ErrApplicationCancellationUnavailable), errors.Is(err, corev2.ErrServerClosed), errors.Is(err, corev2.ErrHistoryNotRebuilt), errors.Is(err, corev2.ErrProtocolResourceExhausted):
+	case errors.Is(err, corev2.ErrApplicationCancellationUnavailable), errors.Is(err, corev2.ErrServerClosed), errors.Is(err, corev2.ErrHistoryNotRebuilt), errors.Is(err, corev2.ErrTerminalOutputUnavailable), errors.Is(err, corev2.ErrProtocolResourceExhausted):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE
 		classified.Retryable = true
 	case errors.Is(err, corev2.ErrInvalidTerminalID), errors.Is(err, corev2.ErrInvalidCommand), errors.Is(err, corev2.ErrInvalidServerSize), errors.Is(err, corev2.ErrInvalidFileUploadResume):

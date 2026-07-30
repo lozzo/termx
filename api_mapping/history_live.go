@@ -144,11 +144,11 @@ func AcknowledgeToProto() *apipb.AcknowledgeResult {
 func HistoryBacklogToProto(endpointID string, status corev2.HistoryBacklogStatus) *apipb.HistoryBacklogStatusResult {
 	return &apipb.HistoryBacklogStatusResult{
 		Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: status.TerminalID}, HistoryEnabled: status.HistoryEnabled,
-		AppliedSeq: status.AppliedSeq, TargetSeq: status.TargetSeq, CatchupPending: status.CatchupPending,
-		PendingTransactions: int32(status.PendingTransactions), PendingBytes: status.PendingBytes,
-		BackpressureMode: string(status.BackpressureMode), BufferLimitBytes: status.BufferLimitBytes,
-		BackpressureEvents: status.BackpressureEvents, BackpressureWaitNanos: status.BackpressureWaitNanos,
-		InFlight: status.InFlight, Closed: status.Closed,
+		OutputBufferPolicy: string(status.OutputBufferPolicy), BufferCapacityBytes: status.BufferCapacityBytes,
+		ResidentBytes: status.ResidentBytes, AggregateResidentBytes: status.AggregateResidentBytes,
+		AggregateBudgetBytes: status.AggregateBudgetBytes, DroppedBytes: status.DroppedBytes,
+		GapCount: status.GapCount, OutputBufferWaitNanos: status.OutputBufferWaitNanos,
+		Unavailable: status.Unavailable, UnavailableReason: status.UnavailableReason, Closed: status.Closed,
 	}
 }
 

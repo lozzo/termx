@@ -22,6 +22,9 @@ func TestConfigCommandsAtomicallyUseRuntimeParser(t *testing.T) {
 	runConfigCommand(t, nil, "config", "set", "daemon.history.max_age_days", "14")
 	runConfigCommand(t, nil, "config", "set", "daemon.history.compression", "s2")
 	runConfigCommand(t, nil, "config", "set", "daemon.history.compression_level", "balanced")
+	runConfigCommand(t, nil, "config", "set", "daemon.output_buffer.capacity_bytes", "1048576")
+	runConfigCommand(t, nil, "config", "set", "daemon.output_buffer.overflow", "block")
+	runConfigCommand(t, nil, "config", "set", "daemon.output_buffer.resident_budget_bytes", "268435456")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -50,8 +53,11 @@ func TestConfigCommandsAtomicallyUseRuntimeParser(t *testing.T) {
 	if strings.TrimSpace(levelOutput) != "balanced" {
 		t.Fatalf("history compression level config get = %q", levelOutput)
 	}
+	if output := runConfigCommand(t, nil, "config", "get", "daemon.output_buffer.overflow"); strings.TrimSpace(output) != "block" {
+		t.Fatalf("output buffer overflow config get = %q", output)
+	}
 	effective := runConfigCommand(t, nil, "config", "show", "--effective")
-	if !strings.Contains(effective, `"Mode": "light"`) || !strings.Contains(effective, `"MaxSizeMB": 256`) {
+	if !strings.Contains(effective, `"Mode": "light"`) || !strings.Contains(effective, `"MaxSizeMB": 256`) || !strings.Contains(effective, `"Overflow": "block"`) {
 		t.Fatalf("effective config did not use updated runtime value: %s", effective)
 	}
 	runConfigCommand(t, nil, "config", "validate")

@@ -28,6 +28,7 @@ const (
 
 	compressedBlockKindLines    uint8 = 1
 	compressedBlockKindBoundary uint8 = 2
+	compressedBlockKindGap      uint8 = 3
 	compressedBlockCodecRaw     uint8 = 0
 	compressedBlockCodecZstd    uint8 = 1
 	compressedBlockCodecS2      uint8 = 2
@@ -76,6 +77,7 @@ type CompressedLineFile struct {
 	pendingBytes   int
 	writeOffset    int64
 	retentionEpoch uint64
+	gapOffsets     []int
 }
 
 // OpenCompressedLineFile 打开生产块存储。旧格式不参与恢复：检测到非当前
@@ -250,6 +252,34 @@ func (f *CompressedLineFile) AppendBoundary() error {
 	}
 	f.writeOffset += int64(len(header))
 	return f.enforceLimit()
+}
+
+func (f *CompressedLineFile) AppendGap() error {
+	if f == nil {
+		return nil
+	}
+	if err := f.flushPending(); err != nil {
+		return err
+	}
+	offset := f.LineCount()
+	if len(f.gapOffsets) > 0 && f.gapOffsets[len(f.gapOffsets)-1] == offset {
+		return nil
+	}
+	header := makeCompressedBlockHeader(compressedBlockKindGap, compressedBlockCodecRaw, offset, 0, 0, 0, f.nowTime().Unix())
+	if err := writeAllAtEnd(f.file, header); err != nil {
+		f.rollbackPartialRecord(f.writeOffset)
+		return err
+	}
+	f.writeOffset += int64(len(header))
+	f.gapOffsets = append(f.gapOffsets, offset)
+	return f.enforceLimit()
+}
+
+func (f *CompressedLineFile) GapOffsets() []int {
+	if f == nil {
+		return nil
+	}
+	return append([]int(nil), f.gapOffsets...)
 }
 
 func (f *CompressedLineFile) LineCount() int {
@@ -462,6 +492,17 @@ func (f *CompressedLineFile) recover() error {
 			})
 			f.persistedLines += int(lineCount)
 		case compressedBlockKindBoundary:
+			if lineCount != 0 || rawLen != 0 || storedLen != 0 || codec != compressedBlockCodecRaw {
+				return errors.New("invalid history boundary block")
+			}
+		case compressedBlockKindGap:
+			if rawLen != 0 || storedLen != 0 || codec != compressedBlockCodecRaw || int(lineCount) > f.persistedLines {
+				return errors.New("invalid history output gap block")
+			}
+			gap := int(lineCount)
+			if len(f.gapOffsets) == 0 || f.gapOffsets[len(f.gapOffsets)-1] != gap {
+				f.gapOffsets = append(f.gapOffsets, gap)
+			}
 		default:
 			return errors.New("unsupported compressed history block kind")
 		}
@@ -557,8 +598,13 @@ func (f *CompressedLineFile) enforceLimit() error {
 		target := f.options.MaxBytes * compressedRetentionNumerator / compressedRetentionDenominator
 		used := int64(0)
 		sizeStart := len(f.blocks)
+		gapIndex := len(f.gapOffsets) - 1
 		for i := len(f.blocks) - 1; i >= 0; i-- {
 			size := int64(compressedBlockHeaderSize) + int64(f.blocks[i].storedLen)
+			for gapIndex >= 0 && f.gapOffsets[gapIndex] > f.blocks[i].firstLine {
+				size += compressedBlockHeaderSize
+				gapIndex--
+			}
 			if used+size > target {
 				break
 			}
@@ -596,6 +642,7 @@ func (f *CompressedLineFile) rewriteBlocks(start int) error {
 		}
 	}()
 	newBlocks := make([]compressedBlock, 0, len(f.blocks)-start)
+	oldGapOffsets := append([]int(nil), f.gapOffsets...)
 	newOffset := int64(0)
 	newFirst := 0
 	for _, block := range f.blocks[start:] {
@@ -608,6 +655,19 @@ func (f *CompressedLineFile) rewriteBlocks(start int) error {
 		newBlocks = append(newBlocks, block)
 		newOffset += size
 		newFirst += block.lineCount
+	}
+	newGapOffsets := make([]int, 0, len(oldGapOffsets))
+	for _, gap := range oldGapOffsets {
+		if gap <= droppedLines {
+			continue
+		}
+		gap -= droppedLines
+		header := makeCompressedBlockHeader(compressedBlockKindGap, compressedBlockCodecRaw, gap, 0, 0, 0, f.nowTime().Unix())
+		if _, err := temporary.Write(header); err != nil {
+			return err
+		}
+		newOffset += int64(len(header))
+		newGapOffsets = append(newGapOffsets, gap)
 	}
 	if err := temporary.Chmod(0o600); err != nil {
 		return err
@@ -642,6 +702,7 @@ func (f *CompressedLineFile) rewriteBlocks(start int) error {
 	f.blocks = newBlocks
 	f.persistedLines = newFirst
 	f.writeOffset = newOffset
+	f.gapOffsets = newGapOffsets
 	if err := filepublish.SyncDirectory(filepath.Dir(f.path)); err != nil {
 		return err
 	}

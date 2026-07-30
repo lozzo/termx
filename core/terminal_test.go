@@ -243,71 +243,6 @@ func TestR396ProcessOutputFansOutLiveSurfaceAndHistorySemanticConsumer(t *testin
 	}
 }
 
-func TestR396RestartFlushesPendingLiveQueueBeforePreservingScreen(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(WithProcessFactory(factory))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r396-restart-live", Command: []string{"shell"}, Size: Size{Cols: 40, Rows: 8}}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	terminal, err := server.Terminal("term-r396-restart-live")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	first := factory.process("term-r396-restart-live")
-	if first == nil {
-		t.Fatal("expected first process")
-	}
-	queue := newTerminalLiveIngestQueue()
-	terminal.setLiveQueue(first, queue)
-	defer func() {
-		queue.Close()
-		queue.Wait()
-		terminal.clearLiveQueue(first, queue)
-	}()
-	queue.Enqueue("pending-before-restart\r\n")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	started := make(chan struct{})
-	release := make(chan struct{})
-	go queue.Run(func(output string) error {
-		select {
-		case <-started:
-		default:
-			close(started)
-		}
-		<-release
-		return terminal.ingestProcessLiveOutput(first, output)
-	})
-	select {
-	case <-started:
-	case <-ctx.Done():
-		t.Fatalf("timed out waiting for live queue worker: %v", ctx.Err())
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- server.RestartTerminal(ctx, "term-r396-restart-live")
-	}()
-	select {
-	case err := <-done:
-		t.Fatalf("restart returned before pending live queue write was released: %v", err)
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(release)
-	if err := <-done; err != nil {
-		t.Fatalf("restart terminal: %v", err)
-	}
-	rows, err := server.LiveRows("term-r396-restart-live")
-	if err != nil {
-		t.Fatalf("live rows after restart: %v", err)
-	}
-	if !strings.Contains(strings.Join(rows, "|"), "pending-before-restart") {
-		t.Fatalf("restart must preserve live queue output that was already enqueued, rows=%#v", rows)
-	}
-	if !strings.Contains(strings.Join(rows, "|"), "terminal started: term-r396-restart-live") || !strings.Contains(strings.Join(rows, "|"), "started at: ") {
-		t.Fatalf("restart live rows must include new start marker, rows=%#v", rows)
-	}
-}
-
 func TestR396HistoryDisabledProcessOutputKeepsLiveOnlyFastPath(t *testing.T) {
 	historyDir := t.TempDir()
 	factory := newRecordingProcessFactory()
@@ -349,10 +284,10 @@ func TestR396HistoryDisabledProcessOutputKeepsLiveOnlyFastPath(t *testing.T) {
 		t.Fatalf("terminal: %v", err)
 	}
 	terminal.queueMu.Lock()
-	historyTapQueue := terminal.historyTapQ
+	buffer := terminal.outputBuffer
 	terminal.queueMu.Unlock()
-	if historyTapQueue != nil {
-		t.Fatal("history disabled live-only mode must not create a history semantic tap queue")
+	if buffer == nil || buffer.consumers[terminalOutputConsumerHistory].active {
+		t.Fatal("history disabled live-only mode must not activate a history output consumer")
 	}
 	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r373-live-only", history.HistoryWindowRequest{
 		TerminalID: "term-r373-live-only",
@@ -648,183 +583,6 @@ func TestServerNextLiveInvalidationCoalescesMissedRevisionsToLatestWake(t *testi
 	snapshot := terminal.NativeScreenSnapshot("term-live-coalesce")
 	if snapshot.Revision != currentRevision || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(snapshot), "\n"), "three") {
 		t.Fatalf("latest native snapshot should remain pull-based, got %#v", snapshot)
-	}
-}
-
-func TestServerNextLiveInvalidationFlushesPendingTapQueueWithoutSnapshot(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(WithProcessFactory(factory))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-flush", Command: []string{"shell"}}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	terminal, err := server.Terminal("term-live-flush")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-live-flush", "first\r\n"); err != nil {
-		t.Fatalf("first output: %v", err)
-	}
-	observed := terminal.LiveRevision()
-	process := factory.process("term-live-flush")
-	if process == nil {
-		t.Fatalf("expected recording process")
-	}
-	queue := newTerminalLiveIngestQueue()
-	terminal.setLiveQueue(process, queue)
-	defer func() {
-		queue.Close()
-		queue.Wait()
-		terminal.clearLiveQueue(process, queue)
-	}()
-	queue.Enqueue("second\r\n")
-	queue.Enqueue("third\r\n")
-	done := make(chan Event, 1)
-	errs := make(chan error, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	go func() {
-		event, err := server.NextLiveInvalidation(ctx, "term-live-flush", observed)
-		if err != nil {
-			errs <- err
-			return
-		}
-		done <- event
-	}()
-	select {
-	case event := <-done:
-		t.Fatalf("wake returned before pending tap queue flush: %#v", event)
-	case err := <-errs:
-		t.Fatalf("wake failed before pending tap queue flush: %v", err)
-	case <-time.After(20 * time.Millisecond):
-	}
-	go queue.Run(func(output string) error {
-		return terminal.IngestOutput(output)
-	})
-	select {
-	case err := <-errs:
-		t.Fatalf("wake failed: %v", err)
-	case event := <-done:
-		current := terminal.LiveRevision()
-		if event.Live == nil || event.Live.Revision != current || current <= observed {
-			t.Fatalf("wake should coalesce to latest revision after tap flush, event=%#v current=%d observed=%d", event, current, observed)
-		}
-		if strings.Contains(fmt.Sprintf("%#v", event.Live), "Snapshot") {
-			t.Fatalf("coalesced wake must remain wake-only, got %#v", event.Live)
-		}
-		snapshot := terminal.NativeScreenSnapshot("term-live-flush")
-		if snapshot.Revision != current || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(snapshot), "\n"), "third") {
-			t.Fatalf("latest native snapshot should be pull-based after flush, got %#v", snapshot)
-		}
-	case <-ctx.Done():
-		t.Fatalf("timed out waiting for coalesced wake: %v", ctx.Err())
-	}
-}
-
-func TestR396NextLiveInvalidationFlushesLiveQueueNotHistoryTapQueue(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(WithProcessFactory(factory))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r396-live-split", Command: []string{"shell"}}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	terminal, err := server.Terminal("term-r396-live-split")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r396-live-split", "first\r\n"); err != nil {
-		t.Fatalf("first output: %v", err)
-	}
-	observed := terminal.LiveRevision()
-	process := factory.process("term-r396-live-split")
-	if process == nil {
-		t.Fatalf("expected recording process")
-	}
-	liveQueue := newTerminalLiveIngestQueue()
-	historyTapQueue := newTerminalLiveIngestQueue()
-	terminal.setLiveQueue(process, liveQueue)
-	terminal.setHistoryTapQueue(process, historyTapQueue)
-	defer func() {
-		liveQueue.Close()
-		liveQueue.Wait()
-		terminal.clearLiveQueue(process, liveQueue)
-		historyTapQueue.Close()
-		terminal.clearHistoryTapQueue(process, historyTapQueue)
-	}()
-	liveQueue.Enqueue("live-latest\r\n")
-	historyTapQueue.Enqueue("history-must-not-block-live\r\n")
-	done := make(chan Event, 1)
-	errs := make(chan error, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	go func() {
-		event, err := server.NextLiveInvalidation(ctx, "term-r396-live-split", observed)
-		if err != nil {
-			errs <- err
-			return
-		}
-		done <- event
-	}()
-	select {
-	case event := <-done:
-		t.Fatalf("wake returned before live queue worker drained pending bytes: %#v", event)
-	case err := <-errs:
-		t.Fatalf("wake failed before live queue drain: %v", err)
-	case <-time.After(20 * time.Millisecond):
-	}
-	go liveQueue.Run(func(output string) error {
-		return terminal.ingestProcessLiveOutput(process, output)
-	})
-	select {
-	case err := <-errs:
-		t.Fatalf("wake failed: %v", err)
-	case event := <-done:
-		current := terminal.LiveRevision()
-		if event.Live == nil || event.Live.Revision != current || current <= observed {
-			t.Fatalf("wake should coalesce to latest live revision without history tap, event=%#v current=%d observed=%d", event, current, observed)
-		}
-		snapshot := terminal.NativeScreenSnapshot("term-r396-live-split")
-		if snapshot.Revision != current || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(snapshot), "\n"), "live-latest") {
-			t.Fatalf("latest live snapshot should come from live SurfaceTrack, got %#v", snapshot)
-		}
-	case <-ctx.Done():
-		t.Fatalf("timed out waiting for live wake while history tap queue was undrained: %v", ctx.Err())
-	}
-}
-
-func TestR397LiveIngestQueueDoesNotShiftBacklogOnBatchDrain(t *testing.T) {
-	queue := newTerminalLiveIngestQueue()
-	for i := 0; i < 2048; i++ {
-		if !queue.Enqueue("x") {
-			t.Fatal("enqueue should accept open queue")
-		}
-	}
-	batch, completeSeq, ok := queue.nextBatchWithSeq()
-	if !ok {
-		t.Fatal("expected first batch")
-	}
-	if len(batch) != 2048 || completeSeq != 2048 {
-		t.Fatalf("expected full small backlog batch, len=%d seq=%d", len(batch), completeSeq)
-	}
-	if queue.pendingCount != 0 || queue.head != nil || queue.tail != nil {
-		t.Fatalf("fully drained queue should release pending pages, count=%d head=%#v tail=%#v", queue.pendingCount, queue.head, queue.tail)
-	}
-
-	for i := 0; i < 2048; i++ {
-		if !queue.Enqueue(strings.Repeat("a", 16)) {
-			t.Fatal("enqueue should accept reopened backlog")
-		}
-	}
-	batch, completeSeq, ok = queue.nextBatchWithSeq()
-	if !ok {
-		t.Fatal("expected bounded batch")
-	}
-	if len(batch) == 0 || completeSeq == 0 {
-		t.Fatalf("expected bounded batch with completion seq, len=%d seq=%d", len(batch), completeSeq)
-	}
-	if queue.pendingCount != 1024 || queue.head == nil || queue.head.items[queue.head.start].seq != completeSeq+1 {
-		t.Fatalf("partial drain should release consumed pages and keep remaining order, count=%d seq=%d head=%#v", queue.pendingCount, completeSeq, queue.head)
-	}
-	if queue.pendingLenLocked() != queue.pendingCount {
-		t.Fatalf("pending length helper mismatch, count=%d", queue.pendingCount)
 	}
 }
 
@@ -1223,6 +981,112 @@ func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalOutputGenerationRejectsPriorProcessCallbacksAfterRestart(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID: "term-output-generation", Command: []string{"shell"}, Size: Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-output-generation")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	oldProcess := factory.process("term-output-generation")
+	if err := server.RestartTerminal(context.Background(), "term-output-generation"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	newProcess := factory.process("term-output-generation")
+	if newProcess == oldProcess {
+		t.Fatal("restart did not create a new process generation")
+	}
+	if err := terminal.ingestProcessLiveOutput(oldProcess, "OLD-GENERATION-LIVE"); err != nil {
+		t.Fatalf("stale live callback: %v", err)
+	}
+	if err := terminal.ingestProcessHistoryTapOutput(oldProcess, "OLD-GENERATION-HISTORY\r\n"); err != nil {
+		t.Fatalf("stale history callback: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-output-generation", "NEW-GENERATION"); err != nil {
+		t.Fatalf("new generation output: %v", err)
+	}
+	rows, err := server.LiveRows("term-output-generation")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	joined := strings.Join(rows, "\n")
+	if strings.Contains(joined, "OLD-GENERATION") || !strings.Contains(joined, "NEW-GENERATION") {
+		t.Fatalf("generation isolation failed: %q", joined)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-output-generation", history.HistoryWindowRequest{
+		TerminalID: "term-output-generation", Mode: history.HistoryWindowModeLatest, Cols: 40, Limit: 100,
+	})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	var historyText strings.Builder
+	for _, row := range window.Rows {
+		for _, cell := range row.Cells {
+			historyText.WriteString(cell.Text)
+		}
+		historyText.WriteByte('\n')
+	}
+	if got := historyText.String(); strings.Contains(got, "OLD-GENERATION") {
+		t.Fatalf("prior process entered new history parser: %q", got)
+	}
+}
+
+func TestTerminalHistoryIngestFailureIsObservableAndReleasesOutputCapacity(t *testing.T) {
+	wantErr := errors.New("line storage write failed")
+	storage := &failingTerminalLineStorage{failAfter: 1, err: wantErr}
+	factory := newRecordingProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithTerminalOutputBufferConfig(TerminalOutputBufferConfig{
+			CapacityBytes: MinTerminalOutputBufferCapacityBytes,
+			Overflow:      TerminalOutputOverflowBlock,
+		}),
+		WithTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes),
+		WithHistoryStoreFactory(func(id string) (history.HistoryStore, error) {
+			return linehist.NewStore(id, linehist.NewEngine(storage)), nil
+		}),
+	)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID: "term-history-output-failure", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-history-output-failure")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	observed := terminal.LiveRevision()
+	factory.process("term-history-output-failure").emitOutput("one\r\ntwo\r\nthree\r\nfour\r\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := server.NextLiveInvalidation(ctx, "term-history-output-failure", observed); err != nil {
+		t.Fatalf("wait for live output: %v", err)
+	}
+	_, err = server.TerminalHistoryWindow(ctx, "term-history-output-failure", history.HistoryWindowRequest{
+		TerminalID: "term-history-output-failure", Mode: history.HistoryWindowModeLatest, Cols: 20, Limit: 20,
+	})
+	if !errors.Is(err, wantErr) || !errors.Is(err, ErrTerminalOutputUnavailable) {
+		t.Fatalf("history failure was not returned as typed unavailable error: %v", err)
+	}
+	status, err := server.TerminalHistoryBacklogStatus("term-history-output-failure")
+	if err != nil {
+		t.Fatalf("history status: %v", err)
+	}
+	if !status.Unavailable || status.ResidentBytes != 0 || status.AggregateResidentBytes != 0 {
+		t.Fatalf("history failure did not release buffer capacity: %#v", status)
+	}
+	info, err := server.GetTerminal("term-history-output-failure")
+	if err != nil || info.State != TerminalStateRunning {
+		t.Fatalf("history failure changed healthy process lifecycle: info=%#v err=%v", info, err)
+	}
+}
+
 func TestTerminalKillAndRemoveCloseProcess(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -1268,6 +1132,46 @@ type recordingProcessFactory struct {
 	processes map[string][]*recordingProcess
 	specs     map[string][]ProcessSpec
 }
+
+type failingTerminalLineStorage struct {
+	mu        sync.Mutex
+	lines     []linehist.Line
+	appends   int
+	failAfter int
+	err       error
+}
+
+func (storage *failingTerminalLineStorage) AppendLines(lines []linehist.Line) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	if storage.appends >= storage.failAfter {
+		return storage.err
+	}
+	storage.appends++
+	storage.lines = append(storage.lines, lines...)
+	return nil
+}
+
+func (storage *failingTerminalLineStorage) AppendBoundary() error { return nil }
+
+func (storage *failingTerminalLineStorage) LineCount() int {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	return len(storage.lines)
+}
+
+func (storage *failingTerminalLineStorage) Base() int { return 0 }
+
+func (storage *failingTerminalLineStorage) Lines(start int, end int) ([]linehist.Line, error) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	return append([]linehist.Line(nil), storage.lines[start:end]...), nil
+}
+
+func (storage *failingTerminalLineStorage) Close() error { return nil }
 
 func newRecordingProcessFactory() *recordingProcessFactory {
 	return &recordingProcessFactory{processes: make(map[string][]*recordingProcess), specs: make(map[string][]ProcessSpec)}

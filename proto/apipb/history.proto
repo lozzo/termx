@@ -200,16 +200,16 @@ message HistoryCopyResult {
 message HistoryBacklogStatusResult {
   TerminalRef terminal = 1;
   bool history_enabled = 2;
-  uint64 applied_seq = 3;
-  uint64 target_seq = 4;
-  bool catchup_pending = 5;
-  int32 pending_transactions = 6;
-  int64 pending_bytes = 7;
-  string backpressure_mode = 8;
-  int64 buffer_limit_bytes = 9;
-  uint64 backpressure_events = 10;
-  int64 backpressure_wait_nanos = 11;
-  bool in_flight = 12;
+  string output_buffer_policy = 3;
+  int64 buffer_capacity_bytes = 4;
+  int64 resident_bytes = 5;
+  int64 aggregate_resident_bytes = 6;
+  int64 aggregate_budget_bytes = 7;
+  uint64 dropped_bytes = 8;
+  uint64 gap_count = 9;
+  int64 output_buffer_wait_nanos = 10;
+  bool unavailable = 11;
+  string unavailable_reason = 12;
   bool closed = 13;
 }
 

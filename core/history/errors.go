@@ -1,6 +1,9 @@
 package history
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // ErrHistoryInvalidMutation 表示 renderer 发出的 mutation batch 不满足
 // HistoryStore 的领域约束。它只能用于新 renderer/store 边界，不能作为旧
@@ -14,3 +17,20 @@ var ErrHistoryUnsupportedWindowMode = errors.New("unsupported history window mod
 // ErrHistoryRendererNotImplemented 表示 R319 已清掉旧 projector/store，但新的
 // logical renderer 尚未接入。这个错误用于防止旧错误模型继续对外提供历史。
 var ErrHistoryRendererNotImplemented = errors.New("history logical renderer not implemented")
+
+var ErrHistorySyncLost = errors.New("history crosses an output gap")
+
+// SyncGapError identifies the durable logical-line boundary that a query tried
+// to cross. Bytes on opposite sides were parsed by different VT parser epochs.
+type SyncGapError struct {
+	GapAfterLine LogicalLineID
+}
+
+func (err *SyncGapError) Error() string {
+	if err == nil {
+		return ErrHistorySyncLost.Error()
+	}
+	return fmt.Sprintf("history crosses output gap after logical line %d", err.GapAfterLine)
+}
+
+func (err *SyncGapError) Is(target error) bool { return target == ErrHistorySyncLost }

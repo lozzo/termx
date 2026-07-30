@@ -29,10 +29,10 @@ Options:
   --skip-history-queries
                         keep history enabled but skip history-dump/copy checks after stress;
                         use this to measure long-output ingest RSS without diagnostic query cost
-  --history-backpressure-mode MODE
-                        set ANYTTY_HISTORY_BACKPRESSURE_MODE for daemon; low-latency or bounded
-  --history-backpressure-buffer-mb N
-                        set ANYTTY_HISTORY_BACKPRESSURE_BUFFER_MB for daemon
+  --output-buffer-overflow POLICY
+                        set ANYTTY_OUTPUT_BUFFER_OVERFLOW for daemon; drop or block
+  --output-buffer-capacity-bytes N
+                        set ANYTTY_OUTPUT_BUFFER_CAPACITY_BYTES for daemon
   --daemon-memory-limit-mb N
                         set ANYTTY_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
   --daemon-request-reclaim-min-heap-mb N
@@ -59,8 +59,8 @@ Artifacts:
   stress-commands.tsv   exact stress command typed into the TUI pane
   history-trace.tsv     live/copy captures checked for oldest/newest stress markers
   history-query.tsv     history-dump/copy visible latency and marker checks
-  history-backpressure.tsv
-                         history backlog pending bytes, configured mode/limit, and backpressure counters
+  output-buffer.tsv
+                         output buffer residency, drop/gap, wait, and unavailable diagnostics
   history-files.tsv     file-backed history payload count/bytes after each stress run
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
@@ -329,29 +329,29 @@ EOF
   printf '%s\t%s\t%s\t%s\t%s\n' "$stage" "$files" "$bytes" "$mib" "$dir" >>"$HISTORY_REPORT"
 }
 
-record_history_backpressure() {
+record_output_buffer() {
   local stage="$1"
   local unix_ms out_path stdout_path stderr_path row
   if [[ "$HISTORY_DISABLED" == "1" || -z "$TERMINAL_ID" ]]; then
     return 0
   fi
   unix_ms="$(now_ms)"
-  out_path="$ROOT/history-backpressure-${stage}.tsv"
-  stdout_path="$ROOT/history-backpressure-${stage}.stdout"
-  stderr_path="$ROOT/history-backpressure-${stage}.stderr"
+  out_path="$ROOT/output-buffer-${stage}.tsv"
+  stdout_path="$ROOT/output-buffer-${stage}.stdout"
+  stderr_path="$ROOT/output-buffer-${stage}.stderr"
   if "$BIN" --socket "$SOCK" --log-file "$LOG" v3 history-backlog "$TERMINAL_ID" --out "$out_path" >"$stdout_path" 2>"$stderr_path"; then
     row="$(awk 'NR == 2 { print; exit }' "$out_path")"
     if [[ -n "$row" ]]; then
-      printf '%s\tok\t%s\t%s\n' "$stage" "$unix_ms" "$row" >>"$HISTORY_BACKPRESSURE_REPORT"
+      printf '%s\tok\t%s\t%s\n' "$stage" "$unix_ms" "$row" >>"$OUTPUT_BUFFER_REPORT"
     else
-      printf '%s\tempty\t%s\t\t\t\t\t\t\t\t\t\t\t\t\t\n' "$stage" "$unix_ms" >>"$HISTORY_BACKPRESSURE_REPORT"
+      printf '%s\tempty\t%s\t\t\t\t\t\t\t\t\t\t\t\t\t\n' "$stage" "$unix_ms" >>"$OUTPUT_BUFFER_REPORT"
     fi
   else
-    printf '%s\terror\t%s\t\t\t\t\t\t\t\t\t\t\t\t\t\n' "$stage" "$unix_ms" >>"$HISTORY_BACKPRESSURE_REPORT"
+    printf '%s\terror\t%s\t\t\t\t\t\t\t\t\t\t\t\t\t\n' "$stage" "$unix_ms" >>"$OUTPUT_BUFFER_REPORT"
   fi
 }
 
-sample_history_backpressure_until_stopped() {
+sample_output_buffer_until_stopped() {
   local stop_file="$1"
   local interval="$2"
   local phase="$3"
@@ -359,10 +359,10 @@ sample_history_backpressure_until_stopped() {
     return 0
   fi
   while [[ ! -f "$stop_file" ]]; do
-    record_history_backpressure "${phase}_sample"
+    record_output_buffer "${phase}_sample"
     sleep "$interval"
   done
-  record_history_backpressure "${phase}_final"
+  record_output_buffer "${phase}_final"
 }
 
 append_stress_time() {
@@ -797,10 +797,10 @@ write_profile_summary() {
       echo "## history query"
       cat "$ROOT/history-query.tsv"
     fi
-    if [[ -s "$ROOT/history-backpressure.tsv" ]]; then
+    if [[ -s "$ROOT/output-buffer.tsv" ]]; then
       echo
-      echo "## history backpressure"
-      cat "$ROOT/history-backpressure.tsv"
+      echo "## output buffer"
+      cat "$ROOT/output-buffer.tsv"
     fi
     if [[ -d "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" ]]; then
       echo
@@ -868,8 +868,8 @@ PROFILE_MODE="final"
 PERFTRACE=0
 HISTORY_DISABLED=0
 SKIP_HISTORY_QUERIES=0
-HISTORY_BACKPRESSURE_MODE=""
-HISTORY_BACKPRESSURE_BUFFER_MB=""
+OUTPUT_BUFFER_OVERFLOW=""
+OUTPUT_BUFFER_CAPACITY_BYTES=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -925,12 +925,12 @@ while [[ $# -gt 0 ]]; do
       SKIP_HISTORY_QUERIES=1
       shift
       ;;
-    --history-backpressure-mode)
-      HISTORY_BACKPRESSURE_MODE="$2"
+    --output-buffer-overflow)
+      OUTPUT_BUFFER_OVERFLOW="$2"
       shift 2
       ;;
-    --history-backpressure-buffer-mb)
-      HISTORY_BACKPRESSURE_BUFFER_MB="$2"
+    --output-buffer-capacity-bytes)
+      OUTPUT_BUFFER_CAPACITY_BYTES="$2"
       shift 2
       ;;
     --daemon-memory-limit-mb)
@@ -979,16 +979,16 @@ positive_integer "--wait-seconds" "$WAIT_SECONDS"
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
   positive_integer "--daemon-memory-limit-mb" "$DAEMON_MEMORY_LIMIT_MB"
 fi
-case "$HISTORY_BACKPRESSURE_MODE" in
-  ""|low-latency|low_latency|bounded)
+case "$OUTPUT_BUFFER_OVERFLOW" in
+  ""|drop|block)
     ;;
   *)
-    echo "--history-backpressure-mode must be low-latency or bounded" >&2
+    echo "--output-buffer-overflow must be drop or block" >&2
     exit 1
     ;;
 esac
-if [[ -n "$HISTORY_BACKPRESSURE_BUFFER_MB" ]]; then
-  positive_integer "--history-backpressure-buffer-mb" "$HISTORY_BACKPRESSURE_BUFFER_MB"
+if [[ -n "$OUTPUT_BUFFER_CAPACITY_BYTES" ]]; then
+  positive_integer "--output-buffer-capacity-bytes" "$OUTPUT_BUFFER_CAPACITY_BYTES"
 fi
 if [[ -n "$SEED" ]]; then
   positive_integer "--seed" "$SEED"
@@ -1038,7 +1038,7 @@ STRESS_LATENCY_REPORT="$ROOT/stress-latency.tsv"
 STRESS_COMMANDS_REPORT="$ROOT/stress-commands.tsv"
 HISTORY_TRACE_REPORT="$ROOT/history-trace.tsv"
 HISTORY_QUERY_REPORT="$ROOT/history-query.tsv"
-HISTORY_BACKPRESSURE_REPORT="$ROOT/history-backpressure.tsv"
+OUTPUT_BUFFER_REPORT="$ROOT/output-buffer.tsv"
 DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
@@ -1116,7 +1116,7 @@ printf 'run\tseed\tstatus\tsend_unix_ms\tdone_visible_unix_ms\tobserved_ms\tvisi
 printf 'run\tseed\tcommand\n' >"$STRESS_COMMANDS_REPORT"
 printf 'stage\thas_oldest_000000\thas_newest_line\thas_done_marker\tpath\n' >"$HISTORY_TRACE_REPORT"
 printf 'stage\tstatus\tstart_unix_ms\tend_unix_ms\telapsed_ms\ttime_real_s\trows\thas_oldest_000000\thas_newest_line\thas_done_marker\tpath\n' >"$HISTORY_QUERY_REPORT"
-printf 'stage\tquery_status\tunix_ms\tterminal_id\thistory_enabled\tapplied_seq\ttarget_seq\tcatchup_pending\tpending_transactions\tpending_bytes\tbackpressure_mode\tbuffer_limit_bytes\tbackpressure_events\tbackpressure_wait_nanos\tin_flight\tclosed\n' >"$HISTORY_BACKPRESSURE_REPORT"
+printf 'stage\tquery_status\tunix_ms\tterminal_id\thistory_enabled\toutput_buffer_policy\tbuffer_capacity_bytes\tresident_bytes\taggregate_resident_bytes\taggregate_budget_bytes\tdropped_bytes\tgap_count\toutput_buffer_wait_nanos\tunavailable\tunavailable_reason\tclosed\n' >"$OUTPUT_BUFFER_REPORT"
 mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
 mkdir -p "$TUI_MEMSTATS_DIR"
@@ -1134,13 +1134,13 @@ if [[ "$HISTORY_DISABLED" == "1" ]]; then
   # 中文说明：该模式只用于隔离 live SurfaceTrack 可见延迟，不改变默认历史准入。
   DAEMON_ENV_PREFIX+=(ANYTTY_HISTORY_DISABLE=1)
 fi
-if [[ -n "$HISTORY_BACKPRESSURE_MODE" ]]; then
-  log "history backpressure mode: $HISTORY_BACKPRESSURE_MODE"
-  DAEMON_ENV_PREFIX+=(ANYTTY_HISTORY_BACKPRESSURE_MODE="$HISTORY_BACKPRESSURE_MODE")
+if [[ -n "$OUTPUT_BUFFER_OVERFLOW" ]]; then
+  log "output buffer overflow: $OUTPUT_BUFFER_OVERFLOW"
+  DAEMON_ENV_PREFIX+=(ANYTTY_OUTPUT_BUFFER_OVERFLOW="$OUTPUT_BUFFER_OVERFLOW")
 fi
-if [[ -n "$HISTORY_BACKPRESSURE_BUFFER_MB" ]]; then
-  log "history backpressure buffer: ${HISTORY_BACKPRESSURE_BUFFER_MB}MB"
-  DAEMON_ENV_PREFIX+=(ANYTTY_HISTORY_BACKPRESSURE_BUFFER_MB="$HISTORY_BACKPRESSURE_BUFFER_MB")
+if [[ -n "$OUTPUT_BUFFER_CAPACITY_BYTES" ]]; then
+  log "output buffer capacity: ${OUTPUT_BUFFER_CAPACITY_BYTES} bytes"
+  DAEMON_ENV_PREFIX+=(ANYTTY_OUTPUT_BUFFER_CAPACITY_BYTES="$OUTPUT_BUFFER_CAPACITY_BYTES")
 fi
 if [[ "$USE_REAL_STATE" == "0" ]]; then
   DAEMON_ENV_PREFIX+=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
@@ -1175,7 +1175,7 @@ maybe_capture_stage_profile "daemon_idle" "daemon" "$DAEMON_PID"
 log "creating interactive shell terminal"
 TERMINAL_ID="$("$BIN" --socket "$SOCK" --log-file "$LOG" v3 new --name stress-shell -- /bin/sh -l)"
 printf '%s\n' "$TERMINAL_ID" >"$TERMINAL_ID_FILE"
-record_history_backpressure "after_terminal_create"
+record_output_buffer "after_terminal_create"
 
 ATTACH_SCRIPT="$ROOT/attach.sh"
 cat >"$ATTACH_SCRIPT" <<EOF
@@ -1254,8 +1254,8 @@ for RUN in $(seq 1 "$REPEAT"); do
   rm -f "$SAMPLE_STOP_FILE"
   sample_processes_until_stopped "$SAMPLE_STOP_FILE" 0.2 "$DAEMON_PID" "$TUI_PID" "stress_run_${RUN_LABEL}" &
   SAMPLE_PID=$!
-  sample_history_backpressure_until_stopped "$SAMPLE_STOP_FILE" 0.5 "stress_run_${RUN_LABEL}" &
-  BACKPRESSURE_SAMPLE_PID=$!
+  sample_output_buffer_until_stopped "$SAMPLE_STOP_FILE" 0.5 "stress_run_${RUN_LABEL}" &
+  OUTPUT_BUFFER_SAMPLE_PID=$!
   # 中文说明：send -> DONE visible 是用户感知 live 延迟；pane 内 time 只量程序本身。
   STRESS_SEND_MS="$(now_ms)"
   STRESS_DONE_MS=""
@@ -1271,7 +1271,7 @@ for RUN in $(seq 1 "$REPEAT"); do
     if [[ ! -s "$TIME_FILE" ]]; then
       touch "$SAMPLE_STOP_FILE"
       wait "$SAMPLE_PID" 2>/dev/null || true
-      wait "$BACKPRESSURE_SAMPLE_PID" 2>/dev/null || true
+      wait "$OUTPUT_BUFFER_SAMPLE_PID" 2>/dev/null || true
       append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
       append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "" "$TIME_FILE" "timeout" "$STRESS_OBSERVED_END_MS"
       echo "stress command run $RUN_LABEL did not create time output within ${WAIT_SECONDS}s" >&2
@@ -1281,7 +1281,7 @@ for RUN in $(seq 1 "$REPEAT"); do
   fi
   touch "$SAMPLE_STOP_FILE"
   wait "$SAMPLE_PID" 2>/dev/null || true
-  wait "$BACKPRESSURE_SAMPLE_PID" 2>/dev/null || true
+  wait "$OUTPUT_BUFFER_SAMPLE_PID" 2>/dev/null || true
   append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
   append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "$STRESS_DONE_MS" "$TIME_FILE" "$STRESS_STATUS" "$STRESS_OBSERVED_END_MS"
   capture_pane "$TARGET" "live-run-${RUN_LABEL}"
@@ -1291,7 +1291,7 @@ for RUN in $(seq 1 "$REPEAT"); do
   record_stage "tui_after_stress_run_${RUN_LABEL}" "tui" "$TUI_PID"
   maybe_capture_stage_profile "tui_after_stress_run_${RUN_LABEL}" "tui" "$TUI_PID"
   record_history_backend_size "after_stress_run_${RUN_LABEL}"
-  record_history_backpressure "after_stress_run_${RUN_LABEL}"
+  record_output_buffer "after_stress_run_${RUN_LABEL}"
 done
 write_memory_peaks
 capture_pane "$TARGET" "live"
@@ -1300,7 +1300,7 @@ record_stage "daemon_after_stress" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_after_stress" "daemon" "$DAEMON_PID"
 record_stage "tui_after_stress" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_after_stress" "tui" "$TUI_PID"
-record_history_backpressure "after_stress"
+record_output_buffer "after_stress"
 
 log "entering copy/history latest"
 if [[ "$HISTORY_DISABLED" == "1" ]]; then
@@ -1327,12 +1327,12 @@ if [[ "$SKIP_HISTORY_QUERIES" == "1" ]]; then
       cat "$ROOT/history-files.tsv"
     fi
   fi
-  if [[ -s "$HISTORY_BACKPRESSURE_REPORT" ]]; then
-    log "history backpressure"
+  if [[ -s "$OUTPUT_BUFFER_REPORT" ]]; then
+    log "output buffer"
     if command -v column >/dev/null 2>&1; then
-      column -t -s $'\t' "$HISTORY_BACKPRESSURE_REPORT"
+      column -t -s $'\t' "$OUTPUT_BUFFER_REPORT"
     else
-      cat "$HISTORY_BACKPRESSURE_REPORT"
+      cat "$OUTPUT_BUFFER_REPORT"
     fi
   fi
   log "artifacts kept at: $ROOT"
@@ -1343,7 +1343,7 @@ if ! run_history_dump_query "history-dump" "$ROOT/history-dump.txt"; then
   echo "authoritative history-dump command failed" >&2
   exit 1
 fi
-record_history_backpressure "after_history_dump"
+record_output_buffer "after_history_dump"
 record_stage "daemon_history_dump" "daemon" "$DAEMON_PID"
 record_stage "tui_history_dump" "tui" "$TUI_PID"
 
@@ -1366,7 +1366,7 @@ record_stage "daemon_copy_latest" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_copy_latest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_latest" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_copy_latest" "tui" "$TUI_PID"
-record_history_backpressure "after_copy_latest"
+record_output_buffer "after_copy_latest"
 
 log "jumping to oldest history page"
 COPY_OLDEST_START_MS="$(now_ms)"
@@ -1382,7 +1382,7 @@ append_history_trace "copy_oldest" "$ROOT/copy-oldest.txt"
 append_history_query "copy_oldest" "$(history_artifact_oldest_status "$ROOT/copy-oldest.txt" || true)" "$COPY_OLDEST_START_MS" "$COPY_OLDEST_END_MS" "$ROOT/copy-oldest.txt"
 record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest" "tui" "$TUI_PID"
-record_history_backpressure "after_copy_oldest"
+record_output_buffer "after_copy_oldest"
 sleep 2
 record_stage "daemon_copy_oldest_idle" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest_idle" "tui" "$TUI_PID"
@@ -1470,12 +1470,12 @@ if [[ -s "$ROOT/history-query.tsv" ]]; then
     cat "$ROOT/history-query.tsv"
   fi
 fi
-if [[ -s "$ROOT/history-backpressure.tsv" ]]; then
-  log "history backpressure"
+if [[ -s "$ROOT/output-buffer.tsv" ]]; then
+  log "output buffer"
   if command -v column >/dev/null 2>&1; then
-    column -t -s $'\t' "$ROOT/history-backpressure.tsv"
+    column -t -s $'\t' "$ROOT/output-buffer.tsv"
   else
-    cat "$ROOT/history-backpressure.tsv"
+    cat "$ROOT/output-buffer.tsv"
   fi
 fi
 if [[ -s "$ROOT/profile-summary.txt" ]]; then

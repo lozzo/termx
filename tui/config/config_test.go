@@ -21,6 +21,9 @@ func TestParseExampleConfigMatchesDefaults(t *testing.T) {
 		t.Fatalf("parse example config: %v", err)
 	}
 	want := Default()
+	if want.Daemon.OutputBuffer.Overflow != "block" || want.Daemon.OutputBuffer.CapacityBytes != 32<<20 || want.Daemon.OutputBuffer.ResidentBudgetBytes != 512<<20 {
+		t.Fatalf("production output buffer defaults changed: %#v", want.Daemon.OutputBuffer)
+	}
 	if cfg.Theme.Primary != "" || cfg.Theme.Secondary != "" {
 		t.Fatalf("example config should keep primary/secondary host-aware by default, got %#v", cfg.Theme)
 	}
@@ -299,6 +302,9 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	env := map[string]string{
+		"ANYTTY_OUTPUT_BUFFER_CAPACITY_BYTES":         "1048576",
+		"ANYTTY_OUTPUT_BUFFER_OVERFLOW":               "block",
+		"ANYTTY_OUTPUT_RESIDENT_BUDGET_BYTES":         "268435456",
 		"ANYTTY_HISTORY_MAX_SIZE_MB":                  "128",
 		"ANYTTY_HISTORY_MAX_AGE_DAYS":                 "30",
 		"ANYTTY_HISTORY_COMPRESSION":                  "none",
@@ -316,6 +322,9 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("load with env overrides: %v", err)
 	}
 	if cfg.Theme.Primary != "#010203" ||
+		cfg.Daemon.OutputBuffer.CapacityBytes != 1<<20 ||
+		cfg.Daemon.OutputBuffer.Overflow != "block" ||
+		cfg.Daemon.OutputBuffer.ResidentBudgetBytes != 256<<20 ||
 		cfg.Daemon.History.MaxSizeMB != 128 ||
 		cfg.Daemon.History.MaxAgeDays != 30 ||
 		cfg.Daemon.History.Compression != "none" ||
@@ -327,6 +336,30 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		cfg.Interaction.ShortcutPassthroughIntervalMS != 650 ||
 		cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.75 {
 		t.Fatalf("env overrides not applied: %#v", cfg)
+	}
+}
+
+func TestOutputBufferYAMLAndValidation(t *testing.T) {
+	cfg, err := Parse([]byte("version: 1\ndaemon:\n  output_buffer:\n    capacity_bytes: 65536\n    overflow: block\n    resident_budget_bytes: 2147483648\n"))
+	if err != nil {
+		t.Fatalf("parse output buffer config: %v", err)
+	}
+	if cfg.Daemon.OutputBuffer.CapacityBytes != 64<<10 || cfg.Daemon.OutputBuffer.Overflow != "block" || cfg.Daemon.OutputBuffer.ResidentBudgetBytes != 2<<30 {
+		t.Fatalf("output buffer config not applied: %#v", cfg.Daemon.OutputBuffer)
+	}
+	for name, mutate := range map[string]func(*state.TUIConfigStore){
+		"capacity below minimum": func(cfg *state.TUIConfigStore) { cfg.Daemon.OutputBuffer.CapacityBytes = 65535 },
+		"capacity above maximum": func(cfg *state.TUIConfigStore) { cfg.Daemon.OutputBuffer.CapacityBytes = 256<<20 + 1 },
+		"invalid overflow":       func(cfg *state.TUIConfigStore) { cfg.Daemon.OutputBuffer.Overflow = "bounded" },
+		"budget above maximum":   func(cfg *state.TUIConfigStore) { cfg.Daemon.OutputBuffer.ResidentBudgetBytes = 2<<30 + 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := Default()
+			mutate(&invalid)
+			if err := Validate(invalid); err == nil {
+				t.Fatal("invalid output buffer config was accepted")
+			}
+		})
 	}
 }
 

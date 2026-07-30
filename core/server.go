@@ -38,7 +38,8 @@ type serverConfig struct {
 	historyStorageDir   string
 	historyStorage      HistoryStorageConfig
 	historyDisabled     bool
-	historyBackpressure HistoryBackpressureConfig
+	terminalOutput      TerminalOutputBufferConfig
+	outputResidentBytes int64
 	applicationFactory  ApplicationExecutorFactory
 	protocolLimits      ProtocolSessionLimits
 }
@@ -189,6 +190,7 @@ type Server struct {
 	historyRetentionMu     sync.Mutex
 	historyRetentionCancel context.CancelFunc
 	historyRetentionWG     sync.WaitGroup
+	outputBudget           *terminalOutputResidentBudget
 	mu                     sync.Mutex
 	listeners              []transport.Listener
 	transports             map[transport.Transport]struct{}
@@ -198,18 +200,16 @@ type Server struct {
 
 func NewServer(opts ...ServerOption) *Server {
 	cfg := serverConfig{
-		socketPath:      defaultSocketPath(),
-		defaultSize:     Size{Cols: 80, Rows: 24},
-		logger:          slog.Default(),
-		listenerFactory: unixListenerFactory,
-		processFactory:  newPTYProcessFactory(),
-		eventBuffer:     64,
-		protocolLimits:  DefaultProtocolSessionLimits(),
-		historyStorage:  DefaultHistoryStorageConfig(),
-		historyBackpressure: HistoryBackpressureConfig{
-			Mode:        HistoryBackpressureLowLatency,
-			BufferBytes: DefaultHistoryBackpressureBufferBytes,
-		},
+		socketPath:          defaultSocketPath(),
+		defaultSize:         Size{Cols: 80, Rows: 24},
+		logger:              slog.Default(),
+		listenerFactory:     unixListenerFactory,
+		processFactory:      newPTYProcessFactory(),
+		eventBuffer:         64,
+		protocolLimits:      DefaultProtocolSessionLimits(),
+		historyStorage:      DefaultHistoryStorageConfig(),
+		terminalOutput:      DefaultTerminalOutputBufferConfig(),
+		outputResidentBytes: DefaultTerminalOutputResidentBudgetBytes,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -225,7 +225,10 @@ func NewServer(opts ...ServerOption) *Server {
 	if cfg.processFactory == nil {
 		cfg.processFactory = newPTYProcessFactory()
 	}
-	cfg.historyBackpressure = cfg.historyBackpressure.Normalize()
+	cfg.terminalOutput = cfg.terminalOutput.normalized()
+	if cfg.outputResidentBytes < MinTerminalOutputResidentBudgetBytes || cfg.outputResidentBytes > MaxTerminalOutputResidentBudgetBytes {
+		cfg.outputResidentBytes = DefaultTerminalOutputResidentBudgetBytes
+	}
 	cfg.historyStorage = cfg.historyStorage.normalized()
 	cfg.protocolLimits = cfg.protocolLimits.normalized()
 	return &Server{
@@ -242,6 +245,7 @@ func NewServer(opts ...ServerOption) *Server {
 		clientAccessService:  cfg.clientAccessService,
 		fileUploads:          make(map[string]*uploadTransferRecord),
 		transports:           make(map[transport.Transport]struct{}),
+		outputBudget:         newTerminalOutputResidentBudget(cfg.outputResidentBytes),
 	}
 }
 
@@ -353,13 +357,19 @@ func WithHistoryDisabled() ServerOption {
 	}
 }
 
-// WithHistoryBackpressureConfig 配置 history 输出背压策略。
-// domain owner 是 Server/Terminal 输出调度：该选项只决定 history pending
-// bytes 是否能反压上游 PTY 消费和诊断如何展示，不改变 linehist truth、
-// storage 格式或 HistoryWindow/Copy/Freeze 合同。
-func WithHistoryBackpressureConfig(backpressure HistoryBackpressureConfig) ServerOption {
+// WithTerminalOutputBufferConfig configures the shared per-generation PTY buffer.
+func WithTerminalOutputBufferConfig(output TerminalOutputBufferConfig) ServerOption {
 	return func(cfg *serverConfig) {
-		cfg.historyBackpressure = backpressure.Normalize()
+		cfg.terminalOutput = output.normalized()
+	}
+}
+
+// WithTerminalOutputResidentBudget sets the daemon-wide actual resident-byte cap.
+func WithTerminalOutputResidentBudget(bytes int64) ServerOption {
+	return func(cfg *serverConfig) {
+		if bytes >= MinTerminalOutputResidentBudgetBytes && bytes <= MaxTerminalOutputResidentBudgetBytes {
+			cfg.outputResidentBytes = bytes
+		}
 	}
 }
 
@@ -404,11 +414,12 @@ func (server *Server) HistoryStorageConfig() HistoryStorageConfig {
 	return server.cfg.historyStorage
 }
 
-// HistoryBackpressureConfig 返回 daemon 当前 history 输出背压配置。
-// 调用边界是诊断与 CLI harness；返回值不能用于推导 history payload，只能解释
-// PTY 输出调度策略和 pending bytes 上限。
-func (server *Server) HistoryBackpressureConfig() HistoryBackpressureConfig {
-	return server.cfg.historyBackpressure.Normalize()
+func (server *Server) TerminalOutputBufferConfig() TerminalOutputBufferConfig {
+	return server.cfg.terminalOutput.normalized()
+}
+
+func (server *Server) TerminalOutputResidentBudget() int64 {
+	return server.cfg.outputResidentBytes
 }
 
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
@@ -445,7 +456,7 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		return TerminalInfo{}, err
 	}
 	finishNewTerminal := perftrace.Measure("core.server.register_terminal.new_terminal")
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.historyBackpressure, server.cfg.logger)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.terminalOutput, server.outputBudget, server.cfg.logger)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -736,7 +747,7 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 	return terminal.LiveSnapshot(), nil
 }
 
-// TerminalHistoryBacklogStatus 返回 terminal history consumer 的 applied/target seq。
+// TerminalHistoryBacklogStatus 返回 terminal history consumer 的 output buffer 诊断。
 // 它是只读诊断入口，不触发 FlushHistory，也不读取 live snapshot 或组装 window；
 // copy/history 入口必须继续通过统一的 history.window 获取 authoritative rows。
 func (server *Server) TerminalHistoryBacklogStatus(id string) (HistoryBacklogStatus, error) {
@@ -760,10 +771,10 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 	}
 	if revision := terminal.LiveRevision(); revision > observedRevision {
 		// 中文说明：这是 latest native screen 的边沿补偿，不是事件回放队列。
-		// 返回 wake 前只等待调用时已经进入 live queue 的 PTY payload，
+		// 返回 wake 前只等待调用时已经进入 output buffer 的 PTY payload，
 		// 把同一批 burst 合并到当前 latest revision；不等待 future output、
 		// history backlog、TUI render，也不携带 screen payload。
-		if err := terminal.flushLiveQueue(ctx); err != nil {
+		if err := terminal.flushLiveOutput(ctx); err != nil {
 			return Event{}, err
 		}
 		revision = terminal.LiveRevision()
@@ -799,7 +810,7 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 			// 中文说明：one-shot wake 是唤醒边界，不是 frame delivery。
 			// 这里 coalesce 当前已入队 PTY，避免 TUI 每个中间 revision 都拉一次
 			// live.screen.get；screen rows 仍由客户端随后 pull latest。
-			if err := terminal.flushLiveQueue(ctx); err != nil {
+			if err := terminal.flushLiveOutput(ctx); err != nil {
 				return Event{}, err
 			}
 			event.Live.Revision = terminal.LiveRevision()
@@ -1014,6 +1025,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	if !server.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	server.outputBudget.close()
 	server.mu.Lock()
 	listeners := append([]transport.Listener(nil), server.listeners...)
 	transports := make([]transport.Transport, 0, len(server.transports))

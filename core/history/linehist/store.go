@@ -92,6 +92,7 @@ type frozenView struct {
 	hot        []history.HistoryRow
 	generation history.Generation
 	retention  uint64
+	gaps       []int
 }
 
 // liveView 是一次查询的一致性视图：coldBase/coldCount/热段行在 ingest gate
@@ -104,6 +105,7 @@ type liveView struct {
 	hot        []history.HistoryRow
 	generation history.Generation
 	retention  uint64
+	gaps       []int
 }
 
 // Store 实现 history.HistoryStore：冷段 = logical-line 文件，热段 =
@@ -192,6 +194,12 @@ func (store *Store) SealLifecycleTail() error {
 	}
 	unlock := store.lockGate()
 	defer unlock()
+	err := store.sealLifecycleTailUnderGate()
+	store.noteHistoryMutation()
+	return err
+}
+
+func (store *Store) sealLifecycleTailUnderGate() error {
 	store.mu.Lock()
 	screen := store.screen
 	store.mu.Unlock()
@@ -203,9 +211,7 @@ func (store *Store) SealLifecycleTail() error {
 	if snap.InAlt {
 		rows = snap.PrimaryRows
 	}
-	err := store.engine.SealPrimaryScreenRows(rows)
-	store.noteHistoryMutation()
-	return err
+	return store.engine.SealPrimaryScreenRows(rows)
 }
 
 // AppendLifecycleLines 把 core terminal lifecycle marker 写入 authoritative
@@ -220,6 +226,44 @@ func (store *Store) AppendLifecycleLines(lines []string) error {
 	err := store.engine.AppendLifecycleLines(lines)
 	store.noteHistoryMutation()
 	return err
+}
+
+// AppendGapBoundary seals the previous parser epoch and durably records the
+// logical-line offset at which the next parser epoch starts.
+func (store *Store) AppendGapBoundary() error {
+	if store == nil {
+		return nil
+	}
+	unlock := store.lockGate()
+	defer unlock()
+	err := store.engine.AppendGapBoundary()
+	store.noteHistoryMutation()
+	return err
+}
+
+// TransitionOutputEpoch atomically seals the old parser's hot timeline,
+// persists a gap boundary, and invokes reset while still holding the ingest
+// gate. The next semantic transaction therefore cannot cross the gap using the
+// old parser state.
+func (store *Store) TransitionOutputEpoch(reset func()) error {
+	if store == nil {
+		return nil
+	}
+	unlock := store.lockGate()
+	defer unlock()
+	if err := store.sealLifecycleTailUnderGate(); err != nil {
+		store.noteHistoryMutation()
+		return err
+	}
+	if err := store.engine.AppendGapBoundary(); err != nil {
+		store.noteHistoryMutation()
+		return err
+	}
+	if reset != nil {
+		reset()
+	}
+	store.noteHistoryMutation()
+	return nil
 }
 
 // Close 落盘未闭合尾部并关闭文件（terminal remove/shutdown 边界）。
@@ -281,6 +325,9 @@ func (store *Store) LatestWindow(req history.HistoryWindowRequest) (history.Hist
 	total := viewLogicalTotal(view)
 	limit := normalizedLimit(req.Limit)
 	start := maxInt(0, total-limit)
+	if err := validateGapRange(view, start, total); err != nil {
+		return history.HistoryWindow{}, err
+	}
 	page, err := store.logicalRowsForLineRange(view, start, total)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -310,6 +357,9 @@ func (store *Store) OlderWindow(req history.HistoryWindowRequest) (history.Histo
 	limit := normalizedLimit(req.Limit)
 	end := clampInt(int(req.Cursor.LineID)-1, 0, total)
 	start := maxInt(0, end-limit)
+	if err := validateGapRange(view, start, end); err != nil {
+		return history.HistoryWindow{}, err
+	}
 	page, err := store.logicalRowsForLineRange(view, start, end)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -334,6 +384,9 @@ func (store *Store) OldestWindow(req history.HistoryWindowRequest) (history.Hist
 	total := viewLogicalTotal(view)
 	limit := normalizedLimit(req.Limit)
 	end := minInt(total, limit)
+	if err := validateGapRange(view, 0, end); err != nil {
+		return history.HistoryWindow{}, err
+	}
 	page, err := store.logicalRowsForLineRange(view, 0, end)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -364,6 +417,9 @@ func (store *Store) NewerWindow(req history.HistoryWindowRequest) (history.Histo
 	limit := normalizedLimit(req.Limit)
 	start := clampInt(int(req.Cursor.LineID), 0, total)
 	end := minInt(total, start+limit)
+	if err := validateGapRange(view, start, end); err != nil {
+		return history.HistoryWindow{}, err
+	}
 	page, err := store.logicalRowsForLineRange(view, start, end)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -387,6 +443,9 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 		return history.FrozenHistorySnapshot{}, nil
 	}
 	view := store.captureLive(req.Cols)
+	if err := validateGapRange(view, 0, viewLogicalTotal(view)); err != nil {
+		return history.FrozenHistorySnapshot{}, err
+	}
 	frozenRows = viewLogicalTotal(view)
 	store.mu.Lock()
 	store.nextToken++
@@ -398,6 +457,7 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 		hot:        cloneRows(view.hot),
 		generation: view.generation,
 		retention:  view.retention,
+		gaps:       append([]int(nil), view.gaps...),
 	}
 	store.mu.Unlock()
 	windowReq := history.HistoryWindowRequest{
@@ -454,6 +514,9 @@ func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
 		}
 		startLine = startOffset
 		endLine = endOffset + 1
+	}
+	if err := validateGapRange(view, startLine, endLine); err != nil {
+		return "", err
 	}
 	rows, err := store.logicalRowsForLineRange(view, startLine, endLine)
 	if err != nil {
@@ -537,6 +600,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 		hot:        hot,
 		generation: generation,
 		retention:  retention,
+		gaps:       store.engine.GapOffsets(),
 	}
 }
 
@@ -622,6 +686,7 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 			hot:        cloneRows(frozen.hot),
 			generation: frozen.generation,
 			retention:  frozen.retention,
+			gaps:       append([]int(nil), frozen.gaps...),
 		}, nil
 	}
 	view := store.captureLive(req.Cols)
@@ -629,6 +694,15 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 		req.Cols = view.cols
 	}
 	return req, view, nil
+}
+
+func validateGapRange(view liveView, start int, end int) error {
+	for _, gap := range view.gaps {
+		if start < gap && gap < end {
+			return &history.SyncGapError{GapAfterLine: history.LogicalLineID(gap)}
+		}
+	}
+	return nil
 }
 
 func viewLogicalTotal(view liveView) int {

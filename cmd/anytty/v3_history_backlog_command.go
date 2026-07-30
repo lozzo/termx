@@ -83,9 +83,10 @@ func writeV3HistoryBacklogTSV(writer io.Writer, status *apipb.HistoryBacklogStat
 	if status == nil {
 		status = &apipb.HistoryBacklogStatusResult{}
 	}
-	fmt.Fprintln(writer, "terminal_id\thistory_enabled\tapplied_seq\ttarget_seq\tcatchup_pending\tpending_transactions\tpending_bytes\tbackpressure_mode\tbuffer_limit_bytes\tbackpressure_events\tbackpressure_wait_nanos\tin_flight\tclosed")
-	fmt.Fprintf(writer, "%s\t%t\t%d\t%d\t%t\t%d\t%d\t%s\t%d\t%d\t%d\t%t\t%t\n",
-		status.GetTerminal().GetTerminalId(), status.GetHistoryEnabled(), status.GetAppliedSeq(), status.GetTargetSeq(), status.GetCatchupPending(),
-		status.GetPendingTransactions(), status.GetPendingBytes(), status.GetBackpressureMode(), status.GetBufferLimitBytes(), status.GetBackpressureEvents(), status.GetBackpressureWaitNanos(), status.GetInFlight(), status.GetClosed(),
+	fmt.Fprintln(writer, "terminal_id\thistory_enabled\toutput_buffer_policy\tbuffer_capacity_bytes\tresident_bytes\taggregate_resident_bytes\taggregate_budget_bytes\tdropped_bytes\tgap_count\toutput_buffer_wait_nanos\tunavailable\tunavailable_reason\tclosed")
+	fmt.Fprintf(writer, "%s\t%t\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%t\t%s\t%t\n",
+		status.GetTerminal().GetTerminalId(), status.GetHistoryEnabled(), status.GetOutputBufferPolicy(), status.GetBufferCapacityBytes(),
+		status.GetResidentBytes(), status.GetAggregateResidentBytes(), status.GetAggregateBudgetBytes(), status.GetDroppedBytes(),
+		status.GetGapCount(), status.GetOutputBufferWaitNanos(), status.GetUnavailable(), status.GetUnavailableReason(), status.GetClosed(),
 	)
 }

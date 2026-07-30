@@ -78,7 +78,6 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 
 		socketPath := resolveV3Socket(*socket)
 		applyDaemonRuntimeTuning(logger)
-		historyBackpressure := daemonHistoryBackpressureConfig(logger)
 		runtimeConfig, err := loadV3TUIConfig(*configPath)
 		if err != nil {
 			return err
@@ -88,6 +87,10 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			MaxAge:              time.Duration(runtimeConfig.Daemon.History.MaxAgeDays) * 24 * time.Hour,
 			Compression:         runtimeConfig.Daemon.History.Compression,
 			CompressionLevel:    runtimeConfig.Daemon.History.CompressionLevel,
+		}
+		outputBuffer := corev2.TerminalOutputBufferConfig{
+			CapacityBytes: runtimeConfig.Daemon.OutputBuffer.CapacityBytes,
+			Overflow:      corev2.TerminalOutputOverflowPolicy(runtimeConfig.Daemon.OutputBuffer.Overflow),
 		}
 		historyDir := resolveV3HistoryStorageDir()
 		clientAccess, err := loadV3ClientAccessRuntime(socketPath)
@@ -114,10 +117,10 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				return fmt.Errorf("prepare history storage: %w", err)
 			}
 		}
-		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryStorageConfig(historyStorage), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
+		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryStorageConfig(historyStorage), corev2.WithTerminalOutputBufferConfig(outputBuffer), corev2.WithTerminalOutputResidentBudget(runtimeConfig.Daemon.OutputBuffer.ResidentBudgetBytes), corev2.WithClientAccessService(accessService)}
 		if !historyEnabled {
 			historyDir = ""
-			opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
+			opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithTerminalOutputBufferConfig(outputBuffer), corev2.WithTerminalOutputResidentBudget(runtimeConfig.Daemon.OutputBuffer.ResidentBudgetBytes), corev2.WithClientAccessService(accessService)}
 		}
 		srv := newCoreV2Server(opts...)
 		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)

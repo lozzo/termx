@@ -37,8 +37,13 @@ func TestServerOptions(t *testing.T) {
 	if server.HistoryStorageDir() != "/tmp/core-history" {
 		t.Fatalf("unexpected history storage dir %q", server.HistoryStorageDir())
 	}
-	if got := server.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureLowLatency || got.BufferBytes != DefaultHistoryBackpressureBufferBytes {
-		t.Fatalf("unexpected default history backpressure %#v", got)
+	if got := server.TerminalOutputBufferConfig(); got != DefaultTerminalOutputBufferConfig() {
+		t.Fatalf("unexpected default terminal output buffer %#v", got)
+	} else if got.Overflow != TerminalOutputOverflowBlock || got.CapacityBytes != 32<<20 {
+		t.Fatalf("production output buffer defaults changed: %#v", got)
+	}
+	if got := server.TerminalOutputResidentBudget(); got != DefaultTerminalOutputResidentBudgetBytes {
+		t.Fatalf("unexpected default terminal output resident budget %d", got)
 	}
 	if got := server.HistoryStorageConfig(); got.MaxBytesPerTerminal != DefaultHistoryMaxBytesPerTerminal || got.Compression != HistoryCompressionZstd || got.CompressionLevel != HistoryCompressionLevelFast {
 		t.Fatalf("unexpected default history storage config %#v", got)
@@ -57,40 +62,38 @@ func TestServerHistoryStorageConfigOption(t *testing.T) {
 	}
 }
 
-func TestR446ServerHistoryBackpressureConfigOption(t *testing.T) {
-	server := NewServer(WithHistoryBackpressureConfig(HistoryBackpressureConfig{
-		Mode:        HistoryBackpressureBounded,
-		BufferBytes: 7 << 20,
-	}))
-	if got := server.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureBounded || got.BufferBytes != 7<<20 {
-		t.Fatalf("unexpected bounded history backpressure %#v", got)
+func TestServerTerminalOutputBufferConfigOption(t *testing.T) {
+	server := NewServer(
+		WithTerminalOutputBufferConfig(TerminalOutputBufferConfig{Overflow: TerminalOutputOverflowBlock, CapacityBytes: 7 << 20}),
+		WithTerminalOutputResidentBudget(19<<20),
+	)
+	if got := server.TerminalOutputBufferConfig(); got.Overflow != TerminalOutputOverflowBlock || got.CapacityBytes != 7<<20 {
+		t.Fatalf("unexpected terminal output buffer config %#v", got)
 	}
-	fallback := NewServer(WithHistoryBackpressureConfig(HistoryBackpressureConfig{
-		Mode:        HistoryBackpressureMode("invalid"),
-		BufferBytes: -1,
-	}))
-	if got := fallback.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureLowLatency || got.BufferBytes != DefaultHistoryBackpressureBufferBytes {
-		t.Fatalf("invalid config must normalize to safe defaults, got %#v", got)
+	if got := server.TerminalOutputResidentBudget(); got != 19<<20 {
+		t.Fatalf("unexpected resident output budget %d", got)
+	}
+	fallback := NewServer(WithTerminalOutputResidentBudget(MinTerminalOutputResidentBudgetBytes - 1))
+	if got := fallback.TerminalOutputResidentBudget(); got != DefaultTerminalOutputResidentBudgetBytes {
+		t.Fatalf("unsafe aggregate budget did not fall back to default: %d", got)
 	}
 }
 
-func TestR446TerminalHistoryBacklogStatusExposesBackpressureConfig(t *testing.T) {
+func TestTerminalHistoryBacklogStatusExposesOutputBufferConfig(t *testing.T) {
 	server := NewServer(
 		WithProcessFactory(newRecordingProcessFactory()),
-		WithHistoryBackpressureConfig(HistoryBackpressureConfig{
-			Mode:        HistoryBackpressureBounded,
-			BufferBytes: 9 << 20,
-		}),
+		WithTerminalOutputBufferConfig(TerminalOutputBufferConfig{Overflow: TerminalOutputOverflowBlock, CapacityBytes: 9 << 20}),
+		WithTerminalOutputResidentBudget(23<<20),
 	)
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r446-backpressure", Command: []string{"shell"}}); err != nil {
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r2-output-buffer", Command: []string{"shell"}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	status, err := server.TerminalHistoryBacklogStatus("term-r446-backpressure")
+	status, err := server.TerminalHistoryBacklogStatus("term-r2-output-buffer")
 	if err != nil {
 		t.Fatalf("history backlog status: %v", err)
 	}
-	if status.BackpressureMode != HistoryBackpressureBounded || status.BufferLimitBytes != 9<<20 {
-		t.Fatalf("status lost history backpressure config: %#v", status)
+	if status.OutputBufferPolicy != TerminalOutputOverflowBlock || status.BufferCapacityBytes != 9<<20 || status.AggregateBudgetBytes != 23<<20 {
+		t.Fatalf("status lost output buffer config: %#v", status)
 	}
 }
 

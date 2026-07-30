@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	corev2 "github.com/anytty/anytty/core"
+	corehistory "github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/proto/apipb"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -84,6 +85,26 @@ func TestProtocolResourceExhaustionMapsToTypedUnavailable(t *testing.T) {
 	mapped := ErrorToProto(CoreError(corev2.ErrProtocolResourceExhausted), true)
 	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || !mapped.GetRetryable() || !mapped.GetAttempted() {
 		t.Fatalf("resource exhaustion mapped to %#v", mapped)
+	}
+}
+
+func TestOutputSyncLostMapsToStructuredUnavailableDetail(t *testing.T) {
+	mapped := ErrorToProto(CoreError(&corev2.TerminalOutputError{
+		TerminalID: "term-1", Consumer: "live", Epoch: 4, DroppedBytes: 8192,
+	}), true)
+	detail := mapped.GetOutputSyncLost()
+	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || mapped.GetRetryable() ||
+		detail.GetTerminalId() != "term-1" || detail.GetConsumer() != "live" || detail.GetParserEpoch() != 4 || detail.GetDroppedBytes() != 8192 {
+		t.Fatalf("sync-lost error mapped to %#v", mapped)
+	}
+}
+
+func TestHistoryGapMapsDurableBoundaryToStructuredUnavailableDetail(t *testing.T) {
+	mapped := ErrorToProto(CoreError(&corehistory.SyncGapError{GapAfterLine: 17}), true)
+	detail := mapped.GetOutputSyncLost()
+	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || mapped.GetRetryable() ||
+		detail.GetConsumer() != "history" || detail.GetGapAfterLine() != 17 {
+		t.Fatalf("history gap error mapped to %#v", mapped)
 	}
 }
 

@@ -31,6 +31,11 @@ func Default() state.TUIConfigStore {
 	return state.TUIConfigStore{
 		Version: 1,
 		Daemon: state.DaemonConfig{
+			OutputBuffer: state.DaemonOutputBufferConfig{
+				CapacityBytes:       32 << 20,
+				Overflow:            "block",
+				ResidentBudgetBytes: 512 << 20,
+			},
 			History: state.DaemonHistoryConfig{
 				MaxSizeMB:        512,
 				MaxAgeDays:       0,
@@ -346,6 +351,7 @@ func knownSection(path string) bool {
 	switch path {
 	case "tui",
 		"daemon",
+		"daemon.output_buffer",
 		"daemon.history",
 		"tui.theme",
 		"tui.theme.border",
@@ -400,7 +406,16 @@ func knownShortcutDynamicSection(path string) bool {
 type scalarSetter func(*state.TUIConfigStore, string) error
 
 var scalarSetters = map[string]scalarSetter{
-	"version":                          setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Version = value }),
+	"version": setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Version = value }),
+	"daemon.output_buffer.capacity_bytes": setInt64(func(cfg *state.TUIConfigStore, value int64) {
+		cfg.Daemon.OutputBuffer.CapacityBytes = value
+	}),
+	"daemon.output_buffer.overflow": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Daemon.OutputBuffer.Overflow = value
+	}),
+	"daemon.output_buffer.resident_budget_bytes": setInt64(func(cfg *state.TUIConfigStore, value int64) {
+		cfg.Daemon.OutputBuffer.ResidentBudgetBytes = value
+	}),
 	"daemon.history.max_size_mb":       setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Daemon.History.MaxSizeMB = value }),
 	"daemon.history.max_age_days":      setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Daemon.History.MaxAgeDays = value }),
 	"daemon.history.compression":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Daemon.History.Compression = value }),
@@ -768,6 +783,17 @@ func setInt(assign func(*state.TUIConfigStore, int)) scalarSetter {
 	}
 }
 
+func setInt64(assign func(*state.TUIConfigStore, int64)) scalarSetter {
+	return func(cfg *state.TUIConfigStore, value string) error {
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			return fmt.Errorf("expected integer, got %q", value)
+		}
+		assign(cfg, parsed)
+		return nil
+	}
+}
+
 func setFloat(assign func(*state.TUIConfigStore, float64)) scalarSetter {
 	return func(cfg *state.TUIConfigStore, value string) error {
 		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
@@ -797,6 +823,9 @@ func applyEnv(cfg *state.TUIConfigStore, lookup func(string) string) error {
 }
 
 var envScalarPaths = map[string]string{
+	"ANYTTY_OUTPUT_BUFFER_CAPACITY_BYTES":         "daemon.output_buffer.capacity_bytes",
+	"ANYTTY_OUTPUT_BUFFER_OVERFLOW":               "daemon.output_buffer.overflow",
+	"ANYTTY_OUTPUT_RESIDENT_BUDGET_BYTES":         "daemon.output_buffer.resident_budget_bytes",
 	"ANYTTY_HISTORY_MAX_SIZE_MB":                  "daemon.history.max_size_mb",
 	"ANYTTY_HISTORY_MAX_AGE_DAYS":                 "daemon.history.max_age_days",
 	"ANYTTY_HISTORY_COMPRESSION":                  "daemon.history.compression",
@@ -829,6 +858,15 @@ var envScalarPaths = map[string]string{
 func Validate(cfg state.TUIConfigStore) error {
 	if cfg.Version != 1 {
 		return fmt.Errorf("version must be 1, got %d", cfg.Version)
+	}
+	if cfg.Daemon.OutputBuffer.CapacityBytes < 64<<10 || cfg.Daemon.OutputBuffer.CapacityBytes > 256<<20 {
+		return fmt.Errorf("daemon.output_buffer.capacity_bytes must be between 65536 and 268435456")
+	}
+	if !oneOf(cfg.Daemon.OutputBuffer.Overflow, "drop", "block") {
+		return fmt.Errorf("daemon.output_buffer.overflow must be drop or block, got %q", cfg.Daemon.OutputBuffer.Overflow)
+	}
+	if cfg.Daemon.OutputBuffer.ResidentBudgetBytes < 64<<10 || cfg.Daemon.OutputBuffer.ResidentBudgetBytes > 2<<30 {
+		return fmt.Errorf("daemon.output_buffer.resident_budget_bytes must be between 65536 and 2147483648")
 	}
 	if cfg.Daemon.History.MaxSizeMB < 0 || cfg.Daemon.History.MaxSizeMB > maxHistorySizeMB {
 		return fmt.Errorf("daemon.history.max_size_mb must be between 0 and %d", maxHistorySizeMB)

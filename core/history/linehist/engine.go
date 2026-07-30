@@ -36,6 +36,11 @@ type retentionTracker interface {
 	RetentionEpoch() uint64
 }
 
+type gapStorage interface {
+	AppendGap() error
+	GapOffsets() []int
+}
+
 // NewEngine 用已打开的 LineStorage 创建引擎。文件里已有的记录即恢复出的
 // 冷历史；未闭合尾部不跨进程恢复（重启时旧行的续写上下文已不存在，
 // Close 会把它按硬结束落盘）。
@@ -122,6 +127,37 @@ func (e *Engine) ApplyClearScrollbackBoundary() error {
 		}
 	}
 	return e.file.AppendBoundary()
+}
+
+func (e *Engine) AppendGapBoundary() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if line, ok := e.asm.SealOpen(); ok {
+		if err := e.file.AppendLines([]Line{line}); err != nil {
+			return err
+		}
+	}
+	storage, ok := e.file.(gapStorage)
+	if !ok {
+		return errors.New("history storage cannot persist output gaps")
+	}
+	return storage.AppendGap()
+}
+
+func (e *Engine) GapOffsets() []int {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	storage, ok := e.file.(gapStorage)
+	if !ok {
+		return nil
+	}
+	return storage.GapOffsets()
 }
 
 // Lines 按绝对序号分页读取已落盘记录。

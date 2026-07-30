@@ -683,6 +683,82 @@ func (x *ResourceErrorDetail) GetResource() *ResourceHandle {
 	return nil
 }
 
+type OutputSyncLostErrorDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	Consumer      string                 `protobuf:"bytes,2,opt,name=consumer,proto3" json:"consumer,omitempty"`
+	ParserEpoch   uint64                 `protobuf:"varint,3,opt,name=parser_epoch,json=parserEpoch,proto3" json:"parser_epoch,omitempty"`
+	DroppedBytes  uint64                 `protobuf:"varint,4,opt,name=dropped_bytes,json=droppedBytes,proto3" json:"dropped_bytes,omitempty"`
+	GapAfterLine  uint64                 `protobuf:"varint,5,opt,name=gap_after_line,json=gapAfterLine,proto3" json:"gap_after_line,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OutputSyncLostErrorDetail) Reset() {
+	*x = OutputSyncLostErrorDetail{}
+	mi := &file_apipb_common_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OutputSyncLostErrorDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OutputSyncLostErrorDetail) ProtoMessage() {}
+
+func (x *OutputSyncLostErrorDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_common_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OutputSyncLostErrorDetail.ProtoReflect.Descriptor instead.
+func (*OutputSyncLostErrorDetail) Descriptor() ([]byte, []int) {
+	return file_apipb_common_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *OutputSyncLostErrorDetail) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+func (x *OutputSyncLostErrorDetail) GetConsumer() string {
+	if x != nil {
+		return x.Consumer
+	}
+	return ""
+}
+
+func (x *OutputSyncLostErrorDetail) GetParserEpoch() uint64 {
+	if x != nil {
+		return x.ParserEpoch
+	}
+	return 0
+}
+
+func (x *OutputSyncLostErrorDetail) GetDroppedBytes() uint64 {
+	if x != nil {
+		return x.DroppedBytes
+	}
+	return 0
+}
+
+func (x *OutputSyncLostErrorDetail) GetGapAfterLine() uint64 {
+	if x != nil {
+		return x.GapAfterLine
+	}
+	return 0
+}
+
 type ApiError struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Code      ApiErrorCode           `protobuf:"varint,1,opt,name=code,proto3,enum=anytty.api.v1.ApiErrorCode" json:"code,omitempty"`
@@ -694,6 +770,7 @@ type ApiError struct {
 	//	*ApiError_Validation
 	//	*ApiError_StaleSession
 	//	*ApiError_Resource
+	//	*ApiError_OutputSyncLost
 	Detail        isApiError_Detail `protobuf_oneof:"detail"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -701,7 +778,7 @@ type ApiError struct {
 
 func (x *ApiError) Reset() {
 	*x = ApiError{}
-	mi := &file_apipb_common_proto_msgTypes[8]
+	mi := &file_apipb_common_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -713,7 +790,7 @@ func (x *ApiError) String() string {
 func (*ApiError) ProtoMessage() {}
 
 func (x *ApiError) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_common_proto_msgTypes[8]
+	mi := &file_apipb_common_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -726,7 +803,7 @@ func (x *ApiError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApiError.ProtoReflect.Descriptor instead.
 func (*ApiError) Descriptor() ([]byte, []int) {
-	return file_apipb_common_proto_rawDescGZIP(), []int{8}
+	return file_apipb_common_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ApiError) GetCode() ApiErrorCode {
@@ -791,6 +868,15 @@ func (x *ApiError) GetResource() *ResourceErrorDetail {
 	return nil
 }
 
+func (x *ApiError) GetOutputSyncLost() *OutputSyncLostErrorDetail {
+	if x != nil {
+		if x, ok := x.Detail.(*ApiError_OutputSyncLost); ok {
+			return x.OutputSyncLost
+		}
+	}
+	return nil
+}
+
 type isApiError_Detail interface {
 	isApiError_Detail()
 }
@@ -807,11 +893,17 @@ type ApiError_Resource struct {
 	Resource *ResourceErrorDetail `protobuf:"bytes,12,opt,name=resource,proto3,oneof"`
 }
 
+type ApiError_OutputSyncLost struct {
+	OutputSyncLost *OutputSyncLostErrorDetail `protobuf:"bytes,13,opt,name=output_sync_lost,json=outputSyncLost,proto3,oneof"`
+}
+
 func (*ApiError_Validation) isApiError_Detail() {}
 
 func (*ApiError_StaleSession) isApiError_Detail() {}
 
 func (*ApiError_Resource) isApiError_Detail() {}
+
+func (*ApiError_OutputSyncLost) isApiError_Detail() {}
 
 var File_apipb_common_proto protoreflect.FileDescriptor
 
@@ -852,7 +944,14 @@ const file_apipb_common_proto_rawDesc = "" +
 	"\trequested\x18\x01 \x01(\v2#.anytty.api.v1.EndpointSessionStampR\trequested\x12-\n" +
 	"\x12current_generation\x18\x02 \x01(\x04R\x11currentGeneration\"P\n" +
 	"\x13ResourceErrorDetail\x129\n" +
-	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\"\xf4\x02\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\"\xc6\x01\n" +
+	"\x19OutputSyncLostErrorDetail\x12\x1f\n" +
+	"\vterminal_id\x18\x01 \x01(\tR\n" +
+	"terminalId\x12\x1a\n" +
+	"\bconsumer\x18\x02 \x01(\tR\bconsumer\x12!\n" +
+	"\fparser_epoch\x18\x03 \x01(\x04R\vparserEpoch\x12#\n" +
+	"\rdropped_bytes\x18\x04 \x01(\x04R\fdroppedBytes\x12$\n" +
+	"\x0egap_after_line\x18\x05 \x01(\x04R\fgapAfterLine\"\xca\x03\n" +
 	"\bApiError\x12/\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1b.anytty.api.v1.ApiErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
@@ -863,7 +962,8 @@ const file_apipb_common_proto_rawDesc = "" +
 	" \x01(\v2$.anytty.api.v1.ValidationErrorDetailH\x00R\n" +
 	"validation\x12M\n" +
 	"\rstale_session\x18\v \x01(\v2&.anytty.api.v1.StaleSessionErrorDetailH\x00R\fstaleSession\x12@\n" +
-	"\bresource\x18\f \x01(\v2\".anytty.api.v1.ResourceErrorDetailH\x00R\bresourceB\b\n" +
+	"\bresource\x18\f \x01(\v2\".anytty.api.v1.ResourceErrorDetailH\x00R\bresource\x12T\n" +
+	"\x10output_sync_lost\x18\r \x01(\v2(.anytty.api.v1.OutputSyncLostErrorDetailH\x00R\x0eoutputSyncLostB\b\n" +
 	"\x06detail*\x98\x04\n" +
 	"\rApiCapability\x12\x1e\n" +
 	"\x1aAPI_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1f\n" +
@@ -918,20 +1018,21 @@ func file_apipb_common_proto_rawDescGZIP() []byte {
 }
 
 var file_apipb_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_apipb_common_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_apipb_common_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_apipb_common_proto_goTypes = []any{
-	(ApiCapability)(0),              // 0: anytty.api.v1.ApiCapability
-	(ApiErrorCode)(0),               // 1: anytty.api.v1.ApiErrorCode
-	(ResourceKind)(0),               // 2: anytty.api.v1.ResourceKind
-	(*ApiVersion)(nil),              // 3: anytty.api.v1.ApiVersion
-	(*EndpointSessionStamp)(nil),    // 4: anytty.api.v1.EndpointSessionStamp
-	(*OperationStamp)(nil),          // 5: anytty.api.v1.OperationStamp
-	(*ResourceHandle)(nil),          // 6: anytty.api.v1.ResourceHandle
-	(*RequestContext)(nil),          // 7: anytty.api.v1.RequestContext
-	(*ValidationErrorDetail)(nil),   // 8: anytty.api.v1.ValidationErrorDetail
-	(*StaleSessionErrorDetail)(nil), // 9: anytty.api.v1.StaleSessionErrorDetail
-	(*ResourceErrorDetail)(nil),     // 10: anytty.api.v1.ResourceErrorDetail
-	(*ApiError)(nil),                // 11: anytty.api.v1.ApiError
+	(ApiCapability)(0),                // 0: anytty.api.v1.ApiCapability
+	(ApiErrorCode)(0),                 // 1: anytty.api.v1.ApiErrorCode
+	(ResourceKind)(0),                 // 2: anytty.api.v1.ResourceKind
+	(*ApiVersion)(nil),                // 3: anytty.api.v1.ApiVersion
+	(*EndpointSessionStamp)(nil),      // 4: anytty.api.v1.EndpointSessionStamp
+	(*OperationStamp)(nil),            // 5: anytty.api.v1.OperationStamp
+	(*ResourceHandle)(nil),            // 6: anytty.api.v1.ResourceHandle
+	(*RequestContext)(nil),            // 7: anytty.api.v1.RequestContext
+	(*ValidationErrorDetail)(nil),     // 8: anytty.api.v1.ValidationErrorDetail
+	(*StaleSessionErrorDetail)(nil),   // 9: anytty.api.v1.StaleSessionErrorDetail
+	(*ResourceErrorDetail)(nil),       // 10: anytty.api.v1.ResourceErrorDetail
+	(*OutputSyncLostErrorDetail)(nil), // 11: anytty.api.v1.OutputSyncLostErrorDetail
+	(*ApiError)(nil),                  // 12: anytty.api.v1.ApiError
 }
 var file_apipb_common_proto_depIdxs = []int32{
 	4,  // 0: anytty.api.v1.OperationStamp.session:type_name -> anytty.api.v1.EndpointSessionStamp
@@ -945,11 +1046,12 @@ var file_apipb_common_proto_depIdxs = []int32{
 	8,  // 8: anytty.api.v1.ApiError.validation:type_name -> anytty.api.v1.ValidationErrorDetail
 	9,  // 9: anytty.api.v1.ApiError.stale_session:type_name -> anytty.api.v1.StaleSessionErrorDetail
 	10, // 10: anytty.api.v1.ApiError.resource:type_name -> anytty.api.v1.ResourceErrorDetail
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	11, // 11: anytty.api.v1.ApiError.output_sync_lost:type_name -> anytty.api.v1.OutputSyncLostErrorDetail
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_apipb_common_proto_init() }
@@ -957,10 +1059,11 @@ func file_apipb_common_proto_init() {
 	if File_apipb_common_proto != nil {
 		return
 	}
-	file_apipb_common_proto_msgTypes[8].OneofWrappers = []any{
+	file_apipb_common_proto_msgTypes[9].OneofWrappers = []any{
 		(*ApiError_Validation)(nil),
 		(*ApiError_StaleSession)(nil),
 		(*ApiError_Resource)(nil),
+		(*ApiError_OutputSyncLost)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -968,7 +1071,7 @@ func file_apipb_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apipb_common_proto_rawDesc), len(file_apipb_common_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

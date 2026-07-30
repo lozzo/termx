@@ -393,7 +393,7 @@ func (session *protocolSession) ApplicationHistoryRelease(ctx context.Context, t
 	return session.server.TerminalHistoryRelease(ctx, terminalID, token)
 }
 
-// ApplicationHistoryBacklogStatus 返回 history worker 的诊断投影。
+// ApplicationHistoryBacklogStatus 返回 history output consumer 的诊断投影。
 func (session *protocolSession) ApplicationHistoryBacklogStatus(_ context.Context, terminalID string) (HistoryBacklogStatus, error) {
 	return session.server.TerminalHistoryBacklogStatus(terminalID)
 }
@@ -406,6 +406,15 @@ func (session *protocolSession) ApplicationLiveScreen(_ context.Context, termina
 	terminal, err := session.server.Terminal(terminalID)
 	if err != nil {
 		return NativeScreenSnapshot{}, err
+	}
+	terminal.queueMu.Lock()
+	liveErr := terminal.liveOutputError
+	if liveErr == nil && terminal.outputBuffer != nil {
+		liveErr = terminal.outputBuffer.ConsumerError(terminalOutputConsumerLive)
+	}
+	terminal.queueMu.Unlock()
+	if liveErr != nil {
+		return NativeScreenSnapshot{}, liveErr
 	}
 	return terminal.NativeScreenSnapshot(terminalID), nil
 }

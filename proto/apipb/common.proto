@@ -91,6 +91,14 @@ message ResourceErrorDetail {
   ResourceHandle resource = 1;
 }
 
+message OutputSyncLostErrorDetail {
+  string terminal_id = 1;
+  string consumer = 2;
+  uint64 parser_epoch = 3;
+  uint64 dropped_bytes = 4;
+  uint64 gap_after_line = 5;
+}
+
 message ApiError {
   ApiErrorCode code = 1;
   string message = 2;
@@ -100,5 +108,6 @@ message ApiError {
     ValidationErrorDetail validation = 10;
     StaleSessionErrorDetail stale_session = 11;
     ResourceErrorDetail resource = 12;
+    OutputSyncLostErrorDetail output_sync_lost = 13;
   }
 }

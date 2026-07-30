@@ -28,6 +28,7 @@ type ClassifiedError struct {
 	Err       error
 	Code      apipb.ApiErrorCode
 	Retryable bool
+	SyncLost  *apipb.OutputSyncLostErrorDetail
 }
 
 // Error 返回原始领域错误文本；公共响应仍由 ErrorToProto 统一生成。
@@ -197,7 +198,11 @@ func ErrorToProto(err error, attempted bool) *apipb.ApiError {
 		if code == apipb.ApiErrorCode_API_ERROR_CODE_UNSPECIFIED {
 			code = apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL
 		}
-		return &apipb.ApiError{Code: code, Message: classified.Error(), Retryable: classified.Retryable, Attempted: attempted}
+		result := &apipb.ApiError{Code: code, Message: classified.Error(), Retryable: classified.Retryable, Attempted: attempted}
+		if classified.SyncLost != nil {
+			result.Detail = &apipb.ApiError_OutputSyncLost{OutputSyncLost: classified.SyncLost}
+		}
+		return result
 	}
 	return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "application operation failed", Attempted: attempted}
 }

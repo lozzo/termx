@@ -2,52 +2,60 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
 const (
-	// DefaultHistoryBackpressureBufferBytes 是有界 history 背压策略的默认
-	// pending bytes 上限。它只约束 history 输出调度队列，不改变 linehist
-	// authoritative truth；低延迟策略下该值仅作为诊断展示和切换策略时的默认值。
-	DefaultHistoryBackpressureBufferBytes int64 = 32 * 1024 * 1024
+	DefaultTerminalOutputBufferCapacityBytes int64 = 32 << 20
+	MinTerminalOutputBufferCapacityBytes     int64 = 64 << 10
+	MaxTerminalOutputBufferCapacityBytes     int64 = 256 << 20
+	DefaultTerminalOutputResidentBudgetBytes int64 = 512 << 20
+	MinTerminalOutputResidentBudgetBytes     int64 = 64 << 10
+	MaxTerminalOutputResidentBudgetBytes     int64 = 2 << 30
 )
 
-// HistoryBackpressureMode 描述 history consumer 落后时 PTY 输出调度如何处理。
-// domain owner 是 core-v2 Terminal 输出链路：该策略只控制 pending bytes
-// 是否形成背压，不能丢弃 EvictedRows、不能从 live snapshot 或 TUI rows 补历史。
-type HistoryBackpressureMode string
+type TerminalOutputOverflowPolicy string
 
 const (
-	// HistoryBackpressureLowLatency 保持既有 live 优先行为：history backlog
-	// 只影响 history.window/freeze/copy 的追平等待，不在入队边界主动阻塞 PTY 输出。
-	HistoryBackpressureLowLatency HistoryBackpressureMode = "low-latency"
-	// HistoryBackpressureBounded 表示 history pending bytes 到达配置上限后
-	// 必须对上游 PTY 输出消费施加背压；R447 负责落地真正阻塞语义。
-	HistoryBackpressureBounded HistoryBackpressureMode = "bounded"
+	TerminalOutputOverflowDrop  TerminalOutputOverflowPolicy = "drop"
+	TerminalOutputOverflowBlock TerminalOutputOverflowPolicy = "block"
 )
 
-// HistoryBackpressureConfig 是 terminal history 输出背压配置。
-// Mode 决定调度策略，BufferBytes 是有界策略允许驻留在 history pending
-// 队列里的 PTY payload 字节数。配置只作用于输出调度与诊断，不是 history
-// payload truth，也不能替代 linehist 的文件存储和 cursor/window 边界。
-type HistoryBackpressureConfig struct {
-	Mode        HistoryBackpressureMode
-	BufferBytes int64
+// TerminalOutputBufferConfig controls the one shared PTY payload buffer owned by
+// each terminal process generation. Live and history retain independent cursors.
+type TerminalOutputBufferConfig struct {
+	CapacityBytes int64
+	Overflow      TerminalOutputOverflowPolicy
 }
 
-// Normalize 返回可执行的 history 背压配置。空 mode 沿用低延迟默认；
-// 非法 mode 保守回到低延迟；非正 buffer 使用默认上限，避免有界策略
-// 被配置成无界或立即自锁。
-func (cfg HistoryBackpressureConfig) Normalize() HistoryBackpressureConfig {
-	switch cfg.Mode {
-	case "", HistoryBackpressureLowLatency:
-		cfg.Mode = HistoryBackpressureLowLatency
-	case HistoryBackpressureBounded:
-	default:
-		cfg.Mode = HistoryBackpressureLowLatency
+func DefaultTerminalOutputBufferConfig() TerminalOutputBufferConfig {
+	return TerminalOutputBufferConfig{
+		CapacityBytes: DefaultTerminalOutputBufferCapacityBytes,
+		Overflow:      TerminalOutputOverflowBlock,
 	}
-	if cfg.BufferBytes <= 0 {
-		cfg.BufferBytes = DefaultHistoryBackpressureBufferBytes
+}
+
+func (cfg TerminalOutputBufferConfig) Validate() error {
+	if cfg.CapacityBytes < MinTerminalOutputBufferCapacityBytes || cfg.CapacityBytes > MaxTerminalOutputBufferCapacityBytes {
+		return fmt.Errorf("terminal output buffer capacity must be between %d and %d bytes", MinTerminalOutputBufferCapacityBytes, MaxTerminalOutputBufferCapacityBytes)
+	}
+	if cfg.Overflow != TerminalOutputOverflowDrop && cfg.Overflow != TerminalOutputOverflowBlock {
+		return fmt.Errorf("terminal output buffer overflow must be drop or block, got %q", cfg.Overflow)
+	}
+	return nil
+}
+
+func (cfg TerminalOutputBufferConfig) normalized() TerminalOutputBufferConfig {
+	defaults := DefaultTerminalOutputBufferConfig()
+	if cfg.CapacityBytes == 0 {
+		cfg.CapacityBytes = defaults.CapacityBytes
+	}
+	if cfg.Overflow == "" {
+		cfg.Overflow = defaults.Overflow
+	}
+	if cfg.Validate() != nil {
+		return defaults
 	}
 	return cfg
 }
@@ -126,42 +134,79 @@ type TerminalRecord struct {
 	Options TerminalCreateOptions
 }
 
-// HistoryBacklogStatus 描述 terminal history consumer 当前追平边界。
-// domain owner 是 core-v2 Terminal ingest；AppliedSeq 表示已由 history worker
-// 交给 authoritative store 处理完成的 backlog 序号，TargetSeq 表示已经进入
-// SemanticTap 后 history backlog 的最高序号。它只服务诊断和 history.window
-// 内部调度判断，不能当作 history payload truth。
+// HistoryBacklogStatus exposes the history cursor's view of the shared terminal
+// output buffer. ResidentBytes counts shared payload once, not once per consumer.
 type HistoryBacklogStatus struct {
-	TerminalID            string
-	HistoryEnabled        bool
-	AppliedSeq            uint64
-	TargetSeq             uint64
-	CatchupPending        bool
-	PendingTransactions   int
-	PendingBytes          int64
-	BackpressureMode      HistoryBackpressureMode
-	BufferLimitBytes      int64
-	BackpressureEvents    uint64
-	BackpressureWaitNanos int64
-	InFlight              bool
-	Closed                bool
+	TerminalID             string
+	HistoryEnabled         bool
+	OutputBufferPolicy     TerminalOutputOverflowPolicy
+	BufferCapacityBytes    int64
+	ResidentBytes          int64
+	AggregateResidentBytes int64
+	AggregateBudgetBytes   int64
+	DroppedBytes           uint64
+	GapCount               uint64
+	OutputBufferWaitNanos  int64
+	Unavailable            bool
+	UnavailableReason      string
+	Closed                 bool
 }
 
 var (
-	ErrServerClosed           = errors.New("core-v2 server closed")
-	ErrInvalidTerminalID      = errors.New("invalid terminal id")
-	ErrInvalidCommand         = errors.New("invalid command")
-	ErrDuplicateTerminal      = errors.New("duplicate terminal")
-	ErrTerminalNotFound       = errors.New("terminal not found")
-	ErrTerminalExited         = errors.New("terminal exited")
-	ErrHistoryNotRebuilt      = errors.New("history not rebuilt")
-	ErrHistoryDisabled        = errors.New("history disabled")
-	ErrInvalidServerSize      = errors.New("invalid server size")
-	ErrNilListenerFactory     = errors.New("nil listener factory")
-	ErrInvalidStorageKey      = errors.New("invalid storage key")
-	ErrStorageEntryNotFound   = errors.New("storage entry not found")
-	ErrStorageVersionConflict = errors.New("storage version conflict")
+	ErrServerClosed              = errors.New("core-v2 server closed")
+	ErrInvalidTerminalID         = errors.New("invalid terminal id")
+	ErrInvalidCommand            = errors.New("invalid command")
+	ErrDuplicateTerminal         = errors.New("duplicate terminal")
+	ErrTerminalNotFound          = errors.New("terminal not found")
+	ErrTerminalExited            = errors.New("terminal exited")
+	ErrHistoryNotRebuilt         = errors.New("history not rebuilt")
+	ErrHistoryDisabled           = errors.New("history disabled")
+	ErrTerminalOutputSyncLost    = errors.New("terminal output sync lost")
+	ErrTerminalOutputUnavailable = errors.New("terminal output consumer unavailable")
+	ErrInvalidServerSize         = errors.New("invalid server size")
+	ErrNilListenerFactory        = errors.New("nil listener factory")
+	ErrInvalidStorageKey         = errors.New("invalid storage key")
+	ErrStorageEntryNotFound      = errors.New("storage entry not found")
+	ErrStorageVersionConflict    = errors.New("storage version conflict")
 )
+
+type TerminalOutputError struct {
+	TerminalID   string
+	Consumer     string
+	Epoch        uint64
+	DroppedBytes uint64
+	Cause        error
+}
+
+func (err *TerminalOutputError) Error() string {
+	if err == nil {
+		return ErrTerminalOutputUnavailable.Error()
+	}
+	if err.DroppedBytes > 0 {
+		return fmt.Sprintf("%s output sync lost at epoch %d after dropping %d bytes", err.Consumer, err.Epoch, err.DroppedBytes)
+	}
+	if err.Cause != nil {
+		return fmt.Sprintf("%s output unavailable: %v", err.Consumer, err.Cause)
+	}
+	return fmt.Sprintf("%s output unavailable", err.Consumer)
+}
+
+func (err *TerminalOutputError) Unwrap() error {
+	if err != nil && err.Cause != nil {
+		return err.Cause
+	}
+	return ErrTerminalOutputUnavailable
+}
+
+func (err *TerminalOutputError) Is(target error) bool {
+	if err == nil {
+		return false
+	}
+	if target == ErrTerminalOutputUnavailable {
+		return true
+	}
+	return err.DroppedBytes > 0 && target == ErrTerminalOutputSyncLost
+}
 
 func cloneStringMap(values map[string]string) map[string]string {
 	if len(values) == 0 {
