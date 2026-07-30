@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -33,18 +34,11 @@ func v3HistoryBacklogCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer closeLogger()
-			socketPath := resolveV3Socket(*socket)
-			client, err := dialOrStartV3Client(socketPath, logPath, logger)
+			application, closeApplication, err := openV3HistoryCommandApplication(resolveV3Socket(*socket), logPath, logger)
 			if err != nil {
 				return err
 			}
-			if client != nil {
-				defer client.Close()
-			}
-			application, err := newLocalApplicationSession(client)
-			if err != nil {
-				return err
-			}
+			defer closeApplication()
 			if cfg.OutPath == "" {
 				return runV3HistoryBacklog(cmd.Context(), application, cfg, cmd.OutOrStdout())
 			}
@@ -62,6 +56,25 @@ func v3HistoryBacklogCommand(socket *string, logFile *string) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&cfg.OutPath, "out", "o", "", "file path to write the history backlog TSV")
 	return cmd
+}
+
+func openV3HistoryCommandApplication(socketPath string, logPath string, logger *slog.Logger) (*clientruntime.ApplicationSession, func(), error) {
+	client, err := dialOrStartV3Client(socketPath, logPath, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	application, err := newLocalApplicationSession(client)
+	if err != nil {
+		if client != nil {
+			_ = client.Close()
+		}
+		return nil, nil, err
+	}
+	return application, func() {
+		if client != nil {
+			_ = client.Close()
+		}
+	}, nil
 }
 
 func runV3HistoryBacklog(ctx context.Context, client *clientruntime.ApplicationSession, cfg v3HistoryBacklogConfig, writer io.Writer) error {

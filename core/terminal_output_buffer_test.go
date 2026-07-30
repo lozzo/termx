@@ -315,6 +315,87 @@ func TestTerminalOutputBufferConsumerFailureReleasesCapacity(t *testing.T) {
 	buffer.Close()
 }
 
+func TestTerminalOutputBufferConsumerFailureReportsFailedAndQueuedRange(t *testing.T) {
+	budget := newTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes)
+	buffer := newTerminalOutputBuffer(testOutputConfig(TerminalOutputOverflowBlock), budget, true)
+	releaseFailure := make(chan struct{})
+	failureStarted := make(chan struct{})
+	failure := make(chan terminalOutputConsumerFailure, 1)
+	go buffer.Run(terminalOutputConsumerLive, func([]byte) error { return nil }, nil)
+	go buffer.run(terminalOutputConsumerHistory, func([]byte) error {
+		close(failureStarted)
+		<-releaseFailure
+		return errors.New("history write failed")
+	}, nil, func(result terminalOutputConsumerFailure) {
+		failure <- result
+	})
+	payload := bytes.Repeat([]byte("x"), 3*terminalOutputChunkBytes)
+	written := make(chan bool, 1)
+	go func() { written <- buffer.Write(payload) }()
+	receiveOutputTest(t, failureStarted, "history failure callback")
+	if !receiveOutputTest(t, written, "queued failure range write") {
+		t.Fatal("write rejected")
+	}
+	close(releaseFailure)
+	result := receiveOutputTest(t, failure, "typed consumer failure")
+	var outputErr *TerminalOutputError
+	if !errors.As(result.Err, &outputErr) {
+		t.Fatalf("consumer failure was not typed: %v", result.Err)
+	}
+	if outputErr.DroppedBytes != uint64(len(payload)) || outputErr.Epoch != 1 || result.DuringGap {
+		t.Fatalf("consumer failure range=%#v result=%#v", outputErr, result)
+	}
+	status := buffer.Status(terminalOutputConsumerHistory)
+	if status.DroppedBytes != uint64(len(payload)) || status.GapCount != 1 {
+		t.Fatalf("consumer failure diagnostics=%#v", status)
+	}
+	buffer.Seal()
+	buffer.Wait()
+	buffer.Close()
+}
+
+func TestTerminalOutputBufferFlushWaitsForFailureHandling(t *testing.T) {
+	budget := newTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes)
+	buffer := newTerminalOutputBuffer(testOutputConfig(TerminalOutputOverflowBlock), budget, false)
+	wantErr := errors.New("live ingest failed")
+	failureStarted := make(chan struct{})
+	releaseFailure := make(chan struct{})
+	go buffer.run(terminalOutputConsumerLive, func([]byte) error {
+		return wantErr
+	}, nil, func(terminalOutputConsumerFailure) {
+		close(failureStarted)
+		<-releaseFailure
+	})
+	if !buffer.Write([]byte("failed output")) {
+		t.Fatal("write rejected")
+	}
+	receiveOutputTest(t, failureStarted, "failure handler")
+
+	flushed := make(chan error, 1)
+	go func() {
+		flushed <- buffer.Flush(context.Background(), terminalOutputConsumerLive)
+	}()
+	waitForOutputCondition(t, func() bool {
+		buffer.mu.Lock()
+		defer buffer.mu.Unlock()
+		return buffer.consumers[terminalOutputConsumerLive].failurePending &&
+			buffer.flushWaiters[terminalOutputConsumerLive] == 1
+	}, "flush waiting for failure handler")
+	select {
+	case err := <-flushed:
+		t.Fatalf("flush returned before failure handling completed: %v", err)
+	default:
+	}
+
+	close(releaseFailure)
+	if err := receiveOutputTest(t, flushed, "handled failure flush"); !errors.Is(err, wantErr) {
+		t.Fatalf("flush error=%v want=%v", err, wantErr)
+	}
+	buffer.Seal()
+	buffer.Wait()
+	buffer.Close()
+}
+
 func TestTerminalOutputResidentBudgetBlocksAcrossBuffers(t *testing.T) {
 	budget := newTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes)
 	first := newTerminalOutputBuffer(testOutputConfig(TerminalOutputOverflowBlock), budget, false)

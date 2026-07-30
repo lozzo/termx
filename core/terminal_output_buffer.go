@@ -54,6 +54,7 @@ type terminalOutputConsumerState struct {
 	droppedBytes    uint64
 	gapCount        uint64
 	unavailable     error
+	failurePending  bool
 }
 
 type terminalOutputBufferStatus struct {
@@ -232,6 +233,7 @@ type terminalOutputBuffer struct {
 	resident     int64
 	nextSeq      uint64
 	closed       bool
+	closedCh     chan struct{}
 	sealed       bool
 	waitNanos    int64
 	localWaiters int
@@ -240,7 +242,7 @@ type terminalOutputBuffer struct {
 }
 
 func newTerminalOutputBuffer(config TerminalOutputBufferConfig, budget *terminalOutputResidentBudget, historyEnabled bool) *terminalOutputBuffer {
-	buffer := &terminalOutputBuffer{config: config.normalized(), budget: budget}
+	buffer := &terminalOutputBuffer{config: config.normalized(), budget: budget, closedCh: make(chan struct{})}
 	buffer.cond = sync.NewCond(&buffer.mu)
 	buffer.consumers[terminalOutputConsumerLive] = terminalOutputConsumerState{active: true, done: make(chan struct{})}
 	buffer.consumers[terminalOutputConsumerHistory] = terminalOutputConsumerState{active: historyEnabled, done: make(chan struct{})}
@@ -375,6 +377,15 @@ func (buffer *terminalOutputBuffer) writeChunk(payload []byte) bool {
 }
 
 func (buffer *terminalOutputBuffer) Run(consumer terminalOutputConsumer, ingest func([]byte) error, gap func(terminalOutputGap) error) {
+	buffer.run(consumer, ingest, gap, nil)
+}
+
+type terminalOutputConsumerFailure struct {
+	Err       error
+	DuringGap bool
+}
+
+func (buffer *terminalOutputBuffer) run(consumer terminalOutputConsumer, ingest func([]byte) error, gap func(terminalOutputGap) error, failed func(terminalOutputConsumerFailure)) {
 	buffer.mu.Lock()
 	state := &buffer.consumers[consumer]
 	if state.started {
@@ -400,14 +411,18 @@ func (buffer *terminalOutputBuffer) Run(consumer terminalOutputConsumer, ingest 
 			if gap != nil {
 				err = gap(*gapEvent)
 			}
-			buffer.completeGap(consumer, gapEvent, err)
+			buffer.completeGap(consumer, gapEvent, err, failed != nil)
 		} else {
 			if ingest != nil {
 				err = ingest(payload)
 			}
-			buffer.completeNode(consumer, node, err)
+			buffer.completeNode(consumer, node, err, failed != nil)
 		}
 		if err != nil {
+			if failed != nil {
+				failed(terminalOutputConsumerFailure{Err: buffer.ConsumerError(consumer), DuringGap: gapEvent != nil})
+				buffer.completeFailureHandling(consumer)
+			}
 			return
 		}
 	}
@@ -440,7 +455,7 @@ func (buffer *terminalOutputBuffer) next(consumer terminalOutputConsumer) ([]byt
 	return state.next.payload, nil, state.next, true
 }
 
-func (buffer *terminalOutputBuffer) completeNode(consumer terminalOutputConsumer, node *terminalOutputNode, ingestErr error) {
+func (buffer *terminalOutputBuffer) completeNode(consumer terminalOutputConsumer, node *terminalOutputNode, ingestErr error, failurePending bool) {
 	buffer.mu.Lock()
 	state := &buffer.consumers[consumer]
 	if state.inFlight != node {
@@ -456,9 +471,20 @@ func (buffer *terminalOutputBuffer) completeNode(consumer terminalOutputConsumer
 	}
 	state.next = buffer.nextPendingNodeLocked(consumer, node.next)
 	if ingestErr != nil {
-		state.unavailable = &TerminalOutputError{Consumer: consumer.String(), Epoch: state.epoch, Cause: ingestErr}
+		dropped := uint64(len(node.payload))
+		state.droppedBytes += uint64(len(node.payload))
+		if state.pendingGapBytes == 0 {
+			state.gapCount++
+		}
+		dropped += state.pendingGapBytes
+		state.pendingGapBytes = 0
+		state.pendingGapSeq = 0
+		released := buffer.releaseConsumerLocked(consumer, state.next)
+		dropped += released
+		state.droppedBytes += released
+		state.unavailable = &TerminalOutputError{Consumer: consumer.String(), Epoch: state.epoch + 1, DroppedBytes: dropped, Cause: ingestErr}
+		state.failurePending = failurePending
 		state.active = false
-		buffer.releaseConsumerLocked(consumer, state.next)
 		state.next = nil
 	}
 	freed := buffer.reclaimLocked()
@@ -470,7 +496,7 @@ func (buffer *terminalOutputBuffer) completeNode(consumer terminalOutputConsumer
 	}
 }
 
-func (buffer *terminalOutputBuffer) completeGap(consumer terminalOutputConsumer, gap *terminalOutputGap, gapErr error) {
+func (buffer *terminalOutputBuffer) completeGap(consumer terminalOutputConsumer, gap *terminalOutputGap, gapErr error, failurePending bool) {
 	buffer.mu.Lock()
 	state := &buffer.consumers[consumer]
 	if state.gapInFlight != gap {
@@ -479,12 +505,18 @@ func (buffer *terminalOutputBuffer) completeGap(consumer terminalOutputConsumer,
 	}
 	state.gapInFlight = nil
 	if gapErr != nil {
+		dropped := gap.DroppedBytes + state.pendingGapBytes
+		state.pendingGapBytes = 0
+		state.pendingGapSeq = 0
+		released := buffer.releaseConsumerLocked(consumer, state.next)
+		dropped += released
+		state.droppedBytes += released
 		state.unavailable = &TerminalOutputError{
 			Consumer: consumer.String(), Epoch: gap.Epoch,
-			DroppedBytes: gap.DroppedBytes, Cause: gapErr,
+			DroppedBytes: dropped, Cause: gapErr,
 		}
+		state.failurePending = failurePending
 		state.active = false
-		buffer.releaseConsumerLocked(consumer, state.next)
 		state.next = nil
 	} else {
 		state.epoch = gap.Epoch
@@ -499,6 +531,13 @@ func (buffer *terminalOutputBuffer) completeGap(consumer terminalOutputConsumer,
 	if gapErr != nil {
 		buffer.budget.wake()
 	}
+}
+
+func (buffer *terminalOutputBuffer) completeFailureHandling(consumer terminalOutputConsumer) {
+	buffer.mu.Lock()
+	buffer.consumers[consumer].failurePending = false
+	buffer.cond.Broadcast()
+	buffer.mu.Unlock()
 }
 
 func (buffer *terminalOutputBuffer) dropForAggregate(required int64) int64 {
@@ -586,10 +625,15 @@ func (buffer *terminalOutputBuffer) nextPendingNodeLocked(consumer terminalOutpu
 	return nil
 }
 
-func (buffer *terminalOutputBuffer) releaseConsumerLocked(consumer terminalOutputConsumer, from *terminalOutputNode) {
+func (buffer *terminalOutputBuffer) releaseConsumerLocked(consumer terminalOutputConsumer, from *terminalOutputNode) uint64 {
+	released := uint64(0)
 	for node := from; node != nil; node = node.next {
-		node.pending &^= consumer.bit()
+		if node.pending&consumer.bit() != 0 {
+			node.pending &^= consumer.bit()
+			released += uint64(len(node.payload))
+		}
 	}
+	return released
 }
 
 func (buffer *terminalOutputBuffer) dropQueuedForConsumerLocked(consumer terminalOutputConsumer, state *terminalOutputConsumerState) {
@@ -648,11 +692,12 @@ func (buffer *terminalOutputBuffer) Flush(ctx context.Context, consumer terminal
 	for {
 		state := &buffer.consumers[consumer]
 		if state.unavailable != nil {
-			err := state.unavailable
-			buffer.mu.Unlock()
-			return err
-		}
-		if !state.active || state.completedSeq >= target {
+			if !state.failurePending {
+				err := state.unavailable
+				buffer.mu.Unlock()
+				return err
+			}
+		} else if !state.active || state.completedSeq >= target {
 			buffer.mu.Unlock()
 			return nil
 		}
@@ -681,6 +726,7 @@ func (buffer *terminalOutputBuffer) Close() {
 		return
 	}
 	buffer.closed = true
+	close(buffer.closedCh)
 	for consumer := terminalOutputConsumer(0); consumer < terminalOutputConsumerCount; consumer++ {
 		state := &buffer.consumers[consumer]
 		if state.active {
@@ -703,6 +749,10 @@ func (buffer *terminalOutputBuffer) Close() {
 	buffer.mu.Unlock()
 	buffer.budget.release(freed)
 	buffer.budget.unregister(buffer)
+}
+
+func (buffer *terminalOutputBuffer) Closed() <-chan struct{} {
+	return buffer.closedCh
 }
 
 func (buffer *terminalOutputBuffer) Wait() {

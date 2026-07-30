@@ -143,6 +143,7 @@ func (process *rawPTYTestProcess) Input(data []byte) error {
 
 func (process *rawPTYTestProcess) Resize(corev2.Size) error { return nil }
 func (process *rawPTYTestProcess) Output() <-chan []byte    { return process.output }
+func (process *rawPTYTestProcess) CancelOutput()            {}
 func (process *rawPTYTestProcess) Wait() <-chan corev2.ProcessExit {
 	return process.wait
 }

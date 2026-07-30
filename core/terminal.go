@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -45,6 +46,7 @@ type Terminal struct {
 	outputBuffer       *terminalOutputBuffer
 	liveOutputError    error
 	historyOutputError error
+	historyStickyError error
 	rawPTYMu           sync.Mutex
 	rawPTYProcess      TerminalProcess
 	rawPTY             *rawPTYBroadcaster
@@ -319,7 +321,8 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.outputBuffer = nil
 	wasLiveUnavailable := terminal.liveOutputError != nil
 	terminal.liveOutputError = nil
-	terminal.historyOutputError = nil
+	terminal.historyOutputError = terminal.historyStickyError
+	historyAvailable := terminal.historyStickyError == nil
 	terminal.queueMu.Unlock()
 	terminal.liveOpMu.Lock()
 	if wasLiveUnavailable {
@@ -330,7 +333,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.liveRevision++
 	revision := terminal.liveRevision
 	terminal.liveOpMu.Unlock()
-	if terminal.historyEnabled {
+	if terminal.historyEnabled && historyAvailable {
 		terminal.tapOpMu.Lock()
 		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
 		terminal.tapOpMu.Unlock()
@@ -512,35 +515,51 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		close(done)
 		return done
 	}
-	buffer := newTerminalOutputBuffer(terminal.outputConfig, terminal.outputBudget, terminal.historyEnabled)
+	terminal.queueMu.Lock()
+	historyConsumerEnabled := terminal.historyEnabled && terminal.historyStickyError == nil
+	terminal.queueMu.Unlock()
+	buffer := newTerminalOutputBuffer(terminal.outputConfig, terminal.outputBudget, historyConsumerEnabled)
 	terminal.setOutputBuffer(process, buffer)
-	if terminal.historyEnabled {
+	if historyConsumerEnabled {
 		go func() {
-			buffer.Run(terminalOutputConsumerHistory, func(output []byte) error {
+			buffer.run(terminalOutputConsumerHistory, func(output []byte) error {
 				return terminal.ingestProcessHistoryTapOutput(process, string(output))
 			}, func(gap terminalOutputGap) error {
 				return terminal.beginHistoryParserEpoch(process, gap)
+			}, func(failure terminalOutputConsumerFailure) {
+				terminal.handleOutputConsumerFailure(process, terminalOutputConsumerHistory, failure)
 			})
-			terminal.recordOutputConsumerFailure(process, buffer, terminalOutputConsumerHistory)
 		}()
 	}
 	go func() {
-		buffer.Run(terminalOutputConsumerLive, func(output []byte) error {
+		buffer.run(terminalOutputConsumerLive, func(output []byte) error {
 			return terminal.ingestProcessLiveOutput(process, string(output))
 		}, func(gap terminalOutputGap) error {
 			return terminal.markLiveParserStale(process, gap)
+		}, func(failure terminalOutputConsumerFailure) {
+			terminal.handleOutputConsumerFailure(process, terminalOutputConsumerLive, failure)
 		})
-		terminal.recordOutputConsumerFailure(process, buffer, terminalOutputConsumerLive)
 	}()
 	go func() {
 		defer close(done)
 		defer func() {
 			buffer.Seal()
 			buffer.Wait()
-			terminal.clearOutputBuffer(process, buffer)
 			buffer.Close()
+			terminal.clearOutputBuffer(buffer)
+			process.CancelOutput()
 		}()
-		for chunk := range output {
+		for {
+			var chunk []byte
+			var ok bool
+			select {
+			case <-buffer.Closed():
+				return
+			case chunk, ok = <-output:
+				if !ok {
+					return
+				}
+			}
 			if len(chunk) == 0 {
 				continue
 			}
@@ -565,21 +584,21 @@ func (terminal *Terminal) setOutputBuffer(process TerminalProcess, buffer *termi
 	terminal.queueMu.Unlock()
 }
 
-func (terminal *Terminal) clearOutputBuffer(process TerminalProcess, buffer *terminalOutputBuffer) {
+func (terminal *Terminal) clearOutputBuffer(buffer *terminalOutputBuffer) {
 	terminal.mu.Lock()
-	current := terminal.process == process
+	terminalID := terminal.info.ID
 	terminal.mu.Unlock()
-	if !current {
-		return
-	}
 	terminal.queueMu.Lock()
 	if terminal.outputBuffer == buffer {
 		terminal.historyStatus = terminal.historyBacklogStatusFromBufferLocked(buffer)
 		if err := buffer.ConsumerError(terminalOutputConsumerLive); err != nil {
-			terminal.liveOutputError = err
+			terminal.liveOutputError = terminalOutputErrorForTerminal(err, terminalID)
 		}
-		if err := buffer.ConsumerError(terminalOutputConsumerHistory); err != nil {
-			terminal.historyOutputError = err
+		if err := buffer.ConsumerError(terminalOutputConsumerHistory); err != nil && terminal.historyStickyError == nil {
+			terminal.historyOutputError = terminalOutputErrorForTerminal(err, terminalID)
+		}
+		if terminal.historyStickyError != nil {
+			terminal.historyOutputError = terminal.historyStickyError
 		}
 		terminal.outputBuffer = nil
 	}
@@ -624,49 +643,45 @@ func (terminal *Terminal) abortOutputBuffer(process TerminalProcess) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
-	if current && buffer != nil {
-		terminalID := terminal.Info().ID
-		buffer.Close()
-		buffer.Wait()
-		liveStatus := buffer.Status(terminalOutputConsumerLive)
-		liveErr := buffer.ConsumerError(terminalOutputConsumerLive)
-		if liveErr == nil && liveStatus.PendingGapBytes > 0 {
-			liveErr = &TerminalOutputError{
-				TerminalID: terminalID, Consumer: terminalOutputConsumerLive.String(),
-				Epoch: liveStatus.Epoch + 1, DroppedBytes: liveStatus.PendingGapBytes, Cause: ErrTerminalOutputSyncLost,
-			}
-		}
-		if liveErr != nil {
-			terminal.queueMu.Lock()
-			terminal.liveOutputError = liveErr
-			terminal.queueMu.Unlock()
-		}
-		historyStatus := buffer.Status(terminalOutputConsumerHistory)
-		if terminal.historyEnabled && historyStatus.PendingGapBytes > 0 {
-			gap := terminalOutputGap{
-				Consumer: terminalOutputConsumerHistory, Epoch: historyStatus.Epoch + 1,
-				DroppedBytes: historyStatus.PendingGapBytes,
-			}
-			if err := terminal.beginHistoryParserEpoch(process, gap); err != nil {
-				terminal.queueMu.Lock()
-				terminal.historyOutputError = &TerminalOutputError{
-					TerminalID: terminalID, Consumer: terminalOutputConsumerHistory.String(),
-					Epoch: gap.Epoch, DroppedBytes: gap.DroppedBytes, Cause: err,
-				}
-				terminal.queueMu.Unlock()
-			}
-		}
-		if err := buffer.ConsumerError(terminalOutputConsumerHistory); err != nil {
-			terminal.queueMu.Lock()
-			terminal.historyOutputError = err
-			terminal.queueMu.Unlock()
+	if !current {
+		return
+	}
+	if buffer == nil {
+		process.CancelOutput()
+		return
+	}
+	terminalID := terminal.Info().ID
+	process.CancelOutput()
+	buffer.Close()
+	buffer.Wait()
+	liveStatus := buffer.Status(terminalOutputConsumerLive)
+	liveErr := buffer.ConsumerError(terminalOutputConsumerLive)
+	if liveErr == nil && liveStatus.PendingGapBytes > 0 {
+		liveErr = &TerminalOutputError{
+			TerminalID: terminalID, Consumer: terminalOutputConsumerLive.String(),
+			Epoch: liveStatus.Epoch + 1, DroppedBytes: liveStatus.PendingGapBytes, Cause: ErrTerminalOutputSyncLost,
 		}
 	}
+	if liveErr != nil {
+		terminal.queueMu.Lock()
+		terminal.liveOutputError = liveErr
+		terminal.queueMu.Unlock()
+	}
+	historyStatus := buffer.Status(terminalOutputConsumerHistory)
+	if terminal.historyEnabled && historyStatus.PendingGapBytes > 0 {
+		gap := terminalOutputGap{
+			Consumer: terminalOutputConsumerHistory, Epoch: historyStatus.Epoch + 1,
+			DroppedBytes: historyStatus.PendingGapBytes,
+		}
+		if err := terminal.beginHistoryParserEpoch(process, gap); err != nil {
+			terminal.setStickyHistoryOutputError(process, gap.Epoch, gap.DroppedBytes, err)
+		}
+	}
+	terminal.clearOutputBuffer(buffer)
 }
 
-func (terminal *Terminal) recordOutputConsumerFailure(process TerminalProcess, buffer *terminalOutputBuffer, consumer terminalOutputConsumer) {
-	err := buffer.ConsumerError(consumer)
-	if err == nil {
+func (terminal *Terminal) handleOutputConsumerFailure(process TerminalProcess, consumer terminalOutputConsumer, failure terminalOutputConsumerFailure) {
+	if failure.Err == nil {
 		return
 	}
 	terminal.mu.Lock()
@@ -676,16 +691,74 @@ func (terminal *Terminal) recordOutputConsumerFailure(process TerminalProcess, b
 	if !current {
 		return
 	}
-	terminal.queueMu.Lock()
-	if terminal.outputBuffer == buffer {
-		if consumer == terminalOutputConsumerLive {
-			terminal.liveOutputError = err
-		} else {
-			terminal.historyOutputError = err
+	err := terminalOutputErrorForTerminal(failure.Err, id)
+	if consumer == terminalOutputConsumerHistory {
+		var outputErr *TerminalOutputError
+		if errors.As(err, &outputErr) && outputErr.DroppedBytes > 0 {
+			if failure.DuringGap {
+				terminal.setStickyHistoryOutputError(process, outputErr.Epoch, outputErr.DroppedBytes, outputErr.Cause)
+				err = terminal.historyStickyOutputError()
+			} else {
+				gap := terminalOutputGap{Consumer: consumer, Epoch: outputErr.Epoch, DroppedBytes: outputErr.DroppedBytes}
+				if gapErr := terminal.beginHistoryParserEpoch(process, gap); gapErr != nil {
+					terminal.setStickyHistoryOutputError(process, outputErr.Epoch, outputErr.DroppedBytes, errors.Join(outputErr.Cause, fmt.Errorf("persist history output gap: %w", gapErr)))
+					err = terminal.historyStickyOutputError()
+				}
+			}
 		}
+	}
+	terminal.queueMu.Lock()
+	if consumer == terminalOutputConsumerLive {
+		terminal.liveOutputError = err
+	} else if terminal.historyStickyError == nil {
+		terminal.historyOutputError = err
+	} else {
+		terminal.historyOutputError = terminal.historyStickyError
 	}
 	terminal.queueMu.Unlock()
 	terminal.logger.Error("terminal output consumer unavailable", "terminal_id", id, "consumer", consumer.String(), "error", err)
+}
+
+func terminalOutputErrorForTerminal(err error, terminalID string) error {
+	var outputErr *TerminalOutputError
+	if !errors.As(err, &outputErr) {
+		return err
+	}
+	copy := *outputErr
+	copy.TerminalID = terminalID
+	return &copy
+}
+
+func (terminal *Terminal) setStickyHistoryOutputError(process TerminalProcess, epoch uint64, droppedBytes uint64, cause error) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminalID := terminal.info.ID
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	sticky := &TerminalOutputError{
+		TerminalID: terminalID, Consumer: terminalOutputConsumerHistory.String(),
+		Epoch: epoch, DroppedBytes: droppedBytes, Cause: cause,
+	}
+	terminal.queueMu.Lock()
+	if terminal.historyStickyError == nil {
+		terminal.historyStickyError = sticky
+	}
+	terminal.historyOutputError = terminal.historyStickyError
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) historyStickyOutputError() error {
+	terminal.queueMu.Lock()
+	defer terminal.queueMu.Unlock()
+	return terminal.historyStickyError
+}
+
+func (terminal *Terminal) historyOutputIsSticky() bool {
+	terminal.queueMu.Lock()
+	defer terminal.queueMu.Unlock()
+	return terminal.historyStickyError != nil
 }
 
 func (terminal *Terminal) historyBacklogStatusFromBufferLocked(buffer *terminalOutputBuffer) HistoryBacklogStatus {
@@ -962,7 +1035,7 @@ func (terminal *Terminal) appendLifecycleLiveMarker(lines []string, leadingBlank
 }
 
 func (terminal *Terminal) appendLifecycleHistoryMarker(lines []string, leadingBlankLine bool) {
-	if terminal.lineHistory == nil || len(lines) == 0 {
+	if terminal.lineHistory == nil || len(lines) == 0 || terminal.historyOutputIsSticky() {
 		return
 	}
 	if leadingBlankLine {
@@ -1107,7 +1180,7 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 }
 
 func (terminal *Terminal) forceCloseHistory() {
-	if terminal.lineHistory != nil {
+	if terminal.lineHistory != nil && !terminal.historyOutputIsSticky() {
 		// 中文说明：process exit/remove/restart 会重置旧 process 的 history tap；
 		// 尚未滚出屏幕的最后一屏必须在同一 gate 下封存，否则 live 保留屏幕但
 		// copy/history 只能看到冷段尾部，出现旧进程最后几行缺失。

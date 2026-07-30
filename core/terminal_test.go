@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -1087,6 +1088,361 @@ func TestTerminalHistoryIngestFailureIsObservableAndReleasesOutputCapacity(t *te
 	}
 }
 
+func TestTerminalHistoryIngestFailurePersistsGapBeforeRestart(t *testing.T) {
+	applyErr := errors.New("fail one history transaction")
+	file, err := linehist.OpenCompressedLineFile(t.TempDir(), "term-history-gap-restart", linehist.CompressedLineFileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := &controlledTerminalLineStorage{file: file}
+	factory := newRecordingProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryStoreFactory(func(id string) (history.HistoryStore, error) {
+			return linehist.NewStore(id, linehist.NewEngine(storage)), nil
+		}),
+	)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID: "term-history-gap-restart", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := server.Terminal("term-history-gap-restart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.failNextAppend(applyErr)
+	factory.process("term-history-gap-restart").emitOutput("one\r\ntwo\r\nthree\r\nfour\r\n")
+	assertEventually(t, 2*time.Second, func() bool {
+		return errors.Is(terminal.FlushHistory(context.Background()), applyErr)
+	}, "history transaction failure was not observable")
+	if gaps := storage.GapOffsets(); len(gaps) != 1 {
+		t.Fatalf("history failure did not persist exactly one gap: %v", gaps)
+	}
+
+	if err := server.RestartTerminal(context.Background(), "term-history-gap-restart"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = server.TerminalHistoryWindow(context.Background(), "term-history-gap-restart", history.HistoryWindowRequest{
+		Mode: history.HistoryWindowModeLatest, Cols: 20, Limit: 100,
+	})
+	if !errors.Is(err, history.ErrHistorySyncLost) {
+		t.Fatalf("restart allowed a history query to cross the persisted gap: %v", err)
+	}
+	latest, err := server.TerminalHistoryWindow(context.Background(), "term-history-gap-restart", history.HistoryWindowRequest{
+		Mode: history.HistoryWindowModeLatest, Cols: 20, Limit: 1,
+	})
+	if err != nil || len(latest.Rows) != 1 {
+		t.Fatalf("one-sided post-gap history must remain readable: window=%#v err=%v", latest, err)
+	}
+}
+
+func TestTerminalHistoryGapPersistenceFailureStaysStickyAcrossRestart(t *testing.T) {
+	applyErr := errors.New("fail history transaction")
+	gapErr := errors.New("fail persistent history gap")
+	file, err := linehist.OpenCompressedLineFile(t.TempDir(), "term-history-gap-sticky", linehist.CompressedLineFileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := &controlledTerminalLineStorage{file: file, gapErr: gapErr}
+	factory := newRecordingProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryStoreFactory(func(id string) (history.HistoryStore, error) {
+			return linehist.NewStore(id, linehist.NewEngine(storage)), nil
+		}),
+	)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID: "term-history-gap-sticky", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := server.Terminal("term-history-gap-sticky")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.failNextAppend(applyErr)
+	factory.process("term-history-gap-sticky").emitOutput("one\r\ntwo\r\nthree\r\nfour\r\n")
+	assertEventually(t, 2*time.Second, func() bool {
+		err := terminal.FlushHistory(context.Background())
+		return errors.Is(err, applyErr) && errors.Is(err, gapErr)
+	}, "gap persistence failure did not become sticky")
+	if gaps := storage.GapOffsets(); len(gaps) != 0 {
+		t.Fatalf("failed gap write unexpectedly changed durable offsets: %v", gaps)
+	}
+
+	if err := server.RestartTerminal(context.Background(), "term-history-gap-sticky"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = server.TerminalHistoryWindow(context.Background(), "term-history-gap-sticky", history.HistoryWindowRequest{
+		Mode: history.HistoryWindowModeLatest, Cols: 20, Limit: 1,
+	})
+	if !errors.Is(err, applyErr) || !errors.Is(err, gapErr) || !errors.Is(err, ErrTerminalOutputUnavailable) {
+		t.Fatalf("restart cleared sticky history failure: %v", err)
+	}
+	terminal.queueMu.Lock()
+	buffer := terminal.outputBuffer
+	terminal.queueMu.Unlock()
+	if buffer == nil {
+		t.Fatal("restart did not install a live output buffer")
+	}
+	buffer.mu.Lock()
+	historyActive := buffer.consumers[terminalOutputConsumerHistory].active
+	buffer.mu.Unlock()
+	if historyActive {
+		t.Fatal("history consumer restarted after an unpersisted output gap")
+	}
+}
+
+func TestTerminalCloseCancelsPublisherBlockedBehindOutputBuffer(t *testing.T) {
+	factory := newCancelableOutputProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryDisabled(),
+		WithTerminalOutputBufferConfig(TerminalOutputBufferConfig{
+			CapacityBytes: MinTerminalOutputBufferCapacityBytes,
+			Overflow:      TerminalOutputOverflowBlock,
+		}),
+		WithTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID: "term-output-cancel", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := server.Terminal("term-output-cancel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	process := factory.process("term-output-cancel")
+	terminal.liveOpMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			terminal.liveOpMu.Unlock()
+		}
+	}()
+
+	firstStarted, firstDone := process.publish(bytes.Repeat([]byte("x"), int(MinTerminalOutputBufferCapacityBytes)))
+	<-firstStarted
+	if !receiveOutputTest(t, firstDone, "first unbuffered publish") {
+		t.Fatal("first publish was canceled")
+	}
+	secondStarted, secondDone := process.publish([]byte("blocked-write"))
+	<-secondStarted
+	if !receiveOutputTest(t, secondDone, "second unbuffered publish") {
+		t.Fatal("second publish was canceled before reaching the watcher")
+	}
+	terminal.queueMu.Lock()
+	buffer := terminal.outputBuffer
+	terminal.queueMu.Unlock()
+	waitForOutputCondition(t, func() bool {
+		buffer.mu.Lock()
+		defer buffer.mu.Unlock()
+		return buffer.localWaiters == 1
+	}, "watcher blocked on local output capacity")
+	thirdStarted, thirdDone := process.publish([]byte("blocked-publisher"))
+	<-thirdStarted
+
+	closed := make(chan error, 1)
+	go func() { closed <- terminal.Close() }()
+	if receiveOutputTest(t, thirdDone, "publisher cancellation") {
+		t.Fatal("publisher unexpectedly handed off output after terminal close")
+	}
+	terminal.liveOpMu.Unlock()
+	locked = false
+	if err := receiveOutputTest(t, closed, "terminal close"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-process.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("process wait lifecycle did not finish")
+	}
+}
+
+func TestTerminalRepeatedRestartAndCloseStopAllOutputGoroutines(t *testing.T) {
+	factory := newCancelableOutputProcessFactory()
+	server := NewServer(WithProcessFactory(factory), WithHistoryDisabled())
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-output-restart", Command: []string{"shell"}}); err != nil {
+		t.Fatal(err)
+	}
+	const restarts = 20
+	for i := 0; i < restarts; i++ {
+		old := factory.process("term-output-restart")
+		publisherDone := old.publishUntilCanceled([]byte("continuous-output"))
+		if err := server.RestartTerminal(context.Background(), "term-output-restart"); err != nil {
+			t.Fatalf("restart %d: %v", i, err)
+		}
+		select {
+		case <-publisherDone:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("restart %d left publisher blocked", i)
+		}
+		select {
+		case <-old.done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("restart %d left process wait goroutine blocked", i)
+		}
+	}
+	last := factory.process("term-output-restart")
+	publisherDone := last.publishUntilCanceled([]byte("final-output"))
+	terminal, err := server.Terminal("term-output-restart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := terminal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-publisherDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("terminal close left final publisher blocked")
+	}
+	select {
+	case <-last.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("terminal close left final wait goroutine blocked")
+	}
+}
+
+func TestTerminalOutputGenerationClosesBeforeDiagnosticsAreCached(t *testing.T) {
+	t.Run("normal output end", func(t *testing.T) {
+		factory := newRecordingProcessFactory()
+		server := NewServer(WithProcessFactory(factory))
+		t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+		if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-output-end", Command: []string{"shell"}}); err != nil {
+			t.Fatal(err)
+		}
+		factory.process("term-output-end").exit(0)
+		waitForTerminalState(t, server, "term-output-end", TerminalStateExited)
+		status, err := server.TerminalHistoryBacklogStatus("term-output-end")
+		if err != nil || !status.Closed {
+			t.Fatalf("normal generation end cached open diagnostics: status=%#v err=%v", status, err)
+		}
+	})
+
+	t.Run("terminal close", func(t *testing.T) {
+		factory := newRecordingProcessFactory()
+		server := NewServer(WithProcessFactory(factory))
+		terminalInfo, err := server.RegisterTerminal(TerminalRecord{ID: "term-output-close", Command: []string{"shell"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		terminal, err := server.Terminal(terminalInfo.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := terminal.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if status := terminal.HistoryBacklogStatus(); !status.Closed {
+			t.Fatalf("terminal close cached open diagnostics: %#v", status)
+		}
+	})
+
+	t.Run("restart", func(t *testing.T) {
+		factory := newRecordingProcessFactory()
+		server := NewServer(WithProcessFactory(factory))
+		t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+		if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-output-restart-closed", Command: []string{"shell"}}); err != nil {
+			t.Fatal(err)
+		}
+		terminal, err := server.Terminal("term-output-restart-closed")
+		if err != nil {
+			t.Fatal(err)
+		}
+		terminal.queueMu.Lock()
+		oldBuffer := terminal.outputBuffer
+		terminal.queueMu.Unlock()
+		if err := server.RestartTerminal(context.Background(), "term-output-restart-closed"); err != nil {
+			t.Fatal(err)
+		}
+		if status := oldBuffer.Status(terminalOutputConsumerHistory); !status.Closed {
+			t.Fatalf("restart replaced generation before closing diagnostics: %#v", status)
+		}
+	})
+}
+
+func TestTerminalOutputMinimumCapacityAggregateBudgetHasNoProcessPrequeue(t *testing.T) {
+	factory := newCancelableOutputProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryDisabled(),
+		WithTerminalOutputBufferConfig(TerminalOutputBufferConfig{
+			CapacityBytes: MinTerminalOutputBufferCapacityBytes,
+			Overflow:      TerminalOutputOverflowBlock,
+		}),
+		WithTerminalOutputResidentBudget(MinTerminalOutputResidentBudgetBytes),
+	)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	for _, id := range []string{"term-aggregate-a", "term-aggregate-b"} {
+		if _, err := server.RegisterTerminal(TerminalRecord{ID: id, Command: []string{"shell"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstTerminal, _ := server.Terminal("term-aggregate-a")
+	secondTerminal, _ := server.Terminal("term-aggregate-b")
+	firstProcess := factory.process("term-aggregate-a")
+	secondProcess := factory.process("term-aggregate-b")
+	if cap(firstProcess.output) != 0 || cap(secondProcess.output) != 0 {
+		t.Fatal("terminal processes added a queue outside the shared output budget")
+	}
+	firstTerminal.liveOpMu.Lock()
+	firstLocked := true
+	secondTerminal.liveOpMu.Lock()
+	secondLocked := true
+	defer func() {
+		if firstLocked {
+			firstTerminal.liveOpMu.Unlock()
+		}
+		if secondLocked {
+			secondTerminal.liveOpMu.Unlock()
+		}
+	}()
+
+	_, firstDone := firstProcess.publish(bytes.Repeat([]byte("a"), int(MinTerminalOutputBufferCapacityBytes)))
+	if !receiveOutputTest(t, firstDone, "first terminal publish") {
+		t.Fatal("first terminal publish was canceled")
+	}
+	firstTerminal.queueMu.Lock()
+	firstBuffer := firstTerminal.outputBuffer
+	firstTerminal.queueMu.Unlock()
+	waitForOutputCondition(t, func() bool {
+		return firstBuffer.Status(terminalOutputConsumerLive).ResidentBytes == MinTerminalOutputBufferCapacityBytes
+	}, "first terminal fills aggregate budget")
+
+	_, blockedDone := secondProcess.publish([]byte("b"))
+	if !receiveOutputTest(t, blockedDone, "second terminal aggregate handoff") {
+		t.Fatal("second terminal handoff was canceled")
+	}
+	waitForOutputCondition(t, func() bool {
+		server.outputBudget.mu.Lock()
+		defer server.outputBudget.mu.Unlock()
+		return server.outputBudget.waiters == 1
+	}, "second terminal aggregate waiter")
+	secondStarted, secondDone := secondProcess.publish([]byte("next"))
+	<-secondStarted
+	resident, limit := server.outputBudget.status()
+	if resident != MinTerminalOutputResidentBudgetBytes || resident > limit {
+		t.Fatalf("aggregate budget exceeded: resident=%d limit=%d", resident, limit)
+	}
+
+	firstTerminal.liveOpMu.Unlock()
+	firstLocked = false
+	if !receiveOutputTest(t, secondDone, "second terminal resumed publisher") {
+		t.Fatal("second terminal publisher was canceled")
+	}
+	secondTerminal.liveOpMu.Unlock()
+	secondLocked = false
+	assertEventually(t, 2*time.Second, func() bool {
+		resident, _ := server.outputBudget.status()
+		return resident == 0
+	}, "aggregate resident bytes did not drain")
+}
+
 func TestTerminalKillAndRemoveCloseProcess(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -1133,6 +1489,100 @@ type recordingProcessFactory struct {
 	specs     map[string][]ProcessSpec
 }
 
+type cancelableOutputProcessFactory struct {
+	mu        sync.Mutex
+	processes map[string][]*cancelableOutputProcess
+}
+
+func newCancelableOutputProcessFactory() *cancelableOutputProcessFactory {
+	return &cancelableOutputProcessFactory{processes: make(map[string][]*cancelableOutputProcess)}
+}
+
+func (factory *cancelableOutputProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
+	process := &cancelableOutputProcess{
+		output: make(chan []byte), cancel: make(chan struct{}),
+		wait: make(chan ProcessExit, 1), done: make(chan struct{}),
+	}
+	factory.mu.Lock()
+	factory.processes[spec.TerminalID] = append(factory.processes[spec.TerminalID], process)
+	factory.mu.Unlock()
+	return process, nil
+}
+
+func (factory *cancelableOutputProcessFactory) process(id string) *cancelableOutputProcess {
+	factory.mu.Lock()
+	defer factory.mu.Unlock()
+	processes := factory.processes[id]
+	return processes[len(processes)-1]
+}
+
+type cancelableOutputProcess struct {
+	output     chan []byte
+	cancel     chan struct{}
+	wait       chan ProcessExit
+	done       chan struct{}
+	cancelOnce sync.Once
+	finishOnce sync.Once
+}
+
+func (process *cancelableOutputProcess) Input([]byte) error { return nil }
+func (process *cancelableOutputProcess) Resize(Size) error  { return nil }
+func (process *cancelableOutputProcess) Output() <-chan []byte {
+	return process.output
+}
+func (process *cancelableOutputProcess) CancelOutput() {
+	process.cancelOnce.Do(func() { close(process.cancel) })
+}
+func (process *cancelableOutputProcess) Kill() error {
+	process.finish(-1)
+	return nil
+}
+func (process *cancelableOutputProcess) Wait() <-chan ProcessExit { return process.wait }
+func (process *cancelableOutputProcess) Close() error {
+	process.finish(-1)
+	return nil
+}
+
+func (process *cancelableOutputProcess) publish(payload []byte) (<-chan struct{}, <-chan bool) {
+	started := make(chan struct{})
+	done := make(chan bool, 1)
+	go func() {
+		close(started)
+		select {
+		case process.output <- append([]byte(nil), payload...):
+			done <- true
+		case <-process.cancel:
+			done <- false
+		}
+		close(done)
+	}()
+	return started, done
+}
+
+func (process *cancelableOutputProcess) publishUntilCanceled(payload []byte) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case process.output <- append([]byte(nil), payload...):
+			case <-process.cancel:
+				return
+			}
+		}
+	}()
+	return done
+}
+
+func (process *cancelableOutputProcess) finish(code int) {
+	process.finishOnce.Do(func() {
+		process.CancelOutput()
+		process.wait <- ProcessExit{Code: code}
+		close(process.wait)
+		close(process.done)
+	})
+}
+
 type failingTerminalLineStorage struct {
 	mu        sync.Mutex
 	lines     []linehist.Line
@@ -1172,6 +1622,55 @@ func (storage *failingTerminalLineStorage) Lines(start int, end int) ([]linehist
 }
 
 func (storage *failingTerminalLineStorage) Close() error { return nil }
+
+type controlledTerminalLineStorage struct {
+	mu        sync.Mutex
+	file      *linehist.CompressedLineFile
+	appendErr error
+	gapErr    error
+}
+
+func (storage *controlledTerminalLineStorage) failNextAppend(err error) {
+	storage.mu.Lock()
+	storage.appendErr = err
+	storage.mu.Unlock()
+}
+
+func (storage *controlledTerminalLineStorage) AppendLines(lines []linehist.Line) error {
+	storage.mu.Lock()
+	err := storage.appendErr
+	storage.appendErr = nil
+	storage.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return storage.file.AppendLines(lines)
+}
+
+func (storage *controlledTerminalLineStorage) AppendBoundary() error {
+	return storage.file.AppendBoundary()
+}
+
+func (storage *controlledTerminalLineStorage) AppendGap() error {
+	storage.mu.Lock()
+	err := storage.gapErr
+	storage.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return storage.file.AppendGap()
+}
+
+func (storage *controlledTerminalLineStorage) GapOffsets() []int {
+	return storage.file.GapOffsets()
+}
+
+func (storage *controlledTerminalLineStorage) LineCount() int { return storage.file.LineCount() }
+func (storage *controlledTerminalLineStorage) Base() int      { return storage.file.Base() }
+func (storage *controlledTerminalLineStorage) Lines(start int, end int) ([]linehist.Line, error) {
+	return storage.file.Lines(start, end)
+}
+func (storage *controlledTerminalLineStorage) Close() error { return storage.file.Close() }
 
 func newRecordingProcessFactory() *recordingProcessFactory {
 	return &recordingProcessFactory{processes: make(map[string][]*recordingProcess), specs: make(map[string][]ProcessSpec)}
@@ -1294,6 +1793,10 @@ func (process *recordingProcess) setResizeHook(hook func(Size)) {
 
 func (process *recordingProcess) Output() <-chan []byte {
 	return process.outputCh
+}
+
+func (process *recordingProcess) CancelOutput() {
+	process.closeOutput()
 }
 
 func (process *recordingProcess) emitOutput(output string) {

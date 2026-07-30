@@ -1214,6 +1214,26 @@ func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 	if !strings.Contains(out.String(), "anytty v3 history backlog ok") || !strings.Contains(out.String(), outPath) {
 		t.Fatalf("unexpected command output:\n%s", out.String())
 	}
+
+	dumpPath := filepath.Join(t.TempDir(), "history-dump.txt")
+	dumpCmd := newDevelopmentRootCmd()
+	dumpCmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "anytty.log"), "v3", "history-dump", "term-backlog", "--out", dumpPath, "--cols", "24", "--limit", "1"})
+	var dumpOut bytes.Buffer
+	dumpCmd.SetOut(&dumpOut)
+	dumpCmd.SetErr(io.Discard)
+	if err := dumpCmd.Execute(); err != nil {
+		t.Fatalf("history-dump returned error: %v", err)
+	}
+	dump, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dump), " page_row=") || !strings.Contains(string(dump), "alpha") || !strings.Contains(string(dump), "beta") {
+		t.Fatalf("history dump did not paginate authoritative rows:\n%s", dump)
+	}
+	if !strings.Contains(dumpOut.String(), "anytty v3 history dump ok") {
+		t.Fatalf("unexpected history dump command output: %s", dumpOut.String())
+	}
 }
 
 func TestV3AttachRejectsNonInteractiveTerminal(t *testing.T) {
@@ -2817,6 +2837,10 @@ func (process *coreV2ResizeRecordingProcess) Resize(size corev2.Size) error {
 
 func (process *coreV2ResizeRecordingProcess) Output() <-chan []byte {
 	return process.outputCh
+}
+
+func (process *coreV2ResizeRecordingProcess) CancelOutput() {
+	process.closeOutput()
 }
 
 func (process *coreV2ResizeRecordingProcess) Kill() error {

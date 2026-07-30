@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	crosspty "github.com/aymanbagabas/go-pty"
 	"github.com/anytty/anytty/shared/perftrace"
+	crosspty "github.com/aymanbagabas/go-pty"
 )
 
 type ProcessFactory interface {
@@ -48,6 +48,7 @@ type TerminalProcess interface {
 	Input([]byte) error
 	Resize(Size) error
 	Output() <-chan []byte
+	CancelOutput()
 	Kill() error
 	Wait() <-chan ProcessExit
 	Close() error
@@ -100,12 +101,13 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 		return nil, fmt.Errorf("establish terminal process lifecycle: %w", err)
 	}
 	process := &ptyProcess{
-		terminal: terminal,
-		cmd:      cmd,
-		platform: platform,
-		outputCh: make(chan []byte, 64),
-		waitCh:   make(chan ProcessExit, 1),
-		readDone: make(chan struct{}),
+		terminal:     terminal,
+		cmd:          cmd,
+		platform:     platform,
+		outputCh:     make(chan []byte),
+		outputCancel: make(chan struct{}),
+		waitCh:       make(chan ProcessExit, 1),
+		readDone:     make(chan struct{}),
 	}
 	go process.readLoop()
 	go process.waitLoop()
@@ -118,11 +120,14 @@ type ptyProcess struct {
 	cmd           *crosspty.Cmd
 	platform      ptyProcessPlatform
 	outputCh      chan []byte
+	outputCancel  chan struct{}
 	waitCh        chan ProcessExit
 	readDone      chan struct{}
 	closeOnce     sync.Once
+	outputOnce    sync.Once
 	waitOnce      sync.Once
 	killRequested atomic.Bool
+	outputPending atomic.Int32
 }
 
 const ptyReadBufferBytes = 64 * 1024
@@ -155,6 +160,10 @@ func (process *ptyProcess) Output() <-chan []byte {
 	return process.outputCh
 }
 
+func (process *ptyProcess) CancelOutput() {
+	process.outputOnce.Do(func() { close(process.outputCancel) })
+}
+
 func (process *ptyProcess) ResourceUsage() (TerminalResourceUsage, bool) {
 	process.mu.Lock()
 	platform := process.platform
@@ -183,6 +192,7 @@ func (process *ptyProcess) Wait() <-chan ProcessExit {
 func (process *ptyProcess) Close() error {
 	var err error
 	process.closeOnce.Do(func() {
+		process.CancelOutput()
 		killErr := process.Kill()
 		process.mu.Lock()
 		platform := process.platform
@@ -212,7 +222,14 @@ func (process *ptyProcess) readLoop() {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			process.outputCh <- chunk
+			process.outputPending.Add(1)
+			select {
+			case process.outputCh <- chunk:
+			case <-process.outputCancel:
+				process.outputPending.Add(-1)
+				return
+			}
+			process.outputPending.Add(-1)
 		}
 		if err != nil {
 			return
@@ -354,6 +371,8 @@ func (process *scriptedProcess) Resize(size Size) error {
 func (process *scriptedProcess) Output() <-chan []byte {
 	return process.outputCh
 }
+
+func (process *scriptedProcess) CancelOutput() {}
 
 func (process *scriptedProcess) Kill() error {
 	process.mu.Lock()

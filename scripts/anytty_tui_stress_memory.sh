@@ -41,6 +41,7 @@ Options:
   --tui-memory-limit-mb N
                         set ANYTTY_TUI_MEMORY_LIMIT_MB for TUI runtime GC pacing
   --wait-seconds N      max wait for attach/copy markers; default 90
+  --check-binary        build/validate required commands, then exit
   --keep-root           keep artifact root after success/failure (default)
   --cleanup-root        remove artifact root on exit
   -h, --help            show this help
@@ -82,6 +83,24 @@ need() {
     echo "missing required command: $1" >&2
     exit 1
   }
+}
+
+verify_anytty_stress_commands() {
+  local root_help v3_help command
+  if ! root_help="$($BIN --help 2>&1)" || ! awk '$1 == "daemon" { found = 1 } END { exit found ? 0 : 1 }' <<<"$root_help"; then
+    echo "anytty binary is missing required command: daemon" >&2
+    return 1
+  fi
+  if ! v3_help="$($BIN v3 --help 2>&1)"; then
+    echo "anytty binary is missing v3 development commands; build with -tags anytty_dev_commands" >&2
+    return 1
+  fi
+  for command in new attach history-backlog history-dump kill rm; do
+    if ! awk -v required="$command" '$1 == required { found = 1 } END { exit found ? 0 : 1 }' <<<"$v3_help"; then
+      echo "anytty binary is missing required development command: v3 $command" >&2
+      return 1
+    fi
+  done
 }
 
 log() {
@@ -646,25 +665,25 @@ wait_for_history_tail_capture() {
 }
 
 history_artifact_full_status() {
-	local path="$1"
-	local newest
-	newest="$(printf '%06d' "$STRESS_LINES")"
-	if history_marker_present "$path" "000000" && history_marker_present "$path" "$newest" && history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
+  local path="$1"
+  local newest
+  newest="$(printf '%06d' "$STRESS_LINES")"
+  if history_marker_present "$path" "000000" && history_marker_present "$path" "$newest" && history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
     printf 'ok\n'
     return 0
   fi
   printf 'missing_marker\n'
-	return 1
+  return 1
 }
 
 history_artifact_oldest_status() {
-	local path="$1"
-	if history_marker_present "$path" "000000"; then
-		printf 'ok\n'
-		return 0
-	fi
-	printf 'missing_oldest\n'
-	return 1
+  local path="$1"
+  if history_marker_present "$path" "000000"; then
+    printf 'ok\n'
+    return 0
+  fi
+  printf 'missing_oldest\n'
+  return 1
 }
 
 append_history_query() {
@@ -870,6 +889,7 @@ HISTORY_DISABLED=0
 SKIP_HISTORY_QUERIES=0
 OUTPUT_BUFFER_OVERFLOW=""
 OUTPUT_BUFFER_CAPACITY_BYTES=""
+CHECK_BINARY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -953,6 +973,10 @@ while [[ $# -gt 0 ]]; do
       WAIT_SECONDS="$2"
       shift 2
       ;;
+    --check-binary)
+      CHECK_BINARY=1
+      shift
+      ;;
     --keep-root)
       CLEANUP_ROOT=0
       shift
@@ -1014,9 +1038,11 @@ esac
 need awk
 need go
 need grep
-need ps
-need python3
-need tmux
+if [[ "$CHECK_BINARY" == "0" ]]; then
+  need ps
+  need python3
+  need tmux
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STRESS_SCRIPT="$REPO_ROOT/scripts/generate_terminal_stress.py"
@@ -1099,7 +1125,7 @@ log "artifact root: $ROOT"
 if [[ -z "$BIN" ]]; then
   BIN="$ROOT/anytty"
   log "building anytty binary"
-  (cd "$REPO_ROOT" && go build -o "$BIN" ./cmd/anytty)
+  (cd "$REPO_ROOT" && go build -tags anytty_dev_commands -o "$BIN" ./cmd/anytty)
 else
   BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 fi
@@ -1107,6 +1133,11 @@ fi
 if [[ ! -x "$BIN" ]]; then
   echo "anytty binary is not executable: $BIN" >&2
   exit 1
+fi
+verify_anytty_stress_commands
+if [[ "$CHECK_BINARY" == "1" ]]; then
+  log "binary command check ok"
+  exit 0
 fi
 
 printf 'stage\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$REPORT"
