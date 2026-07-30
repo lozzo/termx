@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, Suspense, type ComponentType } from 'react'
+import { act, Component, Suspense, type ComponentType, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLazyRoute, RouteResourceBoundary } from './App'
@@ -24,6 +24,19 @@ function deferred<T>(): Deferred<T> {
 
 function LoadedRoute() {
   return <h2>路由加载成功</h2>
+}
+
+class RenderErrorObserver extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  render() {
+    if (this.state.error) return <p data-testid="render-error">{this.state.error.message}</p>
+    return this.props.children
+  }
 }
 
 describe('Cloud lazy route resources', () => {
@@ -83,5 +96,20 @@ describe('Cloud lazy route resources', () => {
       await attempt.promise
     })
     expect(container.textContent).toContain('路由加载成功')
+  })
+
+  it('lets ordinary render errors escape to the owning application boundary', async () => {
+    function BrokenRoute(): never {
+      throw new Error('ordinary render failure')
+    }
+
+    await act(async () => {
+      root.render(<RenderErrorObserver>
+        <RouteResourceBoundary><BrokenRoute /></RouteResourceBoundary>
+      </RenderErrorObserver>)
+    })
+
+    expect(container.querySelector('[data-testid="render-error"]')?.textContent).toBe('ordinary render failure')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
   })
 })

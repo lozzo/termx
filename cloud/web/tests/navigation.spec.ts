@@ -141,7 +141,7 @@ test('路由资源首次加载失败后通过页面重载恢复', async ({ page 
   await page.emulateMedia({ colorScheme: testInfo.project.name === 'mobile-320-chromium' ? 'dark' : 'light' })
   await mockAPI(page)
   let moduleRequests = 0
-  await page.route('**/src/pages/DevicesPage.tsx', async (route) => {
+  await page.route('**/src/routes/UserRouteGroup.ts', async (route) => {
     moduleRequests += 1
     if (moduleRequests === 1) return route.abort('failed')
     return route.continue()

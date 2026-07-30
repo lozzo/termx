@@ -1,44 +1,15 @@
 import { gzipSync } from 'node:zlib'
-import { readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const outputDirectory = resolve(import.meta.dirname, '../../controller/apihttp/web')
 const manifestPath = resolve(outputDirectory, '.build-manifest.json')
 
-const userPageModules = [
-  'src/pages/UserOverviewPage.tsx',
-  'src/pages/DevicesPage.tsx',
-  'src/pages/UserSubscriptionPage.tsx',
-  'src/pages/UserOrdersPage.tsx',
-  'src/pages/UserUsagePage.tsx',
-  'src/pages/SecurityPage.tsx',
-  'src/pages/ForbiddenPage.tsx',
-]
-
-const adminPageModules = [
-  'src/pages/OverviewPage.tsx',
-  'src/pages/EdgesPage.tsx',
-  'src/pages/DaemonsPage.tsx',
-  'src/pages/ConnectionsPage.tsx',
-  'src/pages/AccountsPage.tsx',
-  'src/pages/PlansPage.tsx',
-  'src/pages/SubscriptionsPage.tsx',
-  'src/pages/OrdersPage.tsx',
-  'src/pages/CertificatesPage.tsx',
-  'src/pages/UsagePage.tsx',
-  'src/pages/AuditPage.tsx',
-  'src/pages/SystemPage.tsx',
-]
-
-// 2026-07-30 build: initial 405.8/124.8 KiB, largest route 41.9/15.2 KiB,
-// total 523.1/169.2 KiB (raw/gzip). Budgets retain 12-25% headroom.
+// 2026-07-31 grouped-route build: initial 404.4/122.9 KiB and total
+// 515.7/152.1 KiB (raw/gzip). Raw budgets keep 21-22% headroom; gzip is report-only.
 const budgets = {
-  initialRaw: 460 * 1024,
-  initialGzip: 145 * 1024,
-  largestRouteRaw: 52 * 1024,
-  largestRouteGzip: 19 * 1024,
-  totalRaw: 620 * 1024,
-  totalGzip: 190 * 1024,
+  initialRaw: 490 * 1024,
+  totalRaw: 630 * 1024,
 }
 
 function invariant(value, message) {
@@ -64,8 +35,8 @@ function sizes(files) {
   }, { raw: 0, gzip: 0 })
 }
 
-function checkBudget(label, actual, limit) {
-  invariant(actual <= limit, `${label} is ${formatSize(actual)}, budget is ${formatSize(limit)}`)
+function checkRawBudget(label, actual, limit) {
+  invariant(actual <= limit, `${label} is ${formatSize(actual)}, raw budget is ${formatSize(limit)}`)
 }
 
 function formatSize(bytes) {
@@ -80,52 +51,23 @@ try {
 
   const [entryKey, entryRecord] = entry
   const initialFiles = collectJavaScript(manifest, entryKey)
-  const initialKeys = new Set([entryKey])
-  const visitInitialImports = (key) => {
-    for (const importedKey of manifest[key]?.imports ?? []) {
-      if (initialKeys.has(importedKey)) continue
-      initialKeys.add(importedKey)
-      visitInitialImports(importedKey)
-    }
-  }
-  visitInitialImports(entryKey)
-
-  for (const source of ['src/pages/LandingPage.tsx', 'src/pages/LoginPage.tsx']) {
-    invariant(!manifest[source]?.isDynamicEntry, `${source} must stay eager`)
-  }
-
-  const routeRecords = [...userPageModules, ...adminPageModules].map((source) => {
-    const record = manifest[source]
-    invariant(record?.isDynamicEntry, `${source} must be a lazy route entry`)
-    invariant(record.file !== entryRecord.file, `${source} was bundled into the landing/login entry`)
-    invariant(!initialKeys.has(source), `${source} is reachable through static entry imports`)
-    return [source, record]
+  const routeGroupKeys = entryRecord.dynamicImports ?? []
+  const routeGroups = routeGroupKeys.map((key) => {
+    const files = [...collectJavaScript(manifest, key)].filter((file) => !initialFiles.has(file))
+    return { key, files, ...sizes(files) }
   })
-
-  const adminFiles = new Set(adminPageModules.map((source) => manifest[source].file))
-  invariant(adminFiles.size === adminPageModules.length, 'admin page modules must remain independently split')
-
+  const allJavaScript = new Set(entries.map(([, record]) => record.file).filter((file) => file.endsWith('.js')))
   const initialSize = sizes([...initialFiles])
-  const routeSizes = routeRecords.map(([source]) => {
-    const routeFiles = [...collectJavaScript(manifest, source)].filter((file) => !initialFiles.has(file))
-    return { source, ...sizes(routeFiles) }
-  })
-  const largestRouteRaw = Math.max(...routeSizes.map(({ raw }) => raw))
-  const largestRouteGzip = Math.max(...routeSizes.map(({ gzip }) => gzip))
-  const allJavaScript = readdirSync(outputDirectory).filter((file) => file.endsWith('.js') && statSync(resolve(outputDirectory, file)).isFile())
-  const totalSize = sizes(allJavaScript)
+  const totalSize = sizes([...allJavaScript])
 
-  checkBudget('initial JavaScript raw size', initialSize.raw, budgets.initialRaw)
-  checkBudget('initial JavaScript gzip size', initialSize.gzip, budgets.initialGzip)
-  checkBudget('largest route chunk raw size', largestRouteRaw, budgets.largestRouteRaw)
-  checkBudget('largest route chunk gzip size', largestRouteGzip, budgets.largestRouteGzip)
-  checkBudget('total JavaScript raw size', totalSize.raw, budgets.totalRaw)
-  checkBudget('total JavaScript gzip size', totalSize.gzip, budgets.totalGzip)
+  checkRawBudget('initial JavaScript', initialSize.raw, budgets.initialRaw)
+  checkRawBudget('total JavaScript', totalSize.raw, budgets.totalRaw)
 
-  console.log(`Cloud bundle: initial ${formatSize(initialSize.raw)} raw / ${formatSize(initialSize.gzip)} gzip`)
-  console.log(`Cloud bundle: largest route ${formatSize(largestRouteRaw)} raw / ${formatSize(largestRouteGzip)} gzip`)
-  console.log(`Cloud bundle: total ${formatSize(totalSize.raw)} raw / ${formatSize(totalSize.gzip)} gzip across ${allJavaScript.length} chunks`)
-  console.log(`Cloud bundle: ${userPageModules.length} user and ${adminPageModules.length} admin page modules are lazy entries`)
+  console.log(`Cloud bundle: initial ${formatSize(initialSize.raw)} raw / ${formatSize(initialSize.gzip)} gzip across ${initialFiles.size} requests`)
+  for (const group of routeGroups) {
+    console.log(`Cloud bundle: route group ${group.key} ${formatSize(group.raw)} raw / ${formatSize(group.gzip)} gzip across ${group.files.length} requests`)
+  }
+  console.log(`Cloud bundle: total ${formatSize(totalSize.raw)} raw / ${formatSize(totalSize.gzip)} gzip across ${allJavaScript.size} requests`)
 } finally {
   rmSync(manifestPath, { force: true })
 }

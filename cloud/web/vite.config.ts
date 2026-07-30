@@ -25,9 +25,9 @@ export default defineConfig({
     assetsInlineLimit: 0,
     rollupOptions: {
       output: {
-        entryFileNames: 'app.js',
-        chunkFileNames: 'chunk-[name].js',
-        assetFileNames: (asset) => asset.names.some((name) => name.endsWith('.css')) ? 'styles.css' : 'asset-[name][extname]',
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
       },
     },
   },

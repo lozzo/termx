@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net"
 	"net/http"
 	"net/netip"
 	pathpkg "path"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -133,7 +135,7 @@ func NewHandler(config Config) (http.Handler, error) {
 		cloudv1.RegisterCommerceServiceServer(grpcServer, config.Commerce)
 		cloudv1.RegisterOperatorServiceServer(grpcServer, config.Operator)
 	}
-	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger}
+	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles}
 	return handler, nil
 }
 
@@ -143,7 +145,10 @@ type handler struct {
 	loginLimiter      *loginLimiter
 	trustedProxyCIDRs []netip.Prefix
 	logger            *slog.Logger
+	staticFiles       fs.FS
 }
+
+var contentHashedAssetPath = regexp.MustCompile(`^/assets/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$`)
 
 func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
@@ -216,7 +221,11 @@ func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Re
 			contentType = "application/octet-stream"
 		}
 	}
-	payload, err := webFiles.ReadFile(name)
+	staticFiles := handler.staticFiles
+	if staticFiles == nil {
+		staticFiles = webFiles
+	}
+	payload, err := fs.ReadFile(staticFiles, name)
 	if err != nil {
 		http.NotFound(writer, request)
 		return
@@ -224,6 +233,8 @@ func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Re
 	writer.Header().Set("Content-Type", contentType)
 	if name == "web/index.html" {
 		writer.Header().Set("Cache-Control", "no-cache")
+	} else if contentHashedAssetPath.MatchString(cleanPath) {
+		writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		writer.Header().Set("Cache-Control", "public, max-age=300")
 	}
