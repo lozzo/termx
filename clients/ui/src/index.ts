@@ -81,7 +81,6 @@ export {
   inferConnectionPhase,
 } from './connection/connectionState'
 export type { ConnectionStatePublisher } from './connection/connectionState'
-export { FileManager } from './files/FileManager'
 export type { FileManagerProps } from './files/FileManager'
 export { MachineWorkspace } from './app/MachineWorkspace'
 export type { MachineWorkspaceProps, MachineWorkspaceConnector, MachineWorkspaceClientSession, MachineWorkspaceSessionInput, MachineWorkspaceInventoryApi } from './app/MachineWorkspace'
