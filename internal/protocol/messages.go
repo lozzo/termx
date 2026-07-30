@@ -2,6 +2,11 @@ package protocol
 
 import "fmt"
 
+const (
+	ProtocolErrorCodeBadRequest        = 400
+	ProtocolErrorCodeResourceExhausted = 429
+)
+
 // Hello 是 transport 建连后的最小版本握手 envelope。
 type Hello struct {
 	Version int
@@ -40,6 +45,19 @@ func (err *RequestError) Error() string {
 		return "protocol request failed"
 	}
 	return fmt.Sprintf("protocol error %d: %s", err.Code, err.Message)
+}
+
+// PeerError reports a typed connection-level protocol violation by the remote peer.
+type PeerError struct {
+	Code    int
+	Message string
+}
+
+func (err *PeerError) Error() string {
+	if err == nil {
+		return "protocol peer failed"
+	}
+	return fmt.Sprintf("protocol peer error %d: %s", err.Code, err.Message)
 }
 
 // ErrorMessage 是 framing 层带 correlation 的错误 envelope。

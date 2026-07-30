@@ -71,6 +71,9 @@ func DecodeErrorPayload(payload []byte) (ErrorMessage, error) {
 	if err := proto.Unmarshal(payload, &message); err != nil {
 		return ErrorMessage{}, err
 	}
+	if message.GetError() == nil || message.GetError().GetCode() == 0 || message.GetError().GetMessage() == "" {
+		return ErrorMessage{}, fmt.Errorf("protocol error payload requires code and message")
+	}
 	return ErrorMessage{ID: message.GetId(), Error: ProtocolError{Code: int(message.GetError().GetCode()), Message: message.GetError().GetMessage()}}, nil
 }
 

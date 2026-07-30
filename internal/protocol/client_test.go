@@ -166,7 +166,8 @@ func TestClientFailAllDoesNotBlockOnCompletedWaiter(t *testing.T) {
 	completed := make(chan result, 1)
 	completed <- result{payload: []byte("done")}
 	client := &Client{
-		waiters:                     map[uint64]chan result{1: completed},
+		waiters:                     map[uint64]*responseWaiter{1: {ch: completed, delivered: true}},
+		abandonedWaiters:            make(map[uint64]struct{}),
 		streams:                     make(map[uint16]*clientStream),
 		pending:                     make(map[uint16][]StreamFrame),
 		reused:                      make(map[uint16][]StreamFrame),
