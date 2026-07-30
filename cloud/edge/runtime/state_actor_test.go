@@ -10,6 +10,7 @@ import (
 	"time"
 
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestStateCallCanceledWhileQueuedNeverExecutes(t *testing.T) {
@@ -109,11 +110,14 @@ func TestStateCloseAcknowledgesAllAcceptedCalls(t *testing.T) {
 	}
 	waitMailboxLength(t, state, accepted)
 	closed := make(chan struct{})
+	closeStarted := make(chan struct{})
 	go func() {
+		close(closeStarted)
 		state.Close()
 		close(closed)
 	}()
-	waitCondition(t, "State to enter closing", func() bool { return state.closing.Load() })
+	<-closeStarted
+	waitForStateCloseGate(t, state)
 	select {
 	case <-closed:
 		t.Fatal("Close returned while an accepted call was executing")
@@ -134,6 +138,161 @@ func TestStateCloseAcknowledgesAllAcceptedCalls(t *testing.T) {
 	}
 	if err := state.call(context.Background(), func(*stateData) error { return nil }); !errors.Is(err, ErrStateClosed) {
 		t.Fatalf("post-close call error = %v", err)
+	}
+}
+
+func TestStateCloseWaitsForAcceptedSendAction(t *testing.T) {
+	state := actorTestState(t, 4)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	defer closeIfOpen(release)
+	if err := state.call(context.Background(), func(data *stateData) error {
+		data.agentWriters["agent"] = agentWriter{generation: 1, send: func(*cloudv1.EdgeCommand) bool {
+			close(entered)
+			<-release
+			return true
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sent := make(chan error, 1)
+	go func() {
+		sent <- state.SendAgentCommand(context.Background(), "agent", 1, &cloudv1.EdgeCommand{})
+	}()
+	<-entered
+	closed := make(chan struct{})
+	go func() {
+		state.Close()
+		close(closed)
+	}()
+	waitForStateCloseGate(t, state)
+	select {
+	case <-closed:
+		t.Fatal("Close returned before accepted send action completed")
+	default:
+	}
+	close(release)
+	if err := <-sent; err != nil {
+		t.Fatal(err)
+	}
+	<-closed
+}
+
+func TestStatePublicCloserIsConsumedOnceAndCloseWaits(t *testing.T) {
+	state := actorTestState(t, 4)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	defer closeIfOpen(release)
+	var calls atomic.Int32
+	if err := state.call(context.Background(), func(data *stateData) error {
+		data.agentWriters["agent"] = agentWriter{generation: 1, close: func() {
+			calls.Add(1)
+			close(entered)
+			<-release
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first := make(chan error, 1)
+	go func() { first <- state.CloseAgentConnection(context.Background(), "agent", 1) }()
+	<-entered
+	if err := state.CloseAgentConnection(context.Background(), "agent", 1); !errors.Is(err, ErrStaleGeneration) {
+		t.Fatalf("repeated close error = %v", err)
+	}
+	closed := make(chan struct{})
+	go func() {
+		state.Close()
+		close(closed)
+	}()
+	waitForStateCloseGate(t, state)
+	select {
+	case <-closed:
+		t.Fatal("Close returned before accepted closer completed")
+	default:
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	<-closed
+	if calls.Load() != 1 {
+		t.Fatalf("closer calls = %d", calls.Load())
+	}
+}
+
+func TestStateSessionCloserIsConsumedOnce(t *testing.T) {
+	state := actorTestState(t, 4)
+	var calls atomic.Int32
+	if err := state.call(context.Background(), func(data *stateData) error {
+		data.sessions["session"] = &cloudv1.ClientSessionSummary{SessionId: "session", Generation: 1}
+		data.sessionClosers["session"] = sessionCloser{generation: 1, close: func() { calls.Add(1) }}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CloseSession(context.Background(), "session", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CloseSession(context.Background(), "session", 1); !errors.Is(err, ErrStaleGeneration) {
+		t.Fatalf("repeated session close error = %v", err)
+	}
+	state.Close()
+	if calls.Load() != 1 {
+		t.Fatalf("session closer calls = %d", calls.Load())
+	}
+}
+
+func TestStateCloseWaitsForAttachOldCloser(t *testing.T) {
+	state := actorTestState(t, 4)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	defer closeIfOpen(release)
+	var oldCalls, newCalls atomic.Int32
+	if err := state.call(context.Background(), func(data *stateData) error {
+		data.agentWriters["agent"] = agentWriter{generation: 1, close: func() {
+			oldCalls.Add(1)
+			close(entered)
+			<-release
+		}}
+		data.agentNextGen["agent"] = 1
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	claims := &cloudv1.DaemonBindingClaims{
+		BindingId: "binding", DaemonId: "agent", AccountId: "account", EdgeId: "edge", DeviceId: "device", DevicePublicKey: make([]byte, 32),
+		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)),
+	}
+	agent := &cloudv1.AgentPresence{
+		DaemonId: "agent", AccountId: "account", BootId: "boot", ConnectionId: "connection", BindingId: "binding", BindingIssuedAt: claims.GetIssuedAt(),
+	}
+	attached := make(chan error, 1)
+	go func() {
+		_, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() { newCalls.Add(1) })
+		attached <- err
+	}()
+	<-entered
+	closed := make(chan struct{})
+	go func() {
+		state.Close()
+		close(closed)
+	}()
+	waitForStateCloseGate(t, state)
+	select {
+	case <-closed:
+		t.Fatal("Close returned before replaced writer closer completed")
+	default:
+	}
+	close(release)
+	if err := <-attached; err != nil {
+		t.Fatal(err)
+	}
+	<-closed
+	if oldCalls.Load() != 1 || newCalls.Load() != 1 {
+		t.Fatalf("old closer=%d new closer=%d", oldCalls.Load(), newCalls.Load())
 	}
 }
 
@@ -237,6 +396,17 @@ func waitCondition(t *testing.T, description string, ready func() bool) {
 		}
 		goruntime.Gosched()
 	}
+}
+
+func waitForStateCloseGate(t *testing.T, state *State) {
+	t.Helper()
+	waitCondition(t, "State.Close to wait on the lifecycle gate", func() bool {
+		if state.gate.TryRLock() {
+			state.gate.RUnlock()
+			return false
+		}
+		return true
+	})
 }
 
 func closeIfOpen(channel chan struct{}) {

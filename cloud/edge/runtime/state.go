@@ -171,7 +171,9 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 	clone := proto.Clone(agent).(*cloudv1.AgentPresence)
 	var generation uint64
 	var oldClose func()
-	if err := state.call(ctx, func(data *stateData) error {
+	state.gate.RLock()
+	defer state.gate.RUnlock()
+	if err := state.callUnderGate(ctx, func(data *stateData) error {
 		data.agentNextGen[clone.GetDaemonId()]++
 		clone.Generation = data.agentNextGen[clone.GetDaemonId()]
 		if _, err := runtimesnapshot.NormalizeClone(&cloudv1.RuntimeSnapshot{Agents: []*cloudv1.AgentPresence{clone}}); err != nil {
@@ -243,7 +245,9 @@ func (state *State) SendAgentCommand(ctx context.Context, daemonID string, gener
 		return errors.New("Edge command is required")
 	}
 	var send func(*cloudv1.EdgeCommand) bool
-	if err := state.call(ctx, func(data *stateData) error {
+	state.gate.RLock()
+	defer state.gate.RUnlock()
+	if err := state.callUnderGate(ctx, func(data *stateData) error {
 		writer := data.agentWriters[daemonID]
 		if writer.generation != generation || writer.send == nil {
 			return ErrStaleGeneration
@@ -262,12 +266,16 @@ func (state *State) SendAgentCommand(ctx context.Context, daemonID string, gener
 // CloseAgentConnection 解析精确 generation 后在 actor 外关闭 AgentGateway writer。
 func (state *State) CloseAgentConnection(ctx context.Context, daemonID string, generation uint64) error {
 	var closeWriter func()
-	if err := state.call(ctx, func(data *stateData) error {
+	state.gate.RLock()
+	defer state.gate.RUnlock()
+	if err := state.callUnderGate(ctx, func(data *stateData) error {
 		writer := data.agentWriters[daemonID]
 		if writer.generation != generation || writer.close == nil {
 			return ErrStaleGeneration
 		}
 		closeWriter = writer.close
+		writer.close = nil
+		data.agentWriters[daemonID] = writer
 		return nil
 	}); err != nil {
 		return err
@@ -407,13 +415,17 @@ func (state *State) RegisterSessionCloser(ctx context.Context, sessionID string,
 // CloseSession 解析精确 generation 后在 actor 外取消 ClientGateway stream。
 func (state *State) CloseSession(ctx context.Context, sessionID string, generation uint64) error {
 	var closeSession func()
-	if err := state.call(ctx, func(data *stateData) error {
+	state.gate.RLock()
+	defer state.gate.RUnlock()
+	if err := state.callUnderGate(ctx, func(data *stateData) error {
 		current := data.sessions[sessionID]
 		closer := data.sessionClosers[sessionID]
 		if current == nil || current.GetGeneration() != generation || closer.generation != generation || closer.close == nil {
 			return ErrStaleGeneration
 		}
 		closeSession = closer.close
+		closer.close = nil
+		data.sessionClosers[sessionID] = closer
 		return nil
 	}); err != nil {
 		return err
@@ -552,21 +564,22 @@ func (state *State) mutate(ctx context.Context, mutation func(*stateData) error)
 }
 
 func (state *State) call(ctx context.Context, run func(*stateData) error) error {
-	request := &stateRequest{run: run, result: make(chan error, 1)}
 	state.gate.RLock()
+	defer state.gate.RUnlock()
+	return state.callUnderGate(ctx, run)
+}
+
+func (state *State) callUnderGate(ctx context.Context, run func(*stateData) error) error {
+	request := &stateRequest{run: run, result: make(chan error, 1)}
 	if state.closing.Load() {
-		state.gate.RUnlock()
 		return ErrStateClosed
 	}
 	select {
 	case <-ctx.Done():
-		state.gate.RUnlock()
 		return ctx.Err()
 	case <-state.done:
-		state.gate.RUnlock()
 		return ErrStateClosed
 	case state.mailbox <- request:
-		state.gate.RUnlock()
 	}
 	select {
 	case err := <-request.result:

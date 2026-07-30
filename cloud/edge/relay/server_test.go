@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -128,6 +129,211 @@ func (outbox *relayCleanupOutbox) count() int {
 	return len(outbox.events)
 }
 
+func TestServerCloseSettlesActiveAndCancelsPendingExactlyOnce(t *testing.T) {
+	runtime := &relayCleanupRuntime{}
+	outbox := &relayCleanupOutbox{}
+	connection := testTrackedPacketConn(t)
+	source, destination := testAllocationAddresses()
+	server := &Server{
+		runtime: runtime, outbox: outbox, now: time.Now, closed: make(chan struct{}), pending: map[string]pendingReservation{
+			"pending": {id: "pending", admission: policy.RelayAdmission{SessionID: "session"}},
+		},
+		active: map[string]activeAllocation{
+			allocationKey(source, destination, "udp"): {id: "active", sessionID: "session", conn: connection},
+		},
+	}
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server.allocationCreated(source, destination, "udp", "late", "", nil, 0)
+	server.allocationDeleted(source, destination, "udp", "", "")
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := runtime.canceledIDs(); len(got) != 1 || got[0] != "pending" {
+		t.Fatalf("canceled reservations = %v", got)
+	}
+	if got := runtime.closedIDs(); len(got) != 1 || got[0] != "active" {
+		t.Fatalf("finalized allocations = %v", got)
+	}
+	if outbox.count() != 1 || len(server.pending) != 0 || len(server.active) != 0 {
+		t.Fatalf("outbox=%d pending=%d active=%d", outbox.count(), len(server.pending), len(server.active))
+	}
+}
+
+func TestServerCloseWaitsForClaimedDeletionCallback(t *testing.T) {
+	runtime := &relayBarrierRuntime{event: validUsageEvent("event-close-race")}
+	outbox := &barrierUsageOutbox{entered: make(chan struct{}), release: make(chan struct{})}
+	source, destination := testAllocationAddresses()
+	server := &Server{
+		runtime: runtime, outbox: outbox, now: time.Now, closed: make(chan struct{}), pending: make(map[string]pendingReservation),
+		active: map[string]activeAllocation{
+			allocationKey(source, destination, "udp"): {id: runtime.event.GetAllocationId(), sessionID: runtime.event.GetSessionId(), conn: &trackedPacketConn{}},
+		},
+	}
+	deleted := make(chan struct{})
+	go func() {
+		server.allocationDeleted(source, destination, "udp", "", "")
+		close(deleted)
+	}()
+	<-outbox.entered
+	closed := make(chan error, 1)
+	go func() { closed <- server.Close() }()
+	waitForServerClosing(t, server)
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned before claimed callback completed: %v", err)
+	default:
+	}
+	close(outbox.release)
+	<-deleted
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	server.allocationDeleted(source, destination, "udp", "", "")
+	stats := runtime.stats()
+	if stats.freezeCalls != 1 || stats.finalizeCalls != 1 {
+		t.Fatalf("freeze=%d finalize=%d", stats.freezeCalls, stats.finalizeCalls)
+	}
+}
+
+func TestServerCloseWaitsForActivateAndSettlesIt(t *testing.T) {
+	runtime := &relayBarrierRuntime{event: validUsageEvent("event-activate"), activateEntered: make(chan struct{}), activateRelease: make(chan struct{})}
+	outbox := &relayCleanupOutbox{}
+	source, destination := testAllocationAddresses()
+	relayAddress, generator := testRelayGenerator(t)
+	username := "username-activate"
+	server := &Server{
+		runtime: runtime, outbox: outbox, now: time.Now, closed: make(chan struct{}), generator: generator,
+		pending: map[string]pendingReservation{
+			reservationKey(username, source): {id: "reservation-activate", admission: policy.RelayAdmission{SessionID: "session"}},
+		}, active: make(map[string]activeAllocation),
+	}
+	created := make(chan struct{})
+	go func() {
+		server.allocationCreated(source, destination, "udp", username, "", relayAddress, 0)
+		close(created)
+	}()
+	<-runtime.activateEntered
+	closed := make(chan error, 1)
+	closeStarted := make(chan struct{})
+	go func() {
+		close(closeStarted)
+		closed <- server.Close()
+	}()
+	<-closeStarted
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned while Activate was executing: %v", err)
+	default:
+	}
+	close(runtime.activateRelease)
+	<-created
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	stats := runtime.stats()
+	if stats.activateCalls != 1 || stats.freezeCalls != 1 || stats.finalizeCalls != 1 || outbox.count() != 1 {
+		t.Fatalf("activate=%d freeze=%d finalize=%d outbox=%d", stats.activateCalls, stats.freezeCalls, stats.finalizeCalls, outbox.count())
+	}
+}
+
+func TestServerClosePutFailureKeepsFrozenRuntimeOwner(t *testing.T) {
+	runtime := &settlementRuntime{allocation: true, counters: 1, deltas: 1, event: validUsageEvent("event-close-failed")}
+	connection := testTrackedPacketConn(t)
+	source, destination := testAllocationAddresses()
+	server := &Server{
+		runtime: runtime, outbox: failingUsageOutbox{err: errors.New("disk full")}, now: time.Now, closed: make(chan struct{}), pending: make(map[string]pendingReservation),
+		active: map[string]activeAllocation{
+			allocationKey(source, destination, "udp"): {id: runtime.event.GetAllocationId(), sessionID: runtime.event.GetSessionId(), conn: connection},
+		},
+	}
+	if err := server.Close(); err == nil {
+		t.Fatal("Close succeeded despite outbox failure")
+	}
+	assertFailedSettlementIsFailClosed(t, server, runtime)
+	if err := server.Close(); err == nil || runtime.freezeCalls != 1 {
+		t.Fatalf("repeated Close error=%v freeze calls=%d", err, runtime.freezeCalls)
+	}
+}
+
+func TestPutFailureSealsInFlightReserveBeforePendingPublish(t *testing.T) {
+	runtime := &relayBarrierRuntime{event: validUsageEvent("event-reserve-race"), reserveEntered: make(chan struct{}), reserveRelease: make(chan struct{})}
+	source, destination := testAllocationAddresses()
+	server := &Server{
+		runtime: runtime, outbox: failingUsageOutbox{err: errors.New("disk full")}, now: time.Now, closed: make(chan struct{}), pending: make(map[string]pendingReservation),
+		active: map[string]activeAllocation{
+			allocationKey(source, destination, "udp"): {id: runtime.event.GetAllocationId(), sessionID: runtime.event.GetSessionId(), conn: &trackedPacketConn{}},
+		},
+	}
+	reserved := make(chan bool, 1)
+	go func() { reserved <- server.reserve("username-race", source) }()
+	<-runtime.reserveEntered
+	server.allocationDeleted(source, destination, "udp", "", "")
+	close(runtime.reserveRelease)
+	if <-reserved {
+		t.Fatal("in-flight Reserve published pending after degraded seal")
+	}
+	reservationID := reservationKey("username-race", source)
+	stats := runtime.stats()
+	if len(server.pending) != 0 || !contains(stats.canceled, reservationID) || !server.Degraded() {
+		t.Fatalf("pending=%d canceled=%v degraded=%v", len(server.pending), stats.canceled, server.Degraded())
+	}
+	_ = server.Close()
+}
+
+func TestPutFailureAndAllocationCreatedShareActivateGate(t *testing.T) {
+	runtime := &relayBarrierRuntime{event: validUsageEvent("event-created-race"), activateEntered: make(chan struct{}), activateRelease: make(chan struct{})}
+	outbox := &barrierUsageOutbox{entered: make(chan struct{}), release: make(chan struct{}), err: errors.New("disk full")}
+	source, destination := testAllocationAddresses()
+	relayAddress, generator := testRelayGenerator(t)
+	username := "username-created"
+	existingSource := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 11000}
+	server := &Server{
+		runtime: runtime, outbox: outbox, now: time.Now, closed: make(chan struct{}), generator: generator,
+		pending: map[string]pendingReservation{
+			reservationKey(username, source): {id: "reservation-created", admission: policy.RelayAdmission{SessionID: "session"}},
+		}, active: map[string]activeAllocation{
+			allocationKey(existingSource, destination, "udp"): {id: runtime.event.GetAllocationId(), sessionID: runtime.event.GetSessionId(), conn: &trackedPacketConn{}},
+		},
+	}
+	deleted := make(chan struct{})
+	go func() {
+		server.allocationDeleted(existingSource, destination, "udp", "", "")
+		close(deleted)
+	}()
+	<-outbox.entered
+	created := make(chan struct{})
+	go func() {
+		server.allocationCreated(source, destination, "udp", username, "", relayAddress, 0)
+		close(created)
+	}()
+	<-runtime.activateEntered
+	close(outbox.release)
+	select {
+	case <-deleted:
+		t.Fatal("Put failure returned while Activate still held the linearization gate")
+	default:
+	}
+	close(runtime.activateRelease)
+	<-created
+	<-deleted
+	if !server.Degraded() {
+		t.Fatal("Put failure did not seal Relay admission")
+	}
+	lateAddress, lateGenerator := testRelayGenerator(t)
+	server.mu.Lock()
+	server.generator = lateGenerator
+	server.pending[reservationKey("username-late", source)] = pendingReservation{id: "reservation-late", admission: policy.RelayAdmission{SessionID: "session"}}
+	server.mu.Unlock()
+	server.allocationCreated(source, destination, "udp", "username-late", "", lateAddress, 0)
+	stats := runtime.stats()
+	if stats.activateCalls != 1 || !contains(stats.canceled, "reservation-late") {
+		t.Fatalf("activate=%d canceled=%v", stats.activateCalls, stats.canceled)
+	}
+	_ = server.Close()
+}
+
 func TestCloseSessionAllocationPutFailureIsFailClosed(t *testing.T) {
 	runtime := &settlementRuntime{allocation: true, counters: 1, deltas: 1, event: validUsageEvent("event-failed")}
 	connection := testTrackedPacketConn(t)
@@ -170,8 +376,8 @@ func assertFailedSettlementIsFailClosed(t *testing.T, server *Server, runtime *s
 	if !server.Degraded() || server.reserve("new-user", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 30000}) {
 		t.Fatalf("Relay did not reject new work after settlement failure: degraded=%v", server.Degraded())
 	}
-	if !runtime.frozen || !runtime.allocation || runtime.counters != 1 || runtime.deltas != 1 || runtime.finalizeCalls != 0 {
-		t.Fatalf("frozen=%v allocation=%v counters=%d deltas=%d finalize=%d", runtime.frozen, runtime.allocation, runtime.counters, runtime.deltas, runtime.finalizeCalls)
+	if !runtime.frozen || runtime.freezeCalls != 1 || !runtime.allocation || runtime.counters != 1 || runtime.deltas != 1 || runtime.finalizeCalls != 0 {
+		t.Fatalf("frozen=%v freeze=%d allocation=%v counters=%d deltas=%d finalize=%d", runtime.frozen, runtime.freezeCalls, runtime.allocation, runtime.counters, runtime.deltas, runtime.finalizeCalls)
 	}
 }
 
@@ -214,6 +420,7 @@ func (outbox failingUsageOutbox) Put(*cloudv1.UsageEvent) error { return outbox.
 
 type settlementRuntime struct {
 	frozen          bool
+	freezeCalls     int
 	allocation      bool
 	counters        int
 	deltas          int
@@ -235,6 +442,7 @@ func (*settlementRuntime) ActivateRelayAllocation(context.Context, string, strin
 func (*settlementRuntime) CancelRelayAllocationReservation(context.Context, string) error { return nil }
 func (runtime *settlementRuntime) FreezeRelayAllocationUsage(context.Context, string, uint64, uint64) (*cloudv1.UsageEvent, error) {
 	runtime.frozen = true
+	runtime.freezeCalls++
 	return runtime.event, nil
 }
 func (runtime *settlementRuntime) FinalizeRelayAllocation(_ context.Context, event *cloudv1.UsageEvent) error {
@@ -258,6 +466,142 @@ func validUsageEvent(eventID string) *cloudv1.UsageEvent {
 		SchemaVersion: 1, EventId: eventID, EdgeId: "edge", LeaseId: "lease", AccountId: "account", DaemonId: "daemon", ClientId: "client", SessionId: "session",
 		AllocationId: "allocation-" + eventID, Transport: cloudv1.RelayTransport_RELAY_TRANSPORT_UDP, IngressBytes: 10, EgressBytes: 20,
 		StartedAt: timestamppb.New(started), EndedAt: timestamppb.New(started.Add(time.Second)),
+	}
+}
+
+type relayBarrierRuntime struct {
+	mu              sync.Mutex
+	event           *cloudv1.UsageEvent
+	reserveEntered  chan struct{}
+	reserveRelease  chan struct{}
+	activateEntered chan struct{}
+	activateRelease chan struct{}
+	reserveCalls    int
+	activateCalls   int
+	freezeCalls     int
+	finalizeCalls   int
+	canceled        []string
+}
+
+type relayBarrierStats struct {
+	reserveCalls, activateCalls, freezeCalls, finalizeCalls int
+	canceled                                                []string
+}
+
+func (*relayBarrierRuntime) RelayAuth(context.Context, string, time.Time) (*cloudv1.RelayLeaseClaims, string, bool, error) {
+	return nil, "", false, nil
+}
+
+func (runtime *relayBarrierRuntime) ReserveRelayAllocation(ctx context.Context, _, _ string, _ time.Time) (policy.RelayAdmission, error) {
+	runtime.mu.Lock()
+	runtime.reserveCalls++
+	runtime.mu.Unlock()
+	if runtime.reserveEntered != nil {
+		close(runtime.reserveEntered)
+		select {
+		case <-runtime.reserveRelease:
+		case <-ctx.Done():
+			return policy.RelayAdmission{}, ctx.Err()
+		}
+	}
+	return policy.RelayAdmission{SessionID: "session"}, nil
+}
+
+func (runtime *relayBarrierRuntime) ActivateRelayAllocation(ctx context.Context, _, _ string, _ cloudv1.RelayTransport, _ time.Time) error {
+	runtime.mu.Lock()
+	runtime.activateCalls++
+	runtime.mu.Unlock()
+	if runtime.activateEntered != nil {
+		close(runtime.activateEntered)
+		select {
+		case <-runtime.activateRelease:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func (runtime *relayBarrierRuntime) CancelRelayAllocationReservation(_ context.Context, reservationID string) error {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.canceled = append(runtime.canceled, reservationID)
+	return nil
+}
+
+func (runtime *relayBarrierRuntime) FreezeRelayAllocationUsage(context.Context, string, uint64, uint64) (*cloudv1.UsageEvent, error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.freezeCalls++
+	return runtime.event, nil
+}
+
+func (runtime *relayBarrierRuntime) FinalizeRelayAllocation(context.Context, *cloudv1.UsageEvent) error {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.finalizeCalls++
+	return nil
+}
+
+func (runtime *relayBarrierRuntime) stats() relayBarrierStats {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return relayBarrierStats{
+		reserveCalls: runtime.reserveCalls, activateCalls: runtime.activateCalls, freezeCalls: runtime.freezeCalls, finalizeCalls: runtime.finalizeCalls,
+		canceled: append([]string(nil), runtime.canceled...),
+	}
+}
+
+type barrierUsageOutbox struct {
+	entered     chan struct{}
+	release     chan struct{}
+	err         error
+	enteredOnce sync.Once
+}
+
+func (outbox *barrierUsageOutbox) Put(*cloudv1.UsageEvent) error {
+	outbox.enteredOnce.Do(func() { close(outbox.entered) })
+	<-outbox.release
+	return outbox.err
+}
+
+func testAllocationAddresses() (*net.UDPAddr, *net.UDPAddr) {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 10000}, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 20000}
+}
+
+func testRelayGenerator(t *testing.T) (net.Addr, *trackedGenerator) {
+	t.Helper()
+	connection := testTrackedPacketConn(t)
+	address := connection.LocalAddr()
+	return address, &trackedGenerator{conns: map[string]*trackedPacketConn{address.String(): connection}}
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func waitForServerClosing(t *testing.T, server *Server) {
+	t.Helper()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		server.mu.Lock()
+		closing := server.closing
+		server.mu.Unlock()
+		if closing {
+			return
+		}
+		select {
+		case <-timer.C:
+			t.Fatal("timed out waiting for Relay server to enter closing")
+		default:
+		}
+		goruntime.Gosched()
 	}
 }
 
