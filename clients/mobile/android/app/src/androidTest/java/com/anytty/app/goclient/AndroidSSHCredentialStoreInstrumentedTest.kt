@@ -1,14 +1,10 @@
 package com.anytty.app.goclient
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import android.util.Base64
-import android.util.Log
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.security.KeyFactory
@@ -19,14 +15,6 @@ import java.security.spec.X509EncodedKeySpec
 /** AndroidSSHCredentialStoreInstrumentedTest 在真实 Android Keystore provider 上验证 SSH signer primitive。 */
 @RunWith(AndroidJUnit4::class)
 class AndroidSSHCredentialStoreInstrumentedTest {
-    @Test
-    fun exportsExplicitlyRequestedPublicKeyForE2EFixture() {
-        val ref = InstrumentationRegistry.getArguments().getString("anyttySshCredentialRef")?.trim().orEmpty()
-        assumeTrue(ref.isNotEmpty())
-        val record = AndroidSSHCredentialStore().lookup(ref, false)
-        Log.i("RTC010SSH", Base64.encodeToString(record.publicKeyPkix.toByteArray(), Base64.NO_WRAP))
-    }
-
     @Test
     fun createsReusesSignsAndDeletesNonExportableSigner() {
         val store = AndroidSSHCredentialStore()

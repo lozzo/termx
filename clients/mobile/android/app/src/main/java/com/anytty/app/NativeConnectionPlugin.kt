@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
-import android.util.Log
 import android.util.Base64
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -19,7 +18,6 @@ import com.anytty.app.goclient.AndroidEndpointRegistryStore
 import com.anytty.app.goclient.AndroidSSHCredentialStore
 import com.anytty.app.goclient.GoClientBridgeServer
 import java.security.SecureRandom
-import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +35,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
 
     companion object {
-        private const val TAG = "AnyTTYNativePlugin"
         private const val BRIDGE_TOKEN_BYTES = 32
     }
 
@@ -68,8 +65,8 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         generationChanged = { reason, epoch ->
             notifyListeners("generationChanged", JSObject().put("reason", reason).put("epoch", epoch))
         },
-        generationChangeFailed = { reason, epoch, failure ->
-            AnyTTYDebugLog.e(TAG, "Go client engine could not follow Android network epoch", failure)
+        generationChangeFailed = { reason, epoch, _ ->
+            AnyTTYDebugLog.event(AnyTTYDebugEvent.GENERATION_CHANGE_FAILED)
             notifyListeners("generationChangeFailed", JSObject().put("reason", reason).put("epoch", epoch))
         },
     )
@@ -89,13 +86,11 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
     }
 
     override fun load() {
-        AnyTTYDebugLog.init(context)
         runtimeCoordinator.load(connectivityManager.activeNetwork)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         context.registerReceiver(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
         connectivityManager.registerDefaultNetworkCallback(networkCallback)
-        Log.i(TAG, "NativeConnectionPlugin loaded")
-        AnyTTYDebugLog.i(TAG, "NativeConnectionPlugin loaded")
+        AnyTTYDebugLog.event(AnyTTYDebugEvent.CONNECTION_PLUGIN_LOADED)
     }
 
     override fun onStart(owner: LifecycleOwner) {
@@ -142,7 +137,7 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
                 runtimeCoordinator.resetLocalPairings()
                 if (settled.compareAndSet(false, true)) call.resolve()
             } catch (failure: Exception) {
-                AnyTTYDebugLog.e(TAG, "resetLocalPairings failed", failure)
+                AnyTTYDebugLog.event(AnyTTYDebugEvent.RESET_PAIRINGS_FAILED)
                 runCatching { runtimeCoordinator.restartForForeground() }
                 if (settled.compareAndSet(false, true)) call.reject("failed to reset local pairings", failure)
             }
@@ -166,34 +161,6 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         call.resolve(ret)
     }
 
-    @PluginMethod
-    fun exportDebugLogs(call: PluginCall) {
-        try {
-            val archive: File = AnyTTYDebugLog.exportAndShare(activity)
-            val ret = JSObject()
-            ret.put("path", archive.absolutePath)
-            ret.put("name", archive.name)
-            ret.put("bytes", archive.length())
-            call.resolve(ret)
-        } catch (e: Exception) {
-            AnyTTYDebugLog.e(TAG, "exportDebugLogs failed", e)
-            call.reject("failed to export debug logs: ${e.message}", e)
-        }
-    }
-
-    @PluginMethod
-    fun writeDebugLog(call: PluginCall) {
-        val level = call.getString("level") ?: "INFO"
-        val tag = call.getString("tag") ?: "JS"
-        val message = call.getString("message") ?: ""
-        when (level.lowercase()) {
-            "error" -> AnyTTYDebugLog.e(tag, message)
-            "warn", "warning" -> AnyTTYDebugLog.w(tag, message)
-            else -> AnyTTYDebugLog.i(tag, message)
-        }
-        call.resolve()
-    }
-
     // ─── Bridge Server Setup ─────────────────────────────────────────────────
 
     @Synchronized
@@ -209,7 +176,7 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
                 throw IllegalStateException("Go binding bridge start timed out")
             }
             bridgePort = bridge.port
-            Log.i(TAG, "Go binding bridge started on loopback port $bridgePort")
+            AnyTTYDebugLog.event(AnyTTYDebugEvent.BRIDGE_STARTED)
         } catch (failure: Exception) {
             bridgePort = 0
             runCatching { bridge.close() }

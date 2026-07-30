@@ -7,6 +7,11 @@ const config: CapacitorConfig = {
   // Native bridge responses contain an ephemeral loopback bearer token. Capacitor framework logs
   // must never echo plugin payloads; product diagnostics use the explicitly redacted debug log.
   loggingBehavior: 'none',
+  server: {
+    hostname: 'localhost',
+    androidScheme: 'http',
+    allowNavigation: [],
+  },
   plugins: {
     Keyboard: {
       resize: 'none',
@@ -17,7 +22,7 @@ const config: CapacitorConfig = {
     },
   },
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false,
   },
 }
 

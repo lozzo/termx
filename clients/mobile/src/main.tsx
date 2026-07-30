@@ -5,10 +5,8 @@ import { setHapticImpactHandler } from '@anytty/ui'
 import './index.css'
 import { AnyTTYApp } from './AnyTTYApp'
 import NativeHaptic from './plugins/nativeHaptic'
-import { installNativeDebugLogCapture } from './nativeDebugLog'
 
 if (Capacitor.isNativePlatform()) {
-  installNativeDebugLogCapture()
   setHapticImpactHandler((pattern) => NativeHaptic.impact({ pattern }))
 }
 

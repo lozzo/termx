@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scanPairingCode } from './nativeQrScanner'
 
 const scannerMock = vi.hoisted(() => ({
+  constructorOptions: null as unknown,
   start: vi.fn(),
   stop: vi.fn(),
   clear: vi.fn(),
@@ -13,7 +14,9 @@ const scannerMock = vi.hoisted(() => ({
 }))
 
 vi.mock('html5-qrcode', () => ({
+  Html5QrcodeSupportedFormats: { QR_CODE: 0 },
   Html5Qrcode: class {
+    constructor(_id: string, options: unknown) { scannerMock.constructorOptions = options }
     start(_camera: unknown, _config: unknown, success: (value: string) => void) {
       scannerMock.success = success
       return scannerMock.start()
@@ -29,6 +32,7 @@ describe('native QR scanner ownership', () => {
 
   beforeEach(async () => {
     scannerMock.start.mockReset()
+    scannerMock.constructorOptions = null
     scannerMock.stop.mockReset().mockResolvedValue(undefined)
     scannerMock.clear.mockReset()
     scannerMock.pause.mockReset()
@@ -50,6 +54,14 @@ describe('native QR scanner ownership', () => {
   const runAnimationFrames = () => {
     for (const callback of animationFrames.splice(0)) callback(0)
   }
+
+  it('configures the decoder for QR codes only', async () => {
+    scannerMock.start.mockReturnValue(new Promise<void>(() => {}))
+    const result = scanPairingCode()
+    expect(scannerMock.constructorOptions).toMatchObject({ formatsToSupport: [0] })
+    document.querySelector<HTMLButtonElement>('#anytty-camera-qr-scanner button')?.click()
+    await expect(result).resolves.toBeNull()
+  })
 
   it('cancels immediately without waiting for a camera start that never settles', async () => {
     const start = deferred<void>()

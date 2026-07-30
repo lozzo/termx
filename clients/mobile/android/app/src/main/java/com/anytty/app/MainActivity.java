@@ -7,8 +7,6 @@ import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
-    private static final String TAG = "AnyTTYMainActivity";
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         AnyTTYDebugLog.init(this);
@@ -23,14 +21,20 @@ public class MainActivity extends BridgeActivity {
         WebView webView = getBridge().getWebView();
         if (webView != null) {
             webView.setWebChromeClient(new AnyTTYWebChromeClient(getBridge()));
+            getBridge().setWebViewClient(new AnyTTYWebViewClient(getBridge()));
             webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
             webView.setVerticalScrollBarEnabled(false);
             webView.setHorizontalScrollBarEnabled(false);
             WebSettings settings = webView.getSettings();
             settings.setDomStorageEnabled(true);
             settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+            settings.setAllowFileAccess(false);
+            settings.setAllowContentAccess(false);
+            settings.setAllowFileAccessFromFileURLs(false);
+            settings.setAllowUniversalAccessFromFileURLs(false);
+            settings.setGeolocationEnabled(false);
         }
-        AnyTTYDebugLog.i(TAG, "MainActivity created debug=" + isDebug);
+        AnyTTYDebugLog.event(AnyTTYDebugEvent.ACTIVITY_CREATED, isDebug);
     }
 }

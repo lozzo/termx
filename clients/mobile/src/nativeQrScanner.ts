@@ -1,4 +1,4 @@
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 import { NATIVE_BACK_PRIORITY, addNativeBackHandler, anyttyI18n } from '@anytty/ui'
 
 const qrScannerRootId = 'anytty-camera-qr-scanner'
@@ -87,6 +87,7 @@ export function scanPairingCode(options?: NativeQrScannerOptions): Promise<strin
     scanner = new Html5Qrcode(qrScannerReaderId, {
       verbose: false,
       useBarCodeDetectorIfSupported: false,
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
     })
   } catch (error) {
     root.remove()

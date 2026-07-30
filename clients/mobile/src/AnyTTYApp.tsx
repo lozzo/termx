@@ -137,9 +137,9 @@ function NativeAnyTTYApp() {
   if (!registryReady) {
     return (
       <RegistryStartupScreen
-        diagnosticsAvailable={Capacitor.isPluginAvailable('NativeConnection')}
+        diagnosticsAvailable={false}
         error={registryError}
-        onExportDiagnostics={exportNativeDebugLogs}
+        onExportDiagnostics={async () => undefined}
         onResetLocalPairings={resetLocalPairings}
         onRetry={retryRegistry}
       />
@@ -149,7 +149,6 @@ function NativeAnyTTYApp() {
   return (
     <section className="anytty-app-page flex h-[100dvh] w-screen flex-col overflow-hidden antialiased">
       <RemoteControlApp
-        exportDebugLogs={exportNativeDebugLogs}
         externalPairingAdapter={externalPairingAdapter}
         globalFileTransfer={globalFileTransfer}
         machineRuntimeFactory={machineRuntimeFactory}
@@ -278,10 +277,6 @@ function syncRegistryMachineProjection(storage: RemoteRuntimeStorage, registry: 
   }
 }
 
-async function exportNativeDebugLogs(): Promise<void> {
-  await NativeConnection.exportDebugLogs()
-}
-
 function useNativeKeyboardEvents(): void {
   useEffect(() => {
     const subscriptions = [
@@ -318,9 +313,7 @@ function finishNativeForeground(failure?: unknown): void {
 }
 
 function reportNativeGenerationFailure(failure: unknown): void {
-  const message = failure instanceof Error ? failure.message : String(failure)
-  console.error('[anytty:native-generation]', message)
-  void NativeConnection.writeDebugLog({ level: 'error', tag: 'NativeGeneration', message }).catch(() => undefined)
+  void failure
 }
 
 let nativeGenerationReplacement: Promise<void> = Promise.resolve()

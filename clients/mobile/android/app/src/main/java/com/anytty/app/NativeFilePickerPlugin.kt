@@ -6,7 +6,6 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
-import android.util.Log
 import androidx.activity.result.ActivityResult
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
@@ -34,7 +33,6 @@ import kotlinx.coroutines.launch
 class NativeFilePickerPlugin : Plugin() {
 
     companion object {
-        private const val TAG = "AnyTTYNativeFilePicker"
         private const val MAX_TRANSFER_CHUNK_BYTES = 4 * 1024 * 1024
     }
 
@@ -84,7 +82,7 @@ class NativeFilePickerPlugin : Plugin() {
                 val bytes = Base64.decode(encoded, Base64.DEFAULT)
                 call.resolve(savedDownload(downloadStore.save(name, mimeType, bytes)))
             } catch (failure: Exception) {
-                Log.e(TAG, "saveFile failed", failure)
+                AnyTTYDebugLog.event(AnyTTYDebugEvent.FILE_SAVE_FAILED)
                 call.reject("failed to save download: ${failure.message}", failure)
             }
         }
@@ -291,8 +289,8 @@ class NativeFilePickerPlugin : Plugin() {
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
-            } catch (e: Exception) {
-                Log.w(TAG, "takePersistableUriPermission failed for $uri", e)
+            } catch (_: Exception) {
+                AnyTTYDebugLog.event(AnyTTYDebugEvent.PERSISTABLE_PERMISSION_FAILED)
             }
             val file = queryFileInfo(uri)
             if (file != null) {
@@ -325,8 +323,8 @@ class NativeFilePickerPlugin : Plugin() {
                 }
             }
             context.contentResolver.getType(uri)?.let { mimeType = it }
-        } catch (e: Exception) {
-            Log.e(TAG, "queryFileInfo error for $uri", e)
+        } catch (_: Exception) {
+            AnyTTYDebugLog.event(AnyTTYDebugEvent.FILE_INFO_FAILED)
         }
 
         return JSObject().apply {
