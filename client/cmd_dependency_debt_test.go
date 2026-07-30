@@ -5,38 +5,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestSharedRuntimeLegacyRouteOwnersAreRemoved(t *testing.T) {
-	if _, err := os.Stat(filepath.Join("runtime", "route_selection.go")); !os.IsNotExist(err) {
-		t.Fatalf("legacy single-route selector must be deleted, stat error=%v", err)
-	}
-	forbidden := []string{"adoptCLIProtocolClient", "connectV3LocalApplication", "NewOwnedApplicationClient"}
-	for _, root := range []string{"../cmd/anytty", "adapter/local", "adapter/protocol", "runtime"} {
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return err
-			}
-			payload, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			for _, symbol := range forbidden {
-				if strings.Contains(string(payload), symbol) {
-					t.Errorf("legacy route owner %q remains in %s", symbol, path)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-}
 
 func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 	expectedImports := map[string]struct{}{

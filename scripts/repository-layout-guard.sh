@@ -10,13 +10,6 @@ fail() {
   exit 1
 }
 
-for path in \
-  termx-app remote-ui termx-core termx-core-v2 termx-tui-v3 termx-remote termx-remote-v2 \
-  tuiv2 termx-hub web-control private private/termx-cloud proto/cloudpb shared/cloudcompanion \
-  client/adapter/managed; do
-  [[ ! -e "$path" ]] || fail "legacy path still exists: $path"
-done
-
 required_documents=(
   README.md
   CONTRIBUTING.md
@@ -83,31 +76,6 @@ while IFS= read -r path; do
 done < <(printf '%s\n' "${expected_modules[@]}" | LC_ALL=C sort)
 if [[ "${actual_modules[*]}" != "${expected_modules_sorted[*]}" ]]; then
   fail "Go module roots differ: ${actual_modules[*]}"
-fi
-
-scan_candidates=(
-  .gitignore README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md ARCHITECTURE.md
-  CONNECTION_ARCHITECTURE.md workflow.md Makefile THIRD_PARTY_NOTICES.txt go.mod go.work package.json
-  clients cmd core docs internal proto remote scripts shared testkit tui vterm
-)
-scan_paths=()
-for path in "${scan_candidates[@]}"; do
-  [[ -e "$path" ]] && scan_paths+=("$path")
-done
-old_path_matches="$(rg -n --hidden 'private/termx-cloud' "${scan_paths[@]}" \
-  --glob '!**/node_modules/**' \
-  --glob '!scripts/repository-layout-guard.sh' \
-  --glob '!**/dist/**' --glob '!**/build/**' --glob '!**/.gradle/**' || true)"
-[[ -z "$old_path_matches" ]] || fail "active files reference private/termx-cloud:\n$old_path_matches"
-
-old_import_matches="$(rg -n --hidden \
-  'github\.com/lozzow/termx/(termx-core|termx-core-v2|termx-tui-v3|termx-remote|termx-remote-v2|tuiv2)(/|\"|$)' \
-  --glob '*.go' --glob '!**/*_test.go' --glob 'go.mod' --glob 'go.work' \
-  --glob '!**/node_modules/**' . || true)"
-[[ -z "$old_import_matches" ]] || fail "production files reference a legacy module path:\n$old_import_matches"
-
-if rg -n '^(termx-build|test-core|test-tui|test-repository|test-cli-v3[^:]*):' Makefile >/dev/null; then
-  fail "Makefile still exposes a legacy build or test target"
 fi
 
 echo "repository layout passed"

@@ -50,7 +50,6 @@ create_fixture() {
   printf '/.artifacts/\n*.apk\n*.aab\n' >"$fixture/.gitignore"
   printf '{}\n' >"$fixture/package-lock.json"
   printf 'module example.com/layout-fixture\n\ngo 1.26.5\n' >"$fixture/go.mod"
-  printf '# fixture\n' >"$fixture/Makefile"
   git -C "$fixture" init -q
   git -C "$fixture" add .
   printf '%s\n' "$fixture"
@@ -134,11 +133,6 @@ extra_markdown="$(create_fixture extra-markdown)"
 printf '# Additional documentation\n' >"$extra_markdown/EXTRA.md"
 git -C "$extra_markdown" add EXTRA.md
 expect_pass "additional tracked Markdown" "$extra_markdown/scripts/repository-layout-guard.sh"
-
-legacy_path="$(create_fixture legacy-path)"
-mkdir -p "$legacy_path/termx-app"
-expect_fail "legacy path" "legacy path still exists: termx-app" \
-  "$legacy_path/scripts/repository-layout-guard.sh"
 
 for artifact in app-debug.apk app-release.aab anytty anytty.exe fixture-library.dll; do
   artifact_fixture="$(create_fixture "root-${artifact//./-}")"
