@@ -135,7 +135,7 @@ test('普通用户共享 Shell、复用页面缓存且不能进入运营页面',
   await page.screenshot({ path: testInfo.outputPath('user-denied.png'), fullPage: true })
 })
 
-test('路由资源首次加载失败后可在原 Shell 内重试', async ({ page }, testInfo) => {
+test('路由资源首次加载失败后通过页面重载恢复', async ({ page }, testInfo) => {
   test.skip(Boolean(process.env.ANYTTY_CLOUD_ONLINE_ORIGIN), '故障注入仅针对本地 Vite 模块请求')
   test.skip(!['desktop-chromium', 'mobile-320-chromium'].includes(testInfo.project.name))
   await page.emulateMedia({ colorScheme: testInfo.project.name === 'mobile-320-chromium' ? 'dark' : 'light' })
@@ -150,7 +150,7 @@ test('路由资源首次加载失败后可在原 Shell 内重试', async ({ page
   await page.goto('/app/devices')
   const alert = page.getByRole('alert')
   const errorTitle = page.getByRole('heading', { name: '页面资源加载失败' })
-  const retry = page.getByRole('button', { name: '重试加载页面' })
+  const reload = page.getByRole('button', { name: '重新加载页面资源' })
   await expect(alert).toContainText('当前页面资源未能加载')
   await expect(errorTitle).toBeFocused()
   await expect(page).toHaveURL(/\/app\/devices$/)
@@ -159,13 +159,8 @@ test('路由资源首次加载失败后可在原 Shell 内重试', async ({ page
   await assertMinimumHitArea(page, '.route-resource-error .button')
   await assertNoHorizontalOverflow(page)
 
-  await retry.focus()
-  await page.keyboard.press('Enter')
-  const reload = page.getByRole('button', { name: '重新加载页面资源' })
-  await expect(reload).toBeVisible()
-  await expect(errorTitle).toBeFocused()
-  await reload.focus()
-  await page.keyboard.press('Enter')
+  expect(moduleRequests).toBe(1)
+  await reload.click()
   await expect(page.getByRole('heading', { name: 'Daemon 管理', exact: true })).toBeVisible()
   expect(moduleRequests).toBe(2)
   await expect(alert).toHaveCount(0)

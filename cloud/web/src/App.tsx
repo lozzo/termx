@@ -1,4 +1,4 @@
-import { Component, createContext, lazy, Suspense, useContext, useLayoutEffect, useRef, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react'
+import { Component, lazy, Suspense, useLayoutEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation, useOutletContext } from 'react-router'
 import { LoginPage } from './pages/LoginPage'
 import { LandingPage } from './pages/LandingPage'
@@ -18,47 +18,24 @@ class RouteResourceLoadError extends Error {
   }
 }
 
-type RouteLoadAttempt = {
-  generation: number
-  pages: Map<RouteModuleLoader, LazyExoticComponent<ComponentType>>
-}
-
-function createRouteLoadAttempt(generation: number): RouteLoadAttempt {
-  return { generation, pages: new Map() }
-}
-
-const RouteLoadAttempt = createContext(createRouteLoadAttempt(0))
-
-export function createRetryableLazyRoute(loader: RouteModuleLoader): ComponentType {
-  return function RetryableLazyRoute() {
-    const attempt = useContext(RouteLoadAttempt)
-    let Page = attempt.pages.get(loader)
-    if (!Page) {
-      Page = lazy(async () => {
-        try {
-          return await loader()
-        } catch (error) {
-          throw new RouteResourceLoadError(error)
-        }
-      })
-      attempt.pages.set(loader, Page)
+export function createLazyRoute(loader: RouteModuleLoader): ComponentType {
+  return lazy(async () => {
+    try {
+      return await loader()
+    } catch (error) {
+      throw new RouteResourceLoadError(error)
     }
-    return <Page />
-  }
+  })
 }
 
 type RouteResourceBoundaryProps = { children: ReactNode }
-type RouteResourceBoundaryState = { error: unknown; attempt: RouteLoadAttempt }
+type RouteResourceBoundaryState = { error: unknown }
 
 export class RouteResourceBoundary extends Component<RouteResourceBoundaryProps, RouteResourceBoundaryState> {
-  state: RouteResourceBoundaryState = { error: null, attempt: createRouteLoadAttempt(0) }
+  state: RouteResourceBoundaryState = { error: null }
 
   static getDerivedStateFromError(error: unknown): Pick<RouteResourceBoundaryState, 'error'> {
     return { error }
-  }
-
-  private retry = () => {
-    this.setState(({ attempt }) => ({ error: null, attempt: createRouteLoadAttempt(attempt.generation + 1) }))
   }
 
   private reloadRouteResources = () => {
@@ -68,48 +45,47 @@ export class RouteResourceBoundary extends Component<RouteResourceBoundaryProps,
   render() {
     if (this.state.error !== null) {
       if (!(this.state.error instanceof RouteResourceLoadError)) throw this.state.error
-      const retried = this.state.attempt.generation > 0
-      return <RouteResourceError generation={this.state.attempt.generation} reload={retried} onRetry={retried ? this.reloadRouteResources : this.retry} />
+      return <RouteResourceError onReload={this.reloadRouteResources} />
     }
-    return <RouteLoadAttempt value={this.state.attempt}>{this.props.children}</RouteLoadAttempt>
+    return this.props.children
   }
 }
 
-function RouteResourceError({ generation, reload, onRetry }: { generation: number; reload: boolean; onRetry: () => void }) {
+function RouteResourceError({ onReload }: { onReload: () => void }) {
   const titleRef = useRef<HTMLHeadingElement>(null)
-  useLayoutEffect(() => { titleRef.current?.focus({ preventScroll: true }) }, [generation])
+  useLayoutEffect(() => { titleRef.current?.focus({ preventScroll: true }) }, [])
 
   return <div className="route-resource-error">
     <Notice tone="error">
       <h1 ref={titleRef} tabIndex={-1}>页面资源加载失败</h1>
-      <p>{reload ? '页面资源重试失败，请重新加载当前页面以获取资源。' : '当前页面资源未能加载，请检查网络连接后重试。'}</p>
+      <p>当前页面资源未能加载，请重新加载当前页面以获取资源。</p>
     </Notice>
-    <Button onClick={onRetry}>{reload ? '重新加载页面资源' : '重试加载页面'}</Button>
+    <Button onClick={onReload}>重新加载页面资源</Button>
   </div>
 }
 
-const UserOverviewPage = createRetryableLazyRoute(() => import('./pages/UserOverviewPage').then((module) => ({ default: module.UserOverviewPage })))
-const DevicesPage = createRetryableLazyRoute(() => import('./pages/DevicesPage').then((module) => ({ default: module.DevicesPage })))
-const UserSubscriptionPage = createRetryableLazyRoute(() => import('./pages/UserSubscriptionPage').then((module) => ({ default: module.UserSubscriptionPage })))
-const UserOrdersPage = createRetryableLazyRoute(() => import('./pages/UserOrdersPage').then((module) => ({ default: module.UserOrdersPage })))
-const UserUsagePage = createRetryableLazyRoute(() => import('./pages/UserUsagePage').then((module) => ({ default: module.UserUsagePage })))
-const SecurityPage = createRetryableLazyRoute(() => import('./pages/SecurityPage').then((module) => ({ default: module.SecurityPage })))
-const ForbiddenPage = createRetryableLazyRoute(() => import('./pages/ForbiddenPage').then((module) => ({ default: module.ForbiddenPage })))
+const UserOverviewPage = createLazyRoute(() => import('./pages/UserOverviewPage').then((module) => ({ default: module.UserOverviewPage })))
+const DevicesPage = createLazyRoute(() => import('./pages/DevicesPage').then((module) => ({ default: module.DevicesPage })))
+const UserSubscriptionPage = createLazyRoute(() => import('./pages/UserSubscriptionPage').then((module) => ({ default: module.UserSubscriptionPage })))
+const UserOrdersPage = createLazyRoute(() => import('./pages/UserOrdersPage').then((module) => ({ default: module.UserOrdersPage })))
+const UserUsagePage = createLazyRoute(() => import('./pages/UserUsagePage').then((module) => ({ default: module.UserUsagePage })))
+const SecurityPage = createLazyRoute(() => import('./pages/SecurityPage').then((module) => ({ default: module.SecurityPage })))
+const ForbiddenPage = createLazyRoute(() => import('./pages/ForbiddenPage').then((module) => ({ default: module.ForbiddenPage })))
 
-const OverviewPage = createRetryableLazyRoute(() => import('./pages/OverviewPage').then((module) => ({ default: module.OverviewPage })))
-const EdgesPage = createRetryableLazyRoute(() => import('./pages/EdgesPage').then((module) => ({ default: module.EdgesPage })))
-const EdgeDetailPage = createRetryableLazyRoute(() => import('./pages/EdgesPage').then((module) => ({ default: module.EdgeDetailPage })))
-const DaemonsPage = createRetryableLazyRoute(() => import('./pages/DaemonsPage').then((module) => ({ default: module.DaemonsPage })))
-const ConnectionsPage = createRetryableLazyRoute(() => import('./pages/ConnectionsPage').then((module) => ({ default: module.ConnectionsPage })))
-const AccountsPage = createRetryableLazyRoute(() => import('./pages/AccountsPage').then((module) => ({ default: module.AccountsPage })))
-const AccountDetailPage = createRetryableLazyRoute(() => import('./pages/AccountsPage').then((module) => ({ default: module.AccountDetailPage })))
-const PlansPage = createRetryableLazyRoute(() => import('./pages/PlansPage').then((module) => ({ default: module.PlansPage })))
-const SubscriptionsPage = createRetryableLazyRoute(() => import('./pages/SubscriptionsPage').then((module) => ({ default: module.SubscriptionsPage })))
-const OrdersPage = createRetryableLazyRoute(() => import('./pages/OrdersPage').then((module) => ({ default: module.OrdersPage })))
-const CertificatesPage = createRetryableLazyRoute(() => import('./pages/CertificatesPage').then((module) => ({ default: module.CertificatesPage })))
-const UsagePage = createRetryableLazyRoute(() => import('./pages/UsagePage').then((module) => ({ default: module.UsagePage })))
-const AuditPage = createRetryableLazyRoute(() => import('./pages/AuditPage').then((module) => ({ default: module.AuditPage })))
-const SystemPage = createRetryableLazyRoute(() => import('./pages/SystemPage').then((module) => ({ default: module.SystemPage })))
+const OverviewPage = createLazyRoute(() => import('./pages/OverviewPage').then((module) => ({ default: module.OverviewPage })))
+const EdgesPage = createLazyRoute(() => import('./pages/EdgesPage').then((module) => ({ default: module.EdgesPage })))
+const EdgeDetailPage = createLazyRoute(() => import('./pages/EdgesPage').then((module) => ({ default: module.EdgeDetailPage })))
+const DaemonsPage = createLazyRoute(() => import('./pages/DaemonsPage').then((module) => ({ default: module.DaemonsPage })))
+const ConnectionsPage = createLazyRoute(() => import('./pages/ConnectionsPage').then((module) => ({ default: module.ConnectionsPage })))
+const AccountsPage = createLazyRoute(() => import('./pages/AccountsPage').then((module) => ({ default: module.AccountsPage })))
+const AccountDetailPage = createLazyRoute(() => import('./pages/AccountsPage').then((module) => ({ default: module.AccountDetailPage })))
+const PlansPage = createLazyRoute(() => import('./pages/PlansPage').then((module) => ({ default: module.PlansPage })))
+const SubscriptionsPage = createLazyRoute(() => import('./pages/SubscriptionsPage').then((module) => ({ default: module.SubscriptionsPage })))
+const OrdersPage = createLazyRoute(() => import('./pages/OrdersPage').then((module) => ({ default: module.OrdersPage })))
+const CertificatesPage = createLazyRoute(() => import('./pages/CertificatesPage').then((module) => ({ default: module.CertificatesPage })))
+const UsagePage = createLazyRoute(() => import('./pages/UsagePage').then((module) => ({ default: module.UsagePage })))
+const AuditPage = createLazyRoute(() => import('./pages/AuditPage').then((module) => ({ default: module.AuditPage })))
+const SystemPage = createLazyRoute(() => import('./pages/SystemPage').then((module) => ({ default: module.SystemPage })))
 
 function LazyRouteGroup() {
   const context = useOutletContext()
