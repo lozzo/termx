@@ -2,17 +2,17 @@
 // @generated from file cloud/v1/common.proto (package anytty.cloud.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Duration } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_duration } from "@bufbuild/protobuf/wkt";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Duration, Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_duration, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file cloud/v1/common.proto.
  */
 export const file_cloud_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD2FueXR0eS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMImoKD0hlYXJ0YmVhdFBvbGljeRIrCghpbnRlcnZhbBgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIqCgd0aW1lb3V0GAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIkQKDlNpZ25lZEVudmVsb3BlEg4KBmtleV9pZBgBIAEoCRIPCgdwYXlsb2FkGAIgASgMEhEKCXNpZ25hdHVyZRgDIAEoDEIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_duration]);
+  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD2FueXR0eS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMImoKD0hlYXJ0YmVhdFBvbGljeRIrCghpbnRlcnZhbBgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIqCgd0aW1lb3V0GAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIkQKDlNpZ25lZEVudmVsb3BlEg4KBmtleV9pZBgBIAEoCRIPCgdwYXlsb2FkGAIgASgMEhEKCXNpZ25hdHVyZRgDIAEoDCLtAQoNRWRnZUNoYWxsZW5nZRINCgVub25jZRgBIAEoDBIPCgdlZGdlX2lkGAIgASgJEhQKDGVkZ2VfYm9vdF9pZBgDIAEoCRIRCglzdHJlYW1faWQYBCABKAkSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0CgZ0YXJnZXQYByABKA4yJC5hbnl0dHkuY2xvdWQudjEuRWRnZUNoYWxsZW5nZVRhcmdldCqPAQoTRWRnZUNoYWxsZW5nZVRhcmdldBIlCiFFREdFX0NIQUxMRU5HRV9UQVJHRVRfVU5TUEVDSUZJRUQQABInCiNFREdFX0NIQUxMRU5HRV9UQVJHRVRfQUdFTlRfR0FURVdBWRABEigKJEVER0VfQ0hBTExFTkdFX1RBUkdFVF9DTElFTlRfR0FURVdBWRACQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_duration, file_google_protobuf_timestamp]);
 
 /**
  * VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
@@ -96,3 +96,81 @@ export type SignedEnvelope = Message<"anytty.cloud.v1.SignedEnvelope"> & {
  */
 export const SignedEnvelopeSchema: GenMessage<SignedEnvelope> = /*@__PURE__*/
   messageDesc(file_cloud_v1_common, 2);
+
+/**
+ * EdgeChallenge 是 Edge 在每条 Gateway stream 上先发的单次新鲜度证明材料。
+ * nonce 固定为 32 bytes，stream_id 由 Edge 为该 stream 唯一生成，期限固定为 10 秒。
+ *
+ * @generated from message anytty.cloud.v1.EdgeChallenge
+ */
+export type EdgeChallenge = Message<"anytty.cloud.v1.EdgeChallenge"> & {
+  /**
+   * @generated from field: bytes nonce = 1;
+   */
+  nonce: Uint8Array;
+
+  /**
+   * @generated from field: string edge_id = 2;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: string edge_boot_id = 3;
+   */
+  edgeBootId: string;
+
+  /**
+   * @generated from field: string stream_id = 4;
+   */
+  streamId: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp issued_at = 5;
+   */
+  issuedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.EdgeChallengeTarget target = 7;
+   */
+  target: EdgeChallengeTarget;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.EdgeChallenge.
+ * Use `create(EdgeChallengeSchema)` to create a new message.
+ */
+export const EdgeChallengeSchema: GenMessage<EdgeChallenge> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_common, 3);
+
+/**
+ * EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
+ *
+ * @generated from enum anytty.cloud.v1.EdgeChallengeTarget
+ */
+export enum EdgeChallengeTarget {
+  /**
+   * @generated from enum value: EDGE_CHALLENGE_TARGET_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: EDGE_CHALLENGE_TARGET_AGENT_GATEWAY = 1;
+   */
+  AGENT_GATEWAY = 1,
+
+  /**
+   * @generated from enum value: EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY = 2;
+   */
+  CLIENT_GATEWAY = 2,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.EdgeChallengeTarget.
+ */
+export const EdgeChallengeTargetSchema: GenEnum<EdgeChallengeTarget> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_common, 0);

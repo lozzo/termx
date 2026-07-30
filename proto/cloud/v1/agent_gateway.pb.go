@@ -23,12 +23,13 @@ const (
 )
 
 type AgentHello struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	DaemonBinding   *SignedEnvelope        `protobuf:"bytes,1,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
-	DeviceProof     []byte                 `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
-	SoftwareVersion string                 `protobuf:"bytes,3,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	DaemonBinding     *SignedEnvelope        `protobuf:"bytes,1,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
+	DeviceProof       []byte                 `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
+	SoftwareVersion   string                 `protobuf:"bytes,3,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
+	AttemptGeneration uint64                 `protobuf:"varint,4,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *AgentHello) Reset() {
@@ -80,6 +81,13 @@ func (x *AgentHello) GetSoftwareVersion() string {
 		return x.SoftwareVersion
 	}
 	return ""
+}
+
+func (x *AgentHello) GetAttemptGeneration() uint64 {
+	if x != nil {
+		return x.AttemptGeneration
+	}
+	return 0
 }
 
 type AgentHeartbeat struct {
@@ -791,6 +799,7 @@ type EdgeCommand struct {
 	//	*EdgeCommand_Ready
 	//	*EdgeCommand_Offer
 	//	*EdgeCommand_Authorize
+	//	*EdgeCommand_Challenge
 	Payload       isEdgeCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -909,6 +918,15 @@ func (x *EdgeCommand) GetAuthorize() *AgentAuthorize {
 	return nil
 }
 
+func (x *EdgeCommand) GetChallenge() *EdgeChallenge {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeCommand_Challenge); ok {
+			return x.Challenge
+		}
+	}
+	return nil
+}
+
 type isEdgeCommand_Payload interface {
 	isEdgeCommand_Payload()
 }
@@ -925,22 +943,29 @@ type EdgeCommand_Authorize struct {
 	Authorize *AgentAuthorize `protobuf:"bytes,22,opt,name=authorize,proto3,oneof"`
 }
 
+type EdgeCommand_Challenge struct {
+	Challenge *EdgeChallenge `protobuf:"bytes,23,opt,name=challenge,proto3,oneof"`
+}
+
 func (*EdgeCommand_Ready) isEdgeCommand_Payload() {}
 
 func (*EdgeCommand_Offer) isEdgeCommand_Payload() {}
 
 func (*EdgeCommand_Authorize) isEdgeCommand_Payload() {}
 
+func (*EdgeCommand_Challenge) isEdgeCommand_Payload() {}
+
 var File_cloud_v1_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1ccloud/v1/agent_gateway.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x01\n" +
+	"\x1ccloud/v1/agent_gateway.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
 	"\n" +
 	"AgentHello\x12F\n" +
 	"\x0edaemon_binding\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12!\n" +
 	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\x12)\n" +
-	"\x10software_version\x18\x03 \x01(\tR\x0fsoftwareVersion\"0\n" +
+	"\x10software_version\x18\x03 \x01(\tR\x0fsoftwareVersion\x12-\n" +
+	"\x12attempt_generation\x18\x04 \x01(\x04R\x11attemptGeneration\"0\n" +
 	"\x0eAgentHeartbeat\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
@@ -1016,7 +1041,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\x06answer\x18\x16 \x01(\v2\x1c.anytty.cloud.v1.AgentAnswerH\x00R\x06answer\x12B\n" +
 	"\brejected\x18\x17 \x01(\v2$.anytty.cloud.v1.AgentSignalRejectedH\x00R\brejected\x12Q\n" +
 	"\rauthorization\x18\x18 \x01(\v2).anytty.cloud.v1.AgentAuthorizationResultH\x00R\rauthorizationB\t\n" +
-	"\apayload\"\xbc\x03\n" +
+	"\apayload\"\xfc\x03\n" +
 	"\vEdgeCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1029,7 +1054,8 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x123\n" +
 	"\x05ready\x18\x14 \x01(\v2\x1b.anytty.cloud.v1.AgentReadyH\x00R\x05ready\x123\n" +
 	"\x05offer\x18\x15 \x01(\v2\x1b.anytty.cloud.v1.AgentOfferH\x00R\x05offer\x12?\n" +
-	"\tauthorize\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.AgentAuthorizeH\x00R\tauthorizeB\t\n" +
+	"\tauthorize\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.AgentAuthorizeH\x00R\tauthorize\x12>\n" +
+	"\tchallenge\x18\x17 \x01(\v2\x1e.anytty.cloud.v1.EdgeChallengeH\x00R\tchallengeB\t\n" +
 	"\apayload2X\n" +
 	"\fAgentGateway\x12H\n" +
 	"\aConnect\x12\x1b.anytty.cloud.v1.AgentEvent\x1a\x1c.anytty.cloud.v1.EdgeCommand(\x010\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
@@ -1065,6 +1091,7 @@ var file_cloud_v1_agent_gateway_proto_goTypes = []any{
 	(ClientProduct)(0),               // 14: anytty.cloud.v1.ClientProduct
 	(*HeartbeatPolicy)(nil),          // 15: anytty.cloud.v1.HeartbeatPolicy
 	(*timestamppb.Timestamp)(nil),    // 16: google.protobuf.Timestamp
+	(*EdgeChallenge)(nil),            // 17: anytty.cloud.v1.EdgeChallenge
 }
 var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
 	10, // 0: anytty.cloud.v1.AgentHello.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
@@ -1085,13 +1112,14 @@ var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
 	7,  // 15: anytty.cloud.v1.EdgeCommand.ready:type_name -> anytty.cloud.v1.AgentReady
 	2,  // 16: anytty.cloud.v1.EdgeCommand.offer:type_name -> anytty.cloud.v1.AgentOffer
 	3,  // 17: anytty.cloud.v1.EdgeCommand.authorize:type_name -> anytty.cloud.v1.AgentAuthorize
-	8,  // 18: anytty.cloud.v1.AgentGateway.Connect:input_type -> anytty.cloud.v1.AgentEvent
-	9,  // 19: anytty.cloud.v1.AgentGateway.Connect:output_type -> anytty.cloud.v1.EdgeCommand
-	19, // [19:20] is the sub-list for method output_type
-	18, // [18:19] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	17, // 18: anytty.cloud.v1.EdgeCommand.challenge:type_name -> anytty.cloud.v1.EdgeChallenge
+	8,  // 19: anytty.cloud.v1.AgentGateway.Connect:input_type -> anytty.cloud.v1.AgentEvent
+	9,  // 20: anytty.cloud.v1.AgentGateway.Connect:output_type -> anytty.cloud.v1.EdgeCommand
+	20, // [20:21] is the sub-list for method output_type
+	19, // [19:20] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_agent_gateway_proto_init() }
@@ -1114,6 +1142,7 @@ func file_cloud_v1_agent_gateway_proto_init() {
 		(*EdgeCommand_Ready)(nil),
 		(*EdgeCommand_Offer)(nil),
 		(*EdgeCommand_Authorize)(nil),
+		(*EdgeCommand_Challenge)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
@@ -38,7 +39,11 @@ type Config struct {
 }
 
 // Runtime 只使用 enrollment 持久化的 binding 和 locator 维持 AgentGateway generation。
-type Runtime struct{ config Config }
+type Runtime struct {
+	config            Config
+	bootID            string
+	attemptGeneration atomic.Uint64
+}
 
 type authorizedRuntimeOptions struct {
 	pionLogger *slog.Logger
@@ -125,7 +130,7 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if config.RetryMaximum < config.RetryMinimum {
 		config.RetryMaximum = 5 * time.Second
 	}
-	return &Runtime{config: config}, nil
+	return &Runtime{config: config, bootID: uuid.NewString()}, nil
 }
 
 // Run 维持 AgentGateway 长连接；Controller/Edge 失败只撤销 Presence 并有界重新解析。
@@ -183,12 +188,22 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 	if err != nil {
 		return err
 	}
-	bootID, connectionID := uuid.NewString(), uuid.NewString()
-	proof, err := ticket.SignAgentHelloProof(runtime.config.Identity, binding, runtime.config.Record.DaemonID, bootID, connectionID)
+	challengeCommand, err := stream.Recv()
 	if err != nil {
 		return err
 	}
-	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: binding, DeviceProof: proof, SoftwareVersion: runtime.config.SoftwareVersion}}}
+	challenge, err := validateAgentGatewayChallenge(challengeCommand, locator.GetEdgeId(), time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	connectionID := uuid.NewString()
+	attemptGeneration := runtime.attemptGeneration.Add(1)
+	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: runtime.bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: binding, SoftwareVersion: runtime.config.SoftwareVersion, AttemptGeneration: attemptGeneration}}}
+	proof, err := ticket.SignAgentHelloProof(runtime.config.Identity, challenge, hello, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	hello.GetHello().DeviceProof = proof
 	if err := stream.Send(hello); err != nil {
 		return err
 	}
@@ -196,7 +211,7 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 	if err != nil {
 		return err
 	}
-	if command.GetReady() == nil || command.GetProtocolVersion() != agentgateway.ProtocolVersion || command.GetConnectionId() != connectionID || command.GetStreamSeq() != 1 {
+	if command.GetReady() == nil || command.GetProtocolVersion() != agentgateway.ProtocolVersion || command.GetSenderId() != challenge.GetEdgeId() || command.GetBootId() != challenge.GetEdgeBootId() || command.GetConnectionId() != connectionID || command.GetStreamSeq() != 2 {
 		return errors.New("AgentReady is invalid")
 	}
 	interval := command.GetReady().GetHeartbeat().GetInterval().AsDuration()
@@ -207,7 +222,7 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 	defer cancel()
 	outbound := make(chan *cloudv1.AgentEvent, 32)
 	writerErrors := make(chan error, 1)
-	go runtime.runAgentWriter(connectionCtx, stream, bootID, connectionID, 1, outbound, writerErrors)
+	go runtime.runAgentWriter(connectionCtx, stream, runtime.bootID, connectionID, 1, outbound, writerErrors)
 	receive := make(chan error, 1)
 	go runtime.runEdgeCommands(connectionCtx, stream, command.GetReady().GetGeneration(), outbound, receive)
 	ticker := time.NewTicker(interval)
@@ -232,6 +247,22 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 			}
 		}
 	}
+}
+
+func validateAgentGatewayChallenge(command *cloudv1.EdgeCommand, expectedEdgeID string, now time.Time) (*cloudv1.EdgeChallenge, error) {
+	if command == nil || command.GetProtocolVersion() != agentgateway.ProtocolVersion || command.GetChallenge() == nil || strings.TrimSpace(command.GetMessageId()) == "" ||
+		command.GetStreamSeq() != 1 || command.GetSentAt() == nil || command.GetSentAt().CheckValid() != nil {
+		return nil, errors.New("AgentGateway EdgeChallenge envelope is invalid")
+	}
+	challenge := command.GetChallenge()
+	if err := ticket.ValidateEdgeChallenge(challenge, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY, now); err != nil {
+		return nil, err
+	}
+	if challenge.GetEdgeId() != strings.TrimSpace(expectedEdgeID) || command.GetSenderId() != challenge.GetEdgeId() || command.GetBootId() != challenge.GetEdgeBootId() ||
+		command.GetConnectionId() != challenge.GetStreamId() || !proto.Equal(command.GetSentAt(), challenge.GetIssuedAt()) {
+		return nil, errors.New("AgentGateway EdgeChallenge identity is invalid")
+	}
+	return proto.Clone(challenge).(*cloudv1.EdgeChallenge), nil
 }
 
 func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, bootID, connectionID string, sequence uint64, outbound <-chan *cloudv1.AgentEvent, failures chan<- error) {

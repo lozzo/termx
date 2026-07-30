@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,9 @@ import (
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -33,43 +37,238 @@ func TestPairingAdmissionRequiresClientProofAndOnlineDaemonIdentity(t *testing.T
 		DaemonId: "daemon-1", DeviceId: "device-1", DevicePublicKey: daemonPublicKey,
 		PairingClaimSha256: bytesOf(0x61, sha256.Size), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
 	}
-	proofBytes, err := ticket.PairingHelloProofBytes(admission, "edge-1", "session-1", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI)
-	if err != nil {
-		t.Fatal(err)
-	}
+	challenge := &cloudv1.EdgeChallenge{Nonce: bytesOf(0x51, ticket.EdgeChallengeNonceSize), EdgeId: "edge-1", EdgeBootId: "edge-boot-1", StreamId: "edge-stream-1", IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(ticket.EdgeChallengeLifetime)), Target: cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY}
 	event := &cloudv1.ClientSignal{
-		ProtocolVersion: ProtocolVersion, MessageId: "message-1", SenderId: remoteauth.Fingerprint(clientPublicKey), BootId: "boot-1", ConnectionId: "session-1", StreamSeq: 1,
+		ProtocolVersion: ProtocolVersion, MessageId: "message-1", SenderId: remoteauth.Fingerprint(clientPublicKey), BootId: "boot-1", ConnectionId: "session-1", StreamSeq: 1, SentAt: timestamppb.New(now),
 		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{
-			ClientPublicKey: clientPublicKey, ClientProof: ed25519.Sign(clientPrivateKey, proofBytes), Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
+			ClientPublicKey: clientPublicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, SoftwareVersion: "client-v2",
 			AttemptGeneration: 7, RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO,
 			Authorization: &cloudv1.ClientHello_PairingAdmission{PairingAdmission: admission},
 		}},
 	}
+	proofBytes, err := ticket.ClientHelloProofBytes(challenge, event, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.GetHello().ClientProof = ed25519.Sign(clientPrivateKey, proofBytes)
 	service := &Service{config: Config{
-		EdgeID: "edge-1", Now: func() time.Time { return now },
+		EdgeID: "edge-1", EdgeBootID: "edge-boot-1", Now: func() time.Time { return now },
 		Runtime: &pairingAdmissionRuntime{claims: &cloudv1.DaemonBindingClaims{AccountId: "account-1", DaemonId: "daemon-1", DeviceId: "device-1", DevicePublicKey: daemonPublicKey, EdgeId: "edge-1"}},
 	}}
-	claims, err := service.admit(context.Background(), event)
+	claims, err := service.admit(context.Background(), event, challenge)
 	if err != nil || claims.accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING || !proto.Equal(admission, event.GetHello().GetPairingAdmission()) {
 		t.Fatalf("pairing admission claims=%#v err=%v", claims, err)
 	}
 
 	tamperedIdentity := proto.Clone(event).(*cloudv1.ClientSignal)
 	tamperedIdentity.GetHello().GetPairingAdmission().DevicePublicKey[0] ^= 0xff
-	if _, err := service.admit(context.Background(), tamperedIdentity); err == nil {
+	if _, err := service.admit(context.Background(), tamperedIdentity, challenge); err == nil {
 		t.Fatal("pairing admission accepted another daemon identity")
 	}
 	expired := proto.Clone(event).(*cloudv1.ClientSignal)
 	expired.GetHello().GetPairingAdmission().ExpiresAtUnixNano = now.UnixNano()
-	if _, err := service.admit(context.Background(), expired); err == nil {
+	if _, err := service.admit(context.Background(), expired, challenge); err == nil {
 		t.Fatal("expired pairing admission was accepted")
 	}
 	wrongProof := proto.Clone(event).(*cloudv1.ClientSignal)
 	wrongProof.GetHello().ClientProof[0] ^= 0xff
-	if _, err := service.admit(context.Background(), wrongProof); err == nil {
+	if _, err := service.admit(context.Background(), wrongProof, challenge); err == nil {
 		t.Fatal("pairing admission accepted an invalid client proof")
 	}
 }
+
+func TestClientHelloReplayFailsUnderSerialAndConcurrentFreshChallenges(t *testing.T) {
+	service, clientPrivateKey, admission, now := newClientGatewayFixture(t)
+	_, oldChallenge, err := service.challengeSignal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldHello := signedClientHello(t, clientPrivateKey, admission, oldChallenge, now)
+	if _, err := service.admit(context.Background(), oldHello, oldChallenge); err != nil {
+		t.Fatalf("original ClientHello rejected: %v", err)
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		_, fresh, err := service.challengeSignal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.admit(context.Background(), oldHello, fresh); err == nil {
+			t.Fatal("serial replay accepted under a fresh challenge")
+		}
+	}
+
+	const parallel = 16
+	challenges := make([]*cloudv1.EdgeChallenge, parallel)
+	for index := range challenges {
+		_, challenges[index], err = service.challengeSignal()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var wait sync.WaitGroup
+	failures := make(chan int, parallel)
+	for index, challenge := range challenges {
+		wait.Add(1)
+		go func(index int, challenge *cloudv1.EdgeChallenge) {
+			defer wait.Done()
+			if _, err := service.admit(context.Background(), oldHello, challenge); err == nil {
+				failures <- index
+			}
+		}(index, challenge)
+	}
+	wait.Wait()
+	close(failures)
+	for index := range failures {
+		t.Errorf("concurrent replay %d was accepted", index)
+	}
+}
+
+func TestClientGatewaySendsOneChallengeBeforeHelloAndRejectsDuplicateHello(t *testing.T) {
+	service, clientPrivateKey, admission, now := newClientGatewayFixture(t)
+	stream := &clientGatewayTestStream{ctx: context.Background()}
+	stream.hello = func(challenge *cloudv1.EdgeChallenge) *cloudv1.ClientSignal {
+		return signedClientHello(t, clientPrivateKey, admission, challenge, now)
+	}
+	err := service.Connect(stream)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("duplicate ClientHello error=%v want InvalidArgument", err)
+	}
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if stream.recvBeforeSend {
+		t.Fatal("ClientGateway received Hello before sending EdgeChallenge")
+	}
+	challengeCount := 0
+	for _, signal := range stream.sent {
+		if signal.GetChallenge() != nil {
+			challengeCount++
+		}
+	}
+	if challengeCount != 1 || stream.recvCount != 2 {
+		t.Fatalf("challenge count=%d Recv count=%d want 1 challenge and duplicate Hello rejection", challengeCount, stream.recvCount)
+	}
+}
+
+func TestClientGatewayDoesNotReceiveHelloAfterChallengeDeadline(t *testing.T) {
+	service, _, _, now := newClientGatewayFixture(t)
+	calls := 0
+	service.config.Now = func() time.Time {
+		calls++
+		if calls == 1 {
+			return now
+		}
+		return now.Add(ticket.EdgeChallengeLifetime + time.Nanosecond)
+	}
+	stream := &clientGatewayTestStream{ctx: context.Background()}
+	if err := service.Connect(stream); status.Code(err) != codes.DeadlineExceeded {
+		t.Fatalf("expired ClientGateway challenge error=%v want DeadlineExceeded", err)
+	}
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if stream.recvCount != 0 || len(stream.sent) != 1 || stream.sent[0].GetChallenge() == nil {
+		t.Fatalf("expired challenge sent=%d Recv=%d", len(stream.sent), stream.recvCount)
+	}
+}
+
+func newClientGatewayFixture(t *testing.T) (*Service, ed25519.PrivateKey, *cloudv1.PairingAdmission, time.Time) {
+	t.Helper()
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	daemonPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := &cloudv1.PairingAdmission{
+		DaemonId: "daemon-replay", DeviceId: "device-replay", DevicePublicKey: daemonPublicKey,
+		PairingClaimSha256: bytesOf(0x71, sha256.Size), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
+	}
+	runtime := &clientGatewayRuntime{claims: &cloudv1.DaemonBindingClaims{AccountId: "account-replay", DaemonId: admission.GetDaemonId(), DeviceId: admission.GetDeviceId(), DevicePublicKey: daemonPublicKey, EdgeId: "edge-client"}}
+	service, err := NewService(Config{EdgeID: "edge-client", EdgeBootID: "edge-client-boot", Runtime: runtime, SignalTimeout: time.Second, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service, clientPrivateKey, admission, now
+}
+
+func signedClientHello(t *testing.T, privateKey ed25519.PrivateKey, admission *cloudv1.PairingAdmission, challenge *cloudv1.EdgeChallenge, now time.Time) *cloudv1.ClientSignal {
+	t.Helper()
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	event := &cloudv1.ClientSignal{
+		ProtocolVersion: ProtocolVersion, MessageId: "client-message", SenderId: remoteauth.Fingerprint(publicKey), BootId: "client-process-boot", ConnectionId: "client-session", StreamSeq: 1, SentAt: timestamppb.New(now),
+		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{
+			ClientPublicKey: publicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, SoftwareVersion: "client-v2", AttemptGeneration: 7, RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY,
+			Authorization: &cloudv1.ClientHello_PairingAdmission{PairingAdmission: proto.Clone(admission).(*cloudv1.PairingAdmission)},
+		}},
+	}
+	canonical, err := ticket.ClientHelloProofBytes(challenge, event, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.GetHello().ClientProof = ed25519.Sign(privateKey, canonical)
+	return event
+}
+
+type clientGatewayRuntime struct{ claims *cloudv1.DaemonBindingClaims }
+
+func (*clientGatewayRuntime) UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error {
+	return nil
+}
+func (*clientGatewayRuntime) RemoveSession(context.Context, string, uint64) error { return nil }
+func (*clientGatewayRuntime) BeginAgentSignal(context.Context, string, string, string) (uint64, <-chan *cloudv1.AgentEvent, error) {
+	response := make(chan *cloudv1.AgentEvent, 1)
+	response <- &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Authorization{Authorization: &cloudv1.AgentAuthorizationResult{Authorized: true}}}
+	return 1, response, nil
+}
+func (*clientGatewayRuntime) CancelAgentSignal(context.Context, string) error { return nil }
+func (*clientGatewayRuntime) SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error {
+	return nil
+}
+func (runtime *clientGatewayRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloudv1.DaemonBindingClaims, error) {
+	return proto.Clone(runtime.claims).(*cloudv1.DaemonBindingClaims), nil
+}
+
+type clientGatewayTestStream struct {
+	ctx            context.Context
+	mu             sync.Mutex
+	sent           []*cloudv1.EdgeSignal
+	hello          func(*cloudv1.EdgeChallenge) *cloudv1.ClientSignal
+	firstHello     *cloudv1.ClientSignal
+	recvCount      int
+	recvBeforeSend bool
+}
+
+func (stream *clientGatewayTestStream) Send(signal *cloudv1.EdgeSignal) error {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	stream.sent = append(stream.sent, proto.Clone(signal).(*cloudv1.EdgeSignal))
+	return nil
+}
+
+func (stream *clientGatewayTestStream) Recv() (*cloudv1.ClientSignal, error) {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	stream.recvCount++
+	if len(stream.sent) == 0 || stream.sent[0].GetChallenge() == nil {
+		stream.recvBeforeSend = true
+		return nil, io.EOF
+	}
+	if stream.firstHello == nil {
+		stream.firstHello = stream.hello(stream.sent[0].GetChallenge())
+		return proto.Clone(stream.firstHello).(*cloudv1.ClientSignal), nil
+	}
+	return proto.Clone(stream.firstHello).(*cloudv1.ClientSignal), nil
+}
+
+func (stream *clientGatewayTestStream) SetHeader(metadata.MD) error  { return nil }
+func (stream *clientGatewayTestStream) SendHeader(metadata.MD) error { return nil }
+func (stream *clientGatewayTestStream) SetTrailer(metadata.MD)       {}
+func (stream *clientGatewayTestStream) Context() context.Context     { return stream.ctx }
+func (stream *clientGatewayTestStream) SendMsg(any) error            { return nil }
+func (stream *clientGatewayTestStream) RecvMsg(any) error            { return nil }
 
 func bytesOf(value byte, size int) []byte {
 	result := make([]byte, size)

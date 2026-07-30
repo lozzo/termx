@@ -4,17 +4,21 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { EdgeChallenge } from "./common_pb";
+import { file_cloud_v1_common } from "./common_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { ClientProduct } from "./runtime_pb";
+import type { ClientProduct, CloudClientAccessMode } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
+import type { RelayPreference } from "./usage_pb";
+import { file_cloud_v1_usage } from "./usage_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file cloud/v1/ticket.proto.
  */
 export const file_cloud_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSJ7ChVEYWVtb25SZWxheURlbGVnYXRpb24SGwoTbWF4X2J5dGVzX3Blcl9sZWFzZRgBIAEoBBIhChltYXhfcmF0ZV9ieXRlc19wZXJfc2Vjb25kGAIgASgEEiIKGm1heF9jb25jdXJyZW50X2FsbG9jYXRpb25zGAMgASgNIpgDChNEYWVtb25CaW5kaW5nQ2xhaW1zEhIKCmJpbmRpbmdfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSDwoHZWRnZV9pZBgEIAEoCRIRCglkZXZpY2VfaWQYBSABKAkSGQoRZGV2aWNlX3B1YmxpY19rZXkYBiABKAwSNwoMY2FwYWJpbGl0aWVzGAcgAygOMiEuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkNhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJAChByZWxheV9kZWxlZ2F0aW9uGAogASgLMiYuYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlbGF5RGVsZWdhdGlvbhIQCghyZXZpc2lvbhgLIAEoBBIbChNlZGdlX2xvY2F0b3Jfc2hhMjU2GAwgASgMInEKFEFnZW50SGVsbG9Qcm9vZklucHV0Eh4KFmJpbmRpbmdfcGF5bG9hZF9zaGEyNTYYASABKAwSEQoJZGFlbW9uX2lkGAIgASgJEg8KB2Jvb3RfaWQYAyABKAkSFQoNY29ubmVjdGlvbl9pZBgEIAEoCSLnAQoVQ2xvdWRSb3V0ZUdyYW50Q2xhaW1zEhAKCGdyYW50X2lkGAEgASgJEhEKCWRhZW1vbl9pZBgCIAEoCRIZChFjbGllbnRfcHVibGljX2tleRgDIAEoDBIvCgdwcm9kdWN0GAQgASgOMh4uYW55dHR5LmNsb3VkLnYxLkNsaWVudFByb2R1Y3QSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJyChVDbGllbnRSb3V0ZVByb29mSW5wdXQSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhEKCWNoYWxsZW5nZRgCIAEoDBIcChRncmFudF9wYXlsb2FkX3NoYTI1NhgDIAEoDBISCgpyZXF1ZXN0X2lkGAQgASgJIoABChlDbG91ZFJvdXRlSGVsbG9Qcm9vZklucHV0EiIKGnJvdXRlX2dyYW50X3BheWxvYWRfc2hhMjU2GAEgASgMEg8KB2VkZ2VfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YBCABKAQirAEKFlBhaXJpbmdIZWxsb1Byb29mSW5wdXQSIAoYcGFpcmluZ19hZG1pc3Npb25fc2hhMjU2GAEgASgMEg8KB2VkZ2VfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YBCABKAQSLwoHcHJvZHVjdBgFIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0KlYKEERhZW1vbkNhcGFiaWxpdHkSIQodREFFTU9OX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIfChtEQUVNT05fQ0FQQUJJTElUWV9TSUdOQUxJTkcQAUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_timestamp, file_cloud_v1_runtime]);
+  fileDesc("ChVjbG91ZC92MS90aWNrZXQucHJvdG8SD2FueXR0eS5jbG91ZC52MSJ7ChVEYWVtb25SZWxheURlbGVnYXRpb24SGwoTbWF4X2J5dGVzX3Blcl9sZWFzZRgBIAEoBBIhChltYXhfcmF0ZV9ieXRlc19wZXJfc2Vjb25kGAIgASgEEiIKGm1heF9jb25jdXJyZW50X2FsbG9jYXRpb25zGAMgASgNIpgDChNEYWVtb25CaW5kaW5nQ2xhaW1zEhIKCmJpbmRpbmdfaWQYASABKAkSEQoJZGFlbW9uX2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSDwoHZWRnZV9pZBgEIAEoCRIRCglkZXZpY2VfaWQYBSABKAkSGQoRZGV2aWNlX3B1YmxpY19rZXkYBiABKAwSNwoMY2FwYWJpbGl0aWVzGAcgAygOMiEuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkNhcGFiaWxpdHkSLQoJaXNzdWVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJAChByZWxheV9kZWxlZ2F0aW9uGAogASgLMiYuYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlbGF5RGVsZWdhdGlvbhIQCghyZXZpc2lvbhgLIAEoBBIbChNlZGdlX2xvY2F0b3Jfc2hhMjU2GAwgASgMItUCChRBZ2VudEhlbGxvUHJvb2ZJbnB1dBIfChdiaW5kaW5nX2VudmVsb3BlX3NoYTI1NhgBIAEoDBIRCglkYWVtb25faWQYAiABKAkSFgoOZGFlbW9uX2Jvb3RfaWQYAyABKAkSGQoRZGFlbW9uX3Nlc3Npb25faWQYBCABKAkSMQoJY2hhbGxlbmdlGAUgASgLMh4uYW55dHR5LmNsb3VkLnYxLkVkZ2VDaGFsbGVuZ2USGAoQcHJvdG9jb2xfdmVyc2lvbhgGIAEoDRISCgptZXNzYWdlX2lkGAcgASgJEhIKCnN0cmVhbV9zZXEYCCABKAQSKwoHc2VudF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGAoQc29mdHdhcmVfdmVyc2lvbhgKIAEoCRIaChJhdHRlbXB0X2dlbmVyYXRpb24YCyABKAQi5wEKFUNsb3VkUm91dGVHcmFudENsYWltcxIQCghncmFudF9pZBgBIAEoCRIRCglkYWVtb25faWQYAiABKAkSGQoRY2xpZW50X3B1YmxpY19rZXkYAyABKAwSLwoHcHJvZHVjdBgEIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0Ei0KCWlzc3VlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAicgoVQ2xpZW50Um91dGVQcm9vZklucHV0EhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSHAoUZ3JhbnRfcGF5bG9hZF9zaGEyNTYYAyABKAwSEgoKcmVxdWVzdF9pZBgEIAEoCSKfBAocR2F0ZXdheUNsaWVudEhlbGxvUHJvb2ZJbnB1dBIxCgljaGFsbGVuZ2UYASABKAsyHi5hbnl0dHkuY2xvdWQudjEuRWRnZUNoYWxsZW5nZRIcChRhdXRob3JpemF0aW9uX3NoYTI1NhgCIAEoDBI7CgthY2Nlc3NfbW9kZRgDIAEoDjImLmFueXR0eS5jbG91ZC52MS5DbG91ZENsaWVudEFjY2Vzc01vZGUSGAoQcHJvdG9jb2xfdmVyc2lvbhgEIAEoDRISCgptZXNzYWdlX2lkGAUgASgJEhEKCWNsaWVudF9pZBgGIAEoCRIWCg5jbGllbnRfYm9vdF9pZBgHIAEoCRIZChFjbGllbnRfc2Vzc2lvbl9pZBgIIAEoCRISCgpzdHJlYW1fc2VxGAkgASgEEisKB3NlbnRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhkKEWNsaWVudF9wdWJsaWNfa2V5GAsgASgMEi8KB3Byb2R1Y3QYDCABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBIYChBzb2Z0d2FyZV92ZXJzaW9uGA0gASgJEhoKEmF0dGVtcHRfZ2VuZXJhdGlvbhgOIAEoBBI6ChByZWxheV9wcmVmZXJlbmNlGA8gASgOMiAuYW55dHR5LmNsb3VkLnYxLlJlbGF5UHJlZmVyZW5jZSpWChBEYWVtb25DYXBhYmlsaXR5EiEKHURBRU1PTl9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASHwobREFFTU9OX0NBUEFCSUxJVFlfU0lHTkFMSU5HEAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_google_protobuf_timestamp, file_cloud_v1_runtime, file_cloud_v1_usage]);
 
 /**
  * DaemonRelayDelegation 是 Controller 授予 Edge 的 Relay 上限。
@@ -122,15 +126,15 @@ export const DaemonBindingClaimsSchema: GenMessage<DaemonBindingClaims> = /*@__P
   messageDesc(file_cloud_v1_ticket, 1);
 
 /**
- * AgentHelloProofInput 把 DeviceIdentity proof 绑定到持久 binding 和当前 stream generation。
+ * AgentHelloProofInput 覆盖 Edge 单次 challenge、完整 binding envelope 摘要和 AgentHello 中除 proof 自身外的全部字段。
  *
  * @generated from message anytty.cloud.v1.AgentHelloProofInput
  */
 export type AgentHelloProofInput = Message<"anytty.cloud.v1.AgentHelloProofInput"> & {
   /**
-   * @generated from field: bytes binding_payload_sha256 = 1;
+   * @generated from field: bytes binding_envelope_sha256 = 1;
    */
-  bindingPayloadSha256: Uint8Array;
+  bindingEnvelopeSha256: Uint8Array;
 
   /**
    * @generated from field: string daemon_id = 2;
@@ -138,14 +142,49 @@ export type AgentHelloProofInput = Message<"anytty.cloud.v1.AgentHelloProofInput
   daemonId: string;
 
   /**
-   * @generated from field: string boot_id = 3;
+   * @generated from field: string daemon_boot_id = 3;
    */
-  bootId: string;
+  daemonBootId: string;
 
   /**
-   * @generated from field: string connection_id = 4;
+   * @generated from field: string daemon_session_id = 4;
    */
-  connectionId: string;
+  daemonSessionId: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.EdgeChallenge challenge = 5;
+   */
+  challenge?: EdgeChallenge | undefined;
+
+  /**
+   * @generated from field: uint32 protocol_version = 6;
+   */
+  protocolVersion: number;
+
+  /**
+   * @generated from field: string message_id = 7;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: uint64 stream_seq = 8;
+   */
+  streamSeq: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp sent_at = 9;
+   */
+  sentAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string software_version = 10;
+   */
+  softwareVersion: string;
+
+  /**
+   * @generated from field: uint64 attempt_generation = 11;
+   */
+  attemptGeneration: bigint;
 };
 
 /**
@@ -235,79 +274,94 @@ export const ClientRouteProofInputSchema: GenMessage<ClientRouteProofInput> = /*
   messageDesc(file_cloud_v1_ticket, 4);
 
 /**
- * CloudRouteHelloProofInput 把 daemon 签名的长期 Route grant 绑定到当前 Edge 和单次 stream generation。
- * grant 可复用，但每次连接都必须由同一 ClientAccessIdentity 重新签名，复制 grant 本身不能建立连接。
+ * GatewayClientHelloProofInput 对两种 authorization 使用同一 v2 transcript。
+ * authorization_sha256 是对应 SignedEnvelope 或 PairingAdmission 的确定性 protobuf 摘要。
  *
- * @generated from message anytty.cloud.v1.CloudRouteHelloProofInput
+ * @generated from message anytty.cloud.v1.GatewayClientHelloProofInput
  */
-export type CloudRouteHelloProofInput = Message<"anytty.cloud.v1.CloudRouteHelloProofInput"> & {
+export type GatewayClientHelloProofInput = Message<"anytty.cloud.v1.GatewayClientHelloProofInput"> & {
   /**
-   * @generated from field: bytes route_grant_payload_sha256 = 1;
+   * @generated from field: anytty.cloud.v1.EdgeChallenge challenge = 1;
    */
-  routeGrantPayloadSha256: Uint8Array;
+  challenge?: EdgeChallenge | undefined;
 
   /**
-   * @generated from field: string edge_id = 2;
+   * @generated from field: bytes authorization_sha256 = 2;
    */
-  edgeId: string;
+  authorizationSha256: Uint8Array;
 
   /**
-   * @generated from field: string session_id = 3;
+   * @generated from field: anytty.cloud.v1.CloudClientAccessMode access_mode = 3;
    */
-  sessionId: string;
+  accessMode: CloudClientAccessMode;
 
   /**
-   * @generated from field: uint64 attempt_generation = 4;
+   * @generated from field: uint32 protocol_version = 4;
    */
-  attemptGeneration: bigint;
-};
+  protocolVersion: number;
 
-/**
- * Describes the message anytty.cloud.v1.CloudRouteHelloProofInput.
- * Use `create(CloudRouteHelloProofInputSchema)` to create a new message.
- */
-export const CloudRouteHelloProofInputSchema: GenMessage<CloudRouteHelloProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 5);
-
-/**
- * PairingHelloProofInput 把紧凑 pairing admission 的全部安全字段绑定到目标 Edge 和单次 stream。
- * proof 由新建的 ClientAccessIdentity 签名；Edge 只接收 claim 摘要，不接收 128-bit claim 本体。
- *
- * @generated from message anytty.cloud.v1.PairingHelloProofInput
- */
-export type PairingHelloProofInput = Message<"anytty.cloud.v1.PairingHelloProofInput"> & {
   /**
-   * @generated from field: bytes pairing_admission_sha256 = 1;
+   * @generated from field: string message_id = 5;
    */
-  pairingAdmissionSha256: Uint8Array;
+  messageId: string;
 
   /**
-   * @generated from field: string edge_id = 2;
+   * @generated from field: string client_id = 6;
    */
-  edgeId: string;
+  clientId: string;
 
   /**
-   * @generated from field: string session_id = 3;
+   * @generated from field: string client_boot_id = 7;
    */
-  sessionId: string;
+  clientBootId: string;
 
   /**
-   * @generated from field: uint64 attempt_generation = 4;
+   * @generated from field: string client_session_id = 8;
    */
-  attemptGeneration: bigint;
+  clientSessionId: string;
 
   /**
-   * @generated from field: anytty.cloud.v1.ClientProduct product = 5;
+   * @generated from field: uint64 stream_seq = 9;
+   */
+  streamSeq: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp sent_at = 10;
+   */
+  sentAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bytes client_public_key = 11;
+   */
+  clientPublicKey: Uint8Array;
+
+  /**
+   * @generated from field: anytty.cloud.v1.ClientProduct product = 12;
    */
   product: ClientProduct;
+
+  /**
+   * @generated from field: string software_version = 13;
+   */
+  softwareVersion: string;
+
+  /**
+   * @generated from field: uint64 attempt_generation = 14;
+   */
+  attemptGeneration: bigint;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayPreference relay_preference = 15;
+   */
+  relayPreference: RelayPreference;
 };
 
 /**
- * Describes the message anytty.cloud.v1.PairingHelloProofInput.
- * Use `create(PairingHelloProofInputSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.GatewayClientHelloProofInput.
+ * Use `create(GatewayClientHelloProofInputSchema)` to create a new message.
  */
-export const PairingHelloProofInputSchema: GenMessage<PairingHelloProofInput> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_ticket, 6);
+export const GatewayClientHelloProofInputSchema: GenMessage<GatewayClientHelloProofInput> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_ticket, 5);
 
 /**
  * DaemonCapability 是 enrollment 时授予 daemon 的 Edge 侧能力，不表达 terminal 权限。

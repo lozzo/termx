@@ -14,6 +14,7 @@ message AgentHello {
   SignedEnvelope daemon_binding = 1;
   bytes device_proof = 2;
   string software_version = 3;
+  uint64 attempt_generation = 4;
 }
 
 message AgentHeartbeat { uint64 generation = 1; }
@@ -97,6 +98,7 @@ message EdgeCommand {
     AgentReady ready = 20;
     AgentOffer offer = 21;
     AgentAuthorize authorize = 22;
+    EdgeChallenge challenge = 23;
   }
 }
 

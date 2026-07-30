@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -23,8 +24,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 是 ClientGateway 首发 envelope 版本。
-const ProtocolVersion uint32 = 1
+// ProtocolVersion 是要求 Edge 先发 challenge 的 ClientGateway 协议版本。
+const ProtocolVersion uint32 = 2
 
 const (
 	maxOfferSDPBytes     = 256 * 1024
@@ -58,12 +59,13 @@ type RelaySessionCloser interface {
 
 // Config 提供 Edge identity、状态 owner 和信令 deadline。
 type Config struct {
-	EdgeID        string
-	EdgeBootID    string
-	Runtime       Runtime
-	SignalTimeout time.Duration
-	Now           func() time.Time
-	Relay         RelayBroker
+	EdgeID          string
+	EdgeBootID      string
+	Runtime         Runtime
+	SignalTimeout   time.Duration
+	Now             func() time.Time
+	Relay           RelayBroker
+	ChallengeRandom io.Reader
 }
 
 // Service 只在授权材料、proof、产品和 attempt generation 全部一致后发布客户端实时摘要。
@@ -81,16 +83,35 @@ func NewService(config Config) (*Service, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
+	if config.ChallengeRandom == nil {
+		config.ChallengeRandom = rand.Reader
+	}
 	return &Service{config: config}, nil
 }
 
-// Connect 完成 ClientHello、单次完整 offer/answer correlation；成功后 P2P DataChannel 不再依赖该 stream。
+// Connect 先发送唯一 EdgeChallenge，再完成唯一 ClientHello 和单次 offer/answer correlation。
 func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) error {
-	helloEvent, err := stream.Recv()
+	challengeSignal, challenge, err := service.challengeSignal()
 	if err != nil {
+		return status.Errorf(codes.Internal, "create ClientGateway challenge: %v", err)
+	}
+	if err := stream.Send(challengeSignal); err != nil {
+		return status.Errorf(codes.Unavailable, "send ClientGateway challenge: %v", err)
+	}
+	helloTimeout := challenge.GetExpiresAt().AsTime().Sub(service.config.Now().UTC())
+	if helloTimeout <= 0 {
+		return status.Error(codes.DeadlineExceeded, "ClientGateway challenge expired before ClientHello")
+	}
+	helloContext, cancelHello := context.WithTimeout(stream.Context(), helloTimeout)
+	helloEvent, err := receiveClientSignal(helloContext, stream)
+	cancelHello()
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, "ClientGateway challenge expired before ClientHello")
+		}
 		return status.Errorf(codes.InvalidArgument, "receive ClientHello: %v", err)
 	}
-	claims, err := service.admit(stream.Context(), helloEvent)
+	claims, err := service.admit(stream.Context(), helloEvent, challenge)
 	if err != nil {
 		if errors.Is(err, errRouteStale) {
 			return status.Error(codes.NotFound, errRouteStale.Error())
@@ -147,7 +168,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 			go service.maintainRelayLease(sessionContext, renewRequest, relay, cancelSession)
 		}
 	}
-	if err := stream.Send(service.edgeSignal(sessionID, 1, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
+	if err := stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
 		return err
 	}
 	offerEvent, err := receiveClientSignal(sessionContext, stream)
@@ -187,12 +208,12 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 			return status.Error(codes.FailedPrecondition, "daemon signaling generation ended")
 		}
 		if result.GetRejected() != nil {
-			return stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Rejected{Rejected: &cloudv1.SignalRejected{SessionId: sessionID, Code: result.GetRejected().GetCode(), Message: result.GetRejected().GetMessage()}}))
+			return stream.Send(service.edgeSignal(sessionID, 3, &cloudv1.EdgeSignal_Rejected{Rejected: &cloudv1.SignalRejected{SessionId: sessionID, Code: result.GetRejected().GetCode(), Message: result.GetRejected().GetMessage()}}))
 		}
 		if result.GetAnswer() == nil {
 			return status.Error(codes.Internal, "daemon signaling result is empty")
 		}
-		if err := stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Answer{Answer: &cloudv1.EdgeAnswer{SessionId: sessionID, AnswerSdp: result.GetAnswer().GetAnswerSdp(), Candidates: cloneCandidates(result.GetAnswer().GetCandidates())}})); err != nil {
+		if err := stream.Send(service.edgeSignal(sessionID, 3, &cloudv1.EdgeSignal_Answer{Answer: &cloudv1.EdgeAnswer{SessionId: sessionID, AnswerSdp: result.GetAnswer().GetAnswerSdp(), Candidates: cloneCandidates(result.GetAnswer().GetCandidates())}})); err != nil {
 			return err
 		}
 		// ClientGateway 只观察当前 P2P session 生命周期，不运输任何业务数据。
@@ -366,13 +387,21 @@ type admissionClaims struct {
 	pairingClaimDigest            []byte
 }
 
-func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) (*admissionClaims, error) {
-	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 1 || event.GetHello() == nil || strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
+func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal, challenge *cloudv1.EdgeChallenge) (*admissionClaims, error) {
+	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 1 || event.GetHello() == nil || strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" || event.GetSentAt() == nil || event.GetSentAt().CheckValid() != nil {
 		return nil, errors.New("ClientHello envelope is invalid")
 	}
+	now := service.config.Now().UTC()
+	if err := ticket.ValidateEdgeChallenge(challenge, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err != nil ||
+		challenge.GetEdgeId() != service.config.EdgeID || challenge.GetEdgeBootId() != service.config.EdgeBootID {
+		return nil, errors.New("ClientGateway challenge is invalid")
+	}
 	hello := event.GetHello()
-	if len(hello.GetClientPublicKey()) != ed25519.PublicKeySize || hello.GetAttemptGeneration() == 0 || hello.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || hello.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+	if len(hello.GetClientPublicKey()) != ed25519.PublicKeySize || hello.GetAttemptGeneration() == 0 || hello.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || hello.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI || strings.TrimSpace(hello.GetSoftwareVersion()) == "" {
 		return nil, errors.New("ClientHello identity is incomplete")
+	}
+	if hello.GetRelayPreference() < cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO || hello.GetRelayPreference() > cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
+		return nil, errors.New("ClientHello Relay preference is invalid")
 	}
 	var daemonID string
 	var accessMode cloudv1.CloudClientAccessMode
@@ -399,6 +428,9 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) 
 		return nil, errRouteStale
 	}
 	claims := &admissionClaims{accountID: agent.GetAccountId(), daemonID: daemonID, clientPublicKey: append([]byte(nil), hello.GetClientPublicKey()...), product: hello.GetProduct(), accessMode: accessMode}
+	if err := ticket.VerifyClientHelloProof(claims.clientPublicKey, hello.GetClientProof(), challenge, event, now); err != nil {
+		return nil, err
+	}
 	switch authorization := hello.GetAuthorization().(type) {
 	case *cloudv1.ClientHello_CloudRouteGrant:
 		verified, verifyErr := ticket.VerifyCloudRouteGrant(authorization.CloudRouteGrant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
@@ -408,19 +440,12 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) 
 		if !bytes.Equal(verified.GetClientPublicKey(), hello.GetClientPublicKey()) || verified.GetProduct() != hello.GetProduct() {
 			return nil, errors.New("ClientHello identity or product does not match CloudRouteGrant")
 		}
-		if err := ticket.VerifyCloudRouteHelloProof(claims.clientPublicKey, hello.GetClientProof(), authorization.CloudRouteGrant, service.config.EdgeID, event.GetConnectionId(), hello.GetAttemptGeneration()); err != nil {
-			return nil, err
-		}
 	case *cloudv1.ClientHello_PairingAdmission:
 		admission := authorization.PairingAdmission
-		now := service.config.Now().UTC()
 		expiresAt := time.Unix(0, admission.GetExpiresAtUnixNano()).UTC()
 		if admission.GetDeviceId() != agent.GetDeviceId() || !bytes.Equal(admission.GetDevicePublicKey(), agent.GetDevicePublicKey()) || len(admission.GetPairingClaimSha256()) != sha256.Size ||
 			admission.GetExpiresAtUnixNano() <= 0 || !expiresAt.After(now) || expiresAt.After(now.Add(24*time.Hour)) {
 			return nil, errors.New("pairing admission does not match the online daemon or validity window")
-		}
-		if err := ticket.VerifyPairingHelloProof(claims.clientPublicKey, hello.GetClientProof(), admission, service.config.EdgeID, event.GetConnectionId(), hello.GetAttemptGeneration(), hello.GetProduct()); err != nil {
-			return nil, err
 		}
 		claims.pairingClaimDigest = append([]byte(nil), admission.GetPairingClaimSha256()...)
 	default:
@@ -430,10 +455,24 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal) 
 	if event.GetSenderId() != claims.clientID {
 		return nil, errors.New("ClientHello sender does not match client public key")
 	}
-	if hello.GetRelayPreference() < cloudv1.RelayPreference_RELAY_PREFERENCE_UNSPECIFIED || hello.GetRelayPreference() > cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
-		return nil, errors.New("ClientHello Relay preference is invalid")
-	}
 	return claims, nil
+}
+
+func (service *Service) challengeSignal() (*cloudv1.EdgeSignal, *cloudv1.EdgeChallenge, error) {
+	nonce := make([]byte, ticket.EdgeChallengeNonceSize)
+	if _, err := io.ReadFull(service.config.ChallengeRandom, nonce); err != nil {
+		return nil, nil, err
+	}
+	now := service.config.Now().UTC()
+	challenge := &cloudv1.EdgeChallenge{
+		Nonce: nonce, EdgeId: service.config.EdgeID, EdgeBootId: service.config.EdgeBootID, StreamId: uuid.NewString(),
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(ticket.EdgeChallengeLifetime)), Target: cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY,
+	}
+	signal := &cloudv1.EdgeSignal{
+		ProtocolVersion: ProtocolVersion, MessageId: uuid.NewString(), SenderId: service.config.EdgeID, BootId: service.config.EdgeBootID,
+		ConnectionId: challenge.GetStreamId(), StreamSeq: 1, SentAt: timestamppb.New(now), Payload: &cloudv1.EdgeSignal_Challenge{Challenge: proto.Clone(challenge).(*cloudv1.EdgeChallenge)},
+	}
+	return signal, challenge, nil
 }
 
 func cloudRouteGrantDaemonID(grant *cloudv1.SignedEnvelope) string {

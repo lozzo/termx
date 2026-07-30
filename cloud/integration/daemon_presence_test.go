@@ -73,11 +73,17 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 		t.Fatal(err)
 	}
 	bootID, connectionID := uuid.NewString(), uuid.NewString()
-	proof, err := ticket.SignAgentHelloProof(identity, signed, claims.GetDaemonId(), bootID, connectionID)
+	challengeCommand, err := stream.Recv()
+	if err != nil || challengeCommand.GetChallenge() == nil {
+		t.Fatalf("AgentGateway challenge=%v err=%v", challengeCommand, err)
+	}
+	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: claims.GetDaemonId(), BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: signed, SoftwareVersion: "r4-test", AttemptGeneration: 1}}}
+	proof, err := ticket.SignAgentHelloProof(identity, challengeCommand.GetChallenge(), hello, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: claims.GetDaemonId(), BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: signed, DeviceProof: proof, SoftwareVersion: "r4-test"}}}); err != nil {
+	hello.GetHello().DeviceProof = proof
+	if err := stream.Send(hello); err != nil {
 		t.Fatal(err)
 	}
 	ready, err := stream.Recv()

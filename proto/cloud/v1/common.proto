@@ -3,6 +3,7 @@ syntax = "proto3";
 package anytty.cloud.v1;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
@@ -25,4 +26,23 @@ message SignedEnvelope {
   string key_id = 1;
   bytes payload = 2;
   bytes signature = 3;
+}
+
+// EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
+enum EdgeChallengeTarget {
+  EDGE_CHALLENGE_TARGET_UNSPECIFIED = 0;
+  EDGE_CHALLENGE_TARGET_AGENT_GATEWAY = 1;
+  EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY = 2;
+}
+
+// EdgeChallenge 是 Edge 在每条 Gateway stream 上先发的单次新鲜度证明材料。
+// nonce 固定为 32 bytes，stream_id 由 Edge 为该 stream 唯一生成，期限固定为 10 秒。
+message EdgeChallenge {
+  bytes nonce = 1;
+  string edge_id = 2;
+  string edge_boot_id = 3;
+  string stream_id = 4;
+  google.protobuf.Timestamp issued_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  EdgeChallengeTarget target = 7;
 }

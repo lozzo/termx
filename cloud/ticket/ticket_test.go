@@ -87,17 +87,6 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	if err := ticket.VerifyClientRouteProof(daemonIdentity.PublicKey, proof, canonical); err == nil {
 		t.Fatal("Cloud route proof accepted another client key")
 	}
-	helloCanonical, err := ticket.CloudRouteHelloProofBytes(grant, "edge-r5", "session-r5", 7)
-	if err != nil {
-		t.Fatal(err)
-	}
-	helloProof := ed25519.Sign(clientPrivateKey, helloCanonical)
-	if err := ticket.VerifyCloudRouteHelloProof(clientPublicKey, helloProof, grant, "edge-r5", "session-r5", 7); err != nil {
-		t.Fatal(err)
-	}
-	if err := ticket.VerifyCloudRouteHelloProof(clientPublicKey, helloProof, grant, "edge-other", "session-r5", 7); err == nil {
-		t.Fatal("Cloud Route hello proof accepted another Edge")
-	}
 	tampered := proto.Clone(grant).(*cloudv1.SignedEnvelope)
 	tampered.KeyId = "another-device-fingerprint"
 	if _, err := ticket.VerifyCloudRouteGrant(tampered, daemonIdentity.PublicKey, "daemon-r5", now); err == nil {
@@ -105,7 +94,110 @@ func TestCloudRouteGrantBindsDaemonClientAndProduct(t *testing.T) {
 	}
 }
 
-func TestPairingHelloProofBindsAdmissionEdgeSessionAndProduct(t *testing.T) {
+func TestEdgeChallengeRejectsWrongGatewayTimeAndLength(t *testing.T) {
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	valid := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now)
+	if err := ticket.ValidateEdgeChallenge(valid, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]func(*cloudv1.EdgeChallenge){
+		"short nonce": func(value *cloudv1.EdgeChallenge) { value.Nonce = value.Nonce[:31] },
+		"long nonce":  func(value *cloudv1.EdgeChallenge) { value.Nonce = append(value.Nonce, 0) },
+		"wrong gateway": func(value *cloudv1.EdgeChallenge) {
+			value.Target = cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY
+		},
+		"future": func(value *cloudv1.EdgeChallenge) {
+			value.IssuedAt = timestamppb.New(now.Add(time.Nanosecond))
+			value.ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + time.Nanosecond))
+		},
+		"expired": func(value *cloudv1.EdgeChallenge) {
+			value.IssuedAt = timestamppb.New(now.Add(-ticket.EdgeChallengeLifetime))
+			value.ExpiresAt = timestamppb.New(now)
+		},
+		"wrong lifetime": func(value *cloudv1.EdgeChallenge) {
+			value.ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + time.Nanosecond))
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			value := proto.Clone(valid).(*cloudv1.EdgeChallenge)
+			mutate(value)
+			if err := ticket.ValidateEdgeChallenge(value, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err == nil {
+				t.Fatal("invalid challenge was accepted")
+			}
+		})
+	}
+}
+
+func TestAgentHelloProofCoversChallengeBindingEnvelopeAndEveryHelloField(t *testing.T) {
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := remoteauth.NewIdentity("device-agent-proof", privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY, now)
+	event := &cloudv1.AgentEvent{
+		ProtocolVersion: 2, MessageId: "agent-message", SenderId: "daemon-agent", BootId: "daemon-boot", ConnectionId: "daemon-session", StreamSeq: 1, SentAt: timestamppb.New(now),
+		Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{
+			DaemonBinding:   &cloudv1.SignedEnvelope{KeyId: "binding-key", Payload: []byte("binding-payload"), Signature: bytes.Repeat([]byte{0x41}, ed25519.SignatureSize)},
+			SoftwareVersion: "agent-v2", AttemptGeneration: 7,
+		}},
+	}
+	proof, err := ticket.SignAgentHelloProof(identity, challenge, event, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.GetHello().DeviceProof = proof
+	if err := ticket.VerifyAgentHelloProof(identity.PublicKey, proof, challenge, event, now); err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]func(*cloudv1.EdgeChallenge, *cloudv1.AgentEvent){
+		"challenge nonce": func(value *cloudv1.EdgeChallenge, _ *cloudv1.AgentEvent) { value.Nonce[0] ^= 1 },
+		"edge id":         func(value *cloudv1.EdgeChallenge, _ *cloudv1.AgentEvent) { value.EdgeId += "-other" },
+		"edge boot":       func(value *cloudv1.EdgeChallenge, _ *cloudv1.AgentEvent) { value.EdgeBootId += "-other" },
+		"edge stream":     func(value *cloudv1.EdgeChallenge, _ *cloudv1.AgentEvent) { value.StreamId += "-other" },
+		"binding key": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) {
+			value.GetHello().GetDaemonBinding().KeyId += "-other"
+		},
+		"binding payload": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) {
+			value.GetHello().GetDaemonBinding().Payload[0] ^= 1
+		},
+		"binding signature": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) {
+			value.GetHello().GetDaemonBinding().Signature[0] ^= 1
+		},
+		"protocol": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) { value.ProtocolVersion++ },
+		"message":  func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) { value.MessageId += "-other" },
+		"sender":   func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) { value.SenderId += "-other" },
+		"boot":     func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) { value.BootId += "-other" },
+		"session":  func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) { value.ConnectionId += "-other" },
+		"sequence": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) { value.StreamSeq++ },
+		"sent at": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) {
+			value.SentAt = timestamppb.New(now.Add(time.Nanosecond))
+		},
+		"software version": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) {
+			value.GetHello().SoftwareVersion += "-other"
+		},
+		"attempt generation": func(_ *cloudv1.EdgeChallenge, value *cloudv1.AgentEvent) {
+			value.GetHello().AttemptGeneration++
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			changedChallenge := proto.Clone(challenge).(*cloudv1.EdgeChallenge)
+			changedEvent := proto.Clone(event).(*cloudv1.AgentEvent)
+			mutate(changedChallenge, changedEvent)
+			if err := ticket.VerifyAgentHelloProof(identity.PublicKey, proof, changedChallenge, changedEvent, now); err == nil {
+				t.Fatal("tampered AgentHello proof was accepted")
+			}
+		})
+	}
+}
+
+func TestClientHelloProofCoversChallengeAuthorizationAndEveryHelloField(t *testing.T) {
 	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -114,24 +206,132 @@ func TestPairingHelloProofBindsAdmissionEdgeSessionAndProduct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 	admission := &cloudv1.PairingAdmission{
 		DaemonId: "daemon-pairing", DeviceId: "device-pairing", DevicePublicKey: devicePublicKey,
-		PairingClaimSha256: bytes.Repeat([]byte{0x71}, sha256.Size), ExpiresAtUnixNano: time.Now().Add(10 * time.Minute).UnixNano(),
+		PairingClaimSha256: bytes.Repeat([]byte{0x71}, sha256.Size), ExpiresAtUnixNano: now.Add(10 * time.Minute).UnixNano(),
 	}
-	canonical, err := ticket.PairingHelloProofBytes(admission, "edge-pairing", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI)
+	challenge := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now)
+	event := &cloudv1.ClientSignal{
+		ProtocolVersion: 2, MessageId: "client-message", SenderId: remoteauth.Fingerprint(clientPublicKey), BootId: "client-boot", ConnectionId: "client-session", StreamSeq: 1, SentAt: timestamppb.New(now),
+		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{
+			ClientPublicKey: clientPublicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, SoftwareVersion: "client-v2", AttemptGeneration: 7,
+			RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, Authorization: &cloudv1.ClientHello_PairingAdmission{PairingAdmission: admission},
+		}},
+	}
+	canonical, err := ticket.ClientHelloProofBytes(challenge, event, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	proof := ed25519.Sign(clientPrivateKey, canonical)
-	if err := ticket.VerifyPairingHelloProof(clientPublicKey, proof, admission, "edge-pairing", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI); err != nil {
+	event.GetHello().ClientProof = proof
+	if err := ticket.VerifyClientHelloProof(clientPublicKey, proof, challenge, event, now); err != nil {
 		t.Fatal(err)
 	}
-	tampered := proto.Clone(admission).(*cloudv1.PairingAdmission)
-	tampered.PairingClaimSha256[0] ^= 0xff
-	if err := ticket.VerifyPairingHelloProof(clientPublicKey, proof, tampered, "edge-pairing", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI); err == nil {
-		t.Fatal("pairing proof accepted a different claim")
+	tests := map[string]func(*cloudv1.EdgeChallenge, *cloudv1.ClientSignal){
+		"challenge nonce": func(value *cloudv1.EdgeChallenge, _ *cloudv1.ClientSignal) { value.Nonce[0] ^= 1 },
+		"edge id":         func(value *cloudv1.EdgeChallenge, _ *cloudv1.ClientSignal) { value.EdgeId += "-other" },
+		"edge boot":       func(value *cloudv1.EdgeChallenge, _ *cloudv1.ClientSignal) { value.EdgeBootId += "-other" },
+		"edge stream":     func(value *cloudv1.EdgeChallenge, _ *cloudv1.ClientSignal) { value.StreamId += "-other" },
+		"authorization": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) {
+			value.GetHello().GetPairingAdmission().PairingClaimSha256[0] ^= 1
+		},
+		"protocol": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.ProtocolVersion++ },
+		"message":  func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.MessageId += "-other" },
+		"sender":   func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.SenderId += "-other" },
+		"boot":     func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.BootId += "-other" },
+		"session":  func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.ConnectionId += "-other" },
+		"sequence": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.StreamSeq++ },
+		"sent at": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) {
+			value.SentAt = timestamppb.New(now.Add(time.Nanosecond))
+		},
+		"public key": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.GetHello().ClientPublicKey[0] ^= 1 },
+		"product":    func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.GetHello().Product++ },
+		"software version": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) {
+			value.GetHello().SoftwareVersion += "-other"
+		},
+		"attempt generation": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) {
+			value.GetHello().AttemptGeneration++
+		},
+		"relay preference": func(_ *cloudv1.EdgeChallenge, value *cloudv1.ClientSignal) { value.GetHello().RelayPreference++ },
 	}
-	if err := ticket.VerifyPairingHelloProof(clientPublicKey, proof, admission, "edge-other", "session-pairing", 7, cloudv1.ClientProduct_CLIENT_PRODUCT_CLI); err == nil {
-		t.Fatal("pairing proof accepted another Edge")
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			changedChallenge := proto.Clone(challenge).(*cloudv1.EdgeChallenge)
+			changedEvent := proto.Clone(event).(*cloudv1.ClientSignal)
+			mutate(changedChallenge, changedEvent)
+			if err := ticket.VerifyClientHelloProof(clientPublicKey, proof, changedChallenge, changedEvent, now); err == nil {
+				t.Fatal("tampered ClientHello proof was accepted")
+			}
+		})
+	}
+}
+
+func TestClientHelloProofCoversCompleteRouteGrantEnvelope(t *testing.T) {
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now)
+	event := &cloudv1.ClientSignal{
+		ProtocolVersion: 2, MessageId: "route-message", SenderId: remoteauth.Fingerprint(publicKey), BootId: "route-boot", ConnectionId: "route-session", StreamSeq: 1, SentAt: timestamppb.New(now),
+		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{
+			ClientPublicKey: publicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, SoftwareVersion: "client-v2", AttemptGeneration: 9, RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY,
+			Authorization: &cloudv1.ClientHello_CloudRouteGrant{CloudRouteGrant: &cloudv1.SignedEnvelope{KeyId: "daemon-key", Payload: []byte("route-grant"), Signature: bytes.Repeat([]byte{0x51}, ed25519.SignatureSize)}},
+		}},
+	}
+	canonical, err := ticket.ClientHelloProofBytes(challenge, event, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := ed25519.Sign(privateKey, canonical)
+	for name, mutate := range map[string]func(*cloudv1.SignedEnvelope){
+		"key id":    func(value *cloudv1.SignedEnvelope) { value.KeyId += "-other" },
+		"payload":   func(value *cloudv1.SignedEnvelope) { value.Payload[0] ^= 1 },
+		"signature": func(value *cloudv1.SignedEnvelope) { value.Signature[0] ^= 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := proto.Clone(event).(*cloudv1.ClientSignal)
+			mutate(changed.GetHello().GetCloudRouteGrant())
+			if err := ticket.VerifyClientHelloProof(publicKey, proof, challenge, changed, now); err == nil {
+				t.Fatal("tampered route grant envelope was accepted")
+			}
+		})
+	}
+}
+
+func TestGatewayHelloProofRejectsCrossGatewayChallengeAndDomain(t *testing.T) {
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientChallenge := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now)
+	clientEvent := &cloudv1.ClientSignal{
+		ProtocolVersion: 2, MessageId: "message", SenderId: remoteauth.Fingerprint(publicKey), BootId: "boot", ConnectionId: "session", StreamSeq: 1, SentAt: timestamppb.New(now),
+		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{ClientPublicKey: publicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, SoftwareVersion: "v2", AttemptGeneration: 1, RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, Authorization: &cloudv1.ClientHello_PairingAdmission{PairingAdmission: &cloudv1.PairingAdmission{DaemonId: "daemon", DeviceId: "device", DevicePublicKey: bytes.Repeat([]byte{1}, ed25519.PublicKeySize), PairingClaimSha256: bytes.Repeat([]byte{2}, sha256.Size), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano()}}}},
+	}
+	canonical, err := ticket.ClientHelloProofBytes(clientChallenge, clientEvent, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := ed25519.Sign(privateKey, canonical)
+	agentChallenge := proto.Clone(clientChallenge).(*cloudv1.EdgeChallenge)
+	agentChallenge.Target = cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY
+	if _, err := ticket.ClientHelloProofBytes(agentChallenge, clientEvent, now); err == nil {
+		t.Fatal("ClientHello accepted an AgentGateway challenge")
+	}
+	changed := proto.Clone(clientChallenge).(*cloudv1.EdgeChallenge)
+	changed.StreamId = "another-gateway-stream"
+	if err := ticket.VerifyClientHelloProof(publicKey, proof, changed, clientEvent, now); err == nil {
+		t.Fatal("ClientHello proof crossed Gateway stream identity")
+	}
+}
+
+func testEdgeChallenge(target cloudv1.EdgeChallengeTarget, now time.Time) *cloudv1.EdgeChallenge {
+	return &cloudv1.EdgeChallenge{
+		Nonce: bytes.Repeat([]byte{0x42}, ticket.EdgeChallengeNonceSize), EdgeId: "edge-v2", EdgeBootId: "edge-boot-v2", StreamId: "edge-stream-v2",
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(ticket.EdgeChallengeLifetime)), Target: target,
 	}
 }

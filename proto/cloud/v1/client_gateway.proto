@@ -92,6 +92,7 @@ message EdgeSignal {
     ClientReady ready = 20;
     EdgeAnswer answer = 21;
     SignalRejected rejected = 22;
+    EdgeChallenge challenge = 23;
   }
 }
 

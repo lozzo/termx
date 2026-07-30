@@ -693,6 +693,7 @@ type EdgeSignal struct {
 	//	*EdgeSignal_Ready
 	//	*EdgeSignal_Answer
 	//	*EdgeSignal_Rejected
+	//	*EdgeSignal_Challenge
 	Payload       isEdgeSignal_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -811,6 +812,15 @@ func (x *EdgeSignal) GetRejected() *SignalRejected {
 	return nil
 }
 
+func (x *EdgeSignal) GetChallenge() *EdgeChallenge {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeSignal_Challenge); ok {
+			return x.Challenge
+		}
+	}
+	return nil
+}
+
 type isEdgeSignal_Payload interface {
 	isEdgeSignal_Payload()
 }
@@ -827,11 +837,17 @@ type EdgeSignal_Rejected struct {
 	Rejected *SignalRejected `protobuf:"bytes,22,opt,name=rejected,proto3,oneof"`
 }
 
+type EdgeSignal_Challenge struct {
+	Challenge *EdgeChallenge `protobuf:"bytes,23,opt,name=challenge,proto3,oneof"`
+}
+
 func (*EdgeSignal_Ready) isEdgeSignal_Payload() {}
 
 func (*EdgeSignal_Answer) isEdgeSignal_Payload() {}
 
 func (*EdgeSignal_Rejected) isEdgeSignal_Payload() {}
+
+func (*EdgeSignal_Challenge) isEdgeSignal_Payload() {}
 
 var File_cloud_v1_client_gateway_proto protoreflect.FileDescriptor
 
@@ -900,7 +916,7 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x124\n" +
 	"\x05hello\x18\x14 \x01(\v2\x1c.anytty.cloud.v1.ClientHelloH\x00R\x05hello\x124\n" +
 	"\x05offer\x18\x15 \x01(\v2\x1c.anytty.cloud.v1.ClientOfferH\x00R\x05offerB\t\n" +
-	"\apayload\"\xbc\x03\n" +
+	"\apayload\"\xfc\x03\n" +
 	"\n" +
 	"EdgeSignal\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
@@ -914,7 +930,8 @@ const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x124\n" +
 	"\x05ready\x18\x14 \x01(\v2\x1c.anytty.cloud.v1.ClientReadyH\x00R\x05ready\x125\n" +
 	"\x06answer\x18\x15 \x01(\v2\x1b.anytty.cloud.v1.EdgeAnswerH\x00R\x06answer\x12=\n" +
-	"\brejected\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.SignalRejectedH\x00R\brejectedB\t\n" +
+	"\brejected\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.SignalRejectedH\x00R\brejected\x12>\n" +
+	"\tchallenge\x18\x17 \x01(\v2\x1e.anytty.cloud.v1.EdgeChallengeH\x00R\tchallengeB\t\n" +
 	"\apayload2Z\n" +
 	"\rClientGateway\x12I\n" +
 	"\aConnect\x12\x1d.anytty.cloud.v1.ClientSignal\x1a\x1b.anytty.cloud.v1.EdgeSignal(\x010\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
@@ -947,6 +964,7 @@ var file_cloud_v1_client_gateway_proto_goTypes = []any{
 	(*SignedEnvelope)(nil),        // 11: anytty.cloud.v1.SignedEnvelope
 	(*RelayICEConfig)(nil),        // 12: anytty.cloud.v1.RelayICEConfig
 	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*EdgeChallenge)(nil),         // 14: anytty.cloud.v1.EdgeChallenge
 }
 var file_cloud_v1_client_gateway_proto_depIdxs = []int32{
 	9,  // 0: anytty.cloud.v1.ClientHello.product:type_name -> anytty.cloud.v1.ClientProduct
@@ -963,13 +981,14 @@ var file_cloud_v1_client_gateway_proto_depIdxs = []int32{
 	3,  // 11: anytty.cloud.v1.EdgeSignal.ready:type_name -> anytty.cloud.v1.ClientReady
 	5,  // 12: anytty.cloud.v1.EdgeSignal.answer:type_name -> anytty.cloud.v1.EdgeAnswer
 	6,  // 13: anytty.cloud.v1.EdgeSignal.rejected:type_name -> anytty.cloud.v1.SignalRejected
-	7,  // 14: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
-	8,  // 15: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
-	15, // [15:16] is the sub-list for method output_type
-	14, // [14:15] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	14, // 14: anytty.cloud.v1.EdgeSignal.challenge:type_name -> anytty.cloud.v1.EdgeChallenge
+	7,  // 15: anytty.cloud.v1.ClientGateway.Connect:input_type -> anytty.cloud.v1.ClientSignal
+	8,  // 16: anytty.cloud.v1.ClientGateway.Connect:output_type -> anytty.cloud.v1.EdgeSignal
+	16, // [16:17] is the sub-list for method output_type
+	15, // [15:16] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_client_gateway_proto_init() }
@@ -992,6 +1011,7 @@ func file_cloud_v1_client_gateway_proto_init() {
 		(*EdgeSignal_Ready)(nil),
 		(*EdgeSignal_Answer)(nil),
 		(*EdgeSignal_Rejected)(nil),
+		(*EdgeSignal_Challenge)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

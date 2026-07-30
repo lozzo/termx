@@ -37,11 +37,15 @@ type Config struct {
 	ControllerAddress    string
 	ControllerServerName string
 	ControllerCAPEM      []byte
+	SoftwareVersion      string
 	Now                  func() time.Time
 }
 
-// Client 是无状态 Cloud 网络协议客户端；每次 Resolve/Exchange 都使用当前调用的 grant 和 generation。
-type Client struct{ config Config }
+// Client 持有进程级 boot identity；每次 Resolve/Exchange 仍使用当前调用的 grant 和 generation。
+type Client struct {
+	config Config
+	bootID string
+}
 
 // RouteResolution 是一次已认证的目录结果，或者由本机缓存 Edge locator 与原始 daemon grant 重建。
 type RouteResolution struct {
@@ -109,13 +113,17 @@ func (session *SignalSession) Close() error {
 func NewClient(config Config) (*Client, error) {
 	config.ControllerAddress = strings.TrimSpace(config.ControllerAddress)
 	config.ControllerServerName = strings.TrimSpace(config.ControllerServerName)
+	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
 	if config.ControllerAddress == "" || config.ControllerServerName == "" {
 		return nil, errors.New("Cloud Controller address and TLS server name are required")
+	}
+	if config.SoftwareVersion == "" {
+		config.SoftwareVersion = "development"
 	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	return &Client{config: config}, nil
+	return &Client{config: config, bootID: uuid.NewString()}, nil
 }
 
 // Resolve 只在本机没有 Edge locator 或旧 Edge 失效时查询实时 Presence；返回结果仍使用原始 daemon grant 准入。
@@ -228,13 +236,27 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
-	sessionID, bootID := uuid.NewString(), uuid.NewString()
-	var canonical []byte
-	if capabilityRoute {
-		canonical, err = ticket.CloudRouteHelloProofBytes(resolution.routeGrant, resolution.locator.GetEdgeId(), sessionID, attemptGeneration)
-	} else {
-		canonical, err = ticket.PairingHelloProofBytes(resolution.pairingAdmission, resolution.pairingBootstrap.GetEdgeId(), sessionID, attemptGeneration, product)
+	challengeSignal, err := stream.Recv()
+	if err != nil {
+		return nil, err
 	}
+	expectedEdgeID := resolution.pairingBootstrap.GetEdgeId()
+	if capabilityRoute {
+		expectedEdgeID = resolution.locator.GetEdgeId()
+	}
+	challenge, err := validateClientGatewayChallenge(challengeSignal, expectedEdgeID, client.config.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	sessionID := uuid.NewString()
+	clientHello := &cloudv1.ClientHello{ClientPublicKey: append([]byte(nil), identity.PublicKey...), Product: product, SoftwareVersion: client.config.SoftwareVersion, AttemptGeneration: attemptGeneration, RelayPreference: relayPreference}
+	if capabilityRoute {
+		clientHello.Authorization = &cloudv1.ClientHello_CloudRouteGrant{CloudRouteGrant: proto.Clone(resolution.routeGrant).(*cloudv1.SignedEnvelope)}
+	} else {
+		clientHello.Authorization = &cloudv1.ClientHello_PairingAdmission{PairingAdmission: proto.Clone(resolution.pairingAdmission).(*cloudv1.PairingAdmission)}
+	}
+	hello := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: client.bootID, ConnectionId: sessionID, StreamSeq: 1, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Hello{Hello: clientHello}}
+	canonical, err := ticket.ClientHelloProofBytes(challenge, hello, client.config.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -242,13 +264,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
-	clientHello := &cloudv1.ClientHello{ClientPublicKey: append([]byte(nil), identity.PublicKey...), ClientProof: proof, Product: product, SoftwareVersion: "development", AttemptGeneration: attemptGeneration, RelayPreference: relayPreference}
-	if capabilityRoute {
-		clientHello.Authorization = &cloudv1.ClientHello_CloudRouteGrant{CloudRouteGrant: proto.Clone(resolution.routeGrant).(*cloudv1.SignedEnvelope)}
-	} else {
-		clientHello.Authorization = &cloudv1.ClientHello_PairingAdmission{PairingAdmission: proto.Clone(resolution.pairingAdmission).(*cloudv1.PairingAdmission)}
-	}
-	hello := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: bootID, ConnectionId: sessionID, StreamSeq: 1, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Hello{Hello: clientHello}}
+	clientHello.ClientProof = proof
 	if err := stream.Send(hello); err != nil {
 		return nil, err
 	}
@@ -256,7 +272,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
-	if ready.GetReady() == nil || ready.GetProtocolVersion() != clientgateway.ProtocolVersion || ready.GetConnectionId() != sessionID || ready.GetStreamSeq() != 1 || ready.GetReady().GetGeneration() != attemptGeneration {
+	if ready.GetReady() == nil || ready.GetProtocolVersion() != clientgateway.ProtocolVersion || ready.GetSenderId() != challenge.GetEdgeId() || ready.GetBootId() != challenge.GetEdgeBootId() || ready.GetConnectionId() != sessionID || ready.GetStreamSeq() != 2 || ready.GetReady().GetGeneration() != attemptGeneration {
 		return nil, errors.New("ClientReady is invalid")
 	}
 	offerSDP, err := createOffer(ctx, ready.GetReady())
@@ -266,7 +282,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if strings.TrimSpace(offerSDP) == "" {
 		return nil, errors.New("create Cloud P2P offer returned an empty SDP")
 	}
-	offer := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: bootID, ConnectionId: sessionID, StreamSeq: 2, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Offer{Offer: &cloudv1.ClientOffer{SessionId: sessionID, OfferSdp: offerSDP}}}
+	offer := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: client.bootID, ConnectionId: sessionID, StreamSeq: 2, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Offer{Offer: &cloudv1.ClientOffer{SessionId: sessionID, OfferSdp: offerSDP}}}
 	if err := stream.Send(offer); err != nil {
 		return nil, err
 	}
@@ -274,7 +290,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
-	if response.GetConnectionId() != sessionID || response.GetStreamSeq() != 2 {
+	if response.GetProtocolVersion() != clientgateway.ProtocolVersion || response.GetSenderId() != challenge.GetEdgeId() || response.GetBootId() != challenge.GetEdgeBootId() || response.GetConnectionId() != sessionID || response.GetStreamSeq() != 3 {
 		return nil, errors.New("Edge signaling response is invalid")
 	}
 	if rejected := response.GetRejected(); rejected != nil {
@@ -290,6 +306,22 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	closeConnection = false
 	keepStream = true
 	return &SignalSession{answer: proto.Clone(response.GetAnswer()).(*cloudv1.EdgeAnswer), connection: connection, stream: stream, cancel: cancelStream}, nil
+}
+
+func validateClientGatewayChallenge(signal *cloudv1.EdgeSignal, expectedEdgeID string, now time.Time) (*cloudv1.EdgeChallenge, error) {
+	if signal == nil || signal.GetProtocolVersion() != clientgateway.ProtocolVersion || signal.GetChallenge() == nil || strings.TrimSpace(signal.GetMessageId()) == "" ||
+		signal.GetStreamSeq() != 1 || signal.GetSentAt() == nil || signal.GetSentAt().CheckValid() != nil {
+		return nil, errors.New("ClientGateway EdgeChallenge envelope is invalid")
+	}
+	challenge := signal.GetChallenge()
+	if err := ticket.ValidateEdgeChallenge(challenge, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err != nil {
+		return nil, err
+	}
+	if challenge.GetEdgeId() != strings.TrimSpace(expectedEdgeID) || signal.GetSenderId() != challenge.GetEdgeId() || signal.GetBootId() != challenge.GetEdgeBootId() ||
+		signal.GetConnectionId() != challenge.GetStreamId() || !proto.Equal(signal.GetSentAt(), challenge.GetIssuedAt()) {
+		return nil, errors.New("ClientGateway EdgeChallenge identity is invalid")
+	}
+	return proto.Clone(challenge).(*cloudv1.EdgeChallenge), nil
 }
 
 func waitForEdgeTransport(ctx context.Context, connection *grpc.ClientConn) error {

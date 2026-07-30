@@ -3,6 +3,7 @@ package agentgateway
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 是 AgentGateway 首发 envelope 版本。
-const ProtocolVersion uint32 = 1
+// ProtocolVersion 是要求 Edge 先发 challenge 的 AgentGateway 协议版本。
+const ProtocolVersion uint32 = 2
 
 // Runtime 是 Edge 唯一 State actor 暴露给 AgentGateway 的窄连接边界。
 type Runtime interface {
@@ -39,6 +40,7 @@ type Config struct {
 	Heartbeat        time.Duration
 	HeartbeatTimeout time.Duration
 	Now              func() time.Time
+	ChallengeRandom  io.Reader
 }
 
 // Service 验证 daemon binding/DeviceIdentity proof，并把连接生命周期提交给 Runtime actor。
@@ -57,16 +59,35 @@ func NewService(config Config) (*Service, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
+	if config.ChallengeRandom == nil {
+		config.ChallengeRandom = rand.Reader
+	}
 	return &Service{config: config}, nil
 }
 
-// Connect 要求第一条消息是 AgentHello，之后接收严格连续的 heartbeat 或信令结果。
+// Connect 先发送唯一 EdgeChallenge，再接收唯一 AgentHello，之后只接收连续的 heartbeat 或信令结果。
 func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error {
-	event, err := stream.Recv()
+	challengeCommand, challenge, err := service.challengeCommand()
 	if err != nil {
+		return status.Errorf(codes.Internal, "create AgentGateway challenge: %v", err)
+	}
+	if err := stream.Send(challengeCommand); err != nil {
+		return status.Errorf(codes.Unavailable, "send AgentGateway challenge: %v", err)
+	}
+	helloTimeout := challenge.GetExpiresAt().AsTime().Sub(service.config.Now().UTC())
+	if helloTimeout <= 0 {
+		return status.Error(codes.DeadlineExceeded, "AgentGateway challenge expired before AgentHello")
+	}
+	helloContext, cancelHello := context.WithTimeout(stream.Context(), helloTimeout)
+	event, err := receiveInitialAgentEvent(helloContext, stream)
+	cancelHello()
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, "AgentGateway challenge expired before AgentHello")
+		}
 		return status.Errorf(codes.InvalidArgument, "receive AgentHello: %v", err)
 	}
-	claims, err := service.admit(event)
+	claims, err := service.admit(event, challenge)
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
@@ -143,10 +164,16 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	}
 }
 
-func (service *Service) admit(event *cloudv1.AgentEvent) (*cloudv1.DaemonBindingClaims, error) {
+func (service *Service) admit(event *cloudv1.AgentEvent, challenge *cloudv1.EdgeChallenge) (*cloudv1.DaemonBindingClaims, error) {
 	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 1 || event.GetHello() == nil ||
-		strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetSenderId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
+		strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetSenderId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" ||
+		event.GetSentAt() == nil || event.GetSentAt().CheckValid() != nil || strings.TrimSpace(event.GetHello().GetSoftwareVersion()) == "" || event.GetHello().GetAttemptGeneration() == 0 {
 		return nil, errors.New("AgentHello envelope is invalid")
+	}
+	now := service.config.Now().UTC()
+	if err := ticket.ValidateEdgeChallenge(challenge, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY, now); err != nil ||
+		challenge.GetEdgeId() != service.config.EdgeID || challenge.GetEdgeBootId() != service.config.EdgeBootID {
+		return nil, errors.New("AgentGateway challenge is invalid")
 	}
 	claims, err := ticket.VerifyDaemonBinding(event.GetHello().GetDaemonBinding(), service.config.VerificationKeys(), service.config.EdgeID, service.config.Now().UTC(), 30*time.Second)
 	if err != nil {
@@ -155,10 +182,27 @@ func (service *Service) admit(event *cloudv1.AgentEvent) (*cloudv1.DaemonBinding
 	if event.GetSenderId() != claims.GetDaemonId() {
 		return nil, errors.New("AgentHello sender does not match daemon binding")
 	}
-	if err := ticket.VerifyAgentHelloProof(claims.GetDevicePublicKey(), event.GetHello().GetDeviceProof(), event.GetHello().GetDaemonBinding(), claims.GetDaemonId(), event.GetBootId(), event.GetConnectionId()); err != nil {
+	if err := ticket.VerifyAgentHelloProof(claims.GetDevicePublicKey(), event.GetHello().GetDeviceProof(), challenge, event, now); err != nil {
 		return nil, err
 	}
 	return claims, nil
+}
+
+func (service *Service) challengeCommand() (*cloudv1.EdgeCommand, *cloudv1.EdgeChallenge, error) {
+	nonce := make([]byte, ticket.EdgeChallengeNonceSize)
+	if _, err := io.ReadFull(service.config.ChallengeRandom, nonce); err != nil {
+		return nil, nil, err
+	}
+	now := service.config.Now().UTC()
+	challenge := &cloudv1.EdgeChallenge{
+		Nonce: nonce, EdgeId: service.config.EdgeID, EdgeBootId: service.config.EdgeBootID, StreamId: uuid.NewString(),
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(ticket.EdgeChallengeLifetime)), Target: cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY,
+	}
+	command := &cloudv1.EdgeCommand{
+		ProtocolVersion: ProtocolVersion, MessageId: uuid.NewString(), SenderId: service.config.EdgeID, BootId: service.config.EdgeBootID,
+		ConnectionId: challenge.GetStreamId(), StreamSeq: 1, SentAt: timestamppb.New(now), Payload: &cloudv1.EdgeCommand_Challenge{Challenge: proto.Clone(challenge).(*cloudv1.EdgeChallenge)},
+	}
+	return command, challenge, nil
 }
 
 func validateAgentEvent(event, hello *cloudv1.AgentEvent, generation, expectedSequence uint64) error {
@@ -191,6 +235,17 @@ func validateAgentEvent(event, hello *cloudv1.AgentEvent, generation, expectedSe
 type receiveResult struct {
 	event *cloudv1.AgentEvent
 	err   error
+}
+
+func receiveInitialAgentEvent(ctx context.Context, stream cloudv1.AgentGateway_ConnectServer) (*cloudv1.AgentEvent, error) {
+	received := make(chan receiveResult, 1)
+	go receiveAgentEvents(stream, received)
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case result := <-received:
+		return result.event, result.err
+	}
 }
 
 func receiveAgentEvents(stream cloudv1.AgentGateway_ConnectServer, output chan<- receiveResult) {
@@ -233,7 +288,7 @@ func (writer *outboundWriter) close() {
 }
 
 func (writer *outboundWriter) run() {
-	sequence := uint64(0)
+	sequence := uint64(1)
 	for {
 		select {
 		case <-writer.ctx.Done():

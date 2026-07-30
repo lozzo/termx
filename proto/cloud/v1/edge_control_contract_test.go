@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-// TestCloudV1DescriptorBaseline 锁定当前 Cloud v1 跨进程契约，后续只能做可审查的兼容扩展。
+// TestCloudV1DescriptorBaseline 锁定当前 Cloud v1 跨进程契约；直接升级也必须显式更新并审查 baseline。
 func TestCloudV1DescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-v1.pb")
 	if err != nil {
@@ -41,8 +41,8 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 	}
 }
 
-// TestR5GatewayContracts 锁定客户端与 daemon 都通过双向流完成信令，且 envelope 不能退化成无 generation 的 unary API。
-func TestR5GatewayContracts(t *testing.T) {
+// TestS2GatewayContracts 锁定 challenge-first 双向流，且 envelope 不能退化成无 generation 的 unary API。
+func TestS2GatewayContracts(t *testing.T) {
 	for _, service := range []protoreflect.ServiceDescriptor{
 		File_cloud_v1_agent_gateway_proto.Services().ByName("AgentGateway"),
 		File_cloud_v1_client_gateway_proto.Services().ByName("ClientGateway"),
@@ -56,9 +56,16 @@ func TestR5GatewayContracts(t *testing.T) {
 		}
 	}
 	assertEnvelopeFields(t, (&ClientSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "offer": 21})
-	assertEnvelopeFields(t, (&EdgeSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "answer": 21, "rejected": 22})
+	assertEnvelopeFields(t, (&EdgeSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "answer": 21, "rejected": 22, "challenge": 23})
 	assertEnvelopeFields(t, (&AgentEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "heartbeat": 21, "answer": 22, "rejected": 23, "authorization": 24})
-	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21, "authorize": 22})
+	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21, "authorize": 22, "challenge": 23})
+	challenge := (&EdgeChallenge{}).ProtoReflect().Descriptor()
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"nonce": 1, "edge_id": 2, "edge_boot_id": 3, "stream_id": 4, "issued_at": 5, "expires_at": 6, "target": 7} {
+		field := challenge.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("EdgeChallenge.%s field=%v want=%d", name, field, number)
+		}
+	}
 }
 
 func TestClientHelloSeparatesCapabilityAndPairingAdmission(t *testing.T) {

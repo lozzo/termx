@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -21,6 +22,56 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+// EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
+type EdgeChallengeTarget int32
+
+const (
+	EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_UNSPECIFIED    EdgeChallengeTarget = 0
+	EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY  EdgeChallengeTarget = 1
+	EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY EdgeChallengeTarget = 2
+)
+
+// Enum value maps for EdgeChallengeTarget.
+var (
+	EdgeChallengeTarget_name = map[int32]string{
+		0: "EDGE_CHALLENGE_TARGET_UNSPECIFIED",
+		1: "EDGE_CHALLENGE_TARGET_AGENT_GATEWAY",
+		2: "EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY",
+	}
+	EdgeChallengeTarget_value = map[string]int32{
+		"EDGE_CHALLENGE_TARGET_UNSPECIFIED":    0,
+		"EDGE_CHALLENGE_TARGET_AGENT_GATEWAY":  1,
+		"EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY": 2,
+	}
+)
+
+func (x EdgeChallengeTarget) Enum() *EdgeChallengeTarget {
+	p := new(EdgeChallengeTarget)
+	*p = x
+	return p
+}
+
+func (x EdgeChallengeTarget) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EdgeChallengeTarget) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloud_v1_common_proto_enumTypes[0].Descriptor()
+}
+
+func (EdgeChallengeTarget) Type() protoreflect.EnumType {
+	return &file_cloud_v1_common_proto_enumTypes[0]
+}
+
+func (x EdgeChallengeTarget) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EdgeChallengeTarget.Descriptor instead.
+func (EdgeChallengeTarget) EnumDescriptor() ([]byte, []int) {
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{0}
+}
 
 // VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
 // public_key 只能包含公钥编码，不得携带私钥或 KMS 凭据。
@@ -198,11 +249,105 @@ func (x *SignedEnvelope) GetSignature() []byte {
 	return nil
 }
 
+// EdgeChallenge 是 Edge 在每条 Gateway stream 上先发的单次新鲜度证明材料。
+// nonce 固定为 32 bytes，stream_id 由 Edge 为该 stream 唯一生成，期限固定为 10 秒。
+type EdgeChallenge struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nonce         []byte                 `protobuf:"bytes,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	EdgeId        string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	EdgeBootId    string                 `protobuf:"bytes,3,opt,name=edge_boot_id,json=edgeBootId,proto3" json:"edge_boot_id,omitempty"`
+	StreamId      string                 `protobuf:"bytes,4,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
+	IssuedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Target        EdgeChallengeTarget    `protobuf:"varint,7,opt,name=target,proto3,enum=anytty.cloud.v1.EdgeChallengeTarget" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeChallenge) Reset() {
+	*x = EdgeChallenge{}
+	mi := &file_cloud_v1_common_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeChallenge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeChallenge) ProtoMessage() {}
+
+func (x *EdgeChallenge) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_common_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeChallenge.ProtoReflect.Descriptor instead.
+func (*EdgeChallenge) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *EdgeChallenge) GetNonce() []byte {
+	if x != nil {
+		return x.Nonce
+	}
+	return nil
+}
+
+func (x *EdgeChallenge) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *EdgeChallenge) GetEdgeBootId() string {
+	if x != nil {
+		return x.EdgeBootId
+	}
+	return ""
+}
+
+func (x *EdgeChallenge) GetStreamId() string {
+	if x != nil {
+		return x.StreamId
+	}
+	return ""
+}
+
+func (x *EdgeChallenge) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *EdgeChallenge) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *EdgeChallenge) GetTarget() EdgeChallengeTarget {
+	if x != nil {
+		return x.Target
+	}
+	return EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_UNSPECIFIED
+}
+
 var File_cloud_v1_common_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x15cloud/v1/common.proto\x12\x0fanytty.cloud.v1\x1a\x1egoogle/protobuf/duration.proto\"e\n" +
+	"\x15cloud/v1/common.proto\x12\x0fanytty.cloud.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"e\n" +
 	"\x0fVerificationKey\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1c\n" +
 	"\talgorithm\x18\x02 \x01(\tR\talgorithm\x12\x1d\n" +
@@ -214,7 +359,21 @@ const file_cloud_v1_common_proto_rawDesc = "" +
 	"\x0eSignedEnvelope\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignatureB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
+	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xaf\x02\n" +
+	"\rEdgeChallenge\x12\x14\n" +
+	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x17\n" +
+	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12 \n" +
+	"\fedge_boot_id\x18\x03 \x01(\tR\n" +
+	"edgeBootId\x12\x1b\n" +
+	"\tstream_id\x18\x04 \x01(\tR\bstreamId\x127\n" +
+	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12<\n" +
+	"\x06target\x18\a \x01(\x0e2$.anytty.cloud.v1.EdgeChallengeTargetR\x06target*\x8f\x01\n" +
+	"\x13EdgeChallengeTarget\x12%\n" +
+	"!EDGE_CHALLENGE_TARGET_UNSPECIFIED\x10\x00\x12'\n" +
+	"#EDGE_CHALLENGE_TARGET_AGENT_GATEWAY\x10\x01\x12(\n" +
+	"$EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY\x10\x02B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_common_proto_rawDescOnce sync.Once
@@ -228,21 +387,28 @@ func file_cloud_v1_common_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_common_proto_rawDescData
 }
 
-var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_cloud_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_cloud_v1_common_proto_goTypes = []any{
-	(*VerificationKey)(nil),     // 0: anytty.cloud.v1.VerificationKey
-	(*HeartbeatPolicy)(nil),     // 1: anytty.cloud.v1.HeartbeatPolicy
-	(*SignedEnvelope)(nil),      // 2: anytty.cloud.v1.SignedEnvelope
-	(*durationpb.Duration)(nil), // 3: google.protobuf.Duration
+	(EdgeChallengeTarget)(0),      // 0: anytty.cloud.v1.EdgeChallengeTarget
+	(*VerificationKey)(nil),       // 1: anytty.cloud.v1.VerificationKey
+	(*HeartbeatPolicy)(nil),       // 2: anytty.cloud.v1.HeartbeatPolicy
+	(*SignedEnvelope)(nil),        // 3: anytty.cloud.v1.SignedEnvelope
+	(*EdgeChallenge)(nil),         // 4: anytty.cloud.v1.EdgeChallenge
+	(*durationpb.Duration)(nil),   // 5: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_cloud_v1_common_proto_depIdxs = []int32{
-	3, // 0: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
-	3, // 1: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	5, // 0: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
+	5, // 1: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
+	6, // 2: anytty.cloud.v1.EdgeChallenge.issued_at:type_name -> google.protobuf.Timestamp
+	6, // 3: anytty.cloud.v1.EdgeChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	0, // 4: anytty.cloud.v1.EdgeChallenge.target:type_name -> anytty.cloud.v1.EdgeChallengeTarget
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_common_proto_init() }
@@ -255,13 +421,14 @@ func file_cloud_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_common_proto_rawDesc), len(file_cloud_v1_common_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_cloud_v1_common_proto_goTypes,
 		DependencyIndexes: file_cloud_v1_common_proto_depIdxs,
+		EnumInfos:         file_cloud_v1_common_proto_enumTypes,
 		MessageInfos:      file_cloud_v1_common_proto_msgTypes,
 	}.Build()
 	File_cloud_v1_common_proto = out.File

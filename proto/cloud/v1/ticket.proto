@@ -2,8 +2,10 @@ syntax = "proto3";
 
 package anytty.cloud.v1;
 
+import "cloud/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 import "cloud/v1/runtime.proto";
+import "cloud/v1/usage.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
@@ -38,12 +40,19 @@ message DaemonBindingClaims {
   bytes edge_locator_sha256 = 12;
 }
 
-// AgentHelloProofInput 把 DeviceIdentity proof 绑定到持久 binding 和当前 stream generation。
+// AgentHelloProofInput 覆盖 Edge 单次 challenge、完整 binding envelope 摘要和 AgentHello 中除 proof 自身外的全部字段。
 message AgentHelloProofInput {
-  bytes binding_payload_sha256 = 1;
+  bytes binding_envelope_sha256 = 1;
   string daemon_id = 2;
-  string boot_id = 3;
-  string connection_id = 4;
+  string daemon_boot_id = 3;
+  string daemon_session_id = 4;
+  EdgeChallenge challenge = 5;
+  uint32 protocol_version = 6;
+  string message_id = 7;
+  uint64 stream_seq = 8;
+  google.protobuf.Timestamp sent_at = 9;
+  string software_version = 10;
+  uint64 attempt_generation = 11;
 }
 
 // CloudRouteGrantClaims 由 owning daemon 的 DeviceIdentity 签发，只授权发现和信令。
@@ -65,21 +74,22 @@ message ClientRouteProofInput {
   string request_id = 4;
 }
 
-// CloudRouteHelloProofInput 把 daemon 签名的长期 Route grant 绑定到当前 Edge 和单次 stream generation。
-// grant 可复用，但每次连接都必须由同一 ClientAccessIdentity 重新签名，复制 grant 本身不能建立连接。
-message CloudRouteHelloProofInput {
-  bytes route_grant_payload_sha256 = 1;
-  string edge_id = 2;
-  string session_id = 3;
-  uint64 attempt_generation = 4;
-}
-
-// PairingHelloProofInput 把紧凑 pairing admission 的全部安全字段绑定到目标 Edge 和单次 stream。
-// proof 由新建的 ClientAccessIdentity 签名；Edge 只接收 claim 摘要，不接收 128-bit claim 本体。
-message PairingHelloProofInput {
-  bytes pairing_admission_sha256 = 1;
-  string edge_id = 2;
-  string session_id = 3;
-  uint64 attempt_generation = 4;
-  ClientProduct product = 5;
+// GatewayClientHelloProofInput 对两种 authorization 使用同一 v2 transcript。
+// authorization_sha256 是对应 SignedEnvelope 或 PairingAdmission 的确定性 protobuf 摘要。
+message GatewayClientHelloProofInput {
+  EdgeChallenge challenge = 1;
+  bytes authorization_sha256 = 2;
+  CloudClientAccessMode access_mode = 3;
+  uint32 protocol_version = 4;
+  string message_id = 5;
+  string client_id = 6;
+  string client_boot_id = 7;
+  string client_session_id = 8;
+  uint64 stream_seq = 9;
+  google.protobuf.Timestamp sent_at = 10;
+  bytes client_public_key = 11;
+  ClientProduct product = 12;
+  string software_version = 13;
+  uint64 attempt_generation = 14;
+  RelayPreference relay_preference = 15;
 }
