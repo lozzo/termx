@@ -40,6 +40,48 @@ type serverConfig struct {
 	historyDisabled     bool
 	historyBackpressure HistoryBackpressureConfig
 	applicationFactory  ApplicationExecutorFactory
+	protocolLimits      ProtocolSessionLimits
+}
+
+// ProtocolSessionLimits bounds connection-owned goroutines and long-lived resources.
+// Each resource kind has a concrete cap in addition to the aggregate resource cap.
+type ProtocolSessionLimits struct {
+	MaxInFlightRequests   int
+	MaxResources          int
+	MaxAttachments        int
+	MaxFileTransfers      int
+	MaxEventSubscriptions int
+}
+
+// DefaultProtocolSessionLimits returns the production per-connection bounds.
+func DefaultProtocolSessionLimits() ProtocolSessionLimits {
+	return ProtocolSessionLimits{
+		MaxInFlightRequests:   64,
+		MaxResources:          192,
+		MaxAttachments:        128,
+		MaxFileTransfers:      32,
+		MaxEventSubscriptions: 64,
+	}
+}
+
+func (limits ProtocolSessionLimits) normalized() ProtocolSessionLimits {
+	defaults := DefaultProtocolSessionLimits()
+	if limits.MaxInFlightRequests <= 0 {
+		limits.MaxInFlightRequests = defaults.MaxInFlightRequests
+	}
+	if limits.MaxResources <= 0 {
+		limits.MaxResources = defaults.MaxResources
+	}
+	if limits.MaxAttachments <= 0 {
+		limits.MaxAttachments = defaults.MaxAttachments
+	}
+	if limits.MaxFileTransfers <= 0 {
+		limits.MaxFileTransfers = defaults.MaxFileTransfers
+	}
+	if limits.MaxEventSubscriptions <= 0 {
+		limits.MaxEventSubscriptions = defaults.MaxEventSubscriptions
+	}
+	return limits
 }
 
 const DefaultHistoryMaxBytesPerTerminal int64 = 512 << 20
@@ -162,6 +204,7 @@ func NewServer(opts ...ServerOption) *Server {
 		listenerFactory: unixListenerFactory,
 		processFactory:  newPTYProcessFactory(),
 		eventBuffer:     64,
+		protocolLimits:  DefaultProtocolSessionLimits(),
 		historyStorage:  DefaultHistoryStorageConfig(),
 		historyBackpressure: HistoryBackpressureConfig{
 			Mode:        HistoryBackpressureLowLatency,
@@ -184,6 +227,7 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	cfg.historyBackpressure = cfg.historyBackpressure.Normalize()
 	cfg.historyStorage = cfg.historyStorage.normalized()
+	cfg.protocolLimits = cfg.protocolLimits.normalized()
 	return &Server{
 		cfg:                  cfg,
 		registry:             newTerminalRegistry(),
@@ -214,6 +258,13 @@ func WithSocketPath(path string) ServerOption {
 func WithApplicationExecutorFactory(factory ApplicationExecutorFactory) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.applicationFactory = factory
+	}
+}
+
+// WithProtocolSessionLimits configures concrete per-connection protocol bounds.
+func WithProtocolSessionLimits(limits ProtocolSessionLimits) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.protocolLimits = limits.normalized()
 	}
 }
 

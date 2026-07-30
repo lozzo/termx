@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/proto/apipb"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -76,6 +77,13 @@ func TestCoreErrorsMapToStableCodesAndRetryability(t *testing.T) {
 		if mapped.GetCode() != test.code || mapped.GetRetryable() != test.retryable || !mapped.GetAttempted() {
 			t.Fatalf("error %v mapped to %#v", test.err, mapped)
 		}
+	}
+}
+
+func TestProtocolResourceExhaustionMapsToTypedUnavailable(t *testing.T) {
+	mapped := ErrorToProto(CoreError(corev2.ErrProtocolResourceExhausted), true)
+	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || !mapped.GetRetryable() || !mapped.GetAttempted() {
+		t.Fatalf("resource exhaustion mapped to %#v", mapped)
 	}
 }
 

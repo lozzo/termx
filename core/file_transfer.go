@@ -80,6 +80,16 @@ func (session *protocolSession) openFileDownload(ctx context.Context, params Fil
 	if !params.ExpectedModifiedAt.IsZero() && params.ExpectedModifiedAt.UnixNano() != info.ModTime().UnixNano() {
 		return FileTransfer{}, fmt.Errorf("stale download source")
 	}
+	channel, err := session.reserveFileChannel()
+	if err != nil {
+		return FileTransfer{}, err
+	}
+	registered := false
+	defer func() {
+		if !registered {
+			session.releaseChannel(channel, protocolChannelFileTransfer)
+		}
+	}()
 	file, err := os.Open(path)
 	if err != nil {
 		return FileTransfer{}, err
@@ -93,10 +103,10 @@ func (session *protocolSession) openFileDownload(ctx context.Context, params Fil
 		file.Close()
 		return FileTransfer{}, err
 	}
-	channel := session.allocateFileChannel()
 	transferCtx, cancel := context.WithCancel(ctx)
 	transfer := &sessionFileTransfer{id: id, channel: channel, direction: fileTransferDownload, path: path, file: file, offset: params.Offset, size: info.Size(), ack: make(chan protocol.FileTransferAck, 1), cancel: cancel}
 	session.registerFileTransfer(transfer)
+	registered = true
 	go session.runFileDownload(transferCtx, transfer)
 	return FileTransfer{ID: id, Channel: channel, Path: path, Offset: params.Offset, Size: info.Size(), ModifiedAt: info.ModTime().UTC(), WindowBytes: fileTransferWindowBytes, ChunkBytes: fileTransferChunkBytes, OpaqueToken: fileTransferToken(channel, id)}, nil
 }
@@ -173,6 +183,16 @@ func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (Fi
 	if params.Size < 0 {
 		return FileTransfer{}, fmt.Errorf("invalid upload size")
 	}
+	channel, err := session.reserveFileChannel()
+	if err != nil {
+		return FileTransfer{}, err
+	}
+	registered := false
+	defer func() {
+		if !registered {
+			session.releaseChannel(channel, protocolChannelFileTransfer)
+		}
+	}()
 	now := time.Now().UTC()
 	var record *uploadTransferRecord
 	resumeTransferID := ""
@@ -245,9 +265,9 @@ func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (Fi
 		session.detachUploadRecord(record.ID)
 		return FileTransfer{}, err
 	}
-	channel := session.allocateFileChannel()
 	transfer := &sessionFileTransfer{id: record.ID, channel: channel, direction: fileTransferUpload, path: target, file: file, offset: record.Offset, size: record.Size, hasher: hasher}
 	session.registerFileTransfer(transfer)
+	registered = true
 	token := fileTransferToken(channel, record.ID)
 	return FileTransfer{ID: record.ID, Channel: channel, Path: target, Offset: record.Offset, Size: record.Size, WindowBytes: fileTransferWindowBytes, ChunkBytes: fileTransferChunkBytes, OpaqueToken: token, ResumeToken: fileUploadResumeToken(record.ID)}, nil
 }
@@ -419,19 +439,6 @@ func (session *protocolSession) cancelOwnedUpload(id string) bool {
 	return true
 }
 
-func (session *protocolSession) allocateFileChannel() uint16 {
-	for {
-		channel := uint16(session.nextCh.Add(1))
-		if channel != 0 {
-			session.fileMu.Lock()
-			_, used := session.fileChannels[channel]
-			session.fileMu.Unlock()
-			if !used {
-				return channel
-			}
-		}
-	}
-}
 func (session *protocolSession) registerFileTransfer(transfer *sessionFileTransfer) {
 	session.fileMu.Lock()
 	session.fileChannels[transfer.channel] = transfer
@@ -452,6 +459,9 @@ func (session *protocolSession) releaseFileTransfer(id string, completed bool) {
 		delete(session.fileChannels, channel)
 	}
 	session.fileMu.Unlock()
+	if ok {
+		session.releaseChannel(channel, protocolChannelFileTransfer)
+	}
 	if transfer != nil {
 		if transfer.cancel != nil {
 			transfer.cancel()
@@ -487,6 +497,9 @@ func (session *protocolSession) releaseUploadForTakeover(id string) {
 		delete(session.fileChannels, channel)
 	}
 	session.fileMu.Unlock()
+	if ok {
+		session.releaseChannel(channel, protocolChannelFileTransfer)
+	}
 	if transfer != nil {
 		transfer.mu.Lock()
 		if transfer.file != nil {

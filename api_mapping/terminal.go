@@ -468,7 +468,7 @@ func CoreError(err error) error {
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_FORBIDDEN
 	case errors.Is(err, corev2.ErrApplicationUnsupportedCapability):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY
-	case errors.Is(err, corev2.ErrApplicationCancellationUnavailable), errors.Is(err, corev2.ErrServerClosed), errors.Is(err, corev2.ErrHistoryNotRebuilt):
+	case errors.Is(err, corev2.ErrApplicationCancellationUnavailable), errors.Is(err, corev2.ErrServerClosed), errors.Is(err, corev2.ErrHistoryNotRebuilt), errors.Is(err, corev2.ErrProtocolResourceExhausted):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE
 		classified.Retryable = true
 	case errors.Is(err, corev2.ErrInvalidTerminalID), errors.Is(err, corev2.ErrInvalidCommand), errors.Is(err, corev2.ErrInvalidServerSize), errors.Is(err, corev2.ErrInvalidFileUploadResume):

@@ -140,11 +140,14 @@ func (session *protocolSession) ReleaseApplicationResource(_ context.Context, to
 	if subscriptionID, ok := applicationEventSubscriptionID(token); ok {
 		session.mu.Lock()
 		subscription := session.eventSubscriptions[subscriptionID]
-		delete(session.eventSubscriptions, subscriptionID)
+		if subscription.cancel != nil {
+			delete(session.eventSubscriptions, subscriptionID)
+		}
 		session.mu.Unlock()
 		if subscription.cancel == nil {
 			return ErrApplicationForbidden
 		}
+		session.releaseEventSubscription()
 		subscription.cancel()
 		return nil
 	}
@@ -421,6 +424,9 @@ func (session *protocolSession) ApplicationLiveInvalidation(ctx context.Context,
 func (session *protocolSession) ApplicationEventSubscribe(ctx context.Context, filter EventFilter, encoder ApplicationEventEncoder) ([]byte, error) {
 	if encoder == nil {
 		return nil, ErrApplicationForbidden
+	}
+	if err := session.reserveEventSubscription(); err != nil {
+		return nil, err
 	}
 	eventCtx, cancel := context.WithCancel(ctx)
 	session.mu.Lock()

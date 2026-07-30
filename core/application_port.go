@@ -54,6 +54,8 @@ var (
 	ErrApplicationUnsupportedCapability = errors.New("application capability is unsupported")
 	// ErrApplicationCancellationUnavailable 表示 daemon 尚未发布 operation cancellation registry。
 	ErrApplicationCancellationUnavailable = errors.New("application operation cancellation is unavailable")
+	// ErrProtocolResourceExhausted 表示当前 protocol session 已达到具体资源上限。
+	ErrProtocolResourceExhausted = errors.New("protocol session resource capacity is exhausted")
 )
 
 // ApplicationAdmission 是 API Layer 映射后的 connection-bound 授权输入。
