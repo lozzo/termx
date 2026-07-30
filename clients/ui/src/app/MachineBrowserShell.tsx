@@ -20,7 +20,6 @@ export function MachineBrowserShell({
 }: MachineBrowserShellProps) {
   const [selectedMachine, setSelectedMachine] = useState<AppMachineRecord | null>(null)
   const [connection, setConnection] = useState<ConnectionFlowSnapshot | null>(null)
-  const { t } = useTranslation()
   const attemptSeqRef = useRef(0)
   const resultTimerRef = useRef<number | null>(null)
 
@@ -46,7 +45,6 @@ export function MachineBrowserShell({
       stage: 'trying_local',
       path: 'local',
       relayInUse: false,
-      message: 'Checking saved local and LAN addresses.',
     })
     if (!onStartConnection) return
     void Promise.resolve(onStartConnection(machine))
@@ -65,11 +63,10 @@ export function MachineBrowserShell({
             stage: 'failed',
             path: 'hub',
             relayInUse: false,
-            message: t('errors.connectionInterrupted'),
           })
         }, 50)
       })
-  }, [clearPendingResult, onStartConnection, t])
+  }, [clearPendingResult, onStartConnection])
 
   return (
     <main

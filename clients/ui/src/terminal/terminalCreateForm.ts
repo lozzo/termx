@@ -1,3 +1,5 @@
+import { anyttyI18n } from '../i18n'
+
 /** EnvironmentVariable 是 TerminalCreateSpec.env 单项在表单内的可编辑投影，不是持久领域模型。 */
 export interface EnvironmentVariable {
   key: string
@@ -53,7 +55,7 @@ export function parseCommandLine(input: string): string[] {
     value += character
     active = true
   }
-  if (escaped || quote) throw new Error('Command contains an unfinished quote or escape')
+  if (escaped || quote) throw new Error(anyttyI18n.t('workspace.terminalForm.unfinishedCommand'))
   if (active) arguments_.push(value)
   return arguments_
 }
@@ -78,9 +80,13 @@ export function validateEnvironmentVariables(entries: readonly string[]): string
   for (const entry of entries) {
     const variable = parseEnvironmentEntry(entry)
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(variable.key)) {
-      throw new Error(`Invalid environment variable name: ${variable.key || '(empty)'}`)
+      throw new Error(anyttyI18n.t('workspace.terminalForm.invalidEnvironmentName', {
+        name: variable.key || anyttyI18n.t('workspace.terminalForm.emptyEnvironmentName'),
+      }))
     }
-    if (keys.has(variable.key)) throw new Error(`Duplicate environment variable: ${variable.key}`)
+    if (keys.has(variable.key)) {
+      throw new Error(anyttyI18n.t('workspace.terminalForm.duplicateEnvironment', { name: variable.key }))
+    }
     keys.add(variable.key)
     result.push(environmentEntry(variable))
   }

@@ -166,7 +166,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
       setTotal(response.total)
       setHasLoadedEntries(true)
       if (fallbackFrom && fallbackFrom !== response.path) {
-        showActionMessage(`Opened ${response.path} instead`)
+        showActionMessage(anyttyI18n.t('files.feedback.openedFallback', { path: response.path }))
       }
     } catch (err) {
       if (seq !== requestSeqRef.current) return
@@ -208,12 +208,12 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
   const copy = useCallback((paths: string[]) => {
     setClipboard({ mode: 'copy', paths })
-    showActionMessage(`Copied ${paths.length} items`)
+    showActionMessage(anyttyI18n.t('files.feedback.copiedItems', { count: paths.length }))
   }, [showActionMessage])
 
   const cut = useCallback((paths: string[]) => {
     setClipboard({ mode: 'cut', paths })
-    showActionMessage(`Cut ${paths.length} items`)
+    showActionMessage(anyttyI18n.t('files.feedback.cutItems', { count: paths.length }))
   }, [showActionMessage])
 
   const copyFilePaths = useCallback(async (paths: string[]) => {
@@ -237,10 +237,10 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     try {
       if (clipboard.mode === 'copy') {
         await fileApi.copy(clipboard.paths, currentPathRef.current)
-        showActionMessage(`Pasted ${clipboard.paths.length} items`)
+        showActionMessage(anyttyI18n.t('files.feedback.pastedItems', { count: clipboard.paths.length }))
       } else {
         await fileApi.move(clipboard.paths, currentPathRef.current)
-        showActionMessage(`Moved ${clipboard.paths.length} items`)
+        showActionMessage(anyttyI18n.t('files.feedback.movedItems', { count: clipboard.paths.length }))
         setClipboard(null) // clear clipboard after move
       }
       await loadPath(currentPathRef.current)
@@ -260,7 +260,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     if (!hasLoadedEntriesRef.current) setLoading(true)
     try {
       await fileApi.batchDelete(paths)
-      showActionMessage(`Deleted ${paths.length} items`)
+      showActionMessage(anyttyI18n.t('files.feedback.deletedItems', { count: paths.length }))
       setSelectedPaths(new Set())
       setSelectionMode(false)
       await loadPath(currentPathRef.current)
@@ -314,7 +314,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setPathBookmarkError(null)
     try {
       await bookmarkApi.add(path)
-      showActionMessage(`Bookmarked ${path}`)
+      showActionMessage(anyttyI18n.t('files.bookmarks.added', { path }))
       await refreshPathBookmarks()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -404,7 +404,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     try {
       await fileApi.mkdir(joinPath(currentPathRef.current || '/', name))
       setNewDirName('')
-      showActionMessage(`Created ${name}`)
+      showActionMessage(anyttyI18n.t('files.feedback.createdDirectory', { name }))
       await loadPath(currentPathRef.current)
     } catch (err) {
       setError({
@@ -421,7 +421,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setError(null)
     try {
       await fileApi.delete(path)
-      showActionMessage(`Deleted ${basename(path)}`)
+      showActionMessage(anyttyI18n.t('files.feedback.deletedEntry', { name: basename(path) }))
       await loadPath(currentPathRef.current)
     } catch (err) {
       setError({
@@ -438,7 +438,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setError(null)
     try {
       await fileApi.rename(path, joinPath(parentPath(path), name))
-      showActionMessage(`Renamed to ${name}`)
+      showActionMessage(anyttyI18n.t('files.feedback.renamedEntry', { name }))
       await loadPath(currentPathRef.current)
     } catch (err) {
       setError({

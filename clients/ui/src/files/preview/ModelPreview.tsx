@@ -8,7 +8,7 @@ import { disposeModelObject, loadModelPreviewObject, normalizeModelObject } from
 import type { ModelObject3D, ThreeModule } from './modelPreviewTypes'
 import { PreviewNotice } from './PreviewNotice'
 import { useTranslation } from 'react-i18next'
-import '../../i18n'
+import { anyttyI18n } from '../../i18n'
 
 type ModelPreviewState =
   | { status: 'loading'; receivedSize: number; totalSize: number }
@@ -107,17 +107,17 @@ function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
   const directReader = (blob as Blob & { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer
   if (typeof directReader === 'function') return directReader.call(blob)
   if (typeof FileReader === 'undefined') {
-    return Promise.reject(new Error('This browser context cannot read 3D model preview data.'))
+    return Promise.reject(new Error(anyttyI18n.t('files.preview.modelReadUnavailable')))
   }
   return new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('3D model preview data could not be read.'))
+    reader.onerror = () => reject(reader.error ?? new Error(anyttyI18n.t('files.preview.modelReadFailed')))
     reader.onload = () => {
       if (reader.result instanceof ArrayBuffer) {
         resolve(reader.result)
         return
       }
-      reject(new Error('3D model preview data was not binary.'))
+      reject(new Error(anyttyI18n.t('files.preview.modelNotBinary')))
     }
     reader.readAsArrayBuffer(blob)
   })

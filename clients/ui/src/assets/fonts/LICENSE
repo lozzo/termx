@@ -1,20 +1,8 @@
-This directory contains Nerd Font Mono variants of the following open-source fonts.
-All fonts are licensed under the SIL Open Font License, Version 1.1 (OFL-1.1),
-unless otherwise noted below.
+This directory contains the JetBrains Mono Nerd Font Mono variant.
+It is licensed under the SIL Open Font License, Version 1.1 (OFL-1.1).
 
-Fonts included:
-  - FiraCode Nerd Font Mono        (c) Nikita Prokopov, OFL-1.1
+Font included:
   - JetBrains Mono Nerd Font Mono  (c) JetBrains, OFL-1.1
-  - Source Code Pro Nerd Font Mono  (c) Adobe, OFL-1.1
-  - Cascadia Code Nerd Font Mono   (c) Microsoft, OFL-1.1
-  - Hack Nerd Font Mono            (c) Source Foundry, MIT + OFL-1.1
-  - Ubuntu Mono Nerd Font Mono     (c) Canonical / Dalton Maag, UFL-1.0
-  - Inconsolata Nerd Font Mono     (c) Raph Levien, OFL-1.1
-  - Roboto Mono Nerd Font Mono     (c) Google, Apache-2.0
-  - IBM Plex Mono Nerd Font Mono   (c) IBM, OFL-1.1
-  - Iosevka Nerd Font Mono         (c) Belleve Invis, OFL-1.1
-  - Victor Mono Nerd Font Mono     (c) Rune Bjornerås, OFL-1.1
-  - Maple Mono NF                  (c) subframe7536, OFL-1.1
 
 Nerd Font patches are (c) Ryan L McIntyre, MIT / Apache-2.0.
 

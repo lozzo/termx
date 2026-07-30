@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { basename, fileEntryPath, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
+import { anyttyI18n } from '../i18n'
+import { basename, fileEntryMeta, fileEntryPath, fileEntryMenuSubtitle, joinPath, normalizeFilePath, parentPath, pathBreadcrumbs } from './fileUtils'
 
 describe('file path utilities', () => {
   it('normalizes and navigates Windows drive paths', () => {
@@ -37,5 +38,21 @@ describe('file path utilities', () => {
   it('uses an entry absolute path for virtual Windows drive roots', () => {
     expect(fileEntryPath('/', { name: 'C:', path: 'C:/' })).toBe('C:/')
     expect(fileEntryPath('/home', { name: 'ada' })).toBe('/home/ada')
+  })
+
+  it('localizes visible file metadata without translating technical values', async () => {
+    await anyttyI18n.changeLanguage('zh-CN')
+    try {
+      expect(fileEntryMeta({ type: 'dir', size: 0, childCount: 2 })).toBe('2 个项目')
+      expect(fileEntryMenuSubtitle({
+        type: 'file',
+        size: 128,
+        hardLink: true,
+        linkCount: 2,
+        inode: 42,
+      })).toBe('128 B · 硬链接 x2 · inode 42')
+    } finally {
+      await anyttyI18n.changeLanguage('en')
+    }
   })
 })

@@ -720,12 +720,6 @@ const TERMINAL_THEME_UI_PRESETS: Record<TerminalThemeId, TerminalThemeUiPreset> 
 
 export const TERMINAL_FONT_OPTIONS: TerminalFontOption[] = [
   { label: 'JetBrains Mono NF', value: '"JetBrainsMono NF", monospace' },
-  { label: 'FiraCode NF', value: '"FiraCode NF", monospace' },
-  { label: 'Cascadia Code NF', value: '"CascadiaCode NF", monospace' },
-  { label: 'Hack NF', value: '"Hack NF", monospace' },
-  { label: 'Iosevka NF', value: '"Iosevka NF", monospace' },
-  { label: 'Menlo', value: 'Menlo, Monaco, "Courier New", monospace' },
-  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
 ]
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
@@ -826,8 +820,8 @@ export function terminalThemeCssVariables(themeId: TerminalThemeId | string | un
 export function normalizeTerminalSettings(input: Partial<TerminalSettings> | Record<string, unknown>): TerminalSettings {
   return {
     fontSize: clampNumber(input.fontSize, DEFAULT_TERMINAL_SETTINGS.fontSize, 8, 32),
-    fontFamily: typeof input.fontFamily === 'string' && input.fontFamily.trim()
-      ? input.fontFamily
+    fontFamily: TERMINAL_FONT_OPTIONS.some((option) => option.value === input.fontFamily)
+      ? input.fontFamily as string
       : DEFAULT_TERMINAL_SETTINGS.fontFamily,
     themeId: isTerminalThemeId(input.themeId) ? input.themeId : DEFAULT_TERMINAL_SETTINGS.themeId,
     renderer: isTerminalRenderer(input.renderer) ? input.renderer : DEFAULT_TERMINAL_SETTINGS.renderer,

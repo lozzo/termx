@@ -29,7 +29,6 @@ describe('MachineBrowserShell', () => {
   it('enters a connection flow when a machine is clicked and does not open terminal immediately', async () => {
     const onStartConnection = vi.fn(async () => ({
       stage: 'trying_hub' as const,
-      message: 'Local unavailable. Trying Hub.',
     }))
 
     render(
@@ -54,7 +53,6 @@ describe('MachineBrowserShell', () => {
 
     await waitFor(() => expect(screen.getByText('Connecting to device')).toBeTruthy())
     expect(screen.getByText('Finding the best available connection...')).toBeTruthy()
-    expect(screen.queryByText('Local unavailable. Trying Hub.')).toBeNull()
   })
 
   it('surfaces hub relay as connection info without exposing relay as a path', async () => {
@@ -62,7 +60,6 @@ describe('MachineBrowserShell', () => {
       stage: 'trying_hub' as const,
       path: 'hub' as const,
       relayInUse: true,
-      message: 'Using hub connection.',
     }))
 
     render(

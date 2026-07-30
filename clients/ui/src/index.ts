@@ -27,7 +27,6 @@ export type {
   TerminalState,
 } from './core/model'
 export { openProtoEventSubscription } from './core/protoEventSubscription'
-export { Terminal } from './terminal/Terminal'
 export type { TerminalHandle, TerminalProps } from './terminal/Terminal'
 export { TerminalList } from './terminal/TerminalList'
 export type { OpenTerminalIntent, TerminalListProps } from './terminal/TerminalList'

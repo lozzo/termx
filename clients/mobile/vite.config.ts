@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [react(), copySharedUiPreviewWorker()],
   build: {
     outDir: 'dist',
+    manifest: true,
   },
 })
 

@@ -1,3 +1,5 @@
+@import '@xterm/xterm/css/xterm.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -149,22 +151,6 @@
 }
 
 @font-face {
-  font-family: 'FiraCode NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-  src: url('../assets/fonts/FiraCodeNerdFontMono-Regular.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'FiraCode NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 700;
-  src: url('../assets/fonts/FiraCodeNerdFontMono-Bold.woff2') format('woff2');
-}
-
-@font-face {
   font-family: 'JetBrainsMono NF';
   font-display: swap;
   font-style: normal;
@@ -178,54 +164,6 @@
   font-style: normal;
   font-weight: 700;
   src: url('../assets/fonts/JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'CascadiaCode NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-  src: url('../assets/fonts/CaskaydiaCoveNerdFontMono-Regular.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'CascadiaCode NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 700;
-  src: url('../assets/fonts/CaskaydiaCoveNerdFontMono-Bold.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Hack NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-  src: url('../assets/fonts/HackNerdFontMono-Regular.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Hack NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 700;
-  src: url('../assets/fonts/HackNerdFontMono-Bold.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Iosevka NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-  src: url('../assets/fonts/IosevkaNerdFontMono-Regular.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Iosevka NF';
-  font-display: swap;
-  font-style: normal;
-  font-weight: 700;
-  src: url('../assets/fonts/IosevkaNerdFontMono-Bold.woff2') format('woff2');
 }
 
 .xterm-wrapper .xterm {

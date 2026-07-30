@@ -1,5 +1,6 @@
 import type { FileEntry } from './fileApi'
 import { extension as modelExtension } from './modelFileTypes'
+import { anyttyI18n, anyttyIntlLocale } from '../i18n'
 
 export function basename(path: string): string {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -98,9 +99,9 @@ export function fileEntryMeta(entry: Pick<FileEntry, 'type' | 'size' | 'modTime'
   const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
   if (isDirectory) {
     if (typeof entry.childCount === 'number') {
-      parts.push(`${entry.childCount} ${entry.childCount === 1 ? 'item' : 'items'}`)
+      parts.push(anyttyI18n.t('files.meta.items', { count: entry.childCount }))
     } else {
-      parts.push('Folder')
+      parts.push(anyttyI18n.t('files.meta.folder'))
     }
   } else {
     parts.push(formatBytes(entry.size))
@@ -110,8 +111,8 @@ export function fileEntryMeta(entry: Pick<FileEntry, 'type' | 'size' | 'modTime'
   if (entry.linkTarget) parts.push(`-> ${entry.linkTarget}`)
   else if (entry.hardLink) {
     const hardLink = entry.linkCount && entry.linkCount > 1
-      ? `hard link x${entry.linkCount}`
-      : 'hard link'
+      ? anyttyI18n.t('files.meta.hardLinkCount', { count: entry.linkCount })
+      : anyttyI18n.t('files.meta.hardLink')
     parts.push(entry.inode ? `${hardLink} · inode ${entry.inode}` : hardLink)
   }
   return parts.join(' · ')
@@ -120,25 +121,27 @@ export function fileEntryMeta(entry: Pick<FileEntry, 'type' | 'size' | 'modTime'
 export function fileEntryMenuSubtitle(entry: Pick<FileEntry, 'type' | 'size' | 'childCount' | 'linkTarget' | 'hardLink' | 'linkCount' | 'inode'>): string {
   const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
   if (isDirectory) {
-    const count = typeof entry.childCount === 'number' ? `${entry.childCount} ${entry.childCount === 1 ? 'item' : 'items'}` : 'Folder'
+    const count = typeof entry.childCount === 'number'
+      ? anyttyI18n.t('files.meta.items', { count: entry.childCount })
+      : anyttyI18n.t('files.meta.folder')
     if (entry.linkTarget) return `${count} · -> ${entry.linkTarget}`
     return count
   }
   if (entry.linkTarget) return `${formatBytes(entry.size)} · -> ${entry.linkTarget}`
   if (entry.hardLink) {
     const hardLink = entry.linkCount && entry.linkCount > 1
-      ? `hard link x${entry.linkCount}`
-      : 'hard link'
+      ? anyttyI18n.t('files.meta.hardLinkCount', { count: entry.linkCount })
+      : anyttyI18n.t('files.meta.hardLink')
     return entry.inode ? `${formatBytes(entry.size)} · ${hardLink} · inode ${entry.inode}` : `${formatBytes(entry.size)} · ${hardLink}`
   }
-  return `${formatBytes(entry.size)} · File`
+  return `${formatBytes(entry.size)} · ${anyttyI18n.t('files.meta.file')}`
 }
 
 function formatModifiedTime(value: string | undefined): string {
   if (!value) return ''
   const timestamp = Date.parse(value)
   if (!Number.isFinite(timestamp)) return value
-  return new Date(timestamp).toLocaleString(undefined, {
+  return new Date(timestamp).toLocaleString(anyttyIntlLocale(), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

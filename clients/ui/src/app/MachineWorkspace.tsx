@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { create } from '@bufbuild/protobuf'
 import { Bookmark, BookmarkMinus, BookmarkPlus, Check, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, Scaling, SlidersHorizontal, SquarePen, Trash2, Unlock, WifiOff, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { connectionErrorDisplayMessage, connectionFailurePresentation, isAuthorizationConnectionError, isCancelledConnectionError, type ConnectionFailurePresentation } from '../connection/connectionErrorPresentation'
 import { ConnectionRouteManager, type ConnectionRouteManagementAdapter } from '../connection/ConnectionRouteManager'
 import { FileTransferPanel } from '../files/FileTransferPanel'
-import { FileManager } from '../files/FileManager'
 import { createFileApi, type FileEntry } from '../files/fileApi'
 import { fileEntryPath, joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
 import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
@@ -16,7 +15,7 @@ import { createRemoteClipboardApi, type RemoteClipboardEntry } from '../clipboar
 import { MobileTerminalKeybar } from '../terminal/MobileTerminalKeybar'
 import type { TerminalModifierState } from '../terminal/mobileTerminalInput'
 import { PasteConfirmDialog } from '../terminal/PasteConfirmDialog'
-import { Terminal, type TerminalHandle } from '../terminal/Terminal'
+import type { TerminalHandle } from '../terminal/Terminal'
 import { TerminalActionToolbar, type TerminalToolbarMode } from '../terminal/TerminalActionToolbar'
 import { TerminalEnvironmentEditor } from '../terminal/TerminalEnvironmentEditor'
 import { TerminalFnPanel } from '../terminal/TerminalFnPanel'
@@ -81,6 +80,14 @@ type MobileSheet = 'terminals' | 'terminal-menu' | 'split-terminal' | 'manage-te
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
+const LazyFileManager = lazy(async () => {
+  const module = await import('../files/FileManager')
+  return { default: module.FileManager }
+})
+const LazyTerminal = lazy(async () => {
+  const module = await import('../terminal/Terminal')
+  return { default: module.Terminal }
+})
 const machineWorkspaceInventoryCache = new WeakMap<MachineWorkspaceConnector, Map<string, {
   machine: Machine
   terminals: RemoteTerminal[]
@@ -142,6 +149,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const [page, setPage] = useState<AppPage>('terminal-list')
   const [filesOpen, setFilesOpen] = useState(false)
+  const [hasOpenedFiles, setHasOpenedFiles] = useState(false)
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null)
@@ -451,7 +459,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
     if (snapshot.phase === 'failed') {
-      const source = snapshot.failReason || snapshot.statusText || 'Connection failed'
+      const source = snapshot.failReason || snapshot.statusText || t('machines.connectionFailed')
       if (isCancelledConnectionError(source)) {
         setError(null)
         setConnectionFailure(null)
@@ -1356,6 +1364,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setFilesOpen(false)
         setFileTerminalId(null)
       })
+    setHasOpenedFiles(true)
     setFilesOpen(true)
     setMobileSheet(null)
   }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, requireVerification, t, terminals, updateConnectionStatus, updateFromConnectionState])
@@ -2645,23 +2654,30 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               }}
             >
               {activeTerminalId && renderSession && connectedTerminalId === activeTerminalId ? (
-                <Terminal
-                  ref={terminalRef}
-                  machineId={machine.machineId}
-                  terminalId={activeTerminalId}
-                  session={renderSession}
-                  className="absolute inset-0 outline-none"
-                  modifierState={modifierState}
-                  onModifierStateChange={setModifierState}
-                  onCursorMove={handleCursorMove}
-                  onInput={sendTerminalInput}
-                  onBufferChange={(isAlternate) => handleTerminalBufferChange(0, isAlternate)}
-                  onResizeControl={setTerminalResizeControl}
-                  selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
-                  settings={effectiveTerminalSettings}
-                  preventFocus={keyboardFocusLocked || connectionInputBlocked}
-                  suppressConnectingOverlay={showInitialNetworkOverlay}
-                />
+                <Suspense fallback={(
+                  <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--anytty-muted)]">
+                    <span className="anytty-square-spinner" aria-hidden="true" />
+                    <span>{t('workspace.connectingTerminal')}</span>
+                  </div>
+                )}>
+                  <LazyTerminal
+                    ref={terminalRef}
+                    machineId={machine.machineId}
+                    terminalId={activeTerminalId}
+                    session={renderSession}
+                    className="absolute inset-0 outline-none"
+                    modifierState={modifierState}
+                    onModifierStateChange={setModifierState}
+                    onCursorMove={handleCursorMove}
+                    onInput={sendTerminalInput}
+                    onBufferChange={(isAlternate) => handleTerminalBufferChange(0, isAlternate)}
+                    onResizeControl={setTerminalResizeControl}
+                    selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
+                    settings={effectiveTerminalSettings}
+                    preventFocus={keyboardFocusLocked || connectionInputBlocked}
+                    suppressConnectingOverlay={showInitialNetworkOverlay}
+                  />
+                </Suspense>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-[var(--anytty-muted)]">
                   {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (displayedConnectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
@@ -2693,22 +2709,29 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 }}
               >
                 {renderSession ? (
-                  <Terminal
-                    ref={splitTerminalRef}
-                    machineId={machine.machineId}
-                    terminalId={splitTerminalId}
-                    session={renderSession}
-                    className="absolute inset-0 outline-none"
-                    modifierState={modifierState}
-                    onModifierStateChange={setModifierState}
-                    onCursorMove={handleCursorMove}
-                    onInput={sendTerminalInput}
-                    onBufferChange={(isAlternate) => handleTerminalBufferChange(1, isAlternate)}
-                    selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
-                    settings={effectiveTerminalSettings}
-                    preventFocus={keyboardFocusLocked || connectionInputBlocked}
-                    suppressConnectingOverlay={showInitialNetworkOverlay}
-                  />
+                  <Suspense fallback={(
+                    <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--anytty-muted)]">
+                      <span className="anytty-square-spinner" aria-hidden="true" />
+                      <span>{t('workspace.connectingTerminal')}</span>
+                    </div>
+                  )}>
+                    <LazyTerminal
+                      ref={splitTerminalRef}
+                      machineId={machine.machineId}
+                      terminalId={splitTerminalId}
+                      session={renderSession}
+                      className="absolute inset-0 outline-none"
+                      modifierState={modifierState}
+                      onModifierStateChange={setModifierState}
+                      onCursorMove={handleCursorMove}
+                      onInput={sendTerminalInput}
+                      onBufferChange={(isAlternate) => handleTerminalBufferChange(1, isAlternate)}
+                      selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
+                      settings={effectiveTerminalSettings}
+                      preventFocus={keyboardFocusLocked || connectionInputBlocked}
+                      suppressConnectingOverlay={showInitialNetworkOverlay}
+                    />
+                  </Suspense>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--anytty-muted)]">
                     {showMachineNetworkOverlay ? null : displayedConnectionStatus ?? t('workspace.connectingTerminal')}
@@ -2810,47 +2833,56 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         )}
       </main>
 
-      <div
-        className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--anytty-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
-        data-testid="anytty-machine-files-overlay"
-      >
-        <div className="anytty-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
-          <div className="flex items-center gap-2">
-            <Folder className="h-5 w-5 text-zinc-500" />
-            <span className="text-[17px] font-bold tracking-tight text-zinc-900">{t('files.list')}</span>
+      {hasOpenedFiles ? (
+        <div
+          className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--anytty-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
+          data-testid="anytty-machine-files-overlay"
+        >
+          <div className="anytty-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+            <div className="flex items-center gap-2">
+              <Folder className="h-5 w-5 text-zinc-500" />
+              <span className="text-[17px] font-bold tracking-tight text-zinc-900">{t('files.list')}</span>
+            </div>
+            <button
+              type="button"
+              aria-label={t('workspace.closeFiles')}
+              className="anytty-app-icon-button border-transparent bg-transparent"
+              onClick={() => { hapticSelection(); openTerminalPanel() }}
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            type="button"
-            aria-label={t('workspace.closeFiles')}
-            className="anytty-app-icon-button border-transparent bg-transparent"
-            onClick={() => { hapticSelection(); openTerminalPanel() }}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        {renderSession ? (
-          <FileManager
-            key={fileContextKey}
-            machineId={machine.machineId}
-            terminalId={fileTerminalId ?? undefined}
-            session={renderSession}
-            initialPath={fileInitialPath}
-            className="flex h-full min-h-0 flex-col relative"
-            active={filesOpen}
-            fileTransfer={fileTransfer}
-            onOpenTransferCenter={() => setTransferCenterOpen(true)}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-            {showMachineNetworkOverlay ? null : filesOpen ? (
-              <div className="flex items-center gap-2">
+          {renderSession ? (
+            <Suspense fallback={(
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-zinc-500">
                 <span className="anytty-square-spinner" aria-hidden="true" />
-                <span>{t('workspace.connecting')}</span>
+                <span>{t('common.loading')}</span>
               </div>
-            ) : t('workspace.fileAccessNotReady')}
-          </div>
-        )}
-      </div>
+            )}>
+              <LazyFileManager
+                key={fileContextKey}
+                machineId={machine.machineId}
+                terminalId={fileTerminalId ?? undefined}
+                session={renderSession}
+                initialPath={fileInitialPath}
+                className="flex h-full min-h-0 flex-col relative"
+                active={filesOpen}
+                fileTransfer={fileTransfer}
+                onOpenTransferCenter={() => setTransferCenterOpen(true)}
+              />
+            </Suspense>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+              {showMachineNetworkOverlay ? null : filesOpen ? (
+                <div className="flex items-center gap-2">
+                  <span className="anytty-square-spinner" aria-hidden="true" />
+                  <span>{t('workspace.connecting')}</span>
+                </div>
+              ) : t('workspace.fileAccessNotReady')}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className={`pointer-events-none absolute bottom-8 left-1/2 z-50 flex -translate-x-1/2 transform flex-col items-center gap-2 transition-all duration-300 ${pairStatus ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
         <div className="flex items-center gap-2 border border-white/10 bg-zinc-900/95 px-4 py-2.5 text-sm font-medium text-white backdrop-blur-md" role="status" aria-live="polite">

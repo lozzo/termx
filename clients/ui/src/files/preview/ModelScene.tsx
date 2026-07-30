@@ -3,6 +3,7 @@ import { AlertCircle, Box, Crosshair, ZoomIn, ZoomOut } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
 import { useTranslation } from 'react-i18next'
 import '../../i18n'
+import type { TFunction } from 'i18next'
 import { clamp } from '../fileUtils'
 import { MediaPreviewShell } from './MediaPreviewShell'
 import type { ModelObject3D, ModelQuaternionState, ModelViewState, ModelWebGLRenderer, ThreeModule } from './modelPreviewTypes'
@@ -26,7 +27,7 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
     const mount = mountRef.current
     if (!mount) return undefined
 
-    const initialized = createModelScene(three, mount, object, view)
+    const initialized = createModelScene(three, mount, object, view, t)
     if (!initialized.ok) {
       sceneRef.current = null
       setRenderError(initialized.message)
@@ -40,7 +41,7 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
       sceneRef.current = null
       initialized.scene.dispose()
     }
-  }, [object, three])
+  }, [object, t, three])
 
   useEffect(() => {
     sceneRef.current?.render(view)
@@ -266,11 +267,12 @@ function createModelScene(
   mount: HTMLDivElement,
   object: ModelObject3D,
   initialView: ModelViewState,
+  t: TFunction,
 ): { ok: true; scene: ModelSceneHandle } | { ok: false; message: string } {
   const width = Math.max(1, mount.clientWidth)
   const height = Math.max(1, mount.clientHeight)
   if (typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')) {
-    return { ok: false, message: 'This browser context cannot create a WebGL scene for 3D model files.' }
+    return { ok: false, message: t('files.preview.webglUnavailable') }
   }
   const canvas = document.createElement('canvas')
   const contextAttributes: WebGLContextAttributes = {
@@ -280,7 +282,7 @@ function createModelScene(
   }
   const webglContext = canvas.getContext('webgl2', contextAttributes) ?? canvas.getContext('webgl', contextAttributes)
   if (!webglContext) {
-    return { ok: false, message: 'This browser context cannot create a WebGL scene for 3D model files.' }
+    return { ok: false, message: t('files.preview.webglUnavailable') }
   }
   let renderer: ModelWebGLRenderer
   try {
@@ -292,12 +294,12 @@ function createModelScene(
       preserveDrawingBuffer: true,
     })
   } catch {
-    return { ok: false, message: 'This browser context cannot create a WebGL scene for 3D model files.' }
+    return { ok: false, message: t('files.preview.webglUnavailable') }
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.setSize(width, height, false)
   renderer.setClearColor(0x09090b, 1)
-  renderer.domElement.setAttribute('aria-label', '3D model viewport')
+  renderer.domElement.setAttribute('aria-label', t('files.preview.modelViewport'))
   renderer.domElement.style.display = 'block'
   renderer.domElement.style.height = '100%'
   renderer.domElement.style.width = '100%'

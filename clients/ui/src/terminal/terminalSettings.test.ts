@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveTerminalTheme, terminalThemeCssVariables } from './terminalSettings'
+import { DEFAULT_TERMINAL_SETTINGS, normalizeTerminalSettings, resolveTerminalTheme, TERMINAL_FONT_OPTIONS, terminalThemeCssVariables } from './terminalSettings'
 
 describe('terminal theme UI variables', () => {
   it('keeps terminal chrome colors coordinated with the selected theme', () => {
@@ -30,5 +30,13 @@ describe('terminal theme UI variables', () => {
       foreground: '#a9b1d6',
       cursor: '#c0caf5',
     })
+  })
+
+  it('offers only the bundled JetBrains Mono font and drops stale font settings', () => {
+    expect(TERMINAL_FONT_OPTIONS).toEqual([
+      { label: 'JetBrains Mono NF', value: '"JetBrainsMono NF", monospace' },
+    ])
+    expect(normalizeTerminalSettings({ fontFamily: '"FiraCode NF", monospace' }).fontFamily)
+      .toBe(DEFAULT_TERMINAL_SETTINGS.fontFamily)
   })
 })
