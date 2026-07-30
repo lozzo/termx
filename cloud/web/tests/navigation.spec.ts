@@ -13,6 +13,10 @@ const pendingAttempt = { payment_attempt_id: 'attempt-pending', order_id: pendin
 const onlineCertificateBinding = { edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', public_endpoint: 'cn1.edge.anytty.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '2', sync_state: 'CERTIFICATE_SYNC_STATE_APPLIED', applied_at: now, online: true }
 const offlineCertificateBinding = { edge_id: '77777777-7777-4777-8777-777777777777', edge_name: '备用 Edge', public_endpoint: 'cn2.edge.anytty.com:41102', certificate_profile_id: '66666666-6666-4666-8666-666666666666', certificate_profile_name: '中国区 Edge 证书', binding_revision: '1', desired_revision: '2', applied_revision: '1', sync_state: 'CERTIFICATE_SYNC_STATE_PENDING', online: false }
 const certificateProfile = { certificate_profile_id: '66666666-6666-4666-8666-666666666666', name: '中国区 Edge 证书', dns_names: ['*.edge.anytty.com'], sha256_fingerprint: '9D7A0FE21C994AE4B24383E54DB131A25776D2A285F45E733728E474072F7C2A', not_before: now, not_after: periodEnd, revision: '2', created_at: now, updated_at: now, bindings: [onlineCertificateBinding, offlineCertificateBinding] }
+const themeTokens = {
+  light: { '--bg': '#f1f3f6', '--surface': '#ffffff', '--text': '#111418' },
+  dark: { '--bg': '#10161d', '--surface': '#171f28', '--text': '#eef2f7' },
+} as const
 
 function json(route: Route, value: unknown, status = 200) { return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) }) }
 
@@ -304,15 +308,64 @@ test('query 重试只刷新失败项并保留已打开的证书 dialog 与 draft
   await page.getByRole('button', { name: '上传证书', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '上传证书' })
   await dialog.getByLabel('档案名称').fill('保留中的证书草稿')
+  await dialog.getByLabel('证书链文件').setInputFiles({ name: 'kept-fullchain.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('kept certificate') })
+  await dialog.getByLabel('私钥文件').setInputFiles({ name: 'kept-privkey.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('kept private key') })
+  await expect(dialog.getByRole('alert')).toContainText('edge-query-retry')
 
-  await page.locator('.error-state button').evaluate((button: HTMLButtonElement) => button.click())
+  const retry = dialog.getByRole('button', { name: '重试', exact: true })
+  await retry.focus()
+  await expect(retry).toBeFocused()
+  await retry.click()
 
   await expect(page.locator('.error-state')).toHaveCount(0)
   await expect(page.locator('.certificate-workspace')).toContainText('中国区 Edge 证书')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByLabel('档案名称')).toHaveValue('保留中的证书草稿')
+  await expect(dialog.getByLabel('证书链文件')).toHaveValue(/kept-fullchain\.pem$/)
+  await expect(dialog.getByLabel('私钥文件')).toHaveValue(/kept-privkey\.pem$/)
   expect(edgeRequests).toBe(2)
   expect(requests.get('/api/operator/certificates')).toBe(1)
+})
+
+test('query 重试保留账号列表已有的筛选与分页状态', async ({ page }) => {
+  const requests = await mockAPI(page, true)
+  const accountRequests: { query: string; cursor: string }[] = []
+  let secondPageAttempts = 0
+  await page.route(/\/api\/operator\/accounts(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url())
+    const query = url.searchParams.get('query') ?? ''
+    const cursor = url.searchParams.get('cursor') ?? ''
+    accountRequests.push({ query, cursor })
+    if (cursor === 'accounts-page-2' && ++secondPageAttempts === 1) {
+      return json(route, { code: 'temporary_failure', message: 'private accounts query detail', request_id: 'accounts-query-retry' }, 401)
+    }
+    return json(route, {
+      accounts: [{ account, roles: ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'], daemon_count: '1', subscription: commerce.subscription, entitlement: commerce.entitlement, usage: commerce.usage }],
+      next_cursor: cursor ? '' : 'accounts-page-2',
+    })
+  })
+
+  await page.goto('/app/admin/accounts')
+  const filter = page.getByLabel('搜索账号')
+  await filter.fill('测试用户')
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(filter).toHaveValue('测试用户')
+  await page.getByRole('button', { name: '下一页', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('accounts-query-retry')
+
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(filter).toHaveValue('测试用户')
+  await expect(page.getByText('第 2 页', { exact: true })).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('query')).toBe('测试用户')
+  expect(accountRequests).toEqual([
+    { query: '', cursor: '' },
+    { query: '测试用户', cursor: '' },
+    { query: '测试用户', cursor: 'accounts-page-2' },
+    { query: '测试用户', cursor: 'accounts-page-2' },
+  ])
+  expect(requests.get('/api/account/current')).toBe(1)
 })
 
 test('@axe 公开页、登录、普通用户 Shell、管理员表格与打开的 dialog 满足 WCAG A/AA', async ({ page }, testInfo) => {
@@ -322,6 +375,7 @@ test('@axe 公开页、登录、普通用户 Shell、管理员表格与打开的
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
+  await assertThemeApplied(page, colorScheme)
   await assertNoAxeViolations(page, '公开页')
 
   await page.goto('/login')
@@ -459,4 +513,15 @@ async function assertNoAxeViolations(page: Page, surface: string) {
     targets: violation.nodes.map((node) => node.target),
   }))
   expect(violations, `${surface} 存在 axe violations`).toEqual([])
+}
+
+async function assertThemeApplied(page: Page, colorScheme: 'dark' | 'light') {
+  const root = page.locator(':root')
+  const expected = themeTokens[colorScheme]
+  const opposite = themeTokens[colorScheme === 'dark' ? 'light' : 'dark']
+  await expect(root).toHaveCSS('color-scheme', colorScheme)
+  for (const token of ['--bg', '--surface', '--text'] as const) {
+    await expect(root).toHaveCSS(token, expected[token])
+    await expect(root).not.toHaveCSS(token, opposite[token])
+  }
 }
