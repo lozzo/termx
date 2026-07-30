@@ -155,7 +155,7 @@ describe('FileManager overlays', () => {
     })
     const pickAndUpload = vi.fn()
     const fileTransfer = createFileTransferContext(pickAndUpload)
-    render(<NewDirectoryUploadHarness fileTransfer={fileTransfer} />)
+    render(<FileManagerTransferHarness fileTransfer={fileTransfer} />)
 
     await userEvent.click(screen.getByRole('button', { name: 'New directory' }))
     const draft = screen.getByRole('textbox', { name: 'Directory name' }) as HTMLInputElement
@@ -170,6 +170,120 @@ describe('FileManager overlays', () => {
 
     act(() => { expect(dispatchNativeBack()).toBe(true) })
     expect(screen.queryByRole('textbox', { name: 'Directory name' })).toBeNull()
+  })
+
+  it('closes an upload transfer center before discarding an inline rename draft', async () => {
+    useFileManagerMock.mockReturnValue(createManager({
+      entries: [fileEntry],
+      visibleEntries: [fileEntry],
+      total: 1,
+    }))
+    const pickAndUpload = vi.fn()
+    const fileTransfer = createFileTransferContext(pickAndUpload)
+    render(<FileManagerTransferHarness fileTransfer={fileTransfer} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'More actions for notes.txt' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'notes.txt' })).getByRole('button', { name: 'Rename' }))
+    const renameDraft = screen.getByRole('textbox', { name: 'Rename entry' }) as HTMLInputElement
+    await userEvent.clear(renameDraft)
+    await userEvent.type(renameDraft, 'release-notes.txt')
+    await userEvent.click(screen.getByRole('button', { name: 'Upload files' }))
+    expect(pickAndUpload).toHaveBeenCalledWith('machine-1', '/')
+    expect(screen.getByRole('dialog', { name: 'Data Transfer Center' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Data Transfer Center' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Rename entry' })).toHaveProperty('value', 'release-notes.txt')
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('textbox', { name: 'Rename entry' })).toBeNull()
+  })
+
+  it('closes only the latest visible inline state at the shared workspace priority', async () => {
+    useFileManagerMock.mockImplementation(() => {
+      const [newDirName, setNewDirName] = useState('')
+      return createManager({
+        entries: [fileEntry],
+        visibleEntries: [fileEntry],
+        total: 1,
+        newDirName,
+        setNewDirName,
+      })
+    })
+    renderFileManager()
+
+    await userEvent.click(screen.getByRole('button', { name: 'More actions for notes.txt' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'notes.txt' })).getByRole('button', { name: 'Rename' }))
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Rename entry' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Rename entry' }), 'release-notes.txt')
+    await userEvent.click(screen.getByRole('button', { name: 'New directory' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Directory name' }), 'release-assets')
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('textbox', { name: 'Directory name' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Rename entry' })).toHaveProperty('value', 'release-notes.txt')
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('textbox', { name: 'Rename entry' })).toBeNull()
+  })
+
+  it('keeps file selection under a transfer opened from the reachable active-transfer summary', async () => {
+    useFileManagerMock.mockImplementation(() => {
+      const [selectionMode, setSelectionMode] = useState(false)
+      return createManager({
+        entries: [fileEntry],
+        visibleEntries: [fileEntry],
+        total: 1,
+        selectionMode,
+        setSelectionMode,
+      })
+    })
+    const fileTransfer = createFileTransferContext(vi.fn())
+    render(<FileManagerTransferHarness fileTransfer={fileTransfer} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Select files' }))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Upload files' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'More actions for notes.txt' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Open transfer center, 1 active' }))
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Data Transfer Center' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Upload files' })).toBeTruthy()
+  })
+
+  it('keeps clipboard mode under a transfer opened from the reachable active-transfer summary', async () => {
+    useFileManagerMock.mockImplementation(() => {
+      const [clipboard, setClipboard] = useState<UseFileManagerResult['clipboard']>(null)
+      return createManager({
+        entries: [fileEntry],
+        visibleEntries: [fileEntry],
+        total: 1,
+        clipboard,
+        setClipboard,
+        copy: (paths) => setClipboard({ mode: 'copy', paths }),
+      })
+    })
+    const fileTransfer = createFileTransferContext(vi.fn())
+    render(<FileManagerTransferHarness fileTransfer={fileTransfer} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'More actions for notes.txt' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'notes.txt' })).getByRole('button', { name: 'Copy' }))
+    expect(screen.getByRole('button', { name: 'Paste' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Upload files' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Open transfer center, 1 active' }))
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Data Transfer Center' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Paste' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('button', { name: 'Paste' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Upload files' })).toBeTruthy()
   })
 
   it('keeps delete confirmation associations unique across two file managers', () => {
@@ -251,7 +365,7 @@ function FileManagerWithTransfer() {
   )
 }
 
-function NewDirectoryUploadHarness({ fileTransfer }: { fileTransfer: FileTransferContext }) {
+function FileManagerTransferHarness({ fileTransfer }: { fileTransfer: FileTransferContext }) {
   const [transferOpen, setTransferOpen] = useState(false)
   const snapshot = fileTransfer.getSnapshot()
   return (

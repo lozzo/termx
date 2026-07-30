@@ -175,10 +175,7 @@ export function FileManager({
       || entryMenuPath
       || sortMenuOpen
       || bookmarksOpen
-      || editingBookmark
-      || renamePath
-      || manager.selectionMode
-      || clipboardOpen,
+      || editingBookmark,
   )
 
   useNativeBackHandler(() => {
@@ -207,18 +204,6 @@ export function FileManager({
       closeBookmarkEditor()
       return
     }
-    if (renamePath) {
-      setRenamePath(null)
-      setRenameName('')
-      return
-    }
-    if (manager.selectionMode) {
-      manager.setSelectionMode(false)
-      return
-    }
-    if (clipboardOpen) {
-      manager.setClipboard(null)
-    }
   }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, active && nestedOverlayOpen)
 
   useNativeBackHandler(() => {
@@ -229,6 +214,19 @@ export function FileManager({
     manager.setNewDirName('')
     setNewDirOpen(false)
   }, NATIVE_BACK_PRIORITY.WORKSPACE, active && newDirOpen)
+
+  useNativeBackHandler(() => {
+    setRenamePath(null)
+    setRenameName('')
+  }, NATIVE_BACK_PRIORITY.WORKSPACE, active && Boolean(renamePath))
+
+  useNativeBackHandler(() => {
+    manager.setSelectionMode(false)
+  }, NATIVE_BACK_PRIORITY.WORKSPACE, active && manager.selectionMode)
+
+  useNativeBackHandler(() => {
+    manager.setClipboard(null)
+  }, NATIVE_BACK_PRIORITY.WORKSPACE, active && clipboardOpen)
 
   const openBookmarkEditor = (bookmark: PathBookmark) => {
     setEditingBookmarkId(bookmark.id)
