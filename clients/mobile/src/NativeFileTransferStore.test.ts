@@ -519,6 +519,133 @@ describe('NativeFileTransferStore', () => {
     expect(transferOwnerCounts(harness.store)).toEqual(emptyTransferOwnerCounts())
   })
 
+  it('settles fresh cleanup when a fresh-session cancel command never completes', async () => {
+    const storage = memoryStorage()
+    const commandEntered = deferred<void>()
+    let cancelSignal: AbortSignal | undefined
+    const harness = await createUploadHarness({
+      releaseResource: async () => undefined,
+      storage,
+      beforeCancelResult: async (signal) => {
+        cancelSignal = signal
+        commandEntered.resolve()
+        await new Promise<void>(() => undefined)
+      },
+    })
+    await waitFor(() => harness.store.getSnapshot().transfers[0]?.status === 'transferring')
+    harness.store.pauseTransfer(harness.id)
+    await waitFor(() => harness.counters.releaseCommands === 1 && harness.counters.sessionCloses === 1)
+    const discardedOwner = detachedTransferOwner(harness.store, harness.id)
+
+    harness.store.cancelTransfer(harness.id)
+    await commandEntered.promise
+    const freshCleanup = requiredFreshCleanup(discardedOwner)
+    expect(freshCleanup.completion).not.toBe(discardedOwner.teardown)
+    expect(cancelSignal?.aborted).toBe(false)
+
+    const discard = harness.store.discardForLocalReset()
+    const cancellation = await freshCleanup.completion
+
+    expect(cancellation.confirmed).toBe(false)
+    expect(cancelSignal?.aborted).toBe(true)
+    await discard
+    expect(harness.counters.cancelCommands).toBe(1)
+    expect(harness.counters.sessionCloses).toBe(2)
+    expect(harness.store.getSnapshot()).toEqual({ transfers: [], hasActiveTransfers: false })
+    expect(storage.getItem('anytty.file-transfers.v2')).toBeNull()
+    expect(transferOwnerCounts(harness.store)).toEqual(emptyTransferOwnerCounts())
+    expectDiscardedOwnerCleared(discardedOwner)
+  })
+
+  it('settles fresh cleanup when a live-session cancel command never completes', async () => {
+    const storage = memoryStorage()
+    const commandEntered = deferred<void>()
+    let cancelSignal: AbortSignal | undefined
+    const harness = await createUploadHarness({
+      releaseResource: async () => { throw new Error('detach failed') },
+      storage,
+      beforeCancelResult: async (signal) => {
+        cancelSignal = signal
+        commandEntered.resolve()
+        await new Promise<void>(() => undefined)
+      },
+    })
+    await waitFor(() => harness.store.getSnapshot().transfers[0]?.status === 'transferring')
+    harness.store.pauseTransfer(harness.id)
+    await waitFor(() => harness.store.getSnapshot().transfers[0]?.status === 'failed')
+    const discardedOwner = failedTransferOwner(harness.store, harness.id)
+
+    harness.store.cancelTransfer(harness.id)
+    await commandEntered.promise
+    const freshCleanup = requiredFreshCleanup(discardedOwner)
+    expect(freshCleanup.completion).not.toBe(discardedOwner.teardown)
+    expect(cancelSignal?.aborted).toBe(false)
+
+    const discard = harness.store.discardForLocalReset()
+    const completion = freshCleanup.completion.then(
+      () => 'fulfilled' as const,
+      (error: unknown) => error,
+    )
+
+    await expect(completion).resolves.toMatchObject({ name: 'AbortError' })
+    expect(cancelSignal?.aborted).toBe(true)
+    await discard
+    expect(harness.counters.cancelCommands).toBe(1)
+    expect(harness.counters.sessionCloses).toBe(1)
+    expect(harness.store.getSnapshot()).toEqual({ transfers: [], hasActiveTransfers: false })
+    expect(storage.getItem('anytty.file-transfers.v2')).toBeNull()
+    expect(transferOwnerCounts(harness.store)).toEqual(emptyTransferOwnerCounts())
+    expectDiscardedOwnerCleared(discardedOwner)
+  })
+
+  it.each(['resolve', 'reject'] as const)('absorbs a late cancel %s after local reset', async (outcome) => {
+    const storage = memoryStorage()
+    const commandEntered = deferred<void>()
+    const cancelResult = deferred<void>()
+    let cancelSignal: AbortSignal | undefined
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+    nodeTestRuntime().process.on('unhandledRejection', onUnhandled)
+    try {
+      const harness = await createUploadHarness({
+        releaseResource: async () => undefined,
+        storage,
+        beforeCancelResult: async (signal) => {
+          cancelSignal = signal
+          commandEntered.resolve()
+          await cancelResult.promise
+        },
+      })
+      await waitFor(() => harness.store.getSnapshot().transfers[0]?.status === 'transferring')
+      harness.store.pauseTransfer(harness.id)
+      await waitFor(() => harness.counters.releaseCommands === 1 && harness.counters.sessionCloses === 1)
+      const discardedOwner = detachedTransferOwner(harness.store, harness.id)
+      const snapshots: FileTransferStoreSnapshot[] = []
+      harness.store.subscribe(() => snapshots.push(harness.store.getSnapshot()))
+
+      harness.store.cancelTransfer(harness.id)
+      await commandEntered.promise
+      await harness.store.discardForLocalReset()
+      const notificationsAfterReset = snapshots.length
+
+      if (outcome === 'resolve') cancelResult.resolve()
+      else cancelResult.reject(new Error('late cancel rejection'))
+      await new Promise<void>((resolve) => { nodeTestRuntime().setImmediate(resolve) })
+
+      expect(unhandled).toEqual([])
+      expect(cancelSignal?.aborted).toBe(true)
+      expect(harness.counters.cancelCommands).toBe(1)
+      expect(harness.counters.sessionCloses).toBe(2)
+      expect(harness.store.getSnapshot()).toEqual({ transfers: [], hasActiveTransfers: false })
+      expect(storage.getItem('anytty.file-transfers.v2')).toBeNull()
+      expect(snapshots).toHaveLength(notificationsAfterReset)
+      expect(transferOwnerCounts(harness.store)).toEqual(emptyTransferOwnerCounts())
+      expectDiscardedOwnerCleared(discardedOwner)
+    } finally {
+      nodeTestRuntime().process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
   it('keeps the owner reachable when cancel arrives during session close', async () => {
 	const closeGate = deferred<void>()
 	const closeStarted = deferred<void>()
@@ -921,6 +1048,7 @@ async function createUploadHarness(options: {
   beforeOpenResult?: () => Promise<void>
   beforeStreamResult?: () => Promise<void>
 	beforeSessionClose?: () => Promise<void>
+  beforeCancelResult?: (signal: AbortSignal | undefined) => Promise<void>
   freshResolverFailures?: number
   cancelOpenBeforeDelivery?: boolean
   cancelBehavior?: 'success' | 'false' | 'throw' | 'false_then_success'
@@ -995,6 +1123,7 @@ async function createUploadHarness(options: {
       if (envelope.command.case === 'fileTransferCancel') {
         counters.cancelCommands += 1
 		cancelCredentials.push(envelope.command.value.transfer ? 'transfer' : envelope.command.value.uploadResume ? 'upload_resume' : 'missing')
+		await options.beforeCancelResult?.(executeOptions?.signal)
         if (options.cancelBehavior === 'throw') throw new Error('cancel transport failed')
 		const cancelled = options.cancelBehavior === 'false_then_success' ? counters.cancelCommands > 1 : options.cancelBehavior !== 'false'
         return create(AnyTTYApiApplication.ResultEnvelopeSchema, {
@@ -1058,8 +1187,10 @@ function transferOwnerCounts(store: object) {
     failedCleanupOwners: Map<unknown, unknown>
     detachedCleanupOwners: Map<unknown, unknown>
     destructiveRetries: Map<unknown, unknown>
+    pendingDismissals: Set<unknown>
     resumeTransitions: Map<unknown, unknown>
     transitionEpochs: Map<unknown, unknown>
+    progressSamples: Map<unknown, unknown>
   }
   return {
     active: owners.active.size,
@@ -1068,8 +1199,10 @@ function transferOwnerCounts(store: object) {
     failed: owners.failedCleanupOwners.size,
     detached: owners.detachedCleanupOwners.size,
     retries: owners.destructiveRetries.size,
+    dismissals: owners.pendingDismissals.size,
     resumes: owners.resumeTransitions.size,
     epochs: owners.transitionEpochs.size,
+    progress: owners.progressSamples.size,
   }
 }
 
@@ -1079,8 +1212,38 @@ function detachedTransferOwner(store: object, id: string): Record<string, unknow
   return owner
 }
 
+function failedTransferOwner(store: object, id: string): Record<string, unknown> {
+  const owner = (store as { failedCleanupOwners: Map<string, Record<string, unknown>> }).failedCleanupOwners.get(id)
+  if (!owner) throw new Error('failed transfer owner is unavailable')
+  return owner
+}
+
+function requiredFreshCleanup(owner: Record<string, unknown>): { cancel: AbortController, completion: Promise<{ confirmed: boolean }> } {
+  const freshCleanup = owner.freshCleanup as { cancel: AbortController, completion: Promise<{ confirmed: boolean }> } | undefined
+  if (!freshCleanup) throw new Error('fresh cleanup owner is unavailable')
+  return freshCleanup
+}
+
+function expectDiscardedOwnerCleared(owner: Record<string, unknown>): void {
+  expect(owner.session).toBeUndefined()
+  expect(owner.stream).toBeUndefined()
+  expect(owner.resource).toBeUndefined()
+  expect(owner.uploadResume).toBeUndefined()
+  expect(owner.freshCleanup).toBeUndefined()
+  expect(owner.teardown).toBeUndefined()
+}
+
 function emptyTransferOwnerCounts() {
-  return { active: 0, tasks: 0, teardowns: 0, failed: 0, detached: 0, retries: 0, resumes: 0, epochs: 0 }
+  return { active: 0, tasks: 0, teardowns: 0, failed: 0, detached: 0, retries: 0, dismissals: 0, resumes: 0, epochs: 0, progress: 0 }
+}
+
+type NodeTestRuntime = {
+  process: { on(event: 'unhandledRejection', listener: (reason: unknown) => void): void, off(event: 'unhandledRejection', listener: (reason: unknown) => void): void }
+  setImmediate(callback: () => void): unknown
+}
+
+function nodeTestRuntime(): NodeTestRuntime {
+  return globalThis as unknown as NodeTestRuntime
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

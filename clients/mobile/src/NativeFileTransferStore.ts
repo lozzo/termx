@@ -566,7 +566,9 @@ export class NativeFileTransferStore {
         this.clearPendingTeardown(id, teardown)
         if (this.failedCleanupOwners.get(id) !== task && this.detachedCleanupOwners.get(id) !== task) this.taskOwners.delete(task)
       },
-      () => undefined,
+      () => {
+        if (task.teardown === teardown) task.teardown = undefined
+      },
     )
     return teardown
   }
@@ -670,6 +672,7 @@ export class NativeFileTransferStore {
         this.taskOwners.delete(task)
       },
       () => {
+        if (task.teardown === retry) task.teardown = undefined
         if (this.destructiveRetries.get(id) === retry) this.destructiveRetries.delete(id)
       },
     )
@@ -708,7 +711,11 @@ export class NativeFileTransferStore {
   private async performFreshSessionCancel(task: ActiveTransfer, controller: AbortController): Promise<CleanupConfirmation> {
     let priorError: Error | undefined
     if (task.session?.isAlive()) {
-      const cancellation = await this.cancelRemote(task)
+      const cancellation = await awaitAbortable(
+        this.cancelRemote(task, controller.signal),
+        controller.signal,
+        () => undefined,
+      )
       if (cancellation.confirmed) return cancellation
       priorError = cancellation.error
       await task.session.close().catch(() => undefined)
@@ -727,7 +734,11 @@ export class NativeFileTransferStore {
         return { confirmed: false, error: abortError(controller.signal) }
       }
       task.session = session
-      const cancellation = await this.cancelRemote(task, controller.signal)
+      const cancellation = await awaitAbortable(
+        this.cancelRemote(task, controller.signal),
+        controller.signal,
+        () => undefined,
+      )
       if (cancellation.confirmed || !priorError) return cancellation
       return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError.message}; fresh-session cleanup failed: ${cancellation.error?.message ?? 'unavailable'}`) }
     } catch (error) {
