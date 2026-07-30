@@ -49,6 +49,11 @@ export interface FileTransferStoreSnapshot {
 type NativeTransferSessionResolver = (machineId: string, signal: AbortSignal) => Promise<ProtoClientSession | null | undefined>
 type CleanupConfirmation = { confirmed: boolean, error?: Error }
 
+type FreshCleanupOwner = {
+  cancel: AbortController
+  completion: Promise<CleanupConfirmation>
+}
+
 type ActiveTransfer = {
   epoch: number
   storeEpoch: number
@@ -62,6 +67,8 @@ type ActiveTransfer = {
   destructiveCancel: boolean
   readyForClose: Promise<void>
   markReadyForClose: () => void
+  freshCleanup?: FreshCleanupOwner
+  teardown?: Promise<void>
 }
 
 /** NativeFileTransferStore consumes apipb and Go-owned resource streams; it owns only UI progress and local Blob/URI access. */
@@ -221,7 +228,14 @@ export class NativeFileTransferStore {
 
   async suspendForRuntimeReset(): Promise<void> {
     if (this.discardPromise) await this.discardPromise
-    const teardowns: Promise<void>[] = []
+    const teardowns = new Set<Promise<unknown>>()
+    for (const task of this.taskOwners) {
+      const freshCleanup = task.freshCleanup
+      if (!freshCleanup) continue
+      freshCleanup.cancel.abort()
+      teardowns.add(freshCleanup.completion)
+      if (task.teardown) teardowns.add(task.teardown)
+    }
     for (const [id, task] of this.active) {
       this.advanceTransition(id)
       task.cancel.abort()
@@ -229,7 +243,7 @@ export class NativeFileTransferStore {
       if (transfer?.status === 'pending' || transfer?.status === 'transferring') {
         this.update(id, { status: 'failed', pausedByUser: false, error: 'Connection changed; transfer will resume', updatedAt: Date.now(), bytesPerSecond: 0 })
       }
-      teardowns.push(this.closeTask(id, task))
+      teardowns.add(this.closeTask(id, task))
     }
     await Promise.allSettled(teardowns)
   }
@@ -255,12 +269,27 @@ export class NativeFileTransferStore {
       ...this.failedCleanupOwners.values(),
       ...this.detachedCleanupOwners.values(),
     ])
-    for (const task of tasks) task.cancel.abort()
+    const drainableTeardowns = new Set<Promise<unknown>>()
+    for (const task of tasks) {
+      task.cancel.abort()
+      const freshCleanup = task.freshCleanup
+      if (!freshCleanup) continue
+      freshCleanup.cancel.abort()
+      drainableTeardowns.add(freshCleanup.completion)
+      if (task.teardown) drainableTeardowns.add(task.teardown)
+    }
 
     this.transfers = []
+    this.downloadChunks.clear()
+    this.publishEmptyResetSnapshot()
+
+    await Promise.allSettled([
+      ...drainableTeardowns,
+      ...[...tasks].map((task) => this.closeDiscardedTask(task)),
+    ])
+
     this.active.clear()
     this.taskOwners.clear()
-    this.downloadChunks.clear()
     this.pendingTeardowns.clear()
     this.failedCleanupOwners.clear()
     this.detachedCleanupOwners.clear()
@@ -270,9 +299,6 @@ export class NativeFileTransferStore {
     this.transitionEpochs.clear()
     this.progressSamples.clear()
     this.taskTeardowns = new WeakMap<ActiveTransfer, Promise<void>>()
-    this.publishEmptyResetSnapshot()
-
-    await Promise.allSettled([...tasks].map((task) => this.closeDiscardedTask(task)))
     removePersistedTransfers(this.storage)
   }
 
@@ -479,7 +505,7 @@ export class NativeFileTransferStore {
     }
   }
 
-  private async cancelRemote(task: ActiveTransfer): Promise<CleanupConfirmation> {
+  private async cancelRemote(task: ActiveTransfer, signal?: AbortSignal): Promise<CleanupConfirmation> {
     if (!task.session || (!task.resource && !task.uploadResume)) {
       return { confirmed: false, error: new Error('remote file transfer cancellation has no credential') }
     }
@@ -489,7 +515,7 @@ export class NativeFileTransferStore {
       const result = await task.session.execute(command('fileTransferCancel', create(AnyTTYApiFile.FileTransferCancelCommandSchema, {
         transfer: useSessionResource ? task.resource : undefined,
         uploadResume: useSessionResource ? undefined : task.uploadResume,
-      })))
+      })), signal ? { signal } : undefined)
       if (result.result.case === 'fileTransferCancel') {
         // Download 的 false 表示 daemon 已处理命令且 resource 已不存在；upload 临时文件仍要求明确 cancelled=true。
         if (result.result.value.cancelled || task.direction === 'download') return { confirmed: true }
@@ -526,12 +552,17 @@ export class NativeFileTransferStore {
   private closeTask(id: string, task: ActiveTransfer): Promise<void> {
     if (task.storeEpoch !== this.storeEpoch) return this.closeDiscardedTask(task)
     const existing = this.taskTeardowns.get(task)
-    if (existing) return existing
+    if (existing) {
+      task.teardown ??= existing
+      return existing
+    }
     const teardown = this.finishCloseTask(id, task)
     this.taskTeardowns.set(task, teardown)
+    task.teardown = teardown
     this.pendingTeardowns.set(id, teardown)
     void teardown.then(
       () => {
+        if (task.teardown === teardown) task.teardown = undefined
         this.clearPendingTeardown(id, teardown)
         if (this.failedCleanupOwners.get(id) !== task && this.detachedCleanupOwners.get(id) !== task) this.taskOwners.delete(task)
       },
@@ -629,9 +660,11 @@ export class NativeFileTransferStore {
     if (existing) return existing
     const retry = this.finishDestructiveCleanup(id, task)
     this.destructiveRetries.set(id, retry)
+    task.teardown = retry
     this.pendingTeardowns.set(id, retry)
     void retry.then(
       () => {
+        if (task.teardown === retry) task.teardown = undefined
         if (this.destructiveRetries.get(id) === retry) this.destructiveRetries.delete(id)
         this.clearPendingTeardown(id, retry)
         this.taskOwners.delete(task)
@@ -661,28 +694,46 @@ export class NativeFileTransferStore {
 	await task.session?.close().catch(() => undefined)
   }
 
-  private async cancelWithFreshSession(task: ActiveTransfer): Promise<CleanupConfirmation> {
-	let priorError: Error | undefined
-	if (task.session?.isAlive()) {
-	  const cancellation = await this.cancelRemote(task)
-	  if (cancellation.confirmed) return cancellation
-	  priorError = cancellation.error
-	  await task.session.close().catch(() => undefined)
-	  task.session = undefined
-	}
-	if (!task.uploadResume) {
-	  return { confirmed: false, error: priorError ?? new Error('fresh-session cancellation has no upload resume credential') }
-	}
-	const controller = new AbortController()
-	try {
-	  task.session = await this.session(task.machineId, controller.signal)
-	  const cancellation = await this.cancelRemote(task)
-	  if (cancellation.confirmed || !priorError) return cancellation
-	  return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError.message}; fresh-session cleanup failed: ${cancellation.error?.message ?? 'unavailable'}`) }
-	} catch (error) {
-	  const freshError = error instanceof Error ? error : new Error(String(error))
-	  return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError?.message ?? 'unavailable'}; fresh-session resolution failed: ${freshError.message}`) }
-	}
+  private cancelWithFreshSession(task: ActiveTransfer): Promise<CleanupConfirmation> {
+    if (task.freshCleanup) return task.freshCleanup.completion
+    const cancel = new AbortController()
+    let completion!: Promise<CleanupConfirmation>
+    completion = this.performFreshSessionCancel(task, cancel).finally(() => {
+      if (task.freshCleanup?.completion === completion) task.freshCleanup = undefined
+    })
+    task.freshCleanup = { cancel, completion }
+    return completion
+  }
+
+  private async performFreshSessionCancel(task: ActiveTransfer, controller: AbortController): Promise<CleanupConfirmation> {
+    let priorError: Error | undefined
+    if (task.session?.isAlive()) {
+      const cancellation = await this.cancelRemote(task)
+      if (cancellation.confirmed) return cancellation
+      priorError = cancellation.error
+      await task.session.close().catch(() => undefined)
+      task.session = undefined
+    }
+    if (controller.signal.aborted || task.storeEpoch !== this.storeEpoch) {
+      return { confirmed: false, error: abortError(controller.signal) }
+    }
+    if (!task.uploadResume) {
+      return { confirmed: false, error: priorError ?? new Error('fresh-session cancellation has no upload resume credential') }
+    }
+    try {
+      const session = await this.session(task.machineId, controller.signal)
+      if (controller.signal.aborted || task.storeEpoch !== this.storeEpoch) {
+        await session.close().catch(() => undefined)
+        return { confirmed: false, error: abortError(controller.signal) }
+      }
+      task.session = session
+      const cancellation = await this.cancelRemote(task, controller.signal)
+      if (cancellation.confirmed || !priorError) return cancellation
+      return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError.message}; fresh-session cleanup failed: ${cancellation.error?.message ?? 'unavailable'}`) }
+    } catch (error) {
+      const freshError = error instanceof Error ? error : new Error(String(error))
+      return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError?.message ?? 'unavailable'}; fresh-session resolution failed: ${freshError.message}`) }
+    }
   }
 
   private completeDismiss(id: string): void {
@@ -826,10 +877,13 @@ export class NativeFileTransferStore {
 
   private async closeDiscardedTask(task: ActiveTransfer): Promise<void> {
     task.cancel.abort()
+    task.freshCleanup?.cancel.abort()
     const stream = task.stream
     const session = task.session
     task.stream = undefined
     task.session = undefined
+    task.resource = undefined
+    task.uploadResume = undefined
     await Promise.allSettled([
       stream?.close(),
       session?.close(),
