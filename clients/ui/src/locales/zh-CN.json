@@ -1,8 +1,6 @@
 {
   "errors": {
     "generic": "操作失败，请重试。",
-    "loginRequired": "请先登录 AnyTTY Cloud。",
-    "alreadySignedIn": "当前已登录账号 {{account}}。如需登录其他账号，请先退出当前账号。",
     "pairAgain": "此设备需要重新授权，请再次配对。",
     "storageRequired": "导入 AnyTTY 连接码前需要启用本地存储。",
     "connectionFailed": "无法连接到此设备，请检查手机和目标设备的网络后重试。",
@@ -29,19 +27,11 @@
     "cancel": "取消",
     "close": "关闭",
     "refresh": "刷新",
-    "signIn": "登录",
-    "signedIn": "已登录",
-    "account": "账号",
     "settings": "设置",
-    "backToMachines": "返回设备列表",
-    "signOut": "退出登录"
+    "backToMachines": "返回设备列表"
   },
   "machines": {
     "title": "设备",
-    "availableCount": "{{count}} 台可用",
-    "localRecords": "本地和局域网设备",
-    "availableFor": "{{count}} 台可用 / {{account}}",
-    "signInToSync": "登录后同步设备",
     "savedCount": "已保存 {{count}} 台",
     "refresh": "刷新设备",
     "pullToRefresh": "下拉刷新设备",
@@ -54,15 +44,10 @@
     "restoringNetwork": "网络已恢复，正在重新建立安全连接...",
     "networkRecoveryFailed": "无法恢复安全连接。",
     "scanPairing": "扫描配对二维码",
-    "add": "添加设备",
     "transfers": "打开文件传输",
     "openSettings": "打开设置",
     "emptyTitle": "还没有设备",
-    "emptyCopy": "添加本地设备，或登录账号同步云端设备。",
-    "emptySignedInCopy": "添加本地设备，或在 AnyTTY 网页账号中注册守护进程。",
     "emptyServiceCopy": "扫描 AnyTTY 服务显示的二维码。设备会直接保存在这里，无需登录账号。",
-    "signInCloud": "登录 AnyTTY Cloud",
-    "addLocal": "添加本地设备",
     "scanService": "扫描服务二维码",
     "daemonHost": "AnyTTY 守护进程",
     "scan": "扫描二维码",
@@ -156,8 +141,6 @@
     }
   },
   "settings": {
-    "cloudSignIn": "登录 AnyTTY Cloud",
-    "webSignIn": "登录 Web Control",
     "deviceAccess": "设备访问",
     "connection": "连接",
     "webControl": "Web Control",
@@ -175,33 +158,26 @@
     "scrollback": "回滚行数",
     "prefetch": "预取阈值",
     "cursorBlink": "光标闪烁",
-    "emailOrUsername": "邮箱或用户名",
-    "password": "密码",
     "auto": "自动",
     "resize": "调整终端大小",
     "shiftUp": "上移界面",
-    "languageHint": "App 显示语言",
-    "plan": "当前套餐",
-    "subscriptionStatus": "订阅状态",
-    "subscriptionActive": "已生效",
-    "subscriptionTrial": "试用中",
-    "subscriptionPastDue": "等待付款",
-    "subscriptionCanceling": "本周期结束后取消",
-    "subscriptionCanceled": "已取消",
-    "subscriptionSuspended": "已暂停",
-    "subscriptionExpired": "已过期",
-    "subscriptionGrace": "宽限期",
-    "subscriptionPending": "处理中"
+    "languageHint": "App 显示语言"
   },
-  "activation": {
-    "enterOnComputer": "在电脑上的 AnyTTY Cloud 中输入此验证码",
-    "waiting": "等待网页批准 · {{remaining}}",
-    "cancel": "取消激活",
-    "intro": "在 AnyTTY 网页账号中创建手机登录码，然后扫描二维码或在下方输入同一个验证码。",
-    "scanWeb": "扫描网页二维码",
-    "scanUnavailable": "此设备无法使用摄像头扫码。",
-    "loginCode": "登录码",
-    "useCode": "使用登录码"
+  "startup": {
+    "registryTitle": "无法打开本地配对记录",
+    "registryCopy": "AnyTTY 无法读取原生端点注册表。你可以重试、导出诊断，或只重置此设备上的本地配对。",
+    "technicalDetails": "技术详情",
+    "actionFailed": "恢复操作未完成。请查看详情后重试。",
+    "retry": "重试",
+    "retrying": "正在重试...",
+    "exportDiagnostics": "导出诊断",
+    "exporting": "正在导出...",
+    "resetLocalPairings": "重置本地配对",
+    "resetWarning": "这会删除本机保存的配对端点与传输记录，不会更改终端设置或目标服务。",
+    "confirmReset": "重置配对",
+    "resetting": "正在重置...",
+    "previewTitle": "需要原生 App",
+    "previewCopy": "浏览器预览无法访问原生配对存储或终端连接引擎。请在受支持的移动设备上打开 AnyTTY。"
   },
   "terminal": {
     "defaultTitle": "终端",
@@ -250,9 +226,8 @@
   "pairing": {
     "sshReady": "SSH 密钥已生成",
     "importConfig": "导入连接配置",
-    "addLocal": "添加本地设备",
+    "addLocal": "扫描服务二维码",
     "authorize": "授权设备",
-    "add": "添加设备",
     "pair": "配对设备",
     "scanned": "已扫描二维码，正在与目标设备配对...",
     "scanning": "正在扫描 AnyTTY 二维码...",
@@ -262,17 +237,13 @@
     "pairing": "正在配对...",
     "scanProgress": "正在扫描...",
     "scanCamera": "使用摄像头扫描",
-    "manual": "手工输入",
-    "content": "配对码或分享链接",
-    "manualPlaceholder": "输入 MXP2 配对码或粘贴 AnyTTY 分享链接",
-    "cameraUnavailable": "此设备无法扫描二维码，请在下方输入同一个配对码。",
+    "cameraUnavailable": "此设备无法扫描二维码。请使用受支持的原生设备，扫描目标服务显示的二维码。",
     "importConfig": "导入配置",
     "connectModeChanged": "连接模式将发生变化。",
     "selectionPolicyChanged": "路由选择策略将发生变化。"
   },
   "scanner": {
     "title": "扫描 AnyTTY 二维码",
-    "manualPlaceholder": "也可以手工输入 AnyTTY 二维码内容...",
     "hint": "将摄像头对准 AnyTTY 设备上显示的二维码。"
   }
 }

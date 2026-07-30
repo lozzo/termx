@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { create } from '@bufbuild/protobuf'
 import { Bookmark, BookmarkMinus, BookmarkPlus, Check, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, Scaling, SlidersHorizontal, SquarePen, Trash2, Unlock, WifiOff, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
@@ -35,6 +35,7 @@ import { ConnectionCandidateType, ConnectionObservedPath, ConnectionRouteKind, C
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
+import { ModalSurface } from '../ui/ModalSurface'
 import '../i18n'
 
 export interface MachineWorkspaceInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
@@ -3001,8 +3002,10 @@ function MobileSheetPanel({
 }) {
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={() => { hapticSelection(); onClose() }}>
-      <section
+      <ModalSurface
+        aria-label={title}
         className="anytty-app-page relative max-h-[85vh] w-full overflow-hidden border-t border-[var(--anytty-app-line)] md:max-w-md md:border"
+        onRequestClose={onClose}
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
@@ -3021,7 +3024,7 @@ function MobileSheetPanel({
         <div className="max-h-[calc(85vh-4rem)] overflow-y-auto p-4">
           {children}
         </div>
-      </section>
+      </ModalSurface>
     </div>
   )
 }
@@ -3055,36 +3058,10 @@ export function ConnectionInfoDialog({
   endpointId: string
 }) {
   const { t } = useTranslation()
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const closeRef = useRef<HTMLButtonElement>(null)
   const [draft, setDraft] = useState<ConnectionPolicy>({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })
   useEffect(() => {
     if (policyState) setDraft(policyState.policy)
   }, [policyState])
-  useEffect(() => {
-    const overlay = overlayRef.current
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    if (!overlay) return
-    const siblings = Array.from(overlay.parentElement?.children ?? []).filter((element): element is HTMLElement => element instanceof HTMLElement && element !== overlay)
-    const previous = siblings.map((element) => ({
-      element,
-      ariaHidden: element.getAttribute('aria-hidden'),
-      inert: element.hasAttribute('inert'),
-    }))
-    for (const element of siblings) {
-      element.setAttribute('aria-hidden', 'true')
-      element.setAttribute('inert', '')
-    }
-    closeRef.current?.focus()
-    return () => {
-      for (const item of previous) {
-        if (item.ariaHidden === null) item.element.removeAttribute('aria-hidden')
-        else item.element.setAttribute('aria-hidden', item.ariaHidden)
-        if (!item.inert) item.element.removeAttribute('inert')
-      }
-      previousFocus?.focus()
-    }
-  }, [])
   const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
   const policyChanged = Boolean(policyState) && (
     draft.route !== policyState?.policy.route || draft.cloud !== policyState?.policy.cloud || draft.relayTransport !== policyState?.policy.relayTransport
@@ -3096,14 +3073,14 @@ export function ConnectionInfoDialog({
     { value: 'cloud', label: t('workspace.connection.routeCloud'), available: policyState?.available.cloud ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.cloud, t) },
   ]
   return (
-    <div ref={overlayRef} className="absolute inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-4" onClick={() => { hapticSelection(); onClose() }} onKeyDown={(event) => trapConnectionDialogFocus(event, overlayRef.current, onClose)}>
-      <section className="anytty-app-page flex max-h-[96dvh] w-full max-w-xl flex-col overflow-hidden border-t border-[var(--anytty-app-line)] md:max-h-[90vh] md:border" role="dialog" aria-modal="true" aria-labelledby="anytty-connection-title" onClick={(event) => event.stopPropagation()}>
+    <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-4" onClick={() => { hapticSelection(); onClose() }}>
+      <ModalSurface className="anytty-app-page flex max-h-[96dvh] w-full max-w-xl flex-col overflow-hidden border-t border-[var(--anytty-app-line)] md:max-h-[90vh] md:border" aria-labelledby="anytty-connection-title" onRequestClose={onClose} onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
             <h2 id="anytty-connection-title" className="text-[17px] font-semibold text-zinc-950">{t('workspace.connection.title')}</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type, t)}</p>
           </div>
-          <button ref={closeRef} type="button" aria-label={t('workspace.connection.closeInfo')} className="anytty-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
+          <button type="button" aria-label={t('workspace.connection.closeInfo')} className="anytty-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -3190,7 +3167,7 @@ export function ConnectionInfoDialog({
       {applying ? t('workspace.connection.applying') : t('workspace.connection.applyReconnect')}
           </button>
         </footer>
-      </section>
+      </ModalSurface>
     </div>
   )
 }
@@ -3325,27 +3302,6 @@ function candidateAddress(ip: string | undefined, port: number | undefined): str
   if (!address) return undefined
   if (!port) return address
   return address.includes(':') ? `[${address}]:${port}` : `${address}:${port}`
-}
-
-function trapConnectionDialogFocus(event: ReactKeyboardEvent<HTMLDivElement>, overlay: HTMLDivElement | null, onClose: () => void): void {
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    onClose()
-    return
-  }
-  if (event.key !== 'Tab' || !overlay) return
-  const focusable = Array.from(overlay.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), summary, [href], [tabindex]:not([tabindex="-1"])'))
-    .filter((element) => !element.hasAttribute('hidden'))
-  if (focusable.length === 0) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
 }
 
 function connectionPolicyUnavailableLabel(reason: ConnectionPolicyState['unavailableReasons']['direct'] | undefined, t: (key: string) => string): string | undefined {

@@ -7,21 +7,15 @@ import type { AppMachineRecord, ConnectionFlowSnapshot } from '../state/appMachi
 
 export interface MachineBrowserShellProps {
   machines: AppMachineRecord[]
-  authState?: 'anonymous' | 'signed_in' | undefined
-  onAddMachine: () => void
   onScanMachine: () => void
   onStartConnection?: ((machine: AppMachineRecord) => Promise<ConnectionFlowSnapshot> | ConnectionFlowSnapshot) | undefined
-  onSignIn?: (() => void) | undefined
   className?: string | undefined
 }
 
 export function MachineBrowserShell({
   machines,
-  authState,
-  onAddMachine,
   onScanMachine,
   onStartConnection,
-  onSignIn,
   className,
 }: MachineBrowserShellProps) {
   const [selectedMachine, setSelectedMachine] = useState<AppMachineRecord | null>(null)
@@ -96,11 +90,8 @@ export function MachineBrowserShell({
       ) : (
         <MachineList
           machines={machines}
-          authState={authState}
-          onAddMachine={onAddMachine}
           onScanMachine={onScanMachine}
           onSelectMachine={selectMachine}
-          onSignIn={onSignIn}
         />
       )}
     </main>

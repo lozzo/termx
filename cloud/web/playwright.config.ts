@@ -20,6 +20,7 @@ export default defineConfig({
   projects: [
     { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
     { name: 'tablet-chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } } },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
+    { name: 'mobile-360-chromium', use: { ...devices['Pixel 7'], viewport: { width: 360, height: 800 } } },
+    { name: 'mobile-320-chromium', use: { ...devices['Pixel 7'], viewport: { width: 320, height: 720 } } },
   ],
 })

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, Camera, Check, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Link2Off, Monitor, MoreHorizontal, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, WifiOff, X } from 'lucide-react'
+import { ArrowLeft, Camera, Check, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Link2Off, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, WifiOff, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -28,6 +28,7 @@ import type { MachineAccessClass } from '../state/appMachine'
 import { anyttyIntlLocale, anyttyLanguages, normalizeAnyTTYLanguage } from '../i18n'
 import { connectionErrorDisplayMessage } from '../connection/connectionErrorPresentation'
 import { RemoteNetworkStateManager, type NativeNetworkStatusPlugin } from '../connection/remoteNetworkState'
+import { ModalSurface } from '../ui/ModalSurface'
 
 const appName = 'AnyTTY Remote App'
 
@@ -43,7 +44,7 @@ function localizedAppError(error: unknown, t: TFunction): string {
   switch (appErrorCode(error)) {
     case 'login_required':
     case 'unauthenticated':
-      return t('errors.loginRequired')
+      return t('errors.pairAgain')
     case 'capability_invalid':
     case 'capability_expired':
     case 'authorization_revoked':
@@ -104,7 +105,6 @@ const getEmptyMachineConnectionSnapshot = () => emptyMachineConnectionSnapshot
 const localHubReachabilityProbeTimeoutMs = 2_500
 export interface ScanPairingCodeOptions {
   onCancel?: (() => void) | undefined
-  onManualEntry?: (() => void) | undefined
 }
 
 /** ExternalPairingImportResult 是平台 secure-store 导入成功后可进入共享 UI 的非秘密机器投影。 */
@@ -203,7 +203,6 @@ export function RemoteControlApp({
   const [scanOpen, setScanOpen] = useState(false)
   const [pairIntent, setPairIntent] = useState<PairIntent>('add-local')
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
-  const [manualScanValue, setManualScanValue] = useState('')
   const [authorizedMachineIds, setAuthorizedMachineIds] = useState(() => readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
   const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage, externalPairingAdapter))
   const [pairVersion, setPairVersion] = useState(0)
@@ -415,7 +414,6 @@ export function RemoteControlApp({
     hapticImpact()
     setSelectedMachineId(null)
     setPairIntent('add-local')
-    setManualScanValue('')
 	setSharePreview(null)
     setError(null)
     setScanOpen(true)
@@ -425,7 +423,6 @@ export function RemoteControlApp({
     hapticImpact()
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
-    setManualScanValue('')
 	setSharePreview(null)
     setError(null)
     setScanOpen(true)
@@ -475,7 +472,6 @@ export function RemoteControlApp({
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
-    setManualScanValue('')
     setSharePreview(null)
     const sshCredentials = external.sshCredentials?.filter((credential) => credential.authorizedKey.trim() !== '') ?? []
     setSSHCredentialNotice(sshCredentials.length > 0 ? sshCredentials : null)
@@ -531,11 +527,6 @@ export function RemoteControlApp({
 	}
   }, [externalPairingAdapter, sharePreview, storeImportedMachine, t])
 
-  const importManualScan = useCallback(async () => {
-    hapticImpact()
-    await pairScannedValue(manualScanValue)
-  }, [manualScanValue, pairScannedValue])
-
   const scanWithCamera = useCallback(async () => {
     if (!scanPairingCode) return
     if (cameraScanInFlightRef.current) return
@@ -549,7 +540,6 @@ export function RemoteControlApp({
         onCancel: () => setScanOpen(false),
       })
       if (!value) return
-      setManualScanValue(value)
       await pairScannedValue(value)
     } catch (err) {
       setError(isCameraUnavailableError(err) ? t('pairing.cameraUnavailable') : localizedAppError(err, t))
@@ -568,7 +558,6 @@ export function RemoteControlApp({
     setPairVersion((current) => current + 1)
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
-    setManualScanValue('')
     setError(t('errors.pairAgain'))
     setScanOpen(true)
   }, [dropMachineRuntime, externalPairingAdapter, storage, t])
@@ -668,7 +657,6 @@ export function RemoteControlApp({
 
       {scanOpen ? (
         <PairSheet
-          manualScanValue={manualScanValue}
           pairError={error}
           scanFlowState={scanFlowState}
           pairing={pairing}
@@ -680,8 +668,6 @@ export function RemoteControlApp({
           canScanWithCamera={Boolean(scanPairingCode)}
 		  onCommitShare={() => void commitEndpointShare()}
           onClose={() => { hapticSelection(); setSharePreview(null); setSSHCredentialNotice(null); setScanOpen(false) }}
-          onImport={() => void importManualScan()}
-          onManualScanValueChange={setManualScanValue}
           onScanWithCamera={() => void scanWithCamera()}
         />
       ) : null}
@@ -993,13 +979,13 @@ function HomeView({
             <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
           <button
-            aria-label={t('machines.add')}
+            aria-label={t('machines.scanPairing')}
             className="anytty-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)] lg:px-3"
             type="button"
             onClick={onAddLocalDevice}
           >
-            <Plus className="h-5 w-5" />
-            <span className="hidden text-xs font-semibold lg:inline">{t('machines.add')}</span>
+            <QrCode className="h-5 w-5" />
+            <span className="hidden text-xs font-semibold lg:inline">{t('machines.scanService')}</span>
           </button>
           {fileTransfer ? (
             <button
@@ -1599,7 +1585,6 @@ function Switch({
 function PairSheet({
   cameraScanning,
   canScanWithCamera,
-  manualScanValue,
   pairError,
   scanFlowState,
   pairIntent,
@@ -1609,13 +1594,10 @@ function PairSheet({
   selectedMachine,
   onClose,
   onCommitShare,
-  onImport,
-  onManualScanValueChange,
   onScanWithCamera,
 }: {
   cameraScanning: boolean
   canScanWithCamera: boolean
-  manualScanValue: string
   pairError: string | null
   scanFlowState: ScanFlowState
   pairIntent: PairIntent
@@ -1625,21 +1607,18 @@ function PairSheet({
   selectedMachine: RemoteMachine | null
   onClose: () => void
   onCommitShare: () => void
-  onImport: () => void
-  onManualScanValueChange: (value: string) => void
   onScanWithCamera: () => void
 }) {
   const { t } = useTranslation()
   const title = sshCredentialNotice ? t('pairing.sshReady') : sharePreview ? t('pairing.importConfig') : pairIntent === 'add-local' ? t('pairing.addLocal') : t('pairing.authorize')
-  const primaryLabel = pairIntent === 'add-local' ? t('pairing.add') : t('pairing.pair')
   const statusMessage = scanFlowState === 'pairing'
     ? t('pairing.scanned')
     : scanFlowState === 'scanning'
       ? t('pairing.scanning')
       : null
   return (
-    <div className="anytty-app-page fixed inset-0 z-50" role="dialog" aria-modal="true">
-      <section className="flex h-full min-h-0 flex-col bg-white" data-testid="anytty-pair-sheet">
+    <div className="anytty-app-page fixed inset-0 z-50">
+      <ModalSurface aria-label={title} className="flex h-full min-h-0 flex-col bg-white" data-testid="anytty-pair-sheet" onRequestClose={onClose}>
         <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
           <div className="flex min-w-0 items-center gap-2">
             <QrCode className="h-5 w-5 shrink-0 text-[var(--anytty-accent)]" />
@@ -1733,30 +1712,6 @@ function PairSheet({
               <p className="mt-4 border border-[var(--anytty-app-line)] bg-[var(--anytty-app-soft)] px-3 py-2 text-sm text-zinc-600">{t('pairing.cameraUnavailable')}</p>
             )}
 
-            <div className="anytty-app-panel mt-4 bg-[var(--anytty-app-soft)] px-3 py-3">
-              <label className="block text-xs font-semibold text-zinc-500">
-                {t('pairing.content')}
-                <textarea
-                  className="mt-2 h-28 w-full resize-none border border-[var(--anytty-app-line)] bg-white p-3 font-mono text-sm leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--anytty-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-                  value={manualScanValue}
-                  onChange={(event) => onManualScanValueChange(event.target.value)}
-                  placeholder={t('pairing.manualPlaceholder')}
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-              </label>
-              <button
-                className="anytty-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                type="button"
-                onClick={onImport}
-                disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
-              >
-                {pairing ? <span className="anytty-square-spinner" aria-hidden="true" /> : <ShieldCheck className="h-4 w-4" />}
-                {primaryLabel}
-              </button>
-            </div>
-
             {statusMessage ? (
               <p className="mt-3 border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700">{statusMessage}</p>
             ) : null}
@@ -1770,7 +1725,7 @@ function PairSheet({
 
           </div>
         </div>
-      </section>
+      </ModalSurface>
     </div>
   )
 }
@@ -1914,8 +1869,8 @@ function DisplayMachineDetailSheet({ machine, onClose }: { machine: DisplayMachi
     [t('machines.fields.lastOnline'), machine.lastSeen ? formatAuthorizationExpiry(machine.lastSeen) : '-'],
   ] as const
   return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40 md:items-center md:justify-center" role="dialog" aria-modal="true" aria-labelledby="anytty-device-details-title" onClick={onClose}>
-      <section className="max-h-[85dvh] w-full overflow-hidden border-t border-[var(--anytty-app-line)] bg-white md:max-w-md md:border" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-40 flex items-end bg-black/40 md:items-center md:justify-center" onClick={onClose}>
+      <ModalSurface className="max-h-[85dvh] w-full overflow-hidden border-t border-[var(--anytty-app-line)] bg-white md:max-w-md md:border" aria-labelledby="anytty-device-details-title" onRequestClose={onClose} onClick={(event) => event.stopPropagation()}>
         <header className="flex min-h-16 items-center justify-between gap-3 border-b border-[var(--anytty-app-line)] px-4">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-zinc-950" id="anytty-device-details-title">{machine.name}</h2>
@@ -1931,7 +1886,7 @@ function DisplayMachineDetailSheet({ machine, onClose }: { machine: DisplayMachi
             </div>
           ))}
         </dl>
-      </section>
+      </ModalSurface>
     </div>
   )
 }

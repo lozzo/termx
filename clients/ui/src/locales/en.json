@@ -1,8 +1,6 @@
 {
   "errors": {
     "generic": "Something went wrong. Please try again.",
-    "loginRequired": "Sign in to AnyTTY Cloud to continue.",
-    "alreadySignedIn": "You are already signed in as {{account}}. Sign out before signing in to another account.",
     "pairAgain": "This device needs fresh authorization. Pair it again.",
     "storageRequired": "Local storage is required before importing a AnyTTY code.",
     "connectionFailed": "Could not connect to this device. Check both devices' networks and try again.",
@@ -29,19 +27,11 @@
     "cancel": "Cancel",
     "close": "Close",
     "refresh": "Refresh",
-    "signIn": "Sign in",
-    "signedIn": "Signed in",
-    "account": "Account",
     "settings": "Settings",
-    "backToMachines": "Back to devices",
-    "signOut": "Sign out"
+    "backToMachines": "Back to devices"
   },
   "machines": {
     "title": "Devices",
-    "availableCount": "{{count}} available",
-    "localRecords": "Local and LAN devices",
-    "availableFor": "{{count}} available / {{account}}",
-    "signInToSync": "Sign in to sync devices",
     "savedCount": "{{count}} saved",
     "refresh": "Refresh devices",
     "pullToRefresh": "Pull to refresh devices",
@@ -54,15 +44,10 @@
     "restoringNetwork": "Network is back. Restoring secure connections...",
     "networkRecoveryFailed": "Secure connections could not be restored.",
     "scanPairing": "Scan pairing QR",
-    "add": "Add device",
     "transfers": "Open file transfers",
     "openSettings": "Open settings",
     "emptyTitle": "No devices yet",
-    "emptyCopy": "Add a local device, or sign in to sync your cloud devices.",
-    "emptySignedInCopy": "Add a local device or enroll a daemon from your AnyTTY web account.",
     "emptyServiceCopy": "Scan the QR code shown by the AnyTTY service. This device will be saved here and no account is required.",
-    "signInCloud": "Sign in to AnyTTY Cloud",
-    "addLocal": "Add local device",
     "scanService": "Scan service QR",
     "daemonHost": "AnyTTY daemon",
     "scan": "Scan QR",
@@ -156,8 +141,6 @@
     }
   },
   "settings": {
-    "cloudSignIn": "AnyTTY Cloud sign in",
-    "webSignIn": "Web Control sign in",
     "deviceAccess": "Device access",
     "connection": "Connection",
     "webControl": "Web Control",
@@ -175,33 +158,26 @@
     "scrollback": "Scrollback",
     "prefetch": "Prefetch threshold",
     "cursorBlink": "Cursor blink",
-    "emailOrUsername": "Email or username",
-    "password": "Password",
     "auto": "Auto",
     "resize": "Resize",
     "shiftUp": "Shift up",
-    "languageHint": "App language",
-    "plan": "Current plan",
-    "subscriptionStatus": "Subscription status",
-    "subscriptionActive": "Active",
-    "subscriptionTrial": "Trial",
-    "subscriptionPastDue": "Payment required",
-    "subscriptionCanceling": "Active until period end",
-    "subscriptionCanceled": "Canceled",
-    "subscriptionSuspended": "Suspended",
-    "subscriptionExpired": "Expired",
-    "subscriptionGrace": "Grace period",
-    "subscriptionPending": "Pending"
+    "languageHint": "App language"
   },
-  "activation": {
-    "enterOnComputer": "Enter this code in AnyTTY Cloud on your computer",
-    "waiting": "Waiting for approval · {{remaining}}",
-    "cancel": "Cancel activation",
-    "intro": "Create a phone login code on the AnyTTY web account page, then scan the QR code or enter the same code below.",
-    "scanWeb": "Scan QR from web",
-    "scanUnavailable": "QR scanning is unavailable on this device.",
-    "loginCode": "Login code",
-    "useCode": "Use login code"
+  "startup": {
+    "registryTitle": "Local pairings could not be opened",
+    "registryCopy": "AnyTTY could not read its native endpoint registry. Retry, export diagnostics, or reset only the local pairings on this device.",
+    "technicalDetails": "Technical details",
+    "actionFailed": "That recovery action did not complete. Review the details and try again.",
+    "retry": "Retry",
+    "retrying": "Retrying...",
+    "exportDiagnostics": "Export diagnostics",
+    "exporting": "Exporting...",
+    "resetLocalPairings": "Reset local pairings",
+    "resetWarning": "This removes paired endpoints and transfer history from this device. Terminal settings and target services are not changed.",
+    "confirmReset": "Reset pairings",
+    "resetting": "Resetting...",
+    "previewTitle": "Native app required",
+    "previewCopy": "This browser preview cannot access native pairing storage or the terminal connection engine. Open AnyTTY on a supported mobile device."
   },
   "terminal": {
     "defaultTitle": "Terminal",
@@ -250,9 +226,8 @@
   "pairing": {
     "sshReady": "SSH key ready",
     "importConfig": "Import endpoint config",
-    "addLocal": "Add local device",
+    "addLocal": "Scan service QR",
     "authorize": "Authorize device",
-    "add": "Add device",
     "pair": "Pair device",
     "scanned": "QR code scanned. Pairing this device with the machine...",
     "scanning": "Camera is scanning for a AnyTTY QR code...",
@@ -262,17 +237,13 @@
     "pairing": "Pairing device...",
     "scanProgress": "Scanning QR...",
     "scanCamera": "Scan QR with camera",
-    "manual": "Enter content manually",
-    "content": "Pairing code or share link",
-    "manualPlaceholder": "Enter MXP2 code or paste an AnyTTY share link",
-    "cameraUnavailable": "This device cannot scan a QR code. Enter the same pairing code below.",
+    "cameraUnavailable": "QR scanning is unavailable on this device. Use a supported native device and scan the QR shown by the target service.",
     "importConfig": "Import configuration",
     "connectModeChanged": "Connection mode changes.",
     "selectionPolicyChanged": "Route selection changes."
   },
   "scanner": {
     "title": "Scan AnyTTY QR",
-    "manualPlaceholder": "Or enter AnyTTY QR content manually...",
     "hint": "Point the camera at the QR code shown on the AnyTTY device."
   }
 }

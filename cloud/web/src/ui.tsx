@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
-import { cloneElement, isValidElement, useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
+import { ModalSurface } from '@anytty/ui/modal'
+import { cloneElement, isValidElement, useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 
 export function Button({ tone = 'default', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'default' | 'primary' | 'danger' | 'quiet' }) {
   return <button className={`button button-${tone} ${className}`} {...props} />
@@ -37,19 +38,21 @@ export function Empty({ children = '暂无数据' }: { children?: ReactNode }) {
 export function Skeleton({ rows = 6 }: { rows?: number }) { return <div className="skeleton-list" aria-label="正在加载">{Array.from({ length: rows }, (_, index) => <i key={index} />)}</div> }
 
 export function Dialog({ title, open, onClose, children, footer }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+  const returnFocusRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    if (!open) return
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [onClose, open])
+    const rememberPointerTarget = (event: PointerEvent) => {
+      if (event.target instanceof HTMLElement) returnFocusRef.current = event.target.closest<HTMLElement>('button, a, [tabindex]')
+    }
+    document.addEventListener('pointerdown', rememberPointerTarget, true)
+    return () => document.removeEventListener('pointerdown', rememberPointerTarget, true)
+  }, [])
   if (!open) return null
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="dialog" role="dialog" aria-modal="true" aria-label={title}>
+    <ModalSurface className="dialog" aria-label={title} onRequestClose={onClose} returnFocusRef={returnFocusRef}>
       <header><h2>{title}</h2><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
       <div className="dialog-body">{children}</div>
       {footer && <footer>{footer}</footer>}
-    </section>
+    </ModalSurface>
   </div>
 }
 

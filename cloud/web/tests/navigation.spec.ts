@@ -62,10 +62,14 @@ test('公开落地页展示真实连接路径和套餐', async ({ page }, testIn
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
   await expect(page.getByText('随时回到你的电脑。', { exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '把一台电脑放进你的设备列表。' })).toBeVisible()
-  await expect(page.getByLabel('AnyTTY Cloud 产品连接画面')).toContainText('anytty-cloud-ok')
+  await expect(page.getByRole('heading', { name: 'Cloud 管理 daemon，App 只接受扫码配对。' })).toBeVisible()
+  await expect(page.getByText('Cloud 账号不会填充 App 设备列表。每台手机都必须扫描目标 daemon 或服务生成的配对二维码。')).toBeVisible()
+  await expect(page.getByLabel('扫码配对后的 AnyTTY Cloud 连接路径')).toContainText('anytty-cloud-ok')
   await expect(page.getByRole('heading', { name: '基础版' })).toBeVisible()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+  await assertNoHorizontalOverflow(page)
+  const session = await page.context().newCDPSession(page)
+  await session.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2 })
+  await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('landing.png'), fullPage: true })
 })
 
@@ -77,9 +81,10 @@ test('普通用户共享 Shell、复用页面缓存且不能进入运营页面',
   if (compact) await expect(userNav).toBeHidden()
   else await expect(userNav).toBeVisible()
   await expect(page.getByRole('navigation', { name: '运营管理' })).toHaveCount(0)
-  await expect(page.getByLabel('Cloud 设备连接可用')).toContainText('连接可用')
+  await expect(page.getByLabel('Cloud daemon 管理状态可用')).toContainText('daemon 在线')
+  await expect(page.getByText(/每台手机仍需扫描目标服务生成的二维码/)).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('user-overview.png'), fullPage: !compact })
-  if (testInfo.project.name === 'mobile-chromium') {
+  if (testInfo.project.name.startsWith('mobile-')) {
     const finalAction = page.getByRole('link', { name: '查看套餐' })
     const bottomNavigation = page.getByRole('navigation', { name: '手机主导航' })
     await finalAction.scrollIntoViewIfNeeded()
@@ -87,11 +92,12 @@ test('普通用户共享 Shell、复用页面缓存且不能进入运营页面',
     expect(actionBox && navigationBox ? actionBox.y + actionBox.height <= navigationBox.y : false).toBe(true)
   }
   const deviceLink = compact
-    ? page.getByRole('navigation', { name: '手机主导航' }).getByRole('link', { name: '我的设备' })
-    : userNav.getByRole('link', { name: '我的设备' })
+    ? page.getByRole('navigation', { name: '手机主导航' }).getByRole('link', { name: 'Daemon 管理' })
+    : userNav.getByRole('link', { name: 'Daemon 管理' })
   await deviceLink.click()
   await expect(page).toHaveURL(/\/app\/devices$/)
   await expect(page.getByText('CN1 Edge', { exact: true })).toBeVisible()
+  await assertNoHorizontalOverflow(page)
   if (!compact) {
     await userNav.getByRole('link', { name: '概览' }).click()
     await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
@@ -112,9 +118,18 @@ test('普通用户共享 Shell、复用页面缓存且不能进入运营页面',
 test('用户创建订单并完成 Development 支付', async ({ page }) => {
   await mockAPI(page)
   await page.goto('/app/subscription')
-  await page.getByRole('button', { name: '选择专业版' }).click()
+  const openPayment = page.getByRole('button', { name: '选择专业版' })
+  await openPayment.click()
   const paymentDialog = page.getByRole('dialog', { name: 'Development 支付确认' })
   await expect(paymentDialog).toBeVisible()
+  const closePayment = paymentDialog.getByRole('button', { name: '关闭' })
+  await expect(closePayment).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(paymentDialog.getByRole('button', { name: '确认测试支付' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(paymentDialog).toHaveCount(0)
+  await expect(openPayment).toBeFocused()
+  await openPayment.click()
   await expect(paymentDialog.getByText('¥39.00', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '确认测试支付' }).click()
   await expect(page.getByRole('dialog', { name: 'Development 支付确认' })).toHaveCount(0)
@@ -180,7 +195,7 @@ test('证书页在三种视口完成双文件选择并展示自动同步状态',
   await invalidDialog.getByRole('button', { name: '上传证书', exact: true }).click()
   await expect(invalidDialog).toContainText('证书与私钥不匹配')
   await invalidDialog.getByRole('button', { name: '取消' }).click()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+  await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('certificates.png'), fullPage: testInfo.project.name === 'desktop-chromium' })
   expect(errors.filter((value) => !value.includes('status of 409'))).toEqual([])
   expect(errors.filter((value) => value.includes('status of 409'))).toHaveLength(1)
@@ -191,13 +206,13 @@ test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) =>
   await mockAPI(page, true)
   await page.goto('/app/overview')
   const bottom = page.getByRole('navigation', { name: '手机主导航' })
-  await bottom.getByRole('link', { name: '我的设备' }).click()
-  await expect(page.getByRole('heading', { name: '我的设备' })).toBeVisible()
+  await bottom.getByRole('link', { name: 'Daemon 管理' }).click()
+  await expect(page.getByRole('heading', { name: 'Daemon 管理' })).toBeVisible()
   await page.getByRole('button', { name: '打开导航' }).click()
   await page.getByRole('navigation', { name: '运营管理' }).getByRole('link', { name: '实时连接' }).click()
   await expect(page).toHaveURL(/\/app\/admin\/connections$/)
   await expect.poll(async () => { const box = await page.locator('.sidebar').boundingBox(); return box ? box.x + box.width : 0 }).toBeLessThanOrEqual(0)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+  await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('mobile-admin.png'), fullPage: true })
 })
 
@@ -232,4 +247,8 @@ function captureErrors(page: Page): string[] {
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('pageerror', (error) => errors.push(error.message))
   return errors
+}
+
+async function assertNoHorizontalOverflow(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
 }

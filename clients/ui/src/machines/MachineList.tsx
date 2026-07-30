@@ -1,27 +1,21 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, LaptopMinimal, LogIn, Plus, QrCode, Server, X } from 'lucide-react'
+import { ChevronRight, LaptopMinimal, QrCode, Server, X } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord } from '../state/appMachine'
 import { anyttyIntlLocale } from '../i18n'
 
 export interface MachineListProps {
   machines: AppMachineRecord[]
-  authState?: 'anonymous' | 'signed_in' | undefined
-  onAddMachine: () => void
   onScanMachine: () => void
   onSelectMachine: (machine: AppMachineRecord) => void
-  onSignIn?: (() => void) | undefined
   className?: string | undefined
 }
 
 export function MachineList({
   machines,
-  authState = 'signed_in',
-  onAddMachine,
   onScanMachine,
   onSelectMachine,
-  onSignIn,
   className,
 }: MachineListProps) {
   const { t } = useTranslation()
@@ -38,7 +32,7 @@ export function MachineList({
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 text-zinc-950">{t('machines.title')}</h1>
           <p className="truncate text-xs font-medium text-zinc-500">
-            {authState === 'anonymous' ? t('machines.localRecords') : t('machines.availableCount', { count: machines.length })}
+            {t('machines.savedCount', { count: machines.length })}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -49,14 +43,6 @@ export function MachineList({
             onClick={() => { hapticImpact(); onScanMachine() }}
           >
             <QrCode className="h-5 w-5" />
-          </button>
-          <button
-            aria-label={t('machines.add')}
-            className="anytty-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
-            type="button"
-            onClick={() => { hapticImpact(); onAddMachine() }}
-          >
-            <Plus className="h-5 w-5" />
           </button>
         </div>
       </header>
@@ -72,36 +58,18 @@ export function MachineList({
             </div>
             <div className="space-y-1.5">
               <h2 className="text-base font-semibold text-zinc-950">{t('machines.emptyTitle')}</h2>
-              <p className="text-sm leading-5 text-zinc-500">{t('machines.emptyCopy')}</p>
+              <p className="text-sm leading-5 text-zinc-500">{t('machines.emptyServiceCopy')}</p>
             </div>
-            <div className="grid w-full grid-cols-2 gap-2">
+            <div className="w-full">
               <button
-                className="anytty-app-secondary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
+                className="anytty-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onScanMachine() }}
               >
                 <QrCode className="h-4 w-4" />
-                {t('machines.scan')}
-              </button>
-              <button
-                className="anytty-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
-                type="button"
-                onClick={() => { hapticImpact(); onAddMachine() }}
-              >
-                <Plus className="h-4 w-4" />
-                {t('machines.add')}
+                {t('machines.scanService')}
               </button>
             </div>
-            {authState === 'anonymous' ? (
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 border-b border-blue-700 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
-                type="button"
-                onClick={() => { hapticSelection(); onSignIn?.() }}
-              >
-                <LogIn className="h-4 w-4" />
-                {t('common.signIn')}
-              </button>
-            ) : null}
           </div>
         </div>
       ) : (

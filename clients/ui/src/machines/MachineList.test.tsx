@@ -3,16 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MachineList, type MachineListProps } from './MachineList'
 import type { AppMachineRecord } from '../state/appMachine'
-import appMachineSource from '../state/appMachine.ts?raw'
-import machineListSource from './MachineList.tsx?raw'
 
 describe('MachineList', () => {
   afterEach(() => {
     cleanup()
   })
 
-  it('renders a dense APP-first machine list with add and scan actions', async () => {
-    const onAddMachine = vi.fn()
+  it('renders a dense local machine list with a QR scan action', async () => {
     const onScanMachine = vi.fn()
     const onSelectMachine = vi.fn()
 
@@ -41,7 +38,6 @@ describe('MachineList', () => {
             source: 'hub',
           }),
         ]}
-        onAddMachine={onAddMachine}
         onScanMachine={onScanMachine}
         onSelectMachine={onSelectMachine}
       />,
@@ -49,7 +45,6 @@ describe('MachineList', () => {
 
     expect(screen.getByTestId('anytty-machine-list')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Devices' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /add device/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /scan pairing qr/i })).toBeTruthy()
     expect(screen.getByText('MacBook Pro')).toBeTruthy()
     expect(screen.getByText('mbp.local')).toBeTruthy()
@@ -62,11 +57,9 @@ describe('MachineList', () => {
     expect(screen.getByTestId('anytty-machine-list').textContent).not.toMatch(/workspace|tab|window|pane|tmux|session/i)
 
     await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
-    await userEvent.click(screen.getByRole('button', { name: /add device/i }))
     await userEvent.click(screen.getByRole('button', { name: /connect to macbook pro/i }))
 
     expect(onScanMachine).toHaveBeenCalledTimes(1)
-    expect(onAddMachine).toHaveBeenCalledTimes(1)
     expect(onSelectMachine).toHaveBeenCalledWith(machine({
       machineId: 'machine-local',
       name: 'MacBook Pro',
@@ -95,7 +88,6 @@ describe('MachineList', () => {
             source: 'local',
           }),
         ]}
-        onAddMachine={vi.fn()}
         onScanMachine={vi.fn()}
         onSelectMachine={onSelectMachine}
       />,
@@ -109,12 +101,10 @@ describe('MachineList', () => {
     expect(onSelectMachine).not.toHaveBeenCalled()
   })
 
-  it('shows a compact empty state that only points to add, scan, or login', () => {
+  it('shows a QR-only empty state without account or manual-add actions', () => {
     render(
       <MachineList
         machines={[]}
-        authState="anonymous"
-        onAddMachine={vi.fn()}
         onScanMachine={vi.fn()}
         onSelectMachine={vi.fn()}
       />,
@@ -122,17 +112,16 @@ describe('MachineList', () => {
 
     expect(screen.getByTestId('anytty-machine-empty-state')).toBeTruthy()
     expect(screen.getByText('No devices yet')).toBeTruthy()
-    expect(screen.getByText(/add a local device, or sign in/i)).toBeTruthy()
+    expect(screen.getByText(/scan the QR code shown by the AnyTTY service/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /scan pairing qr/i })).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: /add device/i })).toHaveLength(2)
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /add device/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /sign in/i })).toBeNull()
     expect(screen.getByTestId('anytty-machine-list').textContent).not.toMatch(/terminal page|workspace|tab|window|pane|tmux|session/i)
   })
 
-  it('keeps public props machine-focused and implementation free of old path taxonomy', () => {
+  it('keeps public props QR-only and machine-focused', () => {
     const props = {
       machines: [],
-      onAddMachine: vi.fn(),
       onScanMachine: vi.fn(),
       onSelectMachine: vi.fn(),
     } satisfies MachineListProps
@@ -140,7 +129,8 @@ describe('MachineList', () => {
     render(<MachineList {...props} />)
 
     expect(screen.getByTestId('anytty-machine-list')).toBeTruthy()
-    expect(`${appMachineSource}\n${machineListSource}`).not.toMatch(/anonymous_p2p|managed_p2p|paid_relay|\brelayPath\b|\bpaidRelay\b|\bsessions\b|\bpanes\b|\bworkspace\b|\btmux\b/)
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    expect(screen.getAllByRole('button').every((button) => /scan|close/i.test(button.getAttribute('aria-label') ?? button.textContent ?? ''))).toBe(true)
   })
 })
 

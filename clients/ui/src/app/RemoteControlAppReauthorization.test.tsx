@@ -40,13 +40,13 @@ describe('RemoteControlApp reauthorization', () => {
       <RemoteControlApp
         externalPairingAdapter={externalPairingAdapter}
         networkRuntime={networkRuntime}
+        scanPairingCode={async () => 'MXP2-TEST'}
       />,
     )
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
     const initialSheet = screen.getByTestId('anytty-pair-sheet')
-    await userEvent.type(within(initialSheet).getByLabelText('Pairing code or share link'), 'MXP2-TEST')
-    await userEvent.click(within(initialSheet).getByRole('button', { name: 'Add device' }))
+    await userEvent.click(within(initialSheet).getByRole('button', { name: 'Scan QR with camera' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Simulate authorization failure' }))
 
     expect(await screen.findByTestId('anytty-pair-sheet')).toBeTruthy()

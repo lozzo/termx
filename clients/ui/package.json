@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./modal": "./src/ui/ModalSurface.tsx",
     "./styles.css": "./src/entries/appStyles.css",
     "./preview-worker": "./public/anytty-file-preview-sw.js"
   },

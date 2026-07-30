@@ -1,6 +1,7 @@
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { useTranslation } from 'react-i18next'
 import '../i18n'
+import { ModalSurface } from '../ui/ModalSurface'
 
 export interface PasteConfirmDialogProps {
   text: string
@@ -15,12 +16,14 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
 
   return (
     <div className="absolute inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-paste-confirm" onClick={() => { hapticSelection(); onCancel() }}>
-      <section
+      <ModalSurface
+        aria-labelledby="anytty-paste-confirm-title"
         className="w-full overflow-hidden border-y border-zinc-700 bg-zinc-950 text-zinc-100 md:max-w-md md:border"
+        onRequestClose={onCancel}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="border-b border-zinc-800 px-4 py-3">
-          <h2 className="text-[16px] font-bold">{t('terminal.paste.title')}</h2>
+          <h2 className="text-[16px] font-bold" id="anytty-paste-confirm-title">{t('terminal.paste.title')}</h2>
           <p className="mt-1 text-[12px] font-medium text-zinc-500">
             {t('terminal.paste.summary', { lines: lineCount, characters: text.length })}
           </p>
@@ -44,7 +47,7 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
             {t('terminal.paste.confirm')}
           </button>
         </div>
-      </section>
+      </ModalSurface>
     </div>
   )
 }

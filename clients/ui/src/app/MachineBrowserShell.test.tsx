@@ -13,7 +13,6 @@ describe('MachineBrowserShell', () => {
     render(
       <MachineBrowserShell
         machines={[machine({ machineId: 'machine-local', name: 'Local Mac', terminalCount: 2 })]}
-        onAddMachine={vi.fn()}
         onScanMachine={vi.fn()}
         onStartConnection={vi.fn()}
       />,
@@ -36,7 +35,6 @@ describe('MachineBrowserShell', () => {
     render(
       <MachineBrowserShell
         machines={[machine({ machineId: 'machine-local', name: 'Local Mac', terminalCount: 2 })]}
-        onAddMachine={vi.fn()}
         onScanMachine={vi.fn()}
         onStartConnection={onStartConnection}
       />,
@@ -70,7 +68,6 @@ describe('MachineBrowserShell', () => {
     render(
       <MachineBrowserShell
         machines={[machine({ machineId: 'machine-hub', name: 'Office Linux', preferredPath: 'hub' })]}
-        onAddMachine={vi.fn()}
         onScanMachine={vi.fn()}
         onStartConnection={onStartConnection}
       />,

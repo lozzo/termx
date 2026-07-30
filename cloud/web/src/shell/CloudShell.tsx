@@ -11,7 +11,7 @@ import { IconButton, Skeleton } from '../ui'
 
 const userNavigation = [
   { to: '/app/overview', label: '概览', icon: Gauge },
-  { to: '/app/devices', label: '我的设备', icon: MonitorSmartphone },
+  { to: '/app/devices', label: 'Daemon 管理', icon: MonitorSmartphone },
   { to: '/app/subscription', label: '订阅套餐', icon: CreditCard },
   { to: '/app/orders', label: '我的订单', icon: ReceiptText },
   { to: '/app/usage', label: '用量', icon: Activity },

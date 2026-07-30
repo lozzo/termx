@@ -11,6 +11,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@anytty/ui": "0.0.0",
     "@bufbuild/protobuf": "2.12.0",
     "@tanstack/react-query": "5.101.4",
     "lucide-react": "1.14.0",

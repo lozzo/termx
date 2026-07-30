@@ -21,7 +21,7 @@ export function RegisterPage() {
   })
   useEffect(() => { document.title = '创建账号 · AnyTTY Cloud' }, [])
   function submit(event: FormEvent) { event.preventDefault(); if (displayName.trim() && email.includes('@') && password.length >= 8) mutation.mutate() }
-  return <AuthLayout title="创建 AnyTTY 账号" description="免费添加第一台设备，使用托管 P2P 与 Relay 从外网安全连接。" alternate={<>已经有账号？<Link to="/login">直接登录</Link></>}>
+  return <AuthLayout title="创建 AnyTTY Cloud 账号" description="账号用于注册 daemon、管理 Cloud 路由、Relay 与订阅；AnyTTY App 无需登录。" alternate={<>已经有账号？<Link to="/login">直接登录</Link></>}>
     <form onSubmit={submit}>
       <Field label="你的称呼"><Input autoComplete="name" autoFocus placeholder="例如：小明" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
       <Field label="邮箱"><Input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>

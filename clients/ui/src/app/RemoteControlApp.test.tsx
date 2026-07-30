@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { anyttyI18n } from '../i18n'
 import type { RemoteNetworkRuntime, RemoteRuntimeStorage } from '../core/transport'
+import { createMachineStore } from '../state/machineStore'
 import { RemoteControlApp, type ExternalPairingAdapter } from './RemoteControlApp'
 
 describe('RemoteControlApp accountless product shell', () => {
@@ -29,7 +30,7 @@ describe('RemoteControlApp accountless product shell', () => {
     expect(screen.queryByRole('heading', { name: 'Account' })).toBeNull()
   })
 
-  it('keeps manual pairing available when camera permission is denied', async () => {
+  it('keeps pairing QR-only when camera permission is denied', async () => {
     renderApp({
       scanPairingCode: vi.fn(async () => {
         throw new Error('Error getting userMedia, error = NotAllowedError: Permission denied')
@@ -39,21 +40,42 @@ describe('RemoteControlApp accountless product shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
     await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
 
-    expect(await screen.findByText('This device cannot scan a QR code. Enter the same pairing code below.')).toBeTruthy()
-    expect(screen.getByLabelText('Pairing code or share link')).toBeTruthy()
+    expect(await screen.findByText(/QR scanning is unavailable on this device/)).toBeTruthy()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('ends pairing and allows retry when the device connection is unavailable', async () => {
+  it('imports a scanned service QR and saves the resulting endpoint locally', async () => {
+    const pairingImport = vi.fn(async () => ({
+      machine: { id: 'device-1', name: 'Office Mac', hostname: 'office.local', accessClass: 'local' as const },
+    }))
+    const { storage } = renderApp({
+      pairingImport,
+      scanPairingCode: vi.fn(async () => 'MXP2-SCANNED'),
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
+
+    expect(pairingImport).toHaveBeenCalledWith('MXP2-SCANNED', undefined)
+    expect(createMachineStore({ storage }).listMachines()).toEqual([
+      expect.objectContaining({ machineId: 'device-1', name: 'Office Mac', hostname: 'office.local' }),
+    ])
+  })
+
+  it('ends a failed scanned pairing and allows camera retry', async () => {
     const failure = Object.assign(new Error('sanitized connection failure'), { code: 'unavailable' })
-    renderApp({ pairingImport: async () => { throw failure } })
+    const scanPairingCode = vi.fn(async () => 'MXP2-TEST')
+    renderApp({ pairingImport: async () => { throw failure }, scanPairingCode })
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
     const sheet = screen.getByTestId('anytty-pair-sheet')
-    await userEvent.type(within(sheet).getByLabelText('Pairing code or share link'), 'MXP2-TEST')
-    await userEvent.click(within(sheet).getByRole('button', { name: 'Add device' }))
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Scan QR with camera' }))
 
     expect(await screen.findByText('Could not connect to this device. Check both devices\' networks and try again.')).toBeTruthy()
-    expect((within(sheet).getByRole('button', { name: 'Add device' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((within(sheet).getByRole('button', { name: 'Scan QR with camera' }) as HTMLButtonElement).disabled).toBe(false)
+
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Scan QR with camera' }))
+    expect(scanPairingCode).toHaveBeenCalledTimes(2)
   })
 
   it('refreshes the native device projection from the home toolbar', async () => {
@@ -95,6 +117,7 @@ function renderApp({
       scanPairingCode={scanPairingCode}
     />,
   )
+  return { storage }
 }
 
 class MemoryStorage implements RemoteRuntimeStorage {
