@@ -8,7 +8,6 @@ import org.java_websocket.exceptions.InvalidDataException
 import org.java_websocket.framing.BinaryFrame
 import org.java_websocket.framing.CloseFrame
 import org.java_websocket.framing.ContinuousFrame
-import org.java_websocket.framing.PingFrame
 import org.java_websocket.framing.PongFrame
 import org.java_websocket.framing.TextFrame
 import org.java_websocket.handshake.Handshakedata
@@ -27,7 +26,10 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class BridgeTransportTest {
     private val servers = mutableListOf<GoClientBridgeServer>()
@@ -40,31 +42,47 @@ class BridgeTransportTest {
     }
 
     @Test
-    fun `eight slow accepts reserve physical slots ninth is closed and release permits replacement`() {
+    fun `eight slow accepts reserve physical slots ninth is closed and actual close permits replacement`() {
         val server = startServer()
-        repeat(BRIDGE_PHYSICAL_LIMIT) { raw(server) }
-        await { server.slotSnapshot().first == BRIDGE_PHYSICAL_LIMIT }
+        val accepted = List(BRIDGE_PHYSICAL_LIMIT) { raw(server) }
 
         val rejected = raw(server)
         assertEquals(-1, rejected.readByte())
-        assertEquals(BRIDGE_PHYSICAL_LIMIT, server.slotSnapshot().first)
 
-        sockets.first().close()
-        await { server.slotSnapshot().first == BRIDGE_PHYSICAL_LIMIT - 1 }
-        raw(server)
-        await { server.slotSnapshot().first == BRIDGE_PHYSICAL_LIMIT }
+        accepted.first().close()
+        val replacement = eventuallyUpgrade(server)
+        assertTrue(replacement.lastHttpResponse.startsWith("HTTP/1.1 101"))
     }
 
     @Test
-    fun `fifth in-progress upgrade is rejected before library handshake parsing`() {
+    fun `partial header consumes only physical slot and fifth complete upgrade is rejected`() {
         val server = startServer()
-        repeat(BRIDGE_UPGRADE_LIMIT) { raw(server).writeAscii("G") }
-        await { server.slotSnapshot().second == BRIDGE_UPGRADE_LIMIT }
+        raw(server).writeAscii("GET / HTTP/1.1\r\n")
+
+        repeat(BRIDGE_UPGRADE_LIMIT) {
+            assertTrue(upgraded(server).lastHttpResponse.startsWith("HTTP/1.1 101"))
+        }
 
         val rejected = raw(server)
-        rejected.writeAscii("G")
-        assertEquals(-1, rejected.readByte())
-        assertEquals(BRIDGE_UPGRADE_LIMIT, server.slotSnapshot().second)
+        rejected.writeAscii(handshakeBytes())
+        assertFalse(rejected.readUntilClose().contains("HTTP/1.1 101"))
+    }
+
+    @Test
+    fun `replaced sockets release capacity only after closeConnection reaches peer EOF`() {
+        val server = startServer()
+        val upgraded = mutableListOf<RawSocket>()
+        repeat(BRIDGE_UPGRADE_LIMIT) {
+            val socket = authenticated(server)
+            upgraded += socket
+            if (it > 0) assertEquals(8, upgraded[it - 1].readFrame().opcode)
+        }
+        upgraded.dropLast(1).forEach { assertEquals(-1, it.readByte()) }
+
+        repeat(BRIDGE_UPGRADE_LIMIT - 1) { assertTrue(upgraded(server).lastHttpResponse.startsWith("HTTP/1.1 101")) }
+        val rejected = raw(server)
+        rejected.writeAscii(handshakeBytes())
+        assertFalse(rejected.readUntilClose().contains("HTTP/1.1 101"))
     }
 
     @Test
@@ -90,7 +108,25 @@ class BridgeTransportTest {
         runCatching { socket.sendFrame(Opcode.BINARY, authFrame(TOKEN), true) }
         val frame = socket.readFrameOrNull()
         assertTrue(frame == null || frame.opcode == 8)
-        await { server.slotSnapshot() == Triple(0, 0, false) }
+    }
+
+    @Test
+    fun `blocked engine request does not delay another sockets accept-to-auth deadline`() {
+        val engine = FakeEngine(blockExecute = true)
+        val server = startServer(engine)
+        val active = authenticated(server)
+        val unauthenticated = upgraded(server)
+        active.sendFrame(Opcode.BINARY, executeFrame(7), true)
+        assertTrue(engine.executeEntered.await(1, TimeUnit.SECONDS))
+
+        try {
+            val close = unauthenticated.readFrame()
+            assertEquals(8, close.opcode)
+            assertEquals(CloseFrame.POLICY_VALIDATION, close.closeCode())
+        } finally {
+            engine.executeRelease.countDown()
+        }
+        assertEquals(GoClientBridgeServer.OP_ACCEPTED, active.readFrame().payload[0])
     }
 
     @Test
@@ -113,24 +149,19 @@ class BridgeTransportTest {
             handshakeBytes(extraHeaders = listOf("Sec-WebSocket-Protocol: $BRIDGE_PROTOCOL")),
         )
         for (request in invalid) {
-            val socket = raw(startServer())
+            val socket = raw(startServer(), 250)
             socket.writeAscii(request)
             assertFalse("invalid request upgraded: $request", socket.readUntilClose().contains("HTTP/1.1 101"))
         }
 
-        val valid = raw(startServer())
-        valid.writeAscii(handshakeBytes())
-        assertTrue(valid.readHttpResponse().startsWith("HTTP/1.1 101"))
+        val valid = upgraded(startServer())
         assertTrue(valid.lastHttpResponse.contains("Sec-WebSocket-Protocol: $BRIDGE_PROTOCOL"))
     }
 
     @Test
     fun `only exact auth message is acknowledged and failures close 1008`() {
-        val valid = upgraded(startServer())
-        valid.sendFrame(Opcode.BINARY, authFrame(TOKEN), true)
-        val ack = valid.readFrame()
-        assertEquals(2, ack.opcode)
-        assertEquals(GoClientBridgeServer.OP_ACK, ack.payload[0])
+        val valid = authenticated(startServer())
+        assertTrue(valid.lastHttpResponse.contains("Sec-WebSocket-Protocol: $BRIDGE_PROTOCOL"))
 
         val invalidFrames = listOf(
             ByteArray(0),
@@ -138,6 +169,7 @@ class BridgeTransportTest {
             authFrame(TOKEN).copyOf(45),
             authFrame(TOKEN).also { it[0] = 2 },
             authFrame("B".repeat(43)),
+            ByteArray(256 * 1024),
         )
         for (invalid in invalidFrames) {
             val socket = upgraded(startServer())
@@ -146,6 +178,24 @@ class BridgeTransportTest {
             assertEquals(8, close.opcode)
             assertEquals(CloseFrame.POLICY_VALIDATION, close.closeCode())
             assertFalse(String(close.payload, StandardCharsets.UTF_8).contains("B".repeat(8)))
+        }
+    }
+
+    @Test
+    fun `oversized unauthenticated direct buffer is rejected without moving position`() {
+        val server = startServer()
+        val registry = BridgeConnectionRegistry()
+        try {
+            val connection = BridgeWebSocketImpl(testWebSocketListener(), listOf(BridgeDraft6455()), registry)
+            val message = ByteBuffer.allocateDirect(256 * 1024).apply {
+                position(17)
+                limit(capacity() - 11)
+            }
+            val position = message.position()
+            server.onMessage(connection, message)
+            assertEquals(position, message.position())
+        } finally {
+            registry.stop()
         }
     }
 
@@ -164,6 +214,17 @@ class BridgeTransportTest {
     }
 
     @Test
+    fun `1009 releases capacity only after closeConnection reaches peer EOF`() {
+        val server = startServer()
+        val socketsAtLimit = List(BRIDGE_UPGRADE_LIMIT) { upgraded(server) }
+        socketsAtLimit.first().sendFrame(Opcode.BINARY, ByteArray(BRIDGE_MAX_MESSAGE_BYTES), false)
+        socketsAtLimit.first().sendFrame(Opcode.CONTINUOUS, byteArrayOf(1), true)
+        assertEquals(CloseFrame.TOOBIG, socketsAtLimit.first().readFrame().closeCode())
+        assertEquals(-1, socketsAtLimit.first().readByte())
+        assertTrue(eventuallyUpgrade(server).lastHttpResponse.startsWith("HTTP/1.1 101"))
+    }
+
+    @Test
     fun `Kotlin response header is counted before allocation`() {
         assertEquals(
             BRIDGE_MAX_MESSAGE_BYTES,
@@ -173,33 +234,17 @@ class BridgeTransportTest {
     }
 
     @Test
-    fun `draft copy and reset isolate aggregate counters`() {
+    fun `draft copy reset and close isolate aggregate counters`() {
         val draft = BridgeDraft6455()
         assertNotSame(draft, draft.copyInstance())
-        val listener = object : WebSocketAdapter() {
-            override fun onWebsocketMessage(conn: WebSocket, message: String) = Unit
-
-            override fun onWebsocketMessage(conn: WebSocket, blob: ByteBuffer) = Unit
-
-            override fun onWebsocketOpen(conn: WebSocket, handshake: Handshakedata) = Unit
-
-            override fun onWebsocketClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
-
-            override fun onWebsocketClosing(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
-
-            override fun onWebsocketCloseInitiated(conn: WebSocket, code: Int, reason: String) = Unit
-
-            override fun onWebsocketError(conn: WebSocket, ex: Exception) = Unit
-
-            override fun onWriteDemand(conn: WebSocket) = Unit
-
-            override fun getLocalSocketAddress(conn: WebSocket) = null
-
-            override fun getRemoteSocketAddress(conn: WebSocket) = null
-        }
-        val socket = WebSocketImpl(listener, BridgeDraft6455())
-        val half = ByteBuffer.wrap(ByteArray(BRIDGE_MAX_MESSAGE_BYTES / 2 + 1))
-        draft.processFrame(socket, BinaryFrame().apply { setPayload(half); isFin = false })
+        val socket = WebSocketImpl(testWebSocketListener(), BridgeDraft6455())
+        draft.processFrame(
+            socket,
+            BinaryFrame().apply {
+                setPayload(ByteBuffer.wrap(ByteArray(BRIDGE_MAX_MESSAGE_BYTES / 2 + 1)))
+                isFin = false
+            },
+        )
         draft.processFrame(socket, PongFrame().apply { setPayload(ByteBuffer.wrap(byteArrayOf(1))) })
         try {
             draft.processFrame(
@@ -213,16 +258,21 @@ class BridgeTransportTest {
         } catch (error: InvalidDataException) {
             assertEquals(CloseFrame.TOOBIG, error.closeCode)
         }
+
         draft.reset()
-        val aggregateField = BridgeDraft6455::class.java.getDeclaredField("messageBytes").apply { isAccessible = true }
-        assertEquals(0L, aggregateField.getLong(draft))
-
         val resetDraft = draft.copyInstance() as BridgeDraft6455
-        val resetSocket = WebSocketImpl(listener, BridgeDraft6455())
-        resetDraft.processFrame(resetSocket, BinaryFrame().apply { setPayload(ByteBuffer.wrap(byteArrayOf(1))); isFin = true })
-
+        resetDraft.processFrame(
+            WebSocketImpl(testWebSocketListener(), BridgeDraft6455()),
+            BinaryFrame().apply {
+                setPayload(ByteBuffer.wrap(ByteArray(BRIDGE_MAX_MESSAGE_BYTES)))
+                isFin = true
+            },
+        )
         try {
-            resetDraft.processFrame(resetSocket, TextFrame().apply { setPayload(ByteBuffer.wrap(byteArrayOf(1))) })
+            resetDraft.processFrame(
+                WebSocketImpl(testWebSocketListener(), BridgeDraft6455()),
+                TextFrame().apply { setPayload(ByteBuffer.wrap(byteArrayOf(1))) },
+            )
             fail("text frame unexpectedly accepted")
         } catch (error: InvalidDataException) {
             assertEquals(CloseFrame.PROTOCOL_ERROR, error.closeCode)
@@ -230,40 +280,51 @@ class BridgeTransportTest {
     }
 
     @Test
-    fun `server stop releases all physical and upgrade slots`() {
-        val server = startServer()
-        repeat(3) { raw(server).writeAscii("G") }
-        await { server.slotSnapshot() == Triple(3, 3, false) }
-        server.close()
-        await { server.slotSnapshot() == Triple(0, 0, false) }
+    fun `server stop drains admitted request before engine close and rejects queued request`() {
+        val engine = FakeEngine(blockExecute = true)
+        val server = startServer(engine)
+        val socket = authenticated(server)
+        socket.sendFrame(Opcode.BINARY, executeFrame(1), true)
+        assertTrue(engine.executeEntered.await(1, TimeUnit.SECONDS))
+        socket.sendFrame(Opcode.BINARY, executeFrame(2), true)
+
+        val stopped = CountDownLatch(1)
+        val closer = Thread {
+            server.close()
+            stopped.countDown()
+        }.apply { start() }
+        try {
+            assertFalse(engine.closeCalled.await(200, TimeUnit.MILLISECONDS))
+        } finally {
+            engine.executeRelease.countDown()
+        }
+        assertTrue(stopped.await(3, TimeUnit.SECONDS))
+        closer.join(1_000)
+        assertEquals(1, engine.executeCalls.get())
+        assertTrue(engine.closeCalled.await(0, TimeUnit.MILLISECONDS))
+        assertFalse(engine.calledAfterClose.get())
     }
 
     @Test
-    fun `auth deadline uses elapsed nano time from negative values and across wrap`() {
-        assertElapsedDeadline(
-            acceptedAt = -5_000_000_000L,
-            beforeDeadline = -3_000_000_001L,
-            atDeadline = -3_000_000_000L,
-        )
-
-        val acceptedBeforeWrap = Long.MAX_VALUE - 1_000_000_000L
-        assertElapsedDeadline(
-            acceptedAt = acceptedBeforeWrap,
-            beforeDeadline = acceptedBeforeWrap + BRIDGE_AUTH_DEADLINE_NANOS - 1,
-            atDeadline = acceptedBeforeWrap + BRIDGE_AUTH_DEADLINE_NANOS,
-        )
+    fun `server stop closes partial and upgraded sockets`() {
+        val server = startServer()
+        val partial = raw(server).also { it.writeAscii("GET / HTTP/1.1\r\n") }
+        val upgraded = upgraded(server)
+        server.close()
+        assertEquals(-1, partial.readByte())
+        assertTrue(upgraded.readFrameOrNull()?.opcode == 8 || upgraded.readByte() == -1)
     }
 
-    private fun startServer(): GoClientBridgeServer {
-        val server = GoClientBridgeServer(FakeEngine(), TOKEN)
+    private fun startServer(engine: FakeEngine = FakeEngine()): GoClientBridgeServer {
+        val server = GoClientBridgeServer(engine, TOKEN)
         servers += server
         server.start()
         assertTrue(server.awaitStarted(2_000))
         return server
     }
 
-    private fun raw(server: GoClientBridgeServer): RawSocket {
-        val socket = RawSocket(server.port)
+    private fun raw(server: GoClientBridgeServer, timeoutMillis: Int = 2_500): RawSocket {
+        val socket = RawSocket(server.port, timeoutMillis)
         sockets += socket
         return socket
     }
@@ -273,29 +334,29 @@ class BridgeTransportTest {
         assertTrue(it.readHttpResponse().startsWith("HTTP/1.1 101"))
     }
 
-    private fun assertElapsedDeadline(acceptedAt: Long, beforeDeadline: Long, atDeadline: Long) {
-        var now = acceptedAt
-        val registry = BridgeConnectionRegistry { now }
-        try {
-            val before = bridgeConnection(registry)
-            assertTrue(registry.registerPhysical(before))
-            now = beforeDeadline
-            assertTrue(registry.authenticate(before, true, {}, {}))
-            registry.release(before)
-
-            now = acceptedAt
-            val expired = bridgeConnection(registry)
-            assertTrue(registry.registerPhysical(expired))
-            now = atDeadline
-            assertFalse(registry.authenticate(expired, true, {}, {}))
-            assertEquals(Triple(0, 0, false), registry.snapshot())
-        } finally {
-            registry.stop()
-        }
+    private fun authenticated(server: GoClientBridgeServer): RawSocket = upgraded(server).also {
+        it.sendFrame(Opcode.BINARY, authFrame(TOKEN), true)
+        val ack = it.readFrame()
+        assertEquals(2, ack.opcode)
+        assertEquals(GoClientBridgeServer.OP_ACK, ack.payload[0])
     }
 
-    private fun bridgeConnection(registry: BridgeConnectionRegistry): BridgeWebSocketImpl =
-        BridgeWebSocketImpl(testWebSocketListener(), listOf(BridgeDraft6455()), registry)
+    private fun eventuallyUpgrade(server: GoClientBridgeServer): RawSocket {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        var lastFailure: Throwable? = null
+        while (System.nanoTime() < deadline) {
+            val candidate = raw(server, 100)
+            try {
+                candidate.writeAscii(handshakeBytes())
+                if (candidate.readHttpResponse().startsWith("HTTP/1.1 101")) return candidate
+            } catch (error: Throwable) {
+                lastFailure = error
+            }
+            candidate.close()
+            Thread.sleep(10)
+        }
+        throw AssertionError("replacement did not upgrade", lastFailure)
+    }
 
     private fun testWebSocketListener(): WebSocketAdapter = object : WebSocketAdapter() {
         override fun onWebsocketMessage(conn: WebSocket, message: String) = Unit
@@ -310,34 +371,62 @@ class BridgeTransportTest {
         override fun getRemoteSocketAddress(conn: WebSocket) = null
     }
 
-    private fun await(condition: () -> Boolean) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
-        while (!condition()) {
-            if (System.nanoTime() >= deadline) fail("condition did not become true")
-            Thread.sleep(10)
-        }
-    }
+    private class FakeEngine(
+        private val blockExecute: Boolean = false,
+    ) : GoClientBridgeEngine {
+        private val closed = AtomicBoolean(false)
+        val executeEntered = CountDownLatch(1)
+        val executeRelease = CountDownLatch(if (blockExecute) 1 else 0)
+        val closeCalled = CountDownLatch(1)
+        val executeCalls = AtomicInteger(0)
+        val calledAfterClose = AtomicBoolean(false)
 
-    private class FakeEngine : GoClientBridgeEngine {
-        @Volatile private var closed = false
-        override fun openSession(payload: ByteArray) = 1L
-        override fun execute(session: Long, payload: ByteArray) = 2L
-        override fun openResourceStream(session: Long, payload: ByteArray) = 3L
-        override fun sendResourceStreamFrame(stream: Long, payload: ByteArray) = Unit
-        override fun closeResourceStream(stream: Long) = Unit
-        override fun engineCommand(payload: ByteArray) = 4L
-        override fun cancel(operation: Long) = Unit
-        override fun closeSession(session: Long) = Unit
-        override fun release(handle: Long) = Unit
+        private fun enter() {
+            if (closed.get()) calledAfterClose.set(true)
+        }
+
+        override fun openSession(payload: ByteArray): Long {
+            enter()
+            return 1L
+        }
+
+        override fun execute(session: Long, payload: ByteArray): Long {
+            enter()
+            executeCalls.incrementAndGet()
+            executeEntered.countDown()
+            executeRelease.await()
+            return 2L
+        }
+
+        override fun openResourceStream(session: Long, payload: ByteArray): Long {
+            enter()
+            return 3L
+        }
+
+        override fun sendResourceStreamFrame(stream: Long, payload: ByteArray) = enter()
+        override fun closeResourceStream(stream: Long) = enter()
+        override fun engineCommand(payload: ByteArray): Long {
+            enter()
+            return 4L
+        }
+
+        override fun cancel(operation: Long) = enter()
+        override fun closeSession(session: Long) = enter()
+        override fun release(handle: Long) = enter()
+
         override fun nextEvent(): ByteArray {
-            while (!closed) Thread.sleep(25)
+            while (!closed.get()) Thread.sleep(25)
             throw IllegalStateException("closed")
         }
-        override fun close() { closed = true }
+
+        override fun close() {
+            closed.set(true)
+            closeCalled.countDown()
+        }
     }
 
-    private class RawSocket(port: Int) : Closeable {
-        private val socket = Socket("127.0.0.1", port).apply { soTimeout = 2_500 }
+    private class RawSocket(port: Int, timeoutMillis: Int) : Closeable {
+        private val socket = Socket("127.0.0.1", port).apply { soTimeout = timeoutMillis }
         private val input = socket.getInputStream()
         private val output = socket.getOutputStream()
         var lastHttpResponse: String = ""
@@ -348,7 +437,11 @@ class BridgeTransportTest {
             output.flush()
         }
 
-        fun readByte(): Int = try { input.read() } catch (_: SocketTimeoutException) { Int.MIN_VALUE }
+        fun readByte(): Int = try {
+            input.read()
+        } catch (_: SocketTimeoutException) {
+            Int.MIN_VALUE
+        }
 
         fun readHttpResponse(): String {
             val bytes = ByteArrayOutputStream()
@@ -415,7 +508,13 @@ class BridgeTransportTest {
             output.flush()
         }
 
-        fun readFrameOrNull(): Frame? = try { readFrame() } catch (_: EOFException) { null } catch (_: SocketTimeoutException) { null }
+        fun readFrameOrNull(): Frame? = try {
+            readFrame()
+        } catch (_: EOFException) {
+            null
+        } catch (_: SocketTimeoutException) {
+            null
+        }
 
         fun readFrame(): Frame {
             val first = input.read()
@@ -455,6 +554,12 @@ class BridgeTransportTest {
         const val TOKEN = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
         fun authFrame(token: String): ByteArray = byteArrayOf(GoClientBridgeServer.OP_AUTH) + token.toByteArray()
+
+        fun executeFrame(requestId: Long): ByteArray = ByteBuffer.allocate(17).apply {
+            put(GoClientBridgeServer.OP_EXECUTE)
+            putLong(requestId)
+            putLong(1)
+        }.array()
 
         fun handshakeBytes(
             path: String = "/",

@@ -35,14 +35,25 @@ internal const val BRIDGE_PHYSICAL_LIMIT = 8
 internal const val BRIDGE_UPGRADE_LIMIT = 4
 
 /** Owns the exact physical/upgrade/auth lifecycle under one synchronization boundary. */
-internal class BridgeConnectionRegistry(
-    private val nanoTime: () -> Long = System::nanoTime,
-) {
+internal class BridgeConnectionRegistry {
+    private enum class Phase {
+        ACCEPTED,
+        UPGRADED,
+        CLOSING,
+        CLOSED,
+    }
+
     private data class State(
         val acceptedAtNanos: Long,
-        var upgrade: Boolean = false,
+        var phase: Phase = Phase.ACCEPTED,
+        var holdsUpgrade: Boolean = false,
         var authenticated: Boolean = false,
         var timeout: ScheduledFuture<*>? = null,
+    )
+
+    internal data class AuthenticationCommit(
+        val accepted: Boolean,
+        val replaced: BridgeWebSocketImpl? = null,
     )
 
     private val lock = Any()
@@ -54,121 +65,173 @@ internal class BridgeConnectionRegistry(
         Thread(task, "anytty-bridge-deadline").apply { isDaemon = true }
     }
 
-    fun registerPhysical(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
-        if (stopped || states.size >= BRIDGE_PHYSICAL_LIMIT) return@synchronized false
-        val state = State(acceptedAtNanos = nanoTime())
-        states[connection] = state
-        state.timeout = deadlines.schedule(
-            { expire(connection) },
-            BRIDGE_AUTH_DEADLINE_NANOS,
-            TimeUnit.NANOSECONDS,
-        )
-        true
+    fun registerPhysical(connection: BridgeWebSocketImpl): Boolean {
+        val acceptedAtNanos = System.nanoTime()
+        val state = State(acceptedAtNanos = acceptedAtNanos)
+        val registered = synchronized(lock) {
+            if (stopped || states.size >= BRIDGE_PHYSICAL_LIMIT) {
+                false
+            } else {
+                states[connection] = state
+                true
+            }
+        }
+        if (!registered) return false
+
+        val elapsedNanos = System.nanoTime() - acceptedAtNanos
+        val delayNanos = (BRIDGE_AUTH_DEADLINE_NANOS - elapsedNanos).coerceAtLeast(0L)
+        val timeout = try {
+            deadlines.schedule(
+                { expire(connection) },
+                delayNanos,
+                TimeUnit.NANOSECONDS,
+            )
+        } catch (_: RuntimeException) {
+            beginClosing(connection)
+            return false
+        }
+
+        val armed = synchronized(lock) {
+            if (states[connection] !== state || stopped ||
+                state.phase == Phase.CLOSING || state.phase == Phase.CLOSED
+            ) {
+                false
+            } else {
+                state.timeout = timeout
+                true
+            }
+        }
+        if (!armed) timeout.cancel(false)
+        return armed
     }
 
     fun acquireUpgrade(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
         val state = states[connection] ?: return@synchronized false
-        if (state.upgrade) return@synchronized true
-        if (upgradeCount >= BRIDGE_UPGRADE_LIMIT) {
-            terminateLocked(connection, state)
-            connection.closeForPolicy()
-            return@synchronized false
-        }
-        state.upgrade = true
+        if (stopped || state.phase == Phase.CLOSING || state.phase == Phase.CLOSED) return@synchronized false
+        if (state.phase == Phase.UPGRADED) return@synchronized true
+        if (upgradeCount >= BRIDGE_UPGRADE_LIMIT) return@synchronized false
+        state.phase = Phase.UPGRADED
+        state.holdsUpgrade = true
         upgradeCount += 1
         true
     }
 
-    fun authenticate(
-        connection: BridgeWebSocketImpl,
-        valid: Boolean,
-        acknowledge: () -> Unit,
-        afterAcknowledge: () -> Unit,
-    ): Boolean = synchronized(lock) {
+    fun mayAuthenticate(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
         val state = states[connection] ?: return@synchronized false
-        if (deadlineElapsed(state) || !valid) {
-            terminateLocked(connection, state)
-            connection.closeForPolicy()
-            return@synchronized false
-        }
-
-        val replaced = current
-        if (replaced != null && replaced !== connection) {
-            states[replaced]?.let { terminateLocked(replaced, it) }
-            replaced.close(4001, "binding client replaced")
-        }
-        current = connection
-        state.authenticated = true
-        try {
-            acknowledge()
-            afterAcknowledge()
-        } catch (_: RuntimeException) {
-            terminateLocked(connection, state)
-            connection.closeForPolicy()
-            return@synchronized false
-        }
-        state.timeout?.cancel(false)
-        state.timeout = null
-        true
+        !stopped &&
+            state.phase == Phase.UPGRADED &&
+            !state.authenticated &&
+            !deadlineElapsed(state, System.nanoTime())
     }
 
-    fun <T> withAuthenticated(connection: BridgeWebSocketImpl, action: () -> T): T? = synchronized(lock) {
+    fun commitAuthentication(connection: BridgeWebSocketImpl): AuthenticationCommit {
+        var timeout: ScheduledFuture<*>? = null
+        val result = synchronized(lock) {
+            val state = states[connection]
+            if (state == null ||
+                stopped ||
+                state.phase != Phase.UPGRADED ||
+                state.authenticated ||
+                deadlineElapsed(state, System.nanoTime())
+            ) {
+                AuthenticationCommit(false)
+            } else {
+                val replaced = current?.takeIf { it !== connection }
+                if (replaced != null) states[replaced]?.let(::beginClosingLocked)
+                state.authenticated = true
+                current = connection
+                timeout = state.timeout
+                state.timeout = null
+                AuthenticationCommit(true, replaced)
+            }
+        }
+        timeout?.cancel(false)
+        return result
+    }
+
+    fun admitRequest(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
         val state = states[connection]
-        if (state?.authenticated != true) return@synchronized null
-        action()
+        !stopped && state?.phase == Phase.UPGRADED && state.authenticated
     }
 
-    fun <T> withCurrent(action: (BridgeWebSocketImpl) -> T): T? = synchronized(lock) {
+    fun isAuthenticated(connection: BridgeWebSocketImpl): Boolean = synchronized(lock) {
+        val state = states[connection]
+        state?.phase == Phase.UPGRADED && state.authenticated
+    }
+
+    fun currentConnection(): BridgeWebSocketImpl? = synchronized(lock) {
         val connection = current ?: return@synchronized null
-        if (states[connection]?.authenticated != true || !connection.isOpen) return@synchronized null
-        action(connection)
+        val state = states[connection]
+        if (stopped || state?.phase != Phase.UPGRADED || !state.authenticated) null else connection
     }
 
-    fun reject(connection: BridgeWebSocketImpl) = synchronized(lock) {
-        val state = states[connection] ?: return@synchronized
-        terminateLocked(connection, state)
-        connection.closeForPolicy()
-    }
-
-    fun release(connection: BridgeWebSocketImpl) = synchronized(lock) {
-        val state = states[connection] ?: return@synchronized
-        terminateLocked(connection, state)
-    }
-
-    fun stop() = synchronized(lock) {
-        if (stopped) return@synchronized
-        stopped = true
-        val connections = states.keys.toList()
-        for (connection in connections) {
-            states[connection]?.let { terminateLocked(connection, it) }
-            connection.closeConnection(CloseFrame.GOING_AWAY, "bridge stopped")
+    fun beginClosing(connection: BridgeWebSocketImpl) {
+        val timeout = synchronized(lock) {
+            val state = states[connection] ?: return@synchronized null
+            beginClosingLocked(state)
         }
+        timeout?.cancel(false)
+    }
+
+    fun closed(connection: BridgeWebSocketImpl) {
+        val timeout = synchronized(lock) {
+            val state = states[connection] ?: return@synchronized null
+            if (state.phase == Phase.CLOSED) return@synchronized null
+            state.phase = Phase.CLOSED
+            if (state.holdsUpgrade) {
+                state.holdsUpgrade = false
+                upgradeCount -= 1
+            }
+            if (current === connection) current = null
+            state.authenticated = false
+            states.remove(connection)
+            state.timeout.also { state.timeout = null }
+        }
+        timeout?.cancel(false)
+    }
+
+    fun stop(): List<BridgeWebSocketImpl> {
+        val timeouts = mutableListOf<ScheduledFuture<*>>()
+        val connections = synchronized(lock) {
+            if (stopped) return@synchronized emptyList()
+            stopped = true
+            states.entries.forEach { (_, state) ->
+                beginClosingLocked(state)?.let(timeouts::add)
+            }
+            states.keys.toList()
+        }
+        timeouts.forEach { it.cancel(false) }
         deadlines.shutdownNow()
+        return connections
     }
 
-    internal fun snapshot(): Triple<Int, Int, Boolean> = synchronized(lock) {
-        Triple(states.size, upgradeCount, current != null)
+    private fun expire(connection: BridgeWebSocketImpl) {
+        val shouldClose = synchronized(lock) {
+            val state = states[connection] ?: return@synchronized false
+            if (state.authenticated || state.phase == Phase.CLOSING || state.phase == Phase.CLOSED ||
+                !deadlineElapsed(state, System.nanoTime())
+            ) {
+                false
+            } else {
+                beginClosingLocked(state)
+                true
+            }
+        }
+        if (shouldClose) connection.closeForPolicy()
     }
 
-    private fun expire(connection: BridgeWebSocketImpl) = synchronized(lock) {
-        val state = states[connection] ?: return@synchronized
-        if (state.authenticated || !deadlineElapsed(state)) return@synchronized
-        terminateLocked(connection, state)
-        connection.closeForPolicy()
-    }
+    private fun deadlineElapsed(state: State, nowNanos: Long): Boolean =
+        nowNanos - state.acceptedAtNanos >= BRIDGE_AUTH_DEADLINE_NANOS
 
-    private fun deadlineElapsed(state: State): Boolean =
-        nanoTime() - state.acceptedAtNanos >= BRIDGE_AUTH_DEADLINE_NANOS
-
-    private fun terminateLocked(connection: BridgeWebSocketImpl, state: State) {
-        if (states.remove(connection) == null) return
-        state.timeout?.cancel(false)
+    private fun beginClosingLocked(state: State): ScheduledFuture<*>? {
+        if (state.phase == Phase.CLOSING || state.phase == Phase.CLOSED) return null
+        state.phase = Phase.CLOSING
+        val timeout = state.timeout
         state.timeout = null
-        if (state.upgrade) upgradeCount -= 1
-        if (current === connection) current = null
+        if (current != null && states[current] === state) current = null
         state.authenticated = false
+        return timeout
     }
-
 }
 
 /** Registers accepted sockets before the selector can read and rejects overflow in wrapChannel. */
@@ -198,7 +261,9 @@ internal class BridgeWebSocketFactory(
         return channel
     }
 
-    override fun close() = registry.stop()
+    override fun close() {
+        registry.stop()
+    }
 }
 
 /** Adds only pre-handshake byte accounting; RFC 6455 parsing remains in WebSocketImpl. */
@@ -215,14 +280,14 @@ internal class BridgeWebSocketImpl(
     override fun decode(socketBuffer: ByteBuffer) {
         if (!physicalAccepted || isClosed) return
         if (!headerComplete) {
-            if (!registry.acquireUpgrade(this)) return
             val input = socketBuffer.duplicate()
             while (input.hasRemaining() && !headerComplete) {
                 val byte = input.get()
                 headerBytes += 1
                 delimiterState = nextDelimiterState(delimiterState, byte)
                 if (headerBytes > BRIDGE_MAX_HEADER_BYTES) {
-                    registry.reject(this)
+                    registry.beginClosing(this)
+                    closeForPolicy()
                     return
                 }
                 headerComplete = delimiterState == 4
@@ -231,17 +296,26 @@ internal class BridgeWebSocketImpl(
         super.decode(socketBuffer)
     }
 
-    override fun closeConnection(code: Int, message: String, remote: Boolean) {
-        // Java-WebSocket invokes onClose while holding this connection's monitor.
-        // Release first so registry -> connection remains the only lock order.
-        registry.release(this)
-        super.closeConnection(code, message, remote)
+    override fun close(code: Int, message: String, remote: Boolean) {
+        registry.beginClosing(this)
+        super.close(code, message, remote)
     }
 
-    internal fun closeForPolicy() {
-        if (isOpen) close(CloseFrame.POLICY_VALIDATION, "binding authentication failed")
-        else closeConnection(CloseFrame.POLICY_VALIDATION, "binding authentication failed")
+    override fun flushAndClose(code: Int, message: String, remote: Boolean) {
+        registry.beginClosing(this)
+        super.flushAndClose(code, message, remote)
     }
+
+    override fun closeConnection(code: Int, message: String, remote: Boolean) {
+        registry.beginClosing(this)
+        try {
+            super.closeConnection(code, message, remote)
+        } finally {
+            registry.closed(this)
+        }
+    }
+
+    internal fun closeForPolicy() = close(CloseFrame.POLICY_VALIDATION, "binding authentication failed")
 
     private fun nextDelimiterState(state: Int, byte: Byte): Int = when (state) {
         0 -> if (byte == CR) 1 else 0
