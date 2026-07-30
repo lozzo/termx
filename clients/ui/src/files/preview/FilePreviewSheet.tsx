@@ -1,7 +1,6 @@
-import { useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
+import { ModalSurface } from '../../ui/ModalSurface'
 import type { FilePreviewResponse, FilePreviewStreamOptions, FilePreviewStreamResult } from '../fileApi'
 import { basename, formatBytes, isMarkdownFile } from '../fileUtils'
 import { BinaryVideoPreview, StreamedVideoPreview } from './VideoPreview'
@@ -27,22 +26,12 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
   const subtitle = preview ? `${formatBytes(preview.size)} · ${preview.mimeType}` : path
   const isMediaPreview = preview?.category === 'image' || preview?.category === 'video' || preview?.category === 'model'
 
-  useEffect(() => {
-    if (typeof document === 'undefined') return undefined
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [])
-
-  const dialog = (
-    <div
+  return (
+    <ModalSurface
       className="fixed inset-0 z-[80] flex h-[100dvh] flex-col bg-white"
       data-testid="anytty-file-preview"
-      role="dialog"
-      aria-modal="true"
       aria-labelledby="anytty-file-preview-title"
+      onRequestClose={onClose}
     >
       <header className="anytty-app-header flex shrink-0 items-center gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
         <div className="min-w-0 flex-1">
@@ -70,11 +59,8 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
           <PreviewContent preview={preview} streamPreview={streamPreview} />
         ) : null}
       </div>
-    </div>
+    </ModalSurface>
   )
-
-  if (typeof document === 'undefined') return dialog
-  return createPortal(dialog, document.body)
 }
 
 function PreviewContent({

@@ -10,6 +10,19 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+interface IsolatedElementState {
+  count: number
+  ariaHidden: string | null
+  inert: string | null
+}
+
+const activeSurfaces = new Set<HTMLElement>()
+const isolatedElements = new Map<HTMLElement, IsolatedElementState>()
+const pendingFocusTargets: HTMLElement[] = []
+let bodyScrollLockCount = 0
+let lockedBody: HTMLElement | null = null
+let previousBodyOverflow = ''
+
 export interface ModalSurfaceProps extends Omit<ComponentPropsWithoutRef<'section'>, 'role'> {
   onRequestClose: () => void
   initialFocusRef?: RefObject<HTMLElement | null> | undefined
@@ -22,31 +35,26 @@ export function ModalSurface({ children, initialFocusRef, onKeyDown, onRequestCl
     const surface = surfaceRef.current
     if (!surface) return
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const outside = collectOutsideElements(surface)
-    const previous = outside.map((element) => ({
-      element,
-      ariaHidden: element.getAttribute('aria-hidden'),
-      inert: element.hasAttribute('inert'),
-    }))
-    for (const element of outside) {
-      element.setAttribute('aria-hidden', 'true')
-      element.setAttribute('inert', '')
+    activeSurfaces.add(surface)
+    const releaseIsolation = isolateOutsideElements(surface)
+    const releaseBodyScrollLock = lockBodyScroll()
+    if (topmostSurface() === surface) {
+      const focusTarget = initialFocusRef?.current ?? focusableElements(surface)[0] ?? surface
+      focusTarget.focus()
     }
-    const focusTarget = initialFocusRef?.current ?? focusableElements(surface)[0] ?? surface
-    focusTarget.focus()
     return () => {
-      for (const item of previous) {
-        if (item.ariaHidden === null) item.element.removeAttribute('aria-hidden')
-        else item.element.setAttribute('aria-hidden', item.ariaHidden)
-        if (!item.inert) item.element.removeAttribute('inert')
-      }
-      if (previousFocus?.isConnected) previousFocus.focus()
+      releaseIsolation()
+      releaseBodyScrollLock()
+      activeSurfaces.delete(surface)
+      restoreFocus(previousFocus)
     }
   }, [initialFocusRef])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     onKeyDown?.(event)
     if (event.defaultPrevented) return
+    const surface = surfaceRef.current
+    if (!surface || topmostSurface() !== surface) return
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
@@ -54,8 +62,6 @@ export function ModalSurface({ children, initialFocusRef, onKeyDown, onRequestCl
       return
     }
     if (event.key !== 'Tab') return
-    const surface = surfaceRef.current
-    if (!surface) return
     const focusable = focusableElements(surface)
     if (focusable.length === 0) {
       event.preventDefault()
@@ -82,7 +88,11 @@ export function ModalSurface({ children, initialFocusRef, onKeyDown, onRequestCl
 
 function focusableElements(surface: HTMLElement): HTMLElement[] {
   return Array.from(surface.querySelectorAll<HTMLElement>(focusableSelector))
-    .filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true')
+    .filter((element) => (
+      !element.hasAttribute('hidden')
+      && element.getAttribute('aria-hidden') !== 'true'
+      && element.closest<HTMLElement>('[role="dialog"][aria-modal="true"]') === surface
+    ))
 }
 
 function collectOutsideElements(surface: HTMLElement): HTMLElement[] {
@@ -96,4 +106,95 @@ function collectOutsideElements(surface: HTMLElement): HTMLElement[] {
     if (current === document.body) break
   }
   return outside
+}
+
+function isolateOutsideElements(surface: HTMLElement): () => void {
+  const outside = collectOutsideElements(surface)
+  for (const element of outside) {
+    const current = isolatedElements.get(element)
+    if (current) {
+      current.count += 1
+      continue
+    }
+    isolatedElements.set(element, {
+      count: 1,
+      ariaHidden: element.getAttribute('aria-hidden'),
+      inert: element.getAttribute('inert'),
+    })
+    element.setAttribute('aria-hidden', 'true')
+    element.setAttribute('inert', '')
+  }
+
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    for (const element of outside) {
+      const current = isolatedElements.get(element)
+      if (!current) continue
+      current.count -= 1
+      if (current.count > 0) continue
+      isolatedElements.delete(element)
+      restoreAttribute(element, 'aria-hidden', current.ariaHidden)
+      restoreAttribute(element, 'inert', current.inert)
+    }
+  }
+}
+
+function lockBodyScroll(): () => void {
+  const body = document.body
+  if (bodyScrollLockCount === 0) {
+    lockedBody = body
+    previousBodyOverflow = body.style.overflow
+    body.style.overflow = 'hidden'
+  }
+  bodyScrollLockCount += 1
+
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    bodyScrollLockCount -= 1
+    if (bodyScrollLockCount > 0) return
+    if (lockedBody) lockedBody.style.overflow = previousBodyOverflow
+    lockedBody = null
+    previousBodyOverflow = ''
+    bodyScrollLockCount = 0
+  }
+}
+
+function topmostSurface(): HTMLElement | null {
+  let topmost: HTMLElement | null = null
+  for (const surface of activeSurfaces) {
+    if (!surface.isConnected) continue
+    if (!topmost || topmost.contains(surface)) {
+      topmost = surface
+      continue
+    }
+    if (surface.contains(topmost)) continue
+    topmost = surface
+  }
+  return topmost
+}
+
+function restoreFocus(target: HTMLElement | null): void {
+  if (target?.isConnected && !pendingFocusTargets.includes(target)) pendingFocusTargets.push(target)
+  for (let index = pendingFocusTargets.length - 1; index >= 0; index -= 1) {
+    const candidate = pendingFocusTargets[index]!
+    if (!candidate.isConnected) {
+      pendingFocusTargets.splice(index, 1)
+      continue
+    }
+    if (candidate.closest('[inert]')) continue
+    pendingFocusTargets.splice(index, 1)
+    candidate.focus()
+    if (activeSurfaces.size === 0) pendingFocusTargets.length = 0
+    return
+  }
+  if (activeSurfaces.size === 0) pendingFocusTargets.length = 0
+}
+
+function restoreAttribute(element: HTMLElement, name: string, value: string | null): void {
+  if (value === null) element.removeAttribute(name)
+  else element.setAttribute(name, value)
 }

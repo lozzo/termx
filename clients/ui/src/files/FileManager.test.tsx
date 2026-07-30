@@ -1,0 +1,169 @@
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ProtoClientSession } from '../core/protoClientSession'
+import type { UseFileManagerResult } from './useFileManager'
+import { FileManager } from './FileManager'
+
+const useFileManagerMock = vi.hoisted(() => vi.fn())
+
+vi.mock('./useFileManager', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useFileManager')>()
+  return { ...actual, useFileManager: useFileManagerMock }
+})
+
+describe('FileManager overlays', () => {
+  beforeEach(() => {
+    useFileManagerMock.mockReset()
+  })
+
+  afterEach(cleanup)
+
+  it('keeps the file action sheet open under a named delete confirmation and deletes once', async () => {
+    const user = userEvent.setup()
+    const deleteEntry = vi.fn(async () => undefined)
+    useFileManagerMock.mockReturnValue(createManager({
+      currentPath: '/tmp',
+      entries: [fileEntry],
+      visibleEntries: [fileEntry],
+      total: 1,
+      deleteEntry,
+    }))
+    renderFileManager()
+
+    const trigger = screen.getByRole('button', { name: 'More actions for notes.txt' })
+    await user.click(trigger)
+    const actions = screen.getByRole('dialog', { name: 'notes.txt' })
+    await user.click(within(actions).getByRole('button', { name: 'Delete' }))
+
+    const confirmation = screen.getByRole('dialog', { name: 'Delete this entry?' })
+    expect(confirmation.getAttribute('aria-modal')).toBe('true')
+    expect(actions.closest('[inert]')).toBeTruthy()
+    expect(document.activeElement).toBe(within(confirmation).getByRole('button', { name: 'Cancel' }))
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Delete this entry?' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'notes.txt' })).toBeTruthy()
+    expect(deleteEntry).not.toHaveBeenCalled()
+
+    await user.click(within(screen.getByRole('dialog', { name: 'notes.txt' })).getByRole('button', { name: 'Delete' }))
+    const reopenedConfirmation = screen.getByRole('dialog', { name: 'Delete this entry?' })
+    await user.click(within(reopenedConfirmation).getByRole('button', { name: 'Delete' }))
+
+    expect(deleteEntry).toHaveBeenCalledTimes(1)
+    expect(deleteEntry).toHaveBeenCalledWith('/tmp/notes.txt')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('uses a named bookmark editor and dispatches edit and remove once each', async () => {
+    const user = userEvent.setup()
+    const updatePathBookmark = vi.fn(async () => undefined)
+    const removePathBookmark = vi.fn(async () => undefined)
+    useFileManagerMock.mockReturnValue(createManager({
+      pathBookmarks: [{
+        id: 'bookmark-1',
+        path: '/srv/app',
+        label: 'Production',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        version: 1,
+      }],
+      updatePathBookmark,
+      removePathBookmark,
+    }))
+    renderFileManager()
+
+    await user.click(screen.getByRole('button', { name: 'Path bookmarks' }))
+    await user.click(screen.getByRole('button', { name: 'Edit bookmark Production' }))
+
+    const editor = screen.getByRole('dialog', { name: 'Edit bookmark' })
+    const alias = within(editor).getByRole('textbox', { name: 'Alias' })
+    expect(editor.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(alias)
+    await user.clear(alias)
+    await user.type(alias, 'Production servers')
+    await user.click(within(editor).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(updatePathBookmark).toHaveBeenCalledTimes(1))
+    expect(updatePathBookmark).toHaveBeenCalledWith('bookmark-1', { label: 'Production servers' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit bookmark' })).toBeNull())
+
+    await user.click(screen.getByRole('button', { name: 'Edit bookmark Production' }))
+    const reopenedEditor = screen.getByRole('dialog', { name: 'Edit bookmark' })
+    await user.click(within(reopenedEditor).getByRole('button', { name: 'Remove bookmark' }))
+
+    expect(removePathBookmark).toHaveBeenCalledTimes(1)
+    expect(removePathBookmark).toHaveBeenCalledWith('bookmark-1')
+    expect(screen.queryByRole('dialog', { name: 'Edit bookmark' })).toBeNull()
+  })
+})
+
+const fileEntry = {
+  name: 'notes.txt',
+  type: 'file',
+  size: 42,
+}
+
+function renderFileManager() {
+  return render(
+    <FileManager
+      machineId="machine-1"
+      session={{} as ProtoClientSession}
+    />,
+  )
+}
+
+function createManager(overrides: Partial<UseFileManagerResult> = {}): UseFileManagerResult {
+  return {
+    machineId: 'machine-1',
+    currentPath: '/',
+    entries: [],
+    visibleEntries: [],
+    total: 0,
+    loading: false,
+    error: null,
+    sortState: { field: 'name', direction: 'asc' },
+    showHidden: false,
+    newDirName: '',
+    creatingDirectory: false,
+    actionMessage: null,
+    preview: null,
+    previewPath: null,
+    previewLoading: false,
+    previewError: null,
+    fileApi: {} as UseFileManagerResult['fileApi'],
+    selectionMode: false,
+    selectedPaths: new Set(),
+    clipboard: null,
+    pathBookmarks: [],
+    pathBookmarksLoading: false,
+    pathBookmarkError: null,
+    setSelectionMode: vi.fn(),
+    toggleSelect: vi.fn(),
+    selectAll: vi.fn(),
+    deselectAll: vi.fn(),
+    setClipboard: vi.fn(),
+    copy: vi.fn(),
+    cut: vi.fn(),
+    copyFilePaths: vi.fn(async () => undefined),
+    paste: vi.fn(async () => undefined),
+    batchDelete: vi.fn(async () => undefined),
+    setNewDirName: vi.fn(),
+    setSort: vi.fn(),
+    toggleShowHidden: vi.fn(),
+    openPreview: vi.fn(async () => undefined),
+    streamPreview: vi.fn(),
+    closePreview: vi.fn(),
+    createDirectory: vi.fn(async () => undefined),
+    deleteEntry: vi.fn(async () => undefined),
+    renameEntry: vi.fn(async () => undefined),
+    navigate: vi.fn(async () => undefined),
+    refresh: vi.fn(async () => undefined),
+    addCurrentPathBookmark: vi.fn(async () => undefined),
+    updatePathBookmark: vi.fn(async () => undefined),
+    removePathBookmark: vi.fn(async () => undefined),
+    refreshPathBookmarks: vi.fn(async () => undefined),
+    ...overrides,
+  }
+}

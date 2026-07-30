@@ -43,11 +43,35 @@ describe('FileTransferPanel', () => {
       />,
     )
 
+    expect(screen.getByRole('dialog', { name: 'Data Transfer Center' })).toBeTruthy()
     expect(screen.getByText('From Build Runner')).toBeTruthy()
     expect(screen.getByText('/var/log/server.log -> Downloads/AnyTTY/server.log')).toBeTruthy()
     expect(screen.getByText('To Office Mac')).toBeTruthy()
     expect(screen.getByText('/srv/reports / report.txt')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /close data transfer center/i }))
+  })
+
+  it('focuses the named transfer dialog and requests one close on Escape', async () => {
+    const onOpenChange = vi.fn()
+    render(
+      <FileTransferPanel
+        transfers={[transfer({ status: 'completed', transferredSize: 1 })]}
+        hasActiveTransfers={false}
+        onCancel={vi.fn()}
+        onDismiss={vi.fn()}
+        open
+        onOpenChange={onOpenChange}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Data Transfer Center' })
+    const close = screen.getByRole('button', { name: /close data transfer center/i })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(close)
+
+    await userEvent.keyboard('{Escape}')
+    expect(onOpenChange).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
   it('sorts newest transfer tasks first by added time', () => {

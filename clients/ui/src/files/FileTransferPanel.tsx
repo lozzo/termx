@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowUpFromLine, CheckSquare, Download, Pause, Play, R
 import { useTranslation } from 'react-i18next'
 import '../i18n'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
+import { ModalSurface } from '../ui/ModalSurface'
 import type { TransferInfo } from './fileApi'
 
 interface Props {
@@ -252,8 +253,12 @@ function TransferCenterDialog({
   }
 
   return (
-    <div className="anytty-app-page fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
-      <section className="flex h-full min-h-0 w-full flex-col bg-white">
+    <div className="anytty-app-page fixed inset-0 z-50 flex">
+      <ModalSurface
+        aria-labelledby="anytty-transfer-center-title"
+        className="flex h-full min-h-0 w-full flex-col bg-white"
+        onRequestClose={onClose}
+      >
         {selectionMode ? (
           <header className="anytty-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
             <button
@@ -264,7 +269,7 @@ function TransferCenterDialog({
               {translate('common.cancel')}
             </button>
             <div className="min-w-0 text-center">
-              <h2 className="truncate text-[17px] font-semibold text-zinc-950">{translate('files.transfer.selected', { count: selectedIds.size })}</h2>
+              <h2 id="anytty-transfer-center-title" className="truncate text-[17px] font-semibold text-zinc-950">{translate('files.transfer.selected', { count: selectedIds.size })}</h2>
               <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
             </div>
             <button
@@ -279,7 +284,7 @@ function TransferCenterDialog({
         ) : (
           <header className="anytty-app-header flex shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
             <div className="min-w-0">
-              <h2 className="text-[18px] font-semibold text-zinc-950">{translate('files.transfer.center')}</h2>
+              <h2 id="anytty-transfer-center-title" className="text-[18px] font-semibold text-zinc-950">{translate('files.transfer.center')}</h2>
               <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -465,7 +470,7 @@ function TransferCenterDialog({
             )}
           </div>
         ) : null}
-      </section>
+      </ModalSurface>
     </div>
   )
 }

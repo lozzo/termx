@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
+import { ModalSurface } from './ModalSurface'
 
 export interface ActionSheetItem {
   label: string
@@ -30,6 +31,8 @@ export interface ActionSheetProps {
 }
 
 export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: ActionSheetProps) {
+  const titleId = useId()
+  const firstActionRef = useRef<HTMLButtonElement>(null)
   if (!isOpen) return null
   const closeWithHaptic = () => {
     hapticSelection()
@@ -42,8 +45,12 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
       onClick={closeWithHaptic}
       data-testid="action-sheet-backdrop"
     >
-      <div
+      <ModalSurface
+        aria-label={title ? undefined : subtitle || 'Actions'}
+        aria-labelledby={title ? titleId : undefined}
         className="w-full max-w-xl animate-slide-up border-t border-[var(--anytty-app-line)] bg-[var(--anytty-app-surface)] pb-[env(safe-area-inset-bottom,20px)] md:border md:pb-4"
+        initialFocusRef={firstActionRef}
+        onRequestClose={closeWithHaptic}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col">
@@ -51,7 +58,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
 
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
             <div className="flex flex-col">
-              {title && <h3 className="text-[17px] font-bold text-zinc-900">{title}</h3>}
+              {title && <h3 id={titleId} className="text-[17px] font-bold text-zinc-900">{title}</h3>}
               {subtitle && <p className="text-[13px] font-medium text-zinc-500">{subtitle}</p>}
             </div>
             <button
@@ -74,9 +81,10 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                     data-testid="action-sheet-item"
                   >
                     <button
+                      ref={index === 0 ? firstActionRef : undefined}
                       type="button"
                       aria-label={action.ariaLabel ?? action.label}
-                    className={`flex min-h-11 min-w-0 flex-1 items-center gap-4 py-2 text-left ${
+                      className={`flex min-h-11 min-w-0 flex-1 items-center gap-4 py-2 text-left ${
                         action.danger ? 'text-red-600' : 'text-zinc-700'
                       }`}
                       onClick={() => runSheetAction(action, onClose)}
@@ -105,6 +113,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
               }
               return (
                 <button
+                  ref={index === 0 ? firstActionRef : undefined}
                   key={index}
                   type="button"
                   aria-label={action.ariaLabel ?? action.label}
@@ -121,7 +130,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
             })}
           </div>
         </div>
-      </div>
+      </ModalSurface>
     </div>
   )
 }

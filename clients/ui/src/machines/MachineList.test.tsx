@@ -60,6 +60,7 @@ describe('MachineList', () => {
     await userEvent.click(screen.getByRole('button', { name: /connect to macbook pro/i }))
 
     expect(onScanMachine).toHaveBeenCalledTimes(1)
+    expect(onSelectMachine).toHaveBeenCalledTimes(1)
     expect(onSelectMachine).toHaveBeenCalledWith(machine({
       machineId: 'machine-local',
       name: 'MacBook Pro',
@@ -93,11 +94,20 @@ describe('MachineList', () => {
       />,
     )
 
-    screen.getByRole('button', { name: /connect to macbook pro/i }).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const trigger = screen.getByRole('button', { name: /connect to macbook pro/i })
+    trigger.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
 
     expect(await screen.findByTestId('anytty-machine-detail-sheet')).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: 'MacBook Pro' })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
     expect(screen.getByText('Device details')).toBeTruthy()
     expect(screen.getByText('machine-local')).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /close device details/i }))
+    expect(onSelectMachine).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'MacBook Pro' })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
     expect(onSelectMachine).not.toHaveBeenCalled()
   })
 

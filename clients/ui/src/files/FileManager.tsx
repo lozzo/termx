@@ -10,6 +10,7 @@ import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { ActionSheet, type ActionSheetItem } from '../ui/ActionSheet'
+import { ModalSurface } from '../ui/ModalSurface'
 import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Bookmark, BookmarkMinus, BookmarkPlus, Box, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, FolderBookmark, HardDrive, Image, ListChecks, ListFilter, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -50,6 +51,7 @@ export function FileManager({
   const [transferError, setTransferError] = useState<string | null>(null)
   const pathBarRef = useRef<HTMLDivElement>(null)
   const webUploadRef = useRef<HTMLInputElement>(null)
+  const bookmarkAliasInputRef = useRef<HTMLInputElement>(null)
 
   const breadcrumbs = pathBreadcrumbs(manager.currentPath)
   const entryKeyCounts = new Map<string, number>()
@@ -136,6 +138,7 @@ export function FileManager({
       icon: <Trash2 className="h-5 w-5" />,
       onClick: () => setDeletePath(entryMenuPath),
       danger: true,
+      closeOnClick: false,
     })
 
     return actions
@@ -516,9 +519,14 @@ export function FileManager({
         )}
       </div>
       {deletePath ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
-          <section className="anytty-app-panel w-full p-4 md:max-w-sm" onClick={(event) => event.stopPropagation()}>
-            <h2 className="text-[17px] font-bold text-zinc-950">{t('files.deleteConfirm')}</h2>
+        <div className="absolute inset-0 z-[110] flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
+          <ModalSurface
+            aria-labelledby="anytty-file-delete-confirm-title"
+            className="anytty-app-panel w-full p-4 md:max-w-sm"
+            onClick={(event) => event.stopPropagation()}
+            onRequestClose={() => setDeletePath(null)}
+          >
+            <h2 id="anytty-file-delete-confirm-title" className="text-[17px] font-bold text-zinc-950">{t('files.deleteConfirm')}</h2>
             <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button type="button" className="anytty-app-secondary-button h-11 text-sm font-semibold" onClick={() => { hapticSelection(); setDeletePath(null) }}>
@@ -531,13 +539,14 @@ export function FileManager({
                   hapticImpact()
                   const target = deletePath
                   setDeletePath(null)
+                  setEntryMenuPath(null)
                   void manager.deleteEntry(target)
                 }}
               >
                 {t('files.actions.delete')}
               </button>
             </div>
-          </section>
+          </ModalSurface>
         </div>
       ) : null}
       {manager.previewPath ? (
@@ -754,28 +763,30 @@ export function FileManager({
       />
       {bookmarksOpen && editingBookmark ? (
         <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center" onClick={closeBookmarkEditor}>
-          <section
+          <ModalSurface
+            aria-labelledby="anytty-bookmark-editor-title"
             className="w-full max-w-xl animate-slide-up border-t border-[var(--anytty-app-line)] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] md:border"
+            initialFocusRef={bookmarkAliasInputRef}
             onClick={(event) => event.stopPropagation()}
+            onRequestClose={closeBookmarkEditor}
           >
             <div className="mx-auto mt-3 h-1 w-12 bg-[var(--anytty-app-line-strong)] md:hidden" />
             <div className="px-5 pb-2 pt-4">
-              <h3 className="text-[17px] font-bold text-zinc-900">{t('files.bookmarks.edit')}</h3>
+              <h3 id="anytty-bookmark-editor-title" className="text-[17px] font-bold text-zinc-900">{t('files.bookmarks.edit')}</h3>
               <p className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
             </div>
             <div className="px-5 py-3">
               <label className="flex flex-col gap-2 text-[13px] font-semibold text-zinc-600">
                 {t('files.bookmarks.alias')}
                 <input
+                  ref={bookmarkAliasInputRef}
                   aria-label={t('files.bookmarks.alias')}
                   className="h-12 border border-[var(--anytty-app-line)] bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-[var(--anytty-app-accent)] focus:ring-2 focus:ring-blue-500/20"
                   value={bookmarkAlias}
                   onChange={(event) => setBookmarkAlias(event.currentTarget.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') saveBookmarkAlias()
-                    if (event.key === 'Escape') closeBookmarkEditor()
                   }}
-                  autoFocus
                 />
               </label>
               <div className="mt-4 grid grid-cols-2 gap-3">
@@ -807,7 +818,7 @@ export function FileManager({
                 {t('files.bookmarks.remove')}
               </button>
             </div>
-          </section>
+          </ModalSurface>
         </div>
       ) : null}
     </div>

@@ -4,6 +4,7 @@ import { ChevronRight, LaptopMinimal, QrCode, Server, X } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord } from '../state/appMachine'
 import { anyttyIntlLocale } from '../i18n'
+import { ModalSurface } from '../ui/ModalSurface'
 
 export interface MachineListProps {
   machines: AppMachineRecord[]
@@ -174,12 +175,14 @@ function MachineRow({
       onContextMenu={(event) => {
         if (!onShowDetails) return
         event.preventDefault()
+        event.currentTarget.focus()
         clearLongPress()
         onShowDetails(machine)
       }}
       onPointerDown={(event) => {
         if (!onShowDetails || event.pointerType === 'mouse') return
         longPressTriggeredRef.current = false
+        event.currentTarget.focus()
         clearLongPress()
         longPressTimerRef.current = window.setTimeout(() => {
           longPressTriggeredRef.current = true
@@ -241,14 +244,16 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
 
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="anytty-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
-      <section
+      <ModalSurface
+        aria-labelledby="anytty-machine-detail-title"
         className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--anytty-app-line)] bg-white md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}
+        onRequestClose={onClose}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <header className="flex h-16 items-center justify-between border-b border-zinc-200 px-4">
           <div className="min-w-0">
-            <h2 className="truncate text-[17px] font-bold text-zinc-950">{machine.name}</h2>
+            <h2 id="anytty-machine-detail-title" className="truncate text-[17px] font-bold text-zinc-950">{machine.name}</h2>
             <p className="truncate text-xs font-medium text-zinc-500">{t('machines.details')}</p>
           </div>
           <button
@@ -270,7 +275,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
             ))}
           </dl>
         </div>
-      </section>
+      </ModalSurface>
     </div>
   )
 }
