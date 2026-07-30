@@ -28,6 +28,8 @@ type relayReservation struct {
 type relayAllocation struct {
 	summary *cloudv1.RelayAllocationSummary
 	claims  *cloudv1.RelayLeaseClaims
+	eventID string
+	frozen  *cloudv1.UsageEvent
 }
 
 // RegisterRelayLease 把已经由 Edge 验签的租约和派生 credential 写入纯内存 Runtime。
@@ -39,20 +41,21 @@ func (state *State) RegisterRelayLease(ctx context.Context, claims *cloudv1.Rela
 	claimsClone := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
 	materialClone := proto.Clone(material).(*cloudv1.RelayICEConfig)
 	return state.mutate(ctx, func(data *stateData) error {
-		data.expireRelayLeases(time.Now().UTC())
+		now := state.now().UTC()
+		data.expireRelayLeases(now)
 		if current, exists := data.relayLeases[materialClone.GetUsername()]; exists && current.claims.GetLeaseId() == claimsClone.GetLeaseId() {
 			current.claims, current.material = claimsClone, materialClone
 			data.relayLeases[materialClone.GetUsername()] = current
 			return nil
 		}
-		limiter, err := policy.NewLeaseLimiter(claimsClone.GetExpiresAt().AsTime(), claimsClone.GetMaxBytes(), claimsClone.GetMaxRateBytesPerSecond(), time.Now().UTC())
+		limiter, err := policy.NewLeaseLimiter(claimsClone.GetExpiresAt().AsTime(), claimsClone.GetMaxBytes(), claimsClone.GetMaxRateBytesPerSecond(), now)
 		if err != nil {
 			return err
 		}
-		if _, err := data.restrictRelayRate(data.accountRates, claimsClone.GetAccountId(), claimsClone); err != nil {
+		if _, err := data.restrictRelayRate(data.accountRates, claimsClone.GetAccountId(), claimsClone, now); err != nil {
 			return err
 		}
-		if _, err := data.restrictRelayRate(data.sessionRates, claimsClone.GetSessionId(), claimsClone); err != nil {
+		if _, err := data.restrictRelayRate(data.sessionRates, claimsClone.GetSessionId(), claimsClone, now); err != nil {
 			return err
 		}
 		data.relayLeases[materialClone.GetUsername()] = relayLease{claims: claimsClone, material: materialClone, limiter: limiter}
@@ -72,7 +75,7 @@ func (state *State) RenewRelayLease(ctx context.Context, username string, claims
 	claimsClone := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
 	var renewed *cloudv1.RelayICEConfig
 	err := state.mutate(ctx, func(data *stateData) error {
-		now := time.Now().UTC()
+		now := state.now().UTC()
 		current, exists := data.relayLeases[username]
 		if !exists || current.claims.GetExpiresAt() == nil || !current.claims.GetExpiresAt().AsTime().After(now) {
 			return errors.New("RelayLease renewal targets an unavailable or expired credential")
@@ -86,10 +89,10 @@ func (state *State) RenewRelayLease(ctx context.Context, username string, claims
 		if data.leaseAllocations[current.claims.GetLeaseId()] > claimsClone.GetMaxConcurrentAllocations() {
 			return errors.New("RelayLease renewal concurrency is below active allocations")
 		}
-		if _, err := data.restrictRelayRate(data.accountRates, claimsClone.GetAccountId(), claimsClone); err != nil {
+		if _, err := data.restrictRelayRate(data.accountRates, claimsClone.GetAccountId(), claimsClone, now); err != nil {
 			return err
 		}
-		if _, err := data.restrictRelayRate(data.sessionRates, claimsClone.GetSessionId(), claimsClone); err != nil {
+		if _, err := data.restrictRelayRate(data.sessionRates, claimsClone.GetSessionId(), claimsClone, now); err != nil {
 			return err
 		}
 		if err := current.limiter.Renew(claimsClone.GetExpiresAt().AsTime(), claimsClone.GetMaxBytes(), claimsClone.GetMaxRateBytesPerSecond(), now); err != nil {
@@ -172,31 +175,23 @@ func (state *State) RelayAuth(ctx context.Context, username string, now time.Tim
 	if username == "" {
 		return nil, "", false, nil
 	}
-	type result struct {
-		claims   *cloudv1.RelayLeaseClaims
-		password string
-		ok       bool
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var claims *cloudv1.RelayLeaseClaims
+	var password string
+	var ok bool
+	if err := state.call(ctx, func(data *stateData) error {
 		lease, exists := data.relayLeases[username]
 		if !exists || lease.claims.GetExpiresAt() == nil || !lease.claims.GetExpiresAt().AsTime().After(now.UTC()) {
 			delete(data.relayLeases, username)
-			reply <- result{}
-			return
+			return nil
 		}
-		reply <- result{claims: proto.Clone(lease.claims).(*cloudv1.RelayLeaseClaims), password: lease.material.GetCredential(), ok: true}
+		claims = proto.Clone(lease.claims).(*cloudv1.RelayLeaseClaims)
+		password = lease.material.GetCredential()
+		ok = true
+		return nil
 	}); err != nil {
 		return nil, "", false, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, "", false, ctx.Err()
-	case <-state.done:
-		return nil, "", false, ErrStateClosed
-	case value := <-reply:
-		return value.claims, value.password, value.ok, nil
-	}
+	return claims, password, ok, nil
 }
 
 // ReserveRelayAllocation 在 Pion 创建 socket 前按 account/lease/session 三层原子占用并发配额。
@@ -205,27 +200,20 @@ func (state *State) ReserveRelayAllocation(ctx context.Context, reservationID, u
 	if reservationID == "" || username == "" {
 		return policy.RelayAdmission{}, errors.New("Relay allocation reservation and username are required")
 	}
-	type result struct {
-		admission policy.RelayAdmission
-		err       error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var admission policy.RelayAdmission
+	if err := state.call(ctx, func(data *stateData) error {
 		data.expireRelayReservations(now.UTC().Add(-10 * time.Second))
 		if _, exists := data.relayReservations[reservationID]; exists {
-			reply <- result{err: errors.New("Relay allocation reservation already exists")}
-			return
+			return errors.New("Relay allocation reservation already exists")
 		}
 		lease, exists := data.relayLeases[username]
 		if !exists || lease.claims.GetExpiresAt() == nil || !lease.claims.GetExpiresAt().AsTime().After(now.UTC()) {
-			reply <- result{err: errors.New("RelayLease is unavailable or expired")}
-			return
+			return errors.New("RelayLease is unavailable or expired")
 		}
 		claims := lease.claims
 		limit := claims.GetMaxConcurrentAllocations()
 		if data.accountAllocations[claims.GetAccountId()] >= limit || data.leaseAllocations[claims.GetLeaseId()] >= limit || data.sessionAllocations[claims.GetSessionId()] >= limit {
-			reply <- result{err: errors.New("Relay allocation concurrency limit reached")}
-			return
+			return errors.New("Relay allocation concurrency limit reached")
 		}
 		data.relayReservations[reservationID] = relayReservation{username: username, claims: proto.Clone(claims).(*cloudv1.RelayLeaseClaims), created: now.UTC()}
 		data.incrementRelayCounters(claims)
@@ -233,25 +221,17 @@ func (state *State) ReserveRelayAllocation(ctx context.Context, reservationID, u
 		if err != nil {
 			data.decrementRelayCounters(claims)
 			delete(data.relayReservations, reservationID)
-			reply <- result{err: err}
-			return
+			return err
 		}
-		reply <- result{admission: policy.RelayAdmission{LeaseID: claims.GetLeaseId(), SessionID: claims.GetSessionId(), MaxBytes: claims.GetMaxBytes(), MaxRateBytesPerSecond: claims.GetMaxRateBytesPerSecond(), MaxConcurrentAllocations: limit, Limiter: limiter}}
+		admission = policy.RelayAdmission{LeaseID: claims.GetLeaseId(), SessionID: claims.GetSessionId(), MaxBytes: claims.GetMaxBytes(), MaxRateBytesPerSecond: claims.GetMaxRateBytesPerSecond(), MaxConcurrentAllocations: limit, Limiter: limiter}
+		return nil
 	}); err != nil {
 		return policy.RelayAdmission{}, err
 	}
-	select {
-	case <-ctx.Done():
-		return policy.RelayAdmission{}, ctx.Err()
-	case <-state.done:
-		return policy.RelayAdmission{}, ErrStateClosed
-	case value := <-reply:
-		return value.admission, value.err
-	}
+	return admission, nil
 }
 
-func (data *stateData) restrictRelayRate(limiters map[string]*policy.RateLimiter, key string, claims *cloudv1.RelayLeaseClaims) (*policy.RateLimiter, error) {
-	now := time.Now().UTC()
+func (data *stateData) restrictRelayRate(limiters map[string]*policy.RateLimiter, key string, claims *cloudv1.RelayLeaseClaims, now time.Time) (*policy.RateLimiter, error) {
 	if current := limiters[key]; current != nil {
 		if err := current.Restrict(claims.GetExpiresAt().AsTime(), claims.GetMaxRateBytesPerSecond(), now); err != nil {
 			return nil, err
@@ -286,7 +266,7 @@ func (state *State) ActivateRelayAllocation(ctx context.Context, reservationID, 
 			AllocationId: allocationID, SessionId: reservation.claims.GetSessionId(), LeaseId: reservation.claims.GetLeaseId(), AccountId: reservation.claims.GetAccountId(),
 			Transport: transport, Generation: data.allocationNextGen[allocationID], StartedAt: timestamppb.New(started.UTC()),
 		}
-		data.allocations[allocationID] = relayAllocation{summary: summary, claims: reservation.claims}
+		data.allocations[allocationID] = relayAllocation{summary: summary, claims: reservation.claims, eventID: uuid.NewString()}
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AllocationUpserted{AllocationUpserted: proto.Clone(summary).(*cloudv1.RelayAllocationSummary)}})
 		return nil
@@ -306,41 +286,56 @@ func (state *State) CancelRelayAllocationReservation(ctx context.Context, reserv
 	})
 }
 
-// CloseRelayAllocation 原子删除 Runtime allocation、冻结字节计数并生成唯一 UsageEvent。
-// 调用方必须先把返回事件提交 durable outbox，之后才能经 EdgeControl 发送。
-func (state *State) CloseRelayAllocation(ctx context.Context, allocationID string, ingressBytes, egressBytes uint64, ended time.Time) (*cloudv1.UsageEvent, error) {
+// FreezeRelayAllocationUsage 冻结不可变用量事件，但保留 allocation、投影和全部并发计数。
+func (state *State) FreezeRelayAllocationUsage(ctx context.Context, allocationID string, ingressBytes, egressBytes uint64) (*cloudv1.UsageEvent, error) {
 	allocationID = strings.TrimSpace(allocationID)
-	type result struct {
-		event *cloudv1.UsageEvent
-		err   error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var event *cloudv1.UsageEvent
+	if err := state.call(ctx, func(data *stateData) error {
 		allocation, exists := data.allocations[allocationID]
 		if !exists {
-			reply <- result{err: errors.New("Relay allocation is missing")}
-			return
+			return errors.New("Relay allocation is missing")
+		}
+		if allocation.frozen == nil {
+			ended := state.now().UTC()
+			if ended.Before(allocation.summary.GetStartedAt().AsTime()) {
+				return errors.New("Relay allocation ended before it started")
+			}
+			allocation.frozen = &cloudv1.UsageEvent{
+				SchemaVersion: 1, EventId: allocation.eventID, EdgeId: allocation.claims.GetEdgeId(), LeaseId: allocation.claims.GetLeaseId(), AccountId: allocation.claims.GetAccountId(),
+				DaemonId: allocation.claims.GetDaemonId(), ClientId: allocation.claims.GetClientId(), SessionId: allocation.claims.GetSessionId(), AllocationId: allocationID,
+				Transport: allocation.summary.GetTransport(), IngressBytes: ingressBytes, EgressBytes: egressBytes, StartedAt: allocation.summary.GetStartedAt(), EndedAt: timestamppb.New(ended),
+			}
+			data.allocations[allocationID] = allocation
+		}
+		event = proto.Clone(allocation.frozen).(*cloudv1.UsageEvent)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// FinalizeRelayAllocation 删除已经由 durable outbox 接受的精确冻结事件，并只释放一次计数和投影。
+func (state *State) FinalizeRelayAllocation(ctx context.Context, event *cloudv1.UsageEvent) error {
+	if event == nil || strings.TrimSpace(event.GetAllocationId()) == "" || strings.TrimSpace(event.GetEventId()) == "" {
+		return errors.New("frozen Relay usage event is required")
+	}
+	event = proto.Clone(event).(*cloudv1.UsageEvent)
+	return state.mutate(ctx, func(data *stateData) error {
+		allocationID := event.GetAllocationId()
+		allocation, exists := data.allocations[allocationID]
+		if !exists {
+			return errors.New("Relay allocation is missing")
+		}
+		if allocation.frozen == nil || !proto.Equal(allocation.frozen, event) {
+			return errors.New("Relay allocation finalize event does not match frozen usage")
 		}
 		delete(data.allocations, allocationID)
 		data.decrementRelayCounters(allocation.claims)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AllocationRemoved{AllocationRemoved: &cloudv1.RelayAllocationRemoved{AllocationId: allocationID, Generation: allocation.summary.GetGeneration()}}})
-		reply <- result{event: &cloudv1.UsageEvent{
-			SchemaVersion: 1, EventId: uuid.NewString(), EdgeId: allocation.claims.GetEdgeId(), LeaseId: allocation.claims.GetLeaseId(), AccountId: allocation.claims.GetAccountId(),
-			DaemonId: allocation.claims.GetDaemonId(), ClientId: allocation.claims.GetClientId(), SessionId: allocation.claims.GetSessionId(), AllocationId: allocationID,
-			Transport: allocation.summary.GetTransport(), IngressBytes: ingressBytes, EgressBytes: egressBytes, StartedAt: allocation.summary.GetStartedAt(), EndedAt: timestamppb.New(ended.UTC()),
-		}}
-	}); err != nil {
-		return nil, err
-	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-state.done:
-		return nil, ErrStateClosed
-	case value := <-reply:
-		return value.event, value.err
-	}
+		return nil
+	})
 }
 
 func (data *stateData) incrementRelayCounters(claims *cloudv1.RelayLeaseClaims) {

@@ -1,12 +1,14 @@
 package usage_test
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/anytty/anytty/cloud/edge/usage"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -58,6 +60,30 @@ func TestOutboxRejectsNonVersionedUsage(t *testing.T) {
 	defer outbox.Close()
 	if err := outbox.Put(&cloudv1.UsageEvent{EventId: "incomplete"}); err == nil {
 		t.Fatal("incomplete UsageEvent was persisted")
+	}
+}
+
+func TestOutboxPutAcceptsIdenticalReplayAndRejectsConflict(t *testing.T) {
+	outbox, err := usage.Open(filepath.Join(t.TempDir(), "usage.db"), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer outbox.Close()
+	event := usageEvent("event-idempotent", time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC))
+	if err := outbox.Put(event); err != nil {
+		t.Fatal(err)
+	}
+	if err := outbox.Put(proto.Clone(event).(*cloudv1.UsageEvent)); err != nil {
+		t.Fatalf("identical replay failed: %v", err)
+	}
+	conflict := proto.Clone(event).(*cloudv1.UsageEvent)
+	conflict.EgressBytes++
+	if err := outbox.Put(conflict); !errors.Is(err, usage.ErrEventConflict) {
+		t.Fatalf("conflicting replay error = %v", err)
+	}
+	batch, err := outbox.Batch(10)
+	if err != nil || len(batch) != 1 || !proto.Equal(batch[0], event) {
+		t.Fatalf("durable event=%v err=%v", batch, err)
 	}
 }
 

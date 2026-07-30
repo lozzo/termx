@@ -34,9 +34,10 @@ type StateConfig struct {
 // State 是 Edge 在线 agent/session 的唯一内存 owner。
 // R2 的写入来自测试 harness；R4/R5 将由 gateway 把认证后的事件提交到同一 actor。
 type State struct {
-	mailbox   chan stateRequest
+	mailbox   chan *stateRequest
 	done      chan struct{}
 	closing   atomic.Bool
+	gate      sync.RWMutex
 	closeOnce sync.Once
 	now       func() time.Time
 	limits    stateLimits
@@ -64,8 +65,17 @@ func (feed *Feed) Close() {
 }
 
 type stateRequest struct {
-	run func(*stateData)
+	lifecycle atomic.Uint32
+	run       func(*stateData) error
+	result    chan error
+	stop      bool
 }
+
+const (
+	requestQueued uint32 = iota
+	requestExecuting
+	requestCanceled
+)
 
 type stateData struct {
 	revision           uint64
@@ -122,7 +132,7 @@ func NewState(config StateConfig) (*State, error) {
 		config.Now = time.Now
 	}
 	state := &State{
-		mailbox: make(chan stateRequest, config.MailboxSize), done: make(chan struct{}), now: config.Now,
+		mailbox: make(chan *stateRequest, config.MailboxSize), done: make(chan struct{}), now: config.Now,
 		limits: stateLimits{maxSessions: config.MaxSessions, maxPendingSignals: config.MaxPendingSignals},
 	}
 	go state.run(config.DeltaBuffer)
@@ -159,20 +169,14 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 		return 0, errors.New("authenticated agent and writer are required")
 	}
 	clone := proto.Clone(agent).(*cloudv1.AgentPresence)
-	type result struct {
-		generation uint64
-		oldClose   func()
-		err        error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var generation uint64
+	var oldClose func()
+	if err := state.call(ctx, func(data *stateData) error {
 		data.agentNextGen[clone.GetDaemonId()]++
 		clone.Generation = data.agentNextGen[clone.GetDaemonId()]
 		if _, err := runtimesnapshot.NormalizeClone(&cloudv1.RuntimeSnapshot{Agents: []*cloudv1.AgentPresence{clone}}); err != nil {
-			reply <- result{err: err}
-			return
+			return err
 		}
-		var oldClose func()
 		if old := data.agentWriters[clone.GetDaemonId()]; old.close != nil {
 			oldClose = old.close
 			data.cancelAgentSignals(clone.GetDaemonId(), old.generation)
@@ -182,21 +186,15 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 		data.agentClaims[clone.GetDaemonId()] = proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: proto.Clone(clone).(*cloudv1.AgentPresence)}})
-		reply <- result{generation: clone.GetGeneration(), oldClose: oldClose}
+		generation = clone.GetGeneration()
+		return nil
 	}); err != nil {
 		return 0, err
 	}
-	select {
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	case <-state.done:
-		return 0, ErrStateClosed
-	case value := <-reply:
-		if value.oldClose != nil {
-			value.oldClose()
-		}
-		return value.generation, value.err
+	if oldClose != nil {
+		oldClose()
 	}
+	return generation, nil
 }
 
 // AuthenticatedAgentClaims 返回当前 AgentGateway generation 已验证的 daemon 身份，不访问 Controller。
@@ -205,30 +203,20 @@ func (state *State) AuthenticatedAgentClaims(ctx context.Context, daemonID strin
 	if daemonID == "" {
 		return nil, errors.New("daemon id is required")
 	}
-	reply := make(chan *cloudv1.DaemonBindingClaims, 1)
-	if err := state.submit(ctx, func(data *stateData) {
-		claims := data.agentClaims[daemonID]
+	var claims *cloudv1.DaemonBindingClaims
+	if err := state.call(ctx, func(data *stateData) error {
+		currentClaims := data.agentClaims[daemonID]
 		agent := data.agents[daemonID]
 		writer := data.agentWriters[daemonID]
-		if claims == nil || agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() || claims.GetExpiresAt() == nil || !claims.GetExpiresAt().AsTime().After(state.now().UTC()) {
-			reply <- nil
-			return
+		if currentClaims == nil || agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() || currentClaims.GetExpiresAt() == nil || !currentClaims.GetExpiresAt().AsTime().After(state.now().UTC()) {
+			return ErrStaleGeneration
 		}
-		reply <- proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
+		claims = proto.Clone(currentClaims).(*cloudv1.DaemonBindingClaims)
+		return nil
 	}); err != nil {
 		return nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-state.done:
-		return nil, ErrStateClosed
-	case claims := <-reply:
-		if claims == nil {
-			return nil, ErrStaleGeneration
-		}
-		return claims, nil
-	}
+	return claims, nil
 }
 
 // DetachAgent 删除精确 AgentGateway generation；迟到连接不能删除替换后的 Presence。
@@ -254,66 +242,38 @@ func (state *State) SendAgentCommand(ctx context.Context, daemonID string, gener
 	if command == nil {
 		return errors.New("Edge command is required")
 	}
-	type result struct {
-		send func(*cloudv1.EdgeCommand) bool
-		err  error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var send func(*cloudv1.EdgeCommand) bool
+	if err := state.call(ctx, func(data *stateData) error {
 		writer := data.agentWriters[daemonID]
 		if writer.generation != generation || writer.send == nil {
-			reply <- result{err: ErrStaleGeneration}
-			return
+			return ErrStaleGeneration
 		}
-		reply <- result{send: writer.send}
+		send = writer.send
+		return nil
 	}); err != nil {
 		return err
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-state.done:
-		return ErrStateClosed
-	case value := <-reply:
-		if value.err != nil {
-			return value.err
-		}
-		if !value.send(proto.Clone(command).(*cloudv1.EdgeCommand)) {
-			return errors.New("agent writer queue is unavailable")
-		}
-		return nil
+	if !send(proto.Clone(command).(*cloudv1.EdgeCommand)) {
+		return errors.New("agent writer queue is unavailable")
 	}
+	return nil
 }
 
 // CloseAgentConnection 解析精确 generation 后在 actor 外关闭 AgentGateway writer。
 func (state *State) CloseAgentConnection(ctx context.Context, daemonID string, generation uint64) error {
-	type result struct {
-		close func()
-		err   error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var closeWriter func()
+	if err := state.call(ctx, func(data *stateData) error {
 		writer := data.agentWriters[daemonID]
 		if writer.generation != generation || writer.close == nil {
-			reply <- result{err: ErrStaleGeneration}
-			return
+			return ErrStaleGeneration
 		}
-		reply <- result{close: writer.close}
+		closeWriter = writer.close
+		return nil
 	}); err != nil {
 		return err
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-state.done:
-		return ErrStateClosed
-	case value := <-reply:
-		if value.err != nil {
-			return value.err
-		}
-		value.close()
-		return nil
-	}
+	closeWriter()
+	return nil
 }
 
 // BeginAgentSignal 在 actor 内锁定 daemon 当前 generation 并登记有界一次性 correlation。
@@ -323,41 +283,28 @@ func (state *State) BeginAgentSignal(ctx context.Context, correlationID, daemonI
 	if correlationID == "" || daemonID == "" || sessionID == "" {
 		return 0, nil, errors.New("agent signal correlation, daemon, and session are required")
 	}
-	type result struct {
-		generation uint64
-		response   chan *cloudv1.AgentEvent
-		err        error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var generation uint64
+	var response chan *cloudv1.AgentEvent
+	if err := state.call(ctx, func(data *stateData) error {
 		if _, exists := data.pendingSignals[correlationID]; exists {
-			reply <- result{err: errors.New("agent signal correlation already exists")}
-			return
+			return errors.New("agent signal correlation already exists")
 		}
 		if len(data.pendingSignals) >= state.limits.maxPendingSignals {
-			reply <- result{err: errors.New("runtime pending signal capacity is exhausted")}
-			return
+			return errors.New("runtime pending signal capacity is exhausted")
 		}
 		agent := data.agents[daemonID]
 		writer := data.agentWriters[daemonID]
 		if agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() {
-			reply <- result{err: ErrStaleGeneration}
-			return
+			return ErrStaleGeneration
 		}
-		response := make(chan *cloudv1.AgentEvent, 1)
+		response = make(chan *cloudv1.AgentEvent, 1)
 		data.pendingSignals[correlationID] = pendingSignal{daemonID: daemonID, sessionID: sessionID, agentGeneration: agent.GetGeneration(), result: response}
-		reply <- result{generation: agent.GetGeneration(), response: response}
+		generation = agent.GetGeneration()
+		return nil
 	}); err != nil {
 		return 0, nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return 0, nil, ctx.Err()
-	case <-state.done:
-		return 0, nil, ErrStateClosed
-	case value := <-reply:
-		return value.generation, value.response, value.err
-	}
+	return generation, response, nil
 }
 
 // ResolveAgentSignal 只允许当前 AgentGateway generation 完成其登记的 correlation。
@@ -459,34 +406,20 @@ func (state *State) RegisterSessionCloser(ctx context.Context, sessionID string,
 
 // CloseSession 解析精确 generation 后在 actor 外取消 ClientGateway stream。
 func (state *State) CloseSession(ctx context.Context, sessionID string, generation uint64) error {
-	type result struct {
-		close func()
-		err   error
-	}
-	reply := make(chan result, 1)
-	if err := state.submit(ctx, func(data *stateData) {
+	var closeSession func()
+	if err := state.call(ctx, func(data *stateData) error {
 		current := data.sessions[sessionID]
 		closer := data.sessionClosers[sessionID]
 		if current == nil || current.GetGeneration() != generation || closer.generation != generation || closer.close == nil {
-			reply <- result{err: ErrStaleGeneration}
-			return
+			return ErrStaleGeneration
 		}
-		reply <- result{close: closer.close}
+		closeSession = closer.close
+		return nil
 	}); err != nil {
 		return err
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-state.done:
-		return ErrStateClosed
-	case value := <-reply:
-		if value.err != nil {
-			return value.err
-		}
-		value.close()
-		return nil
-	}
+	closeSession()
+	return nil
 }
 
 // RemoveSession 仅删除精确 generation 的客户端信令会话。
@@ -506,92 +439,87 @@ func (state *State) RemoveSession(ctx context.Context, sessionID string, generat
 
 // OpenFeed 返回原子快照和后续增量；增量缓冲溢出时 channel 会关闭，ControllerLink 必须重连重建。
 func (state *State) OpenFeed(ctx context.Context) (*Feed, error) {
-	type result struct {
-		feed *Feed
-		err  error
-	}
-	reply := make(chan result, 1)
-	err := state.submit(ctx, func(data *stateData) {
+	var feed *Feed
+	err := state.call(ctx, func(data *stateData) error {
 		snapshot, snapshotErr := data.snapshot()
 		if snapshotErr != nil {
-			reply <- result{err: snapshotErr}
-			return
+			return snapshotErr
 		}
 		data.nextSubscriber++
 		id := data.nextSubscriber
 		channel := make(chan *cloudv1.RuntimeDelta, data.deltaBuffer)
 		data.subscribers[id] = channel
-		reply <- result{feed: &Feed{Snapshot: snapshot, Deltas: channel, close: func() { state.unsubscribe(id) }}}
+		feed = &Feed{Snapshot: snapshot, Deltas: channel, close: func() { state.unsubscribe(id) }}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-state.done:
-		return nil, ErrStateClosed
-	case result := <-reply:
-		return result.feed, result.err
-	}
+	return feed, nil
 }
 
 // Snapshot 返回当前不可变投影，供状态查询和测试使用。
 func (state *State) Snapshot(ctx context.Context) (*cloudv1.RuntimeSnapshot, error) {
-	reply := make(chan struct {
-		snapshot *cloudv1.RuntimeSnapshot
-		err      error
-	}, 1)
-	if err := state.submit(ctx, func(data *stateData) {
-		snapshot, err := data.snapshot()
-		reply <- struct {
-			snapshot *cloudv1.RuntimeSnapshot
-			err      error
-		}{snapshot, err}
+	var snapshot *cloudv1.RuntimeSnapshot
+	if err := state.call(ctx, func(data *stateData) error {
+		var err error
+		snapshot, err = data.snapshot()
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-state.done:
-		return nil, ErrStateClosed
-	case result := <-reply:
-		return result.snapshot, result.err
-	}
+	return snapshot, nil
 }
 
 // Close 停止 actor 并关闭全部 feed；重复调用安全。
 func (state *State) Close() {
 	state.closeOnce.Do(func() {
+		state.gate.Lock()
 		state.closing.Store(true)
-		ack := make(chan struct{})
-		select {
-		case state.mailbox <- stateRequest{run: func(data *stateData) {
-			for _, writer := range data.agentWriters {
+		state.gate.Unlock()
+
+		var closers []func()
+		request := &stateRequest{result: make(chan error, 1), stop: true, run: func(data *stateData) error {
+			for id, writer := range data.agentWriters {
 				if writer.close != nil {
-					go writer.close()
+					closers = append(closers, writer.close)
 				}
-				for _, session := range data.sessionClosers {
-					if session.close != nil {
-						go session.close()
-					}
+				delete(data.agentWriters, id)
+			}
+			for id, session := range data.sessionClosers {
+				if session.close != nil {
+					closers = append(closers, session.close)
 				}
+				delete(data.sessionClosers, id)
+			}
+			for correlationID, pending := range data.pendingSignals {
+				close(pending.result)
+				delete(data.pendingSignals, correlationID)
 			}
 			for id, subscriber := range data.subscribers {
 				close(subscriber)
 				delete(data.subscribers, id)
 			}
-			close(ack)
-		}}:
-			<-ack
-		case <-state.done:
+			return nil
+		}}
+		state.mailbox <- request
+		<-request.result
+		<-state.done
+
+		var wait sync.WaitGroup
+		wait.Add(len(closers))
+		for _, closeOwned := range closers {
+			go func() {
+				defer wait.Done()
+				closeOwned()
+			}()
 		}
-		close(state.done)
+		wait.Wait()
 	})
 }
 
 func (state *State) run(deltaBuffer int) {
+	defer close(state.done)
 	data := &stateData{
 		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
 		relayLeases: make(map[string]relayLease), relayReservations: make(map[string]relayReservation), allocations: make(map[string]relayAllocation), allocationNextGen: make(map[string]uint64),
@@ -599,12 +527,13 @@ func (state *State) run(deltaBuffer int) {
 		accountRates: make(map[string]*policy.RateLimiter), sessionRates: make(map[string]*policy.RateLimiter),
 		subscribers: make(map[uint64]chan *cloudv1.RuntimeDelta), deltaBuffer: deltaBuffer,
 	}
-	for {
-		select {
-		case <-state.done:
+	for request := range state.mailbox {
+		if !request.lifecycle.CompareAndSwap(requestQueued, requestExecuting) {
+			continue
+		}
+		request.result <- request.run(data)
+		if request.stop {
 			return
-		case request := <-state.mailbox:
-			request.run(data)
 		}
 	}
 }
@@ -619,40 +548,46 @@ func (data *stateData) cancelAgentSignals(daemonID string, generation uint64) {
 }
 
 func (state *State) mutate(ctx context.Context, mutation func(*stateData) error) error {
-	reply := make(chan error, 1)
-	if err := state.submit(ctx, func(data *stateData) { reply <- mutation(data) }); err != nil {
-		return err
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-state.done:
-		return ErrStateClosed
-	case err := <-reply:
-		return err
-	}
+	return state.call(ctx, mutation)
 }
 
-func (state *State) submit(ctx context.Context, run func(*stateData)) error {
+func (state *State) call(ctx context.Context, run func(*stateData) error) error {
+	request := &stateRequest{run: run, result: make(chan error, 1)}
+	state.gate.RLock()
 	if state.closing.Load() {
+		state.gate.RUnlock()
 		return ErrStateClosed
 	}
 	select {
 	case <-ctx.Done():
+		state.gate.RUnlock()
 		return ctx.Err()
 	case <-state.done:
+		state.gate.RUnlock()
 		return ErrStateClosed
-	case state.mailbox <- stateRequest{run: run}:
-		return nil
+	case state.mailbox <- request:
+		state.gate.RUnlock()
+	}
+	select {
+	case err := <-request.result:
+		return err
+	case <-ctx.Done():
+		if request.lifecycle.CompareAndSwap(requestQueued, requestCanceled) {
+			err := ctx.Err()
+			request.result <- err
+			return err
+		}
+		return <-request.result
 	}
 }
 
 func (state *State) unsubscribe(id uint64) {
-	_ = state.submit(context.Background(), func(data *stateData) {
+	_ = state.call(context.Background(), func(data *stateData) error {
 		if subscriber := data.subscribers[id]; subscriber != nil {
 			close(subscriber)
 			delete(data.subscribers, id)
 		}
+		return nil
 	})
 }
 

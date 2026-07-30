@@ -2,6 +2,7 @@
 package usage
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,9 @@ import (
 )
 
 var eventsBucket = []byte("usage-events-v1")
+
+// ErrEventConflict 表示同一 event ID 已经对应另一份不可变用量事实。
+var ErrEventConflict = errors.New("usage event ID conflicts with durable payload")
 
 // Outbox 使用单个 bbolt bucket 原子保存、读取和确认 versioned UsageEvent。
 // Presence、信令、票据、credential 和在线 topology 不得写入这个数据库。
@@ -58,7 +62,14 @@ func (outbox *Outbox) Put(event *cloudv1.UsageEvent) error {
 		return err
 	}
 	return outbox.database.Update(func(tx *bolt.Tx) error {
-		return tx.Bucket(eventsBucket).Put([]byte(event.GetEventId()), payload)
+		bucket := tx.Bucket(eventsBucket)
+		if existing := bucket.Get([]byte(event.GetEventId())); existing != nil {
+			if bytes.Equal(existing, payload) {
+				return nil
+			}
+			return fmt.Errorf("%w: %s", ErrEventConflict, event.GetEventId())
+		}
+		return bucket.Put([]byte(event.GetEventId()), payload)
 	})
 }
 

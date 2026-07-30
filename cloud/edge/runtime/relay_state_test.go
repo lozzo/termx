@@ -13,12 +13,13 @@ import (
 )
 
 func TestRelayRuntimeEnforcesConcurrencyAndFreezesUsage(t *testing.T) {
-	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 32, DeltaBuffer: 32})
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	clock := now
+	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 32, DeltaBuffer: 32, Now: func() time.Time { return clock }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	now := time.Now().UTC()
 	claims := &cloudv1.RelayLeaseClaims{
 		LeaseId: "lease-r6", AccountId: "account-r6", EdgeId: "edge-r6", DaemonId: "daemon-r6", ClientId: "client-r6", SessionId: "session-r6",
 		MaxBytes: 4096, MaxRateBytesPerSecond: 1024, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)),
@@ -45,12 +46,92 @@ func TestRelayRuntimeEnforcesConcurrencyAndFreezesUsage(t *testing.T) {
 	if err != nil || len(snapshot.GetAllocations()) != 1 {
 		t.Fatalf("snapshot=%v err=%v", snapshot, err)
 	}
-	event, err := state.CloseRelayAllocation(context.Background(), "allocation-a", 120, 240, now.Add(time.Second))
+	feed, err := state.OpenFeed(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer feed.Close()
+	clock = now.Add(time.Second)
+	event, err := state.FreezeRelayAllocationUsage(context.Background(), "allocation-a", 120, 240)
 	if err != nil || event.GetIngressBytes() != 120 || event.GetEgressBytes() != 240 || event.GetEventId() == "" {
 		t.Fatalf("usage=%v err=%v", event, err)
 	}
-	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-c", material.GetUsername(), now.Add(2*time.Second)); err != nil {
-		t.Fatalf("closed allocation did not release concurrency: %v", err)
+	firstPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.IngressBytes++
+	clock = now.Add(2 * time.Second)
+	retried, err := state.FreezeRelayAllocationUsage(context.Background(), "allocation-a", 999, 999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(retried)
+	if err != nil || string(firstPayload) != string(retryPayload) {
+		t.Fatalf("freeze retry changed event: first=%v retry=%v err=%v", event, retried, err)
+	}
+	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-c", material.GetUsername(), clock); err == nil {
+		t.Fatal("frozen allocation released concurrency before finalize")
+	}
+	select {
+	case delta := <-feed.Deltas:
+		t.Fatalf("freeze emitted projection delta: %v", delta)
+	default:
+	}
+	wrong := proto.Clone(retried).(*cloudv1.UsageEvent)
+	wrong.EgressBytes++
+	if err := state.FinalizeRelayAllocation(context.Background(), wrong); err == nil {
+		t.Fatal("finalize accepted a different event")
+	}
+	if err := state.FinalizeRelayAllocation(context.Background(), retried); err != nil {
+		t.Fatal(err)
+	}
+	removed := <-feed.Deltas
+	if removed.GetAllocationRemoved().GetAllocationId() != "allocation-a" {
+		t.Fatalf("finalize delta = %v", removed)
+	}
+	if err := state.FinalizeRelayAllocation(context.Background(), retried); err == nil {
+		t.Fatal("second finalize unexpectedly succeeded")
+	}
+	select {
+	case delta := <-feed.Deltas:
+		t.Fatalf("second finalize emitted another delta: %v", delta)
+	default:
+	}
+	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-c", material.GetUsername(), clock); err != nil {
+		t.Fatalf("finalized allocation did not release concurrency: %v", err)
+	}
+}
+
+func TestRelayRuntimeInjectedClockControlsRegisterRenewAndExpiry(t *testing.T) {
+	clock := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 16, DeltaBuffer: 16, Now: func() time.Time { return clock }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	claims := &cloudv1.RelayLeaseClaims{
+		LeaseId: "lease-clock", AccountId: "account-clock", EdgeId: "edge-clock", DaemonId: "daemon-clock", ClientId: "client-clock", SessionId: "session-clock",
+		MaxBytes: 100, MaxRateBytesPerSecond: 100, MaxConcurrentAllocations: 1, IssuedAt: timestamppb.New(clock), ExpiresAt: timestamppb.New(clock.Add(time.Minute)),
+	}
+	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "username-clock", Credential: "secret-clock", ExpiresAt: claims.GetExpiresAt()}
+	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
+		t.Fatalf("historical injected clock was ignored during register: %v", err)
+	}
+	clock = clock.Add(30 * time.Second)
+	renewedClaims := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
+	renewedClaims.IssuedAt = timestamppb.New(clock)
+	renewedClaims.ExpiresAt = timestamppb.New(clock.Add(time.Minute))
+	if _, err := state.RenewRelayLease(context.Background(), material.GetUsername(), renewedClaims); err != nil {
+		t.Fatalf("historical injected clock was ignored during renewal: %v", err)
+	}
+	clock = clock.Add(45 * time.Second)
+	if _, _, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), clock); err != nil || !ok {
+		t.Fatalf("renewed lease expired at old boundary: ok=%v err=%v", ok, err)
+	}
+	clock = clock.Add(16 * time.Second)
+	if _, _, ok, err := state.RelayAuth(context.Background(), material.GetUsername(), clock); err != nil || ok {
+		t.Fatalf("lease remained active past injected expiry: ok=%v err=%v", ok, err)
 	}
 }
 

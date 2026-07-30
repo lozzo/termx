@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/edge/policy"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"github.com/pion/transport/v4/stdnet"
 	turn "github.com/pion/turn/v4"
 )
@@ -25,7 +25,8 @@ type Runtime interface {
 	ReserveRelayAllocation(context.Context, string, string, time.Time) (policy.RelayAdmission, error)
 	ActivateRelayAllocation(context.Context, string, string, cloudv1.RelayTransport, time.Time) error
 	CancelRelayAllocationReservation(context.Context, string) error
-	CloseRelayAllocation(context.Context, string, uint64, uint64, time.Time) (*cloudv1.UsageEvent, error)
+	FreezeRelayAllocationUsage(context.Context, string, uint64, uint64) (*cloudv1.UsageEvent, error)
+	FinalizeRelayAllocation(context.Context, *cloudv1.UsageEvent) error
 }
 
 // UsageOutbox 是 allocation 关闭后的先落盘边界。
@@ -185,6 +186,8 @@ func (server *Server) CloseSessionAllocations(ctx context.Context, sessionID str
 	for key, allocation := range server.active {
 		if allocation.sessionID == sessionID {
 			active = append(active, allocation)
+			// active 只关联仍存活的 socket；结算失败时 degraded 门禁拒绝新分配，
+			// Runtime 中的 frozen allocation 继续持有全部配额。
 			delete(server.active, key)
 		}
 	}
@@ -282,6 +285,8 @@ func (server *Server) allocationDeleted(source, destination net.Addr, protocol, 
 	key := allocationKey(source, destination, protocol)
 	server.mu.Lock()
 	allocation, exists := server.active[key]
+	// Pion 已删除物理 allocation，不能保留失效的 socket 关联。结算失败会进入
+	// degraded，Runtime frozen allocation 则继续作为 fail-closed 配额 owner。
 	delete(server.active, key)
 	server.mu.Unlock()
 	if !exists {
@@ -299,12 +304,15 @@ func (server *Server) settleAllocation(ctx context.Context, allocation activeAll
 		return fmt.Errorf("settle Relay allocation %s: missing relay socket", allocation.id)
 	}
 	ingress, egress := allocation.conn.counts()
-	event, err := server.runtime.CloseRelayAllocation(ctx, allocation.id, ingress, egress, server.now().UTC())
+	event, err := server.runtime.FreezeRelayAllocationUsage(ctx, allocation.id, ingress, egress)
 	if err != nil {
-		return fmt.Errorf("settle Relay allocation %s: %w", allocation.id, err)
+		return fmt.Errorf("freeze Relay allocation %s usage: %w", allocation.id, err)
 	}
 	if err := server.outbox.Put(event); err != nil {
 		return fmt.Errorf("persist Relay allocation %s usage: %w", allocation.id, err)
+	}
+	if err := server.runtime.FinalizeRelayAllocation(ctx, event); err != nil {
+		return fmt.Errorf("finalize Relay allocation %s: %w", allocation.id, err)
 	}
 	return nil
 }
