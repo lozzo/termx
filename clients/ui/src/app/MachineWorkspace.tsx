@@ -5,7 +5,7 @@ import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connectio
 import { connectionErrorDisplayMessage, connectionFailurePresentation, isAuthorizationConnectionError, isCancelledConnectionError, type ConnectionFailurePresentation } from '../connection/connectionErrorPresentation'
 import { ConnectionRouteManager, type ConnectionRouteManagementAdapter } from '../connection/ConnectionRouteManager'
 import { FileTransferPanel } from '../files/FileTransferPanel'
-import { loadFileManager, type FileManagerComponent } from '../files/loadFileManager'
+import { loadFileManager, reloadAfterFileManagerLoadFailure, type FileManagerComponent } from '../files/loadFileManager'
 import { createFileApi, type FileEntry } from '../files/fileApi'
 import { fileEntryPath, joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
 import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
@@ -305,7 +305,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     [effectiveTerminalSettings.themeId],
   )
   const startFileManagerLoad = useCallback(() => {
-    if (fileManagerLoadStatusRef.current === 'loading' || fileManagerLoadStatusRef.current === 'ready') return
+    if (fileManagerLoadStatusRef.current !== 'idle') return
     const request = fileManagerLoadRequestRef.current + 1
     fileManagerLoadRequestRef.current = request
     fileManagerLoadStatusRef.current = 'loading'
@@ -2899,10 +2899,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 className="anytty-app-secondary-button min-h-11 gap-2 px-4 text-sm font-semibold"
-                onClick={() => { hapticSelection(); startFileManagerLoad() }}
+                onClick={() => { hapticSelection(); reloadAfterFileManagerLoadFailure() }}
               >
                 <RefreshCw className="h-4 w-4" />
-                {t('files.retryLoad')}
+                {t('files.reloadApplication')}
               </button>
             </div>
           ) : (

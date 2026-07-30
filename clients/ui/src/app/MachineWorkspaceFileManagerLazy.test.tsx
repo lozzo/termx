@@ -10,10 +10,16 @@ import { anyttyI18n } from '../i18n'
 import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { MachineWorkspace } from './MachineWorkspace'
 
-const fileManagerLoader = vi.hoisted(() => ({ load: vi.fn<() => Promise<unknown>>() }))
+const fileManagerLoader = vi.hoisted(() => ({
+  load: vi.fn<() => Promise<unknown>>(),
+  reload: vi.fn<() => void>(),
+}))
 
 vi.mock('../terminal/Terminal', () => ({ Terminal: () => null }))
-vi.mock('../files/loadFileManager', () => ({ loadFileManager: fileManagerLoader.load }))
+vi.mock('../files/loadFileManager', () => ({
+  loadFileManager: fileManagerLoader.load,
+  reloadAfterFileManagerLoadFailure: fileManagerLoader.reload,
+}))
 
 function StatefulFileManager({ active }: { active?: boolean }) {
   const [value, setValue] = useState('')
@@ -75,6 +81,7 @@ function renderWorkspace(initialMachine: Machine = { machineId: 'studio', name: 
 describe('MachineWorkspace FileManager loading', () => {
   beforeEach(async () => {
     fileManagerLoader.load.mockReset()
+    fileManagerLoader.reload.mockReset()
     fileManagerLoader.load.mockResolvedValue(StatefulFileManager)
     await anyttyI18n.changeLanguage('en')
   })
@@ -105,21 +112,22 @@ describe('MachineWorkspace FileManager loading', () => {
     expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
   })
 
-  it('contains an import rejection in the overlay and retries with a new load', async () => {
-    fileManagerLoader.load
-      .mockRejectedValueOnce(new Error('chunk unavailable'))
-      .mockResolvedValueOnce(StatefulFileManager)
+  it('contains an import rejection and reloads the application without exposing the raw error', async () => {
+    const rawError = 'chunk unavailable from https://private.invalid/file-manager.js'
+    fileManagerLoader.load.mockRejectedValueOnce(new Error(rawError))
     renderWorkspace()
 
     await screen.findByTestId('anytty-terminal-list-page')
     await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
 
-    expect((await screen.findByRole('alert')).textContent).toContain('Files could not be loaded.')
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Files could not be loaded.')
+    expect(document.body.textContent).not.toContain(rawError)
     expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Retry loading files' }))
-    expect(await screen.findByRole('textbox', { name: 'Lazy file manager state' })).not.toBeNull()
-    expect(fileManagerLoader.load).toHaveBeenCalledTimes(2)
+    await userEvent.click(screen.getByRole('button', { name: 'Reload application' }))
+    expect(fileManagerLoader.reload).toHaveBeenCalledTimes(1)
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
   })
 
   it('reuses one pending load across a rapid close and reopen', async () => {
@@ -160,9 +168,7 @@ describe('MachineWorkspace FileManager loading', () => {
 
   it('invalidates a pending load when the machine context changes', async () => {
     const pending = createDeferred<FileManagerComponent>()
-    fileManagerLoader.load
-      .mockReturnValueOnce(pending.promise)
-      .mockResolvedValueOnce(StatefulFileManager)
+    fileManagerLoader.load.mockReturnValue(pending.promise)
     const workspace = renderWorkspace()
 
     await screen.findByTestId('anytty-terminal-list-page')

@@ -3,7 +3,15 @@ import type { FileManagerProps } from './FileManager'
 
 export type FileManagerComponent = ComponentType<FileManagerProps>
 
-export async function loadFileManager(): Promise<FileManagerComponent> {
-  const module = await import('./FileManager')
-  return module.FileManager
+let fileManagerPromise: Promise<FileManagerComponent> | null = null
+
+export function loadFileManager(): Promise<FileManagerComponent> {
+  if (!fileManagerPromise) {
+    fileManagerPromise = import('./FileManager').then((module) => module.FileManager)
+  }
+  return fileManagerPromise
+}
+
+export function reloadAfterFileManagerLoadFailure(): void {
+  window.location.reload()
 }
