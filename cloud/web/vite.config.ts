@@ -5,13 +5,7 @@ import { resolve } from 'node:path'
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    // Cloud Web 使用 React Router 8 所需的 React patch；所有 hoisted 依赖必须解析到同一实例。
     dedupe: ['react', 'react-dom'],
-    alias: {
-      'lucide-react': resolve(__dirname, '../../node_modules/lucide-react/dist/esm/lucide-react.mjs'),
-      react: resolve(__dirname, 'node_modules/react'),
-      'react-dom': resolve(__dirname, 'node_modules/react-dom'),
-    },
   },
   server: {
     port: 4177,
