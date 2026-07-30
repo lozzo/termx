@@ -19,6 +19,10 @@ import (
 var (
 	// ErrUnauthenticated 表示 credential 不存在、失效或密码校验失败。
 	ErrUnauthenticated = errors.New("account credential is invalid")
+	// ErrLoginUnavailable 表示登录所需的持久化或系统依赖暂时不可用。
+	ErrLoginUnavailable = errors.New("account login is unavailable")
+	// ErrAccountNotFound 是 Store 的内部缺失记录契约；transport 不得直接暴露。
+	ErrAccountNotFound = errors.New("account record was not found")
 	// ErrAccountConflict 表示账号标识已存在或 session CAS 失败。
 	ErrAccountConflict = errors.New("account state conflicts")
 	// ErrAccountDisabled 表示账号已被运营人员禁用。
@@ -157,10 +161,10 @@ func (service *Service) Login(ctx context.Context, request *cloudv1.LoginAccount
 		passwordHash = service.dummyPasswordHash
 	}
 	passwordErr := bcrypt.CompareHashAndPassword(passwordHash, []byte(request.GetPassword()))
+	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
+		return nil, ErrLoginUnavailable
+	}
 	if !recordValid || passwordErr != nil {
-		if lookupErr != nil {
-			return nil, fmt.Errorf("%w: account lookup failed: %v", ErrUnauthenticated, lookupErr)
-		}
 		return nil, ErrUnauthenticated
 	}
 	if record.Profile.GetState() != cloudv1.AccountState_ACCOUNT_STATE_ACTIVE {
@@ -169,10 +173,10 @@ func (service *Service) Login(ctx context.Context, request *cloudv1.LoginAccount
 	now := service.now().UTC()
 	credential, session, err := service.newSession(record.Profile.GetAccountId(), 1, now)
 	if err != nil {
-		return nil, err
+		return nil, ErrLoginUnavailable
 	}
 	if err := service.store.PutSession(ctx, session); err != nil {
-		return nil, err
+		return nil, ErrLoginUnavailable
 	}
 	return &cloudv1.LoginAccountResponse{Account: record.Profile, Roles: record.Roles, Session: credential}, nil
 }

@@ -152,7 +152,7 @@ func (store *accountStoreFake) AccountByLogin(_ context.Context, login string) (
 	if record, ok := store.loginRecords[login]; ok {
 		return record, nil
 	}
-	return account.Record{}, errors.New("not found")
+	return account.Record{}, account.ErrAccountNotFound
 }
 func (store *accountStoreFake) AccountByID(_ context.Context, accountID string) (account.Record, error) {
 	record, ok := store.records[accountID]

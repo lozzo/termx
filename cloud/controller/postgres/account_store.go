@@ -62,7 +62,11 @@ func (database *Database) ProvisionAccount(ctx context.Context, record account.R
 
 // AccountByLogin 按规范化 email/部署 login 查询账号和完整角色集合。
 func (database *Database) AccountByLogin(ctx context.Context, login string) (account.Record, error) {
-	return scanAccountRecord(database.pool.QueryRow(ctx, accountSelect+` WHERE lower(a.email)=lower($1)`, login))
+	record, err := scanAccountRecord(database.pool.QueryRow(ctx, accountSelect+` WHERE lower(a.email)=lower($1)`, login))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return account.Record{}, account.ErrAccountNotFound
+	}
+	return record, err
 }
 
 // AccountByID 返回账号 credential 记录；不读取实时 daemon 或 Edge 状态。

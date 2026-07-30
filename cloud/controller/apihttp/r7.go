@@ -40,7 +40,11 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 		}
 		response, err := handler.config.Accounts.Login(request.Context(), input)
 		if err != nil {
-			writeError(writer, http.StatusUnauthorized, err)
+			status := http.StatusUnauthorized
+			if errors.Is(err, account.ErrLoginUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			writeError(writer, status, err)
 			return
 		}
 		handler.setSessionCookies(writer, response.GetSession())

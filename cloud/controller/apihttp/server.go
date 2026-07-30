@@ -481,7 +481,11 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 		writer.Header().Set("X-Request-ID", requestID)
 	}
 	if wrapped, ok := writer.(*apiResponseWriter); ok && wrapped.logger != nil {
-		wrapped.logger.Warn("Cloud HTTP request failed", "request_id", requestID, "method", wrapped.request.Method, "path", wrapped.request.URL.Path, "status", status, "error", err)
+		if wrapped.request.URL.Path == "/api/account/login" {
+			wrapped.logger.Warn("Cloud login request failed", "request_id", requestID, "method", wrapped.request.Method, "path", wrapped.request.URL.Path, "status", status, "code", code)
+		} else {
+			wrapped.logger.Warn("Cloud HTTP request failed", "request_id", requestID, "method", wrapped.request.Method, "path", wrapped.request.URL.Path, "status", status, "error", err)
+		}
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Header().Set("Cache-Control", "no-store")
