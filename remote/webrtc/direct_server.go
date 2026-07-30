@@ -33,6 +33,8 @@ type directServerOptions struct {
 	logger *slog.Logger
 }
 
+type directAnswerFunc func(context.Context, Answerer, *SignalingOffer) (*SignalingAnswer, error)
+
 // WithPionLogger routes embedded Pion diagnostics through the daemon logger.
 func WithPionLogger(logger *slog.Logger) DirectServerOption {
 	return func(options *directServerOptions) {
@@ -54,6 +56,7 @@ type DirectServer struct {
 	// Test hooks are package-private so production admission limits stay fixed.
 	afterPreAuthAcquire       func()
 	beforeConnectionWorkerRun func()
+	answerForTest             directAnswerFunc
 
 	mu           sync.Mutex
 	consumed     map[string]time.Time
@@ -131,25 +134,7 @@ func (server *DirectServer) Serve(ctx context.Context) error {
 			_ = connection.Close()
 			continue
 		}
-		if server.afterPreAuthAcquire != nil {
-			server.afterPreAuthAcquire()
-		}
-		if !server.track(connection) {
-			releasePreAuth()
-			server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED, "direct signaling server is overloaded")
-			_ = connection.Close()
-			continue
-		}
-		if server.beforeConnectionWorkerRun != nil {
-			server.beforeConnectionWorkerRun()
-		}
-		server.wg.Add(1)
-		go func() {
-			defer server.wg.Done()
-			defer server.untrack(connection)
-			defer connection.Close()
-			server.serveConnection(ctx, connection, releasePreAuth)
-		}()
+		server.startConnectionWorker(ctx, connection, releasePreAuth)
 	}
 }
 
@@ -182,8 +167,63 @@ func (server *DirectServer) Close() error {
 	return server.closeErr
 }
 
+func (server *DirectServer) startConnectionWorker(ctx context.Context, connection net.Conn, releasePreAuth func()) {
+	tracked := false
+	defer func() {
+		if recover() == nil {
+			return
+		}
+		if tracked {
+			server.untrack(connection)
+		}
+		releasePreAuth()
+		func() {
+			defer func() { _ = recover() }()
+			server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "direct signaling server internal failure")
+		}()
+		func() {
+			defer func() { _ = recover() }()
+			_ = connection.Close()
+		}()
+	}()
+	if server.afterPreAuthAcquire != nil {
+		server.afterPreAuthAcquire()
+	}
+	if !server.track(connection) {
+		releasePreAuth()
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED, "direct signaling server is overloaded")
+		func() {
+			defer func() { _ = recover() }()
+			_ = connection.Close()
+		}()
+		return
+	}
+	tracked = true
+	server.wg.Add(1)
+	go server.runConnectionWorker(ctx, connection, releasePreAuth)
+}
+
+func (server *DirectServer) runConnectionWorker(ctx context.Context, connection net.Conn, releasePreAuth func()) {
+	defer func() {
+		panicked := recover() != nil
+		releasePreAuth()
+		if panicked {
+			func() {
+				defer func() { _ = recover() }()
+				server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "direct signaling server internal failure")
+			}()
+		}
+		_ = connection.Close()
+		server.untrack(connection)
+		server.wg.Done()
+	}()
+	if server.beforeConnectionWorkerRun != nil {
+		server.beforeConnectionWorkerRun()
+	}
+	server.serveConnection(ctx, connection, releasePreAuth)
+}
+
 func (server *DirectServer) serveConnection(ctx context.Context, connection net.Conn, releasePreAuth func()) {
-	defer releasePreAuth()
 	firstRequestLimit := server.firstRequestLimit
 	if firstRequestLimit <= 0 {
 		firstRequestLimit = directSignalingFirstRequestLimit
@@ -215,21 +255,36 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED, "direct signaling server is overloaded")
 		return
 	}
+	peerHandedOff := false
+	defer func() {
+		if !peerHandedOff {
+			releasePeer()
+		}
+	}()
 	if ctx.Err() != nil {
 		releasePeer()
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "direct signaling server is stopping")
 		return
 	}
-	answer, err := (Answerer{
+	answerer := Answerer{
 		Handler: server.handler, PeerConnections: server.peerConnections, CloseOnDisconnected: true, OnPeerClosed: releasePeer,
-	}).Answer(ctx, &SignalingOffer{
+	}
+	offer := &SignalingOffer{
 		SessionID: request.GetRequestId(), SDP: request.GetOfferSdp(),
-	}, nil)
+	}
+	var answer *SignalingAnswer
+	var err error
+	if server.answerForTest != nil {
+		answer, err = server.answerForTest(ctx, answerer, offer)
+	} else {
+		answer, err = answerer.Answer(ctx, offer, nil)
+	}
 	if err != nil {
 		releasePeer()
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "create direct signaling answer failed")
 		return
 	}
+	peerHandedOff = true
 	now := server.currentTime()
 	wireAnswer := &remoteauthpb.DirectSignalingAnswerV1{
 		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: request.GetRequestId(),

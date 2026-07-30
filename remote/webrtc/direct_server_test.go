@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -172,6 +173,103 @@ func TestDirectServerAnswerFailuresReleasePeerExactlyOnce(t *testing.T) {
 	waitDirectServerState(t, harness.server, 0, 0)
 }
 
+func TestDirectServerPreAuthPanicGuardsReleaseAndContinue(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		install func(*DirectServer, func())
+	}{
+		{name: "handoff", install: func(server *DirectServer, hook func()) { server.afterPreAuthAcquire = hook }},
+		{name: "worker", install: func(server *DirectServer, hook func()) { server.beforeConnectionWorkerRun = hook }},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			harness := newDirectServerHarness(t)
+			var panicOnce atomic.Bool
+			testCase.install(harness.server, func() {
+				if panicOnce.CompareAndSwap(false, true) {
+					panic("sensitive pre-auth panic")
+				}
+			})
+			harness.start(t)
+
+			serverConnection, response := harness.exchangeDuringEarlyFailure(t, directTestAddress("192.0.2.62:6100"), harness.request("pre-auth-panic"))
+			assertDirectPanicFailure(t, response)
+			waitAtomicInt32(t, &serverConnection.closes, 1)
+			waitDirectServerState(t, harness.server, 0, 0)
+			assertPreAuthSlotsReusable(t, harness.server)
+
+			response = harness.exchange(t, directTestAddress("192.0.2.62:6101"), harness.request("after-pre-auth-panic"))
+			assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL)
+			waitDirectServerState(t, harness.server, 0, 0)
+		})
+	}
+}
+
+func TestDirectServerPeerFactoryPanicReleasesAndContinues(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	var calls atomic.Int32
+	harness.server.peerConnections = func(pion.Configuration) (*pion.PeerConnection, error) {
+		if calls.Add(1) == 1 {
+			panic("sensitive peer factory panic")
+		}
+		return nil, errors.New("factory remains available")
+	}
+	harness.start(t)
+
+	serverConnection, response := harness.exchangeWithServerConnection(t, directTestAddress("192.0.2.63:6200"), harness.request("peer-factory-panic"))
+	assertDirectPanicFailure(t, response)
+	waitAtomicInt32(t, &serverConnection.closes, 1)
+	waitDirectServerState(t, harness.server, 0, 0)
+	assertPeerSlotsReusable(t, harness.server)
+
+	response = harness.exchange(t, directTestAddress("192.0.2.63:6201"), harness.request("after-peer-factory-panic"))
+	assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL)
+	if calls.Load() != 2 {
+		t.Fatalf("peer factory calls = %d, want 2", calls.Load())
+	}
+}
+
+func TestDirectServerAnswerPanicReleasesBeforeLatePeerClosed(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	latePeerClosed := make(chan func(), 1)
+	var calls atomic.Int32
+	harness.server.answerForTest = func(_ context.Context, answerer Answerer, _ *SignalingOffer) (*SignalingAnswer, error) {
+		if calls.Add(1) == 1 {
+			latePeerClosed <- answerer.OnPeerClosed
+			panic("sensitive answer panic")
+		}
+		return nil, errors.New("answerer remains available")
+	}
+	harness.start(t)
+
+	serverConnection, response := harness.exchangeWithServerConnection(t, directTestAddress("192.0.2.64:6300"), harness.request("answer-panic"))
+	assertDirectPanicFailure(t, response)
+	waitAtomicInt32(t, &serverConnection.closes, 1)
+	waitDirectServerState(t, harness.server, 0, 0)
+	assertPeerSlotsReusable(t, harness.server)
+
+	callback := <-latePeerClosed
+	callbackDone := make(chan struct{})
+	go func() {
+		callback()
+		callback()
+		close(callbackDone)
+	}()
+	select {
+	case <-callbackDone:
+	case <-time.After(time.Second):
+		t.Fatal("late OnPeerClosed blocked on an already released peer slot")
+	}
+	if got := len(harness.server.peerSlots); got != 0 {
+		t.Fatalf("late OnPeerClosed changed peer slots to %d", got)
+	}
+
+	response = harness.exchange(t, directTestAddress("192.0.2.64:6301"), harness.request("after-answer-panic"))
+	assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL)
+	if calls.Load() != 2 {
+		t.Fatalf("answer calls = %d, want 2", calls.Load())
+	}
+}
+
 func TestDirectServerAdmissionRejectionsReleasePreAuth(t *testing.T) {
 	harness := newDirectServerHarness(t)
 	for index := 0; index < directSignalingPeerLimit; index++ {
@@ -302,7 +400,13 @@ func (harness *directServerHarness) acceptPipe(t *testing.T, remoteAddress net.A
 
 func (harness *directServerHarness) exchange(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) *remoteauthpb.DirectSignalingResponseV1 {
 	t.Helper()
-	_, client := harness.acceptPipe(t, remoteAddress)
+	_, response := harness.exchangeWithServerConnection(t, remoteAddress, request)
+	return response
+}
+
+func (harness *directServerHarness) exchangeWithServerConnection(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) (*directTestConn, *remoteauthpb.DirectSignalingResponseV1) {
+	t.Helper()
+	serverConnection, client := harness.acceptPipe(t, remoteAddress)
 	defer client.Close()
 	if err := client.SetDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
@@ -314,7 +418,26 @@ func (harness *directServerHarness) exchange(t *testing.T, remoteAddress net.Add
 	if err := directsignal.ReadMessage(client, response); err != nil {
 		t.Fatal(err)
 	}
-	return response
+	return serverConnection, response
+}
+
+func (harness *directServerHarness) exchangeDuringEarlyFailure(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) (*directTestConn, *remoteauthpb.DirectSignalingResponseV1) {
+	t.Helper()
+	serverConnection, client := harness.acceptPipe(t, remoteAddress)
+	defer client.Close()
+	if err := client.SetDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	writeDone := make(chan error, 1)
+	go func() { writeDone <- directsignal.WriteMessage(client, request) }()
+	response := &remoteauthpb.DirectSignalingResponseV1{}
+	if err := directsignal.ReadMessage(client, response); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-writeDone; err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("write request during early server failure: %v", err)
+	}
+	return serverConnection, response
 }
 
 func (harness *directServerHarness) request(id string) *remoteauthpb.DirectSignalingRequestV1 {
@@ -343,6 +466,14 @@ func assertDirectErrorCode(t *testing.T, response *remoteauthpb.DirectSignalingR
 	t.Helper()
 	if response.GetError() == nil || response.GetError().GetCode() != want {
 		t.Fatalf("direct signaling response = %#v, want error code %s", response, want)
+	}
+}
+
+func assertDirectPanicFailure(t *testing.T, response *remoteauthpb.DirectSignalingResponseV1) {
+	t.Helper()
+	assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL)
+	if got := response.GetError().GetMessage(); got != "direct signaling server internal failure" {
+		t.Fatalf("panic response message = %q", got)
 	}
 }
 
@@ -386,6 +517,58 @@ func assertDirectServerSlotsEmpty(t *testing.T, server *DirectServer) {
 	defer server.mu.Unlock()
 	if server.preAuthTotal != 0 || len(server.preAuthByIP) != 0 || len(server.peerSlots) != 0 || len(server.conns) != 0 {
 		t.Fatalf("server retained pre-auth=%d per-IP=%v peers=%d conns=%d", server.preAuthTotal, server.preAuthByIP, len(server.peerSlots), len(server.conns))
+	}
+}
+
+func assertPreAuthSlotsReusable(t *testing.T, server *DirectServer) {
+	t.Helper()
+	releases := make([]func(), 0, directSignalingPreAuthLimit)
+	for index := 0; index < directSignalingPreAuthPerIPLimit; index++ {
+		release, acquired := server.tryAcquirePreAuth(directTestAddress(fmt.Sprintf("192.0.2.90:%d", 9000+index)))
+		if !acquired {
+			t.Fatalf("reacquire same-IP pre-auth slot %d", index)
+		}
+		releases = append(releases, release)
+	}
+	if _, acquired := server.tryAcquirePreAuth(directTestAddress("[::ffff:192.0.2.90]:9999")); acquired {
+		t.Fatal("reused pre-auth limiter admitted a ninth normalized source IP")
+	}
+	for index := directSignalingPreAuthPerIPLimit; index < directSignalingPreAuthLimit; index++ {
+		release, acquired := server.tryAcquirePreAuth(directTestAddress(fmt.Sprintf("[2001:db8:2::%x]:9000", index)))
+		if !acquired {
+			t.Fatalf("reacquire global pre-auth slot %d", index)
+		}
+		releases = append(releases, release)
+	}
+	if _, acquired := server.tryAcquirePreAuth(directTestAddress("[2001:db8:2::ffff]:9000")); acquired {
+		t.Fatal("reused pre-auth limiter admitted a 65th connection")
+	}
+	for _, release := range releases {
+		release()
+		release()
+	}
+	waitDirectServerState(t, server, 0, 0)
+}
+
+func assertPeerSlotsReusable(t *testing.T, server *DirectServer) {
+	t.Helper()
+	releases := make([]func(), 0, directSignalingPeerLimit)
+	for index := 0; index < directSignalingPeerLimit; index++ {
+		release, acquired := server.tryAcquirePeer()
+		if !acquired {
+			t.Fatalf("reacquire peer slot %d", index)
+		}
+		releases = append(releases, release)
+	}
+	if _, acquired := server.tryAcquirePeer(); acquired {
+		t.Fatal("reused peer limiter admitted a 33rd peer")
+	}
+	for _, release := range releases {
+		release()
+		release()
+	}
+	if got := len(server.peerSlots); got != 0 {
+		t.Fatalf("peer slots after reuse = %d", got)
 	}
 }
 
@@ -433,11 +616,17 @@ type directTestConn struct {
 	net.Conn
 	remoteAddress net.Addr
 	reads         atomic.Int32
+	closes        atomic.Int32
 }
 
 func (connection *directTestConn) Read(buffer []byte) (int, error) {
 	connection.reads.Add(1)
 	return connection.Conn.Read(buffer)
+}
+
+func (connection *directTestConn) Close() error {
+	connection.closes.Add(1)
+	return connection.Conn.Close()
 }
 
 func (connection *directTestConn) RemoteAddr() net.Addr { return connection.remoteAddress }

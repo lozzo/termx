@@ -3,6 +3,8 @@ package webrtc
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -99,6 +101,83 @@ func TestAnswererFailsClosedWithoutAuthorizedHandler(t *testing.T) {
 	}
 }
 
+func TestAnswererRecoversDataChannelHandlerPanicAndClosesExactlyOnce(t *testing.T) {
+	handler := &panickingAuthorizedHandler{called: make(chan int32, 2), canceled: make(chan int32, 2)}
+	peerClosed := make(chan int32, 2)
+	sessionErrors := make(chan error, 1)
+	var peerCloseCount atomic.Int32
+	answerer := Answerer{
+		Handler:        handler,
+		OnSessionError: func(err error) { sessionErrors <- err },
+		OnPeerClosed: func() {
+			peerClosed <- peerCloseCount.Add(1)
+		},
+	}
+
+	for session := int32(1); session <= 2; session++ {
+		clientPeer, err := pion.NewPeerConnection(pion.Configuration{})
+		if err != nil {
+			t.Fatalf("create client peer %d: %v", session, err)
+		}
+		if _, err := clientPeer.CreateDataChannel(protocolChannelLabel, nil); err != nil {
+			_ = clientPeer.Close()
+			t.Fatalf("create protocol data channel %d: %v", session, err)
+		}
+		offer := createGatheredOffer(t, clientPeer)
+		answer, err := answerer.Answer(context.Background(), &SignalingOffer{SessionID: fmt.Sprintf("panic-%d", session), SDP: offer.SDP}, nil)
+		if err != nil {
+			_ = clientPeer.Close()
+			t.Fatalf("Answer %d: %v", session, err)
+		}
+		if err := clientPeer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeAnswer, SDP: answer.SDP}); err != nil {
+			_ = clientPeer.Close()
+			t.Fatalf("set remote answer %d: %v", session, err)
+		}
+		for _, candidate := range answer.Candidates {
+			if err := clientPeer.AddICECandidate(pion.ICECandidateInit{
+				Candidate: candidate.Candidate, SDPMid: stringPointer(candidate.SDPMid),
+				SDPMLineIndex: uint16Pointer(uint16(candidate.SDPMLineIndex)), UsernameFragment: stringPointer(candidate.UsernameFragment),
+			}); err != nil {
+				_ = clientPeer.Close()
+				t.Fatalf("add remote candidate %d: %v", session, err)
+			}
+		}
+		select {
+		case got := <-handler.called:
+			if got != session {
+				t.Fatalf("handler call = %d, want %d", got, session)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("panicking handler %d was not invoked", session)
+		}
+		select {
+		case got := <-handler.canceled:
+			if got != session {
+				t.Fatalf("canceled session = %d, want %d", got, session)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("panicking handler context %d was not canceled", session)
+		}
+		select {
+		case got := <-peerClosed:
+			if got != session {
+				t.Fatalf("peer close callback = %d, want %d", got, session)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("panicking handler peer %d was not closed", session)
+		}
+		_ = clientPeer.Close()
+	}
+	if peerCloseCount.Load() != 2 {
+		t.Fatalf("peer close callbacks = %d, want 2", peerCloseCount.Load())
+	}
+	select {
+	case err := <-sessionErrors:
+		t.Fatalf("handler panic leaked through session error callback: %v", err)
+	default:
+	}
+}
+
 func createGatheredOffer(t *testing.T, peer *pion.PeerConnection) pion.SessionDescription {
 	t.Helper()
 	offer, err := peer.CreateOffer(nil)
@@ -125,6 +204,22 @@ type recordingAuthorizedHandler struct {
 	called                chan struct{}
 	result                chan error
 	daemonDTLSFingerprint string
+}
+
+type panickingAuthorizedHandler struct {
+	calls    atomic.Int32
+	called   chan int32
+	canceled chan int32
+}
+
+func (handler *panickingAuthorizedHandler) ServeDataChannel(ctx context.Context, _ transport.Transport, _ string) error {
+	call := handler.calls.Add(1)
+	handler.called <- call
+	go func() {
+		<-ctx.Done()
+		handler.canceled <- call
+	}()
+	panic("sensitive handler panic")
 }
 
 func (handler *recordingAuthorizedHandler) ServeDataChannel(ctx context.Context, _ transport.Transport, daemonDTLSFingerprint string) error {

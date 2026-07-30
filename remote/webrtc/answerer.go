@@ -122,6 +122,10 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		})
 	}
 	sessionCtx, cancel := context.WithCancel(ctx)
+	var cancelSessionOnce sync.Once
+	cancelSession := func() {
+		cancelSessionOnce.Do(cancel)
+	}
 	var candidateMu sync.Mutex
 	candidates := make([]ICECandidate, 0, 4)
 	gathering := NewICEGatheringWaiter(false, len(iceServers) == 0, ICEGatheringCloudGrace)
@@ -147,13 +151,13 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	})
 	peer.OnConnectionStateChange(func(state pion.PeerConnectionState) {
 		if state == pion.PeerConnectionStateClosed {
-			cancel()
+			cancelSession()
 			notifyPeerClosed()
 			return
 		}
 		if state == pion.PeerConnectionStateFailed || answerer.CloseOnDisconnected && state == pion.PeerConnectionStateDisconnected {
 			go func() {
-				cancel()
+				cancelSession()
 				closePeer()
 			}()
 		}
@@ -166,6 +170,11 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		protocolTransport := datachannel.New(NewChannel(channel))
 		channel.OnOpen(func() {
 			go func() {
+				defer func() {
+					_ = recover()
+					cancelSession()
+					closePeer()
+				}()
 				if answerer.OnSessionStart != nil {
 					answerer.OnSessionStart()
 				}
@@ -178,32 +187,30 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 				if fingerprintErr != nil && sessionCtx.Err() == nil && answerer.OnSessionError != nil {
 					answerer.OnSessionError(fingerprintErr)
 				}
-				cancel()
-				closePeer()
 			}()
 		})
 	})
 	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeOffer, SDP: offer.SDP}); err != nil {
-		cancel()
+		cancelSession()
 		closePeer()
 		return nil, fmt.Errorf("set remote daemon offer: %w", err)
 	}
 	for _, candidate := range offer.Candidates {
 		if err := peer.AddICECandidate(toPionCandidate(candidate)); err != nil {
-			cancel()
+			cancelSession()
 			closePeer()
 			return nil, fmt.Errorf("add remote daemon ICE candidate: %w", err)
 		}
 	}
 	localAnswer, err := peer.CreateAnswer(nil)
 	if err != nil {
-		cancel()
+		cancelSession()
 		closePeer()
 		return nil, fmt.Errorf("create remote daemon answer: %w", err)
 	}
 	gatherComplete := pion.GatheringCompletePromise(peer)
 	if err := peer.SetLocalDescription(localAnswer); err != nil {
-		cancel()
+		cancelSession()
 		closePeer()
 		return nil, fmt.Errorf("set remote daemon answer: %w", err)
 	}
@@ -212,13 +219,13 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		timeout = cloudGatherTimeout
 	}
 	if err := gathering.Wait(ctx, gatherComplete, timeout); err != nil {
-		cancel()
+		cancelSession()
 		closePeer()
 		return nil, err
 	}
 	description := peer.LocalDescription()
 	if description == nil || strings.TrimSpace(description.SDP) == "" {
-		cancel()
+		cancelSession()
 		closePeer()
 		return nil, fmt.Errorf("remote daemon answer has no local description")
 	}
