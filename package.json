@@ -8,9 +8,14 @@
     "cloud/web"
   ],
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "esbuild": "0.28.1",
+    "eslint": "10.8.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "16.5.0",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "typescript-eslint": "8.65.0"
   },
   "overrides": {
     "@capacitor/core": "8.3.2",
@@ -27,6 +32,7 @@
   },
   "scripts": {
     "proto": "npm run proto --workspace @anytty/ui && npm run proto --workspace @anytty/cloud-web",
+    "lint": "npm run lint --workspace @anytty/ui && npm run lint --workspace @anytty/mobile && npm run lint --workspace @anytty/cloud-web",
     "test": "npm test --workspace @anytty/ui && npm test --workspace @anytty/mobile && npm test --workspace @anytty/cloud-web",
     "test:i18n": "node scripts/check-i18n.mjs",
     "typecheck": "npm run typecheck --workspace @anytty/ui && npm run typecheck --workspace @anytty/mobile && npm run typecheck --workspace @anytty/cloud-web",

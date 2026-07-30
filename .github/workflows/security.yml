@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  security:
-    runs-on: ubuntu-latest
+  quality:
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,12 +61,19 @@ jobs:
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.0-rc.1 -checks='SA*' ./...
           scripts/govulncheck.sh
 
-      - name: JavaScript security and client gates
+      - name: JavaScript correctness and security gates
         run: |
           npm audit
-          npm audit --omit=dev
           npm run test:i18n
+          npm run lint
+          npm run typecheck
           npm test
+          npm run build
+
+      - name: Cloud browser and accessibility gates
+        run: |
+          npm run test:e2e --workspace @anytty/cloud-web
+          npm run test:axe --workspace @anytty/cloud-web
 
       - name: Android release gate
         run: |
@@ -75,3 +82,6 @@ jobs:
           npm run cap:build
           clients/mobile/android/gradlew --no-daemon --project-dir clients/mobile/android testDebugUnitTest assembleRelease
           scripts/verify-android-apk-boundary.sh clients/mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Tracked generated files are current
+        run: git diff --exit-code --

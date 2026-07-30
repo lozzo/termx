@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,17 +24,49 @@ function readPackage(relativePath) {
   return JSON.parse(readFileSync(join(repoRoot, relativePath), 'utf8'))
 }
 
-function workspaceInvocations(command, lifecycle) {
-  return command.split(/\s*&&\s*/).map((step) => {
-    const actionPattern = lifecycle === 'test'
-      ? /^npm\s+(?:run\s+)?test(?:\s|$)/
-      : new RegExp(`^npm\\s+run\\s+${lifecycle}(?:\\s|$)`)
-    assert.match(step, actionPattern, `root ${lifecycle} contains a non-${lifecycle} command: ${step}`)
+function runLifecycleFixture(lifecycle) {
+  const fixture = mkdtempSync(join(tmpdir(), 'anytty-package-scripts-'))
+  try {
+    writeFileSync(join(fixture, 'package.json'), JSON.stringify({
+      private: true,
+      workspaces: rootPackage.workspaces,
+      scripts: { [lifecycle]: rootPackage.scripts[lifecycle] },
+    }))
+    writeFileSync(join(fixture, 'record-workspace.mjs'), [
+      "import { appendFileSync } from 'node:fs'",
+      "appendFileSync(new URL('./calls.log', import.meta.url), `${process.argv[2]} ${process.env.npm_package_name}\\n`)",
+    ].join('\n'))
 
-    const match = step.match(/(?:^|\s)--workspace(?:=|\s+)([^\s]+)(?:\s|$)/)
-    assert.ok(match, `root ${lifecycle} command does not select a workspace: ${step}`)
-    return match[1].replace(/^(['"])(.*)\1$/, '$2')
-  })
+    for (const workspace of rootWorkspaces) {
+      const workspaceDirectory = join(fixture, workspace.path)
+      mkdirSync(workspaceDirectory, { recursive: true })
+      writeFileSync(join(workspaceDirectory, 'package.json'), JSON.stringify({
+        name: workspace.name,
+        version: '0.0.0',
+        private: true,
+        scripts: { [lifecycle]: `node ../../record-workspace.mjs ${lifecycle}` },
+      }))
+    }
+
+    execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', lifecycle, '--silent'], {
+      cwd: fixture,
+      stdio: 'pipe',
+    })
+    return readFileSync(join(fixture, 'calls.log'), 'utf8').trim().split('\n').sort()
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+}
+
+function requireWorkspaceLifecycle(lifecycle) {
+  for (const workspace of rootWorkspaces) {
+    assert.equal(
+      typeof workspace.package.scripts?.[lifecycle],
+      'string',
+      `${workspace.path} must expose ${lifecycle}`,
+    )
+  }
+  assert.equal(typeof rootPackage.scripts?.[lifecycle], 'string', `root must expose ${lifecycle}`)
 }
 
 test('root workspaces match the UI, Mobile, and Cloud product contract', () => {
@@ -42,18 +76,20 @@ test('root workspaces match the UI, Mobile, and Cloud product contract', () => {
   assert.deepEqual(actual, expected)
 })
 
-for (const lifecycle of ['typecheck', 'test', 'build']) {
-  test(`root ${lifecycle} covers every client workspace`, () => {
-    for (const workspace of rootWorkspaces) {
-      assert.equal(
-        typeof workspace.package.scripts?.[lifecycle],
-        'string',
-        `${workspace.path} must expose ${lifecycle}`,
-      )
-    }
-
-    const expectedPackages = rootWorkspaces.map(({ name }) => name).sort()
-    const actualPackages = workspaceInvocations(rootPackage.scripts[lifecycle], lifecycle).sort()
-    assert.deepEqual(actualPackages, expectedPackages)
+for (const lifecycle of ['lint', 'typecheck', 'test', 'build']) {
+  test(`root ${lifecycle} runs every product workspace exactly once`, () => {
+    requireWorkspaceLifecycle(lifecycle)
+    const expectedCalls = rootWorkspaces.map(({ name }) => `${lifecycle} ${name}`).sort()
+    assert.deepEqual(runLifecycleFixture(lifecycle), expectedCalls)
   })
 }
+
+test('workspace lint scripts reject warnings', () => {
+  for (const workspace of rootWorkspaces) {
+    assert.match(
+      workspace.package.scripts.lint,
+      /(?:^|\s)--max-warnings(?:=|\s+)0(?:\s|$)/,
+      `${workspace.path} lint must set max warnings to zero`,
+    )
+  }
+})

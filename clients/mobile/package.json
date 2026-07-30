@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build && node scripts/check-bundle-size.mjs",

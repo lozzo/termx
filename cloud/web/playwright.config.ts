@@ -14,6 +14,7 @@ export default defineConfig({
   grepInvert: /@axe/,
   use: {
     baseURL: onlineOrigin ?? 'http://127.0.0.1:4177',
+    channel: 'chrome',
     trace: 'retain-on-failure',
     launchOptions: { args: resolverArgs },
   },

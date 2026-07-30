@@ -15,6 +15,7 @@
     "proto": "node ../../scripts/generate-ui-proto.mjs",
     "proto:api": "node ../../scripts/generate-ui-proto.mjs api",
     "proto:wire": "node ../../scripts/generate-ui-proto.mjs wire",
+    "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
