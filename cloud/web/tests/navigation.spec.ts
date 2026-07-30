@@ -76,6 +76,17 @@ test('公开落地页展示真实连接路径和套餐', async ({ page }, testIn
     expect(800 - nextSectionTop).toBeGreaterThanOrEqual(24)
   }
   if (testInfo.project.name === 'mobile-320-chromium') expect(viewport).toEqual({ width: 320, height: 800 })
+  if (testInfo.project.name === 'mobile-landscape-chromium') {
+    expect(viewport).toEqual({ width: 844, height: 390 })
+    const nextSectionTop = await page.locator('.product-band').evaluate((element) => element.getBoundingClientRect().top)
+    const primaryCTA = page.getByRole('link', { name: '管理 Cloud 服务' })
+    await expect(page.locator('.hero-copy > p')).toBeInViewport({ ratio: 1 })
+    await expect(primaryCTA).toBeInViewport({ ratio: 1 })
+    const ctaBox = await primaryCTA.boundingBox()
+    expect(ctaBox).not.toBeNull()
+    expect(ctaBox!.y + ctaBox!.height).toBeLessThanOrEqual(nextSectionTop)
+    expect(viewport!.height - nextSectionTop).toBeGreaterThanOrEqual(24)
+  }
   await assertNoHorizontalOverflow(page)
   const session = await page.context().newCDPSession(page)
   await session.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2 })
@@ -160,6 +171,8 @@ test('管理员在同一 Shell 进入全部运营模块', async ({ page }, testI
   await page.goto('/app/admin/overview')
   const navigation = page.getByRole('navigation', { name: '运营管理' })
   await expect(page.getByRole('dialog', { name: 'Cloud 导航' })).toHaveCount(0)
+  await expect(page.locator('.menu-button')).toBeHidden()
+  expect(await navigation.getByRole('link').first().evaluate((element) => getComputedStyle(element).minHeight)).toBe('42px')
   expect(await navigation.getByRole('heading', { level: 2 }).allTextContents()).toEqual(['Infrastructure', 'Account operations', 'Governance'])
   expect(await navigation.getByRole('link').allTextContents()).toEqual(['运营总览', 'Edge 管理', '在线 daemon', '实时连接', '用户与权限', '套餐', '订阅', '订单与交易', '用量与结算', '证书', '审计', '系统'])
   const modules = [['Edge 管理', 'edges'], ['在线 daemon', 'daemons'], ['实时连接', 'connections'], ['用户与权限', 'accounts'], ['套餐', 'plans'], ['订阅', 'subscriptions'], ['订单与交易', 'orders'], ['证书', 'certificates'], ['用量与结算', 'usage'], ['审计', 'audit'], ['系统', 'system']] as const
@@ -254,6 +267,10 @@ test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) =>
   await expect(menu).toHaveAccessibleName('打开导航')
   await expect(menu).toHaveAttribute('aria-controls', 'cloud-mobile-navigation')
   await expect(menu).toHaveAttribute('aria-expanded', 'false')
+  if (testInfo.project.name === 'mobile-320-chromium') {
+    await assertMinimumHitArea(page, '.menu-button')
+    await assertMinimumHitArea(page, '.topbar-account > a')
+  }
   await menu.click()
   await expect(menu).toHaveAttribute('aria-expanded', 'true')
   let drawer = page.getByRole('dialog', { name: 'Cloud 导航' })
@@ -262,6 +279,10 @@ test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) =>
   await expect(page.locator('.workspace')).toHaveAttribute('inert', '')
   expect(await page.evaluate(() => getComputedStyle(document.body).overflow)).toBe('hidden')
   expect(await drawer.getByRole('heading', { level: 2 }).allTextContents()).toEqual(['Infrastructure', 'Account operations', 'Governance'])
+  if (testInfo.project.name === 'mobile-320-chromium') {
+    await assertMinimumHitArea(page, '.topbar-account > a')
+    await assertMinimumHitArea(page, '#cloud-mobile-navigation nav a')
+  }
   await page.keyboard.press('Shift+Tab')
   await expect(drawer.getByRole('link', { name: '系统', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')

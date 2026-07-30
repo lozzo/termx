@@ -6,8 +6,8 @@ export function Button({ tone = 'default', className = '', ...props }: ButtonHTM
   return <button className={`button button-${tone} ${className}`} {...props} />
 }
 
-export function IconButton({ label, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
-  return <button className="icon-button" title={label} aria-label={label} {...props} />
+export function IconButton({ label, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+  return <button className={`icon-button ${className}`.trim()} title={label} aria-label={label} {...props} />
 }
 
 export function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
