@@ -21,20 +21,26 @@ const maxBundleBytes = 1 << 20
 
 var ErrUnavailable = errors.New("binding verification keys are unavailable")
 
+// ErrDurabilityUncertain means rename made a new bundle visible but directory durability could not be established.
+// The store stays fail-closed until a restart reloads the visible file.
+var ErrDurabilityUncertain = errors.New("binding key bundle durability is uncertain; restart required")
+
 type snapshot struct {
-	bundle *cloudv1.KeyBundle
-	keys   ticket.KeySet
+	bundle              *cloudv1.KeyBundle
+	keys                ticket.KeySet
+	durabilityUncertain bool
 }
 
 // Store serializes receive rules and publishes a complete immutable snapshot only after durable file publication.
 type Store struct {
 	path string
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	data atomic.Pointer[snapshot]
 
 	rename        func(string, string) error
 	syncDirectory func(string) error
 	syncFile      func(*os.File) error
+	writeFile     func(*os.File, []byte) (int, error)
 }
 
 // Open loads one explicitly configured protobuf cache. A missing cache is a valid unavailable state.
@@ -43,7 +49,11 @@ func Open(path string) (*Store, error) {
 	if path == "." || !filepath.IsAbs(path) {
 		return nil, errors.New("binding key bundle cache requires an absolute file path")
 	}
-	store := &Store{path: path, rename: filepublish.Rename, syncDirectory: filepublish.SyncDirectory, syncFile: func(file *os.File) error { return file.Sync() }}
+	store := &Store{
+		path: path, rename: filepublish.Rename, syncDirectory: filepublish.SyncDirectory,
+		syncFile:  func(file *os.File) error { return file.Sync() },
+		writeFile: func(file *os.File, payload []byte) (int, error) { return file.Write(payload) },
+	}
 	bundle, err := readBundle(path)
 	if err != nil {
 		return nil, err
@@ -67,6 +77,9 @@ func (store *Store) Update(bundle *cloudv1.KeyBundle) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	current := store.data.Load()
+	if current != nil && current.durabilityUncertain {
+		return ErrDurabilityUncertain
+	}
 	if current != nil {
 		switch {
 		case canonical.GetRevision() < current.bundle.GetRevision():
@@ -90,7 +103,12 @@ func (store *Store) Update(bundle *cloudv1.KeyBundle) error {
 
 // VerificationKeys returns one complete keyset snapshot only while its bundle is effective.
 func (store *Store) VerificationKeys(now time.Time) (ticket.KeySet, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	current := store.data.Load()
+	if current != nil && current.durabilityUncertain {
+		return nil, ErrDurabilityUncertain
+	}
 	if current == nil || !ticket.KeyBundleUsableAt(current.bundle, now) {
 		return nil, ErrUnavailable
 	}
@@ -103,14 +121,18 @@ func (store *Store) VerificationKeys(now time.Time) (ticket.KeySet, error) {
 
 // Usable reports whether AgentGateway admission may use the current snapshot at now.
 func (store *Store) Usable(now time.Time) bool {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	current := store.data.Load()
-	return current != nil && ticket.KeyBundleUsableAt(current.bundle, now)
+	return current != nil && !current.durabilityUncertain && ticket.KeyBundleUsableAt(current.bundle, now)
 }
 
 // Bundle returns a defensive copy for health expiry scheduling and tests.
 func (store *Store) Bundle() *cloudv1.KeyBundle {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	current := store.data.Load()
-	if current == nil {
+	if current == nil || current.durabilityUncertain {
 		return nil
 	}
 	return proto.Clone(current.bundle).(*cloudv1.KeyBundle)
@@ -134,9 +156,14 @@ func (store *Store) publish(payload []byte) error {
 		_ = temporary.Close()
 		return err
 	}
-	if _, err := temporary.Write(payload); err != nil {
+	written, err := store.writeFile(temporary, payload)
+	if err != nil {
 		_ = temporary.Close()
 		return err
+	}
+	if written != len(payload) {
+		_ = temporary.Close()
+		return io.ErrShortWrite
 	}
 	if err := store.syncFile(temporary); err != nil {
 		_ = temporary.Close()
@@ -149,23 +176,30 @@ func (store *Store) publish(payload []byte) error {
 		return err
 	}
 	if err := store.syncDirectory(directory); err != nil {
-		return err
+		// Update holds the write lock across rename and this transition, so no
+		// admission can observe the old snapshot after an uncertain commit.
+		store.data.Store(&snapshot{durabilityUncertain: true})
+		return fmt.Errorf("%w: %v", ErrDurabilityUncertain, err)
 	}
 	return nil
 }
 
 func readBundle(path string) (*cloudv1.KeyBundle, error) {
-	if err := validateExistingTarget(path); err != nil {
+	return readBundleWith(path, openBundleFileNoFollow)
+}
+
+func readBundleWith(path string, openFile func(string) (*os.File, error)) (*cloudv1.KeyBundle, error) {
+	file, err := openFile(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	file, err := os.Open(path)
-	if err != nil {
+	defer file.Close()
+	if err := validateOpenedBundleFile(file); err != nil {
 		return nil, err
 	}
-	defer file.Close()
 	payload, err := io.ReadAll(io.LimitReader(file, maxBundleBytes+1))
 	if err != nil {
 		return nil, err
@@ -181,15 +215,10 @@ func readBundle(path string) (*cloudv1.KeyBundle, error) {
 }
 
 func validateExistingTarget(path string) error {
-	info, err := os.Lstat(path)
+	file, err := openBundleFileNoFollow(path)
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return errors.New("binding key bundle cache must be a regular file")
-	}
-	if info.Mode().Perm() != 0o600 {
-		return fmt.Errorf("binding key bundle cache mode is %04o, want 0600", info.Mode().Perm())
-	}
-	return nil
+	defer file.Close()
+	return validateOpenedBundleFile(file)
 }

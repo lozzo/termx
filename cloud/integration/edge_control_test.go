@@ -422,13 +422,13 @@ func testBindingKeyCacheFile(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "binding-key-bundle.pb")
 }
 
-func testBindingKeyBundleProvider(keys ...*cloudv1.VerificationKey) func() *cloudv1.KeyBundle {
+func testBindingKeyBundleProvider(keys ...*cloudv1.VerificationKey) func(context.Context) (*cloudv1.KeyBundle, error) {
 	if len(keys) == 0 {
 		keys = []*cloudv1.VerificationKey{{KeyId: "integration-binding", Algorithm: "Ed25519", PublicKey: make([]byte, ed25519.PublicKeySize)}}
 	}
-	return func() *cloudv1.KeyBundle {
+	return func(context.Context) (*cloudv1.KeyBundle, error) {
 		now := time.Now().UTC()
-		return &cloudv1.KeyBundle{Revision: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(24 * time.Hour)), Keys: keys}
+		return &cloudv1.KeyBundle{Revision: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(24 * time.Hour)), Keys: keys}, nil
 	}
 }
 

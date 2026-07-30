@@ -2,9 +2,11 @@
 package bindingkeys
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/anytty/anytty/cloud/ticket"
@@ -13,9 +15,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// RevisionStore persists the monotonic revision associated with one canonical binding keyset digest.
+// ErrKeySetReplay is returned when a keyset that is no longer current is presented again.
+var ErrKeySetReplay = errors.New("historical binding keyset replay")
+
+// Metadata is the database-owned publication identity and validity window for the current keyset.
+type Metadata struct {
+	KeySetSHA256 []byte
+	Revision     uint64
+	IssuedAt     time.Time
+	ExpiresAt    time.Time
+}
+
+// RevisionStore persists digest history and the complete current bundle metadata.
 type RevisionStore interface {
-	ReconcileBindingKeySet(context.Context, []byte, time.Time) (uint64, error)
+	ReconcileBindingKeySet(context.Context, []byte, time.Time, time.Duration) (Metadata, error)
 }
 
 // Config is the complete, narrow Controller keyset owner configuration.
@@ -28,10 +41,11 @@ type Config struct {
 
 // Owner publishes fresh bounded bundles while keeping the persistent keyset revision stable.
 type Owner struct {
-	revision uint64
-	keys     []*cloudv1.VerificationKey
-	ttl      time.Duration
-	now      func() time.Time
+	store  RevisionStore
+	digest []byte
+	keys   []*cloudv1.VerificationKey
+	ttl    time.Duration
+	now    func() time.Time
 }
 
 // New validates and canonicalizes the keyset before reconciling its persistent revision.
@@ -48,28 +62,36 @@ func New(ctx context.Context, config Config) (*Owner, error) {
 	if err != nil {
 		return nil, err
 	}
-	keysetPayload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&cloudv1.KeyBundle{Revision: 1, IssuedAt: timestamppb.New(time.Unix(1, 0).UTC()), ExpiresAt: timestamppb.New(time.Unix(2, 0).UTC()), Keys: canonical.GetKeys()})
+	keysetPayload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&cloudv1.KeyBundle{Keys: canonical.GetKeys()})
 	if err != nil {
 		return nil, err
 	}
 	digest := sha256.Sum256(keysetPayload)
-	revision, err := config.Store.ReconcileBindingKeySet(ctx, digest[:], now)
+	owner := &Owner{store: config.Store, digest: append([]byte(nil), digest[:]...), keys: canonical.GetKeys(), ttl: config.TTL, now: config.Now}
+	if _, err := owner.Bundle(ctx); err != nil {
+		return nil, err
+	}
+	return owner, nil
+}
+
+// Bundle verifies that this Owner's digest is still current and returns database-owned metadata.
+func (owner *Owner) Bundle(ctx context.Context) (*cloudv1.KeyBundle, error) {
+	metadata, err := owner.store.ReconcileBindingKeySet(ctx, owner.digest, owner.now().UTC(), owner.ttl)
 	if err != nil {
 		return nil, err
 	}
-	if revision == 0 {
-		return nil, errors.New("binding key revision store returned zero")
+	if !bytes.Equal(metadata.KeySetSHA256, owner.digest) {
+		return nil, errors.New("binding key revision store returned a different current digest")
 	}
-	return &Owner{revision: revision, keys: canonical.GetKeys(), ttl: config.TTL, now: config.Now}, nil
-}
-
-// Bundle returns a fresh immutable publication window for the current persistent revision.
-func (owner *Owner) Bundle() *cloudv1.KeyBundle {
-	now := owner.now().UTC()
-	return &cloudv1.KeyBundle{
-		Revision: owner.revision, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(owner.ttl)),
+	bundle := &cloudv1.KeyBundle{
+		Revision: metadata.Revision, IssuedAt: timestamppb.New(metadata.IssuedAt), ExpiresAt: timestamppb.New(metadata.ExpiresAt),
 		Keys: cloneKeys(owner.keys),
 	}
+	canonical, _, err := ticket.CanonicalKeyBundle(bundle)
+	if err != nil {
+		return nil, fmt.Errorf("binding key revision store returned invalid metadata: %w", err)
+	}
+	return canonical, nil
 }
 
 func cloneKeys(keys []*cloudv1.VerificationKey) []*cloudv1.VerificationKey {

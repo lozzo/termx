@@ -8,12 +8,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
+	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	controllerbindingkeys "github.com/anytty/anytty/cloud/controller/bindingkeys"
 	"github.com/anytty/anytty/cloud/controller/control"
 	"github.com/anytty/anytty/cloud/controller/directory"
+	"github.com/anytty/anytty/cloud/controller/postgres"
 	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
 	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
@@ -23,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -179,7 +184,144 @@ func TestBindingKeyBundleRecoversAcrossControllerAndEdgeRestart(t *testing.T) {
 	eventually(t, 8*time.Second, secondEdge.Ready)
 }
 
+func TestPostgresOwnerAndEdgeCacheRecoverAcrossRestarts(t *testing.T) {
+	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	database, err := postgres.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	keyID := "binding-pg-restart"
+	verification := &cloudv1.VerificationKey{KeyId: keyID, Algorithm: "Ed25519", PublicKey: publicKey}
+	firstOwner, err := controllerbindingkeys.New(ctx, controllerbindingkeys.Config{Store: database, Keys: []*cloudv1.VerificationKey{verification}, TTL: 2 * time.Hour})
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	firstBundle, err := firstOwner.Bundle(ctx)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+
+	certificates := newCertificateFiles(t, testEdgeID)
+	firstController, firstDirectory := startPresenceControllerWithProvider(t, certificates, "127.0.0.1:0", firstOwner.Bundle)
+	controllerAddress := firstController.GRPCAddress()
+	cachePath := filepath.Join(t.TempDir(), "binding-key-bundle.pb")
+	startEdge := func(bootID string) *edgeruntime.Runtime {
+		t.Helper()
+		runtime, startErr := edgeruntime.Start(context.Background(), edgeruntime.Config{
+			ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
+			ControllerAddress: controllerAddress, ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
+			IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
+			EdgeID: testEdgeID, BootID: bootID, SoftwareVersion: testEdgeSoftwareVersion, BindingKeyBundleCacheFile: cachePath,
+		})
+		if startErr != nil {
+			t.Fatal(startErr)
+		}
+		return runtime
+	}
+	firstEdge := startEdge("edge-pg-before-restart")
+	readyContext, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := firstEdge.WaitReady(readyContext); err != nil {
+		cancelReady()
+		database.Close()
+		t.Fatal(err)
+	}
+	cancelReady()
+	shutdownEdge(t, firstEdge)
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := firstController.Shutdown(shutdownContext); err != nil {
+		cancelShutdown()
+		database.Close()
+		t.Fatal(err)
+	}
+	cancelShutdown()
+	firstDirectory.Close()
+	database.Close()
+
+	secondEdge := startEdge("edge-pg-after-restart")
+	defer shutdownEdge(t, secondEdge)
+	eventually(t, 3*time.Second, func() bool { return secondEdge.BindingKeysUsable() && !secondEdge.ControllerConnected() })
+	identity, signed, claims := restartBindingForKey(t, keyID, privateKey)
+	assertAgentAdmission(t, secondEdge, certificates.rootPool, identity, signed, claims)
+
+	restartedDatabase, err := postgres.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restartedDatabase.Close()
+	if err := restartedDatabase.VerifySchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	secondOwner, err := controllerbindingkeys.New(ctx, controllerbindingkeys.Config{Store: restartedDatabase, Keys: []*cloudv1.VerificationKey{verification}, TTL: 2 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBundle, err := secondOwner.Bundle(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(firstBundle, secondBundle) {
+		t.Fatalf("database metadata changed across restart: first=%v second=%v", firstBundle, secondBundle)
+	}
+	secondController, secondDirectory := startPresenceControllerWithProvider(t, certificates, controllerAddress, secondOwner.Bundle)
+	defer func() {
+		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelShutdown()
+		_ = secondController.Shutdown(shutdownContext)
+		secondDirectory.Close()
+	}()
+	eventually(t, 8*time.Second, secondEdge.Ready)
+}
+
+func TestControllerDoesNotPublishWelcomeForStaleBindingOwner(t *testing.T) {
+	certificates := newCertificateFiles(t, testEdgeID)
+	var providerCalls atomic.Int32
+	controllerRuntime, directoryState := startPresenceControllerWithProvider(t, certificates, "127.0.0.1:0", func(context.Context) (*cloudv1.KeyBundle, error) {
+		providerCalls.Add(1)
+		return nil, controllerbindingkeys.ErrKeySetReplay
+	})
+	defer func() {
+		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelShutdown()
+		_ = controllerRuntime.Shutdown(shutdownContext)
+		directoryState.Close()
+	}()
+	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
+		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
+		ControllerAddress: controllerRuntime.GRPCAddress(), ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
+		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
+		EdgeID: testEdgeID, BootID: "edge-stale-owner", SoftwareVersion: testEdgeSoftwareVersion, BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shutdownEdge(t, edgeRuntime)
+	eventually(t, 5*time.Second, func() bool { return providerCalls.Load() > 0 })
+	if edgeRuntime.ControllerConnected() || edgeRuntime.BindingKeysUsable() || edgeRuntime.Ready() {
+		t.Fatalf("stale owner published state: connected=%v keys=%v ready=%v", edgeRuntime.ControllerConnected(), edgeRuntime.BindingKeysUsable(), edgeRuntime.Ready())
+	}
+}
+
 func restartBinding(t *testing.T, privateKey ed25519.PrivateKey) (remoteauth.Identity, *cloudv1.SignedEnvelope, *cloudv1.DaemonBindingClaims) {
+	return restartBindingForKey(t, "binding-restart", privateKey)
+}
+
+func restartBindingForKey(t *testing.T, keyID string, privateKey ed25519.PrivateKey) (remoteauth.Identity, *cloudv1.SignedEnvelope, *cloudv1.DaemonBindingClaims) {
 	t.Helper()
 	_, daemonPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -194,7 +336,7 @@ func restartBinding(t *testing.T, privateKey ed25519.PrivateKey) (remoteauth.Ide
 		BindingId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: testEdgeID, DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey,
 		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), Revision: 1, EdgeLocatorSha256: make([]byte, sha256.Size),
 	}
-	signed, err := ticket.SignDaemonBinding("binding-restart", privateKey, claims)
+	signed, err := ticket.SignDaemonBinding(keyID, privateKey, claims)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,11 +379,16 @@ func assertAgentAdmission(t *testing.T, edgeRuntime *edgeruntime.Runtime, rootPo
 
 func startPresenceController(t *testing.T, certificates certificateFiles, listen string, key *cloudv1.VerificationKey) (*controllerruntime.Runtime, *directory.Directory) {
 	t.Helper()
+	return startPresenceControllerWithProvider(t, certificates, listen, testBindingKeyBundleProvider(key))
+}
+
+func startPresenceControllerWithProvider(t *testing.T, certificates certificateFiles, listen string, provider func(context.Context) (*cloudv1.KeyBundle, error)) (*controllerruntime.Runtime, *directory.Directory) {
+	t.Helper()
 	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := control.NewService(control.Config{ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, BindingKeyBundle: testBindingKeyBundleProvider(key), Directory: directoryState})
+	service, err := control.NewService(control.Config{ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, BindingKeyBundle: provider, Directory: directoryState})
 	if err != nil {
 		directoryState.Close()
 		t.Fatal(err)

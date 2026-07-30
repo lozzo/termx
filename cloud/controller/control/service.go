@@ -34,7 +34,7 @@ type Config struct {
 	ControllerBootID   string
 	HeartbeatInterval  time.Duration
 	HeartbeatTimeout   time.Duration
-	BindingKeyBundle   func() *cloudv1.KeyBundle
+	BindingKeyBundle   func(context.Context) (*cloudv1.KeyBundle, error)
 	Directory          *directory.Directory
 	DesiredConfig      func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
 	DesiredCertificate func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
@@ -74,9 +74,6 @@ func NewService(config Config) (*Service, error) {
 	}
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
-	}
-	if _, err := validPublishedBundle(config.BindingKeyBundle(), time.Now().UTC()); err != nil {
-		return nil, fmt.Errorf("binding key bundle provider: %w", err)
 	}
 	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand), edgeConnections: make(map[string]string)}, nil
 }
@@ -152,7 +149,10 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	}()
 
 	commandSeq := uint64(1)
-	bindingBundle, err := validPublishedBundle(service.config.BindingKeyBundle(), time.Now().UTC())
+	bindingBundle, err := service.config.BindingKeyBundle(stream.Context())
+	if err == nil {
+		bindingBundle, err = validPublishedBundle(bindingBundle, time.Now().UTC())
+	}
 	if err != nil {
 		return status.Errorf(codes.FailedPrecondition, "load binding key bundle: %v", err)
 	}
@@ -211,7 +211,10 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		case err = <-writerErrors:
 			return status.Errorf(codes.Unavailable, "send Controller command: %v", err)
 		case <-bundleRefresh.C:
-			bindingBundle, err = validPublishedBundle(service.config.BindingKeyBundle(), time.Now().UTC())
+			bindingBundle, err = service.config.BindingKeyBundle(stream.Context())
+			if err == nil {
+				bindingBundle, err = validPublishedBundle(bindingBundle, time.Now().UTC())
+			}
 			if err != nil {
 				return status.Errorf(codes.FailedPrecondition, "refresh binding key bundle: %v", err)
 			}

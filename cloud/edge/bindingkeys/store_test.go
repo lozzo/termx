@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -49,8 +50,6 @@ func TestOpenRejectsUnsafeOrCorruptCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := map[string]func(*testing.T, string){
-		"group readable": func(t *testing.T, path string) { writeBytes(t, path, payload, 0o640) },
-		"other readable": func(t *testing.T, path string) { writeBytes(t, path, payload, 0o604) },
 		"directory": func(t *testing.T, path string) {
 			if err := os.Mkdir(path, 0o700); err != nil {
 				t.Fatal(err)
@@ -66,6 +65,10 @@ func TestOpenRejectsUnsafeOrCorruptCache(t *testing.T) {
 		"corrupt":   func(t *testing.T, path string) { writeBytes(t, path, []byte("not-protobuf"), 0o600) },
 		"truncated": func(t *testing.T, path string) { writeBytes(t, path, payload[:len(payload)/2], 0o600) },
 	}
+	if runtime.GOOS != "windows" {
+		tests["group readable"] = func(t *testing.T, path string) { writeBytes(t, path, payload, 0o640) }
+		tests["other readable"] = func(t *testing.T, path string) { writeBytes(t, path, payload, 0o604) }
+	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "binding.pb")
@@ -74,6 +77,41 @@ func TestOpenRejectsUnsafeOrCorruptCache(t *testing.T) {
 				t.Fatal("unsafe or corrupt cache was accepted")
 			}
 		})
+	}
+}
+
+func TestReadBundleValidatesAndReadsTheOpenedDescriptor(t *testing.T) {
+	now := time.Now().UTC()
+	directory := t.TempDir()
+	path := filepath.Join(directory, "binding.pb")
+	originalPath := filepath.Join(directory, "binding.original.pb")
+	replacementPath := filepath.Join(directory, "binding.replacement.pb")
+	writeBundle(t, path, bundle(1, now, time.Hour, "key-a", make([]byte, ed25519.PublicKeySize)), 0o600)
+	writeBundle(t, replacementPath, bundle(2, now, time.Hour, "key-b", append(make([]byte, ed25519.PublicKeySize-1), 1)), 0o600)
+
+	loaded, err := readBundleWith(path, func(openPath string) (*os.File, error) {
+		file, openErr := openBundleFileNoFollow(openPath)
+		if openErr != nil {
+			return nil, openErr
+		}
+		if renameErr := os.Rename(path, originalPath); renameErr != nil {
+			_ = file.Close()
+			return nil, renameErr
+		}
+		if symlinkErr := os.Symlink(replacementPath, path); symlinkErr != nil {
+			_ = file.Close()
+			return nil, symlinkErr
+		}
+		return file, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.GetRevision() != 1 {
+		t.Fatalf("loaded replacement revision=%d want opened revision=1", loaded.GetRevision())
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("replacement symlink was accepted on a new open")
 	}
 }
 
@@ -120,7 +158,60 @@ func TestUpdateEnforcesRevisionReplayAndKeyChangeRules(t *testing.T) {
 	}
 }
 
-func TestFailedPublishKeepsOldMemorySnapshot(t *testing.T) {
+func TestPreRenamePublishFailuresKeepOldSnapshotAndPermitRetry(t *testing.T) {
+	now := time.Now().UTC()
+	first := bundle(1, now, time.Hour, "key-a", make([]byte, ed25519.PublicKeySize))
+	second := bundle(2, now, time.Hour, "key-b", append(make([]byte, ed25519.PublicKeySize-1), 1))
+	tests := map[string]func(*Store) func(){
+		"write": func(store *Store) func() {
+			original := store.writeFile
+			store.writeFile = func(*os.File, []byte) (int, error) { return 0, errors.New("injected write failure") }
+			return func() { store.writeFile = original }
+		},
+		"short write": func(store *Store) func() {
+			original := store.writeFile
+			store.writeFile = func(_ *os.File, payload []byte) (int, error) { return len(payload) - 1, nil }
+			return func() { store.writeFile = original }
+		},
+		"file fsync": func(store *Store) func() {
+			original := store.syncFile
+			store.syncFile = func(*os.File) error { return errors.New("injected file sync failure") }
+			return func() { store.syncFile = original }
+		},
+		"rename": func(store *Store) func() {
+			original := store.rename
+			store.rename = func(string, string) error { return errors.New("injected rename failure") }
+			return func() { store.rename = original }
+		},
+	}
+	for name, inject := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "binding.pb")
+			store, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Update(first); err != nil {
+				t.Fatal(err)
+			}
+			restore := inject(store)
+			err = store.Update(second)
+			restore()
+			if err == nil || store.Bundle().GetRevision() != 1 || readRevision(t, path) != 1 {
+				t.Fatalf("failure err=%v memory=%d disk=%d", err, store.Bundle().GetRevision(), readRevision(t, path))
+			}
+			if err := store.Update(second); err != nil {
+				t.Fatalf("retry after failure: %v", err)
+			}
+			reopened, err := Open(path)
+			if err != nil || reopened.Bundle().GetRevision() != 2 {
+				t.Fatalf("restart after retry revision=%v err=%v", reopened.Bundle(), err)
+			}
+		})
+	}
+}
+
+func TestDirectorySyncFailureIsFatalUntilRestart(t *testing.T) {
 	now := time.Now().UTC()
 	path := filepath.Join(t.TempDir(), "binding.pb")
 	store, err := Open(path)
@@ -129,39 +220,36 @@ func TestFailedPublishKeepsOldMemorySnapshot(t *testing.T) {
 	}
 	first := bundle(1, now, time.Hour, "key-a", make([]byte, ed25519.PublicKeySize))
 	second := bundle(2, now, time.Hour, "key-b", append(make([]byte, ed25519.PublicKeySize-1), 1))
+	third := bundle(3, now, time.Hour, "key-c", append(make([]byte, ed25519.PublicKeySize-1), 2))
 	if err := store.Update(first); err != nil {
 		t.Fatal(err)
 	}
-
-	t.Run("file fsync", func(t *testing.T) {
-		original := store.syncFile
-		store.syncFile = func(*os.File) error { return errors.New("injected file sync failure") }
-		defer func() { store.syncFile = original }()
-		if err := store.Update(second); err == nil || store.Bundle().GetRevision() != 1 || readRevision(t, path) != 1 {
-			t.Fatalf("file sync failure err=%v memory=%d disk=%d", err, store.Bundle().GetRevision(), readRevision(t, path))
-		}
-	})
-
-	t.Run("rename", func(t *testing.T) {
-		original := store.rename
-		store.rename = func(string, string) error { return errors.New("injected rename failure") }
-		defer func() { store.rename = original }()
-		if err := store.Update(second); err == nil || store.Bundle().GetRevision() != 1 || readRevision(t, path) != 1 {
-			t.Fatalf("rename failure err=%v memory=%d disk=%d", err, store.Bundle().GetRevision(), readRevision(t, path))
-		}
-	})
-
-	t.Run("directory fsync", func(t *testing.T) {
-		original := store.syncDirectory
-		store.syncDirectory = func(string) error { return errors.New("injected directory sync failure") }
-		defer func() { store.syncDirectory = original }()
-		if err := store.Update(second); err == nil || store.Bundle().GetRevision() != 1 {
-			t.Fatalf("directory sync failure err=%v memory=%d", err, store.Bundle().GetRevision())
-		}
-		if readRevision(t, path) != 2 {
-			t.Fatal("rename was not visible before the injected directory sync failure")
-		}
-	})
+	store.syncDirectory = func(string) error { return errors.New("injected directory sync failure") }
+	if err := store.Update(second); !errors.Is(err, ErrDurabilityUncertain) {
+		t.Fatalf("directory sync failure err=%v", err)
+	}
+	if store.Bundle() != nil || store.Usable(now) {
+		t.Fatal("durability-uncertain store retained a published or usable snapshot")
+	}
+	if _, err := store.VerificationKeys(now); !errors.Is(err, ErrDurabilityUncertain) {
+		t.Fatalf("admission error=%v want durability uncertain", err)
+	}
+	if err := store.Update(third); !errors.Is(err, ErrDurabilityUncertain) {
+		t.Fatalf("subsequent update error=%v want durability uncertain", err)
+	}
+	if readRevision(t, path) != 2 {
+		t.Fatal("fatal store overwrote the visible revision 2")
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Bundle().GetRevision() != 2 || !reopened.Usable(now) {
+		t.Fatalf("restart did not recover visible revision 2: %v", reopened.Bundle())
+	}
+	if err := reopened.Update(third); err != nil {
+		t.Fatalf("update after restart: %v", err)
+	}
 }
 
 func TestConcurrentUpdateAndAdmissionObserveCompleteKeysets(t *testing.T) {
