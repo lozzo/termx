@@ -1,0 +1,389 @@
+package enginehost
+
+import (
+	"bytes"
+	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	peeradapter "github.com/anytty/anytty/client/adapter/peer"
+	"github.com/anytty/anytty/client/binding"
+	"github.com/anytty/anytty/client/endpoint"
+	clientruntime "github.com/anytty/anytty/client/runtime"
+	cloudclient "github.com/anytty/anytty/cloud/client"
+	"github.com/anytty/anytty/cloud/edge/clientgateway"
+	"github.com/anytty/anytty/cloud/ticket"
+	"github.com/anytty/anytty/proto/bindingpb"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/remoteauth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+func TestHostCloudBootIdentitySpansReconnectAttempts(t *testing.T) {
+	gateway, address, serverName, caPEM := startCloudBootGateway(t)
+	profile := &bindingpb.CloudProfileRecord{AccountProfileRef: "account:test", ControllerAddress: address, ControllerServerName: serverName, ControllerCaPem: caPEM}
+	host := newCloudBootHost(t, profile)
+	otherHost := newCloudBootHost(t, profile)
+	if host.cloudBootID == otherHost.cloudBootID {
+		t.Fatal("new engine Hosts shared a Cloud boot ID")
+	}
+
+	profiles := cloudProfilesFromHost(t, host)
+	otherProfiles := cloudProfilesFromHost(t, otherHost)
+	identity, err := remoteauth.GenerateClientAccessIdentity("engine-cloud", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := remoteauth.NewPrivateClientAccessSigner(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolution, err := cloudclient.NewCachedRoute(
+		&cloudv1.EdgeLocator{EdgeId: gateway.edgeID, PublicEndpoint: address, ServerName: serverName, CaCertificatePem: caPEM},
+		&cloudv1.SignedEnvelope{KeyId: "daemon-route", Payload: []byte("route-grant"), Signature: bytes.Repeat([]byte{0x41}, ed25519.SignatureSize)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := cloudBootTarget()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	const sequentialAttempts = 3
+	var previous uint64
+	for range sequentialAttempts {
+		generation, allocationErr := allocateCloudAttempt(host, target)
+		if allocationErr != nil {
+			t.Fatal(allocationErr)
+		}
+		if generation != previous+1 {
+			t.Fatalf("sequential attempt generation=%d after %d", generation, previous)
+		}
+		previous = generation
+		if err := exchangeCloudHello(ctx, profiles, resolution, identity, signer, generation); err != nil {
+			t.Fatalf("sequential Cloud attempt %d: %v", generation, err)
+		}
+	}
+
+	otherGeneration, err := allocateCloudAttempt(otherHost, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := exchangeCloudHello(ctx, otherProfiles, resolution, identity, signer, otherGeneration); err != nil {
+		t.Fatalf("new Host Cloud attempt: %v", err)
+	}
+
+	const concurrentAttempts = 8
+	generations := make([]uint64, concurrentAttempts)
+	for index := range generations {
+		generation, allocationErr := allocateCloudAttempt(host, target)
+		if allocationErr != nil {
+			t.Fatal(allocationErr)
+		}
+		if generation != previous+1 {
+			t.Fatalf("concurrent attempt allocation generation=%d after %d", generation, previous)
+		}
+		previous = generation
+		generations[index] = generation
+	}
+	errors := make(chan error, concurrentAttempts)
+	var attempts sync.WaitGroup
+	for _, generation := range generations {
+		generation := generation
+		attempts.Add(1)
+		go func() {
+			defer attempts.Done()
+			errors <- exchangeCloudHello(ctx, profiles, resolution, identity, signer, generation)
+		}()
+	}
+	attempts.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("concurrent Cloud attempt: %v", err)
+		}
+	}
+
+	hostCaptures := gateway.capturesForBoot(host.cloudBootID)
+	if len(hostCaptures) != sequentialAttempts+concurrentAttempts {
+		t.Fatalf("same-Host Hello count=%d want %d", len(hostCaptures), sequentialAttempts+concurrentAttempts)
+	}
+	for index := range sequentialAttempts {
+		if got := hostCaptures[index].hello.GetHello().GetAttemptGeneration(); got != uint64(index+1) {
+			t.Fatalf("sequential wire attempt_generation[%d]=%d", index, got)
+		}
+	}
+	allGenerations := make([]uint64, 0, len(hostCaptures))
+	for _, capture := range hostCaptures {
+		if capture.hello.GetBootId() != host.cloudBootID {
+			t.Fatalf("same Host emitted boot_id %q want %q", capture.hello.GetBootId(), host.cloudBootID)
+		}
+		allGenerations = append(allGenerations, capture.hello.GetHello().GetAttemptGeneration())
+	}
+	sort.Slice(allGenerations, func(i, j int) bool { return allGenerations[i] < allGenerations[j] })
+	for index, generation := range allGenerations {
+		if generation != uint64(index+1) {
+			t.Fatalf("same-Host wire generations=%v", allGenerations)
+		}
+	}
+
+	otherCaptures := gateway.capturesForBoot(otherHost.cloudBootID)
+	if len(otherCaptures) != 1 || otherCaptures[0].hello.GetBootId() == hostCaptures[0].hello.GetBootId() {
+		t.Fatalf("new Host wire boot IDs did not differ: first=%q second=%q", hostCaptures[0].hello.GetBootId(), otherCaptures[0].hello.GetBootId())
+	}
+	tampered := proto.Clone(hostCaptures[0].hello).(*cloudv1.ClientSignal)
+	tampered.BootId = otherCaptures[0].hello.GetBootId()
+	if err := ticket.VerifyClientHelloProof(identity.PublicKey, tampered.GetHello().GetClientProof(), hostCaptures[0].challenge, tampered, hostCaptures[0].challenge.GetIssuedAt().AsTime()); err == nil {
+		t.Fatal("ClientHello proof accepted a cross-boot transcript")
+	}
+}
+
+func cloudProfilesFromHost(t *testing.T, host *Host) platformCloudProfiles {
+	t.Helper()
+	connector, ok := host.routeConnectors(peeradapter.CapabilityAuthorizer{})[endpoint.RouteManagedWebRTC].(*platformCloudConnector)
+	if !ok {
+		t.Fatal("Host did not construct its Cloud connector")
+	}
+	return connector.profiles
+}
+
+func newCloudBootHost(t *testing.T, profile *bindingpb.CloudProfileRecord) *Host {
+	t.Helper()
+	broker := binding.NewPlatformBroker()
+	pumpCloudProfile(t, broker, profile)
+	host, err := New(Options{
+		Broker: broker, DirectPeers: fakeCloudPairingPeerFactory{}, ClientName: "enginehost-test", CredentialPrefix: "enginehost:test",
+		CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close() })
+	return host
+}
+
+func pumpCloudProfile(t *testing.T, broker *binding.PlatformBroker, profile *bindingpb.CloudProfileRecord) {
+	t.Helper()
+	go func() {
+		for {
+			payload, err := broker.NextRequest(context.Background())
+			if err != nil {
+				return
+			}
+			request := &bindingpb.PlatformRequest{}
+			if err := proto.Unmarshal(payload, request); err != nil {
+				t.Errorf("decode Cloud profile request: %v", err)
+				return
+			}
+			resolved := request.GetCloudProfileResolve()
+			if resolved == nil || resolved.GetAccountProfileRef() != profile.GetAccountProfileRef() {
+				t.Errorf("unexpected Cloud profile request: %v", request)
+				return
+			}
+			response, err := proto.Marshal(&bindingpb.PlatformResponse{
+				RequestId: request.GetRequestId(),
+				Response:  &bindingpb.PlatformResponse_CloudProfile{CloudProfile: proto.Clone(profile).(*bindingpb.CloudProfileRecord)},
+			})
+			if err != nil {
+				t.Errorf("encode Cloud profile response: %v", err)
+				return
+			}
+			if err := broker.Complete(response); err != nil {
+				t.Errorf("complete Cloud profile response: %v", err)
+				return
+			}
+		}
+	}()
+}
+
+func cloudBootTarget() endpoint.Endpoint {
+	identity := endpoint.DaemonIdentity{DeviceID: "daemon-engine", DeviceFingerprint: "SHA256:daemon-engine"}
+	return endpoint.Endpoint{
+		ID: "engine-cloud", DaemonIdentity: identity,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
+			"cloud": {
+				ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, CredentialRef: "credential:engine",
+				Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser, TargetDeviceID: identity.DeviceID,
+				AccountProfileRef: "account:test", RelayMode: endpoint.RelayAuto,
+			},
+		},
+	}
+}
+
+func allocateCloudAttempt(host *Host, target endpoint.Endpoint) (uint64, error) {
+	attempt, err := host.owner.BeginRouteAttempt(target, "cloud", clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(attempt.Stamp().Generation), nil
+}
+
+func exchangeCloudHello(ctx context.Context, profiles platformCloudProfiles, resolution *cloudclient.RouteResolution, identity remoteauth.ClientAccessIdentity, signer remoteauth.ClientAccessSigner, generation uint64) error {
+	client, err := profiles.Resolve(ctx, "account:test")
+	if err != nil {
+		return err
+	}
+	session, err := client.Exchange(ctx, resolution, identity, signer, cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID, generation, cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, func(context.Context, *cloudv1.ClientReady) (string, error) {
+		return "enginehost-offer", nil
+	})
+	if err != nil {
+		return err
+	}
+	return session.Close()
+}
+
+type cloudBootCapture struct {
+	challenge *cloudv1.EdgeChallenge
+	hello     *cloudv1.ClientSignal
+}
+
+type cloudBootGateway struct {
+	cloudv1.UnimplementedClientGatewayServer
+	edgeID   string
+	edgeBoot string
+	sequence atomic.Uint64
+	mu       sync.Mutex
+	captures []cloudBootCapture
+}
+
+func (gateway *cloudBootGateway) Connect(stream grpc.BidiStreamingServer[cloudv1.ClientSignal, cloudv1.EdgeSignal]) error {
+	sequence := gateway.sequence.Add(1)
+	issuedAt := time.Now().UTC()
+	challenge := &cloudv1.EdgeChallenge{
+		Nonce: bytes.Repeat([]byte{byte(sequence)}, ticket.EdgeChallengeNonceSize), EdgeId: gateway.edgeID, EdgeBootId: gateway.edgeBoot,
+		StreamId: fmt.Sprintf("enginehost-stream-%d", sequence), IssuedAt: timestamppb.New(issuedAt), ExpiresAt: timestamppb.New(issuedAt.Add(ticket.EdgeChallengeLifetime)),
+		Target: cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY,
+	}
+	if err := stream.Send(&cloudv1.EdgeSignal{
+		ProtocolVersion: clientgateway.ProtocolVersion, MessageId: fmt.Sprintf("challenge-%d", sequence), SenderId: gateway.edgeID,
+		BootId: gateway.edgeBoot, ConnectionId: challenge.GetStreamId(), StreamSeq: 1, SentAt: timestamppb.New(issuedAt),
+		Payload: &cloudv1.EdgeSignal_Challenge{Challenge: challenge},
+	}); err != nil {
+		return err
+	}
+	hello, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if err := ticket.VerifyClientHelloProof(hello.GetHello().GetClientPublicKey(), hello.GetHello().GetClientProof(), challenge, hello, issuedAt); err != nil {
+		return fmt.Errorf("verify enginehost ClientHello proof: %w", err)
+	}
+	gateway.mu.Lock()
+	gateway.captures = append(gateway.captures, cloudBootCapture{challenge: proto.Clone(challenge).(*cloudv1.EdgeChallenge), hello: proto.Clone(hello).(*cloudv1.ClientSignal)})
+	gateway.mu.Unlock()
+	sessionID := hello.GetConnectionId()
+	generation := hello.GetHello().GetAttemptGeneration()
+	if err := stream.Send(&cloudv1.EdgeSignal{
+		ProtocolVersion: clientgateway.ProtocolVersion, MessageId: fmt.Sprintf("ready-%d", sequence), SenderId: gateway.edgeID, BootId: gateway.edgeBoot,
+		ConnectionId: sessionID, StreamSeq: 2, SentAt: timestamppb.Now(), Payload: &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation}},
+	}); err != nil {
+		return err
+	}
+	offer, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if offer.GetOffer() == nil || offer.GetOffer().GetSessionId() != sessionID {
+		return fmt.Errorf("enginehost ClientOffer is invalid")
+	}
+	return stream.Send(&cloudv1.EdgeSignal{
+		ProtocolVersion: clientgateway.ProtocolVersion, MessageId: fmt.Sprintf("answer-%d", sequence), SenderId: gateway.edgeID, BootId: gateway.edgeBoot,
+		ConnectionId: sessionID, StreamSeq: 3, SentAt: timestamppb.Now(), Payload: &cloudv1.EdgeSignal_Answer{Answer: &cloudv1.EdgeAnswer{SessionId: sessionID, AnswerSdp: "enginehost-answer"}},
+	})
+}
+
+func (gateway *cloudBootGateway) capturesForBoot(bootID string) []cloudBootCapture {
+	gateway.mu.Lock()
+	defer gateway.mu.Unlock()
+	var captures []cloudBootCapture
+	for _, capture := range gateway.captures {
+		if capture.hello.GetBootId() == bootID {
+			captures = append(captures, cloudBootCapture{
+				challenge: proto.Clone(capture.challenge).(*cloudv1.EdgeChallenge),
+				hello:     proto.Clone(capture.hello).(*cloudv1.ClientSignal),
+			})
+		}
+	}
+	return captures
+}
+
+func startCloudBootGateway(t *testing.T) (*cloudBootGateway, string, string, []byte) {
+	t.Helper()
+	const serverName = "enginehost-edge.test"
+	certificate, caPEM := cloudBootCertificate(t, serverName)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := &cloudBootGateway{edgeID: "edge-enginehost", edgeBoot: "edge-enginehost-boot"}
+	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}})))
+	cloudv1.RegisterClientGatewayServer(server, gateway)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	return gateway, listener.Addr().String(), serverName, caPEM
+}
+
+func cloudBootCertificate(t *testing.T, serverName string) (tls.Certificate, []byte) {
+	t.Helper()
+	rootKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	rootTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "enginehost test root"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	rootDER, err := x509.CreateCertificate(rand.Reader, rootTemplate, rootTemplate, &rootKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: serverName}, DNSNames: []string{serverName}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	serverDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, root, &serverKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateDER, err := x509.MarshalPKCS8PrivateKey(serverKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := tls.X509KeyPair(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER}),
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return certificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})
+}

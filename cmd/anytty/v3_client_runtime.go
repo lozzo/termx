@@ -25,6 +25,7 @@ import (
 	cloudclient "github.com/anytty/anytty/cloud/client"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 )
 
 type cliEndpointPlanSource struct {
@@ -144,7 +145,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 			Credentials: sshCredentials, ClientName: "anytty-cli",
 		}),
 	}
-	cloudProtocol, err := cliCloudClientFromEnvironment()
+	cloudProtocol, err := cliCloudClientFromEnvironment(uuid.NewString())
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +215,7 @@ func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint
 	return environment
 }
 
-func cliCloudClientFromEnvironment() (*cloudclient.Client, error) {
+func cliCloudClientFromEnvironment(bootID string) (*cloudclient.Client, error) {
 	address := strings.TrimSpace(os.Getenv("ANYTTY_CLOUD_CONTROLLER_ADDRESS"))
 	serverName := strings.TrimSpace(os.Getenv("ANYTTY_CLOUD_CONTROLLER_SERVER_NAME"))
 	caFile := strings.TrimSpace(os.Getenv("ANYTTY_CLOUD_CONTROLLER_CA"))
@@ -233,7 +234,7 @@ func cliCloudClientFromEnvironment() (*cloudclient.Client, error) {
 			return nil, fmt.Errorf("read AnyTTY Cloud Controller CA: %w", err)
 		}
 	}
-	return cloudclient.NewClient(cloudclient.Config{ControllerAddress: address, ControllerServerName: serverName, ControllerCAPEM: caPEM})
+	return cloudclient.NewClient(cloudclient.Config{ControllerAddress: address, ControllerServerName: serverName, ControllerCAPEM: caPEM, BootID: bootID})
 }
 
 type v3PairingRaceResult struct {
@@ -242,7 +243,7 @@ type v3PairingRaceResult struct {
 }
 
 func redeemV3RemotePairing(ctx context.Context, endpointID clientendpoint.EndpointID, credentialRef string, candidate clientendpoint.EndpointCandidate, request remoteauth.ClientPairingRequest) (remoteauth.PairingExchangeResult, error) {
-	cloudProtocol, err := cliCloudClientFromEnvironment()
+	cloudProtocol, err := cliCloudClientFromEnvironment(uuid.NewString())
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err
 	}

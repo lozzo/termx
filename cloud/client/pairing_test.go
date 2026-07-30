@@ -24,7 +24,7 @@ func TestPairingRouteBuildsOnlineAdmissionWithoutGrantOrFullCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	network, err := NewClient(Config{ControllerAddress: "controller.example:443", ControllerServerName: "controller.example"})
+	network, err := NewClient(Config{ControllerAddress: "controller.example:443", ControllerServerName: "controller.example", BootID: "00000000-0000-4000-8000-000000000001"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,5 +36,20 @@ func TestPairingRouteBuildsOnlineAdmissionWithoutGrantOrFullCA(t *testing.T) {
 	if resolution.routeGrant != nil || resolution.locator != nil || resolution.pairingBootstrap == nil || resolution.pairingAdmission == nil ||
 		resolution.pairingAdmission.GetDaemonId() != "daemon-1" || resolution.pairingAdmission.GetDeviceId() != "device-1" || !bytes.Equal(resolution.pairingAdmission.GetPairingClaimSha256(), wantDigest[:]) {
 		t.Fatalf("pairing resolution = %#v", resolution)
+	}
+}
+
+func TestNewClientRequiresOwnerBootID(t *testing.T) {
+	base := Config{ControllerAddress: "controller.example:443", ControllerServerName: "controller.example"}
+	for _, bootID := range []string{"", "not-a-uuid", "00000000-0000-0000-0000-000000000000", "00000000-0000-4000-8000-00000000000A"} {
+		config := base
+		config.BootID = bootID
+		if _, err := NewClient(config); err == nil {
+			t.Fatalf("NewClient accepted boot ID %q", bootID)
+		}
+	}
+	base.BootID = "00000000-0000-4000-8000-00000000000a"
+	if _, err := NewClient(base); err != nil {
+		t.Fatalf("NewClient rejected canonical owner boot ID: %v", err)
 	}
 }

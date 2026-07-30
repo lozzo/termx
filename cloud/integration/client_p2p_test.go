@@ -198,7 +198,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	// Pairing and all cached client routes must remain usable after the public Controller is gone.
 	stopPublicController()
 
-	cloudNetwork, err := cloudclient.NewClient(cloudclient.Config{ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, ControllerCAPEM: edgeCAPEM})
+	cloudNetwork, err := cloudclient.NewClient(cloudclient.Config{ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, ControllerCAPEM: edgeCAPEM, BootID: uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}

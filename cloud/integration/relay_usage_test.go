@@ -215,7 +215,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		return locateErr == nil && found && location.EdgeID == testEdgeID
 	})
 
-	cloudNetwork, err := cloudclient.NewClient(cloudclient.Config{ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, ControllerCAPEM: edgeCAPEM})
+	cloudNetwork, err := cloudclient.NewClient(cloudclient.Config{ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, ControllerCAPEM: edgeCAPEM, BootID: uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}

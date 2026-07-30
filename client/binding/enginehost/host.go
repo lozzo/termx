@@ -30,6 +30,7 @@ import (
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -51,6 +52,7 @@ type Options struct {
 type Host struct {
 	options        Options
 	owner          *clientruntime.SessionOwner
+	cloudBootID    string
 	registryMu     sync.Mutex
 	registry       endpoint.Registry
 	registryLoaded bool
@@ -84,7 +86,7 @@ func New(options Options) (*Host, error) {
 	if options.ShareReceive == nil {
 		options.ShareReceive = shareadapter.Receive
 	}
-	return &Host{options: options, owner: clientruntime.NewSessionOwnerWithAuthority(options.SessionAuthority), pendingShares: make(map[string]*remoteauthpb.ClientEndpointShareBundleV1)}, nil
+	return &Host{options: options, owner: clientruntime.NewSessionOwnerWithAuthority(options.SessionAuthority), cloudBootID: uuid.NewString(), pendingShares: make(map[string]*remoteauthpb.ClientEndpointShareBundleV1)}, nil
 }
 
 // OpenSession 从 generated EndpointConfigV1 建立 Go-owned generation；平台 UI 状态不能参与 endpoint、Route、auth 或协议判断。
@@ -139,7 +141,7 @@ func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) m
 	cloudPeers, cloudSupported := host.options.DirectPeers.(cloudadapter.PeerFactory)
 	if validCloudProduct(host.options.CloudProduct) && cloudSupported {
 		connectors[endpoint.RouteManagedWebRTC] = &platformCloudConnector{
-			profiles: platformCloudProfiles{broker: host.options.Broker}, peers: cloudPeers,
+			profiles: platformCloudProfiles{broker: host.options.Broker, bootID: host.cloudBootID}, peers: cloudPeers,
 			authorization: authorizer, product: host.options.CloudProduct, clientName: host.options.ClientName,
 		}
 	}
@@ -473,7 +475,10 @@ func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, routes [
 	}
 }
 
-type platformCloudProfiles struct{ broker *binding.PlatformBroker }
+type platformCloudProfiles struct {
+	broker *binding.PlatformBroker
+	bootID string
+}
 
 // Resolve 只把平台 profile 投影成 Go Cloud protocol client；平台不建立网络连接，也不拥有 attempt。
 func (source platformCloudProfiles) Resolve(ctx context.Context, reference string) (*cloudclient.Client, error) {
@@ -496,7 +501,7 @@ func (source platformCloudProfiles) Resolve(ctx context.Context, reference strin
 	}
 	return cloudclient.NewClient(cloudclient.Config{
 		ControllerAddress: profile.GetControllerAddress(), ControllerServerName: profile.GetControllerServerName(),
-		ControllerCAPEM: append([]byte(nil), profile.GetControllerCaPem()...),
+		ControllerCAPEM: append([]byte(nil), profile.GetControllerCaPem()...), BootID: source.bootID,
 	})
 }
 

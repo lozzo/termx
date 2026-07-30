@@ -11,7 +11,7 @@ func TestCLICloudClientUsesOfficialControllerByDefault(t *testing.T) {
 	t.Setenv("ANYTTY_CLOUD_CONTROLLER_ADDRESS", "")
 	t.Setenv("ANYTTY_CLOUD_CONTROLLER_SERVER_NAME", "")
 	t.Setenv("ANYTTY_CLOUD_CONTROLLER_CA", "")
-	client, err := cliCloudClientFromEnvironment()
+	client, err := cliCloudClientFromEnvironment("00000000-0000-4000-8000-000000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestCLICloudClientRejectsPartialOverride(t *testing.T) {
 	t.Setenv("ANYTTY_CLOUD_CONTROLLER_ADDRESS", "controller.example.com:443")
 	t.Setenv("ANYTTY_CLOUD_CONTROLLER_SERVER_NAME", "")
 	t.Setenv("ANYTTY_CLOUD_CONTROLLER_CA", "")
-	if _, err := cliCloudClientFromEnvironment(); err == nil {
+	if _, err := cliCloudClientFromEnvironment("00000000-0000-4000-8000-000000000001"); err == nil {
 		t.Fatal("partial Cloud Controller override was accepted")
 	}
 }

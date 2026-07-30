@@ -37,6 +37,7 @@ type Config struct {
 	ControllerAddress    string
 	ControllerServerName string
 	ControllerCAPEM      []byte
+	BootID               string
 	SoftwareVersion      string
 	Now                  func() time.Time
 }
@@ -113,9 +114,14 @@ func (session *SignalSession) Close() error {
 func NewClient(config Config) (*Client, error) {
 	config.ControllerAddress = strings.TrimSpace(config.ControllerAddress)
 	config.ControllerServerName = strings.TrimSpace(config.ControllerServerName)
+	config.BootID = strings.TrimSpace(config.BootID)
 	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
 	if config.ControllerAddress == "" || config.ControllerServerName == "" {
 		return nil, errors.New("Cloud Controller address and TLS server name are required")
+	}
+	parsedBootID, err := uuid.Parse(config.BootID)
+	if err != nil || parsedBootID == uuid.Nil || parsedBootID.String() != config.BootID {
+		return nil, errors.New("Cloud client boot ID must be a canonical non-zero UUID")
 	}
 	if config.SoftwareVersion == "" {
 		config.SoftwareVersion = "development"
@@ -123,7 +129,7 @@ func NewClient(config Config) (*Client, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	return &Client{config: config, bootID: uuid.NewString()}, nil
+	return &Client{config: config, bootID: config.BootID}, nil
 }
 
 // Resolve 只在本机没有 Edge locator 或旧 Edge 失效时查询实时 Presence；返回结果仍使用原始 daemon grant 准入。
