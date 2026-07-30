@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/commerce"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -64,7 +64,7 @@ const operatorAccountSummarySelect = `WITH selected_accounts AS MATERIALIZED (
      GROUP BY d.account_id
 ), current_usage AS (
     SELECT DISTINCT ON (u.account_id)
-           u.account_id,u.period_start,u.period_end,u.relay_ingress_bytes,u.relay_egress_bytes,u.revision
+           u.account_id,u.period_start,u.period_end,u.committed_ingress_bytes,u.committed_egress_bytes,u.recovery_bytes,u.held_bytes,u.revision
       FROM usage_periods u
       JOIN selected_accounts a ON a.account_id=u.account_id
      WHERE u.period_start<=$4 AND u.period_end>$4
@@ -78,7 +78,7 @@ SELECT a.account_id::text,coalesce(a.email,''),a.display_name,a.state,a.revision
        p.relay_max_bytes_per_period,p.relay_max_bytes_per_lease,p.relay_max_rate_bytes_per_second,
        p.cloud_daemon_limit,p.allowed_regions,
        coalesce(u.period_start,s.period_start),coalesce(u.period_end,s.period_end),
-       coalesce(u.relay_ingress_bytes,0),coalesce(u.relay_egress_bytes,0),coalesce(u.revision,0)
+       coalesce(u.committed_ingress_bytes,0),coalesce(u.committed_egress_bytes,0),coalesce(u.recovery_bytes,0),coalesce(u.held_bytes,0),coalesce(u.revision,0)
   FROM selected_accounts a
   JOIN subscriptions s ON s.account_id=a.account_id
   JOIN plans p ON p.plan_id=s.plan_id AND p.version=s.plan_version
@@ -102,7 +102,7 @@ func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.Account
 	var relayQuota, relayLease, relayRate, daemonLimit uint64
 	var allowedRegions []string
 	var usageStart, usageEnd time.Time
-	var ingress, egress, usageRevision uint64
+	var ingress, egress, recovery, held, usageRevision uint64
 	if err := row.Scan(
 		&accountID, &email, &displayName, &accountState, &accountRevision, &accountCreatedAt, &accountUpdatedAt,
 		&roleNames, &daemonCount,
@@ -110,7 +110,7 @@ func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.Account
 		&cancelAtPeriodEnd, &subscriptionRevision, &periodStart, &periodEnd, &subscriptionUpdatedAt,
 		&managedP2PEnabled, &managedP2PConcurrency, &relayEnabled, &relayConcurrency,
 		&relayQuota, &relayLease, &relayRate, &daemonLimit, &allowedRegions,
-		&usageStart, &usageEnd, &ingress, &egress, &usageRevision,
+		&usageStart, &usageEnd, &ingress, &egress, &recovery, &held, &usageRevision,
 	); err != nil {
 		return nil, err
 	}
@@ -131,10 +131,10 @@ func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.Account
 		CloudDaemonLimit:           uint32(daemonLimit),
 		AllowedRegions:             append([]string(nil), allowedRegions...),
 	}
-	used := ingress + egress
+	used := ingress + egress + recovery
 	remaining := uint64(0)
-	if used < relayQuota {
-		remaining = relayQuota - used
+	if used < relayQuota && held < relayQuota-used {
+		remaining = relayQuota - used - held
 	}
 	entitlementState := cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE
 	if accountState != "active" || subscriptionStateValue == cloudv1.SubscriptionState_SUBSCRIPTION_STATE_SUSPENDED {
@@ -233,31 +233,31 @@ func (database *Database) ListOperatorSubscriptions(ctx context.Context, page *c
 	return values, next, rows.Err()
 }
 
-// ListOperatorUsage 返回账号当前账期与 Edge 聚合；缺失记录表示尚无已结算用量。
-func (database *Database) ListOperatorUsage(ctx context.Context, page *cloudv1.PageRequest, now time.Time) ([]*cloudv1.UsagePeriodProjection, []*cloudv1.EdgeUsageProjection, string, error) {
+// ListOperatorUsage 返回账号当前真实订阅账期；缺失记录表示尚无授权或结算用量。
+func (database *Database) ListOperatorUsage(ctx context.Context, page *cloudv1.PageRequest, now time.Time) ([]*cloudv1.UsagePeriodProjection, string, error) {
 	limit := pageLimit(page)
-	rows, err := database.pool.Query(ctx, `SELECT u.account_id::text,u.period_start,u.period_end,u.relay_ingress_bytes,u.relay_egress_bytes,u.revision,p.relay_max_bytes_per_period FROM usage_periods u JOIN subscriptions s ON s.account_id=u.account_id JOIN plans p ON p.plan_id=s.plan_id AND p.version=s.plan_version WHERE u.period_start<=$1 AND u.period_end>$1 AND ($2='' OR u.account_id>$2::uuid) ORDER BY u.account_id LIMIT $3`, now, page.GetCursor(), limit+1)
+	rows, err := database.pool.Query(ctx, `SELECT u.account_id::text,u.period_start,u.period_end,u.committed_ingress_bytes,u.committed_egress_bytes,u.recovery_bytes,u.held_bytes,u.revision,u.quota_bytes FROM usage_periods u WHERE u.period_start<=$1 AND u.period_end>$1 AND ($2='' OR u.account_id>$2::uuid) ORDER BY u.account_id LIMIT $3`, now, page.GetCursor(), limit+1)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, "", err
 	}
 	accounts := make([]*cloudv1.UsagePeriodProjection, 0, limit+1)
 	for rows.Next() {
 		var id string
 		var start, end time.Time
-		var ingress, egress, revision, quota uint64
-		if err := rows.Scan(&id, &start, &end, &ingress, &egress, &revision, &quota); err != nil {
+		var ingress, egress, recovery, held, revision, quota uint64
+		if err := rows.Scan(&id, &start, &end, &ingress, &egress, &recovery, &held, &revision, &quota); err != nil {
 			rows.Close()
-			return nil, nil, "", err
+			return nil, "", err
 		}
-		total := ingress + egress
+		total := ingress + egress + recovery
 		remaining := uint64(0)
-		if total < quota {
-			remaining = quota - total
+		if total < quota && held < quota-total {
+			remaining = quota - total - held
 		}
 		accounts = append(accounts, &cloudv1.UsagePeriodProjection{AccountId: id, PeriodStart: timestamppb.New(start), PeriodEnd: timestamppb.New(end), RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: total, QuotaBytes: quota, RemainingBytes: remaining, Revision: revision})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, "", err
+		return nil, "", err
 	}
 	rows.Close()
 	next := ""
@@ -265,22 +265,7 @@ func (database *Database) ListOperatorUsage(ctx context.Context, page *cloudv1.P
 		next = accounts[limit-1].GetAccountId()
 		accounts = accounts[:limit]
 	}
-	edgeRows, err := database.pool.Query(ctx, `SELECT a.edge_id::text,e.name,e.region,a.ingress_bytes,a.egress_bytes,a.event_count,a.period_start FROM relay_usage_aggregates a JOIN edge_deployments e ON e.edge_id=a.edge_id WHERE a.period_start=date_trunc('month',$1::timestamptz) ORDER BY a.edge_id`, now)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	defer edgeRows.Close()
-	edges := make([]*cloudv1.EdgeUsageProjection, 0)
-	for edgeRows.Next() {
-		value := &cloudv1.EdgeUsageProjection{}
-		var start time.Time
-		if err := edgeRows.Scan(&value.EdgeId, &value.EdgeName, &value.Region, &value.IngressBytes, &value.EgressBytes, &value.EventCount, &start); err != nil {
-			return nil, nil, "", err
-		}
-		value.PeriodStart = timestamppb.New(start)
-		edges = append(edges, value)
-	}
-	return accounts, edges, next, edgeRows.Err()
+	return accounts, next, nil
 }
 
 // ListOperatorAudit 返回按时间倒序的持久管理事实。
@@ -425,7 +410,7 @@ func (database *Database) AuditRuntimeCommand(ctx context.Context, actorID, acti
 // RelayBytesCurrentPeriod 返回当前自然月已提交总字节。
 func (database *Database) RelayBytesCurrentPeriod(ctx context.Context, now time.Time) (uint64, error) {
 	var value uint64
-	err := database.pool.QueryRow(ctx, `SELECT coalesce(sum(relay_ingress_bytes+relay_egress_bytes),0) FROM usage_periods WHERE period_start<=$1 AND period_end>$1`, now).Scan(&value)
+	err := database.pool.QueryRow(ctx, `SELECT coalesce(sum(committed_ingress_bytes+committed_egress_bytes+recovery_bytes),0) FROM usage_periods WHERE period_start<=$1 AND period_end>$1`, now).Scan(&value)
 	return value, err
 }
 

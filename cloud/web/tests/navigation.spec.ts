@@ -36,10 +36,10 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path === '/api/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'cn1.edge.anytty.com:41102', generation: '1' } }] })
     if (path === '/api/daemons/enroll') return json(route, { account_id: account.account_id, enrollment_code: 'mxe_test', expires_at: periodEnd, enroll_command: 'anytty cloud enroll --controller https://cloud.anytty.com mxe_test' })
     if (path === '/api/operator/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {"controller_instance_id":"controller-test"}\n\n' })
-    if (path === '/api/operator/overview') return json(route, { overview: { edge_total: '1', edge_online: '1', daemon_total: '1', daemon_online: '1', client_session_online: '1', p2p_session_online: '1', relay_session_online: '0', relay_bytes_current_period: '1536', controller_instance_id: 'controller-test', generated_at: now } })
+    if (path === '/api/operator/overview') return json(route, { overview: { edge_total: '1', edge_online: '1', daemon_total: '1', daemon_online: '1', client_session_online: '1', relay_bytes_current_period: '1536', controller_instance_id: 'controller-test', generated_at: now } })
     if (path === '/api/operator/edges') return json(route, { edges: [
-      { config: { edge_id: '22222222-2222-4222-8222-222222222222', version: '1', name: 'CN1 Edge', region: 'CN1', capacity: '1000', public_endpoint: 'cn1.edge.anytty.com:41102', enabled: true }, config_revision: '1', runtime: { online: true, software_version: 'dev-cloudp007', agent_count: '1', session_count: '1', relay_allocation_count: '0', last_heartbeat: now }, certificate: onlineCertificateBinding },
-      { config: { edge_id: '77777777-7777-4777-8777-777777777777', version: '1', name: '备用 Edge', region: 'CN2', capacity: '1000', public_endpoint: 'cn2.edge.anytty.com:41102', enabled: true }, config_revision: '1', runtime: { online: false, software_version: 'dev-cloudp007', agent_count: '0', session_count: '0', relay_allocation_count: '0', last_heartbeat: now }, certificate: offlineCertificateBinding },
+      { config: { edge_id: '22222222-2222-4222-8222-222222222222', version: '1', name: 'CN1 Edge', region: 'CN1', capacity: '1000', public_endpoint: 'cn1.edge.anytty.com:41102', enabled: true }, config_revision: '1', runtime: { online: true, software_version: 'dev-cloudp007', agent_count: '1', session_count: '1', last_heartbeat: now }, certificate: onlineCertificateBinding },
+      { config: { edge_id: '77777777-7777-4777-8777-777777777777', version: '1', name: '备用 Edge', region: 'CN2', capacity: '1000', public_endpoint: 'cn2.edge.anytty.com:41102', enabled: true }, config_revision: '1', runtime: { online: false, software_version: 'dev-cloudp007', agent_count: '0', session_count: '0', last_heartbeat: now }, certificate: offlineCertificateBinding },
     ] })
     if (path === '/api/operator/certificates' && route.request().method() === 'GET') return json(route, { profiles: [certificateProfile] })
     if (path === '/api/operator/certificates' && route.request().method() === 'POST') {
@@ -49,12 +49,12 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path.startsWith('/api/operator/certificates/') && route.request().method() === 'PUT') return json(route, { profile: certificateProfile })
     if (path.endsWith('/certificate') && route.request().method() === 'POST') return json(route, { binding: certificateProfile.bindings[0] })
     if (path === '/api/operator/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'cn1.edge.anytty.com:41102', generation: '1' } }] })
-    if (path === '/api/operator/connections') return json(route, { sessions: [{ session_id: '44444444-4444-4444-8444-444444444444', account_id: account.account_id, daemon_id: daemon.daemon_id, edge_id: '22222222-2222-4222-8222-222222222222', client_id: 'android-client', product: 'CLIENT_PRODUCT_ANDROID', relay: false, generation: '1', connected_at: now }] })
+    if (path === '/api/operator/connections') return json(route, { sessions: [{ session_id: '44444444-4444-4444-8444-444444444444', account_id: account.account_id, daemon_id: daemon.daemon_id, edge_id: '22222222-2222-4222-8222-222222222222', client_id: 'android-client', product: 'CLIENT_PRODUCT_ANDROID', generation: '1', connected_at: now }] })
     if (path === '/api/operator/accounts') return json(route, { accounts: [{ account, roles: ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'], daemon_count: '1', subscription: commerce.subscription, entitlement: commerce.entitlement, usage: commerce.usage }] })
     if (path === '/api/operator/plans') return json(route, { plans })
     if (path === '/api/operator/subscriptions') return json(route, { subscriptions: [commerce.subscription] })
     if (path === '/api/operator/orders') return json(route, { orders: [] })
-    if (path === '/api/operator/usage') return json(route, { accounts: [commerce.usage], edges: [] })
+    if (path === '/api/operator/usage') return json(route, { accounts: [commerce.usage] })
     if (path === '/api/operator/audit') return json(route, { events: [] })
     return json(route, {})
   })

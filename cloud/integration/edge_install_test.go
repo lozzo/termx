@@ -31,6 +31,7 @@ import (
 	operatorservice "github.com/anytty/anytty/cloud/controller/operator"
 	"github.com/anytty/anytty/cloud/controller/postgres"
 	"github.com/anytty/anytty/cloud/edge/bootstrap"
+	"github.com/anytty/anytty/cloud/runtimesnapshot"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
@@ -365,6 +366,26 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer directoryState.Close()
+	edge, _, _, err := edges.CreateEdge(ctx, edgeconfig.CreateInput{Name: "R4 Enrollment Edge", Region: "test", Capacity: 10, PublicEndpoint: "edge-r4.example.com:41102"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const edgeConnectionID = "r4-enrollment-edge-connection"
+	if err := directoryState.Attach(ctx, directory.Attachment{EdgeID: edge.ID, BootID: "r4-enrollment-edge-boot", ConnectionID: edgeConnectionID, SoftwareVersion: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &cloudv1.RuntimeSnapshot{Revision: 1}
+	digest, err := runtimesnapshot.Digest(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const snapshotID = "r4-enrollment-edge-snapshot"
+	if err := directoryState.BeginSnapshot(ctx, edgeConnectionID, &cloudv1.SnapshotBegin{SnapshotId: snapshotID, Revision: snapshot.GetRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := directoryState.CommitSnapshot(ctx, edgeConnectionID, &cloudv1.SnapshotEnd{SnapshotId: snapshotID, Revision: snapshot.GetRevision(), Digest: digest}); err != nil {
+		t.Fatal(err)
+	}
 	_, bindingKey, _ := ed25519.GenerateKey(rand.Reader)
 	service, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: testEntitlementReader{}, BindingSigningKey: bindingKey, BindingSigningKeyID: "r4-binding", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, BindingTTL: 10 * time.Minute})
 	if err != nil {

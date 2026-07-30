@@ -3,7 +3,6 @@ syntax = "proto3";
 package anytty.cloud.v1;
 
 import "google/protobuf/timestamp.proto";
-import "cloud/v1/usage.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
@@ -49,26 +48,12 @@ message ClientSessionSummary {
   CloudClientAccessMode access_mode = 7;
 }
 
-// RelayAllocationSummary 是 Edge 内存 runtime 的脱敏 allocation 投影。
-// credential、SDP、candidate 和 payload 都不得进入该消息。
-message RelayAllocationSummary {
-  string allocation_id = 1;
-  string session_id = 2;
-  string lease_id = 3;
-  string account_id = 4;
-  RelayTransport transport = 5;
-  uint64 generation = 6;
-  uint64 ingress_bytes = 7;
-  uint64 egress_bytes = 8;
-  google.protobuf.Timestamp started_at = 9;
-}
-
 // RuntimeSnapshot 是 Edge 在某个单调 revision 上的一致性运行时投影。
 message RuntimeSnapshot {
   uint64 revision = 1;
   repeated AgentPresence agents = 2;
   repeated ClientSessionSummary sessions = 3;
-  repeated RelayAllocationSummary allocations = 4;
+  reserved 4;
 }
 
 message AgentRemoved {
@@ -81,20 +66,14 @@ message ClientSessionRemoved {
   uint64 generation = 2;
 }
 
-message RelayAllocationRemoved {
-  string allocation_id = 1;
-  uint64 generation = 2;
-}
-
 // RuntimeDelta 是快照 revision 之后严格连续的一次运行时变更。
 message RuntimeDelta {
   uint64 revision = 1;
+  reserved 14, 15;
   oneof change {
     AgentPresence agent_upserted = 10;
     AgentRemoved agent_removed = 11;
     ClientSessionSummary session_upserted = 12;
     ClientSessionRemoved session_removed = 13;
-    RelayAllocationSummary allocation_upserted = 14;
-    RelayAllocationRemoved allocation_removed = 15;
   }
 }

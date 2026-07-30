@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/cloud/controller/account"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/anytty/anytty/cloud/controller/account"
-	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -79,11 +79,12 @@ func TestListOperatorAccountsUsesOneQueryAndMatchesDetails(t *testing.T) {
 		}
 	}
 
-	usageStart, usageEnd := now.Add(-time.Hour), now.Add(time.Hour)
 	if _, err := database.pool.Exec(ctx, `UPDATE subscriptions SET plan_id='professional',plan_version=1,updated_at=$1 WHERE account_id=$2`, now, accountIDs[1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.pool.Exec(ctx, `INSERT INTO usage_periods(account_id,period_start,period_end,relay_ingress_bytes,relay_egress_bytes,revision,updated_at) VALUES($1,$2,$3,120,240,3,$4)`, accountIDs[1], usageStart, usageEnd, now); err != nil {
+	if _, err := database.pool.Exec(ctx, `INSERT INTO usage_periods(account_id,subscription_id,period_start,period_end,quota_bytes,committed_ingress_bytes,committed_egress_bytes,policy_digest,revision,updated_at)
+SELECT s.account_id,s.subscription_id,s.period_start,s.period_end,p.relay_max_bytes_per_period,120,240,decode(repeat('00',32),'hex'),3,$1
+FROM subscriptions s JOIN plans p ON p.plan_id=s.plan_id AND p.version=s.plan_version WHERE s.account_id=$2`, now, accountIDs[1]); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.pool.Exec(ctx, `INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,revoked,revision,created_at,updated_at) VALUES($1,$2,'批量查询设备',$3,$4,$5,false,1,$6,$6)`, uuid.NewString(), accountIDs[1], "device-"+uuid.NewString(), make([]byte, 32), "fingerprint-"+uuid.NewString(), now); err != nil {

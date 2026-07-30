@@ -455,7 +455,7 @@ func accountUnaryInterceptor(accounts *account.Service) grpc.UnaryServerIntercep
 func projectEdge(edge edgeconfig.Edge, runtime directory.EdgeProjection, certificate *cloudv1.CertificateBinding) *cloudv1.ManagedEdge {
 	projection := &cloudv1.ManagedEdge{Config: &cloudv1.EdgeDesiredConfig{EdgeId: edge.ID, Version: edge.ConfigVersion, Name: edge.Name, Region: edge.Region, Capacity: edge.Capacity, PublicEndpoint: edge.PublicEndpoint, Enabled: edge.Enabled}, ConfigRevision: edge.Revision, Runtime: &cloudv1.EdgeRuntimeProjection{}, Certificate: certificate}
 	if runtime.EdgeID != "" {
-		projection.Runtime = &cloudv1.EdgeRuntimeProjection{Online: true, BootId: runtime.BootID, ConnectionId: runtime.ConnectionID, SoftwareVersion: runtime.SoftwareVersion, RuntimeRevision: runtime.RuntimeRevision, AgentCount: uint64(runtime.AgentCount), SessionCount: uint64(runtime.SessionCount), RelayAllocationCount: uint64(runtime.RelayAllocationCount), ConnectedAt: timestamppb.New(runtime.ConnectedAt), LastHeartbeat: timestamppb.New(runtime.LastHeartbeat)}
+		projection.Runtime = &cloudv1.EdgeRuntimeProjection{Online: true, BootId: runtime.BootID, ConnectionId: runtime.ConnectionID, SoftwareVersion: runtime.SoftwareVersion, RuntimeRevision: runtime.RuntimeRevision, AgentCount: uint64(runtime.AgentCount), SessionCount: uint64(runtime.SessionCount), ConnectedAt: timestamppb.New(runtime.ConnectedAt), LastHeartbeat: timestamppb.New(runtime.LastHeartbeat)}
 	}
 	return projection
 }

@@ -6,15 +6,13 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { RelayTransport } from "./usage_pb";
-import { file_cloud_v1_usage } from "./usage_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file cloud/v1/runtime.proto.
  */
 export const file_cloud_v1_runtime: GenFile = /*@__PURE__*/
-  fileDesc("ChZjbG91ZC92MS9ydW50aW1lLnByb3RvEg9hbnl0dHkuY2xvdWQudjEivQEKDUFnZW50UHJlc2VuY2USEQoJZGFlbW9uX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHYm9vdF9pZBgDIAEoCRIVCg1jb25uZWN0aW9uX2lkGAQgASgJEhIKCmdlbmVyYXRpb24YBSABKAQSEgoKYmluZGluZ19pZBgGIAEoCRI1ChFiaW5kaW5nX2lzc3VlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi5gEKFENsaWVudFNlc3Npb25TdW1tYXJ5EhIKCnNlc3Npb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIRCglkYWVtb25faWQYAyABKAkSEQoJY2xpZW50X2lkGAQgASgJEi8KB3Byb2R1Y3QYBSABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBISCgpnZW5lcmF0aW9uGAYgASgEEjsKC2FjY2Vzc19tb2RlGAcgASgOMiYuYW55dHR5LmNsb3VkLnYxLkNsb3VkQ2xpZW50QWNjZXNzTW9kZSKOAgoWUmVsYXlBbGxvY2F0aW9uU3VtbWFyeRIVCg1hbGxvY2F0aW9uX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEAoIbGVhc2VfaWQYAyABKAkSEgoKYWNjb3VudF9pZBgEIAEoCRIyCgl0cmFuc3BvcnQYBSABKA4yHy5hbnl0dHkuY2xvdWQudjEuUmVsYXlUcmFuc3BvcnQSEgoKZ2VuZXJhdGlvbhgGIAEoBBIVCg1pbmdyZXNzX2J5dGVzGAcgASgEEhQKDGVncmVzc19ieXRlcxgIIAEoBBIuCgpzdGFydGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLKAQoPUnVudGltZVNuYXBzaG90EhAKCHJldmlzaW9uGAEgASgEEi4KBmFnZW50cxgCIAMoCzIeLmFueXR0eS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAMgAygLMiUuYW55dHR5LmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5EjwKC2FsbG9jYXRpb25zGAQgAygLMicuYW55dHR5LmNsb3VkLnYxLlJlbGF5QWxsb2NhdGlvblN1bW1hcnkiNQoMQWdlbnRSZW1vdmVkEhEKCWRhZW1vbl9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEIj4KFENsaWVudFNlc3Npb25SZW1vdmVkEhIKCnNlc3Npb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBCJDChZSZWxheUFsbG9jYXRpb25SZW1vdmVkEhUKDWFsbG9jYXRpb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBCKwAwoMUnVudGltZURlbHRhEhAKCHJldmlzaW9uGAEgASgEEjgKDmFnZW50X3Vwc2VydGVkGAogASgLMh4uYW55dHR5LmNsb3VkLnYxLkFnZW50UHJlc2VuY2VIABI2Cg1hZ2VudF9yZW1vdmVkGAsgASgLMh0uYW55dHR5LmNsb3VkLnYxLkFnZW50UmVtb3ZlZEgAEkEKEHNlc3Npb25fdXBzZXJ0ZWQYDCABKAsyJS5hbnl0dHkuY2xvdWQudjEuQ2xpZW50U2Vzc2lvblN1bW1hcnlIABJACg9zZXNzaW9uX3JlbW92ZWQYDSABKAsyJS5hbnl0dHkuY2xvdWQudjEuQ2xpZW50U2Vzc2lvblJlbW92ZWRIABJGChNhbGxvY2F0aW9uX3Vwc2VydGVkGA4gASgLMicuYW55dHR5LmNsb3VkLnYxLlJlbGF5QWxsb2NhdGlvblN1bW1hcnlIABJFChJhbGxvY2F0aW9uX3JlbW92ZWQYDyABKAsyJy5hbnl0dHkuY2xvdWQudjEuUmVsYXlBbGxvY2F0aW9uUmVtb3ZlZEgAQggKBmNoYW5nZSqzAQoNQ2xpZW50UHJvZHVjdBIeChpDTElFTlRfUFJPRFVDVF9VTlNQRUNJRklFRBAAEhYKEkNMSUVOVF9QUk9EVUNUX1RVSRABEhYKEkNMSUVOVF9QUk9EVUNUX0NMSRACEhoKFkNMSUVOVF9QUk9EVUNUX0FORFJPSUQQAxIWChJDTElFTlRfUFJPRFVDVF9JT1MQBBIeChpDTElFTlRfUFJPRFVDVF9ERVNLVE9QX0dVSRAFKpABChVDbG91ZENsaWVudEFjY2Vzc01vZGUSKAokQ0xPVURfQ0xJRU5UX0FDQ0VTU19NT0RFX1VOU1BFQ0lGSUVEEAASJwojQ0xPVURfQ0xJRU5UX0FDQ0VTU19NT0RFX0NBUEFCSUxJVFkQARIkCiBDTE9VRF9DTElFTlRfQUNDRVNTX01PREVfUEFJUklORxACQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_cloud_v1_usage]);
+  fileDesc("ChZjbG91ZC92MS9ydW50aW1lLnByb3RvEg9hbnl0dHkuY2xvdWQudjEivQEKDUFnZW50UHJlc2VuY2USEQoJZGFlbW9uX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHYm9vdF9pZBgDIAEoCRIVCg1jb25uZWN0aW9uX2lkGAQgASgJEhIKCmdlbmVyYXRpb24YBSABKAQSEgoKYmluZGluZ19pZBgGIAEoCRI1ChFiaW5kaW5nX2lzc3VlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi5gEKFENsaWVudFNlc3Npb25TdW1tYXJ5EhIKCnNlc3Npb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIRCglkYWVtb25faWQYAyABKAkSEQoJY2xpZW50X2lkGAQgASgJEi8KB3Byb2R1Y3QYBSABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBISCgpnZW5lcmF0aW9uGAYgASgEEjsKC2FjY2Vzc19tb2RlGAcgASgOMiYuYW55dHR5LmNsb3VkLnYxLkNsb3VkQ2xpZW50QWNjZXNzTW9kZSKSAQoPUnVudGltZVNuYXBzaG90EhAKCHJldmlzaW9uGAEgASgEEi4KBmFnZW50cxgCIAMoCzIeLmFueXR0eS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAMgAygLMiUuYW55dHR5LmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5SgQIBBAFIjUKDEFnZW50UmVtb3ZlZBIRCglkYWVtb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBCI+ChRDbGllbnRTZXNzaW9uUmVtb3ZlZBISCgpzZXNzaW9uX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQirQIKDFJ1bnRpbWVEZWx0YRIQCghyZXZpc2lvbhgBIAEoBBI4Cg5hZ2VudF91cHNlcnRlZBgKIAEoCzIeLmFueXR0eS5jbG91ZC52MS5BZ2VudFByZXNlbmNlSAASNgoNYWdlbnRfcmVtb3ZlZBgLIAEoCzIdLmFueXR0eS5jbG91ZC52MS5BZ2VudFJlbW92ZWRIABJBChBzZXNzaW9uX3Vwc2VydGVkGAwgASgLMiUuYW55dHR5LmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5SAASQAoPc2Vzc2lvbl9yZW1vdmVkGA0gASgLMiUuYW55dHR5LmNsb3VkLnYxLkNsaWVudFNlc3Npb25SZW1vdmVkSABCCAoGY2hhbmdlSgQIDhAPSgQIDxAQKrMBCg1DbGllbnRQcm9kdWN0Eh4KGkNMSUVOVF9QUk9EVUNUX1VOU1BFQ0lGSUVEEAASFgoSQ0xJRU5UX1BST0RVQ1RfVFVJEAESFgoSQ0xJRU5UX1BST0RVQ1RfQ0xJEAISGgoWQ0xJRU5UX1BST0RVQ1RfQU5EUk9JRBADEhYKEkNMSUVOVF9QUk9EVUNUX0lPUxAEEh4KGkNMSUVOVF9QUk9EVUNUX0RFU0tUT1BfR1VJEAUqkAEKFUNsb3VkQ2xpZW50QWNjZXNzTW9kZRIoCiRDTE9VRF9DTElFTlRfQUNDRVNTX01PREVfVU5TUEVDSUZJRUQQABInCiNDTE9VRF9DTElFTlRfQUNDRVNTX01PREVfQ0FQQUJJTElUWRABEiQKIENMT1VEX0NMSUVOVF9BQ0NFU1NfTU9ERV9QQUlSSU5HEAJCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * AgentPresence 是 Edge 内存中一个已认证 daemon 连接的实时投影。
@@ -117,66 +115,6 @@ export const ClientSessionSummarySchema: GenMessage<ClientSessionSummary> = /*@_
   messageDesc(file_cloud_v1_runtime, 1);
 
 /**
- * RelayAllocationSummary 是 Edge 内存 runtime 的脱敏 allocation 投影。
- * credential、SDP、candidate 和 payload 都不得进入该消息。
- *
- * @generated from message anytty.cloud.v1.RelayAllocationSummary
- */
-export type RelayAllocationSummary = Message<"anytty.cloud.v1.RelayAllocationSummary"> & {
-  /**
-   * @generated from field: string allocation_id = 1;
-   */
-  allocationId: string;
-
-  /**
-   * @generated from field: string session_id = 2;
-   */
-  sessionId: string;
-
-  /**
-   * @generated from field: string lease_id = 3;
-   */
-  leaseId: string;
-
-  /**
-   * @generated from field: string account_id = 4;
-   */
-  accountId: string;
-
-  /**
-   * @generated from field: anytty.cloud.v1.RelayTransport transport = 5;
-   */
-  transport: RelayTransport;
-
-  /**
-   * @generated from field: uint64 generation = 6;
-   */
-  generation: bigint;
-
-  /**
-   * @generated from field: uint64 ingress_bytes = 7;
-   */
-  ingressBytes: bigint;
-
-  /**
-   * @generated from field: uint64 egress_bytes = 8;
-   */
-  egressBytes: bigint;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp started_at = 9;
-   */
-  startedAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message anytty.cloud.v1.RelayAllocationSummary.
- * Use `create(RelayAllocationSummarySchema)` to create a new message.
- */
-export const RelayAllocationSummarySchema: GenMessage<RelayAllocationSummary> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_runtime, 2);
-
-/**
  * RuntimeSnapshot 是 Edge 在某个单调 revision 上的一致性运行时投影。
  *
  * @generated from message anytty.cloud.v1.RuntimeSnapshot
@@ -196,11 +134,6 @@ export type RuntimeSnapshot = Message<"anytty.cloud.v1.RuntimeSnapshot"> & {
    * @generated from field: repeated anytty.cloud.v1.ClientSessionSummary sessions = 3;
    */
   sessions: ClientSessionSummary[];
-
-  /**
-   * @generated from field: repeated anytty.cloud.v1.RelayAllocationSummary allocations = 4;
-   */
-  allocations: RelayAllocationSummary[];
 };
 
 /**
@@ -208,7 +141,7 @@ export type RuntimeSnapshot = Message<"anytty.cloud.v1.RuntimeSnapshot"> & {
  * Use `create(RuntimeSnapshotSchema)` to create a new message.
  */
 export const RuntimeSnapshotSchema: GenMessage<RuntimeSnapshot> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_runtime, 3);
+  messageDesc(file_cloud_v1_runtime, 2);
 
 /**
  * @generated from message anytty.cloud.v1.AgentRemoved
@@ -230,7 +163,7 @@ export type AgentRemoved = Message<"anytty.cloud.v1.AgentRemoved"> & {
  * Use `create(AgentRemovedSchema)` to create a new message.
  */
 export const AgentRemovedSchema: GenMessage<AgentRemoved> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_runtime, 4);
+  messageDesc(file_cloud_v1_runtime, 3);
 
 /**
  * @generated from message anytty.cloud.v1.ClientSessionRemoved
@@ -252,29 +185,7 @@ export type ClientSessionRemoved = Message<"anytty.cloud.v1.ClientSessionRemoved
  * Use `create(ClientSessionRemovedSchema)` to create a new message.
  */
 export const ClientSessionRemovedSchema: GenMessage<ClientSessionRemoved> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_runtime, 5);
-
-/**
- * @generated from message anytty.cloud.v1.RelayAllocationRemoved
- */
-export type RelayAllocationRemoved = Message<"anytty.cloud.v1.RelayAllocationRemoved"> & {
-  /**
-   * @generated from field: string allocation_id = 1;
-   */
-  allocationId: string;
-
-  /**
-   * @generated from field: uint64 generation = 2;
-   */
-  generation: bigint;
-};
-
-/**
- * Describes the message anytty.cloud.v1.RelayAllocationRemoved.
- * Use `create(RelayAllocationRemovedSchema)` to create a new message.
- */
-export const RelayAllocationRemovedSchema: GenMessage<RelayAllocationRemoved> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_runtime, 6);
+  messageDesc(file_cloud_v1_runtime, 4);
 
 /**
  * RuntimeDelta 是快照 revision 之后严格连续的一次运行时变更。
@@ -314,18 +225,6 @@ export type RuntimeDelta = Message<"anytty.cloud.v1.RuntimeDelta"> & {
      */
     value: ClientSessionRemoved;
     case: "sessionRemoved";
-  } | {
-    /**
-     * @generated from field: anytty.cloud.v1.RelayAllocationSummary allocation_upserted = 14;
-     */
-    value: RelayAllocationSummary;
-    case: "allocationUpserted";
-  } | {
-    /**
-     * @generated from field: anytty.cloud.v1.RelayAllocationRemoved allocation_removed = 15;
-     */
-    value: RelayAllocationRemoved;
-    case: "allocationRemoved";
   } | { case: undefined; value?: undefined };
 };
 
@@ -334,7 +233,7 @@ export type RuntimeDelta = Message<"anytty.cloud.v1.RuntimeDelta"> & {
  * Use `create(RuntimeDeltaSchema)` to create a new message.
  */
 export const RuntimeDeltaSchema: GenMessage<RuntimeDelta> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_runtime, 7);
+  messageDesc(file_cloud_v1_runtime, 5);
 
 /**
  * ClientProduct 表示建立 Cloud 信令连接的官方客户端形态。

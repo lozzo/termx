@@ -210,8 +210,8 @@ Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“
 - `go test ./...` 全仓通过。
 - `./scripts/check-generated-code.sh` 通过。
 - public Controller 停止后，pairing、CLI/TUI P2P terminal I/O 通过。
-- Controller 与 Directory 停止后，已缓存客户端可建立新的 UDP/TCP Relay session。
-- Controller 恢复后，Edge usage outbox 清空且事件去重提交。
+- Controller 与 Directory 停止后，AUTO 只走 P2P，RELAY_ONLY 明确 unavailable，且不能创建新 TURN allocation。
+- Controller 恢复后，Edge reservation journal 按原 reservation ID 重放并在已验证 ACK 后清理。
 - binding/locator 篡改、错误 Edge、过期 claims 和 binding 缺少 locator digest 均被拒绝。
 - proto descriptor contract 不包含已删除的开发期 RPC 和 payload。
 

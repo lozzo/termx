@@ -36,7 +36,7 @@ message EdgeRuntimeProjection {
   uint64 session_count = 7;
   google.protobuf.Timestamp connected_at = 8;
   google.protobuf.Timestamp last_heartbeat = 9;
-  uint64 relay_allocation_count = 10;
+  reserved 10;
 }
 
 // ManagedEdge 合并持久 desired state 与只读 runtime projection。

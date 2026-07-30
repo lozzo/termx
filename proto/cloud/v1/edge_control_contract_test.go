@@ -26,8 +26,8 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloud_v1_commerce_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_certificate_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
-		protodesc.ToFileDescriptorProto(File_cloud_v1_usage_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_usage_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_ticket_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_enrollment_proto),
@@ -122,10 +122,10 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "usage_batch": 28, "command_result": 29, "certificate_applied": 30,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_reserve": 28, "command_result": 29, "certificate_applied": 30, "relay_renew": 31, "relay_settle": 32, "relay_query": 33,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31,
 	})
 }
 
@@ -141,24 +141,28 @@ func TestR8CertificateContracts(t *testing.T) {
 	}
 }
 
-// TestEdgeLocalRelayContracts 锁定 daemon 预检、本地短租约和幂等 usage 的边界。
-func TestEdgeLocalRelayContracts(t *testing.T) {
-	request := (&RelayLeaseSpec{}).ProtoReflect().Descriptor()
-	if field := request.Fields().ByName("renew_lease_id"); field == nil || field.Number() != 6 {
-		t.Fatalf("RelayLeaseSpec.renew_lease_id field number=%v want=6", field)
+// TestDurableRelayReservationContracts locks the request/grant/settlement identity and journal stages.
+func TestDurableRelayReservationContracts(t *testing.T) {
+	request := (&RelayReserveRequest{}).ProtoReflect().Descriptor()
+	if field := request.Fields().ByName("reservation_id"); field == nil || field.Number() != 1 {
+		t.Fatalf("RelayReserveRequest.reservation_id field=%v", field)
 	}
-	lease := (&RelayLeaseClaims{}).ProtoReflect().Descriptor()
-	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
-		"lease_id": 1, "account_id": 2, "edge_id": 3, "daemon_id": 4, "client_id": 5, "session_id": 6,
-		"max_bytes": 7, "max_rate_bytes_per_second": 8, "max_concurrent_allocations": 9, "issued_at": 10, "expires_at": 11,
+	for _, descriptor := range []protoreflect.MessageDescriptor{
+		(&RelayGrant{}).ProtoReflect().Descriptor(), (&RelayRenewRequest{}).ProtoReflect().Descriptor(),
+		(&RelaySettlement{}).ProtoReflect().Descriptor(), (&RelaySettlementAck{}).ProtoReflect().Descriptor(),
 	} {
-		field := lease.Fields().ByName(name)
-		if field == nil || field.Number() != number {
-			t.Fatalf("RelayLeaseClaims.%s field number=%v want=%d", name, field, number)
+		if descriptor.Fields().ByName("reservation_id").Number() != 1 {
+			t.Fatalf("%s does not use reservation_id at field 1", descriptor.FullName())
 		}
 	}
-	if (&UsageEvent{}).ProtoReflect().Descriptor().Fields().ByName("event_id").Number() != 2 {
-		t.Fatal("UsageEvent.event_id must remain the idempotency key at field 2")
+	journal := (&RelayJournalRecord{}).ProtoReflect().Descriptor()
+	if journal.Fields().ByName("stage") == nil || journal.Fields().ByName("reserve_request") == nil || journal.Fields().ByName("settlement") == nil {
+		t.Fatal("RelayJournalRecord is missing durable lifecycle fields")
+	}
+	if File_cloud_v1_runtime_proto.Messages().ByName("RelayAllocationSummary") != nil ||
+		(&RuntimeSnapshot{}).ProtoReflect().Descriptor().Fields().ByName("allocations") != nil ||
+		(&SnapshotChunk{}).ProtoReflect().Descriptor().Fields().ByName("allocations") != nil {
+		t.Fatal("physical Relay allocations must remain Edge-local")
 	}
 }
 

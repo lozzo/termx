@@ -320,130 +320,19 @@ func (x *ClientSessionSummary) GetAccessMode() CloudClientAccessMode {
 	return CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_UNSPECIFIED
 }
 
-// RelayAllocationSummary 是 Edge 内存 runtime 的脱敏 allocation 投影。
-// credential、SDP、candidate 和 payload 都不得进入该消息。
-type RelayAllocationSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AllocationId  string                 `protobuf:"bytes,1,opt,name=allocation_id,json=allocationId,proto3" json:"allocation_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	LeaseId       string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	AccountId     string                 `protobuf:"bytes,4,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Transport     RelayTransport         `protobuf:"varint,5,opt,name=transport,proto3,enum=anytty.cloud.v1.RelayTransport" json:"transport,omitempty"`
-	Generation    uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
-	IngressBytes  uint64                 `protobuf:"varint,7,opt,name=ingress_bytes,json=ingressBytes,proto3" json:"ingress_bytes,omitempty"`
-	EgressBytes   uint64                 `protobuf:"varint,8,opt,name=egress_bytes,json=egressBytes,proto3" json:"egress_bytes,omitempty"`
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RelayAllocationSummary) Reset() {
-	*x = RelayAllocationSummary{}
-	mi := &file_cloud_v1_runtime_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RelayAllocationSummary) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RelayAllocationSummary) ProtoMessage() {}
-
-func (x *RelayAllocationSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_runtime_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RelayAllocationSummary.ProtoReflect.Descriptor instead.
-func (*RelayAllocationSummary) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *RelayAllocationSummary) GetAllocationId() string {
-	if x != nil {
-		return x.AllocationId
-	}
-	return ""
-}
-
-func (x *RelayAllocationSummary) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *RelayAllocationSummary) GetLeaseId() string {
-	if x != nil {
-		return x.LeaseId
-	}
-	return ""
-}
-
-func (x *RelayAllocationSummary) GetAccountId() string {
-	if x != nil {
-		return x.AccountId
-	}
-	return ""
-}
-
-func (x *RelayAllocationSummary) GetTransport() RelayTransport {
-	if x != nil {
-		return x.Transport
-	}
-	return RelayTransport_RELAY_TRANSPORT_UNSPECIFIED
-}
-
-func (x *RelayAllocationSummary) GetGeneration() uint64 {
-	if x != nil {
-		return x.Generation
-	}
-	return 0
-}
-
-func (x *RelayAllocationSummary) GetIngressBytes() uint64 {
-	if x != nil {
-		return x.IngressBytes
-	}
-	return 0
-}
-
-func (x *RelayAllocationSummary) GetEgressBytes() uint64 {
-	if x != nil {
-		return x.EgressBytes
-	}
-	return 0
-}
-
-func (x *RelayAllocationSummary) GetStartedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.StartedAt
-	}
-	return nil
-}
-
 // RuntimeSnapshot 是 Edge 在某个单调 revision 上的一致性运行时投影。
 type RuntimeSnapshot struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Revision      uint64                    `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
-	Agents        []*AgentPresence          `protobuf:"bytes,2,rep,name=agents,proto3" json:"agents,omitempty"`
-	Sessions      []*ClientSessionSummary   `protobuf:"bytes,3,rep,name=sessions,proto3" json:"sessions,omitempty"`
-	Allocations   []*RelayAllocationSummary `protobuf:"bytes,4,rep,name=allocations,proto3" json:"allocations,omitempty"`
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Revision      uint64                  `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
+	Agents        []*AgentPresence        `protobuf:"bytes,2,rep,name=agents,proto3" json:"agents,omitempty"`
+	Sessions      []*ClientSessionSummary `protobuf:"bytes,3,rep,name=sessions,proto3" json:"sessions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RuntimeSnapshot) Reset() {
 	*x = RuntimeSnapshot{}
-	mi := &file_cloud_v1_runtime_proto_msgTypes[3]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +344,7 @@ func (x *RuntimeSnapshot) String() string {
 func (*RuntimeSnapshot) ProtoMessage() {}
 
 func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_runtime_proto_msgTypes[3]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +357,7 @@ func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeSnapshot) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{3}
+	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RuntimeSnapshot) GetRevision() uint64 {
@@ -492,13 +381,6 @@ func (x *RuntimeSnapshot) GetSessions() []*ClientSessionSummary {
 	return nil
 }
 
-func (x *RuntimeSnapshot) GetAllocations() []*RelayAllocationSummary {
-	if x != nil {
-		return x.Allocations
-	}
-	return nil
-}
-
 type AgentRemoved struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DaemonId      string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
@@ -509,7 +391,7 @@ type AgentRemoved struct {
 
 func (x *AgentRemoved) Reset() {
 	*x = AgentRemoved{}
-	mi := &file_cloud_v1_runtime_proto_msgTypes[4]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +403,7 @@ func (x *AgentRemoved) String() string {
 func (*AgentRemoved) ProtoMessage() {}
 
 func (x *AgentRemoved) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_runtime_proto_msgTypes[4]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -534,7 +416,7 @@ func (x *AgentRemoved) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRemoved.ProtoReflect.Descriptor instead.
 func (*AgentRemoved) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AgentRemoved) GetDaemonId() string {
@@ -561,7 +443,7 @@ type ClientSessionRemoved struct {
 
 func (x *ClientSessionRemoved) Reset() {
 	*x = ClientSessionRemoved{}
-	mi := &file_cloud_v1_runtime_proto_msgTypes[5]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -573,7 +455,7 @@ func (x *ClientSessionRemoved) String() string {
 func (*ClientSessionRemoved) ProtoMessage() {}
 
 func (x *ClientSessionRemoved) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_runtime_proto_msgTypes[5]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -586,7 +468,7 @@ func (x *ClientSessionRemoved) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientSessionRemoved.ProtoReflect.Descriptor instead.
 func (*ClientSessionRemoved) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ClientSessionRemoved) GetSessionId() string {
@@ -603,58 +485,6 @@ func (x *ClientSessionRemoved) GetGeneration() uint64 {
 	return 0
 }
 
-type RelayAllocationRemoved struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AllocationId  string                 `protobuf:"bytes,1,opt,name=allocation_id,json=allocationId,proto3" json:"allocation_id,omitempty"`
-	Generation    uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RelayAllocationRemoved) Reset() {
-	*x = RelayAllocationRemoved{}
-	mi := &file_cloud_v1_runtime_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RelayAllocationRemoved) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RelayAllocationRemoved) ProtoMessage() {}
-
-func (x *RelayAllocationRemoved) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_runtime_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RelayAllocationRemoved.ProtoReflect.Descriptor instead.
-func (*RelayAllocationRemoved) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *RelayAllocationRemoved) GetAllocationId() string {
-	if x != nil {
-		return x.AllocationId
-	}
-	return ""
-}
-
-func (x *RelayAllocationRemoved) GetGeneration() uint64 {
-	if x != nil {
-		return x.Generation
-	}
-	return 0
-}
-
 // RuntimeDelta 是快照 revision 之后严格连续的一次运行时变更。
 type RuntimeDelta struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
@@ -665,8 +495,6 @@ type RuntimeDelta struct {
 	//	*RuntimeDelta_AgentRemoved
 	//	*RuntimeDelta_SessionUpserted
 	//	*RuntimeDelta_SessionRemoved
-	//	*RuntimeDelta_AllocationUpserted
-	//	*RuntimeDelta_AllocationRemoved
 	Change        isRuntimeDelta_Change `protobuf_oneof:"change"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -674,7 +502,7 @@ type RuntimeDelta struct {
 
 func (x *RuntimeDelta) Reset() {
 	*x = RuntimeDelta{}
-	mi := &file_cloud_v1_runtime_proto_msgTypes[7]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -686,7 +514,7 @@ func (x *RuntimeDelta) String() string {
 func (*RuntimeDelta) ProtoMessage() {}
 
 func (x *RuntimeDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_runtime_proto_msgTypes[7]
+	mi := &file_cloud_v1_runtime_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -699,7 +527,7 @@ func (x *RuntimeDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeDelta.ProtoReflect.Descriptor instead.
 func (*RuntimeDelta) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_runtime_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RuntimeDelta) GetRevision() uint64 {
@@ -752,24 +580,6 @@ func (x *RuntimeDelta) GetSessionRemoved() *ClientSessionRemoved {
 	return nil
 }
 
-func (x *RuntimeDelta) GetAllocationUpserted() *RelayAllocationSummary {
-	if x != nil {
-		if x, ok := x.Change.(*RuntimeDelta_AllocationUpserted); ok {
-			return x.AllocationUpserted
-		}
-	}
-	return nil
-}
-
-func (x *RuntimeDelta) GetAllocationRemoved() *RelayAllocationRemoved {
-	if x != nil {
-		if x, ok := x.Change.(*RuntimeDelta_AllocationRemoved); ok {
-			return x.AllocationRemoved
-		}
-	}
-	return nil
-}
-
 type isRuntimeDelta_Change interface {
 	isRuntimeDelta_Change()
 }
@@ -790,14 +600,6 @@ type RuntimeDelta_SessionRemoved struct {
 	SessionRemoved *ClientSessionRemoved `protobuf:"bytes,13,opt,name=session_removed,json=sessionRemoved,proto3,oneof"`
 }
 
-type RuntimeDelta_AllocationUpserted struct {
-	AllocationUpserted *RelayAllocationSummary `protobuf:"bytes,14,opt,name=allocation_upserted,json=allocationUpserted,proto3,oneof"`
-}
-
-type RuntimeDelta_AllocationRemoved struct {
-	AllocationRemoved *RelayAllocationRemoved `protobuf:"bytes,15,opt,name=allocation_removed,json=allocationRemoved,proto3,oneof"`
-}
-
 func (*RuntimeDelta_AgentUpserted) isRuntimeDelta_Change() {}
 
 func (*RuntimeDelta_AgentRemoved) isRuntimeDelta_Change() {}
@@ -806,15 +608,11 @@ func (*RuntimeDelta_SessionUpserted) isRuntimeDelta_Change() {}
 
 func (*RuntimeDelta_SessionRemoved) isRuntimeDelta_Change() {}
 
-func (*RuntimeDelta_AllocationUpserted) isRuntimeDelta_Change() {}
-
-func (*RuntimeDelta_AllocationRemoved) isRuntimeDelta_Change() {}
-
 var File_cloud_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\x16cloud/v1/runtime.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14cloud/v1/usage.proto\"\x90\x02\n" +
+	"\x16cloud/v1/runtime.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x90\x02\n" +
 	"\rAgentPresence\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1d\n" +
 	"\n" +
@@ -839,27 +637,11 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"generation\x18\x06 \x01(\x04R\n" +
 	"generation\x12G\n" +
 	"\vaccess_mode\x18\a \x01(\x0e2&.anytty.cloud.v1.CloudClientAccessModeR\n" +
-	"accessMode\"\xf8\x02\n" +
-	"\x16RelayAllocationSummary\x12#\n" +
-	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x19\n" +
-	"\blease_id\x18\x03 \x01(\tR\aleaseId\x12\x1d\n" +
-	"\n" +
-	"account_id\x18\x04 \x01(\tR\taccountId\x12=\n" +
-	"\ttransport\x18\x05 \x01(\x0e2\x1f.anytty.cloud.v1.RelayTransportR\ttransport\x12\x1e\n" +
-	"\n" +
-	"generation\x18\x06 \x01(\x04R\n" +
-	"generation\x12#\n" +
-	"\ringress_bytes\x18\a \x01(\x04R\fingressBytes\x12!\n" +
-	"\fegress_bytes\x18\b \x01(\x04R\vegressBytes\x129\n" +
-	"\n" +
-	"started_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\"\xf3\x01\n" +
+	"accessMode\"\xae\x01\n" +
 	"\x0fRuntimeSnapshot\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x126\n" +
 	"\x06agents\x18\x02 \x03(\v2\x1e.anytty.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
-	"\bsessions\x18\x03 \x03(\v2%.anytty.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
-	"\vallocations\x18\x04 \x03(\v2'.anytty.cloud.v1.RelayAllocationSummaryR\vallocations\"K\n" +
+	"\bsessions\x18\x03 \x03(\v2%.anytty.cloud.v1.ClientSessionSummaryR\bsessionsJ\x04\b\x04\x10\x05\"K\n" +
 	"\fAgentRemoved\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1e\n" +
 	"\n" +
@@ -870,22 +652,15 @@ const file_cloud_v1_runtime_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"]\n" +
-	"\x16RelayAllocationRemoved\x12#\n" +
-	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x12\x1e\n" +
-	"\n" +
-	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"\x9f\x04\n" +
+	"generation\"\xf5\x02\n" +
 	"\fRuntimeDelta\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12G\n" +
 	"\x0eagent_upserted\x18\n" +
 	" \x01(\v2\x1e.anytty.cloud.v1.AgentPresenceH\x00R\ragentUpserted\x12D\n" +
 	"\ragent_removed\x18\v \x01(\v2\x1d.anytty.cloud.v1.AgentRemovedH\x00R\fagentRemoved\x12R\n" +
 	"\x10session_upserted\x18\f \x01(\v2%.anytty.cloud.v1.ClientSessionSummaryH\x00R\x0fsessionUpserted\x12P\n" +
-	"\x0fsession_removed\x18\r \x01(\v2%.anytty.cloud.v1.ClientSessionRemovedH\x00R\x0esessionRemoved\x12Z\n" +
-	"\x13allocation_upserted\x18\x0e \x01(\v2'.anytty.cloud.v1.RelayAllocationSummaryH\x00R\x12allocationUpserted\x12X\n" +
-	"\x12allocation_removed\x18\x0f \x01(\v2'.anytty.cloud.v1.RelayAllocationRemovedH\x00R\x11allocationRemovedB\b\n" +
-	"\x06change*\xb3\x01\n" +
+	"\x0fsession_removed\x18\r \x01(\v2%.anytty.cloud.v1.ClientSessionRemovedH\x00R\x0esessionRemovedB\b\n" +
+	"\x06changeJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10*\xb3\x01\n" +
 	"\rClientProduct\x12\x1e\n" +
 	"\x1aCLIENT_PRODUCT_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12CLIENT_PRODUCT_TUI\x10\x01\x12\x16\n" +
@@ -911,41 +686,33 @@ func file_cloud_v1_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloud_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_cloud_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_cloud_v1_runtime_proto_goTypes = []any{
-	(ClientProduct)(0),             // 0: anytty.cloud.v1.ClientProduct
-	(CloudClientAccessMode)(0),     // 1: anytty.cloud.v1.CloudClientAccessMode
-	(*AgentPresence)(nil),          // 2: anytty.cloud.v1.AgentPresence
-	(*ClientSessionSummary)(nil),   // 3: anytty.cloud.v1.ClientSessionSummary
-	(*RelayAllocationSummary)(nil), // 4: anytty.cloud.v1.RelayAllocationSummary
-	(*RuntimeSnapshot)(nil),        // 5: anytty.cloud.v1.RuntimeSnapshot
-	(*AgentRemoved)(nil),           // 6: anytty.cloud.v1.AgentRemoved
-	(*ClientSessionRemoved)(nil),   // 7: anytty.cloud.v1.ClientSessionRemoved
-	(*RelayAllocationRemoved)(nil), // 8: anytty.cloud.v1.RelayAllocationRemoved
-	(*RuntimeDelta)(nil),           // 9: anytty.cloud.v1.RuntimeDelta
-	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
-	(RelayTransport)(0),            // 11: anytty.cloud.v1.RelayTransport
+	(ClientProduct)(0),            // 0: anytty.cloud.v1.ClientProduct
+	(CloudClientAccessMode)(0),    // 1: anytty.cloud.v1.CloudClientAccessMode
+	(*AgentPresence)(nil),         // 2: anytty.cloud.v1.AgentPresence
+	(*ClientSessionSummary)(nil),  // 3: anytty.cloud.v1.ClientSessionSummary
+	(*RuntimeSnapshot)(nil),       // 4: anytty.cloud.v1.RuntimeSnapshot
+	(*AgentRemoved)(nil),          // 5: anytty.cloud.v1.AgentRemoved
+	(*ClientSessionRemoved)(nil),  // 6: anytty.cloud.v1.ClientSessionRemoved
+	(*RuntimeDelta)(nil),          // 7: anytty.cloud.v1.RuntimeDelta
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_cloud_v1_runtime_proto_depIdxs = []int32{
-	10, // 0: anytty.cloud.v1.AgentPresence.binding_issued_at:type_name -> google.protobuf.Timestamp
-	0,  // 1: anytty.cloud.v1.ClientSessionSummary.product:type_name -> anytty.cloud.v1.ClientProduct
-	1,  // 2: anytty.cloud.v1.ClientSessionSummary.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
-	11, // 3: anytty.cloud.v1.RelayAllocationSummary.transport:type_name -> anytty.cloud.v1.RelayTransport
-	10, // 4: anytty.cloud.v1.RelayAllocationSummary.started_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: anytty.cloud.v1.RuntimeSnapshot.agents:type_name -> anytty.cloud.v1.AgentPresence
-	3,  // 6: anytty.cloud.v1.RuntimeSnapshot.sessions:type_name -> anytty.cloud.v1.ClientSessionSummary
-	4,  // 7: anytty.cloud.v1.RuntimeSnapshot.allocations:type_name -> anytty.cloud.v1.RelayAllocationSummary
-	2,  // 8: anytty.cloud.v1.RuntimeDelta.agent_upserted:type_name -> anytty.cloud.v1.AgentPresence
-	6,  // 9: anytty.cloud.v1.RuntimeDelta.agent_removed:type_name -> anytty.cloud.v1.AgentRemoved
-	3,  // 10: anytty.cloud.v1.RuntimeDelta.session_upserted:type_name -> anytty.cloud.v1.ClientSessionSummary
-	7,  // 11: anytty.cloud.v1.RuntimeDelta.session_removed:type_name -> anytty.cloud.v1.ClientSessionRemoved
-	4,  // 12: anytty.cloud.v1.RuntimeDelta.allocation_upserted:type_name -> anytty.cloud.v1.RelayAllocationSummary
-	8,  // 13: anytty.cloud.v1.RuntimeDelta.allocation_removed:type_name -> anytty.cloud.v1.RelayAllocationRemoved
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	8, // 0: anytty.cloud.v1.AgentPresence.binding_issued_at:type_name -> google.protobuf.Timestamp
+	0, // 1: anytty.cloud.v1.ClientSessionSummary.product:type_name -> anytty.cloud.v1.ClientProduct
+	1, // 2: anytty.cloud.v1.ClientSessionSummary.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	2, // 3: anytty.cloud.v1.RuntimeSnapshot.agents:type_name -> anytty.cloud.v1.AgentPresence
+	3, // 4: anytty.cloud.v1.RuntimeSnapshot.sessions:type_name -> anytty.cloud.v1.ClientSessionSummary
+	2, // 5: anytty.cloud.v1.RuntimeDelta.agent_upserted:type_name -> anytty.cloud.v1.AgentPresence
+	5, // 6: anytty.cloud.v1.RuntimeDelta.agent_removed:type_name -> anytty.cloud.v1.AgentRemoved
+	3, // 7: anytty.cloud.v1.RuntimeDelta.session_upserted:type_name -> anytty.cloud.v1.ClientSessionSummary
+	6, // 8: anytty.cloud.v1.RuntimeDelta.session_removed:type_name -> anytty.cloud.v1.ClientSessionRemoved
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_runtime_proto_init() }
@@ -953,14 +720,11 @@ func file_cloud_v1_runtime_proto_init() {
 	if File_cloud_v1_runtime_proto != nil {
 		return
 	}
-	file_cloud_v1_usage_proto_init()
-	file_cloud_v1_runtime_proto_msgTypes[7].OneofWrappers = []any{
+	file_cloud_v1_runtime_proto_msgTypes[5].OneofWrappers = []any{
 		(*RuntimeDelta_AgentUpserted)(nil),
 		(*RuntimeDelta_AgentRemoved)(nil),
 		(*RuntimeDelta_SessionUpserted)(nil),
 		(*RuntimeDelta_SessionRemoved)(nil),
-		(*RuntimeDelta_AllocationUpserted)(nil),
-		(*RuntimeDelta_AllocationRemoved)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -968,7 +732,7 @@ func file_cloud_v1_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_runtime_proto_rawDesc), len(file_cloud_v1_runtime_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   8,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

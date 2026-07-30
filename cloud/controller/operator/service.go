@@ -23,7 +23,7 @@ type Store interface {
 	GetOperatorAccount(context.Context, string, time.Time) (*cloudv1.AccountSummary, error)
 	ListOperatorOrders(context.Context, *cloudv1.PageRequest) ([]*cloudv1.OrderProjection, string, error)
 	ListOperatorSubscriptions(context.Context, *cloudv1.PageRequest) ([]*cloudv1.SubscriptionProjection, string, error)
-	ListOperatorUsage(context.Context, *cloudv1.PageRequest, time.Time) ([]*cloudv1.UsagePeriodProjection, []*cloudv1.EdgeUsageProjection, string, error)
+	ListOperatorUsage(context.Context, *cloudv1.PageRequest, time.Time) ([]*cloudv1.UsagePeriodProjection, string, error)
 	ListOperatorAudit(context.Context, *cloudv1.PageRequest) ([]*cloudv1.OperatorAuditEvent, string, error)
 	SetAccountState(context.Context, *cloudv1.SetAccountStateRequest, string, time.Time) (*cloudv1.AccountProfile, error)
 	SetAccountRole(context.Context, *cloudv1.SetAccountRoleRequest, string, time.Time) ([]cloudv1.AccountRole, error)
@@ -122,13 +122,6 @@ func (service *Service) GetOverview(ctx context.Context, _ *cloudv1.GetOperatorO
 			overview.DaemonOnline++
 		}
 	}
-	for _, session := range sessions {
-		if session.Relay {
-			overview.RelaySessionOnline++
-		} else {
-			overview.P2PSessionOnline++
-		}
-	}
 	return &cloudv1.GetOperatorOverviewResponse{Overview: overview}, nil
 }
 
@@ -165,7 +158,7 @@ func (service *Service) ListRuntimeSessions(ctx context.Context, _ *cloudv1.List
 	}
 	result := make([]*cloudv1.RuntimeSessionProjection, 0, len(sessions))
 	for _, value := range sessions {
-		result = append(result, &cloudv1.RuntimeSessionProjection{SessionId: value.Session.GetSessionId(), AccountId: value.Session.GetAccountId(), DaemonId: value.Session.GetDaemonId(), EdgeId: value.Location.EdgeID, ClientId: value.Session.GetClientId(), Product: value.Session.GetProduct(), Relay: value.Relay, Generation: value.Location.Generation, ConnectedAt: timestamppb.New(value.ConnectedAt)})
+		result = append(result, &cloudv1.RuntimeSessionProjection{SessionId: value.Session.GetSessionId(), AccountId: value.Session.GetAccountId(), DaemonId: value.Session.GetDaemonId(), EdgeId: value.Location.EdgeID, ClientId: value.Session.GetClientId(), Product: value.Session.GetProduct(), Generation: value.Location.Generation, ConnectedAt: timestamppb.New(value.ConnectedAt)})
 	}
 	return &cloudv1.ListRuntimeSessionsResponse{Sessions: result}, nil
 }
@@ -193,8 +186,8 @@ func (service *Service) ListUsage(ctx context.Context, request *cloudv1.ListOper
 	if _, err := requireOperator(ctx, false); err != nil {
 		return nil, err
 	}
-	accounts, edges, next, err := service.config.Store.ListOperatorUsage(ctx, pageFrom(request), service.config.Now().UTC())
-	return &cloudv1.ListOperatorUsageResponse{Accounts: accounts, Edges: edges, NextCursor: next}, err
+	accounts, next, err := service.config.Store.ListOperatorUsage(ctx, pageFrom(request), service.config.Now().UTC())
+	return &cloudv1.ListOperatorUsageResponse{Accounts: accounts, NextCursor: next}, err
 }
 
 // ListAudit 返回持久运营事实；读取本身不新增审计。

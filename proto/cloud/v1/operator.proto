@@ -23,8 +23,7 @@ message OperatorOverview {
   uint64 daemon_total = 3;
   uint64 daemon_online = 4;
   uint64 client_session_online = 5;
-  uint64 p2p_session_online = 6;
-  uint64 relay_session_online = 7;
+  reserved 6, 7;
   uint64 relay_bytes_current_period = 8;
   string controller_instance_id = 9;
   google.protobuf.Timestamp generated_at = 10;
@@ -46,19 +45,9 @@ message RuntimeSessionProjection {
   string edge_id = 4;
   string client_id = 5;
   ClientProduct product = 6;
-  bool relay = 7;
+  reserved 7;
   uint64 generation = 8;
   google.protobuf.Timestamp connected_at = 9;
-}
-
-message EdgeUsageProjection {
-  string edge_id = 1;
-  string edge_name = 2;
-  string region = 3;
-  uint64 ingress_bytes = 4;
-  uint64 egress_bytes = 5;
-  uint64 event_count = 6;
-  google.protobuf.Timestamp period_start = 7;
 }
 
 message OperatorAuditEvent {
@@ -104,7 +93,7 @@ message ListOperatorSubscriptionsResponse {
 message ListOperatorUsageRequest { PageRequest page = 1; }
 message ListOperatorUsageResponse {
   repeated UsagePeriodProjection accounts = 1;
-  repeated EdgeUsageProjection edges = 2;
+  reserved 2;
   string next_cursor = 3;
 }
 message ListOperatorAuditRequest { PageRequest page = 1; }

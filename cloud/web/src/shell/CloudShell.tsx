@@ -72,7 +72,7 @@ export function CloudShell() {
         void queryClient.invalidateQueries({ queryKey: ['daemons'] })
         void queryClient.invalidateQueries({ queryKey: ['user', 'daemons'] })
       }
-      if (payload.resource_kind === 'session' || payload.resource_kind === 'allocation') void queryClient.invalidateQueries({ queryKey: ['connections'] })
+      if (payload.resource_kind === 'session') void queryClient.invalidateQueries({ queryKey: ['connections'] })
       void queryClient.invalidateQueries({ queryKey: ['overview'] })
     })
     return () => source.close()

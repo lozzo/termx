@@ -216,7 +216,14 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(current.GetProfiles()) != 1 || current.GetProfiles()[0].GetRevision() != 1 || peerCertificateFingerprint(t, edgeRuntime.PublicAddress(), managedRoots) != fingerprint1 {
+	var currentProfileRevision uint64
+	for _, profile := range current.GetProfiles() {
+		if profile.GetCertificateProfileId() == profileID {
+			currentProfileRevision = profile.GetRevision()
+			break
+		}
+	}
+	if currentProfileRevision != 1 || peerCertificateFingerprint(t, edgeRuntime.PublicAddress(), managedRoots) != fingerprint1 {
 		t.Fatal("failed replacement changed the profile revision or active TLS certificate")
 	}
 	upload2, err := certificateService.UploadProfile(ctx, &cloudv1.UploadCertificateProfileRequest{

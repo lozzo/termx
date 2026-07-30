@@ -20,7 +20,6 @@ export function OverviewPage() {
     <PageHeader title="总览" meta={`最近生成：${dateTime(value.generatedAt)}`} actions={<button className="sync-state" onClick={() => query.refetch()}><span />数据已同步</button>} />
     <section className="metric-strip">{metrics.map(({ label, value: metric, icon: Icon, to }) => <Link to={to} key={label}><Icon size={18} /><span>{label}</span><strong>{metric}</strong></Link>)}</section>
     <div className="overview-grid">
-      <section className="plain-section"><header><div><h2>连接路径</h2><p>当前在线会话分布</p></div></header><div className="path-balance"><div><span>P2P</span><strong>{value.p2pSessionOnline}</strong><i style={{ width: `${value.clientSessionOnline ? Number(value.p2pSessionOnline) / Number(value.clientSessionOnline) * 100 : 0}%` }} /></div><div><span>Relay</span><strong>{value.relaySessionOnline}</strong><i style={{ width: `${value.clientSessionOnline ? Number(value.relaySessionOnline) / Number(value.clientSessionOnline) * 100 : 0}%` }} /></div></div></section>
       <section className="plain-section"><header><div><h2>控制面状态</h2><p>只表示当前进程 generation</p></div></header><dl className="detail-list"><div><dt>Controller</dt><dd><Status active>在线</Status></dd></div><div><dt>实例 ID</dt><dd className="mono">{value.controllerInstanceId}</dd></div><div><dt>在线 Edge</dt><dd>{value.edgeOnline ? <Status active>{value.edgeOnline} 个已同步</Status> : <Status active={false}>暂无已同步节点</Status>}</dd></div></dl></section>
     </div>
   </>

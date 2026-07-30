@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/enrollment"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -119,6 +119,8 @@ func TestConsumeDaemonEnrollmentRejectsDeviceIDKeyReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	deviceID := "device-" + uuid.NewString()
+	firstFingerprint := "fingerprint-" + uuid.NewString()
+	secondFingerprint := "fingerprint-" + uuid.NewString()
 	firstPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 	secondPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 	firstDigest := sha256.Sum256([]byte("first-" + uuid.NewString()))
@@ -126,13 +128,13 @@ func TestConsumeDaemonEnrollmentRejectsDeviceIDKeyReplacement(t *testing.T) {
 	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "", "Original", firstDigest[:], now.Add(time.Hour), now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.ConsumeDaemonEnrollment(ctx, firstDigest[:], deviceID, "fingerprint-original", firstPublicKey, now); err != nil {
+	if _, err := database.ConsumeDaemonEnrollment(ctx, firstDigest[:], deviceID, firstFingerprint, firstPublicKey, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "", "Replacement", secondDigest[:], now.Add(time.Hour), now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, "fingerprint-replacement", secondPublicKey, now); !errors.Is(err, enrollment.ErrDaemonIdentityConflict) {
+	if _, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, secondFingerprint, secondPublicKey, now); !errors.Is(err, enrollment.ErrDaemonIdentityConflict) {
 		t.Fatalf("device ID key replacement error=%v", err)
 	}
 }

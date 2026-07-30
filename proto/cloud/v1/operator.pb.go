@@ -207,8 +207,6 @@ type OperatorOverview struct {
 	DaemonTotal             uint64                 `protobuf:"varint,3,opt,name=daemon_total,json=daemonTotal,proto3" json:"daemon_total,omitempty"`
 	DaemonOnline            uint64                 `protobuf:"varint,4,opt,name=daemon_online,json=daemonOnline,proto3" json:"daemon_online,omitempty"`
 	ClientSessionOnline     uint64                 `protobuf:"varint,5,opt,name=client_session_online,json=clientSessionOnline,proto3" json:"client_session_online,omitempty"`
-	P2PSessionOnline        uint64                 `protobuf:"varint,6,opt,name=p2p_session_online,json=p2pSessionOnline,proto3" json:"p2p_session_online,omitempty"`
-	RelaySessionOnline      uint64                 `protobuf:"varint,7,opt,name=relay_session_online,json=relaySessionOnline,proto3" json:"relay_session_online,omitempty"`
 	RelayBytesCurrentPeriod uint64                 `protobuf:"varint,8,opt,name=relay_bytes_current_period,json=relayBytesCurrentPeriod,proto3" json:"relay_bytes_current_period,omitempty"`
 	ControllerInstanceId    string                 `protobuf:"bytes,9,opt,name=controller_instance_id,json=controllerInstanceId,proto3" json:"controller_instance_id,omitempty"`
 	GeneratedAt             *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
@@ -277,20 +275,6 @@ func (x *OperatorOverview) GetDaemonOnline() uint64 {
 func (x *OperatorOverview) GetClientSessionOnline() uint64 {
 	if x != nil {
 		return x.ClientSessionOnline
-	}
-	return 0
-}
-
-func (x *OperatorOverview) GetP2PSessionOnline() uint64 {
-	if x != nil {
-		return x.P2PSessionOnline
-	}
-	return 0
-}
-
-func (x *OperatorOverview) GetRelaySessionOnline() uint64 {
-	if x != nil {
-		return x.RelaySessionOnline
 	}
 	return 0
 }
@@ -408,7 +392,6 @@ type RuntimeSessionProjection struct {
 	EdgeId        string                 `protobuf:"bytes,4,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
 	ClientId      string                 `protobuf:"bytes,5,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	Product       ClientProduct          `protobuf:"varint,6,opt,name=product,proto3,enum=anytty.cloud.v1.ClientProduct" json:"product,omitempty"`
-	Relay         bool                   `protobuf:"varint,7,opt,name=relay,proto3" json:"relay,omitempty"`
 	Generation    uint64                 `protobuf:"varint,8,opt,name=generation,proto3" json:"generation,omitempty"`
 	ConnectedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=connected_at,json=connectedAt,proto3" json:"connected_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -487,13 +470,6 @@ func (x *RuntimeSessionProjection) GetProduct() ClientProduct {
 	return ClientProduct_CLIENT_PRODUCT_UNSPECIFIED
 }
 
-func (x *RuntimeSessionProjection) GetRelay() bool {
-	if x != nil {
-		return x.Relay
-	}
-	return false
-}
-
 func (x *RuntimeSessionProjection) GetGeneration() uint64 {
 	if x != nil {
 		return x.Generation
@@ -504,98 +480,6 @@ func (x *RuntimeSessionProjection) GetGeneration() uint64 {
 func (x *RuntimeSessionProjection) GetConnectedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ConnectedAt
-	}
-	return nil
-}
-
-type EdgeUsageProjection struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EdgeId        string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
-	EdgeName      string                 `protobuf:"bytes,2,opt,name=edge_name,json=edgeName,proto3" json:"edge_name,omitempty"`
-	Region        string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
-	IngressBytes  uint64                 `protobuf:"varint,4,opt,name=ingress_bytes,json=ingressBytes,proto3" json:"ingress_bytes,omitempty"`
-	EgressBytes   uint64                 `protobuf:"varint,5,opt,name=egress_bytes,json=egressBytes,proto3" json:"egress_bytes,omitempty"`
-	EventCount    uint64                 `protobuf:"varint,6,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
-	PeriodStart   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EdgeUsageProjection) Reset() {
-	*x = EdgeUsageProjection{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EdgeUsageProjection) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EdgeUsageProjection) ProtoMessage() {}
-
-func (x *EdgeUsageProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EdgeUsageProjection.ProtoReflect.Descriptor instead.
-func (*EdgeUsageProjection) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *EdgeUsageProjection) GetEdgeId() string {
-	if x != nil {
-		return x.EdgeId
-	}
-	return ""
-}
-
-func (x *EdgeUsageProjection) GetEdgeName() string {
-	if x != nil {
-		return x.EdgeName
-	}
-	return ""
-}
-
-func (x *EdgeUsageProjection) GetRegion() string {
-	if x != nil {
-		return x.Region
-	}
-	return ""
-}
-
-func (x *EdgeUsageProjection) GetIngressBytes() uint64 {
-	if x != nil {
-		return x.IngressBytes
-	}
-	return 0
-}
-
-func (x *EdgeUsageProjection) GetEgressBytes() uint64 {
-	if x != nil {
-		return x.EgressBytes
-	}
-	return 0
-}
-
-func (x *EdgeUsageProjection) GetEventCount() uint64 {
-	if x != nil {
-		return x.EventCount
-	}
-	return 0
-}
-
-func (x *EdgeUsageProjection) GetPeriodStart() *timestamppb.Timestamp {
-	if x != nil {
-		return x.PeriodStart
 	}
 	return nil
 }
@@ -618,7 +502,7 @@ type OperatorAuditEvent struct {
 
 func (x *OperatorAuditEvent) Reset() {
 	*x = OperatorAuditEvent{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[5]
+	mi := &file_cloud_v1_operator_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +514,7 @@ func (x *OperatorAuditEvent) String() string {
 func (*OperatorAuditEvent) ProtoMessage() {}
 
 func (x *OperatorAuditEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[5]
+	mi := &file_cloud_v1_operator_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +527,7 @@ func (x *OperatorAuditEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperatorAuditEvent.ProtoReflect.Descriptor instead.
 func (*OperatorAuditEvent) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *OperatorAuditEvent) GetAuditId() string {
@@ -724,7 +608,7 @@ type GetOperatorOverviewRequest struct {
 
 func (x *GetOperatorOverviewRequest) Reset() {
 	*x = GetOperatorOverviewRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[6]
+	mi := &file_cloud_v1_operator_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +620,7 @@ func (x *GetOperatorOverviewRequest) String() string {
 func (*GetOperatorOverviewRequest) ProtoMessage() {}
 
 func (x *GetOperatorOverviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[6]
+	mi := &file_cloud_v1_operator_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +633,7 @@ func (x *GetOperatorOverviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperatorOverviewRequest.ProtoReflect.Descriptor instead.
 func (*GetOperatorOverviewRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{5}
 }
 
 type GetOperatorOverviewResponse struct {
@@ -761,7 +645,7 @@ type GetOperatorOverviewResponse struct {
 
 func (x *GetOperatorOverviewResponse) Reset() {
 	*x = GetOperatorOverviewResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[7]
+	mi := &file_cloud_v1_operator_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +657,7 @@ func (x *GetOperatorOverviewResponse) String() string {
 func (*GetOperatorOverviewResponse) ProtoMessage() {}
 
 func (x *GetOperatorOverviewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[7]
+	mi := &file_cloud_v1_operator_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +670,7 @@ func (x *GetOperatorOverviewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperatorOverviewResponse.ProtoReflect.Descriptor instead.
 func (*GetOperatorOverviewResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetOperatorOverviewResponse) GetOverview() *OperatorOverview {
@@ -805,7 +689,7 @@ type ListOperatorAccountsRequest struct {
 
 func (x *ListOperatorAccountsRequest) Reset() {
 	*x = ListOperatorAccountsRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[8]
+	mi := &file_cloud_v1_operator_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -817,7 +701,7 @@ func (x *ListOperatorAccountsRequest) String() string {
 func (*ListOperatorAccountsRequest) ProtoMessage() {}
 
 func (x *ListOperatorAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[8]
+	mi := &file_cloud_v1_operator_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -830,7 +714,7 @@ func (x *ListOperatorAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAccountsRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{8}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListOperatorAccountsRequest) GetPage() *PageRequest {
@@ -850,7 +734,7 @@ type ListOperatorAccountsResponse struct {
 
 func (x *ListOperatorAccountsResponse) Reset() {
 	*x = ListOperatorAccountsResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[9]
+	mi := &file_cloud_v1_operator_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -862,7 +746,7 @@ func (x *ListOperatorAccountsResponse) String() string {
 func (*ListOperatorAccountsResponse) ProtoMessage() {}
 
 func (x *ListOperatorAccountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[9]
+	mi := &file_cloud_v1_operator_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -875,7 +759,7 @@ func (x *ListOperatorAccountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAccountsResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorAccountsResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{9}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListOperatorAccountsResponse) GetAccounts() []*AccountSummary {
@@ -901,7 +785,7 @@ type GetOperatorAccountRequest struct {
 
 func (x *GetOperatorAccountRequest) Reset() {
 	*x = GetOperatorAccountRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[10]
+	mi := &file_cloud_v1_operator_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +797,7 @@ func (x *GetOperatorAccountRequest) String() string {
 func (*GetOperatorAccountRequest) ProtoMessage() {}
 
 func (x *GetOperatorAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[10]
+	mi := &file_cloud_v1_operator_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,7 +810,7 @@ func (x *GetOperatorAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperatorAccountRequest.ProtoReflect.Descriptor instead.
 func (*GetOperatorAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetOperatorAccountRequest) GetAccountId() string {
@@ -945,7 +829,7 @@ type GetOperatorAccountResponse struct {
 
 func (x *GetOperatorAccountResponse) Reset() {
 	*x = GetOperatorAccountResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[11]
+	mi := &file_cloud_v1_operator_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -957,7 +841,7 @@ func (x *GetOperatorAccountResponse) String() string {
 func (*GetOperatorAccountResponse) ProtoMessage() {}
 
 func (x *GetOperatorAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[11]
+	mi := &file_cloud_v1_operator_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,7 +854,7 @@ func (x *GetOperatorAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperatorAccountResponse.ProtoReflect.Descriptor instead.
 func (*GetOperatorAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{11}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetOperatorAccountResponse) GetAccount() *AccountSummary {
@@ -991,7 +875,7 @@ type ProvisionAccountRequest struct {
 
 func (x *ProvisionAccountRequest) Reset() {
 	*x = ProvisionAccountRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[12]
+	mi := &file_cloud_v1_operator_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1003,7 +887,7 @@ func (x *ProvisionAccountRequest) String() string {
 func (*ProvisionAccountRequest) ProtoMessage() {}
 
 func (x *ProvisionAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[12]
+	mi := &file_cloud_v1_operator_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1016,7 +900,7 @@ func (x *ProvisionAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProvisionAccountRequest.ProtoReflect.Descriptor instead.
 func (*ProvisionAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{12}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ProvisionAccountRequest) GetEmail() string {
@@ -1049,7 +933,7 @@ type ProvisionAccountResponse struct {
 
 func (x *ProvisionAccountResponse) Reset() {
 	*x = ProvisionAccountResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[13]
+	mi := &file_cloud_v1_operator_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1061,7 +945,7 @@ func (x *ProvisionAccountResponse) String() string {
 func (*ProvisionAccountResponse) ProtoMessage() {}
 
 func (x *ProvisionAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[13]
+	mi := &file_cloud_v1_operator_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1074,7 +958,7 @@ func (x *ProvisionAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProvisionAccountResponse.ProtoReflect.Descriptor instead.
 func (*ProvisionAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{13}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ProvisionAccountResponse) GetAccount() *AccountProfile {
@@ -1093,7 +977,7 @@ type ListRuntimeSessionsRequest struct {
 
 func (x *ListRuntimeSessionsRequest) Reset() {
 	*x = ListRuntimeSessionsRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[14]
+	mi := &file_cloud_v1_operator_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +989,7 @@ func (x *ListRuntimeSessionsRequest) String() string {
 func (*ListRuntimeSessionsRequest) ProtoMessage() {}
 
 func (x *ListRuntimeSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[14]
+	mi := &file_cloud_v1_operator_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,7 +1002,7 @@ func (x *ListRuntimeSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimeSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListRuntimeSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{14}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListRuntimeSessionsRequest) GetPage() *PageRequest {
@@ -1137,7 +1021,7 @@ type ListRuntimeSessionsResponse struct {
 
 func (x *ListRuntimeSessionsResponse) Reset() {
 	*x = ListRuntimeSessionsResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[15]
+	mi := &file_cloud_v1_operator_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1033,7 @@ func (x *ListRuntimeSessionsResponse) String() string {
 func (*ListRuntimeSessionsResponse) ProtoMessage() {}
 
 func (x *ListRuntimeSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[15]
+	mi := &file_cloud_v1_operator_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1046,7 @@ func (x *ListRuntimeSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimeSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListRuntimeSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{15}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListRuntimeSessionsResponse) GetSessions() []*RuntimeSessionProjection {
@@ -1181,7 +1065,7 @@ type ListOperatorOrdersRequest struct {
 
 func (x *ListOperatorOrdersRequest) Reset() {
 	*x = ListOperatorOrdersRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[16]
+	mi := &file_cloud_v1_operator_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1193,7 +1077,7 @@ func (x *ListOperatorOrdersRequest) String() string {
 func (*ListOperatorOrdersRequest) ProtoMessage() {}
 
 func (x *ListOperatorOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[16]
+	mi := &file_cloud_v1_operator_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1206,7 +1090,7 @@ func (x *ListOperatorOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorOrdersRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{16}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListOperatorOrdersRequest) GetPage() *PageRequest {
@@ -1226,7 +1110,7 @@ type ListOperatorOrdersResponse struct {
 
 func (x *ListOperatorOrdersResponse) Reset() {
 	*x = ListOperatorOrdersResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[17]
+	mi := &file_cloud_v1_operator_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1238,7 +1122,7 @@ func (x *ListOperatorOrdersResponse) String() string {
 func (*ListOperatorOrdersResponse) ProtoMessage() {}
 
 func (x *ListOperatorOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[17]
+	mi := &file_cloud_v1_operator_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1251,7 +1135,7 @@ func (x *ListOperatorOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorOrdersResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{17}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListOperatorOrdersResponse) GetOrders() []*OrderProjection {
@@ -1277,7 +1161,7 @@ type ListOperatorSubscriptionsRequest struct {
 
 func (x *ListOperatorSubscriptionsRequest) Reset() {
 	*x = ListOperatorSubscriptionsRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[18]
+	mi := &file_cloud_v1_operator_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1289,7 +1173,7 @@ func (x *ListOperatorSubscriptionsRequest) String() string {
 func (*ListOperatorSubscriptionsRequest) ProtoMessage() {}
 
 func (x *ListOperatorSubscriptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[18]
+	mi := &file_cloud_v1_operator_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1302,7 +1186,7 @@ func (x *ListOperatorSubscriptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorSubscriptionsRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorSubscriptionsRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{18}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListOperatorSubscriptionsRequest) GetPage() *PageRequest {
@@ -1322,7 +1206,7 @@ type ListOperatorSubscriptionsResponse struct {
 
 func (x *ListOperatorSubscriptionsResponse) Reset() {
 	*x = ListOperatorSubscriptionsResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[19]
+	mi := &file_cloud_v1_operator_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1334,7 +1218,7 @@ func (x *ListOperatorSubscriptionsResponse) String() string {
 func (*ListOperatorSubscriptionsResponse) ProtoMessage() {}
 
 func (x *ListOperatorSubscriptionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[19]
+	mi := &file_cloud_v1_operator_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1347,7 +1231,7 @@ func (x *ListOperatorSubscriptionsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListOperatorSubscriptionsResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorSubscriptionsResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{19}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListOperatorSubscriptionsResponse) GetSubscriptions() []*SubscriptionProjection {
@@ -1373,7 +1257,7 @@ type ListOperatorUsageRequest struct {
 
 func (x *ListOperatorUsageRequest) Reset() {
 	*x = ListOperatorUsageRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[20]
+	mi := &file_cloud_v1_operator_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1385,7 +1269,7 @@ func (x *ListOperatorUsageRequest) String() string {
 func (*ListOperatorUsageRequest) ProtoMessage() {}
 
 func (x *ListOperatorUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[20]
+	mi := &file_cloud_v1_operator_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1398,7 +1282,7 @@ func (x *ListOperatorUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorUsageRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorUsageRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{20}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListOperatorUsageRequest) GetPage() *PageRequest {
@@ -1411,7 +1295,6 @@ func (x *ListOperatorUsageRequest) GetPage() *PageRequest {
 type ListOperatorUsageResponse struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
 	Accounts      []*UsagePeriodProjection `protobuf:"bytes,1,rep,name=accounts,proto3" json:"accounts,omitempty"`
-	Edges         []*EdgeUsageProjection   `protobuf:"bytes,2,rep,name=edges,proto3" json:"edges,omitempty"`
 	NextCursor    string                   `protobuf:"bytes,3,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1419,7 +1302,7 @@ type ListOperatorUsageResponse struct {
 
 func (x *ListOperatorUsageResponse) Reset() {
 	*x = ListOperatorUsageResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[21]
+	mi := &file_cloud_v1_operator_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1431,7 +1314,7 @@ func (x *ListOperatorUsageResponse) String() string {
 func (*ListOperatorUsageResponse) ProtoMessage() {}
 
 func (x *ListOperatorUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[21]
+	mi := &file_cloud_v1_operator_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1444,19 +1327,12 @@ func (x *ListOperatorUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorUsageResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorUsageResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{21}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListOperatorUsageResponse) GetAccounts() []*UsagePeriodProjection {
 	if x != nil {
 		return x.Accounts
-	}
-	return nil
-}
-
-func (x *ListOperatorUsageResponse) GetEdges() []*EdgeUsageProjection {
-	if x != nil {
-		return x.Edges
 	}
 	return nil
 }
@@ -1477,7 +1353,7 @@ type ListOperatorAuditRequest struct {
 
 func (x *ListOperatorAuditRequest) Reset() {
 	*x = ListOperatorAuditRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[22]
+	mi := &file_cloud_v1_operator_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1489,7 +1365,7 @@ func (x *ListOperatorAuditRequest) String() string {
 func (*ListOperatorAuditRequest) ProtoMessage() {}
 
 func (x *ListOperatorAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[22]
+	mi := &file_cloud_v1_operator_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1502,7 +1378,7 @@ func (x *ListOperatorAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAuditRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorAuditRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{22}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListOperatorAuditRequest) GetPage() *PageRequest {
@@ -1522,7 +1398,7 @@ type ListOperatorAuditResponse struct {
 
 func (x *ListOperatorAuditResponse) Reset() {
 	*x = ListOperatorAuditResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[23]
+	mi := &file_cloud_v1_operator_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1534,7 +1410,7 @@ func (x *ListOperatorAuditResponse) String() string {
 func (*ListOperatorAuditResponse) ProtoMessage() {}
 
 func (x *ListOperatorAuditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[23]
+	mi := &file_cloud_v1_operator_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1547,7 +1423,7 @@ func (x *ListOperatorAuditResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAuditResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorAuditResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{23}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListOperatorAuditResponse) GetEvents() []*OperatorAuditEvent {
@@ -1576,7 +1452,7 @@ type SetAccountStateRequest struct {
 
 func (x *SetAccountStateRequest) Reset() {
 	*x = SetAccountStateRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[24]
+	mi := &file_cloud_v1_operator_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1588,7 +1464,7 @@ func (x *SetAccountStateRequest) String() string {
 func (*SetAccountStateRequest) ProtoMessage() {}
 
 func (x *SetAccountStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[24]
+	mi := &file_cloud_v1_operator_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1601,7 +1477,7 @@ func (x *SetAccountStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAccountStateRequest.ProtoReflect.Descriptor instead.
 func (*SetAccountStateRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{24}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SetAccountStateRequest) GetAccountId() string {
@@ -1641,7 +1517,7 @@ type SetAccountStateResponse struct {
 
 func (x *SetAccountStateResponse) Reset() {
 	*x = SetAccountStateResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[25]
+	mi := &file_cloud_v1_operator_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1653,7 +1529,7 @@ func (x *SetAccountStateResponse) String() string {
 func (*SetAccountStateResponse) ProtoMessage() {}
 
 func (x *SetAccountStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[25]
+	mi := &file_cloud_v1_operator_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1666,7 +1542,7 @@ func (x *SetAccountStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAccountStateResponse.ProtoReflect.Descriptor instead.
 func (*SetAccountStateResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{25}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SetAccountStateResponse) GetAccount() *AccountProfile {
@@ -1688,7 +1564,7 @@ type SetAccountRoleRequest struct {
 
 func (x *SetAccountRoleRequest) Reset() {
 	*x = SetAccountRoleRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[26]
+	mi := &file_cloud_v1_operator_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1700,7 +1576,7 @@ func (x *SetAccountRoleRequest) String() string {
 func (*SetAccountRoleRequest) ProtoMessage() {}
 
 func (x *SetAccountRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[26]
+	mi := &file_cloud_v1_operator_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1713,7 +1589,7 @@ func (x *SetAccountRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAccountRoleRequest.ProtoReflect.Descriptor instead.
 func (*SetAccountRoleRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{26}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SetAccountRoleRequest) GetAccountId() string {
@@ -1753,7 +1629,7 @@ type SetAccountRoleResponse struct {
 
 func (x *SetAccountRoleResponse) Reset() {
 	*x = SetAccountRoleResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[27]
+	mi := &file_cloud_v1_operator_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1765,7 +1641,7 @@ func (x *SetAccountRoleResponse) String() string {
 func (*SetAccountRoleResponse) ProtoMessage() {}
 
 func (x *SetAccountRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[27]
+	mi := &file_cloud_v1_operator_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1778,7 +1654,7 @@ func (x *SetAccountRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAccountRoleResponse.ProtoReflect.Descriptor instead.
 func (*SetAccountRoleResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{27}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SetAccountRoleResponse) GetRoles() []AccountRole {
@@ -1799,7 +1675,7 @@ type DisconnectDaemonRequest struct {
 
 func (x *DisconnectDaemonRequest) Reset() {
 	*x = DisconnectDaemonRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[28]
+	mi := &file_cloud_v1_operator_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1811,7 +1687,7 @@ func (x *DisconnectDaemonRequest) String() string {
 func (*DisconnectDaemonRequest) ProtoMessage() {}
 
 func (x *DisconnectDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[28]
+	mi := &file_cloud_v1_operator_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1824,7 +1700,7 @@ func (x *DisconnectDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectDaemonRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{28}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DisconnectDaemonRequest) GetDaemonId() string {
@@ -1857,7 +1733,7 @@ type DisconnectDaemonResponse struct {
 
 func (x *DisconnectDaemonResponse) Reset() {
 	*x = DisconnectDaemonResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[29]
+	mi := &file_cloud_v1_operator_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1869,7 +1745,7 @@ func (x *DisconnectDaemonResponse) String() string {
 func (*DisconnectDaemonResponse) ProtoMessage() {}
 
 func (x *DisconnectDaemonResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[29]
+	mi := &file_cloud_v1_operator_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1882,7 +1758,7 @@ func (x *DisconnectDaemonResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectDaemonResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectDaemonResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{29}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DisconnectDaemonResponse) GetResult() RuntimeCommandResult {
@@ -1903,7 +1779,7 @@ type DisconnectSessionRequest struct {
 
 func (x *DisconnectSessionRequest) Reset() {
 	*x = DisconnectSessionRequest{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[30]
+	mi := &file_cloud_v1_operator_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1915,7 +1791,7 @@ func (x *DisconnectSessionRequest) String() string {
 func (*DisconnectSessionRequest) ProtoMessage() {}
 
 func (x *DisconnectSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[30]
+	mi := &file_cloud_v1_operator_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1928,7 +1804,7 @@ func (x *DisconnectSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectSessionRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{30}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DisconnectSessionRequest) GetSessionId() string {
@@ -1961,7 +1837,7 @@ type DisconnectSessionResponse struct {
 
 func (x *DisconnectSessionResponse) Reset() {
 	*x = DisconnectSessionResponse{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[31]
+	mi := &file_cloud_v1_operator_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1973,7 +1849,7 @@ func (x *DisconnectSessionResponse) String() string {
 func (*DisconnectSessionResponse) ProtoMessage() {}
 
 func (x *DisconnectSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[31]
+	mi := &file_cloud_v1_operator_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1986,7 +1862,7 @@ func (x *DisconnectSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectSessionResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{31}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DisconnectSessionResponse) GetResult() RuntimeCommandResult {
@@ -2011,7 +1887,7 @@ type OperatorRuntimeEvent struct {
 
 func (x *OperatorRuntimeEvent) Reset() {
 	*x = OperatorRuntimeEvent{}
-	mi := &file_cloud_v1_operator_proto_msgTypes[32]
+	mi := &file_cloud_v1_operator_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2023,7 +1899,7 @@ func (x *OperatorRuntimeEvent) String() string {
 func (*OperatorRuntimeEvent) ProtoMessage() {}
 
 func (x *OperatorRuntimeEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_operator_proto_msgTypes[32]
+	mi := &file_cloud_v1_operator_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2036,7 +1912,7 @@ func (x *OperatorRuntimeEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperatorRuntimeEvent.ProtoReflect.Descriptor instead.
 func (*OperatorRuntimeEvent) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{32}
+	return file_cloud_v1_operator_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *OperatorRuntimeEvent) GetControllerInstanceId() string {
@@ -2090,7 +1966,7 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"\tpage_size\x18\x01 \x01(\rR\bpageSize\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05query\x18\x03 \x01(\tR\x05query\x12\x12\n" +
-	"\x04sort\x18\x04 \x01(\tR\x04sort\"\xe0\x03\n" +
+	"\x04sort\x18\x04 \x01(\tR\x04sort\"\x8c\x03\n" +
 	"\x10OperatorOverview\x12\x1d\n" +
 	"\n" +
 	"edge_total\x18\x01 \x01(\x04R\tedgeTotal\x12\x1f\n" +
@@ -2098,20 +1974,18 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"edgeOnline\x12!\n" +
 	"\fdaemon_total\x18\x03 \x01(\x04R\vdaemonTotal\x12#\n" +
 	"\rdaemon_online\x18\x04 \x01(\x04R\fdaemonOnline\x122\n" +
-	"\x15client_session_online\x18\x05 \x01(\x04R\x13clientSessionOnline\x12,\n" +
-	"\x12p2p_session_online\x18\x06 \x01(\x04R\x10p2pSessionOnline\x120\n" +
-	"\x14relay_session_online\x18\a \x01(\x04R\x12relaySessionOnline\x12;\n" +
+	"\x15client_session_online\x18\x05 \x01(\x04R\x13clientSessionOnline\x12;\n" +
 	"\x1arelay_bytes_current_period\x18\b \x01(\x04R\x17relayBytesCurrentPeriod\x124\n" +
 	"\x16controller_instance_id\x18\t \x01(\tR\x14controllerInstanceId\x12=\n" +
 	"\fgenerated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\vgeneratedAt\"\xf6\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\vgeneratedAtJ\x04\b\x06\x10\aJ\x04\b\a\x10\b\"\xf6\x02\n" +
 	"\x0eAccountSummary\x129\n" +
 	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x122\n" +
 	"\x05roles\x18\x02 \x03(\x0e2\x1c.anytty.cloud.v1.AccountRoleR\x05roles\x12!\n" +
 	"\fdaemon_count\x18\x03 \x01(\x04R\vdaemonCount\x12K\n" +
 	"\fsubscription\x18\x04 \x01(\v2'.anytty.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
 	"\ventitlement\x18\x05 \x01(\v2%.anytty.cloud.v1.EffectiveEntitlementR\ventitlement\x12<\n" +
-	"\x05usage\x18\x06 \x01(\v2&.anytty.cloud.v1.UsagePeriodProjectionR\x05usage\"\xda\x02\n" +
+	"\x05usage\x18\x06 \x01(\v2&.anytty.cloud.v1.UsagePeriodProjectionR\x05usage\"\xca\x02\n" +
 	"\x18RuntimeSessionProjection\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -2120,21 +1994,11 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"\tdaemon_id\x18\x03 \x01(\tR\bdaemonId\x12\x17\n" +
 	"\aedge_id\x18\x04 \x01(\tR\x06edgeId\x12\x1b\n" +
 	"\tclient_id\x18\x05 \x01(\tR\bclientId\x128\n" +
-	"\aproduct\x18\x06 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12\x14\n" +
-	"\x05relay\x18\a \x01(\bR\x05relay\x12\x1e\n" +
+	"\aproduct\x18\x06 \x01(\x0e2\x1e.anytty.cloud.v1.ClientProductR\aproduct\x12\x1e\n" +
 	"\n" +
 	"generation\x18\b \x01(\x04R\n" +
 	"generation\x12=\n" +
-	"\fconnected_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vconnectedAt\"\x8b\x02\n" +
-	"\x13EdgeUsageProjection\x12\x17\n" +
-	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x1b\n" +
-	"\tedge_name\x18\x02 \x01(\tR\bedgeName\x12\x16\n" +
-	"\x06region\x18\x03 \x01(\tR\x06region\x12#\n" +
-	"\ringress_bytes\x18\x04 \x01(\x04R\fingressBytes\x12!\n" +
-	"\fegress_bytes\x18\x05 \x01(\x04R\vegressBytes\x12\x1f\n" +
-	"\vevent_count\x18\x06 \x01(\x04R\n" +
-	"eventCount\x12=\n" +
-	"\fperiod_start\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\"\xf9\x02\n" +
+	"\fconnected_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vconnectedAtJ\x04\b\a\x10\b\"\xf9\x02\n" +
 	"\x12OperatorAuditEvent\x12\x19\n" +
 	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12(\n" +
 	"\x10actor_account_id\x18\x02 \x01(\tR\x0eactorAccountId\x12,\n" +
@@ -2186,12 +2050,11 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\"L\n" +
 	"\x18ListOperatorUsageRequest\x120\n" +
-	"\x04page\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.PageRequestR\x04page\"\xbc\x01\n" +
+	"\x04page\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.PageRequestR\x04page\"\x86\x01\n" +
 	"\x19ListOperatorUsageResponse\x12B\n" +
-	"\baccounts\x18\x01 \x03(\v2&.anytty.cloud.v1.UsagePeriodProjectionR\baccounts\x12:\n" +
-	"\x05edges\x18\x02 \x03(\v2$.anytty.cloud.v1.EdgeUsageProjectionR\x05edges\x12\x1f\n" +
+	"\baccounts\x18\x01 \x03(\v2&.anytty.cloud.v1.UsagePeriodProjectionR\baccounts\x12\x1f\n" +
 	"\vnext_cursor\x18\x03 \x01(\tR\n" +
-	"nextCursor\"L\n" +
+	"nextCursorJ\x04\b\x02\x10\x03\"L\n" +
 	"\x18ListOperatorAuditRequest\x120\n" +
 	"\x04page\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.PageRequestR\x04page\"y\n" +
 	"\x19ListOperatorAuditResponse\x12;\n" +
@@ -2285,7 +2148,7 @@ func file_cloud_v1_operator_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_operator_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloud_v1_operator_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_cloud_v1_operator_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_cloud_v1_operator_proto_goTypes = []any{
 	(RuntimeCommandResult)(0),                 // 0: anytty.cloud.v1.RuntimeCommandResult
 	(OperatorEventOperation)(0),               // 1: anytty.cloud.v1.OperatorEventOperation
@@ -2293,123 +2156,120 @@ var file_cloud_v1_operator_proto_goTypes = []any{
 	(*OperatorOverview)(nil),                  // 3: anytty.cloud.v1.OperatorOverview
 	(*AccountSummary)(nil),                    // 4: anytty.cloud.v1.AccountSummary
 	(*RuntimeSessionProjection)(nil),          // 5: anytty.cloud.v1.RuntimeSessionProjection
-	(*EdgeUsageProjection)(nil),               // 6: anytty.cloud.v1.EdgeUsageProjection
-	(*OperatorAuditEvent)(nil),                // 7: anytty.cloud.v1.OperatorAuditEvent
-	(*GetOperatorOverviewRequest)(nil),        // 8: anytty.cloud.v1.GetOperatorOverviewRequest
-	(*GetOperatorOverviewResponse)(nil),       // 9: anytty.cloud.v1.GetOperatorOverviewResponse
-	(*ListOperatorAccountsRequest)(nil),       // 10: anytty.cloud.v1.ListOperatorAccountsRequest
-	(*ListOperatorAccountsResponse)(nil),      // 11: anytty.cloud.v1.ListOperatorAccountsResponse
-	(*GetOperatorAccountRequest)(nil),         // 12: anytty.cloud.v1.GetOperatorAccountRequest
-	(*GetOperatorAccountResponse)(nil),        // 13: anytty.cloud.v1.GetOperatorAccountResponse
-	(*ProvisionAccountRequest)(nil),           // 14: anytty.cloud.v1.ProvisionAccountRequest
-	(*ProvisionAccountResponse)(nil),          // 15: anytty.cloud.v1.ProvisionAccountResponse
-	(*ListRuntimeSessionsRequest)(nil),        // 16: anytty.cloud.v1.ListRuntimeSessionsRequest
-	(*ListRuntimeSessionsResponse)(nil),       // 17: anytty.cloud.v1.ListRuntimeSessionsResponse
-	(*ListOperatorOrdersRequest)(nil),         // 18: anytty.cloud.v1.ListOperatorOrdersRequest
-	(*ListOperatorOrdersResponse)(nil),        // 19: anytty.cloud.v1.ListOperatorOrdersResponse
-	(*ListOperatorSubscriptionsRequest)(nil),  // 20: anytty.cloud.v1.ListOperatorSubscriptionsRequest
-	(*ListOperatorSubscriptionsResponse)(nil), // 21: anytty.cloud.v1.ListOperatorSubscriptionsResponse
-	(*ListOperatorUsageRequest)(nil),          // 22: anytty.cloud.v1.ListOperatorUsageRequest
-	(*ListOperatorUsageResponse)(nil),         // 23: anytty.cloud.v1.ListOperatorUsageResponse
-	(*ListOperatorAuditRequest)(nil),          // 24: anytty.cloud.v1.ListOperatorAuditRequest
-	(*ListOperatorAuditResponse)(nil),         // 25: anytty.cloud.v1.ListOperatorAuditResponse
-	(*SetAccountStateRequest)(nil),            // 26: anytty.cloud.v1.SetAccountStateRequest
-	(*SetAccountStateResponse)(nil),           // 27: anytty.cloud.v1.SetAccountStateResponse
-	(*SetAccountRoleRequest)(nil),             // 28: anytty.cloud.v1.SetAccountRoleRequest
-	(*SetAccountRoleResponse)(nil),            // 29: anytty.cloud.v1.SetAccountRoleResponse
-	(*DisconnectDaemonRequest)(nil),           // 30: anytty.cloud.v1.DisconnectDaemonRequest
-	(*DisconnectDaemonResponse)(nil),          // 31: anytty.cloud.v1.DisconnectDaemonResponse
-	(*DisconnectSessionRequest)(nil),          // 32: anytty.cloud.v1.DisconnectSessionRequest
-	(*DisconnectSessionResponse)(nil),         // 33: anytty.cloud.v1.DisconnectSessionResponse
-	(*OperatorRuntimeEvent)(nil),              // 34: anytty.cloud.v1.OperatorRuntimeEvent
-	(*timestamppb.Timestamp)(nil),             // 35: google.protobuf.Timestamp
-	(*AccountProfile)(nil),                    // 36: anytty.cloud.v1.AccountProfile
-	(AccountRole)(0),                          // 37: anytty.cloud.v1.AccountRole
-	(*SubscriptionProjection)(nil),            // 38: anytty.cloud.v1.SubscriptionProjection
-	(*EffectiveEntitlement)(nil),              // 39: anytty.cloud.v1.EffectiveEntitlement
-	(*UsagePeriodProjection)(nil),             // 40: anytty.cloud.v1.UsagePeriodProjection
-	(ClientProduct)(0),                        // 41: anytty.cloud.v1.ClientProduct
-	(*OrderProjection)(nil),                   // 42: anytty.cloud.v1.OrderProjection
-	(AccountState)(0),                         // 43: anytty.cloud.v1.AccountState
-	(*ListCertificateProfilesRequest)(nil),    // 44: anytty.cloud.v1.ListCertificateProfilesRequest
-	(*UploadCertificateProfileRequest)(nil),   // 45: anytty.cloud.v1.UploadCertificateProfileRequest
-	(*BindCertificateProfileRequest)(nil),     // 46: anytty.cloud.v1.BindCertificateProfileRequest
-	(*ListCertificateProfilesResponse)(nil),   // 47: anytty.cloud.v1.ListCertificateProfilesResponse
-	(*UploadCertificateProfileResponse)(nil),  // 48: anytty.cloud.v1.UploadCertificateProfileResponse
-	(*BindCertificateProfileResponse)(nil),    // 49: anytty.cloud.v1.BindCertificateProfileResponse
+	(*OperatorAuditEvent)(nil),                // 6: anytty.cloud.v1.OperatorAuditEvent
+	(*GetOperatorOverviewRequest)(nil),        // 7: anytty.cloud.v1.GetOperatorOverviewRequest
+	(*GetOperatorOverviewResponse)(nil),       // 8: anytty.cloud.v1.GetOperatorOverviewResponse
+	(*ListOperatorAccountsRequest)(nil),       // 9: anytty.cloud.v1.ListOperatorAccountsRequest
+	(*ListOperatorAccountsResponse)(nil),      // 10: anytty.cloud.v1.ListOperatorAccountsResponse
+	(*GetOperatorAccountRequest)(nil),         // 11: anytty.cloud.v1.GetOperatorAccountRequest
+	(*GetOperatorAccountResponse)(nil),        // 12: anytty.cloud.v1.GetOperatorAccountResponse
+	(*ProvisionAccountRequest)(nil),           // 13: anytty.cloud.v1.ProvisionAccountRequest
+	(*ProvisionAccountResponse)(nil),          // 14: anytty.cloud.v1.ProvisionAccountResponse
+	(*ListRuntimeSessionsRequest)(nil),        // 15: anytty.cloud.v1.ListRuntimeSessionsRequest
+	(*ListRuntimeSessionsResponse)(nil),       // 16: anytty.cloud.v1.ListRuntimeSessionsResponse
+	(*ListOperatorOrdersRequest)(nil),         // 17: anytty.cloud.v1.ListOperatorOrdersRequest
+	(*ListOperatorOrdersResponse)(nil),        // 18: anytty.cloud.v1.ListOperatorOrdersResponse
+	(*ListOperatorSubscriptionsRequest)(nil),  // 19: anytty.cloud.v1.ListOperatorSubscriptionsRequest
+	(*ListOperatorSubscriptionsResponse)(nil), // 20: anytty.cloud.v1.ListOperatorSubscriptionsResponse
+	(*ListOperatorUsageRequest)(nil),          // 21: anytty.cloud.v1.ListOperatorUsageRequest
+	(*ListOperatorUsageResponse)(nil),         // 22: anytty.cloud.v1.ListOperatorUsageResponse
+	(*ListOperatorAuditRequest)(nil),          // 23: anytty.cloud.v1.ListOperatorAuditRequest
+	(*ListOperatorAuditResponse)(nil),         // 24: anytty.cloud.v1.ListOperatorAuditResponse
+	(*SetAccountStateRequest)(nil),            // 25: anytty.cloud.v1.SetAccountStateRequest
+	(*SetAccountStateResponse)(nil),           // 26: anytty.cloud.v1.SetAccountStateResponse
+	(*SetAccountRoleRequest)(nil),             // 27: anytty.cloud.v1.SetAccountRoleRequest
+	(*SetAccountRoleResponse)(nil),            // 28: anytty.cloud.v1.SetAccountRoleResponse
+	(*DisconnectDaemonRequest)(nil),           // 29: anytty.cloud.v1.DisconnectDaemonRequest
+	(*DisconnectDaemonResponse)(nil),          // 30: anytty.cloud.v1.DisconnectDaemonResponse
+	(*DisconnectSessionRequest)(nil),          // 31: anytty.cloud.v1.DisconnectSessionRequest
+	(*DisconnectSessionResponse)(nil),         // 32: anytty.cloud.v1.DisconnectSessionResponse
+	(*OperatorRuntimeEvent)(nil),              // 33: anytty.cloud.v1.OperatorRuntimeEvent
+	(*timestamppb.Timestamp)(nil),             // 34: google.protobuf.Timestamp
+	(*AccountProfile)(nil),                    // 35: anytty.cloud.v1.AccountProfile
+	(AccountRole)(0),                          // 36: anytty.cloud.v1.AccountRole
+	(*SubscriptionProjection)(nil),            // 37: anytty.cloud.v1.SubscriptionProjection
+	(*EffectiveEntitlement)(nil),              // 38: anytty.cloud.v1.EffectiveEntitlement
+	(*UsagePeriodProjection)(nil),             // 39: anytty.cloud.v1.UsagePeriodProjection
+	(ClientProduct)(0),                        // 40: anytty.cloud.v1.ClientProduct
+	(*OrderProjection)(nil),                   // 41: anytty.cloud.v1.OrderProjection
+	(AccountState)(0),                         // 42: anytty.cloud.v1.AccountState
+	(*ListCertificateProfilesRequest)(nil),    // 43: anytty.cloud.v1.ListCertificateProfilesRequest
+	(*UploadCertificateProfileRequest)(nil),   // 44: anytty.cloud.v1.UploadCertificateProfileRequest
+	(*BindCertificateProfileRequest)(nil),     // 45: anytty.cloud.v1.BindCertificateProfileRequest
+	(*ListCertificateProfilesResponse)(nil),   // 46: anytty.cloud.v1.ListCertificateProfilesResponse
+	(*UploadCertificateProfileResponse)(nil),  // 47: anytty.cloud.v1.UploadCertificateProfileResponse
+	(*BindCertificateProfileResponse)(nil),    // 48: anytty.cloud.v1.BindCertificateProfileResponse
 }
 var file_cloud_v1_operator_proto_depIdxs = []int32{
-	35, // 0: anytty.cloud.v1.OperatorOverview.generated_at:type_name -> google.protobuf.Timestamp
-	36, // 1: anytty.cloud.v1.AccountSummary.account:type_name -> anytty.cloud.v1.AccountProfile
-	37, // 2: anytty.cloud.v1.AccountSummary.roles:type_name -> anytty.cloud.v1.AccountRole
-	38, // 3: anytty.cloud.v1.AccountSummary.subscription:type_name -> anytty.cloud.v1.SubscriptionProjection
-	39, // 4: anytty.cloud.v1.AccountSummary.entitlement:type_name -> anytty.cloud.v1.EffectiveEntitlement
-	40, // 5: anytty.cloud.v1.AccountSummary.usage:type_name -> anytty.cloud.v1.UsagePeriodProjection
-	41, // 6: anytty.cloud.v1.RuntimeSessionProjection.product:type_name -> anytty.cloud.v1.ClientProduct
-	35, // 7: anytty.cloud.v1.RuntimeSessionProjection.connected_at:type_name -> google.protobuf.Timestamp
-	35, // 8: anytty.cloud.v1.EdgeUsageProjection.period_start:type_name -> google.protobuf.Timestamp
-	35, // 9: anytty.cloud.v1.OperatorAuditEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	3,  // 10: anytty.cloud.v1.GetOperatorOverviewResponse.overview:type_name -> anytty.cloud.v1.OperatorOverview
-	2,  // 11: anytty.cloud.v1.ListOperatorAccountsRequest.page:type_name -> anytty.cloud.v1.PageRequest
-	4,  // 12: anytty.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> anytty.cloud.v1.AccountSummary
-	4,  // 13: anytty.cloud.v1.GetOperatorAccountResponse.account:type_name -> anytty.cloud.v1.AccountSummary
-	36, // 14: anytty.cloud.v1.ProvisionAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	2,  // 15: anytty.cloud.v1.ListRuntimeSessionsRequest.page:type_name -> anytty.cloud.v1.PageRequest
-	5,  // 16: anytty.cloud.v1.ListRuntimeSessionsResponse.sessions:type_name -> anytty.cloud.v1.RuntimeSessionProjection
-	2,  // 17: anytty.cloud.v1.ListOperatorOrdersRequest.page:type_name -> anytty.cloud.v1.PageRequest
-	42, // 18: anytty.cloud.v1.ListOperatorOrdersResponse.orders:type_name -> anytty.cloud.v1.OrderProjection
-	2,  // 19: anytty.cloud.v1.ListOperatorSubscriptionsRequest.page:type_name -> anytty.cloud.v1.PageRequest
-	38, // 20: anytty.cloud.v1.ListOperatorSubscriptionsResponse.subscriptions:type_name -> anytty.cloud.v1.SubscriptionProjection
-	2,  // 21: anytty.cloud.v1.ListOperatorUsageRequest.page:type_name -> anytty.cloud.v1.PageRequest
-	40, // 22: anytty.cloud.v1.ListOperatorUsageResponse.accounts:type_name -> anytty.cloud.v1.UsagePeriodProjection
-	6,  // 23: anytty.cloud.v1.ListOperatorUsageResponse.edges:type_name -> anytty.cloud.v1.EdgeUsageProjection
-	2,  // 24: anytty.cloud.v1.ListOperatorAuditRequest.page:type_name -> anytty.cloud.v1.PageRequest
-	7,  // 25: anytty.cloud.v1.ListOperatorAuditResponse.events:type_name -> anytty.cloud.v1.OperatorAuditEvent
-	43, // 26: anytty.cloud.v1.SetAccountStateRequest.state:type_name -> anytty.cloud.v1.AccountState
-	36, // 27: anytty.cloud.v1.SetAccountStateResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	37, // 28: anytty.cloud.v1.SetAccountRoleRequest.role:type_name -> anytty.cloud.v1.AccountRole
-	37, // 29: anytty.cloud.v1.SetAccountRoleResponse.roles:type_name -> anytty.cloud.v1.AccountRole
-	0,  // 30: anytty.cloud.v1.DisconnectDaemonResponse.result:type_name -> anytty.cloud.v1.RuntimeCommandResult
-	0,  // 31: anytty.cloud.v1.DisconnectSessionResponse.result:type_name -> anytty.cloud.v1.RuntimeCommandResult
-	1,  // 32: anytty.cloud.v1.OperatorRuntimeEvent.operation:type_name -> anytty.cloud.v1.OperatorEventOperation
-	35, // 33: anytty.cloud.v1.OperatorRuntimeEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	8,  // 34: anytty.cloud.v1.OperatorService.GetOverview:input_type -> anytty.cloud.v1.GetOperatorOverviewRequest
-	10, // 35: anytty.cloud.v1.OperatorService.ListAccounts:input_type -> anytty.cloud.v1.ListOperatorAccountsRequest
-	12, // 36: anytty.cloud.v1.OperatorService.GetAccount:input_type -> anytty.cloud.v1.GetOperatorAccountRequest
-	14, // 37: anytty.cloud.v1.OperatorService.ProvisionAccount:input_type -> anytty.cloud.v1.ProvisionAccountRequest
-	16, // 38: anytty.cloud.v1.OperatorService.ListRuntimeSessions:input_type -> anytty.cloud.v1.ListRuntimeSessionsRequest
-	18, // 39: anytty.cloud.v1.OperatorService.ListOrders:input_type -> anytty.cloud.v1.ListOperatorOrdersRequest
-	20, // 40: anytty.cloud.v1.OperatorService.ListSubscriptions:input_type -> anytty.cloud.v1.ListOperatorSubscriptionsRequest
-	22, // 41: anytty.cloud.v1.OperatorService.ListUsage:input_type -> anytty.cloud.v1.ListOperatorUsageRequest
-	24, // 42: anytty.cloud.v1.OperatorService.ListAudit:input_type -> anytty.cloud.v1.ListOperatorAuditRequest
-	26, // 43: anytty.cloud.v1.OperatorService.SetAccountState:input_type -> anytty.cloud.v1.SetAccountStateRequest
-	28, // 44: anytty.cloud.v1.OperatorService.SetAccountRole:input_type -> anytty.cloud.v1.SetAccountRoleRequest
-	30, // 45: anytty.cloud.v1.OperatorService.DisconnectDaemon:input_type -> anytty.cloud.v1.DisconnectDaemonRequest
-	32, // 46: anytty.cloud.v1.OperatorService.DisconnectSession:input_type -> anytty.cloud.v1.DisconnectSessionRequest
-	44, // 47: anytty.cloud.v1.OperatorService.ListCertificateProfiles:input_type -> anytty.cloud.v1.ListCertificateProfilesRequest
-	45, // 48: anytty.cloud.v1.OperatorService.UploadCertificateProfile:input_type -> anytty.cloud.v1.UploadCertificateProfileRequest
-	46, // 49: anytty.cloud.v1.OperatorService.BindCertificateProfile:input_type -> anytty.cloud.v1.BindCertificateProfileRequest
-	9,  // 50: anytty.cloud.v1.OperatorService.GetOverview:output_type -> anytty.cloud.v1.GetOperatorOverviewResponse
-	11, // 51: anytty.cloud.v1.OperatorService.ListAccounts:output_type -> anytty.cloud.v1.ListOperatorAccountsResponse
-	13, // 52: anytty.cloud.v1.OperatorService.GetAccount:output_type -> anytty.cloud.v1.GetOperatorAccountResponse
-	15, // 53: anytty.cloud.v1.OperatorService.ProvisionAccount:output_type -> anytty.cloud.v1.ProvisionAccountResponse
-	17, // 54: anytty.cloud.v1.OperatorService.ListRuntimeSessions:output_type -> anytty.cloud.v1.ListRuntimeSessionsResponse
-	19, // 55: anytty.cloud.v1.OperatorService.ListOrders:output_type -> anytty.cloud.v1.ListOperatorOrdersResponse
-	21, // 56: anytty.cloud.v1.OperatorService.ListSubscriptions:output_type -> anytty.cloud.v1.ListOperatorSubscriptionsResponse
-	23, // 57: anytty.cloud.v1.OperatorService.ListUsage:output_type -> anytty.cloud.v1.ListOperatorUsageResponse
-	25, // 58: anytty.cloud.v1.OperatorService.ListAudit:output_type -> anytty.cloud.v1.ListOperatorAuditResponse
-	27, // 59: anytty.cloud.v1.OperatorService.SetAccountState:output_type -> anytty.cloud.v1.SetAccountStateResponse
-	29, // 60: anytty.cloud.v1.OperatorService.SetAccountRole:output_type -> anytty.cloud.v1.SetAccountRoleResponse
-	31, // 61: anytty.cloud.v1.OperatorService.DisconnectDaemon:output_type -> anytty.cloud.v1.DisconnectDaemonResponse
-	33, // 62: anytty.cloud.v1.OperatorService.DisconnectSession:output_type -> anytty.cloud.v1.DisconnectSessionResponse
-	47, // 63: anytty.cloud.v1.OperatorService.ListCertificateProfiles:output_type -> anytty.cloud.v1.ListCertificateProfilesResponse
-	48, // 64: anytty.cloud.v1.OperatorService.UploadCertificateProfile:output_type -> anytty.cloud.v1.UploadCertificateProfileResponse
-	49, // 65: anytty.cloud.v1.OperatorService.BindCertificateProfile:output_type -> anytty.cloud.v1.BindCertificateProfileResponse
-	50, // [50:66] is the sub-list for method output_type
-	34, // [34:50] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	34, // 0: anytty.cloud.v1.OperatorOverview.generated_at:type_name -> google.protobuf.Timestamp
+	35, // 1: anytty.cloud.v1.AccountSummary.account:type_name -> anytty.cloud.v1.AccountProfile
+	36, // 2: anytty.cloud.v1.AccountSummary.roles:type_name -> anytty.cloud.v1.AccountRole
+	37, // 3: anytty.cloud.v1.AccountSummary.subscription:type_name -> anytty.cloud.v1.SubscriptionProjection
+	38, // 4: anytty.cloud.v1.AccountSummary.entitlement:type_name -> anytty.cloud.v1.EffectiveEntitlement
+	39, // 5: anytty.cloud.v1.AccountSummary.usage:type_name -> anytty.cloud.v1.UsagePeriodProjection
+	40, // 6: anytty.cloud.v1.RuntimeSessionProjection.product:type_name -> anytty.cloud.v1.ClientProduct
+	34, // 7: anytty.cloud.v1.RuntimeSessionProjection.connected_at:type_name -> google.protobuf.Timestamp
+	34, // 8: anytty.cloud.v1.OperatorAuditEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	3,  // 9: anytty.cloud.v1.GetOperatorOverviewResponse.overview:type_name -> anytty.cloud.v1.OperatorOverview
+	2,  // 10: anytty.cloud.v1.ListOperatorAccountsRequest.page:type_name -> anytty.cloud.v1.PageRequest
+	4,  // 11: anytty.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> anytty.cloud.v1.AccountSummary
+	4,  // 12: anytty.cloud.v1.GetOperatorAccountResponse.account:type_name -> anytty.cloud.v1.AccountSummary
+	35, // 13: anytty.cloud.v1.ProvisionAccountResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	2,  // 14: anytty.cloud.v1.ListRuntimeSessionsRequest.page:type_name -> anytty.cloud.v1.PageRequest
+	5,  // 15: anytty.cloud.v1.ListRuntimeSessionsResponse.sessions:type_name -> anytty.cloud.v1.RuntimeSessionProjection
+	2,  // 16: anytty.cloud.v1.ListOperatorOrdersRequest.page:type_name -> anytty.cloud.v1.PageRequest
+	41, // 17: anytty.cloud.v1.ListOperatorOrdersResponse.orders:type_name -> anytty.cloud.v1.OrderProjection
+	2,  // 18: anytty.cloud.v1.ListOperatorSubscriptionsRequest.page:type_name -> anytty.cloud.v1.PageRequest
+	37, // 19: anytty.cloud.v1.ListOperatorSubscriptionsResponse.subscriptions:type_name -> anytty.cloud.v1.SubscriptionProjection
+	2,  // 20: anytty.cloud.v1.ListOperatorUsageRequest.page:type_name -> anytty.cloud.v1.PageRequest
+	39, // 21: anytty.cloud.v1.ListOperatorUsageResponse.accounts:type_name -> anytty.cloud.v1.UsagePeriodProjection
+	2,  // 22: anytty.cloud.v1.ListOperatorAuditRequest.page:type_name -> anytty.cloud.v1.PageRequest
+	6,  // 23: anytty.cloud.v1.ListOperatorAuditResponse.events:type_name -> anytty.cloud.v1.OperatorAuditEvent
+	42, // 24: anytty.cloud.v1.SetAccountStateRequest.state:type_name -> anytty.cloud.v1.AccountState
+	35, // 25: anytty.cloud.v1.SetAccountStateResponse.account:type_name -> anytty.cloud.v1.AccountProfile
+	36, // 26: anytty.cloud.v1.SetAccountRoleRequest.role:type_name -> anytty.cloud.v1.AccountRole
+	36, // 27: anytty.cloud.v1.SetAccountRoleResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	0,  // 28: anytty.cloud.v1.DisconnectDaemonResponse.result:type_name -> anytty.cloud.v1.RuntimeCommandResult
+	0,  // 29: anytty.cloud.v1.DisconnectSessionResponse.result:type_name -> anytty.cloud.v1.RuntimeCommandResult
+	1,  // 30: anytty.cloud.v1.OperatorRuntimeEvent.operation:type_name -> anytty.cloud.v1.OperatorEventOperation
+	34, // 31: anytty.cloud.v1.OperatorRuntimeEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	7,  // 32: anytty.cloud.v1.OperatorService.GetOverview:input_type -> anytty.cloud.v1.GetOperatorOverviewRequest
+	9,  // 33: anytty.cloud.v1.OperatorService.ListAccounts:input_type -> anytty.cloud.v1.ListOperatorAccountsRequest
+	11, // 34: anytty.cloud.v1.OperatorService.GetAccount:input_type -> anytty.cloud.v1.GetOperatorAccountRequest
+	13, // 35: anytty.cloud.v1.OperatorService.ProvisionAccount:input_type -> anytty.cloud.v1.ProvisionAccountRequest
+	15, // 36: anytty.cloud.v1.OperatorService.ListRuntimeSessions:input_type -> anytty.cloud.v1.ListRuntimeSessionsRequest
+	17, // 37: anytty.cloud.v1.OperatorService.ListOrders:input_type -> anytty.cloud.v1.ListOperatorOrdersRequest
+	19, // 38: anytty.cloud.v1.OperatorService.ListSubscriptions:input_type -> anytty.cloud.v1.ListOperatorSubscriptionsRequest
+	21, // 39: anytty.cloud.v1.OperatorService.ListUsage:input_type -> anytty.cloud.v1.ListOperatorUsageRequest
+	23, // 40: anytty.cloud.v1.OperatorService.ListAudit:input_type -> anytty.cloud.v1.ListOperatorAuditRequest
+	25, // 41: anytty.cloud.v1.OperatorService.SetAccountState:input_type -> anytty.cloud.v1.SetAccountStateRequest
+	27, // 42: anytty.cloud.v1.OperatorService.SetAccountRole:input_type -> anytty.cloud.v1.SetAccountRoleRequest
+	29, // 43: anytty.cloud.v1.OperatorService.DisconnectDaemon:input_type -> anytty.cloud.v1.DisconnectDaemonRequest
+	31, // 44: anytty.cloud.v1.OperatorService.DisconnectSession:input_type -> anytty.cloud.v1.DisconnectSessionRequest
+	43, // 45: anytty.cloud.v1.OperatorService.ListCertificateProfiles:input_type -> anytty.cloud.v1.ListCertificateProfilesRequest
+	44, // 46: anytty.cloud.v1.OperatorService.UploadCertificateProfile:input_type -> anytty.cloud.v1.UploadCertificateProfileRequest
+	45, // 47: anytty.cloud.v1.OperatorService.BindCertificateProfile:input_type -> anytty.cloud.v1.BindCertificateProfileRequest
+	8,  // 48: anytty.cloud.v1.OperatorService.GetOverview:output_type -> anytty.cloud.v1.GetOperatorOverviewResponse
+	10, // 49: anytty.cloud.v1.OperatorService.ListAccounts:output_type -> anytty.cloud.v1.ListOperatorAccountsResponse
+	12, // 50: anytty.cloud.v1.OperatorService.GetAccount:output_type -> anytty.cloud.v1.GetOperatorAccountResponse
+	14, // 51: anytty.cloud.v1.OperatorService.ProvisionAccount:output_type -> anytty.cloud.v1.ProvisionAccountResponse
+	16, // 52: anytty.cloud.v1.OperatorService.ListRuntimeSessions:output_type -> anytty.cloud.v1.ListRuntimeSessionsResponse
+	18, // 53: anytty.cloud.v1.OperatorService.ListOrders:output_type -> anytty.cloud.v1.ListOperatorOrdersResponse
+	20, // 54: anytty.cloud.v1.OperatorService.ListSubscriptions:output_type -> anytty.cloud.v1.ListOperatorSubscriptionsResponse
+	22, // 55: anytty.cloud.v1.OperatorService.ListUsage:output_type -> anytty.cloud.v1.ListOperatorUsageResponse
+	24, // 56: anytty.cloud.v1.OperatorService.ListAudit:output_type -> anytty.cloud.v1.ListOperatorAuditResponse
+	26, // 57: anytty.cloud.v1.OperatorService.SetAccountState:output_type -> anytty.cloud.v1.SetAccountStateResponse
+	28, // 58: anytty.cloud.v1.OperatorService.SetAccountRole:output_type -> anytty.cloud.v1.SetAccountRoleResponse
+	30, // 59: anytty.cloud.v1.OperatorService.DisconnectDaemon:output_type -> anytty.cloud.v1.DisconnectDaemonResponse
+	32, // 60: anytty.cloud.v1.OperatorService.DisconnectSession:output_type -> anytty.cloud.v1.DisconnectSessionResponse
+	46, // 61: anytty.cloud.v1.OperatorService.ListCertificateProfiles:output_type -> anytty.cloud.v1.ListCertificateProfilesResponse
+	47, // 62: anytty.cloud.v1.OperatorService.UploadCertificateProfile:output_type -> anytty.cloud.v1.UploadCertificateProfileResponse
+	48, // 63: anytty.cloud.v1.OperatorService.BindCertificateProfile:output_type -> anytty.cloud.v1.BindCertificateProfileResponse
+	48, // [48:64] is the sub-list for method output_type
+	32, // [32:48] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_operator_proto_init() }
@@ -2427,7 +2287,7 @@ func file_cloud_v1_operator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_operator_proto_rawDesc), len(file_cloud_v1_operator_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   33,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

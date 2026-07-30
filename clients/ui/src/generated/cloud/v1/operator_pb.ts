@@ -20,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/operator.proto.
  */
 export const file_cloud_v1_operator: GenFile = /*@__PURE__*/
-  fileDesc("ChdjbG91ZC92MS9vcGVyYXRvci5wcm90bxIPYW55dHR5LmNsb3VkLnYxIk0KC1BhZ2VSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoDRIOCgZjdXJzb3IYAiABKAkSDQoFcXVlcnkYAyABKAkSDAoEc29ydBgEIAEoCSK3AgoQT3BlcmF0b3JPdmVydmlldxISCgplZGdlX3RvdGFsGAEgASgEEhMKC2VkZ2Vfb25saW5lGAIgASgEEhQKDGRhZW1vbl90b3RhbBgDIAEoBBIVCg1kYWVtb25fb25saW5lGAQgASgEEh0KFWNsaWVudF9zZXNzaW9uX29ubGluZRgFIAEoBBIaChJwMnBfc2Vzc2lvbl9vbmxpbmUYBiABKAQSHAoUcmVsYXlfc2Vzc2lvbl9vbmxpbmUYByABKAQSIgoacmVsYXlfYnl0ZXNfY3VycmVudF9wZXJpb2QYCCABKAQSHgoWY29udHJvbGxlcl9pbnN0YW5jZV9pZBgJIAEoCRIwCgxnZW5lcmF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrcCCg5BY2NvdW50U3VtbWFyeRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwuYW55dHR5LmNsb3VkLnYxLkFjY291bnRSb2xlEhQKDGRhZW1vbl9jb3VudBgDIAEoBBI9CgxzdWJzY3JpcHRpb24YBCABKAsyJy5hbnl0dHkuY2xvdWQudjEuU3Vic2NyaXB0aW9uUHJvamVjdGlvbhI6CgtlbnRpdGxlbWVudBgFIAEoCzIlLmFueXR0eS5jbG91ZC52MS5FZmZlY3RpdmVFbnRpdGxlbWVudBI1CgV1c2FnZRgGIAEoCzImLmFueXR0eS5jbG91ZC52MS5Vc2FnZVBlcmlvZFByb2plY3Rpb24i/wEKGFJ1bnRpbWVTZXNzaW9uUHJvamVjdGlvbhISCgpzZXNzaW9uX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSEQoJZGFlbW9uX2lkGAMgASgJEg8KB2VkZ2VfaWQYBCABKAkSEQoJY2xpZW50X2lkGAUgASgJEi8KB3Byb2R1Y3QYBiABKA4yHi5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UHJvZHVjdBINCgVyZWxheRgHIAEoCBISCgpnZW5lcmF0aW9uGAggASgEEjAKDGNvbm5lY3RlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAivQEKE0VkZ2VVc2FnZVByb2plY3Rpb24SDwoHZWRnZV9pZBgBIAEoCRIRCgllZGdlX25hbWUYAiABKAkSDgoGcmVnaW9uGAMgASgJEhUKDWluZ3Jlc3NfYnl0ZXMYBCABKAQSFAoMZWdyZXNzX2J5dGVzGAUgASgEEhMKC2V2ZW50X2NvdW50GAYgASgEEjAKDHBlcmlvZF9zdGFydBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAigQIKEk9wZXJhdG9yQXVkaXRFdmVudBIQCghhdWRpdF9pZBgBIAEoCRIYChBhY3Rvcl9hY2NvdW50X2lkGAIgASgJEhoKEmFjdG9yX2Rpc3BsYXlfbmFtZRgDIAEoCRIOCgZhY3Rpb24YBCABKAkSFQoNcmVzb3VyY2VfdHlwZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZyZWFzb24YByABKAkSDgoGcmVzdWx0GAggASgJEhYKDmNvcnJlbGF0aW9uX2lkGAkgASgJEi8KC29jY3VycmVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIcChpHZXRPcGVyYXRvck92ZXJ2aWV3UmVxdWVzdCJSChtHZXRPcGVyYXRvck92ZXJ2aWV3UmVzcG9uc2USMwoIb3ZlcnZpZXcYASABKAsyIS5hbnl0dHkuY2xvdWQudjEuT3BlcmF0b3JPdmVydmlldyJJChtMaXN0T3BlcmF0b3JBY2NvdW50c1JlcXVlc3QSKgoEcGFnZRgBIAEoCzIcLmFueXR0eS5jbG91ZC52MS5QYWdlUmVxdWVzdCJmChxMaXN0T3BlcmF0b3JBY2NvdW50c1Jlc3BvbnNlEjEKCGFjY291bnRzGAEgAygLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdW1tYXJ5EhMKC25leHRfY3Vyc29yGAIgASgJIi8KGUdldE9wZXJhdG9yQWNjb3VudFJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCSJOChpHZXRPcGVyYXRvckFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdW1tYXJ5IlAKF1Byb3Zpc2lvbkFjY291bnRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCSJMChhQcm92aXNpb25BY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZSJIChpMaXN0UnVudGltZVNlc3Npb25zUmVxdWVzdBIqCgRwYWdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0IloKG0xpc3RSdW50aW1lU2Vzc2lvbnNSZXNwb25zZRI7CghzZXNzaW9ucxgBIAMoCzIpLmFueXR0eS5jbG91ZC52MS5SdW50aW1lU2Vzc2lvblByb2plY3Rpb24iRwoZTGlzdE9wZXJhdG9yT3JkZXJzUmVxdWVzdBIqCgRwYWdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0ImMKGkxpc3RPcGVyYXRvck9yZGVyc1Jlc3BvbnNlEjAKBm9yZGVycxgBIAMoCzIgLmFueXR0eS5jbG91ZC52MS5PcmRlclByb2plY3Rpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkiTgogTGlzdE9wZXJhdG9yU3Vic2NyaXB0aW9uc1JlcXVlc3QSKgoEcGFnZRgBIAEoCzIcLmFueXR0eS5jbG91ZC52MS5QYWdlUmVxdWVzdCJ4CiFMaXN0T3BlcmF0b3JTdWJzY3JpcHRpb25zUmVzcG9uc2USPgoNc3Vic2NyaXB0aW9ucxgBIAMoCzInLmFueXR0eS5jbG91ZC52MS5TdWJzY3JpcHRpb25Qcm9qZWN0aW9uEhMKC25leHRfY3Vyc29yGAIgASgJIkYKGExpc3RPcGVyYXRvclVzYWdlUmVxdWVzdBIqCgRwYWdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0Ip8BChlMaXN0T3BlcmF0b3JVc2FnZVJlc3BvbnNlEjgKCGFjY291bnRzGAEgAygLMiYuYW55dHR5LmNsb3VkLnYxLlVzYWdlUGVyaW9kUHJvamVjdGlvbhIzCgVlZGdlcxgCIAMoCzIkLmFueXR0eS5jbG91ZC52MS5FZGdlVXNhZ2VQcm9qZWN0aW9uEhMKC25leHRfY3Vyc29yGAMgASgJIkYKGExpc3RPcGVyYXRvckF1ZGl0UmVxdWVzdBIqCgRwYWdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0ImUKGUxpc3RPcGVyYXRvckF1ZGl0UmVzcG9uc2USMwoGZXZlbnRzGAEgAygLMiMuYW55dHR5LmNsb3VkLnYxLk9wZXJhdG9yQXVkaXRFdmVudBITCgtuZXh0X2N1cnNvchgCIAEoCSKFAQoWU2V0QWNjb3VudFN0YXRlUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEiwKBXN0YXRlGAIgASgOMh0uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdGF0ZRIZChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoBBIOCgZyZWFzb24YBCABKAkiSwoXU2V0QWNjb3VudFN0YXRlUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZSJ4ChVTZXRBY2NvdW50Um9sZVJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIqCgRyb2xlGAIgASgOMhwuYW55dHR5LmNsb3VkLnYxLkFjY291bnRSb2xlEg8KB2VuYWJsZWQYAyABKAgSDgoGcmVhc29uGAQgASgJIkUKFlNldEFjY291bnRSb2xlUmVzcG9uc2USKwoFcm9sZXMYASADKA4yHC5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJvbGUiUAoXRGlzY29ubmVjdERhZW1vblJlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSDgoGcmVhc29uGAMgASgJIlEKGERpc2Nvbm5lY3REYWVtb25SZXNwb25zZRI1CgZyZXN1bHQYASABKA4yJS5hbnl0dHkuY2xvdWQudjEuUnVudGltZUNvbW1hbmRSZXN1bHQiUgoYRGlzY29ubmVjdFNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIOCgZyZWFzb24YAyABKAkiUgoZRGlzY29ubmVjdFNlc3Npb25SZXNwb25zZRI1CgZyZXN1bHQYASABKA4yJS5hbnl0dHkuY2xvdWQudjEuUnVudGltZUNvbW1hbmRSZXN1bHQi4gEKFE9wZXJhdG9yUnVudGltZUV2ZW50Eh4KFmNvbnRyb2xsZXJfaW5zdGFuY2VfaWQYASABKAkSEQoJZXZlbnRfc2VxGAIgASgEEhUKDXJlc291cmNlX2tpbmQYAyABKAkSEwoLcmVzb3VyY2VfaWQYBCABKAkSOgoJb3BlcmF0aW9uGAUgASgOMicuYW55dHR5LmNsb3VkLnYxLk9wZXJhdG9yRXZlbnRPcGVyYXRpb24SLwoLb2NjdXJyZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wKvUBChRSdW50aW1lQ29tbWFuZFJlc3VsdBImCiJSVU5USU1FX0NPTU1BTkRfUkVTVUxUX1VOU1BFQ0lGSUVEEAASIgoeUlVOVElNRV9DT01NQU5EX1JFU1VMVF9BUFBMSUVEEAESIwofUlVOVElNRV9DT01NQU5EX1JFU1VMVF9SRUpFQ1RFRBACEiAKHFJVTlRJTUVfQ09NTUFORF9SRVNVTFRfU1RBTEUQAxIiCh5SVU5USU1FX0NPTU1BTkRfUkVTVUxUX1RJTUVPVVQQBBImCiJSVU5USU1FX0NPTU1BTkRfUkVTVUxUX1VOQVZBSUxBQkxFEAUqsAEKFk9wZXJhdG9yRXZlbnRPcGVyYXRpb24SKAokT1BFUkFUT1JfRVZFTlRfT1BFUkFUSU9OX1VOU1BFQ0lGSUVEEAASIwofT1BFUkFUT1JfRVZFTlRfT1BFUkFUSU9OX1VQU0VSVBABEiMKH09QRVJBVE9SX0VWRU5UX09QRVJBVElPTl9ERUxFVEUQAhIiCh5PUEVSQVRPUl9FVkVOVF9PUEVSQVRJT05fUkVTRVQQAzLtDQoPT3BlcmF0b3JTZXJ2aWNlEmgKC0dldE92ZXJ2aWV3EisuYW55dHR5LmNsb3VkLnYxLkdldE9wZXJhdG9yT3ZlcnZpZXdSZXF1ZXN0GiwuYW55dHR5LmNsb3VkLnYxLkdldE9wZXJhdG9yT3ZlcnZpZXdSZXNwb25zZRJrCgxMaXN0QWNjb3VudHMSLC5hbnl0dHkuY2xvdWQudjEuTGlzdE9wZXJhdG9yQWNjb3VudHNSZXF1ZXN0Gi0uYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvckFjY291bnRzUmVzcG9uc2USZQoKR2V0QWNjb3VudBIqLmFueXR0eS5jbG91ZC52MS5HZXRPcGVyYXRvckFjY291bnRSZXF1ZXN0GisuYW55dHR5LmNsb3VkLnYxLkdldE9wZXJhdG9yQWNjb3VudFJlc3BvbnNlEmcKEFByb3Zpc2lvbkFjY291bnQSKC5hbnl0dHkuY2xvdWQudjEuUHJvdmlzaW9uQWNjb3VudFJlcXVlc3QaKS5hbnl0dHkuY2xvdWQudjEuUHJvdmlzaW9uQWNjb3VudFJlc3BvbnNlEnAKE0xpc3RSdW50aW1lU2Vzc2lvbnMSKy5hbnl0dHkuY2xvdWQudjEuTGlzdFJ1bnRpbWVTZXNzaW9uc1JlcXVlc3QaLC5hbnl0dHkuY2xvdWQudjEuTGlzdFJ1bnRpbWVTZXNzaW9uc1Jlc3BvbnNlEmUKCkxpc3RPcmRlcnMSKi5hbnl0dHkuY2xvdWQudjEuTGlzdE9wZXJhdG9yT3JkZXJzUmVxdWVzdBorLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JPcmRlcnNSZXNwb25zZRJ6ChFMaXN0U3Vic2NyaXB0aW9ucxIxLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JTdWJzY3JpcHRpb25zUmVxdWVzdBoyLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JTdWJzY3JpcHRpb25zUmVzcG9uc2USYgoJTGlzdFVzYWdlEikuYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvclVzYWdlUmVxdWVzdBoqLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JVc2FnZVJlc3BvbnNlEmIKCUxpc3RBdWRpdBIpLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JBdWRpdFJlcXVlc3QaKi5hbnl0dHkuY2xvdWQudjEuTGlzdE9wZXJhdG9yQXVkaXRSZXNwb25zZRJkCg9TZXRBY2NvdW50U3RhdGUSJy5hbnl0dHkuY2xvdWQudjEuU2V0QWNjb3VudFN0YXRlUmVxdWVzdBooLmFueXR0eS5jbG91ZC52MS5TZXRBY2NvdW50U3RhdGVSZXNwb25zZRJhCg5TZXRBY2NvdW50Um9sZRImLmFueXR0eS5jbG91ZC52MS5TZXRBY2NvdW50Um9sZVJlcXVlc3QaJy5hbnl0dHkuY2xvdWQudjEuU2V0QWNjb3VudFJvbGVSZXNwb25zZRJnChBEaXNjb25uZWN0RGFlbW9uEiguYW55dHR5LmNsb3VkLnYxLkRpc2Nvbm5lY3REYWVtb25SZXF1ZXN0GikuYW55dHR5LmNsb3VkLnYxLkRpc2Nvbm5lY3REYWVtb25SZXNwb25zZRJqChFEaXNjb25uZWN0U2Vzc2lvbhIpLmFueXR0eS5jbG91ZC52MS5EaXNjb25uZWN0U2Vzc2lvblJlcXVlc3QaKi5hbnl0dHkuY2xvdWQudjEuRGlzY29ubmVjdFNlc3Npb25SZXNwb25zZRJ8ChdMaXN0Q2VydGlmaWNhdGVQcm9maWxlcxIvLmFueXR0eS5jbG91ZC52MS5MaXN0Q2VydGlmaWNhdGVQcm9maWxlc1JlcXVlc3QaMC5hbnl0dHkuY2xvdWQudjEuTGlzdENlcnRpZmljYXRlUHJvZmlsZXNSZXNwb25zZRJ/ChhVcGxvYWRDZXJ0aWZpY2F0ZVByb2ZpbGUSMC5hbnl0dHkuY2xvdWQudjEuVXBsb2FkQ2VydGlmaWNhdGVQcm9maWxlUmVxdWVzdBoxLmFueXR0eS5jbG91ZC52MS5VcGxvYWRDZXJ0aWZpY2F0ZVByb2ZpbGVSZXNwb25zZRJ5ChZCaW5kQ2VydGlmaWNhdGVQcm9maWxlEi4uYW55dHR5LmNsb3VkLnYxLkJpbmRDZXJ0aWZpY2F0ZVByb2ZpbGVSZXF1ZXN0Gi8uYW55dHR5LmNsb3VkLnYxLkJpbmRDZXJ0aWZpY2F0ZVByb2ZpbGVSZXNwb25zZUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_account, file_cloud_v1_certificate, file_cloud_v1_commerce, file_cloud_v1_runtime, file_google_protobuf_timestamp]);
+  fileDesc("ChdjbG91ZC92MS9vcGVyYXRvci5wcm90bxIPYW55dHR5LmNsb3VkLnYxIk0KC1BhZ2VSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoDRIOCgZjdXJzb3IYAiABKAkSDQoFcXVlcnkYAyABKAkSDAoEc29ydBgEIAEoCSKJAgoQT3BlcmF0b3JPdmVydmlldxISCgplZGdlX3RvdGFsGAEgASgEEhMKC2VkZ2Vfb25saW5lGAIgASgEEhQKDGRhZW1vbl90b3RhbBgDIAEoBBIVCg1kYWVtb25fb25saW5lGAQgASgEEh0KFWNsaWVudF9zZXNzaW9uX29ubGluZRgFIAEoBBIiChpyZWxheV9ieXRlc19jdXJyZW50X3BlcmlvZBgIIAEoBBIeChZjb250cm9sbGVyX2luc3RhbmNlX2lkGAkgASgJEjAKDGdlbmVyYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBKBAgGEAdKBAgHEAgitwIKDkFjY291bnRTdW1tYXJ5EjAKB2FjY291bnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFByb2ZpbGUSKwoFcm9sZXMYAiADKA4yHC5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJvbGUSFAoMZGFlbW9uX2NvdW50GAMgASgEEj0KDHN1YnNjcmlwdGlvbhgEIAEoCzInLmFueXR0eS5jbG91ZC52MS5TdWJzY3JpcHRpb25Qcm9qZWN0aW9uEjoKC2VudGl0bGVtZW50GAUgASgLMiUuYW55dHR5LmNsb3VkLnYxLkVmZmVjdGl2ZUVudGl0bGVtZW50EjUKBXVzYWdlGAYgASgLMiYuYW55dHR5LmNsb3VkLnYxLlVzYWdlUGVyaW9kUHJvamVjdGlvbiL2AQoYUnVudGltZVNlc3Npb25Qcm9qZWN0aW9uEhIKCnNlc3Npb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIRCglkYWVtb25faWQYAyABKAkSDwoHZWRnZV9pZBgEIAEoCRIRCgljbGllbnRfaWQYBSABKAkSLwoHcHJvZHVjdBgGIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EhIKCmdlbmVyYXRpb24YCCABKAQSMAoMY29ubmVjdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEoECAcQCCKBAgoST3BlcmF0b3JBdWRpdEV2ZW50EhAKCGF1ZGl0X2lkGAEgASgJEhgKEGFjdG9yX2FjY291bnRfaWQYAiABKAkSGgoSYWN0b3JfZGlzcGxheV9uYW1lGAMgASgJEg4KBmFjdGlvbhgEIAEoCRIVCg1yZXNvdXJjZV90eXBlGAUgASgJEhMKC3Jlc291cmNlX2lkGAYgASgJEg4KBnJlYXNvbhgHIAEoCRIOCgZyZXN1bHQYCCABKAkSFgoOY29ycmVsYXRpb25faWQYCSABKAkSLwoLb2NjdXJyZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIhwKGkdldE9wZXJhdG9yT3ZlcnZpZXdSZXF1ZXN0IlIKG0dldE9wZXJhdG9yT3ZlcnZpZXdSZXNwb25zZRIzCghvdmVydmlldxgBIAEoCzIhLmFueXR0eS5jbG91ZC52MS5PcGVyYXRvck92ZXJ2aWV3IkkKG0xpc3RPcGVyYXRvckFjY291bnRzUmVxdWVzdBIqCgRwYWdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0ImYKHExpc3RPcGVyYXRvckFjY291bnRzUmVzcG9uc2USMQoIYWNjb3VudHMYASADKAsyHy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFN1bW1hcnkSEwoLbmV4dF9jdXJzb3IYAiABKAkiLwoZR2V0T3BlcmF0b3JBY2NvdW50UmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJIk4KGkdldE9wZXJhdG9yQWNjb3VudFJlc3BvbnNlEjAKB2FjY291bnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFN1bW1hcnkiUAoXUHJvdmlzaW9uQWNjb3VudFJlcXVlc3QSDQoFZW1haWwYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJIkwKGFByb3Zpc2lvbkFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlIkgKGkxpc3RSdW50aW1lU2Vzc2lvbnNSZXF1ZXN0EioKBHBhZ2UYASABKAsyHC5hbnl0dHkuY2xvdWQudjEuUGFnZVJlcXVlc3QiWgobTGlzdFJ1bnRpbWVTZXNzaW9uc1Jlc3BvbnNlEjsKCHNlc3Npb25zGAEgAygLMikuYW55dHR5LmNsb3VkLnYxLlJ1bnRpbWVTZXNzaW9uUHJvamVjdGlvbiJHChlMaXN0T3BlcmF0b3JPcmRlcnNSZXF1ZXN0EioKBHBhZ2UYASABKAsyHC5hbnl0dHkuY2xvdWQudjEuUGFnZVJlcXVlc3QiYwoaTGlzdE9wZXJhdG9yT3JkZXJzUmVzcG9uc2USMAoGb3JkZXJzGAEgAygLMiAuYW55dHR5LmNsb3VkLnYxLk9yZGVyUHJvamVjdGlvbhITCgtuZXh0X2N1cnNvchgCIAEoCSJOCiBMaXN0T3BlcmF0b3JTdWJzY3JpcHRpb25zUmVxdWVzdBIqCgRwYWdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0IngKIUxpc3RPcGVyYXRvclN1YnNjcmlwdGlvbnNSZXNwb25zZRI+Cg1zdWJzY3JpcHRpb25zGAEgAygLMicuYW55dHR5LmNsb3VkLnYxLlN1YnNjcmlwdGlvblByb2plY3Rpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkiRgoYTGlzdE9wZXJhdG9yVXNhZ2VSZXF1ZXN0EioKBHBhZ2UYASABKAsyHC5hbnl0dHkuY2xvdWQudjEuUGFnZVJlcXVlc3QicAoZTGlzdE9wZXJhdG9yVXNhZ2VSZXNwb25zZRI4CghhY2NvdW50cxgBIAMoCzImLmFueXR0eS5jbG91ZC52MS5Vc2FnZVBlcmlvZFByb2plY3Rpb24SEwoLbmV4dF9jdXJzb3IYAyABKAlKBAgCEAMiRgoYTGlzdE9wZXJhdG9yQXVkaXRSZXF1ZXN0EioKBHBhZ2UYASABKAsyHC5hbnl0dHkuY2xvdWQudjEuUGFnZVJlcXVlc3QiZQoZTGlzdE9wZXJhdG9yQXVkaXRSZXNwb25zZRIzCgZldmVudHMYASADKAsyIy5hbnl0dHkuY2xvdWQudjEuT3BlcmF0b3JBdWRpdEV2ZW50EhMKC25leHRfY3Vyc29yGAIgASgJIoUBChZTZXRBY2NvdW50U3RhdGVSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSLAoFc3RhdGUYAiABKA4yHS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFN0YXRlEhkKEWV4cGVjdGVkX3JldmlzaW9uGAMgASgEEg4KBnJlYXNvbhgEIAEoCSJLChdTZXRBY2NvdW50U3RhdGVSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlIngKFVNldEFjY291bnRSb2xlUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEioKBHJvbGUYAiABKA4yHC5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJvbGUSDwoHZW5hYmxlZBgDIAEoCBIOCgZyZWFzb24YBCABKAkiRQoWU2V0QWNjb3VudFJvbGVSZXNwb25zZRIrCgVyb2xlcxgBIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZSJQChdEaXNjb25uZWN0RGFlbW9uUmVxdWVzdBIRCglkYWVtb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIOCgZyZWFzb24YAyABKAkiUQoYRGlzY29ubmVjdERhZW1vblJlc3BvbnNlEjUKBnJlc3VsdBgBIAEoDjIlLmFueXR0eS5jbG91ZC52MS5SdW50aW1lQ29tbWFuZFJlc3VsdCJSChhEaXNjb25uZWN0U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSJSChlEaXNjb25uZWN0U2Vzc2lvblJlc3BvbnNlEjUKBnJlc3VsdBgBIAEoDjIlLmFueXR0eS5jbG91ZC52MS5SdW50aW1lQ29tbWFuZFJlc3VsdCLiAQoUT3BlcmF0b3JSdW50aW1lRXZlbnQSHgoWY29udHJvbGxlcl9pbnN0YW5jZV9pZBgBIAEoCRIRCglldmVudF9zZXEYAiABKAQSFQoNcmVzb3VyY2Vfa2luZBgDIAEoCRITCgtyZXNvdXJjZV9pZBgEIAEoCRI6CglvcGVyYXRpb24YBSABKA4yJy5hbnl0dHkuY2xvdWQudjEuT3BlcmF0b3JFdmVudE9wZXJhdGlvbhIvCgtvY2N1cnJlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAq9QEKFFJ1bnRpbWVDb21tYW5kUmVzdWx0EiYKIlJVTlRJTUVfQ09NTUFORF9SRVNVTFRfVU5TUEVDSUZJRUQQABIiCh5SVU5USU1FX0NPTU1BTkRfUkVTVUxUX0FQUExJRUQQARIjCh9SVU5USU1FX0NPTU1BTkRfUkVTVUxUX1JFSkVDVEVEEAISIAocUlVOVElNRV9DT01NQU5EX1JFU1VMVF9TVEFMRRADEiIKHlJVTlRJTUVfQ09NTUFORF9SRVNVTFRfVElNRU9VVBAEEiYKIlJVTlRJTUVfQ09NTUFORF9SRVNVTFRfVU5BVkFJTEFCTEUQBSqwAQoWT3BlcmF0b3JFdmVudE9wZXJhdGlvbhIoCiRPUEVSQVRPUl9FVkVOVF9PUEVSQVRJT05fVU5TUEVDSUZJRUQQABIjCh9PUEVSQVRPUl9FVkVOVF9PUEVSQVRJT05fVVBTRVJUEAESIwofT1BFUkFUT1JfRVZFTlRfT1BFUkFUSU9OX0RFTEVURRACEiIKHk9QRVJBVE9SX0VWRU5UX09QRVJBVElPTl9SRVNFVBADMu0NCg9PcGVyYXRvclNlcnZpY2USaAoLR2V0T3ZlcnZpZXcSKy5hbnl0dHkuY2xvdWQudjEuR2V0T3BlcmF0b3JPdmVydmlld1JlcXVlc3QaLC5hbnl0dHkuY2xvdWQudjEuR2V0T3BlcmF0b3JPdmVydmlld1Jlc3BvbnNlEmsKDExpc3RBY2NvdW50cxIsLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JBY2NvdW50c1JlcXVlc3QaLS5hbnl0dHkuY2xvdWQudjEuTGlzdE9wZXJhdG9yQWNjb3VudHNSZXNwb25zZRJlCgpHZXRBY2NvdW50EiouYW55dHR5LmNsb3VkLnYxLkdldE9wZXJhdG9yQWNjb3VudFJlcXVlc3QaKy5hbnl0dHkuY2xvdWQudjEuR2V0T3BlcmF0b3JBY2NvdW50UmVzcG9uc2USZwoQUHJvdmlzaW9uQWNjb3VudBIoLmFueXR0eS5jbG91ZC52MS5Qcm92aXNpb25BY2NvdW50UmVxdWVzdBopLmFueXR0eS5jbG91ZC52MS5Qcm92aXNpb25BY2NvdW50UmVzcG9uc2UScAoTTGlzdFJ1bnRpbWVTZXNzaW9ucxIrLmFueXR0eS5jbG91ZC52MS5MaXN0UnVudGltZVNlc3Npb25zUmVxdWVzdBosLmFueXR0eS5jbG91ZC52MS5MaXN0UnVudGltZVNlc3Npb25zUmVzcG9uc2USZQoKTGlzdE9yZGVycxIqLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JPcmRlcnNSZXF1ZXN0GisuYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvck9yZGVyc1Jlc3BvbnNlEnoKEUxpc3RTdWJzY3JpcHRpb25zEjEuYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvclN1YnNjcmlwdGlvbnNSZXF1ZXN0GjIuYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvclN1YnNjcmlwdGlvbnNSZXNwb25zZRJiCglMaXN0VXNhZ2USKS5hbnl0dHkuY2xvdWQudjEuTGlzdE9wZXJhdG9yVXNhZ2VSZXF1ZXN0GiouYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvclVzYWdlUmVzcG9uc2USYgoJTGlzdEF1ZGl0EikuYW55dHR5LmNsb3VkLnYxLkxpc3RPcGVyYXRvckF1ZGl0UmVxdWVzdBoqLmFueXR0eS5jbG91ZC52MS5MaXN0T3BlcmF0b3JBdWRpdFJlc3BvbnNlEmQKD1NldEFjY291bnRTdGF0ZRInLmFueXR0eS5jbG91ZC52MS5TZXRBY2NvdW50U3RhdGVSZXF1ZXN0GiguYW55dHR5LmNsb3VkLnYxLlNldEFjY291bnRTdGF0ZVJlc3BvbnNlEmEKDlNldEFjY291bnRSb2xlEiYuYW55dHR5LmNsb3VkLnYxLlNldEFjY291bnRSb2xlUmVxdWVzdBonLmFueXR0eS5jbG91ZC52MS5TZXRBY2NvdW50Um9sZVJlc3BvbnNlEmcKEERpc2Nvbm5lY3REYWVtb24SKC5hbnl0dHkuY2xvdWQudjEuRGlzY29ubmVjdERhZW1vblJlcXVlc3QaKS5hbnl0dHkuY2xvdWQudjEuRGlzY29ubmVjdERhZW1vblJlc3BvbnNlEmoKEURpc2Nvbm5lY3RTZXNzaW9uEikuYW55dHR5LmNsb3VkLnYxLkRpc2Nvbm5lY3RTZXNzaW9uUmVxdWVzdBoqLmFueXR0eS5jbG91ZC52MS5EaXNjb25uZWN0U2Vzc2lvblJlc3BvbnNlEnwKF0xpc3RDZXJ0aWZpY2F0ZVByb2ZpbGVzEi8uYW55dHR5LmNsb3VkLnYxLkxpc3RDZXJ0aWZpY2F0ZVByb2ZpbGVzUmVxdWVzdBowLmFueXR0eS5jbG91ZC52MS5MaXN0Q2VydGlmaWNhdGVQcm9maWxlc1Jlc3BvbnNlEn8KGFVwbG9hZENlcnRpZmljYXRlUHJvZmlsZRIwLmFueXR0eS5jbG91ZC52MS5VcGxvYWRDZXJ0aWZpY2F0ZVByb2ZpbGVSZXF1ZXN0GjEuYW55dHR5LmNsb3VkLnYxLlVwbG9hZENlcnRpZmljYXRlUHJvZmlsZVJlc3BvbnNlEnkKFkJpbmRDZXJ0aWZpY2F0ZVByb2ZpbGUSLi5hbnl0dHkuY2xvdWQudjEuQmluZENlcnRpZmljYXRlUHJvZmlsZVJlcXVlc3QaLy5hbnl0dHkuY2xvdWQudjEuQmluZENlcnRpZmljYXRlUHJvZmlsZVJlc3BvbnNlQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_account, file_cloud_v1_certificate, file_cloud_v1_commerce, file_cloud_v1_runtime, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message anytty.cloud.v1.PageRequest
@@ -82,16 +82,6 @@ export type OperatorOverview = Message<"anytty.cloud.v1.OperatorOverview"> & {
    * @generated from field: uint64 client_session_online = 5;
    */
   clientSessionOnline: bigint;
-
-  /**
-   * @generated from field: uint64 p2p_session_online = 6;
-   */
-  p2pSessionOnline: bigint;
-
-  /**
-   * @generated from field: uint64 relay_session_online = 7;
-   */
-  relaySessionOnline: bigint;
 
   /**
    * @generated from field: uint64 relay_bytes_current_period = 8;
@@ -193,11 +183,6 @@ export type RuntimeSessionProjection = Message<"anytty.cloud.v1.RuntimeSessionPr
   product: ClientProduct;
 
   /**
-   * @generated from field: bool relay = 7;
-   */
-  relay: boolean;
-
-  /**
    * @generated from field: uint64 generation = 8;
    */
   generation: bigint;
@@ -214,53 +199,6 @@ export type RuntimeSessionProjection = Message<"anytty.cloud.v1.RuntimeSessionPr
  */
 export const RuntimeSessionProjectionSchema: GenMessage<RuntimeSessionProjection> = /*@__PURE__*/
   messageDesc(file_cloud_v1_operator, 3);
-
-/**
- * @generated from message anytty.cloud.v1.EdgeUsageProjection
- */
-export type EdgeUsageProjection = Message<"anytty.cloud.v1.EdgeUsageProjection"> & {
-  /**
-   * @generated from field: string edge_id = 1;
-   */
-  edgeId: string;
-
-  /**
-   * @generated from field: string edge_name = 2;
-   */
-  edgeName: string;
-
-  /**
-   * @generated from field: string region = 3;
-   */
-  region: string;
-
-  /**
-   * @generated from field: uint64 ingress_bytes = 4;
-   */
-  ingressBytes: bigint;
-
-  /**
-   * @generated from field: uint64 egress_bytes = 5;
-   */
-  egressBytes: bigint;
-
-  /**
-   * @generated from field: uint64 event_count = 6;
-   */
-  eventCount: bigint;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp period_start = 7;
-   */
-  periodStart?: Timestamp | undefined;
-};
-
-/**
- * Describes the message anytty.cloud.v1.EdgeUsageProjection.
- * Use `create(EdgeUsageProjectionSchema)` to create a new message.
- */
-export const EdgeUsageProjectionSchema: GenMessage<EdgeUsageProjection> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 4);
 
 /**
  * @generated from message anytty.cloud.v1.OperatorAuditEvent
@@ -322,7 +260,7 @@ export type OperatorAuditEvent = Message<"anytty.cloud.v1.OperatorAuditEvent"> &
  * Use `create(OperatorAuditEventSchema)` to create a new message.
  */
 export const OperatorAuditEventSchema: GenMessage<OperatorAuditEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 5);
+  messageDesc(file_cloud_v1_operator, 4);
 
 /**
  * @generated from message anytty.cloud.v1.GetOperatorOverviewRequest
@@ -335,7 +273,7 @@ export type GetOperatorOverviewRequest = Message<"anytty.cloud.v1.GetOperatorOve
  * Use `create(GetOperatorOverviewRequestSchema)` to create a new message.
  */
 export const GetOperatorOverviewRequestSchema: GenMessage<GetOperatorOverviewRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 6);
+  messageDesc(file_cloud_v1_operator, 5);
 
 /**
  * @generated from message anytty.cloud.v1.GetOperatorOverviewResponse
@@ -352,7 +290,7 @@ export type GetOperatorOverviewResponse = Message<"anytty.cloud.v1.GetOperatorOv
  * Use `create(GetOperatorOverviewResponseSchema)` to create a new message.
  */
 export const GetOperatorOverviewResponseSchema: GenMessage<GetOperatorOverviewResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 7);
+  messageDesc(file_cloud_v1_operator, 6);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorAccountsRequest
@@ -369,7 +307,7 @@ export type ListOperatorAccountsRequest = Message<"anytty.cloud.v1.ListOperatorA
  * Use `create(ListOperatorAccountsRequestSchema)` to create a new message.
  */
 export const ListOperatorAccountsRequestSchema: GenMessage<ListOperatorAccountsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 8);
+  messageDesc(file_cloud_v1_operator, 7);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorAccountsResponse
@@ -391,7 +329,7 @@ export type ListOperatorAccountsResponse = Message<"anytty.cloud.v1.ListOperator
  * Use `create(ListOperatorAccountsResponseSchema)` to create a new message.
  */
 export const ListOperatorAccountsResponseSchema: GenMessage<ListOperatorAccountsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 9);
+  messageDesc(file_cloud_v1_operator, 8);
 
 /**
  * @generated from message anytty.cloud.v1.GetOperatorAccountRequest
@@ -408,7 +346,7 @@ export type GetOperatorAccountRequest = Message<"anytty.cloud.v1.GetOperatorAcco
  * Use `create(GetOperatorAccountRequestSchema)` to create a new message.
  */
 export const GetOperatorAccountRequestSchema: GenMessage<GetOperatorAccountRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 10);
+  messageDesc(file_cloud_v1_operator, 9);
 
 /**
  * @generated from message anytty.cloud.v1.GetOperatorAccountResponse
@@ -425,7 +363,7 @@ export type GetOperatorAccountResponse = Message<"anytty.cloud.v1.GetOperatorAcc
  * Use `create(GetOperatorAccountResponseSchema)` to create a new message.
  */
 export const GetOperatorAccountResponseSchema: GenMessage<GetOperatorAccountResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 11);
+  messageDesc(file_cloud_v1_operator, 10);
 
 /**
  * @generated from message anytty.cloud.v1.ProvisionAccountRequest
@@ -452,7 +390,7 @@ export type ProvisionAccountRequest = Message<"anytty.cloud.v1.ProvisionAccountR
  * Use `create(ProvisionAccountRequestSchema)` to create a new message.
  */
 export const ProvisionAccountRequestSchema: GenMessage<ProvisionAccountRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 12);
+  messageDesc(file_cloud_v1_operator, 11);
 
 /**
  * @generated from message anytty.cloud.v1.ProvisionAccountResponse
@@ -469,7 +407,7 @@ export type ProvisionAccountResponse = Message<"anytty.cloud.v1.ProvisionAccount
  * Use `create(ProvisionAccountResponseSchema)` to create a new message.
  */
 export const ProvisionAccountResponseSchema: GenMessage<ProvisionAccountResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 13);
+  messageDesc(file_cloud_v1_operator, 12);
 
 /**
  * @generated from message anytty.cloud.v1.ListRuntimeSessionsRequest
@@ -486,7 +424,7 @@ export type ListRuntimeSessionsRequest = Message<"anytty.cloud.v1.ListRuntimeSes
  * Use `create(ListRuntimeSessionsRequestSchema)` to create a new message.
  */
 export const ListRuntimeSessionsRequestSchema: GenMessage<ListRuntimeSessionsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 14);
+  messageDesc(file_cloud_v1_operator, 13);
 
 /**
  * @generated from message anytty.cloud.v1.ListRuntimeSessionsResponse
@@ -503,7 +441,7 @@ export type ListRuntimeSessionsResponse = Message<"anytty.cloud.v1.ListRuntimeSe
  * Use `create(ListRuntimeSessionsResponseSchema)` to create a new message.
  */
 export const ListRuntimeSessionsResponseSchema: GenMessage<ListRuntimeSessionsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 15);
+  messageDesc(file_cloud_v1_operator, 14);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorOrdersRequest
@@ -520,7 +458,7 @@ export type ListOperatorOrdersRequest = Message<"anytty.cloud.v1.ListOperatorOrd
  * Use `create(ListOperatorOrdersRequestSchema)` to create a new message.
  */
 export const ListOperatorOrdersRequestSchema: GenMessage<ListOperatorOrdersRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 16);
+  messageDesc(file_cloud_v1_operator, 15);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorOrdersResponse
@@ -542,7 +480,7 @@ export type ListOperatorOrdersResponse = Message<"anytty.cloud.v1.ListOperatorOr
  * Use `create(ListOperatorOrdersResponseSchema)` to create a new message.
  */
 export const ListOperatorOrdersResponseSchema: GenMessage<ListOperatorOrdersResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 17);
+  messageDesc(file_cloud_v1_operator, 16);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorSubscriptionsRequest
@@ -559,7 +497,7 @@ export type ListOperatorSubscriptionsRequest = Message<"anytty.cloud.v1.ListOper
  * Use `create(ListOperatorSubscriptionsRequestSchema)` to create a new message.
  */
 export const ListOperatorSubscriptionsRequestSchema: GenMessage<ListOperatorSubscriptionsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 18);
+  messageDesc(file_cloud_v1_operator, 17);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorSubscriptionsResponse
@@ -581,7 +519,7 @@ export type ListOperatorSubscriptionsResponse = Message<"anytty.cloud.v1.ListOpe
  * Use `create(ListOperatorSubscriptionsResponseSchema)` to create a new message.
  */
 export const ListOperatorSubscriptionsResponseSchema: GenMessage<ListOperatorSubscriptionsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 19);
+  messageDesc(file_cloud_v1_operator, 18);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorUsageRequest
@@ -598,7 +536,7 @@ export type ListOperatorUsageRequest = Message<"anytty.cloud.v1.ListOperatorUsag
  * Use `create(ListOperatorUsageRequestSchema)` to create a new message.
  */
 export const ListOperatorUsageRequestSchema: GenMessage<ListOperatorUsageRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 20);
+  messageDesc(file_cloud_v1_operator, 19);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorUsageResponse
@@ -608,11 +546,6 @@ export type ListOperatorUsageResponse = Message<"anytty.cloud.v1.ListOperatorUsa
    * @generated from field: repeated anytty.cloud.v1.UsagePeriodProjection accounts = 1;
    */
   accounts: UsagePeriodProjection[];
-
-  /**
-   * @generated from field: repeated anytty.cloud.v1.EdgeUsageProjection edges = 2;
-   */
-  edges: EdgeUsageProjection[];
 
   /**
    * @generated from field: string next_cursor = 3;
@@ -625,7 +558,7 @@ export type ListOperatorUsageResponse = Message<"anytty.cloud.v1.ListOperatorUsa
  * Use `create(ListOperatorUsageResponseSchema)` to create a new message.
  */
 export const ListOperatorUsageResponseSchema: GenMessage<ListOperatorUsageResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 21);
+  messageDesc(file_cloud_v1_operator, 20);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorAuditRequest
@@ -642,7 +575,7 @@ export type ListOperatorAuditRequest = Message<"anytty.cloud.v1.ListOperatorAudi
  * Use `create(ListOperatorAuditRequestSchema)` to create a new message.
  */
 export const ListOperatorAuditRequestSchema: GenMessage<ListOperatorAuditRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 22);
+  messageDesc(file_cloud_v1_operator, 21);
 
 /**
  * @generated from message anytty.cloud.v1.ListOperatorAuditResponse
@@ -664,7 +597,7 @@ export type ListOperatorAuditResponse = Message<"anytty.cloud.v1.ListOperatorAud
  * Use `create(ListOperatorAuditResponseSchema)` to create a new message.
  */
 export const ListOperatorAuditResponseSchema: GenMessage<ListOperatorAuditResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 23);
+  messageDesc(file_cloud_v1_operator, 22);
 
 /**
  * @generated from message anytty.cloud.v1.SetAccountStateRequest
@@ -696,7 +629,7 @@ export type SetAccountStateRequest = Message<"anytty.cloud.v1.SetAccountStateReq
  * Use `create(SetAccountStateRequestSchema)` to create a new message.
  */
 export const SetAccountStateRequestSchema: GenMessage<SetAccountStateRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 24);
+  messageDesc(file_cloud_v1_operator, 23);
 
 /**
  * @generated from message anytty.cloud.v1.SetAccountStateResponse
@@ -713,7 +646,7 @@ export type SetAccountStateResponse = Message<"anytty.cloud.v1.SetAccountStateRe
  * Use `create(SetAccountStateResponseSchema)` to create a new message.
  */
 export const SetAccountStateResponseSchema: GenMessage<SetAccountStateResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 25);
+  messageDesc(file_cloud_v1_operator, 24);
 
 /**
  * @generated from message anytty.cloud.v1.SetAccountRoleRequest
@@ -745,7 +678,7 @@ export type SetAccountRoleRequest = Message<"anytty.cloud.v1.SetAccountRoleReque
  * Use `create(SetAccountRoleRequestSchema)` to create a new message.
  */
 export const SetAccountRoleRequestSchema: GenMessage<SetAccountRoleRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 26);
+  messageDesc(file_cloud_v1_operator, 25);
 
 /**
  * @generated from message anytty.cloud.v1.SetAccountRoleResponse
@@ -762,7 +695,7 @@ export type SetAccountRoleResponse = Message<"anytty.cloud.v1.SetAccountRoleResp
  * Use `create(SetAccountRoleResponseSchema)` to create a new message.
  */
 export const SetAccountRoleResponseSchema: GenMessage<SetAccountRoleResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 27);
+  messageDesc(file_cloud_v1_operator, 26);
 
 /**
  * @generated from message anytty.cloud.v1.DisconnectDaemonRequest
@@ -789,7 +722,7 @@ export type DisconnectDaemonRequest = Message<"anytty.cloud.v1.DisconnectDaemonR
  * Use `create(DisconnectDaemonRequestSchema)` to create a new message.
  */
 export const DisconnectDaemonRequestSchema: GenMessage<DisconnectDaemonRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 28);
+  messageDesc(file_cloud_v1_operator, 27);
 
 /**
  * @generated from message anytty.cloud.v1.DisconnectDaemonResponse
@@ -806,7 +739,7 @@ export type DisconnectDaemonResponse = Message<"anytty.cloud.v1.DisconnectDaemon
  * Use `create(DisconnectDaemonResponseSchema)` to create a new message.
  */
 export const DisconnectDaemonResponseSchema: GenMessage<DisconnectDaemonResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 29);
+  messageDesc(file_cloud_v1_operator, 28);
 
 /**
  * @generated from message anytty.cloud.v1.DisconnectSessionRequest
@@ -833,7 +766,7 @@ export type DisconnectSessionRequest = Message<"anytty.cloud.v1.DisconnectSessio
  * Use `create(DisconnectSessionRequestSchema)` to create a new message.
  */
 export const DisconnectSessionRequestSchema: GenMessage<DisconnectSessionRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 30);
+  messageDesc(file_cloud_v1_operator, 29);
 
 /**
  * @generated from message anytty.cloud.v1.DisconnectSessionResponse
@@ -850,7 +783,7 @@ export type DisconnectSessionResponse = Message<"anytty.cloud.v1.DisconnectSessi
  * Use `create(DisconnectSessionResponseSchema)` to create a new message.
  */
 export const DisconnectSessionResponseSchema: GenMessage<DisconnectSessionResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 31);
+  messageDesc(file_cloud_v1_operator, 30);
 
 /**
  * OperatorRuntimeEvent 是 SSE 的失效提示，不携带实时对象完整内容。
@@ -894,7 +827,7 @@ export type OperatorRuntimeEvent = Message<"anytty.cloud.v1.OperatorRuntimeEvent
  * Use `create(OperatorRuntimeEventSchema)` to create a new message.
  */
 export const OperatorRuntimeEventSchema: GenMessage<OperatorRuntimeEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_operator, 32);
+  messageDesc(file_cloud_v1_operator, 31);
 
 /**
  * @generated from enum anytty.cloud.v1.RuntimeCommandResult
