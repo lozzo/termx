@@ -86,3 +86,58 @@ jobs:
 
       - name: Tracked generated files are current
         run: git diff --exit-code --
+
+  linux-targeted-race:
+    name: Linux targeted race
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Race-test final shared concurrency boundaries
+        run: |
+          go test -race -count=1 \
+            ./core \
+            ./client/runtime \
+            ./remote/webrtc \
+            ./cloud/edge/runtime \
+            ./cloud/edge/relay \
+            ./cloud/controller/account \
+            ./cloud/controller/apihttp \
+            ./cloud/controller/runtime
+
+      - name: Tracked generated files are current
+        run: git diff --exit-code --
+
+  macos-platform:
+    name: macOS platform
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test macOS core and filesystem packages
+        run: |
+          go test -count=1 \
+            ./core \
+            ./api_layer \
+            ./shared/filelock \
+            ./shared/filepublish \
+            ./shared/runtimepath \
+            ./shared/securefs
+
+      - name: Build macOS CLI
+        run: go build -trimpath ./cmd/anytty
+
+      - name: Tracked generated files are current
+        run: git diff --exit-code --
