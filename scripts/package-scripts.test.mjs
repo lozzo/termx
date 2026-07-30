@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
-import { basename, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -84,14 +84,16 @@ function requireWorkspaceLifecycle(lifecycle) {
 
 function withLintWarningFixture(workspace, callback) {
   const id = `${process.pid}-${randomUUID()}`
-  const warningPath = join(repoRoot, workspace.path, `eslint-warning-fixture-${id}.js`)
-  const configPath = join(repoRoot, `eslint-warning-fixture-${id}.config.mjs`)
+  const warningName = `eslint warning fixture ${id}.js`
+  const workspacePath = join(repoRoot, workspace.path)
+  const warningPath = join(workspacePath, warningName)
+  const configPath = join(workspacePath, `eslint warning fixture ${id}.config.mjs`)
   try {
     writeFileSync(configPath, `
-import baseConfig from './eslint.config.mjs'
-
-export default [...baseConfig, {
-  files: ['**/${basename(warningPath)}'],
+export default [{
+  ignores: ['**/*', ${JSON.stringify(`!${warningName}`)}],
+}, {
+  files: [${JSON.stringify(warningName)}],
   rules: { 'no-warning-comments': ['warn', { terms: ['TODO'] }] },
 }]
 `)
