@@ -178,7 +178,6 @@ type Server struct {
 	events                 *eventBroker
 	closed                 atomic.Bool
 	nextProtocolSessionID  atomic.Uint64
-	protocolRequestMu      sync.Mutex
 	protocolRequestSlots   chan struct{}
 	lifecycleMu            sync.Mutex
 	protocolAttachmentMu   sync.Mutex
@@ -1058,13 +1057,10 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	server.wgMu.Lock()
-	server.protocolRequestMu.Lock()
 	if !server.closed.CompareAndSwap(false, true) {
-		server.protocolRequestMu.Unlock()
 		server.wgMu.Unlock()
 		return nil
 	}
-	server.protocolRequestMu.Unlock()
 	server.stopGrantOperations()
 	server.outputBudget.close()
 	server.mu.Lock()

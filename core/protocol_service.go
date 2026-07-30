@@ -367,10 +367,8 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 	}
 }
 
-// startProtocolRequest linearizes non-blocking admission and goroutine creation with Shutdown.
+// startProtocolRequest performs non-blocking admission against the server-wide execution budget.
 func (server *Server) startProtocolRequest(run func()) bool {
-	server.protocolRequestMu.Lock()
-	defer server.protocolRequestMu.Unlock()
 	if server.closed.Load() {
 		return false
 	}
