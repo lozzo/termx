@@ -1,9 +1,9 @@
 import { gzipSync } from 'node:zlib'
-import { readFileSync, rmSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const outputDirectory = resolve(import.meta.dirname, '../../controller/apihttp/web')
-const manifestPath = resolve(outputDirectory, '.build-manifest.json')
+const manifestPath = resolve(outputDirectory, 'asset-manifest.json')
 
 // 2026-07-31 grouped-route build: initial 404.4/122.9 KiB and total
 // 515.7/152.1 KiB (raw/gzip). Raw budgets keep 21-22% headroom; gzip is report-only.
@@ -43,31 +43,27 @@ function formatSize(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`
 }
 
-try {
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  const entries = Object.entries(manifest)
-  const entry = entries.find(([, record]) => record.isEntry)
-  invariant(entry, 'entry chunk is missing')
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+const entries = Object.entries(manifest)
+const entry = entries.find(([, record]) => record.isEntry)
+invariant(entry, 'entry chunk is missing')
 
-  const [entryKey, entryRecord] = entry
-  const initialFiles = collectJavaScript(manifest, entryKey)
-  const routeGroupKeys = entryRecord.dynamicImports ?? []
-  const routeGroups = routeGroupKeys.map((key) => {
-    const files = [...collectJavaScript(manifest, key)].filter((file) => !initialFiles.has(file))
-    return { key, files, ...sizes(files) }
-  })
-  const allJavaScript = new Set(entries.map(([, record]) => record.file).filter((file) => file.endsWith('.js')))
-  const initialSize = sizes([...initialFiles])
-  const totalSize = sizes([...allJavaScript])
+const [entryKey, entryRecord] = entry
+const initialFiles = collectJavaScript(manifest, entryKey)
+const routeGroupKeys = entryRecord.dynamicImports ?? []
+const routeGroups = routeGroupKeys.map((key) => {
+  const files = [...collectJavaScript(manifest, key)].filter((file) => !initialFiles.has(file))
+  return { key, files, ...sizes(files) }
+})
+const allJavaScript = new Set(entries.map(([, record]) => record.file).filter((file) => file.endsWith('.js')))
+const initialSize = sizes([...initialFiles])
+const totalSize = sizes([...allJavaScript])
 
-  checkRawBudget('initial JavaScript', initialSize.raw, budgets.initialRaw)
-  checkRawBudget('total JavaScript', totalSize.raw, budgets.totalRaw)
+checkRawBudget('initial JavaScript', initialSize.raw, budgets.initialRaw)
+checkRawBudget('total JavaScript', totalSize.raw, budgets.totalRaw)
 
-  console.log(`Cloud bundle: initial ${formatSize(initialSize.raw)} raw / ${formatSize(initialSize.gzip)} gzip across ${initialFiles.size} requests`)
-  for (const group of routeGroups) {
-    console.log(`Cloud bundle: route group ${group.key} ${formatSize(group.raw)} raw / ${formatSize(group.gzip)} gzip across ${group.files.length} requests`)
-  }
-  console.log(`Cloud bundle: total ${formatSize(totalSize.raw)} raw / ${formatSize(totalSize.gzip)} gzip across ${allJavaScript.size} requests`)
-} finally {
-  rmSync(manifestPath, { force: true })
+console.log(`Cloud bundle: initial ${formatSize(initialSize.raw)} raw / ${formatSize(initialSize.gzip)} gzip across ${initialFiles.size} requests`)
+for (const group of routeGroups) {
+  console.log(`Cloud bundle: route group ${group.key} ${formatSize(group.raw)} raw / ${formatSize(group.gzip)} gzip across ${group.files.length} requests`)
 }
+console.log(`Cloud bundle: total ${formatSize(totalSize.raw)} raw / ${formatSize(totalSize.gzip)} gzip across ${allJavaScript.size} requests`)

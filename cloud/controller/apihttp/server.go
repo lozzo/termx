@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/netip"
 	pathpkg "path"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -122,6 +121,10 @@ func NewHandler(config Config) (http.Handler, error) {
 	if config.Logger == nil {
 		config.Logger = slog.Default()
 	}
+	immutableAssetPaths, err := loadViteAssetPaths(webFiles)
+	if err != nil {
+		return nil, fmt.Errorf("load embedded Cloud web asset manifest: %w", err)
+	}
 	var grpcServer *grpc.Server
 	if config.Enrollment != nil {
 		grpcServer = grpc.NewServer(grpc.UnaryInterceptor(accountUnaryInterceptor(config.Accounts)))
@@ -135,20 +138,19 @@ func NewHandler(config Config) (http.Handler, error) {
 		cloudv1.RegisterCommerceServiceServer(grpcServer, config.Commerce)
 		cloudv1.RegisterOperatorServiceServer(grpcServer, config.Operator)
 	}
-	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles}
+	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles, immutableAssetPaths: immutableAssetPaths}
 	return handler, nil
 }
 
 type handler struct {
-	config            Config
-	grpcServer        *grpc.Server
-	loginLimiter      *loginLimiter
-	trustedProxyCIDRs []netip.Prefix
-	logger            *slog.Logger
-	staticFiles       fs.FS
+	config              Config
+	grpcServer          *grpc.Server
+	loginLimiter        *loginLimiter
+	trustedProxyCIDRs   []netip.Prefix
+	logger              *slog.Logger
+	staticFiles         fs.FS
+	immutableAssetPaths map[string]struct{}
 }
-
-var contentHashedAssetPath = regexp.MustCompile(`^/assets/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$`)
 
 func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
@@ -210,7 +212,15 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 }
 
 func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Request) {
+	if handler.immutableAssetPaths == nil {
+		http.Error(writer, "Cloud web asset manifest is unavailable", http.StatusInternalServerError)
+		return
+	}
 	cleanPath := pathpkg.Clean("/" + request.URL.Path)
+	if cleanPath == "/"+viteAssetManifestName {
+		http.NotFound(writer, request)
+		return
+	}
 	extension := pathpkg.Ext(cleanPath)
 	name := "web/index.html"
 	contentType := "text/html; charset=utf-8"
@@ -233,7 +243,7 @@ func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Re
 	writer.Header().Set("Content-Type", contentType)
 	if name == "web/index.html" {
 		writer.Header().Set("Cache-Control", "no-cache")
-	} else if contentHashedAssetPath.MatchString(cleanPath) {
+	} else if _, immutable := handler.immutableAssetPaths[cleanPath]; immutable {
 		writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		writer.Header().Set("Cache-Control", "public, max-age=300")
