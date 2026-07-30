@@ -137,9 +137,7 @@ function NativeAnyTTYApp() {
   if (!registryReady) {
     return (
       <RegistryStartupScreen
-        diagnosticsAvailable={false}
         error={registryError}
-        onExportDiagnostics={async () => undefined}
         onResetLocalPairings={resetLocalPairings}
         onRetry={retryRegistry}
       />
