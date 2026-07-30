@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = resolve(mobileRoot, '..', '..')
 const androidRoot = join(mobileRoot, 'android')
 const sourceRoot = join(androidRoot, 'app', 'src', 'main', 'java', 'com', 'anytty', 'app')
 
@@ -16,6 +17,22 @@ function requireFile(path, label) {
   if (!existsSync(path) || !statSync(path).isFile() || statSync(path).size === 0) {
     fail(`required file is missing or empty: ${label}`)
   }
+}
+
+function collectProductionFiles(root, extensions) {
+  if (!existsSync(root) || !statSync(root).isDirectory()) {
+    fail(`required production source directory is missing: ${relative(repoRoot, root)}`)
+  }
+  const files = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...collectProductionFiles(path, extensions))
+    } else if (entry.isFile() && extensions.some((extension) => entry.name.endsWith(extension))) {
+      files.push(path)
+    }
+  }
+  return files
 }
 
 if (existsSync(join(mobileRoot, 'native', 'android'))) {
@@ -79,6 +96,41 @@ for (const fragment of [
 const capacitorConfigText = readFileSync(capacitorConfig, 'utf8')
 if (!capacitorConfigText.includes("loggingBehavior: 'none'")) {
   fail('Capacitor framework logging could expose native bridge bearer tokens')
+}
+
+const androidBuildFiles = [
+  buildGradle,
+  join(androidRoot, 'build.gradle'),
+  join(androidRoot, 'settings.gradle'),
+  join(androidRoot, 'capacitor.settings.gradle'),
+  join(androidRoot, 'gradle.properties'),
+  join(androidRoot, 'app', 'capacitor.build.gradle'),
+  join(repoRoot, 'scripts', 'build-android-client.sh'),
+  join(repoRoot, 'scripts', 'build-android-client-windows.ps1'),
+]
+for (const path of androidBuildFiles) requireFile(path, relative(repoRoot, path))
+
+const productionBoundaryFiles = [
+  ...androidBuildFiles,
+  ...collectProductionFiles(join(repoRoot, 'client', 'binding', 'cabi', 'androidlib'), ['.go']),
+  ...collectProductionFiles(join(androidRoot, 'app', 'src', 'main', 'cpp'), ['.c', '.h']),
+  ...collectProductionFiles(join(androidRoot, 'app', 'src', 'main', 'java'), ['.java', '.kt']),
+]
+const forbiddenProductionMarkers = [
+  'ANYTTY_ANDROID_GO_TAGS',
+  'anytty_android_spike',
+  'createSpike',
+  'android-spike-daemon',
+  'android-managed-1',
+  'anytty-go-client-%d',
+]
+for (const path of productionBoundaryFiles) {
+  const source = readFileSync(path, 'utf8')
+  for (const marker of forbiddenProductionMarkers) {
+    if (source.includes(marker)) {
+      fail(`forbidden Android dev/spike marker ${JSON.stringify(marker)} found in ${relative(repoRoot, path)}`)
+    }
+  }
 }
 
 console.log('Android Gradle source integrity passed')

@@ -49,6 +49,7 @@ test-android:
 	mkdir -p "$(ANDROID_ARTIFACT_DIR)"
 	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleDebug
 	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-debug.apk"
+	scripts/verify-android-apk-boundary.sh "$(ANDROID_ARTIFACT_DIR)/app-debug.apk"
 
 test-all:
 	$(MAKE) test

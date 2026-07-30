@@ -67,5 +67,8 @@ jobs:
       - name: Android release gate
         run: |
           sdkmanager "ndk;27.2.12479018"
+          clients/mobile/scripts/verify-android-source.sh
+          scripts/test-android-apk-boundary.sh
           npm run cap:build
           clients/mobile/android/gradlew --no-daemon --project-dir clients/mobile/android testDebugUnitTest assembleRelease
+          scripts/verify-android-apk-boundary.sh clients/mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
