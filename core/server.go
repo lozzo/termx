@@ -42,6 +42,8 @@ type serverConfig struct {
 	outputResidentBytes int64
 	applicationFactory  ApplicationExecutorFactory
 	protocolLimits      ProtocolSessionLimits
+	grantNow            func() time.Time
+	grantAfterFunc      func(time.Duration, func()) grantTimer
 }
 
 // ProtocolSessionLimits bounds connection-owned goroutines and long-lived resources.
@@ -191,9 +193,16 @@ type Server struct {
 	historyRetentionCancel context.CancelFunc
 	historyRetentionWG     sync.WaitGroup
 	outputBudget           *terminalOutputResidentBudget
+	grantMu                sync.Mutex
+	grantTransports        map[string]map[*trackedTransport]struct{}
+	transportGrants        map[*trackedTransport]string
+	grantTombstones        map[string]transportCloseReason
+	grantTimers            map[string]*grantTimerEntry
+	grantNow               func() time.Time
+	grantAfterFunc         func(time.Duration, func()) grantTimer
 	mu                     sync.Mutex
 	listeners              []transport.Listener
-	transports             map[transport.Transport]struct{}
+	transports             map[*trackedTransport]struct{}
 	wgMu                   sync.Mutex
 	wg                     sync.WaitGroup
 }
@@ -210,6 +219,10 @@ func NewServer(opts ...ServerOption) *Server {
 		historyStorage:      DefaultHistoryStorageConfig(),
 		terminalOutput:      DefaultTerminalOutputBufferConfig(),
 		outputResidentBytes: DefaultTerminalOutputResidentBudgetBytes,
+		grantNow:            time.Now,
+		grantAfterFunc: func(delay time.Duration, callback func()) grantTimer {
+			return time.AfterFunc(delay, callback)
+		},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -244,7 +257,13 @@ func NewServer(opts ...ServerOption) *Server {
 		remoteService:        cfg.remoteService,
 		clientAccessService:  cfg.clientAccessService,
 		fileUploads:          make(map[string]*uploadTransferRecord),
-		transports:           make(map[transport.Transport]struct{}),
+		grantTransports:      make(map[string]map[*trackedTransport]struct{}),
+		transportGrants:      make(map[*trackedTransport]string),
+		grantTombstones:      make(map[string]transportCloseReason),
+		grantTimers:          make(map[string]*grantTimerEntry),
+		grantNow:             cfg.grantNow,
+		grantAfterFunc:       cfg.grantAfterFunc,
+		transports:           make(map[*trackedTransport]struct{}),
 		outputBudget:         newTerminalOutputResidentBudget(cfg.outputResidentBytes),
 	}
 }
@@ -1017,9 +1036,15 @@ func (server *Server) ServeScopedTransportObserved(ctx context.Context, conn tra
 		_ = conn.Close()
 		return ErrServerClosed
 	}
-	server.trackTransport(conn)
+	tracked, err := server.admitTransport(ctx, conn, scope)
+	if err != nil {
+		server.wgMu.Unlock()
+		return err
+	}
+	server.wg.Add(1)
 	server.wgMu.Unlock()
-	return server.serveTrackedTransportObserved(ctx, conn, scope, observer)
+	defer server.wg.Done()
+	return server.serveTrackedTransportObserved(ctx, tracked, scope, observer)
 }
 
 func (server *Server) Shutdown(ctx context.Context) error {
@@ -1027,22 +1052,26 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.stopHistoryRetention()
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
+	server.wgMu.Lock()
 	if !server.closed.CompareAndSwap(false, true) {
+		server.wgMu.Unlock()
 		return nil
 	}
+	server.stopGrantTimers()
 	server.outputBudget.close()
 	server.mu.Lock()
 	listeners := append([]transport.Listener(nil), server.listeners...)
-	transports := make([]transport.Transport, 0, len(server.transports))
+	transports := make([]*trackedTransport, 0, len(server.transports))
 	for conn := range server.transports {
 		transports = append(transports, conn)
 	}
 	server.mu.Unlock()
+	server.wgMu.Unlock()
 	for _, listener := range listeners {
 		_ = listener.Close()
 	}
 	for _, conn := range transports {
-		_ = conn.Close()
+		_ = conn.closeWithReason(transportCloseShutdown)
 	}
 	server.mu.Lock()
 	terminals := make([]*Terminal, 0, len(server.terminals))
@@ -1142,18 +1171,18 @@ func (server *Server) removeTerminalHandle(id string) *Terminal {
 	return terminal
 }
 
-func (server *Server) handleTransport(ctx context.Context, conn transport.Transport) {
+func (server *Server) handleTransport(ctx context.Context, conn *trackedTransport) {
 	defer server.wg.Done()
 	if err := server.serveTrackedTransport(ctx, conn, fullDaemonTransportScope()); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
 		server.cfg.logger.Debug("core-v2 protocol session stopped", "error", err)
 	}
 }
 
-func (server *Server) serveTrackedTransport(ctx context.Context, conn transport.Transport, scope TransportScope) error {
+func (server *Server) serveTrackedTransport(ctx context.Context, conn *trackedTransport, scope TransportScope) error {
 	return server.serveTrackedTransportObserved(ctx, conn, scope, nil)
 }
 
-func (server *Server) serveTrackedTransportObserved(ctx context.Context, conn transport.Transport, scope TransportScope, observer TransportLifecycleObserver) error {
+func (server *Server) serveTrackedTransportObserved(ctx context.Context, conn *trackedTransport, scope TransportScope, observer TransportLifecycleObserver) error {
 	defer server.untrackTransport(conn)
 	defer func() { _ = conn.Close() }()
 	session := newProtocolSessionObserved(server, conn, scope, observer)
@@ -1167,9 +1196,12 @@ func (server *Server) startTransport(ctx context.Context, conn transport.Transpo
 		_ = conn.Close()
 		return false
 	}
-	server.trackTransport(conn)
+	tracked, err := server.admitTransport(ctx, conn, fullDaemonTransportScope())
+	if err != nil {
+		return false
+	}
 	server.wg.Add(1)
-	go server.handleTransport(ctx, conn)
+	go server.handleTransport(ctx, tracked)
 	return true
 }
 
@@ -1177,18 +1209,6 @@ func (server *Server) waitTransports() {
 	server.wgMu.Lock()
 	defer server.wgMu.Unlock()
 	server.wg.Wait()
-}
-
-func (server *Server) trackTransport(conn transport.Transport) {
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	server.transports[conn] = struct{}{}
-}
-
-func (server *Server) untrackTransport(conn transport.Transport) {
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	delete(server.transports, conn)
 }
 
 func (server *Server) publishTerminalEvent(typ EventType, info TerminalInfo) {

@@ -163,6 +163,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	coreServer := corev2.NewServer(
 		corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory),
 		corev2.WithSocketPath(filepath.Join(t.TempDir(), "core.sock")),
+		corev2.WithClientAccessService(integrationCoreAccessService{store: accessStore}),
 	)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -492,6 +493,30 @@ func startR5PublicController(t *testing.T, certificates certificateFiles, enroll
 
 type r5CredentialSource struct {
 	credential remoteauth.ClientAccessCredential
+}
+
+type integrationCoreAccessService struct {
+	store *remoteauth.AccessStore
+}
+
+func (integrationCoreAccessService) Identity(context.Context, []byte) (corev2.ClientAccessIdentity, error) {
+	return corev2.ClientAccessIdentity{}, nil
+}
+
+func (integrationCoreAccessService) CreateTicket(context.Context, corev2.ClientAccessTicketRequest) (corev2.ClientAccessTicket, error) {
+	return corev2.ClientAccessTicket{}, nil
+}
+
+func (integrationCoreAccessService) List(context.Context) ([]corev2.ClientAccessRecord, error) {
+	return nil, nil
+}
+
+func (service integrationCoreAccessService) GrantActive(_ context.Context, grantID string, expiresAt, now time.Time) bool {
+	return service.store.GrantActive(grantID, expiresAt, now)
+}
+
+func (integrationCoreAccessService) Revoke(context.Context, string) (corev2.ClientAccessRecord, error) {
+	return corev2.ClientAccessRecord{}, errors.New("unused")
 }
 
 func (source r5CredentialSource) ResolveClientCredential(context.Context, string, string) (remoteauth.ClientAccessCredential, error) {

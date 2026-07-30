@@ -175,7 +175,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	coreServer := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory), corev2.WithSocketPath(filepath.Join(t.TempDir(), "core.sock")))
+	coreServer := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory), corev2.WithSocketPath(filepath.Join(t.TempDir(), "core.sock")), corev2.WithClientAccessService(integrationCoreAccessService{store: accessStore}))
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

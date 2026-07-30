@@ -3,12 +3,17 @@ package core
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // TransportScope 只约束一条 protocol session 的可见能力，不保存 terminal truth。
 type TransportScope struct {
+	// GrantID 与 GrantExpiresAt 是远程 transport 已验证 CapabilityGrant 的规范身份和绝对期限。
+	// local owner 不携带二者；远程 transport 缺少任一字段都不能进入 protocol business。
+	GrantID        string
+	GrantExpiresAt time.Time
 	// PrincipalID 标识当前已验证授权主体，仅用于绑定可恢复资源；不得作为 terminal 或账号 truth。
-	// local listener 使用固定 local principal，remote DataChannel 使用已签名 CapabilityGrant ID。
+	// local listener 使用固定 local principal，remote DataChannel 使用已签名 subject key fingerprint。
 	PrincipalID string
 	// LocalOwner 表示该 session 来自当前用户拥有的 daemon-local listener。
 	// 它只由 core 本地 listener 设置，用于 DeviceIdentity、pairing ticket 和 client access 管理；远程 grant 永远不能声明该字段。
@@ -41,11 +46,21 @@ func fullDaemonTransportScope() TransportScope {
 }
 
 func (scope TransportScope) normalized() TransportScope {
+	scope.GrantID = strings.TrimSpace(scope.GrantID)
+	scope.GrantExpiresAt = scope.GrantExpiresAt.UTC()
+	scope.PrincipalID = strings.TrimSpace(scope.PrincipalID)
 	scope.TerminalID = strings.TrimSpace(scope.TerminalID)
 	return scope
 }
 
 func (scope TransportScope) validate() error {
+	if scope.LocalOwner {
+		if scope.GrantID != "" || !scope.GrantExpiresAt.IsZero() {
+			return fmt.Errorf("local owner transport cannot carry remote grant")
+		}
+	} else if scope.GrantID == "" || scope.GrantExpiresAt.IsZero() {
+		return fmt.Errorf("remote transport requires grant identity and expiry")
+	}
 	capabilities := 0
 	if scope.AllowDaemon {
 		capabilities++

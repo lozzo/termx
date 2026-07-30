@@ -274,6 +274,7 @@ const (
 	DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH DirectSignalingErrorCode = 4
 	DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL          DirectSignalingErrorCode = 5
 	DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED        DirectSignalingErrorCode = 6
+	DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION     DirectSignalingErrorCode = 7
 )
 
 // Enum value maps for DirectSignalingErrorCode.
@@ -286,6 +287,7 @@ var (
 		4: "DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH",
 		5: "DIRECT_SIGNALING_ERROR_CODE_INTERNAL",
 		6: "DIRECT_SIGNALING_ERROR_CODE_OVERLOADED",
+		7: "DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION",
 	}
 	DirectSignalingErrorCode_value = map[string]int32{
 		"DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED":       0,
@@ -295,6 +297,7 @@ var (
 		"DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH": 4,
 		"DIRECT_SIGNALING_ERROR_CODE_INTERNAL":          5,
 		"DIRECT_SIGNALING_ERROR_CODE_OVERLOADED":        6,
+		"DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION":     7,
 	}
 )
 
@@ -2275,9 +2278,9 @@ func (x *DirectIceCandidate) GetUsernameFragment() string {
 	return ""
 }
 
-// DirectSignalingRequestV1 是客户端向 daemon embedded signaling 提交的一次性短期 offer。
+// DirectSignalingRequestV2 是客户端向 daemon embedded signaling 提交的一次性短期 offer。
 // request_id 由客户端安全随机生成；daemon 必须在有效期内原子消费，并在创建 PeerConnection 前校验 Endpoint pin。
-type DirectSignalingRequestV1 struct {
+type DirectSignalingRequestV2 struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	SchemaVersion             uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	RequestId                 string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -2286,24 +2289,29 @@ type DirectSignalingRequestV1 struct {
 	OfferSdp                  string                 `protobuf:"bytes,5,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
 	IssuedAtUnixNano          int64                  `protobuf:"varint,6,opt,name=issued_at_unix_nano,json=issuedAtUnixNano,proto3" json:"issued_at_unix_nano,omitempty"`
 	ExpiresAtUnixNano         int64                  `protobuf:"varint,7,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	GrantId                   string                 `protobuf:"bytes,8,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	GrantExpiresAtUnixNano    int64                  `protobuf:"varint,9,opt,name=grant_expires_at_unix_nano,json=grantExpiresAtUnixNano,proto3" json:"grant_expires_at_unix_nano,omitempty"`
+	PairingClaimDigest        []byte                 `protobuf:"bytes,10,opt,name=pairing_claim_digest,json=pairingClaimDigest,proto3" json:"pairing_claim_digest,omitempty"`
+	PairingClientPublicKey    []byte                 `protobuf:"bytes,11,opt,name=pairing_client_public_key,json=pairingClientPublicKey,proto3" json:"pairing_client_public_key,omitempty"`
+	PairingExpiresAtUnixNano  int64                  `protobuf:"varint,12,opt,name=pairing_expires_at_unix_nano,json=pairingExpiresAtUnixNano,proto3" json:"pairing_expires_at_unix_nano,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
 
-func (x *DirectSignalingRequestV1) Reset() {
-	*x = DirectSignalingRequestV1{}
+func (x *DirectSignalingRequestV2) Reset() {
+	*x = DirectSignalingRequestV2{}
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DirectSignalingRequestV1) String() string {
+func (x *DirectSignalingRequestV2) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DirectSignalingRequestV1) ProtoMessage() {}
+func (*DirectSignalingRequestV2) ProtoMessage() {}
 
-func (x *DirectSignalingRequestV1) ProtoReflect() protoreflect.Message {
+func (x *DirectSignalingRequestV2) ProtoReflect() protoreflect.Message {
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2315,63 +2323,98 @@ func (x *DirectSignalingRequestV1) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DirectSignalingRequestV1.ProtoReflect.Descriptor instead.
-func (*DirectSignalingRequestV1) Descriptor() ([]byte, []int) {
+// Deprecated: Use DirectSignalingRequestV2.ProtoReflect.Descriptor instead.
+func (*DirectSignalingRequestV2) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *DirectSignalingRequestV1) GetSchemaVersion() uint32 {
+func (x *DirectSignalingRequestV2) GetSchemaVersion() uint32 {
 	if x != nil {
 		return x.SchemaVersion
 	}
 	return 0
 }
 
-func (x *DirectSignalingRequestV1) GetRequestId() string {
+func (x *DirectSignalingRequestV2) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
 	}
 	return ""
 }
 
-func (x *DirectSignalingRequestV1) GetExpectedDeviceId() string {
+func (x *DirectSignalingRequestV2) GetExpectedDeviceId() string {
 	if x != nil {
 		return x.ExpectedDeviceId
 	}
 	return ""
 }
 
-func (x *DirectSignalingRequestV1) GetExpectedDeviceFingerprint() string {
+func (x *DirectSignalingRequestV2) GetExpectedDeviceFingerprint() string {
 	if x != nil {
 		return x.ExpectedDeviceFingerprint
 	}
 	return ""
 }
 
-func (x *DirectSignalingRequestV1) GetOfferSdp() string {
+func (x *DirectSignalingRequestV2) GetOfferSdp() string {
 	if x != nil {
 		return x.OfferSdp
 	}
 	return ""
 }
 
-func (x *DirectSignalingRequestV1) GetIssuedAtUnixNano() int64 {
+func (x *DirectSignalingRequestV2) GetIssuedAtUnixNano() int64 {
 	if x != nil {
 		return x.IssuedAtUnixNano
 	}
 	return 0
 }
 
-func (x *DirectSignalingRequestV1) GetExpiresAtUnixNano() int64 {
+func (x *DirectSignalingRequestV2) GetExpiresAtUnixNano() int64 {
 	if x != nil {
 		return x.ExpiresAtUnixNano
 	}
 	return 0
 }
 
-// DirectSignalingAnswerV1 是 daemon 对本次 offer 返回的短期签名 answer。
+func (x *DirectSignalingRequestV2) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *DirectSignalingRequestV2) GetGrantExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.GrantExpiresAtUnixNano
+	}
+	return 0
+}
+
+func (x *DirectSignalingRequestV2) GetPairingClaimDigest() []byte {
+	if x != nil {
+		return x.PairingClaimDigest
+	}
+	return nil
+}
+
+func (x *DirectSignalingRequestV2) GetPairingClientPublicKey() []byte {
+	if x != nil {
+		return x.PairingClientPublicKey
+	}
+	return nil
+}
+
+func (x *DirectSignalingRequestV2) GetPairingExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.PairingExpiresAtUnixNano
+	}
+	return 0
+}
+
+// DirectSignalingAnswerV2 是 daemon 对本次 offer 返回的短期签名 answer。
 // signature 覆盖 DirectSignalingAnswerSignatureInput；客户端必须使用 Endpoint pin 对 identity 和签名同时校验。
-type DirectSignalingAnswerV1 struct {
+type DirectSignalingAnswerV2 struct {
 	state             protoimpl.MessageState  `protogen:"open.v1"`
 	SchemaVersion     uint32                  `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	RequestId         string                  `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -2385,20 +2428,20 @@ type DirectSignalingAnswerV1 struct {
 	sizeCache         protoimpl.SizeCache
 }
 
-func (x *DirectSignalingAnswerV1) Reset() {
-	*x = DirectSignalingAnswerV1{}
+func (x *DirectSignalingAnswerV2) Reset() {
+	*x = DirectSignalingAnswerV2{}
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DirectSignalingAnswerV1) String() string {
+func (x *DirectSignalingAnswerV2) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DirectSignalingAnswerV1) ProtoMessage() {}
+func (*DirectSignalingAnswerV2) ProtoMessage() {}
 
-func (x *DirectSignalingAnswerV1) ProtoReflect() protoreflect.Message {
+func (x *DirectSignalingAnswerV2) ProtoReflect() protoreflect.Message {
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2410,61 +2453,61 @@ func (x *DirectSignalingAnswerV1) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DirectSignalingAnswerV1.ProtoReflect.Descriptor instead.
-func (*DirectSignalingAnswerV1) Descriptor() ([]byte, []int) {
+// Deprecated: Use DirectSignalingAnswerV2.ProtoReflect.Descriptor instead.
+func (*DirectSignalingAnswerV2) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *DirectSignalingAnswerV1) GetSchemaVersion() uint32 {
+func (x *DirectSignalingAnswerV2) GetSchemaVersion() uint32 {
 	if x != nil {
 		return x.SchemaVersion
 	}
 	return 0
 }
 
-func (x *DirectSignalingAnswerV1) GetRequestId() string {
+func (x *DirectSignalingAnswerV2) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
 	}
 	return ""
 }
 
-func (x *DirectSignalingAnswerV1) GetIdentity() *EndpointDaemonIdentity {
+func (x *DirectSignalingAnswerV2) GetIdentity() *EndpointDaemonIdentity {
 	if x != nil {
 		return x.Identity
 	}
 	return nil
 }
 
-func (x *DirectSignalingAnswerV1) GetAnswerSdp() string {
+func (x *DirectSignalingAnswerV2) GetAnswerSdp() string {
 	if x != nil {
 		return x.AnswerSdp
 	}
 	return ""
 }
 
-func (x *DirectSignalingAnswerV1) GetCandidates() []*DirectIceCandidate {
+func (x *DirectSignalingAnswerV2) GetCandidates() []*DirectIceCandidate {
 	if x != nil {
 		return x.Candidates
 	}
 	return nil
 }
 
-func (x *DirectSignalingAnswerV1) GetIssuedAtUnixNano() int64 {
+func (x *DirectSignalingAnswerV2) GetIssuedAtUnixNano() int64 {
 	if x != nil {
 		return x.IssuedAtUnixNano
 	}
 	return 0
 }
 
-func (x *DirectSignalingAnswerV1) GetExpiresAtUnixNano() int64 {
+func (x *DirectSignalingAnswerV2) GetExpiresAtUnixNano() int64 {
 	if x != nil {
 		return x.ExpiresAtUnixNano
 	}
 	return 0
 }
 
-func (x *DirectSignalingAnswerV1) GetSignature() []byte {
+func (x *DirectSignalingAnswerV2) GetSignature() []byte {
 	if x != nil {
 		return x.Signature
 	}
@@ -2477,7 +2520,7 @@ type DirectSignalingAnswerSignatureInput struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
 	Protocol      string                   `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	Version       uint32                   `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	Answer        *DirectSignalingAnswerV1 `protobuf:"bytes,3,opt,name=answer,proto3" json:"answer,omitempty"`
+	Answer        *DirectSignalingAnswerV2 `protobuf:"bytes,3,opt,name=answer,proto3" json:"answer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2526,15 +2569,15 @@ func (x *DirectSignalingAnswerSignatureInput) GetVersion() uint32 {
 	return 0
 }
 
-func (x *DirectSignalingAnswerSignatureInput) GetAnswer() *DirectSignalingAnswerV1 {
+func (x *DirectSignalingAnswerSignatureInput) GetAnswer() *DirectSignalingAnswerV2 {
 	if x != nil {
 		return x.Answer
 	}
 	return nil
 }
 
-// DirectSignalingErrorV1 返回不含内部状态的信令失败；错误响应后当前 TCP connection 必须关闭。
-type DirectSignalingErrorV1 struct {
+// DirectSignalingErrorV2 返回不含内部状态的信令失败；错误响应后当前 TCP connection 必须关闭。
+type DirectSignalingErrorV2 struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
 	Code          DirectSignalingErrorCode `protobuf:"varint,1,opt,name=code,proto3,enum=anytty.remote.auth.v1.DirectSignalingErrorCode" json:"code,omitempty"`
 	Message       string                   `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
@@ -2542,20 +2585,20 @@ type DirectSignalingErrorV1 struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DirectSignalingErrorV1) Reset() {
-	*x = DirectSignalingErrorV1{}
+func (x *DirectSignalingErrorV2) Reset() {
+	*x = DirectSignalingErrorV2{}
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DirectSignalingErrorV1) String() string {
+func (x *DirectSignalingErrorV2) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DirectSignalingErrorV1) ProtoMessage() {}
+func (*DirectSignalingErrorV2) ProtoMessage() {}
 
-func (x *DirectSignalingErrorV1) ProtoReflect() protoreflect.Message {
+func (x *DirectSignalingErrorV2) ProtoReflect() protoreflect.Message {
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2567,51 +2610,51 @@ func (x *DirectSignalingErrorV1) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DirectSignalingErrorV1.ProtoReflect.Descriptor instead.
-func (*DirectSignalingErrorV1) Descriptor() ([]byte, []int) {
+// Deprecated: Use DirectSignalingErrorV2.ProtoReflect.Descriptor instead.
+func (*DirectSignalingErrorV2) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *DirectSignalingErrorV1) GetCode() DirectSignalingErrorCode {
+func (x *DirectSignalingErrorV2) GetCode() DirectSignalingErrorCode {
 	if x != nil {
 		return x.Code
 	}
 	return DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED
 }
 
-func (x *DirectSignalingErrorV1) GetMessage() string {
+func (x *DirectSignalingErrorV2) GetMessage() string {
 	if x != nil {
 		return x.Message
 	}
 	return ""
 }
 
-// DirectSignalingResponseV1 是 embedded signaling 每条 TCP connection 唯一允许返回的响应。
-type DirectSignalingResponseV1 struct {
+// DirectSignalingResponseV2 是 embedded signaling 每条 TCP connection 唯一允许返回的响应。
+type DirectSignalingResponseV2 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
 	//
-	//	*DirectSignalingResponseV1_Answer
-	//	*DirectSignalingResponseV1_Error
-	Payload       isDirectSignalingResponseV1_Payload `protobuf_oneof:"payload"`
+	//	*DirectSignalingResponseV2_Answer
+	//	*DirectSignalingResponseV2_Error
+	Payload       isDirectSignalingResponseV2_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DirectSignalingResponseV1) Reset() {
-	*x = DirectSignalingResponseV1{}
+func (x *DirectSignalingResponseV2) Reset() {
+	*x = DirectSignalingResponseV2{}
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DirectSignalingResponseV1) String() string {
+func (x *DirectSignalingResponseV2) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DirectSignalingResponseV1) ProtoMessage() {}
+func (*DirectSignalingResponseV2) ProtoMessage() {}
 
-func (x *DirectSignalingResponseV1) ProtoReflect() protoreflect.Message {
+func (x *DirectSignalingResponseV2) ProtoReflect() protoreflect.Message {
 	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2623,51 +2666,51 @@ func (x *DirectSignalingResponseV1) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DirectSignalingResponseV1.ProtoReflect.Descriptor instead.
-func (*DirectSignalingResponseV1) Descriptor() ([]byte, []int) {
+// Deprecated: Use DirectSignalingResponseV2.ProtoReflect.Descriptor instead.
+func (*DirectSignalingResponseV2) Descriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{24}
 }
 
-func (x *DirectSignalingResponseV1) GetPayload() isDirectSignalingResponseV1_Payload {
+func (x *DirectSignalingResponseV2) GetPayload() isDirectSignalingResponseV2_Payload {
 	if x != nil {
 		return x.Payload
 	}
 	return nil
 }
 
-func (x *DirectSignalingResponseV1) GetAnswer() *DirectSignalingAnswerV1 {
+func (x *DirectSignalingResponseV2) GetAnswer() *DirectSignalingAnswerV2 {
 	if x != nil {
-		if x, ok := x.Payload.(*DirectSignalingResponseV1_Answer); ok {
+		if x, ok := x.Payload.(*DirectSignalingResponseV2_Answer); ok {
 			return x.Answer
 		}
 	}
 	return nil
 }
 
-func (x *DirectSignalingResponseV1) GetError() *DirectSignalingErrorV1 {
+func (x *DirectSignalingResponseV2) GetError() *DirectSignalingErrorV2 {
 	if x != nil {
-		if x, ok := x.Payload.(*DirectSignalingResponseV1_Error); ok {
+		if x, ok := x.Payload.(*DirectSignalingResponseV2_Error); ok {
 			return x.Error
 		}
 	}
 	return nil
 }
 
-type isDirectSignalingResponseV1_Payload interface {
-	isDirectSignalingResponseV1_Payload()
+type isDirectSignalingResponseV2_Payload interface {
+	isDirectSignalingResponseV2_Payload()
 }
 
-type DirectSignalingResponseV1_Answer struct {
-	Answer *DirectSignalingAnswerV1 `protobuf:"bytes,1,opt,name=answer,proto3,oneof"`
+type DirectSignalingResponseV2_Answer struct {
+	Answer *DirectSignalingAnswerV2 `protobuf:"bytes,1,opt,name=answer,proto3,oneof"`
 }
 
-type DirectSignalingResponseV1_Error struct {
-	Error *DirectSignalingErrorV1 `protobuf:"bytes,2,opt,name=error,proto3,oneof"`
+type DirectSignalingResponseV2_Error struct {
+	Error *DirectSignalingErrorV2 `protobuf:"bytes,2,opt,name=error,proto3,oneof"`
 }
 
-func (*DirectSignalingResponseV1_Answer) isDirectSignalingResponseV1_Payload() {}
+func (*DirectSignalingResponseV2_Answer) isDirectSignalingResponseV2_Payload() {}
 
-func (*DirectSignalingResponseV1_Error) isDirectSignalingResponseV1_Payload() {}
+func (*DirectSignalingResponseV2_Error) isDirectSignalingResponseV2_Payload() {}
 
 // EndpointDaemonIdentity 是跨来源安全归并 daemon 的唯一锚点。
 // device_public_key 只在 daemon-signed bootstrap 中必填；普通 registry 至少保存 DeviceID 与 fingerprint pin。
@@ -5276,8 +5319,8 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
 	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rR\rsdpMlineIndex\x12+\n" +
-	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xcb\x02\n" +
-	"\x18DirectSignalingRequestV1\x12%\n" +
+	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xcf\x04\n" +
+	"\x18DirectSignalingRequestV2\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12,\n" +
@@ -5285,8 +5328,14 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x1bexpected_device_fingerprint\x18\x04 \x01(\tR\x19expectedDeviceFingerprint\x12\x1b\n" +
 	"\toffer_sdp\x18\x05 \x01(\tR\bofferSdp\x12-\n" +
 	"\x13issued_at_unix_nano\x18\x06 \x01(\x03R\x10issuedAtUnixNano\x12/\n" +
-	"\x14expires_at_unix_nano\x18\a \x01(\x03R\x11expiresAtUnixNano\"\x92\x03\n" +
-	"\x17DirectSignalingAnswerV1\x12%\n" +
+	"\x14expires_at_unix_nano\x18\a \x01(\x03R\x11expiresAtUnixNano\x12\x19\n" +
+	"\bgrant_id\x18\b \x01(\tR\agrantId\x12:\n" +
+	"\x1agrant_expires_at_unix_nano\x18\t \x01(\x03R\x16grantExpiresAtUnixNano\x120\n" +
+	"\x14pairing_claim_digest\x18\n" +
+	" \x01(\fR\x12pairingClaimDigest\x129\n" +
+	"\x19pairing_client_public_key\x18\v \x01(\fR\x16pairingClientPublicKey\x12>\n" +
+	"\x1cpairing_expires_at_unix_nano\x18\f \x01(\x03R\x18pairingExpiresAtUnixNano\"\x92\x03\n" +
+	"\x17DirectSignalingAnswerV2\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12I\n" +
@@ -5302,13 +5351,13 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"#DirectSignalingAnswerSignatureInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12F\n" +
-	"\x06answer\x18\x03 \x01(\v2..anytty.remote.auth.v1.DirectSignalingAnswerV1R\x06answer\"w\n" +
-	"\x16DirectSignalingErrorV1\x12C\n" +
+	"\x06answer\x18\x03 \x01(\v2..anytty.remote.auth.v1.DirectSignalingAnswerV2R\x06answer\"w\n" +
+	"\x16DirectSignalingErrorV2\x12C\n" +
 	"\x04code\x18\x01 \x01(\x0e2/.anytty.remote.auth.v1.DirectSignalingErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\xb7\x01\n" +
-	"\x19DirectSignalingResponseV1\x12H\n" +
-	"\x06answer\x18\x01 \x01(\v2..anytty.remote.auth.v1.DirectSignalingAnswerV1H\x00R\x06answer\x12E\n" +
-	"\x05error\x18\x02 \x01(\v2-.anytty.remote.auth.v1.DirectSignalingErrorV1H\x00R\x05errorB\t\n" +
+	"\x19DirectSignalingResponseV2\x12H\n" +
+	"\x06answer\x18\x01 \x01(\v2..anytty.remote.auth.v1.DirectSignalingAnswerV2H\x00R\x06answer\x12E\n" +
+	"\x05error\x18\x02 \x01(\v2-.anytty.remote.auth.v1.DirectSignalingErrorV2H\x00R\x05errorB\t\n" +
 	"\apayload\"\x90\x01\n" +
 	"\x16EndpointDaemonIdentity\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12*\n" +
@@ -5546,7 +5595,7 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\fAuthOpenKind\x12\x1e\n" +
 	"\x1aAUTH_OPEN_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19AUTH_OPEN_KIND_CAPABILITY\x10\x01\x12\x1a\n" +
-	"\x16AUTH_OPEN_KIND_PAIRING\x10\x02*\xcd\x02\n" +
+	"\x16AUTH_OPEN_KIND_PAIRING\x10\x02*\xfc\x02\n" +
 	"\x18DirectSignalingErrorCode\x12+\n" +
 	"'DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED\x10\x00\x12(\n" +
 	"$DIRECT_SIGNALING_ERROR_CODE_PROTOCOL\x10\x01\x12'\n" +
@@ -5554,7 +5603,8 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"$DIRECT_SIGNALING_ERROR_CODE_REPLAYED\x10\x03\x121\n" +
 	"-DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH\x10\x04\x12(\n" +
 	"$DIRECT_SIGNALING_ERROR_CODE_INTERNAL\x10\x05\x12*\n" +
-	"&DIRECT_SIGNALING_ERROR_CODE_OVERLOADED\x10\x06*\xa3\x01\n" +
+	"&DIRECT_SIGNALING_ERROR_CODE_OVERLOADED\x10\x06\x12-\n" +
+	")DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION\x10\a*\xa3\x01\n" +
 	"\x13EndpointConnectMode\x12%\n" +
 	"!ENDPOINT_CONNECT_MODE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aENDPOINT_CONNECT_MODE_AUTO\x10\x01\x12#\n" +
@@ -5640,11 +5690,11 @@ var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(*DeviceHelloSignatureInput)(nil),           // 28: anytty.remote.auth.v1.DeviceHelloSignatureInput
 	(*ClientProofInput)(nil),                    // 29: anytty.remote.auth.v1.ClientProofInput
 	(*DirectIceCandidate)(nil),                  // 30: anytty.remote.auth.v1.DirectIceCandidate
-	(*DirectSignalingRequestV1)(nil),            // 31: anytty.remote.auth.v1.DirectSignalingRequestV1
-	(*DirectSignalingAnswerV1)(nil),             // 32: anytty.remote.auth.v1.DirectSignalingAnswerV1
+	(*DirectSignalingRequestV2)(nil),            // 31: anytty.remote.auth.v1.DirectSignalingRequestV2
+	(*DirectSignalingAnswerV2)(nil),             // 32: anytty.remote.auth.v1.DirectSignalingAnswerV2
 	(*DirectSignalingAnswerSignatureInput)(nil), // 33: anytty.remote.auth.v1.DirectSignalingAnswerSignatureInput
-	(*DirectSignalingErrorV1)(nil),              // 34: anytty.remote.auth.v1.DirectSignalingErrorV1
-	(*DirectSignalingResponseV1)(nil),           // 35: anytty.remote.auth.v1.DirectSignalingResponseV1
+	(*DirectSignalingErrorV2)(nil),              // 34: anytty.remote.auth.v1.DirectSignalingErrorV2
+	(*DirectSignalingResponseV2)(nil),           // 35: anytty.remote.auth.v1.DirectSignalingResponseV2
 	(*EndpointDaemonIdentity)(nil),              // 36: anytty.remote.auth.v1.EndpointDaemonIdentity
 	(*EndpointSelectionPolicy)(nil),             // 37: anytty.remote.auth.v1.EndpointSelectionPolicy
 	(*EndpointCredentialDescriptor)(nil),        // 38: anytty.remote.auth.v1.EndpointCredentialDescriptor
@@ -5695,12 +5745,12 @@ var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	11, // 16: anytty.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> anytty.remote.auth.v1.ChannelBinding
 	11, // 17: anytty.remote.auth.v1.ClientProofInput.channel_binding:type_name -> anytty.remote.auth.v1.ChannelBinding
 	3,  // 18: anytty.remote.auth.v1.ClientProofInput.open_kind:type_name -> anytty.remote.auth.v1.AuthOpenKind
-	36, // 19: anytty.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> anytty.remote.auth.v1.EndpointDaemonIdentity
-	30, // 20: anytty.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> anytty.remote.auth.v1.DirectIceCandidate
-	32, // 21: anytty.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> anytty.remote.auth.v1.DirectSignalingAnswerV1
-	4,  // 22: anytty.remote.auth.v1.DirectSignalingErrorV1.code:type_name -> anytty.remote.auth.v1.DirectSignalingErrorCode
-	32, // 23: anytty.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> anytty.remote.auth.v1.DirectSignalingAnswerV1
-	34, // 24: anytty.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> anytty.remote.auth.v1.DirectSignalingErrorV1
+	36, // 19: anytty.remote.auth.v1.DirectSignalingAnswerV2.identity:type_name -> anytty.remote.auth.v1.EndpointDaemonIdentity
+	30, // 20: anytty.remote.auth.v1.DirectSignalingAnswerV2.candidates:type_name -> anytty.remote.auth.v1.DirectIceCandidate
+	32, // 21: anytty.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> anytty.remote.auth.v1.DirectSignalingAnswerV2
+	4,  // 22: anytty.remote.auth.v1.DirectSignalingErrorV2.code:type_name -> anytty.remote.auth.v1.DirectSignalingErrorCode
+	32, // 23: anytty.remote.auth.v1.DirectSignalingResponseV2.answer:type_name -> anytty.remote.auth.v1.DirectSignalingAnswerV2
+	34, // 24: anytty.remote.auth.v1.DirectSignalingResponseV2.error:type_name -> anytty.remote.auth.v1.DirectSignalingErrorV2
 	7,  // 25: anytty.remote.auth.v1.EndpointSelectionPolicy.route_preference:type_name -> anytty.remote.auth.v1.EndpointRoutePreference
 	10, // 26: anytty.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> anytty.remote.auth.v1.EndpointCredentialKind
 	38, // 27: anytty.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> anytty.remote.auth.v1.EndpointCredentialDescriptor
@@ -5760,8 +5810,8 @@ func file_remoteauthpb_remote_auth_proto_init() {
 		(*AuthEnvelope_PairingAccepted)(nil),
 	}
 	file_remoteauthpb_remote_auth_proto_msgTypes[24].OneofWrappers = []any{
-		(*DirectSignalingResponseV1_Answer)(nil),
-		(*DirectSignalingResponseV1_Error)(nil),
+		(*DirectSignalingResponseV2_Answer)(nil),
+		(*DirectSignalingResponseV2_Error)(nil),
 	}
 	file_remoteauthpb_remote_auth_proto_msgTypes[32].OneofWrappers = []any{
 		(*EndpointRouteConfigV1_LocalUnix)(nil),

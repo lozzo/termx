@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/internal/protocol"
 	"github.com/anytty/anytty/proto/apipb"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/proto/wire"
 	"github.com/anytty/anytty/shared/transport/memory"
 )
@@ -60,9 +63,10 @@ func TestGeneratedEventSubscriptionsCorrelateAndRelease(t *testing.T) {
 }
 
 func TestGeneratedMachineEventsScopeAllowsOnlyLifecycleSubscription(t *testing.T) {
-	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory), corev2.WithClientAccessService(&protoGrantAccessService{grants: map[string]time.Time{"grant-events": expiresAt}}))
 	defer func() { _ = server.Shutdown(context.Background()) }()
-	scope := corev2.TransportScope{PrincipalID: "machine-observer", MachineEventsOnly: true}
+	scope := corev2.TransportScope{GrantID: "grant-events", GrantExpiresAt: expiresAt, PrincipalID: "machine-observer", MachineEventsOnly: true}
 	observer, _, closeObserver := newProtoTransportClient(t, server, &scope, 1)
 	defer closeObserver()
 	owner, _, closeOwner := newProtoTransportClient(t, server, nil, 2)
@@ -92,14 +96,15 @@ func TestGeneratedMachineEventsScopeAllowsOnlyLifecycleSubscription(t *testing.T
 }
 
 func TestGeneratedTerminalScopeListsOnlyAuthorizedTerminal(t *testing.T) {
-	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory), corev2.WithClientAccessService(&protoGrantAccessService{grants: map[string]time.Time{"grant-terminal": expiresAt}}))
 	defer func() { _ = server.Shutdown(context.Background()) }()
 	owner, _, closeOwner := newProtoTransportClient(t, server, nil, 1)
 	defer closeOwner()
 	createProtoTestTerminal(t, owner, "term-scoped-visible")
 	createProtoTestTerminal(t, owner, "term-scoped-hidden")
 
-	scope := corev2.TransportScope{PrincipalID: "terminal-client", TerminalID: "term-scoped-visible"}
+	scope := corev2.TransportScope{GrantID: "grant-terminal", GrantExpiresAt: expiresAt, PrincipalID: "terminal-client", TerminalID: "term-scoped-visible"}
 	application, _, closeApplication := newProtoTransportClient(t, server, &scope, 2)
 	defer closeApplication()
 	listed, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{})
@@ -128,6 +133,44 @@ func TestGeneratedTerminalScopeListsOnlyAuthorizedTerminal(t *testing.T) {
 		ViewId:       "terminal-scoped-view",
 	}); err != nil {
 		t.Fatalf("terminal-scoped attach failed: %v", err)
+	}
+}
+
+func TestClientAccessRevokeClosesEstablishedTerminalAndFileTransports(t *testing.T) {
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	service := &protoGrantAccessService{grants: map[string]time.Time{"grant-business": expiresAt}, revoked: make(map[string]bool)}
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory), corev2.WithClientAccessService(service))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	owner, _, closeOwner := newProtoTransportClient(t, server, nil, 1)
+	defer closeOwner()
+	createProtoTestTerminal(t, owner, "term-business")
+	scope := corev2.TransportScope{
+		GrantID: "grant-business", GrantExpiresAt: expiresAt, PrincipalID: "subject", AllowDaemon: true,
+		FileReadMetadata: true, FileReadContent: true, FileWriteContent: true, FileMutate: true,
+	}
+	terminalApplication, _, closeTerminal := newProtoTransportClient(t, server, &scope, 2)
+	defer closeTerminal()
+	fileApplication, _, closeFile := newProtoTransportClient(t, server, &scope, 3)
+	defer closeFile()
+
+	if _, err := terminalApplication.TerminalList(context.Background(), &apipb.TerminalListCommand{}); err != nil {
+		t.Fatalf("terminal transport before revoke: %v", err)
+	}
+	path := t.TempDir()
+	if _, err := fileApplication.FileStat(context.Background(), &apipb.FileStatCommand{Path: path}); err != nil {
+		t.Fatalf("file transport before revoke: %v", err)
+	}
+	revoked, err := owner.ClientAccessRevoke(context.Background(), &apipb.ClientAccessRevokeCommand{
+		Request: &remoteauthpb.ClientAccessRevokeRequest{GrantId: "grant-business"},
+	})
+	if err != nil || revoked.GetRecord().GetGrantId() != "grant-business" {
+		t.Fatalf("revoke result = %#v, error = %v", revoked, err)
+	}
+	if _, err := terminalApplication.TerminalList(context.Background(), &apipb.TerminalListCommand{}); err == nil {
+		t.Fatal("terminal transport survived revoke")
+	}
+	if _, err := fileApplication.FileStat(context.Background(), &apipb.FileStatCommand{Path: path}); err == nil {
+		t.Fatal("file transport survived revoke")
 	}
 }
 
@@ -397,4 +440,43 @@ func waitProtoFileFrame(t *testing.T, stream <-chan protocol.StreamFrame) protoc
 		t.Fatal("timed out waiting for file stream")
 		return protocol.StreamFrame{}
 	}
+}
+
+type protoGrantAccessService struct {
+	mu      sync.Mutex
+	grants  map[string]time.Time
+	revoked map[string]bool
+}
+
+func (*protoGrantAccessService) Identity(context.Context, []byte) (corev2.ClientAccessIdentity, error) {
+	return corev2.ClientAccessIdentity{}, nil
+}
+
+func (*protoGrantAccessService) CreateTicket(context.Context, corev2.ClientAccessTicketRequest) (corev2.ClientAccessTicket, error) {
+	return corev2.ClientAccessTicket{}, nil
+}
+
+func (*protoGrantAccessService) List(context.Context) ([]corev2.ClientAccessRecord, error) {
+	return nil, nil
+}
+
+func (service *protoGrantAccessService) GrantActive(_ context.Context, grantID string, expiresAt, now time.Time) bool {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	stored, ok := service.grants[grantID]
+	return ok && !service.revoked[grantID] && stored.Equal(expiresAt) && now.Before(stored)
+}
+
+func (service *protoGrantAccessService) Revoke(_ context.Context, grantID string) (corev2.ClientAccessRecord, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	expiresAt, ok := service.grants[grantID]
+	if !ok {
+		return corev2.ClientAccessRecord{}, errors.New("client access grant not found")
+	}
+	if service.revoked == nil {
+		service.revoked = make(map[string]bool)
+	}
+	service.revoked[grantID] = true
+	return corev2.ClientAccessRecord{GrantID: grantID, ExpiresAt: expiresAt, RevokedAt: time.Now().UTC()}, nil
 }

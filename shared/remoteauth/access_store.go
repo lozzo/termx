@@ -529,6 +529,27 @@ func (store *AccessStore) ListClientAccess() []ClientAccessRecord {
 	return records
 }
 
+// GrantActive 是 core transport admission 与 Direct preauth 共用的窄只读查询。
+// 请求必须携带已验证 claims 的规范 GrantID 和绝对期限；未知、撤销、过期或期限不匹配都 fail closed。
+func (store *AccessStore) GrantActive(grantID string, expiresAt, now time.Time) bool {
+	if store == nil {
+		return false
+	}
+	grantID = strings.TrimSpace(grantID)
+	if grantID == "" || expiresAt.IsZero() {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	store.mu.RLock()
+	record, ok := store.grants[grantID]
+	active := !store.closed && ok && record.RevokedAt.IsZero() &&
+		record.Claims.GrantID == grantID && record.Claims.ExpiresAt.Equal(expiresAt.UTC()) && now.UTC().Before(record.Claims.ExpiresAt)
+	store.mu.RUnlock()
+	return active
+}
+
 // RevokeGrant 原子撤销指定 client-bound grant，重启后仍由同一 AccessStore 拒绝普通 capability handshake。
 // 重复撤销保持幂等且不重写 state；未知 GrantID 返回错误，调用方不能用删除客户端本地 ref 冒充 daemon 撤销。
 func (store *AccessStore) RevokeGrant(grantID string) (ClientAccessRecord, error) {
@@ -546,7 +567,7 @@ func (store *AccessStore) RevokeGrant(grantID string) (ClientAccessRecord, error
 	}
 	record, ok := store.grants[grantID]
 	if !ok {
-		return ClientAccessRecord{}, fmt.Errorf("client access grant %q not found", grantID)
+		return ClientAccessRecord{}, fmt.Errorf("client access grant not found")
 	}
 	if !record.RevokedAt.IsZero() {
 		return clientAccessRecordFromStored(record), nil

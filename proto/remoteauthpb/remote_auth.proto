@@ -234,6 +234,7 @@ enum DirectSignalingErrorCode {
   DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH = 4;
   DIRECT_SIGNALING_ERROR_CODE_INTERNAL = 5;
   DIRECT_SIGNALING_ERROR_CODE_OVERLOADED = 6;
+  DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION = 7;
 }
 
 // DirectIceCandidate 是 Direct/SSH embedded signaling 使用的 ICE candidate wire contract。
@@ -245,9 +246,9 @@ message DirectIceCandidate {
   string username_fragment = 4;
 }
 
-// DirectSignalingRequestV1 是客户端向 daemon embedded signaling 提交的一次性短期 offer。
+// DirectSignalingRequestV2 是客户端向 daemon embedded signaling 提交的一次性短期 offer。
 // request_id 由客户端安全随机生成；daemon 必须在有效期内原子消费，并在创建 PeerConnection 前校验 Endpoint pin。
-message DirectSignalingRequestV1 {
+message DirectSignalingRequestV2 {
   uint32 schema_version = 1;
   string request_id = 2;
   string expected_device_id = 3;
@@ -255,11 +256,16 @@ message DirectSignalingRequestV1 {
   string offer_sdp = 5;
   int64 issued_at_unix_nano = 6;
   int64 expires_at_unix_nano = 7;
+  string grant_id = 8;
+  int64 grant_expires_at_unix_nano = 9;
+  bytes pairing_claim_digest = 10;
+  bytes pairing_client_public_key = 11;
+  int64 pairing_expires_at_unix_nano = 12;
 }
 
-// DirectSignalingAnswerV1 是 daemon 对本次 offer 返回的短期签名 answer。
+// DirectSignalingAnswerV2 是 daemon 对本次 offer 返回的短期签名 answer。
 // signature 覆盖 DirectSignalingAnswerSignatureInput；客户端必须使用 Endpoint pin 对 identity 和签名同时校验。
-message DirectSignalingAnswerV1 {
+message DirectSignalingAnswerV2 {
   uint32 schema_version = 1;
   string request_id = 2;
   EndpointDaemonIdentity identity = 3;
@@ -275,20 +281,20 @@ message DirectSignalingAnswerV1 {
 message DirectSignalingAnswerSignatureInput {
   string protocol = 1;
   uint32 version = 2;
-  DirectSignalingAnswerV1 answer = 3;
+  DirectSignalingAnswerV2 answer = 3;
 }
 
-// DirectSignalingErrorV1 返回不含内部状态的信令失败；错误响应后当前 TCP connection 必须关闭。
-message DirectSignalingErrorV1 {
+// DirectSignalingErrorV2 返回不含内部状态的信令失败；错误响应后当前 TCP connection 必须关闭。
+message DirectSignalingErrorV2 {
   DirectSignalingErrorCode code = 1;
   string message = 2;
 }
 
-// DirectSignalingResponseV1 是 embedded signaling 每条 TCP connection 唯一允许返回的响应。
-message DirectSignalingResponseV1 {
+// DirectSignalingResponseV2 是 embedded signaling 每条 TCP connection 唯一允许返回的响应。
+message DirectSignalingResponseV2 {
   oneof payload {
-    DirectSignalingAnswerV1 answer = 1;
-    DirectSignalingErrorV1 error = 2;
+    DirectSignalingAnswerV2 answer = 1;
+    DirectSignalingErrorV2 error = 2;
   }
 }
 

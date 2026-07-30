@@ -57,6 +57,8 @@ type ClientAccessService interface {
 	CreateTicket(ctx context.Context, request ClientAccessTicketRequest) (ClientAccessTicket, error)
 	// List 返回不含 ticket、grant body 或 client public key bytes 的脱敏授权投影。
 	List(ctx context.Context) ([]ClientAccessRecord, error)
+	// GrantActive 在 core admission 线性化边界查询同一持久 store；未知、撤销、过期或期限不匹配都返回 false。
+	GrantActive(ctx context.Context, grantID string, expiresAt, now time.Time) bool
 	// Revoke 按 GrantID 持久化撤销；实现失败时不得只修改 core session 内存。
 	Revoke(ctx context.Context, grantID string) (ClientAccessRecord, error)
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/proto/remoteauthpb"
@@ -186,6 +187,10 @@ func (service v3ClientAccessService) List(context.Context) ([]corev2.ClientAcces
 		result = append(result, clientAccessRecordFromRemoteAuth(record))
 	}
 	return result, nil
+}
+
+func (service v3ClientAccessService) GrantActive(_ context.Context, grantID string, expiresAt, now time.Time) bool {
+	return service.store != nil && service.store.GrantActive(grantID, expiresAt, now)
 }
 
 // Revoke 由 owning daemon 原子持久化撤销状态；删除客户端本地 credential 不能替代该操作。

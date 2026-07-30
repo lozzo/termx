@@ -311,7 +311,7 @@ func (forwarder *iceForwarder) serve() {
 	}
 }
 
-func (forwarder *iceForwarder) projectAnswer(answer *remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error) {
+func (forwarder *iceForwarder) projectAnswer(answer *remoteauthpb.DirectSignalingAnswerV2) (*remoteauthpb.DirectSignalingAnswerV2, error) {
 	if answer == nil || forwarder == nil || forwarder.listener == nil {
 		return nil, fmt.Errorf("SSH ICE answer projection is unavailable")
 	}

@@ -56,7 +56,12 @@ func (acceptor SessionAcceptor) ServeBoundTransport(ctx context.Context, connect
 	if connection == nil {
 		return fmt.Errorf("remote daemon data channel transport is not configured")
 	}
-	defer connection.Close()
+	handedToCore := false
+	defer func() {
+		if !handedToCore {
+			_ = connection.Close()
+		}
+	}()
 	if acceptor.AccessStore == nil || !acceptor.AccessStore.Available() {
 		return fmt.Errorf("remote daemon client access store is not configured")
 	}
@@ -85,6 +90,8 @@ func (acceptor SessionAcceptor) ServeBoundTransport(ctx context.Context, connect
 	}
 	claims := result.Claims
 	scope := core.TransportScope{
+		GrantID:            claims.GrantID,
+		GrantExpiresAt:     claims.ExpiresAt,
 		PrincipalID:        claims.SubjectKeyFingerprint,
 		AllowDaemon:        claims.Scope.AllowDaemon,
 		TerminalID:         claims.Scope.TerminalID,
@@ -95,7 +102,26 @@ func (acceptor SessionAcceptor) ServeBoundTransport(ctx context.Context, connect
 		FileMutate:         claims.Scope.FileMutate,
 		ManageClientAccess: claims.Scope.ManageClientAccess,
 	}
+	handedToCore = true
 	return acceptor.Core.ServeScopedTransport(ctx, connection, scope)
+}
+
+// GrantActive 让 Direct signaling 在分配 PeerConnection 前复用 daemon-local 持久 grant 真值。
+// DataChannel 仍必须完成完整 capability proof，preauth 结果不能进入 core。
+func (acceptor SessionAcceptor) GrantActive(grantID string, expiresAt time.Time) bool {
+	now := time.Now().UTC()
+	if acceptor.Now != nil {
+		now = acceptor.Now().UTC()
+	}
+	return acceptor.AccessStore != nil && acceptor.AccessStore.GrantActive(grantID, expiresAt, now)
+}
+
+func (acceptor SessionAcceptor) PairingClaimActive(digest, clientPublicKey []byte, expiresAt time.Time) bool {
+	now := time.Now().UTC()
+	if acceptor.Now != nil {
+		now = acceptor.Now().UTC()
+	}
+	return acceptor.AccessStore != nil && acceptor.AccessStore.PairingClaimActive(digest, clientPublicKey, expiresAt, now)
 }
 
 // PairingAcceptor 是 owner-only local Unix pairing socket 的受限 daemon 入口。

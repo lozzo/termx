@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,12 +19,17 @@ import (
 
 func TestSessionAcceptorAuthenticatesBeforeServingScopedTransport(t *testing.T) {
 	identity, credential, store, now := sessionFixture(t, remoteauth.Scope{TerminalID: "term-1"})
+	claims, err := remoteauth.Verify(credential.CapabilityGrant, identity.Fingerprint, now, store)
+	if err != nil {
+		t.Fatal(err)
+	}
 	core := &recordingCore{}
 	clientConn, serverConn := memory.NewPair()
+	countedServerConn := &countingSessionTransport{Transport: serverConn}
 	serverDone := make(chan error, 1)
 	go func() {
 		serverDone <- (SessionAcceptor{Core: core, Identity: identity, AccessStore: store, Now: fixedSessionNow(now)}).
-			ServeDataChannel(context.Background(), serverConn, sessionDTLSFingerprint())
+			ServeDataChannel(context.Background(), countedServerConn, sessionDTLSFingerprint())
 	}()
 	if _, err := (remoteauth.ClientHandshake{Now: fixedSessionNow(now)}).Authenticate(context.Background(), clientConn, remoteauth.ClientHandshakeRequest{
 		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
@@ -34,8 +40,12 @@ func TestSessionAcceptorAuthenticatesBeforeServingScopedTransport(t *testing.T) 
 	if err := <-serverDone; err != nil {
 		t.Fatalf("ServeDataChannel: %v", err)
 	}
-	if core.calls != 1 || core.scope.TerminalID != "term-1" || core.scope.AllowDaemon {
+	if core.calls != 1 || core.scope.TerminalID != "term-1" || core.scope.AllowDaemon ||
+		core.scope.GrantID != claims.GrantID || !core.scope.GrantExpiresAt.Equal(claims.ExpiresAt) {
 		t.Fatalf("unexpected scoped core call: calls=%d scope=%#v", core.calls, core.scope)
+	}
+	if countedServerConn.closes.Load() != 1 {
+		t.Fatalf("handed-off transport closes = %d, want exactly 1", countedServerConn.closes.Load())
 	}
 }
 
@@ -204,6 +214,16 @@ func TestSessionAcceptorRejectsLocalUnixBindingBeforeCore(t *testing.T) {
 type recordingCore struct {
 	calls int
 	scope core.TransportScope
+}
+
+type countingSessionTransport struct {
+	transport.Transport
+	closes atomic.Int32
+}
+
+func (connection *countingSessionTransport) Close() error {
+	connection.closes.Add(1)
+	return connection.Transport.Close()
 }
 
 func (core *recordingCore) ServeScopedTransport(_ context.Context, conn transport.Transport, scope core.TransportScope) error {

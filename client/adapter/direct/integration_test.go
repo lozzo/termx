@@ -158,10 +158,15 @@ func TestDirectSignalingRejectsExpiryReplayAndPinMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := direct.TCPSignalingClient{}
-	base := &remoteauthpb.DirectSignalingRequestV1{
+	claims, err := remoteauth.Verify(fixture.credential.CapabilityGrant, fixture.identity.Fingerprint, fixture.now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := &remoteauthpb.DirectSignalingRequestV2{
 		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: "request-valid-0000000000000001",
 		ExpectedDeviceId: fixture.identity.DeviceID, ExpectedDeviceFingerprint: fixture.identity.Fingerprint,
 		OfferSdp: offer, IssuedAtUnixNano: fixture.now.UnixNano(), ExpiresAtUnixNano: fixture.now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
+		GrantId: claims.GrantID, GrantExpiresAtUnixNano: claims.ExpiresAt.UnixNano(),
 	}
 	answer, err := client.Exchange(context.Background(), []string{fixture.signalingAddress}, base)
 	if err != nil {
@@ -268,7 +273,7 @@ func TestNilDirectDialerFailsWithoutPanic(t *testing.T) {
 }
 
 func TestVerifiedTCPAnswerProjectionPublishesOneCandidatePerLocator(t *testing.T) {
-	answer, err := direct.ProjectVerifiedTCPAnswer(&remoteauthpb.DirectSignalingAnswerV1{
+	answer, err := direct.ProjectVerifiedTCPAnswer(&remoteauthpb.DirectSignalingAnswerV2{
 		AnswerSdp: "v=0\r\na=candidate:one 1 tcp 10 192.168.1.10 41121 typ host tcptype passive\r\na=candidate:two 1 tcp 9 10.0.0.10 41121 typ host tcptype passive\r\na=end-of-candidates\r\n",
 		Candidates: []*remoteauthpb.DirectIceCandidate{
 			{Candidate: "candidate:one 1 tcp 10 192.168.1.10 41121 typ host tcptype passive"},
@@ -343,7 +348,7 @@ func newDirectFixture(t *testing.T) *directFixture {
 		_ = signalingListener.Close()
 		t.Fatal(err)
 	}
-	coreServer := core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
+	coreServer := core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory), core.WithClientAccessService(directCoreAccessService{store: store}))
 	acceptor := remotev2daemon.SessionAcceptor{
 		Core: coreServer, Identity: identity, AccessStore: store, Now: func() time.Time { return now },
 	}
@@ -466,9 +471,41 @@ type directCredentialSource struct {
 	credential remoteauth.ClientAccessCredential
 }
 
+type directCoreAccessService struct {
+	store *remoteauth.AccessStore
+}
+
+func (directCoreAccessService) Identity(context.Context, []byte) (core.ClientAccessIdentity, error) {
+	return core.ClientAccessIdentity{}, nil
+}
+
+func (directCoreAccessService) CreateTicket(context.Context, core.ClientAccessTicketRequest) (core.ClientAccessTicket, error) {
+	return core.ClientAccessTicket{}, nil
+}
+
+func (directCoreAccessService) List(context.Context) ([]core.ClientAccessRecord, error) {
+	return nil, nil
+}
+
+func (service directCoreAccessService) GrantActive(_ context.Context, grantID string, expiresAt, now time.Time) bool {
+	return service.store.GrantActive(grantID, expiresAt, now)
+}
+
+func (directCoreAccessService) Revoke(context.Context, string) (core.ClientAccessRecord, error) {
+	return core.ClientAccessRecord{}, errors.New("unused")
+}
+
 type countingHandler struct {
 	inner  remotev2daemon.SessionAcceptor
 	closed *atomic.Int32
+}
+
+func (handler countingHandler) GrantActive(grantID string, expiresAt time.Time) bool {
+	return handler.inner.GrantActive(grantID, expiresAt)
+}
+
+func (handler countingHandler) PairingClaimActive(digest, clientPublicKey []byte, expiresAt time.Time) bool {
+	return handler.inner.PairingClaimActive(digest, clientPublicKey, expiresAt)
 }
 
 func (handler countingHandler) ServeDataChannel(ctx context.Context, connection transport.Transport, fingerprint string) error {
@@ -485,7 +522,7 @@ type blockingSignaling struct {
 	started chan struct{}
 }
 
-func (signaling blockingSignaling) Exchange(ctx context.Context, _ []string, _ *remoteauthpb.DirectSignalingRequestV1) (*remoteauthpb.DirectSignalingAnswerV1, error) {
+func (signaling blockingSignaling) Exchange(ctx context.Context, _ []string, _ *remoteauthpb.DirectSignalingRequestV2) (*remoteauthpb.DirectSignalingAnswerV2, error) {
 	close(signaling.started)
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -519,10 +556,13 @@ func signalingCode(err error) remoteauthpb.DirectSignalingErrorCode {
 	return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED
 }
 
-func cloneRequest(request *remoteauthpb.DirectSignalingRequestV1) *remoteauthpb.DirectSignalingRequestV1 {
-	return &remoteauthpb.DirectSignalingRequestV1{
+func cloneRequest(request *remoteauthpb.DirectSignalingRequestV2) *remoteauthpb.DirectSignalingRequestV2 {
+	return &remoteauthpb.DirectSignalingRequestV2{
 		SchemaVersion: request.GetSchemaVersion(), RequestId: request.GetRequestId(), ExpectedDeviceId: request.GetExpectedDeviceId(),
 		ExpectedDeviceFingerprint: request.GetExpectedDeviceFingerprint(), OfferSdp: request.GetOfferSdp(),
 		IssuedAtUnixNano: request.GetIssuedAtUnixNano(), ExpiresAtUnixNano: request.GetExpiresAtUnixNano(),
+		GrantId: request.GetGrantId(), GrantExpiresAtUnixNano: request.GetGrantExpiresAtUnixNano(),
+		PairingClaimDigest: append([]byte(nil), request.GetPairingClaimDigest()...), PairingClientPublicKey: append([]byte(nil), request.GetPairingClientPublicKey()...),
+		PairingExpiresAtUnixNano: request.GetPairingExpiresAtUnixNano(),
 	}
 }

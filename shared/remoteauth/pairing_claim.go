@@ -227,6 +227,33 @@ func (store *AccessStore) AllowsPairingClaimDigest(digest []byte, clientPublicKe
 	return !now.After(record.ExpiresAt)
 }
 
+// PairingClaimActive 是 Direct signaling 的显式 pairing preauth 查询。
+// digest、公钥和 offer 绝对期限必须同时匹配；真正兑换仍由 DataChannel 内的 PairingOpen 完成。
+func (store *AccessStore) PairingClaimActive(digest []byte, clientPublicKey ed25519.PublicKey, expiresAt, now time.Time) bool {
+	if store == nil || len(digest) != sha256.Size || len(clientPublicKey) != ed25519.PublicKeySize || expiresAt.IsZero() || !store.Available() {
+		return false
+	}
+	if now.IsZero() {
+		now = store.now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	var key [sha256.Size]byte
+	copy(key[:], digest)
+	subject := Fingerprint(clientPublicKey)
+	store.pairingClaimsMu.Lock()
+	defer store.pairingClaimsMu.Unlock()
+	store.compactPairingClaimsLocked(now)
+	record, ok := store.pairingClaims[key]
+	if !ok || len(record.BundlePayload) == 0 || !record.ExpiresAt.Equal(expiresAt.UTC()) {
+		return false
+	}
+	if record.SubjectKeyFingerprint == "" {
+		return !now.After(record.ExpiresAt)
+	}
+	return record.SubjectKeyFingerprint == subject && now.Before(record.ExpiresAt.Add(defaultDeliveryGrace))
+}
+
 // RedeemPairingClaim 复用 AccessStore 的 PairingTicket 原子消费事务，并在成功后把内存 claim 固定到同一客户端 key。
 func (store *AccessStore) RedeemPairingClaim(offerPayload []byte, clientPublicKey ed25519.PublicKey, clientLabel string, now time.Time) (PairingExchangeResult, []byte, error) {
 	return store.redeemPairingClaim(offerPayload, clientPublicKey, clientLabel, 0, now)

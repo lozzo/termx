@@ -208,7 +208,7 @@ func newSSHWebRTCFixture(t *testing.T) *sshWebRTCFixture {
 		t.Fatal(err)
 	}
 	acceptor := remotev2daemon.SessionAcceptor{
-		Core:     core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory)),
+		Core:     core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory), core.WithClientAccessService(sshCoreAccessService{store: store})),
 		Identity: identity, AccessStore: store, Now: func() time.Time { return now },
 	}
 	server, err := remotev2webrtc.NewDirectServer(identity, acceptor, signaling, ice, func() time.Time { return now })
@@ -228,6 +228,28 @@ func newSSHWebRTCFixture(t *testing.T) *sshWebRTCFixture {
 	}
 	t.Cleanup(func() { fixture.stop(t) })
 	return fixture
+}
+
+type sshCoreAccessService struct {
+	store *remoteauth.AccessStore
+}
+
+func (sshCoreAccessService) Identity(context.Context, []byte) (core.ClientAccessIdentity, error) {
+	return core.ClientAccessIdentity{}, nil
+}
+
+func (sshCoreAccessService) CreateTicket(context.Context, core.ClientAccessTicketRequest) (core.ClientAccessTicket, error) {
+	return core.ClientAccessTicket{}, nil
+}
+
+func (sshCoreAccessService) List(context.Context) ([]core.ClientAccessRecord, error) { return nil, nil }
+
+func (service sshCoreAccessService) GrantActive(_ context.Context, grantID string, expiresAt, now time.Time) bool {
+	return service.store.GrantActive(grantID, expiresAt, now)
+}
+
+func (sshCoreAccessService) Revoke(context.Context, string) (core.ClientAccessRecord, error) {
+	return core.ClientAccessRecord{}, errors.New("unused")
 }
 
 func (fixture *sshWebRTCFixture) attempt(t *testing.T, host *isolatedSSHD) clientruntime.AttemptRequest {

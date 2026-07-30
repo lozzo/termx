@@ -49,6 +49,10 @@ func TestDirectSignalingOverloadedErrorCodeIsStable(t *testing.T) {
 	if value == nil || value.Number() != 6 {
 		t.Fatalf("DirectSignalingErrorCode OVERLOADED = %v, want 6", value)
 	}
+	authorization := descriptor.Values().ByName("DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION")
+	if authorization == nil || authorization.Number() != 7 {
+		t.Fatalf("DirectSignalingErrorCode AUTHORIZATION = %v, want 7", authorization)
+	}
 }
 
 func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T) {
@@ -156,11 +160,19 @@ func TestEndpointNetworkPolicyFieldsRemainAdditive(t *testing.T) {
 }
 
 func TestDirectSignalingUsesVersionedProtoAndSignedAnswer(t *testing.T) {
-	request := (&DirectSignalingRequestV1{}).ProtoReflect().Descriptor()
-	answer := (&DirectSignalingAnswerV1{}).ProtoReflect().Descriptor()
-	response := (&DirectSignalingResponseV1{}).ProtoReflect().Descriptor()
+	request := (&DirectSignalingRequestV2{}).ProtoReflect().Descriptor()
+	answer := (&DirectSignalingAnswerV2{}).ProtoReflect().Descriptor()
+	response := (&DirectSignalingResponseV2{}).ProtoReflect().Descriptor()
 	if request.Fields().ByName("schema_version").Number() != 1 || answer.Fields().ByName("schema_version").Number() != 1 {
 		t.Fatal("Direct signaling request/answer must retain schema_version field 1")
+	}
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
+		"grant_id": 8, "grant_expires_at_unix_nano": 9, "pairing_claim_digest": 10,
+		"pairing_client_public_key": 11, "pairing_expires_at_unix_nano": 12,
+	} {
+		if field := request.Fields().ByName(name); field == nil || field.Number() != number {
+			t.Fatalf("DirectSignalingRequestV2.%s field = %v, want number %d", name, field, number)
+		}
 	}
 	if answer.Fields().ByName("identity") == nil || answer.Fields().ByName("signature") == nil {
 		t.Fatal("Direct signaling answer must carry daemon identity and signature")

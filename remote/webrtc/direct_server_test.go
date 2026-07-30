@@ -281,14 +281,27 @@ func TestDirectServerAdmissionRejectionsReleasePreAuth(t *testing.T) {
 	protocol := harness.request("protocol")
 	protocol.OfferSdp = ""
 	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7000"), protocol), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL)
+	missingAuthorization := harness.request("missing-authorization")
+	missingAuthorization.GrantId = ""
+	missingAuthorization.GrantExpiresAtUnixNano = 0
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7001"), missingAuthorization), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL)
 
 	mismatch := harness.request("identity-mismatch")
 	mismatch.ExpectedDeviceFingerprint = "sha256:mismatch"
-	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7001"), mismatch), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH)
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7002"), mismatch), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH)
+
+	harness.server.admission = directRejectingAdmission{}
+	authorization := harness.request("grant-secret-must-not-leak")
+	response := harness.exchange(t, directTestAddress("192.0.2.70:7003"), authorization)
+	assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION)
+	if got := response.GetError().GetMessage(); got != "direct signaling authorization is unavailable" || strings.Contains(got, authorization.GetGrantId()) {
+		t.Fatalf("authorization error leaked identity: %q", got)
+	}
+	harness.server.admission = directTestHandler{}
 
 	replay := harness.request("replay")
-	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7002"), replay), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED)
-	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7003"), replay), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED)
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7004"), replay), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED)
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7005"), replay), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED)
 	waitDirectServerState(t, harness.server, 0, 0)
 
 	for index := 0; index < directSignalingPeerLimit; index++ {
@@ -512,7 +525,7 @@ func newDirectServerHarness(t *testing.T) *directServerHarness {
 	harness := &directServerHarness{
 		listener: listener, mux: mux, ctx: ctx, cancel: cancel, done: make(chan error, 1), now: now,
 		server: &DirectServer{
-			identity: identity, handler: directTestHandler{}, signalingListener: listener, iceMux: mux,
+			identity: identity, handler: directTestHandler{}, admission: directTestHandler{}, signalingListener: listener, iceMux: mux,
 			peerConnections: func(pion.Configuration) (*pion.PeerConnection, error) { return nil, errors.New("unused peer factory") },
 			now:             func() time.Time { return now }, firstRequestLimit: directSignalingFirstRequestLimit,
 			consumed: make(map[string]time.Time), conns: make(map[*directConnection]struct{}), preAuthByIP: make(map[string]int),
@@ -563,13 +576,13 @@ func (harness *directServerHarness) acceptConnection(t *testing.T, connection ne
 	}
 }
 
-func (harness *directServerHarness) exchange(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) *remoteauthpb.DirectSignalingResponseV1 {
+func (harness *directServerHarness) exchange(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV2) *remoteauthpb.DirectSignalingResponseV2 {
 	t.Helper()
 	_, response := harness.exchangeWithServerConnection(t, remoteAddress, request)
 	return response
 }
 
-func (harness *directServerHarness) exchangeWithServerConnection(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) (*directTestConn, *remoteauthpb.DirectSignalingResponseV1) {
+func (harness *directServerHarness) exchangeWithServerConnection(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV2) (*directTestConn, *remoteauthpb.DirectSignalingResponseV2) {
 	t.Helper()
 	serverConnection, client := harness.acceptPipe(t, remoteAddress)
 	defer client.Close()
@@ -579,14 +592,14 @@ func (harness *directServerHarness) exchangeWithServerConnection(t *testing.T, r
 	if err := directsignal.WriteMessage(client, request); err != nil {
 		t.Fatal(err)
 	}
-	response := &remoteauthpb.DirectSignalingResponseV1{}
+	response := &remoteauthpb.DirectSignalingResponseV2{}
 	if err := directsignal.ReadMessage(client, response); err != nil {
 		t.Fatal(err)
 	}
 	return serverConnection, response
 }
 
-func (harness *directServerHarness) exchangeDuringEarlyFailure(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) (*directTestConn, *remoteauthpb.DirectSignalingResponseV1) {
+func (harness *directServerHarness) exchangeDuringEarlyFailure(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV2) (*directTestConn, *remoteauthpb.DirectSignalingResponseV2) {
 	t.Helper()
 	serverConnection, client := harness.acceptPipe(t, remoteAddress)
 	defer client.Close()
@@ -595,7 +608,7 @@ func (harness *directServerHarness) exchangeDuringEarlyFailure(t *testing.T, rem
 	}
 	writeDone := make(chan error, 1)
 	go func() { writeDone <- directsignal.WriteMessage(client, request) }()
-	response := &remoteauthpb.DirectSignalingResponseV1{}
+	response := &remoteauthpb.DirectSignalingResponseV2{}
 	if err := directsignal.ReadMessage(client, response); err != nil {
 		t.Fatal(err)
 	}
@@ -605,36 +618,37 @@ func (harness *directServerHarness) exchangeDuringEarlyFailure(t *testing.T, rem
 	return serverConnection, response
 }
 
-func (harness *directServerHarness) request(id string) *remoteauthpb.DirectSignalingRequestV1 {
-	return &remoteauthpb.DirectSignalingRequestV1{
+func (harness *directServerHarness) request(id string) *remoteauthpb.DirectSignalingRequestV2 {
+	return &remoteauthpb.DirectSignalingRequestV2{
 		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: id,
 		ExpectedDeviceId: harness.server.identity.DeviceID, ExpectedDeviceFingerprint: harness.server.identity.Fingerprint,
 		OfferSdp: "invalid-sdp-for-admission-only", IssuedAtUnixNano: harness.now.UnixNano(),
 		ExpiresAtUnixNano: harness.now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
+		GrantId:           "grant-direct-test", GrantExpiresAtUnixNano: harness.now.Add(time.Hour).UnixNano(),
 	}
 }
 
-func readDirectResponse(t *testing.T, connection net.Conn) *remoteauthpb.DirectSignalingResponseV1 {
+func readDirectResponse(t *testing.T, connection net.Conn) *remoteauthpb.DirectSignalingResponseV2 {
 	t.Helper()
 	defer connection.Close()
 	if err := connection.SetDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	response := &remoteauthpb.DirectSignalingResponseV1{}
+	response := &remoteauthpb.DirectSignalingResponseV2{}
 	if err := directsignal.ReadMessage(connection, response); err != nil {
 		t.Fatal(err)
 	}
 	return response
 }
 
-func assertDirectErrorCode(t *testing.T, response *remoteauthpb.DirectSignalingResponseV1, want remoteauthpb.DirectSignalingErrorCode) {
+func assertDirectErrorCode(t *testing.T, response *remoteauthpb.DirectSignalingResponseV2, want remoteauthpb.DirectSignalingErrorCode) {
 	t.Helper()
 	if response.GetError() == nil || response.GetError().GetCode() != want {
 		t.Fatalf("direct signaling response = %#v, want error code %s", response, want)
 	}
 }
 
-func assertDirectPanicFailure(t *testing.T, response *remoteauthpb.DirectSignalingResponseV1) {
+func assertDirectPanicFailure(t *testing.T, response *remoteauthpb.DirectSignalingResponseV2) {
 	t.Helper()
 	assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL)
 	if got := response.GetError().GetMessage(); got != "direct signaling server internal failure" {
@@ -739,9 +753,17 @@ func assertPeerSlotsReusable(t *testing.T, server *DirectServer) {
 
 type directTestHandler struct{}
 
+func (directTestHandler) GrantActive(string, time.Time) bool                { return true }
+func (directTestHandler) PairingClaimActive([]byte, []byte, time.Time) bool { return true }
+
 func (directTestHandler) ServeDataChannel(context.Context, transport.Transport, string) error {
 	return nil
 }
+
+type directRejectingAdmission struct{}
+
+func (directRejectingAdmission) GrantActive(string, time.Time) bool                { return false }
+func (directRejectingAdmission) PairingClaimActive([]byte, []byte, time.Time) bool { return false }
 
 type directTestListener struct {
 	connections chan net.Conn

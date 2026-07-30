@@ -20,7 +20,7 @@ func TestDirectSignalingAnswerSignatureBindsPinCorrelationAndLifetime(t *testing
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	answer := &remoteauthpb.DirectSignalingAnswerV1{
+	answer := &remoteauthpb.DirectSignalingAnswerV2{
 		SchemaVersion: DirectSignalingSchemaVersion, RequestId: "request-signature",
 		Identity: &remoteauthpb.EndpointDaemonIdentity{
 			DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), DeviceFingerprint: identity.Fingerprint,
@@ -33,7 +33,7 @@ func TestDirectSignalingAnswerSignatureBindsPinCorrelationAndLifetime(t *testing
 	if err := VerifyDirectSignalingAnswer(answer, answer.GetRequestId(), identity.DeviceID, identity.Fingerprint, now); err != nil {
 		t.Fatal(err)
 	}
-	tampered := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1)
+	tampered := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV2)
 	tampered.AnswerSdp = "v=0\r\na=tampered\r\n"
 	if err := VerifyDirectSignalingAnswer(tampered, answer.GetRequestId(), identity.DeviceID, identity.Fingerprint, now); err == nil {
 		t.Fatal("tampered Direct signaling answer must fail signature verification")

@@ -18,7 +18,7 @@ func TestSSHRouteProjectionKeepsUserHostAndTCPCandidateExplicit(t *testing.T) {
 	if user != "build" || host != "studio.example" {
 		t.Fatalf("SSH target = %q@%q", user, host)
 	}
-	answer, err := direct.ProjectVerifiedTCPAnswer(&remoteauthpb.DirectSignalingAnswerV1{Candidates: []*remoteauthpb.DirectIceCandidate{{
+	answer, err := direct.ProjectVerifiedTCPAnswer(&remoteauthpb.DirectSignalingAnswerV2{Candidates: []*remoteauthpb.DirectIceCandidate{{
 		Candidate: "candidate:1 1 tcp 1671430143 127.0.0.1 41121 typ host tcptype passive",
 	}}}, []string{"127.0.0.1:54321"})
 	if err != nil || answer.GetCandidates()[0].GetCandidate() != "candidate:1 1 tcp 1671430143 127.0.0.1 54321 typ host tcptype passive" {

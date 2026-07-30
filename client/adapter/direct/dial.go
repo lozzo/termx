@@ -45,7 +45,7 @@ type PeerFactory interface {
 // 实现只能传输 generated Proto request/response，不能返回预授权 session 或修改 Endpoint pin。
 type SignalingClient interface {
 	// Exchange 在给定 locator 中建立一条 signaling TCP connection，并返回 daemon-signed answer。
-	Exchange(context.Context, []string, *remoteauthpb.DirectSignalingRequestV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
+	Exchange(context.Context, []string, *remoteauthpb.DirectSignalingRequestV2) (*remoteauthpb.DirectSignalingAnswerV2, error)
 }
 
 // Dialer 是 direct-webrtc-tcp Route 的 Go-owned connector。
@@ -56,7 +56,7 @@ type Dialer struct {
 	Authorization   peeradapter.Authorizer
 	RouteKind       endpoint.RouteKind
 	Locators        []string
-	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
+	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV2) (*remoteauthpb.DirectSignalingAnswerV2, error)
 	Random          io.Reader
 	Now             func() time.Time
 	ClientName      string
@@ -93,6 +93,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	opened, err := openDirectPeer(ctx, request, directPeerOptions{
 		Peers: dialer.Peers, Signaling: dialer.Signaling, Locators: dialer.Locators, TransformAnswer: dialer.TransformAnswer,
 		Random: dialer.Random, Now: dialer.Now, Phase: dialer.Phase,
+		GrantID: prepared.GrantID(), GrantExpiresAt: prepared.GrantExpiresAt(),
 	})
 	if err != nil {
 		return nil, err
@@ -150,13 +151,18 @@ func directRequestID(randomSource io.Reader) (string, error) {
 }
 
 type directPeerOptions struct {
-	Peers           PeerFactory
-	Signaling       SignalingClient
-	Locators        []string
-	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
-	Random          io.Reader
-	Now             func() time.Time
-	Phase           func(clientruntime.EndpointPhase)
+	Peers            PeerFactory
+	Signaling        SignalingClient
+	Locators         []string
+	TransformAnswer  func(*remoteauthpb.DirectSignalingAnswerV2) (*remoteauthpb.DirectSignalingAnswerV2, error)
+	Random           io.Reader
+	Now              func() time.Time
+	Phase            func(clientruntime.EndpointPhase)
+	GrantID          string
+	GrantExpiresAt   time.Time
+	PairingDigest    []byte
+	PairingPublicKey []byte
+	PairingExpiresAt time.Time
 }
 
 type openedDirectPeer struct {
@@ -199,10 +205,18 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 	if options.Now != nil {
 		now = options.Now().UTC()
 	}
-	signalingRequest := &remoteauthpb.DirectSignalingRequestV1{
+	signalingRequest := &remoteauthpb.DirectSignalingRequestV2{
 		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: requestID,
 		ExpectedDeviceId: request.DaemonIdentity().DeviceID, ExpectedDeviceFingerprint: request.DaemonIdentity().DeviceFingerprint,
 		OfferSdp: offer, IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
+	}
+	if options.GrantID != "" && !options.GrantExpiresAt.IsZero() {
+		signalingRequest.GrantId = options.GrantID
+		signalingRequest.GrantExpiresAtUnixNano = options.GrantExpiresAt.UnixNano()
+	} else if len(options.PairingDigest) > 0 && len(options.PairingPublicKey) > 0 && !options.PairingExpiresAt.IsZero() {
+		signalingRequest.PairingClaimDigest = append([]byte(nil), options.PairingDigest...)
+		signalingRequest.PairingClientPublicKey = append([]byte(nil), options.PairingPublicKey...)
+		signalingRequest.PairingExpiresAtUnixNano = options.PairingExpiresAt.UnixNano()
 	}
 	if options.Phase != nil {
 		options.Phase(clientruntime.EndpointPhaseSignaling)
@@ -236,7 +250,7 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 		}
 	}
 	if options.TransformAnswer != nil {
-		answer, err = options.TransformAnswer(proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1))
+		answer, err = options.TransformAnswer(proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV2))
 		if err != nil {
 			_ = opened.Close()
 			return nil, fmt.Errorf("project verified WebRTC answer: %w", err)
@@ -272,7 +286,7 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 
 // ProjectVerifiedTCPAnswer 把已经通过 daemon DeviceIdentity 签名验证的 TCP candidates 投影到 Route 声明的可达 locator。
 // 该函数不验证签名也不选择 Route；调用方必须先完成 VerifyDirectSignalingAnswer，地址投影失败时必须终止当前 attempt。
-func ProjectVerifiedTCPAnswer(answer *remoteauthpb.DirectSignalingAnswerV1, addresses []string) (*remoteauthpb.DirectSignalingAnswerV1, error) {
+func ProjectVerifiedTCPAnswer(answer *remoteauthpb.DirectSignalingAnswerV2, addresses []string) (*remoteauthpb.DirectSignalingAnswerV2, error) {
 	if answer == nil {
 		return nil, fmt.Errorf("verified Direct answer is required")
 	}
@@ -280,7 +294,7 @@ func ProjectVerifiedTCPAnswer(answer *remoteauthpb.DirectSignalingAnswerV1, addr
 	if err != nil {
 		return nil, err
 	}
-	projected := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1)
+	projected := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV2)
 	if answerAlreadyUsesTCPCandidateLocators(answer, locators) {
 		return projected, nil
 	}
@@ -320,7 +334,7 @@ func ProjectVerifiedTCPAnswer(answer *remoteauthpb.DirectSignalingAnswerV1, addr
 	return projected, nil
 }
 
-func answerAlreadyUsesTCPCandidateLocators(answer *remoteauthpb.DirectSignalingAnswerV1, locators []tcpCandidateLocator) bool {
+func answerAlreadyUsesTCPCandidateLocators(answer *remoteauthpb.DirectSignalingAnswerV2, locators []tcpCandidateLocator) bool {
 	wanted := make(map[string]struct{}, len(locators))
 	for _, locator := range locators {
 		wanted[net.JoinHostPort(locator.host, strconv.Itoa(locator.port))] = struct{}{}
@@ -451,7 +465,7 @@ type ContextDialer interface {
 }
 
 // Exchange 建连后写入一个 request 并读取一个 response；context 取消会立即打断当前 socket。
-func (client TCPSignalingClient) Exchange(ctx context.Context, addresses []string, request *remoteauthpb.DirectSignalingRequestV1) (*remoteauthpb.DirectSignalingAnswerV1, error) {
+func (client TCPSignalingClient) Exchange(ctx context.Context, addresses []string, request *remoteauthpb.DirectSignalingRequestV2) (*remoteauthpb.DirectSignalingAnswerV2, error) {
 	if request == nil || len(addresses) == 0 {
 		return nil, fmt.Errorf("direct signaling request and addresses are required")
 	}
@@ -493,17 +507,17 @@ func (client TCPSignalingClient) Exchange(ctx context.Context, addresses []strin
 	if err := directsignal.WriteMessage(connection, request); err != nil {
 		return nil, err
 	}
-	response := &remoteauthpb.DirectSignalingResponseV1{}
+	response := &remoteauthpb.DirectSignalingResponseV2{}
 	if err := directsignal.ReadMessage(connection, response); err != nil {
 		return nil, err
 	}
 	switch payload := response.GetPayload().(type) {
-	case *remoteauthpb.DirectSignalingResponseV1_Answer:
+	case *remoteauthpb.DirectSignalingResponseV2_Answer:
 		if payload.Answer == nil {
 			return nil, fmt.Errorf("direct signaling returned an empty answer")
 		}
 		return payload.Answer, nil
-	case *remoteauthpb.DirectSignalingResponseV1_Error:
+	case *remoteauthpb.DirectSignalingResponseV2_Error:
 		if payload.Error == nil {
 			return nil, fmt.Errorf("direct signaling returned an empty error")
 		}

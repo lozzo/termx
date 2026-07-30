@@ -38,6 +38,8 @@ type SignerSource interface {
 // PreparedAuthorization 是当前 endpoint/route 已完成本地 credential 校验后的单次认证事务。
 // Authenticate 只能绑定当前 peer 的实际 DTLS certificate；失败后调用方必须关闭 peer，不能切换旧授权路径。
 type PreparedAuthorization interface {
+	GrantID() string
+	GrantExpiresAt() time.Time
 	// Authenticate 使用当前 peer certificate fingerprint 完成 DataChannel 内 capability proof。
 	Authenticate(context.Context, transport.Transport, string) (remoteauth.Claims, error)
 }
@@ -120,7 +122,7 @@ func (authorizer CapabilityAuthorizer) Prepare(ctx context.Context, request clie
 		return nil, fmt.Errorf("peer endpoint capability subject does not match ClientAccessIdentity")
 	}
 	return &preparedCapabilityAuthorization{
-		credential: credential, identity: request.DaemonIdentity(), signer: signer, random: authorizer.Random, now: authorizer.Now,
+		credential: credential, identity: request.DaemonIdentity(), claims: claims, signer: signer, random: authorizer.Random, now: authorizer.Now,
 		credentialRef: route.CredentialRef, locatorStore: locatorStore(authorizer.Credentials),
 	}, nil
 }
@@ -128,11 +130,20 @@ func (authorizer CapabilityAuthorizer) Prepare(ctx context.Context, request clie
 type preparedCapabilityAuthorization struct {
 	credential    remoteauth.ClientAccessCredential
 	identity      endpoint.DaemonIdentity
+	claims        remoteauth.Claims
 	signer        remoteauth.ClientAccessSigner
 	random        io.Reader
 	now           func() time.Time
 	credentialRef string
 	locatorStore  CloudEdgeLocatorStore
+}
+
+func (authorization *preparedCapabilityAuthorization) GrantID() string {
+	return authorization.claims.GrantID
+}
+
+func (authorization *preparedCapabilityAuthorization) GrantExpiresAt() time.Time {
+	return authorization.claims.ExpiresAt
 }
 
 func (authorization *preparedCapabilityAuthorization) Authenticate(ctx context.Context, connection transport.Transport, certificateFingerprint string) (remoteauth.Claims, error) {

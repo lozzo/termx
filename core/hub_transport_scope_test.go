@@ -17,7 +17,8 @@ import (
 )
 
 func TestHubDataChannelTransportCannotEscapeCapabilityTerminalScope(t *testing.T) {
-	server := NewServer(WithApplicationExecutorFactory(applicationTestExecutorFactory), WithProcessFactory(newRecordingProcessFactory()))
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	server := NewServer(WithApplicationExecutorFactory(applicationTestExecutorFactory), WithProcessFactory(newRecordingProcessFactory()), WithClientAccessService(newGrantAccessTestService(map[string]time.Time{"grant-hub": expiresAt})))
 	registerScopedTestTerminal(t, server, "allowed")
 	registerScopedTestTerminal(t, server, "denied")
 
@@ -26,7 +27,7 @@ func TestHubDataChannelTransportCannotEscapeCapabilityTerminalScope(t *testing.T
 	serverTransport := datachannel.New(serverChannel)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- server.ServeScopedTransport(context.Background(), serverTransport, TransportScope{TerminalID: "allowed"})
+		errCh <- server.ServeScopedTransport(context.Background(), serverTransport, TransportScope{GrantID: "grant-hub", GrantExpiresAt: expiresAt, PrincipalID: "subject", TerminalID: "allowed"})
 	}()
 	client := protocol.NewClient(clientTransport)
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "hub-scope-test"}); err != nil {

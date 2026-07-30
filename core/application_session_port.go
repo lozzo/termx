@@ -618,11 +618,7 @@ func (session *protocolSession) ApplicationClientAccessCreateTicket(ctx context.
 }
 
 func (session *protocolSession) ApplicationClientAccessRevoke(ctx context.Context, grantID string) (ClientAccessRecord, error) {
-	service, err := session.clientAccessService()
-	if err != nil {
-		return ClientAccessRecord{}, err
-	}
-	return service.Revoke(ctx, grantID)
+	return session.server.revokeClientAccess(ctx, grantID)
 }
 
 func (session *protocolSession) ApplicationRemoteStatus(ctx context.Context) (RemoteStatus, error) {

@@ -13,15 +13,15 @@ import (
 
 const (
 	// DirectSignalingSchemaVersion 是 embedded signaling request/answer 当前唯一接受的 schema 版本。
-	DirectSignalingSchemaVersion uint32 = 1
+	DirectSignalingSchemaVersion uint32 = 2
 	// DirectSignalingMaxTTL 限制公开 signaling admission 的最大有效窗口。
 	DirectSignalingMaxTTL   = 30 * time.Second
-	directSignalingProtocol = "anytty.direct-signaling.v1"
+	directSignalingProtocol = "anytty.direct-signaling.v2"
 )
 
 // SignDirectSignalingAnswer 使用 daemon-local DeviceIdentity 对短期 Direct answer 签名。
 // answer 必须已经包含当前 daemon public identity、request correlation 和有效期；本函数不会修正上层字段。
-func SignDirectSignalingAnswer(identity Identity, answer *remoteauthpb.DirectSignalingAnswerV1) error {
+func SignDirectSignalingAnswer(identity Identity, answer *remoteauthpb.DirectSignalingAnswerV2) error {
 	if err := identity.Validate(); err != nil {
 		return fmt.Errorf("sign direct signaling answer with invalid identity: %w", err)
 	}
@@ -38,7 +38,7 @@ func SignDirectSignalingAnswer(identity Identity, answer *remoteauthpb.DirectSig
 
 // VerifyDirectSignalingAnswer 校验短期 answer 的 Endpoint pin、有效期与 daemon Ed25519 签名。
 // signaling 地址、SDP 和 candidate 都不能替代 expected DeviceID/fingerprint；失败时调用方必须关闭 peer。
-func VerifyDirectSignalingAnswer(answer *remoteauthpb.DirectSignalingAnswerV1, requestID, expectedDeviceID, expectedFingerprint string, now time.Time) error {
+func VerifyDirectSignalingAnswer(answer *remoteauthpb.DirectSignalingAnswerV2, requestID, expectedDeviceID, expectedFingerprint string, now time.Time) error {
 	if answer == nil || answer.GetIdentity() == nil {
 		return errors.New("direct signaling answer identity is required")
 	}
@@ -71,8 +71,8 @@ func VerifyDirectSignalingAnswer(answer *remoteauthpb.DirectSignalingAnswerV1, r
 	return nil
 }
 
-func directSignalingAnswerBytes(answer *remoteauthpb.DirectSignalingAnswerV1) ([]byte, error) {
-	clone := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1)
+func directSignalingAnswerBytes(answer *remoteauthpb.DirectSignalingAnswerV2) ([]byte, error) {
+	clone := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV2)
 	clone.Signature = nil
 	return (proto.MarshalOptions{Deterministic: true}).Marshal(&remoteauthpb.DirectSignalingAnswerSignatureInput{
 		Protocol: directSignalingProtocol, Version: DirectSignalingSchemaVersion, Answer: clone,

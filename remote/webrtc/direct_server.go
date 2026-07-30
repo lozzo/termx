@@ -69,6 +69,7 @@ func WithPionLogger(logger *slog.Logger) DirectServerOption {
 type DirectServer struct {
 	identity          remoteauth.Identity
 	handler           DataChannelSessionHandler
+	admission         DirectSignalingAdmission
 	signalingListener net.Listener
 	iceMux            ice.TCPMux
 	peerConnections   PeerConnectionFactory
@@ -92,6 +93,12 @@ type DirectServer struct {
 	wg           sync.WaitGroup
 }
 
+// DirectSignalingAdmission 只在公开信令分配 peer 前检查持久 grant 或一次性 pairing claim；它不能替代 DataChannel proof。
+type DirectSignalingAdmission interface {
+	GrantActive(grantID string, expiresAt time.Time) bool
+	PairingClaimActive(digest, clientPublicKey []byte, expiresAt time.Time) bool
+}
+
 // NewDirectServer 使用 daemon 已绑定的 signaling 与 ICE-TCP listener 创建服务。
 // ICE listener 被单个 Pion TCPMux 接管并在所有 peer 间共享；任一依赖缺失都在启动前失败，不创建 fallback listener。
 func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHandler, signalingListener, iceListener net.Listener, now func() time.Time, serverOptions ...DirectServerOption) (*DirectServer, error) {
@@ -100,6 +107,10 @@ func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHan
 	}
 	if handler == nil || signalingListener == nil || iceListener == nil {
 		return nil, fmt.Errorf("direct server handler and listeners are required")
+	}
+	admission, ok := handler.(DirectSignalingAdmission)
+	if !ok {
+		return nil, fmt.Errorf("direct server handler requires signaling admission")
 	}
 	options := directServerOptions{}
 	for _, apply := range serverOptions {
@@ -119,7 +130,7 @@ func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHan
 	settings.SetICETimeouts(2*time.Second, 5*time.Second, 500*time.Millisecond)
 	api := pion.NewAPI(pion.WithSettingEngine(settings))
 	return &DirectServer{
-		identity: identity, handler: handler, signalingListener: signalingListener, iceMux: mux,
+		identity: identity, handler: handler, admission: admission, signalingListener: signalingListener, iceMux: mux,
 		peerConnections: api.NewPeerConnection, now: now, consumed: make(map[string]time.Time), conns: make(map[*directConnection]struct{}),
 		firstRequestLimit: directSignalingFirstRequestLimit, preAuthByIP: make(map[string]int),
 		peerSlots: make(chan struct{}, directSignalingPeerLimit),
@@ -250,7 +261,7 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 	requestStarted := time.Now()
 	_ = connection.SetReadDeadline(earlierDeadline(requestStarted.Add(firstRequestLimit), ctx))
 	_ = connection.SetWriteDeadline(earlierDeadline(requestStarted.Add(remoteauth.DirectSignalingMaxTTL), ctx))
-	request := &remoteauthpb.DirectSignalingRequestV1{}
+	request := &remoteauthpb.DirectSignalingRequestV2{}
 	if err := directsignal.ReadMessage(connection, request); err != nil {
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL, "invalid direct signaling request")
 		return
@@ -265,6 +276,8 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 			message = "direct signaling request already consumed"
 		} else if code == remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH {
 			message = "direct signaling endpoint identity mismatch"
+		} else if code == remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION {
+			message = "direct signaling authorization is unavailable"
 		}
 		server.writeError(ctx, connection, code, message)
 		return
@@ -305,7 +318,7 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 	}
 	peerHandedOff = true
 	now := server.currentTime()
-	wireAnswer := &remoteauthpb.DirectSignalingAnswerV1{
+	wireAnswer := &remoteauthpb.DirectSignalingAnswerV2{
 		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: request.GetRequestId(),
 		Identity: &remoteauthpb.EndpointDaemonIdentity{
 			DeviceId: server.identity.DeviceID, DevicePublicKey: append([]byte(nil), server.identity.PublicKey...), DeviceFingerprint: server.identity.Fingerprint,
@@ -321,14 +334,21 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "sign direct signaling answer failed")
 		return
 	}
-	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV1{
-		Payload: &remoteauthpb.DirectSignalingResponseV1_Answer{Answer: wireAnswer},
+	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV2{
+		Payload: &remoteauthpb.DirectSignalingResponseV2_Answer{Answer: wireAnswer},
 	})
 }
 
-func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV1) remoteauthpb.DirectSignalingErrorCode {
+func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV2) remoteauthpb.DirectSignalingErrorCode {
 	if request == nil || request.GetSchemaVersion() != remoteauth.DirectSignalingSchemaVersion || strings.TrimSpace(request.GetRequestId()) == "" ||
 		strings.TrimSpace(request.GetOfferSdp()) == "" || request.GetIssuedAtUnixNano() <= 0 || request.GetExpiresAtUnixNano() <= 0 {
+		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL
+	}
+	grantMode := strings.TrimSpace(request.GetGrantId()) != "" && request.GetGrantExpiresAtUnixNano() > 0 &&
+		len(request.GetPairingClaimDigest()) == 0 && len(request.GetPairingClientPublicKey()) == 0 && request.GetPairingExpiresAtUnixNano() == 0
+	pairingMode := strings.TrimSpace(request.GetGrantId()) == "" && request.GetGrantExpiresAtUnixNano() == 0 &&
+		len(request.GetPairingClaimDigest()) > 0 && len(request.GetPairingClientPublicKey()) > 0 && request.GetPairingExpiresAtUnixNano() > 0
+	if grantMode == pairingMode {
 		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL
 	}
 	if request.GetExpectedDeviceId() != server.identity.DeviceID || request.GetExpectedDeviceFingerprint() != server.identity.Fingerprint {
@@ -339,6 +359,17 @@ func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV1
 	expiresAt := time.Unix(0, request.GetExpiresAtUnixNano()).UTC()
 	if issuedAt.After(now.Add(directSignalingClockSkew)) || !expiresAt.After(now) || !expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > remoteauth.DirectSignalingMaxTTL {
 		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_EXPIRED
+	}
+	authorized := false
+	if grantMode {
+		grantExpiresAt := time.Unix(0, request.GetGrantExpiresAtUnixNano()).UTC()
+		authorized = grantExpiresAt.After(now) && server.admission != nil && server.admission.GrantActive(request.GetGrantId(), grantExpiresAt)
+	} else {
+		pairingExpiresAt := time.Unix(0, request.GetPairingExpiresAtUnixNano()).UTC()
+		authorized = server.admission != nil && server.admission.PairingClaimActive(request.GetPairingClaimDigest(), request.GetPairingClientPublicKey(), pairingExpiresAt)
+	}
+	if !authorized {
+		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_AUTHORIZATION
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -356,8 +387,8 @@ func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV1
 
 func (server *DirectServer) writeError(ctx context.Context, connection net.Conn, code remoteauthpb.DirectSignalingErrorCode, message string) {
 	_ = connection.SetWriteDeadline(earlierDeadline(time.Now().Add(directSignalingErrorWriteLimit), ctx))
-	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV1{
-		Payload: &remoteauthpb.DirectSignalingResponseV1_Error{Error: &remoteauthpb.DirectSignalingErrorV1{Code: code, Message: message}},
+	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV2{
+		Payload: &remoteauthpb.DirectSignalingResponseV2_Error{Error: &remoteauthpb.DirectSignalingErrorV2{Code: code, Message: message}},
 	})
 }
 

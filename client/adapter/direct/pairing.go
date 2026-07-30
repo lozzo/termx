@@ -2,6 +2,7 @@ package direct
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"time"
@@ -19,14 +20,14 @@ type PairingConnector struct {
 	Signaling       SignalingClient
 	RouteKind       endpoint.RouteKind
 	Locators        []string
-	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
+	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV2) (*remoteauthpb.DirectSignalingAnswerV2, error)
 	Random          io.Reader
 	Now             func() time.Time
 	Phase           func(clientruntime.EndpointPhase)
 }
 
 // Redeem 使用当前 Direct attempt 的 Endpoint pin 与实际 DTLS certificate 兑换 PairingTicket。
-// ticket、ClientAccessIdentity 和 signer 只进入 DataChannel 内的公共 pairing 状态机，不进入 embedded signaling。
+// embedded signaling 只携带 claim digest、客户端公钥投影和绝对期限；claim body 与 signer 仍只进入 DataChannel pairing 状态机。
 func (connector *PairingConnector) Redeem(ctx context.Context, request clientruntime.AttemptRequest, pairing remoteauth.ClientPairingRequest) (remoteauth.PairingExchangeResult, error) {
 	if err := clientruntime.ValidatePairingAttempt(request, pairing); err != nil {
 		return remoteauth.PairingExchangeResult{}, err
@@ -41,9 +42,16 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	if request.Route().Kind != expectedKind {
 		return remoteauth.PairingExchangeResult{}, fmt.Errorf("route %q kind %q does not match pairing connector kind %q", request.Route().ID, request.Route().Kind, expectedKind)
 	}
+	offer, err := remoteauth.ParsePairingClaimOfferForExchange(pairing.PairingClaimOffer)
+	if err != nil {
+		return remoteauth.PairingExchangeResult{}, err
+	}
+	digest := sha256.Sum256(offer.GetClaim())
 	opened, err := openDirectPeer(ctx, request, directPeerOptions{
 		Peers: connector.Peers, Signaling: connector.Signaling, Locators: connector.Locators, TransformAnswer: connector.TransformAnswer,
 		Random: connector.Random, Now: connector.Now, Phase: connector.Phase,
+		PairingDigest: digest[:], PairingPublicKey: pairing.Identity.PublicKey,
+		PairingExpiresAt: time.Unix(0, offer.GetExpiresAtUnixNano()).UTC(),
 	})
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err

@@ -330,6 +330,52 @@ func TestAccessStoreKeepsPublishedStateInMemoryAfterDurabilityError(t *testing.T
 	}
 }
 
+func TestAccessStoreRevokePrePublishFailureKeepsGrantActive(t *testing.T) {
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	identity, _ := NewIdentity("device-revoke-failure", privateKey)
+	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	store, err := LoadAccessStore(dir, identity, AccessStoreOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	bundle, _, err := store.IssuePairingBundle(PairingIssueOptions{Scope: FullDaemonScope(), TicketTTL: time.Hour, GrantLifetime: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _ := GenerateClientAccessIdentity("endpoint-revoke-failure", rand.Reader)
+	result, err := store.RedeemPairingBundle(payload, client.PublicKey, "revoke-failure", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.GrantActive(result.GrantID, result.ExpiresAt, now) {
+		t.Fatal("redeemed grant is not active before revoke")
+	}
+	revision := store.AccessProjectionRevision()
+	originalWriter := store.writeFile
+	injected := errors.New("injected pre-publish revoke failure")
+	store.writeFile = func(string, []byte) error { return injected }
+	if _, err := store.RevokeGrant(result.GrantID); !errors.Is(err, injected) {
+		t.Fatalf("revoke error = %v", err)
+	}
+	store.writeFile = originalWriter
+	if store.Revoked(result.GrantID) || !store.GrantActive(result.GrantID, result.ExpiresAt, now) {
+		t.Fatal("pre-publish failure changed in-memory grant truth")
+	}
+	if store.AccessProjectionRevision() != revision {
+		t.Fatalf("pre-publish failure revision = %d, want %d", store.AccessProjectionRevision(), revision)
+	}
+	snapshot, err := LoadAccessSnapshot(dir, identity)
+	if err != nil || snapshot.Revoked(result.GrantID) {
+		t.Fatalf("pre-publish failure changed durable grant truth: snapshot=%#v err=%v", snapshot, err)
+	}
+}
+
 func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 	_, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	identity, _ := NewIdentity("device-1", daemonPrivate)
@@ -456,6 +502,9 @@ func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 	if beforeRevokeRevision == 0 {
 		t.Fatal("grant creation did not advance access projection revision")
 	}
+	if !store.GrantActive(winner.result.GrantID, winner.result.ExpiresAt, now) {
+		t.Fatal("grant is not active before durable revoke")
+	}
 	if _, err := store.RevokeGrant(winner.result.GrantID); err != nil {
 		t.Fatal(err)
 	}
@@ -472,6 +521,9 @@ func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 	t.Cleanup(func() { _ = reloaded.Close() })
 	if !reloaded.Revoked(winner.result.GrantID) || len(reloaded.ListClientAccess()) != 1 {
 		t.Fatalf("access truth did not survive restart: %#v", reloaded.ListClientAccess())
+	}
+	if reloaded.GrantActive(winner.result.GrantID, winner.result.ExpiresAt, now.Add(time.Minute)) {
+		t.Fatal("revoked grant became active after restart")
 	}
 	if reloaded.AccessProjectionRevision() != beforeRevokeRevision+1 {
 		t.Fatalf("reloaded access projection revision = %d", reloaded.AccessProjectionRevision())

@@ -15,11 +15,12 @@ import (
 )
 
 func TestServeScopedTransportRestrictsGeneratedTerminalCommands(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithClientAccessService(newGrantAccessTestService(map[string]time.Time{"grant-scope": expiresAt})))
 	server.cfg.applicationFactory = applicationTestExecutorFactory
 	registerScopedTestTerminal(t, server, "term-1")
 	registerScopedTestTerminal(t, server, "term-2")
-	application, closeClient := newScopedApplicationClient(t, server, TransportScope{TerminalID: "term-1"})
+	application, closeClient := newScopedApplicationClient(t, server, TransportScope{GrantID: "grant-scope", GrantExpiresAt: expiresAt, PrincipalID: "subject", TerminalID: "term-1"})
 	defer closeClient()
 
 	if _, err := application.TerminalGet(context.Background(), &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-1"}}); err != nil {
@@ -37,11 +38,11 @@ func TestServeScopedTransportRestrictsGeneratedTerminalCommands(t *testing.T) {
 	}
 }
 
-func TestServeScopedTransportRejectsZeroValueScope(t *testing.T) {
+func TestServeScopedTransportRejectsRemoteScopeWithoutGrantIdentity(t *testing.T) {
 	server := NewServer()
 	_, serverTransport := memory.NewPair()
 	defer serverTransport.Close()
-	if err := server.ServeScopedTransport(context.Background(), serverTransport, TransportScope{}); err == nil || !strings.Contains(err.Error(), "explicit capability") {
+	if err := server.ServeScopedTransport(context.Background(), serverTransport, TransportScope{}); err == nil || !strings.Contains(err.Error(), "grant identity and expiry") {
 		t.Fatalf("zero scope error = %v", err)
 	}
 }
