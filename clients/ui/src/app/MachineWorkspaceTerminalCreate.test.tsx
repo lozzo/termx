@@ -395,6 +395,49 @@ describe('MachineWorkspace terminal creation', () => {
     expect(dispatchNativeBack()).toBe(false)
   })
 
+  it('returns terminal path picker and bookmarks to their editor before closing it', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const session = new MockProtoSession('studio', (command) => {
+      if (command.command.case === 'terminalDefaults') {
+        return protoResult('terminalDefaults', create(TerminalDefaultsResultSchema, {
+          defaults: create(TerminalDefaultsSchema, { defaultCommand: ['/bin/zsh'], defaultCwd: '/tmp' }),
+        }))
+      }
+      return protoResult('acknowledge', create(AcknowledgeResultSchema))
+    })
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => []),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    const openCreateEditor = async () => {
+      await userEvent.click(await screen.findByRole('button', { name: 'Create terminal' }))
+      return screen.findByTestId('anytty-terminal-editor-sheet')
+    }
+
+    let editor = await openCreateEditor()
+    await userEvent.click(within(editor).getByRole('button', { name: 'Browse' }))
+    expect(await screen.findByTestId('anytty-terminal-path-picker-sheet')).toBeTruthy()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-terminal-path-picker-sheet')).toBeNull()
+    expect(screen.getByTestId('anytty-terminal-editor-sheet')).toBeTruthy()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-terminal-editor-sheet')).toBeNull()
+
+    editor = await openCreateEditor()
+    await userEvent.click(within(editor).getByRole('button', { name: 'Path bookmarks' }))
+    expect(await screen.findByTestId('anytty-terminal-path-bookmarks-sheet')).toBeTruthy()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-terminal-path-bookmarks-sheet')).toBeNull()
+    expect(screen.getByTestId('anytty-terminal-editor-sheet')).toBeTruthy()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-terminal-editor-sheet')).toBeNull()
+  })
+
   it('refreshes daemon inventory after a list-page manual reconnect', async () => {
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
     const terminal = {

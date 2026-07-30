@@ -158,67 +158,82 @@ export function FileManager({
     }
   }), [manager, t])
 
-  useNativeBackHandler(() => {
-    if (deletePath) {
-      setDeletePath(null)
-      return true
-    }
-    if (manager.previewPath) {
-      manager.closePreview()
-      return true
-    }
-    if (entryMenuPath) {
-      setEntryMenuPath(null)
-      return true
-    }
-    if (sortMenuOpen) {
-      setSortMenuOpen(false)
-      return true
-    }
-    if (bookmarksOpen) {
-      setBookmarksOpen(false)
-      setEditingBookmarkId(null)
-      setBookmarkAlias('')
-      return true
-    }
-    if (renamePath) {
-      setRenamePath(null)
-      setRenameName('')
-      return true
-    }
-    if (newDirOpen) {
-      manager.setNewDirName('')
-      setNewDirOpen(false)
-      return true
-    }
-    if (manager.selectionMode) {
-      manager.setSelectionMode(false)
-      return true
-    }
-    if (manager.clipboard) {
-      manager.setClipboard(null)
-      return true
-    }
-    const currentPath = normalizeFilePath(manager.currentPath)
-    if (currentPath !== '/') {
-      void manager.navigate(parentPath(currentPath))
-      return true
-    }
-    return false
-  }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, active)
-
   const editingBookmark = useMemo(() => (
     editingBookmarkId ? manager.pathBookmarks.find((bookmark) => bookmark.id === editingBookmarkId) ?? null : null
   ), [editingBookmarkId, manager.pathBookmarks])
 
-  const openBookmarkEditor = (bookmark: PathBookmark) => {
-    setEditingBookmarkId(bookmark.id)
-    setBookmarkAlias(bookmark.label)
-  }
-
   const closeBookmarkEditor = () => {
     setEditingBookmarkId(null)
     setBookmarkAlias('')
+  }
+
+  const currentPath = normalizeFilePath(manager.currentPath)
+  const clipboardOpen = Boolean(manager.clipboard?.paths.length)
+  const nestedOverlayOpen = Boolean(
+    deletePath
+      || manager.previewPath
+      || entryMenuPath
+      || sortMenuOpen
+      || bookmarksOpen
+      || editingBookmark
+      || renamePath
+      || newDirOpen
+      || manager.selectionMode
+      || clipboardOpen,
+  )
+
+  useNativeBackHandler(() => {
+    if (deletePath) {
+      setDeletePath(null)
+      return
+    }
+    if (manager.previewPath) {
+      manager.closePreview()
+      return
+    }
+    if (entryMenuPath) {
+      setEntryMenuPath(null)
+      return
+    }
+    if (sortMenuOpen) {
+      setSortMenuOpen(false)
+      return
+    }
+    if (bookmarksOpen && editingBookmark) {
+      closeBookmarkEditor()
+      return
+    }
+    if (bookmarksOpen) {
+      setBookmarksOpen(false)
+      closeBookmarkEditor()
+      return
+    }
+    if (renamePath) {
+      setRenamePath(null)
+      setRenameName('')
+      return
+    }
+    if (newDirOpen) {
+      manager.setNewDirName('')
+      setNewDirOpen(false)
+      return
+    }
+    if (manager.selectionMode) {
+      manager.setSelectionMode(false)
+      return
+    }
+    if (clipboardOpen) {
+      manager.setClipboard(null)
+    }
+  }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, active && nestedOverlayOpen)
+
+  useNativeBackHandler(() => {
+    void manager.navigate(parentPath(currentPath))
+  }, NATIVE_BACK_PRIORITY.WORKSPACE, active && currentPath !== '/')
+
+  const openBookmarkEditor = (bookmark: PathBookmark) => {
+    setEditingBookmarkId(bookmark.id)
+    setBookmarkAlias(bookmark.label)
   }
 
   const saveBookmarkAlias = () => {

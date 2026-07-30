@@ -1,7 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
+import { addNativeBackHandler, dispatchNativeBack, NATIVE_BACK_PRIORITY } from '../platform/nativeBack'
 import type { ProtoClientSession } from '../core/protoClientSession'
+import { FileTransferPanel } from './FileTransferPanel'
 import type { UseFileManagerResult } from './useFileManager'
 import { FileManager } from './FileManager'
 
@@ -100,6 +103,50 @@ describe('FileManager overlays', () => {
     expect(screen.queryByRole('dialog', { name: 'Edit bookmark' })).toBeNull()
   })
 
+  it('closes the bookmark editor before its bookmarks sheet', async () => {
+    useFileManagerMock.mockReturnValue(createManager({
+      pathBookmarks: [{
+        id: 'bookmark-1',
+        path: '/srv/app',
+        label: 'Production',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        version: 1,
+      }],
+    }))
+    renderFileManager()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Path bookmarks' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit bookmark Production' }))
+    expect(screen.getByRole('dialog', { name: 'Edit bookmark' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Edit bookmark' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Path bookmarks' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Path bookmarks' })).toBeNull()
+  })
+
+  it('closes transfer before navigating /tmp, then keeps file navigation ahead of leaving files', () => {
+    const navigate = vi.fn(async () => undefined)
+    const leaveFiles = vi.fn()
+    useFileManagerMock.mockReturnValue(createManager({ currentPath: '/tmp', navigate }))
+    const unregisterLeaveFiles = addNativeBackHandler(leaveFiles, NATIVE_BACK_PRIORITY.WORKSPACE)
+    render(<FileManagerWithTransfer />)
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Data Transfer Center' })).toBeNull()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(leaveFiles).not.toHaveBeenCalled()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(navigate).toHaveBeenCalledOnce()
+    expect(navigate).toHaveBeenCalledWith('/')
+    expect(leaveFiles).not.toHaveBeenCalled()
+    unregisterLeaveFiles()
+  })
+
   it('keeps delete confirmation associations unique across two file managers', () => {
     useFileManagerMock.mockReturnValue(createManager({
       currentPath: '/tmp',
@@ -152,6 +199,32 @@ describe('FileManager overlays', () => {
     expectUniqueAssociations(editors, ['Edit bookmark', 'Edit bookmark'], ['/srv/app', '/srv/app'])
   })
 })
+
+function FileManagerWithTransfer() {
+  const [transferOpen, setTransferOpen] = useState(true)
+  return (
+    <>
+      <FileManager machineId="machine-1" session={{} as ProtoClientSession} />
+      <FileTransferPanel
+        transfers={[{
+          id: 'transfer-1',
+          name: 'payload.bin',
+          direction: 'download',
+          totalSize: 1,
+          transferredSize: 0,
+          status: 'pending',
+          startedAt: 1,
+          updatedAt: 1,
+        }]}
+        hasActiveTransfers
+        onCancel={vi.fn()}
+        onDismiss={vi.fn()}
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+      />
+    </>
+  )
+}
 
 function expectAssociation(dialog: HTMLElement, attribute: 'aria-labelledby' | 'aria-describedby', text: string) {
   const id = dialog.getAttribute(attribute)

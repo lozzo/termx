@@ -608,20 +608,17 @@ export function RemoteControlApp({
 
   useNativeBackHandler(() => {
     requestPairSheetClose()
-    return true
   }, NATIVE_BACK_PRIORITY.SCANNER, scanOpen)
 
   useNativeBackHandler(() => {
     if (view === 'settings') {
       setView('home')
-      return true
+      return
     }
     if (view === 'machine') {
       setView('home')
       setError(null)
-      return true
     }
-    return false
   }, NATIVE_BACK_PRIORITY.ROOT, view !== 'home')
 
   return (

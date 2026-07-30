@@ -177,8 +177,12 @@ function TransferCenterDialog({
   const [selectionMode, setSelectionMode] = useState(false)
 
   useNativeBackHandler(() => {
+    if (selectionMode) {
+      setSelectionMode(false)
+      setSelectedIds(new Set())
+      return
+    }
     onClose()
-    return true
   }, NATIVE_BACK_PRIORITY.TRANSFER)
 
   useEffect(() => {

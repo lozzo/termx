@@ -202,7 +202,45 @@ describe('FileTransferPanel', () => {
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(0)
     expect(dispatchNativeBack()).toBe(false)
   })
+
+  it('exits selection and clears selected transfers before closing the center', async () => {
+    const onClose = vi.fn()
+    render(<SelectionTransferCenter onClose={onClose} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /select transfers/i }))
+    await userEvent.click(screen.getByRole('button', { name: /select selected\.txt/i }))
+    expect(screen.getByText('1 selected')).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.queryByText('1 selected')).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Data Transfer Center' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /select transfers/i }))
+    expect(screen.getByText('0 selected')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog', { name: 'Data Transfer Center' })).toBeNull()
+  })
 })
+
+function SelectionTransferCenter({ onClose }: { onClose: () => void }) {
+  const [open, setOpen] = useState(true)
+  return (
+    <FileTransferPanel
+      transfers={[transfer({ id: 'selected', name: 'selected.txt' })]}
+      hasActiveTransfers
+      onCancel={vi.fn()}
+      onDismiss={vi.fn()}
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (!nextOpen) onClose()
+      }}
+    />
+  )
+}
 
 function TwoTransferCenters({
   firstClosed,

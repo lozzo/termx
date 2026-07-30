@@ -22,6 +22,7 @@ export function scanPairingCode(options?: NativeQrScannerOptions): Promise<strin
   root.setAttribute('aria-labelledby', qrScannerTitleId)
   root.setAttribute('aria-modal', 'true')
   root.setAttribute('role', 'dialog')
+  root.tabIndex = -1
 
   const scannerStyle = document.createElement('style')
   scannerStyle.textContent = `
@@ -77,6 +78,7 @@ export function scanPairingCode(options?: NativeQrScannerOptions): Promise<strin
   header.append(title, cancelButton)
   root.append(scannerStyle, header, reader, hint)
   document.body.append(root)
+  const restoreBackground = isolateBackground(root)
   cancelButton.focus()
 
   // Android WebView 的 BarcodeDetector 可能在缺少 GMS provider 时让进程直接崩溃；扫码只使用库内 decoder。
@@ -88,7 +90,8 @@ export function scanPairingCode(options?: NativeQrScannerOptions): Promise<strin
     })
   } catch (error) {
     root.remove()
-    restoreFocus(previousFocus)
+    restoreBackground()
+    scheduleFocusRestore(previousFocus)
     return Promise.reject(normalizeScanError(error))
   }
 
@@ -98,19 +101,26 @@ export function scanPairingCode(options?: NativeQrScannerOptions): Promise<strin
     resolveScan = resolve
     rejectScan = reject
   })
-  let startFailure: unknown
-  let startResult = Promise.resolve(false)
-  let finalizePromise: Promise<void> | null = null
+  let promptSettled = false
+  let promptUiCleaned = false
+  let cameraCleanupStarted = false
   let removeNativeBackHandler = () => {}
+  let startOutcomeSettled = false
+  let settleStartOutcome!: (outcome: CameraStartOutcome) => void
+  const startOutcome = new Promise<CameraStartOutcome>((resolve) => {
+    settleStartOutcome = resolve
+  })
+  const settleCameraStart = (outcome: CameraStartOutcome) => {
+    if (startOutcomeSettled) return
+    startOutcomeSettled = true
+    settleStartOutcome(outcome)
+  }
 
-  const onAbort = () => { void finalize(null) }
-  const finalize = (value: string | null, error?: unknown): Promise<void> => {
-    if (finalizePromise) return finalizePromise
-    finalizePromise = (async () => {
-      cancelButton.disabled = true
-      options?.signal?.removeEventListener('abort', onAbort)
-      const started = await startResult
-      if (started) {
+  const cleanupCamera = () => {
+    if (cameraCleanupStarted) return
+    cameraCleanupStarted = true
+    void startOutcome.then(async (outcome) => {
+      if (outcome.started) {
         try {
           await scanner.stop()
         } catch {}
@@ -118,53 +128,105 @@ export function scanPairingCode(options?: NativeQrScannerOptions): Promise<strin
       try {
         scanner.clear()
       } catch {}
-      root.remove()
-      removeNativeBackHandler()
-      restoreFocus(previousFocus)
-
-      if (error !== undefined) {
-        const normalized = normalizeScanError(error)
-        console.warn('[anytty:scan] camera scan failed', normalized.message)
-        rejectScan(normalized)
-        return
-      }
-      console.info(value ? '[anytty:scan] QR decoded' : '[anytty:scan] scan cancelled')
-      resolveScan(value)
-    })()
-    return finalizePromise
+    }).catch(() => undefined)
   }
 
-  cancelButton.onclick = () => { void finalize(null) }
+  const cleanupPromptUi = (restorePreviousFocus: boolean) => {
+    if (promptUiCleaned) return
+    promptUiCleaned = true
+    cancelButton.disabled = true
+    options?.signal?.removeEventListener('abort', onAbort)
+    cancelButton.removeEventListener('click', onCancel)
+    root.removeEventListener('keydown', onKeyDown)
+    removeNativeBackHandler()
+    root.remove()
+    restoreBackground()
+    if (restorePreviousFocus) scheduleFocusRestore(previousFocus)
+  }
+
+  const finishPrompt = (value: string | null, error?: unknown, restorePreviousFocus = true) => {
+    if (promptSettled) return
+    promptSettled = true
+    cleanupPromptUi(restorePreviousFocus)
+    cleanupCamera()
+
+    if (error !== undefined) {
+      const normalized = normalizeScanError(error)
+      console.warn('[anytty:scan] camera scan failed', normalized.message)
+      rejectScan(normalized)
+      return
+    }
+    console.info(value ? '[anytty:scan] QR decoded' : '[anytty:scan] scan cancelled')
+    resolveScan(value)
+  }
+
+  function onCancel() {
+    finishPrompt(null)
+  }
+  function onAbort() {
+    finishPrompt(null)
+  }
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      finishPrompt(null)
+      return
+    }
+    if (event.key !== 'Tab') return
+    const focusable = scannerFocusableElements(root)
+    if (focusable.length === 0) {
+      event.preventDefault()
+      root.focus()
+      return
+    }
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
+    const activeElement = document.activeElement
+    if (!root.contains(activeElement)) {
+      event.preventDefault()
+      first.focus()
+      return
+    }
+    if (event.shiftKey && activeElement === first) {
+      event.preventDefault()
+      last.focus()
+      return
+    }
+    if (!event.shiftKey && activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  cancelButton.addEventListener('click', onCancel)
+  root.addEventListener('keydown', onKeyDown)
   removeNativeBackHandler = addNativeBackHandler(() => {
-    void finalize(null)
-    return true
+    finishPrompt(null)
   }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY)
   options?.signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
-    startResult = scanner.start(
+    void Promise.resolve(scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: qrboxSize, height: qrboxSize }, aspectRatio: 1.0 },
       (decodedText) => {
+        if (promptSettled) return
         try {
           scanner.pause(true)
         } catch {}
-        void finalize(decodedText)
+        finishPrompt(decodedText, undefined, false)
       },
       () => {},
-    ).then(
-      () => true,
-      (error) => {
-        startFailure = error
-        return false
-      },
+    )).then(
+      () => settleCameraStart({ started: true }),
+      (error: unknown) => settleCameraStart({ started: false, error }),
     )
   } catch (error) {
-    startFailure = error
-    startResult = Promise.resolve(false)
+    settleCameraStart({ started: false, error })
   }
-  void startResult.then((started) => {
-    if (!started) void finalize(null, startFailure)
+  void startOutcome.then((outcome) => {
+    if (!outcome.started) finishPrompt(null, outcome.error)
   })
 
   return result
@@ -181,6 +243,49 @@ function normalizeScanError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-function restoreFocus(target: HTMLElement | null): void {
-  if (target?.isConnected && !target.closest('[inert]')) target.focus()
+type CameraStartOutcome = { started: true } | { started: false; error: unknown }
+
+function isolateBackground(scannerRoot: HTMLElement): () => void {
+  const states = Array.from(document.body.children)
+    .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== scannerRoot)
+    .map((element) => ({
+      element,
+      ariaHidden: element.getAttribute('aria-hidden'),
+      inert: element.getAttribute('inert'),
+    }))
+  for (const { element } of states) {
+    element.setAttribute('aria-hidden', 'true')
+    element.setAttribute('inert', '')
+  }
+  let restored = false
+  return () => {
+    if (restored) return
+    restored = true
+    for (const { element, ariaHidden, inert } of states) {
+      if (ariaHidden === null) element.removeAttribute('aria-hidden')
+      else element.setAttribute('aria-hidden', ariaHidden)
+      if (inert === null) element.removeAttribute('inert')
+      else element.setAttribute('inert', inert)
+    }
+  }
+}
+
+function scannerFocusableElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  )).filter((element) => (
+    !element.matches(':disabled')
+      && element.getAttribute('aria-disabled') !== 'true'
+      && !element.closest('[inert], [aria-hidden="true"]')
+  ))
+}
+
+function scheduleFocusRestore(target: HTMLElement | null): void {
+  if (!target) return
+  window.requestAnimationFrame(() => {
+    if (!target.isConnected) return
+    if (target.matches(':disabled') || target.getAttribute('aria-disabled') === 'true') return
+    if (target.closest('[inert], [aria-hidden="true"]')) return
+    target.focus()
+  })
 }

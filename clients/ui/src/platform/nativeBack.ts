@@ -1,4 +1,4 @@
-export type AnyTTYNativeBackHandler = () => boolean
+export type AnyTTYNativeBackHandler = () => void
 
 export const NATIVE_BACK_PRIORITY = {
   ROOT: 10,
@@ -31,21 +31,20 @@ export function addNativeBackHandler(handler: AnyTTYNativeBackHandler, priority 
 }
 
 export function dispatchNativeBack(): boolean {
-  const handlers = nativeBackHandlers
-    .slice()
-    .sort((left, right) => right.priority - left.priority || right.id - left.id)
+  const entry = nativeBackHandlers.reduce<NativeBackHandlerEntry | undefined>((selected, candidate) => {
+    if (!selected) return candidate
+    if (candidate.priority > selected.priority) return candidate
+    if (candidate.priority === selected.priority && candidate.id > selected.id) return candidate
+    return selected
+  }, undefined)
+  if (!entry) return false
 
-  for (const entry of handlers) {
-    if (!nativeBackHandlers.includes(entry)) continue
-    try {
-      if (entry.handler()) return true
-    } catch (err) {
-      globalThis.setTimeout(() => {
-        throw err
-      }, 0)
-      return true
-    }
+  try {
+    entry.handler()
+  } catch (err) {
+    globalThis.setTimeout(() => {
+      throw err
+    }, 0)
   }
-
-  return false
+  return true
 }

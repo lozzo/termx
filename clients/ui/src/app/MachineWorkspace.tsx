@@ -2130,43 +2130,45 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   useNativeBackHandler(() => {
     if (pasteConfirmText) {
       setPasteConfirmText('')
-      return true
+      return
     }
     if (connectionInfoOpen) {
       setConnectionInfoOpen(false)
-      return true
+      return
     }
     if (mobileSheet) {
-      setMobileSheet(null)
-      return true
+      setMobileSheet(
+        mobileSheet === 'terminal-path-picker' || mobileSheet === 'terminal-path-bookmarks'
+          ? terminalPathReturnSheet
+          : null,
+      )
+      return
     }
     if (terminalFnOpen) {
       setTerminalFnOpen(false)
-      return true
+      return
     }
     if (terminalToolbarOpen) {
       setTerminalToolbarOpen(false)
       setTerminalToolbarModeAndReset('default')
-      return true
+      return
     }
     if (splitTerminalId) {
       closeSplitTerminal()
-      return true
     }
-    return false
   }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, nestedOverlayOpen)
 
-  const workspaceNavigationOpen = filesOpen || page === 'terminal'
+  const workspaceNavigationOpen = filesOpen || page === 'terminal' || Boolean(onBack)
   useNativeBackHandler(() => {
     if (filesOpen) {
       openTerminalPanel()
-      return true
+      return
     }
     if (page === 'terminal') {
       showTerminalListPage()
-      return true
+      return
     }
-    return false
+    onBack?.()
   }, NATIVE_BACK_PRIORITY.WORKSPACE, workspaceNavigationOpen)
 
   const renderTerminalListPage = () => {

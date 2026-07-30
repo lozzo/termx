@@ -13,9 +13,9 @@ afterEach(() => {
 describe('native back handler registry', () => {
   it('dispatches by priority and LIFO order within one priority', () => {
     const calls: string[] = []
-    register(() => { calls.push('low'); return true }, NATIVE_BACK_PRIORITY.ROOT)
-    register(() => { calls.push('high-old'); return true }, NATIVE_BACK_PRIORITY.TRANSFER)
-    const unregisterNewest = register(() => { calls.push('high-new'); return true }, NATIVE_BACK_PRIORITY.TRANSFER)
+    register(() => { calls.push('low') }, NATIVE_BACK_PRIORITY.ROOT)
+    register(() => { calls.push('high-old') }, NATIVE_BACK_PRIORITY.TRANSFER)
+    const unregisterNewest = register(() => { calls.push('high-new') }, NATIVE_BACK_PRIORITY.TRANSFER)
 
     expect(dispatchNativeBack()).toBe(true)
     expect(calls).toEqual(['high-new'])
@@ -25,23 +25,18 @@ describe('native back handler registry', () => {
     expect(calls).toEqual(['high-new', 'high-old'])
   })
 
-  it('never calls an unregistered handler, including one removed during dispatch', () => {
-    const removed = vi.fn(() => true)
+  it('never calls an unregistered handler', () => {
+    const removed = vi.fn()
     const unregisterRemoved = register(removed, NATIVE_BACK_PRIORITY.ROOT)
-    register(() => {
-      unregisterRemoved()
-      return false
-    }, NATIVE_BACK_PRIORITY.TRANSFER)
+    unregisterRemoved()
 
-    expect(dispatchNativeBack()).toBe(false)
-    expect(removed).not.toHaveBeenCalled()
     expect(dispatchNativeBack()).toBe(false)
     expect(removed).not.toHaveBeenCalled()
   })
 
-  it('stops after one handler consumes an event', () => {
-    const lower = vi.fn(() => true)
-    const top = vi.fn(() => true)
+  it('consumes at the selected handler even when it is a no-op', () => {
+    const lower = vi.fn()
+    const top = vi.fn()
     register(lower, NATIVE_BACK_PRIORITY.WORKSPACE)
     register(top, NATIVE_BACK_PRIORITY.NESTED_OVERLAY)
 
@@ -52,7 +47,6 @@ describe('native back handler registry', () => {
 
   it('orders nested overlay, scanner, transfer, workspace, then root', () => {
     const consumed: string[] = []
-    const active = new Set(['nested', 'scanner', 'transfer', 'workspace', 'root'])
     const entries = [
       ['root', NATIVE_BACK_PRIORITY.ROOT],
       ['workspace', NATIVE_BACK_PRIORITY.WORKSPACE],
@@ -60,13 +54,12 @@ describe('native back handler registry', () => {
       ['scanner', NATIVE_BACK_PRIORITY.SCANNER],
       ['nested', NATIVE_BACK_PRIORITY.NESTED_OVERLAY],
     ] as const
+    const unregisterByName = new Map<string, () => void>()
     for (const [name, priority] of entries) {
-      register(() => {
-        if (!active.has(name)) return false
-        active.delete(name)
+      unregisterByName.set(name, register(() => {
         consumed.push(name)
-        return true
-      }, priority)
+        unregisterByName.get(name)?.()
+      }, priority))
     }
 
     for (let index = 0; index < entries.length; index += 1) {
@@ -74,6 +67,19 @@ describe('native back handler registry', () => {
     }
     expect(consumed).toEqual(['nested', 'scanner', 'transfer', 'workspace', 'root'])
     expect(dispatchNativeBack()).toBe(false)
+  })
+
+  it('fails closed when the selected handler throws', () => {
+    const lower = vi.fn()
+    const failure = new Error('handler failed')
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as ReturnType<typeof setTimeout>)
+    register(lower, NATIVE_BACK_PRIORITY.ROOT)
+    register(() => { throw failure }, NATIVE_BACK_PRIORITY.TRANSFER)
+
+    expect(dispatchNativeBack()).toBe(true)
+    expect(lower).not.toHaveBeenCalled()
+    expect(setTimeoutSpy).toHaveBeenCalledOnce()
+    setTimeoutSpy.mockRestore()
   })
 
   it('keeps one registration across rerenders and invokes the latest closure', () => {
@@ -93,12 +99,11 @@ describe('native back handler registry', () => {
 function NativeBackHarness({ value, onBack }: { value: string; onBack: (value: string) => void }) {
   useNativeBackHandler(() => {
     onBack(value)
-    return true
   }, NATIVE_BACK_PRIORITY.WORKSPACE)
   return null
 }
 
-function register(handler: () => boolean, priority: number): () => void {
+function register(handler: () => void, priority: number): () => void {
   const unregister = addNativeBackHandler(handler, priority)
   unregisterHandlers.push(unregister)
   return unregister
