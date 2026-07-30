@@ -33,7 +33,9 @@ import (
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -175,7 +177,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		// 已发布套餐是公开产品目录；未登录请求不能设置 include_unpublished。
 		response, err := handler.config.Commerce.ListPlans(request.Context(), &cloudv1.ListPlansRequest{})
 		writeServiceResult(writer, response, err)
-	case request.URL.Path == "/api/account/login" || request.URL.Path == "/api/account/refresh":
+	case request.URL.Path == "/api/account/login" || request.URL.Path == "/api/account/refresh" || request.URL.Path == "/api/account/setup/redeem":
 		if !handler.allowMutationOrigin(writer, request) {
 			return
 		}
@@ -419,7 +421,7 @@ func (handler *handler) allowMutationOrigin(writer http.ResponseWriter, request 
 			writeError(writer, http.StatusForbidden, errors.New("CSRF proof is invalid"))
 			return false
 		}
-	} else if strings.HasPrefix(request.URL.Path, "/api/") && request.URL.Path != "/api/account/login" {
+	} else if strings.HasPrefix(request.URL.Path, "/api/") && request.URL.Path != "/api/account/login" && request.URL.Path != "/api/account/setup/redeem" {
 		identity, ok := account.IdentityFromContext(request.Context())
 		csrfCookie, err := request.Cookie(csrfCookieName)
 		csrfHeader := strings.TrimSpace(request.Header.Get("X-AnyTTY-CSRF"))
@@ -438,18 +440,39 @@ func accountUnaryInterceptor(accounts *account.Service) grpc.UnaryServerIntercep
 		}
 		values := metadata.ValueFromIncomingContext(ctx, "authorization")
 		if len(values) != 1 {
-			return nil, account.ErrUnauthenticated
+			return nil, grpcServiceError(ctx, account.ErrUnauthenticated)
 		}
 		token, err := decodeBearer(values[0])
 		if err != nil {
-			return nil, account.ErrUnauthenticated
+			return nil, grpcServiceError(ctx, account.ErrUnauthenticated)
 		}
 		identity, err := accounts.AuthenticateAccess(ctx, token)
 		if err != nil {
-			return nil, err
+			return nil, grpcServiceError(ctx, err)
 		}
-		return handler(account.ContextWithIdentity(ctx, identity), request)
+		response, err := handler(account.ContextWithIdentity(ctx, identity), request)
+		return response, grpcServiceError(ctx, err)
 	}
+}
+
+func grpcServiceError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	correlationID := uuid.NewString()
+	_ = grpc.SetTrailer(ctx, metadata.Pairs("x-correlation-id", correlationID))
+	code := codes.Internal
+	switch {
+	case errors.Is(err, account.ErrUnauthenticated):
+		code = codes.Unauthenticated
+	case errors.Is(err, account.ErrForbidden), errors.Is(err, account.ErrRecentAuthenticationRequired), errors.Is(err, account.ErrAccountDisabled):
+		code = codes.PermissionDenied
+	case errors.Is(err, account.ErrInvalidArgument), errors.Is(err, account.ErrSetupCredentialInvalid):
+		code = codes.InvalidArgument
+	case errors.Is(err, account.ErrAccountConflict):
+		code = codes.Aborted
+	}
+	return status.Errorf(code, "request failed; correlation_id=%s", correlationID)
 }
 
 func projectEdge(edge edgeconfig.Edge, runtime directory.EdgeProjection, certificate *cloudv1.CertificateBinding) *cloudv1.ManagedEdge {
@@ -496,6 +519,12 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 		status = http.StatusTooManyRequests
 	}
 	code, message := publicHTTPError(status)
+	if errors.Is(err, errSetupRateLimited) {
+		status, code, message = http.StatusTooManyRequests, "setup_rate_limited", "尝试过于频繁，请稍后重试。"
+	}
+	if errors.Is(err, account.ErrSetupCredentialInvalid) {
+		status, code, message = http.StatusBadRequest, "setup_invalid", "一次性凭据无效或已过期。"
+	}
 	requestID := writer.Header().Get("X-Request-ID")
 	if requestID == "" {
 		requestID = uuid.NewString()

@@ -85,11 +85,12 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer directoryState.Close()
-	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: 4})
+	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := accounts.EnsureBootstrapOperator(ctx, "operator", "test-password"); err != nil {
+	operatorLogin := "operator-" + uuid.NewString() + "@example.com"
+	if _, err := accounts.EnsureBootstrapOperator(ctx, operatorLogin, "test-password"); err != nil {
 		t.Fatal(err)
 	}
 	commercial, err := commerce.New(commerce.Config{Store: database})
@@ -124,7 +125,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loginBody, _ := protojson.Marshal(&cloudv1.LoginAccountRequest{Login: "operator", Password: "test-password"})
+	loginBody, _ := protojson.Marshal(&cloudv1.LoginAccountRequest{Login: operatorLogin, Password: "test-password"})
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/account/login", bytes.NewReader(loginBody))
 	loginRequest.Header.Set("Content-Type", "application/json")
 	loginRecorder := httptest.NewRecorder()
@@ -391,7 +392,7 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: 4})
+	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,8 +408,11 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registered, err := accounts.ProvisionAccount(account.ContextWithIdentity(ctx, adminIdentity), &cloudv1.ProvisionAccountRequest{Email: "r4-" + uuid.NewString() + "@example.com", Password: "r4-test-password", DisplayName: "R4 测试账号"})
+	registered, err := accounts.ProvisionAccount(account.ContextWithIdentity(ctx, adminIdentity), &cloudv1.ProvisionAccountRequest{Email: "r4-" + uuid.NewString() + "@example.com", DisplayName: "R4 测试账号", Reason: "integration test"})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.RedeemAccountSetup(ctx, &cloudv1.RedeemAccountSetupRequest{SetupCredential: registered.GetSetupCredential(), NewPassword: "r4-account-password"}); err != nil {
 		t.Fatal(err)
 	}
 	created, err := service.CreateEnrollment(ctx, &cloudv1.CreateDaemonEnrollmentRequest{AccountId: registered.GetAccount().GetAccountId(), AccountName: registered.GetAccount().GetDisplayName(), DaemonName: "R4 Daemon"}, "anytty cloud enroll --controller https://controller.test")

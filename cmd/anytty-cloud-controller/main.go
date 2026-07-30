@@ -134,11 +134,14 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return fmt.Errorf("read Edge CA: %w", err)
 	}
-	passwordPayload, err := os.ReadFile(filepath.Clean(config.operatorPasswordFile))
-	if err != nil {
-		return fmt.Errorf("read operator password: %w", err)
+	var passwordPayload []byte
+	if strings.TrimSpace(config.operatorPasswordFile) != "" {
+		passwordPayload, err = os.ReadFile(filepath.Clean(config.operatorPasswordFile))
+		if err != nil {
+			return fmt.Errorf("read operator password: %w", err)
+		}
 	}
-	accountService, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: 30 * 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute})
+	accountService, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: 30 * 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: 24 * time.Hour})
 	if err != nil {
 		return err
 	}
@@ -291,7 +294,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.controllerAddress, "controller-address", "", "public EdgeControl address returned to Edge")
 	flags.StringVar(&config.controllerServerName, "controller-server-name", "", "EdgeControl TLS server name returned to Edge")
 	flags.StringVar(&config.certificateSecretDir, "certificate-secret-dir", "/var/lib/anytty-cloud-controller/certificates", "restricted Controller service directory for managed Edge certificate files")
-	flags.StringVar(&config.operatorUsername, "operator-username", "operator", "bootstrap administrator login")
+	flags.StringVar(&config.operatorUsername, "operator-username", "", "bootstrap administrator email")
 	flags.StringVar(&config.operatorPasswordFile, "operator-password-file", "", "bootstrap administrator password file")
 	flags.StringVar(&config.configSigningKey, "config-signing-key", "", "Edge desired config Ed25519 private key")
 	flags.StringVar(&config.configSigningKeyID, "config-signing-key-id", "", "Edge desired config key ID")

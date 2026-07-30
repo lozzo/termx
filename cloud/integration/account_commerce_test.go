@@ -36,7 +36,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock := time.Now().UTC()
-	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: 4, Now: func() time.Time { return clock }})
+	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4, Now: func() time.Time { return clock }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminLogin := "r7-admin-" + uuid.NewString()
+	adminLogin := "r7-admin-" + uuid.NewString() + "@example.com"
 	if _, err := accounts.EnsureBootstrapOperator(ctx, adminLogin, "r7-test-password"); err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +58,11 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	}
 	adminContext := account.ContextWithIdentity(ctx, adminIdentity)
 	email := "r7-" + uuid.NewString() + "@example.com"
-	registered, err := accounts.ProvisionAccount(adminContext, &cloudv1.ProvisionAccountRequest{Email: email, Password: "r7-user-password", DisplayName: "R7 交易测试"})
+	registered, err := accounts.ProvisionAccount(adminContext, &cloudv1.ProvisionAccountRequest{Email: email, DisplayName: "R7 交易测试", Reason: "integration test"})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.RedeemAccountSetup(ctx, &cloudv1.RedeemAccountSetupRequest{SetupCredential: registered.GetSetupCredential(), NewPassword: "r7-user-password"}); err != nil {
 		t.Fatal(err)
 	}
 	userLogin, err := accounts.Login(ctx, &cloudv1.LoginAccountRequest{Login: email, Password: "r7-user-password"})
@@ -108,8 +111,11 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	}
 
 	otherEmail := "r7-other-" + uuid.NewString() + "@example.com"
-	otherRegistered, err := accounts.ProvisionAccount(adminContext, &cloudv1.ProvisionAccountRequest{Email: otherEmail, Password: "r7-other-password", DisplayName: "R7 隔离测试"})
+	otherRegistered, err := accounts.ProvisionAccount(adminContext, &cloudv1.ProvisionAccountRequest{Email: otherEmail, DisplayName: "R7 隔离测试", Reason: "integration test"})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.RedeemAccountSetup(ctx, &cloudv1.RedeemAccountSetupRequest{SetupCredential: otherRegistered.GetSetupCredential(), NewPassword: "r7-other-password"}); err != nil {
 		t.Fatal(err)
 	}
 	otherLogin, err := accounts.Login(ctx, &cloudv1.LoginAccountRequest{Login: otherEmail, Password: "r7-other-password"})

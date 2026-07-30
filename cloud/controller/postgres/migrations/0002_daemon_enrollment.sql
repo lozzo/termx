@@ -1,7 +1,7 @@
 CREATE TABLE accounts (
     account_id uuid PRIMARY KEY,
     display_name text NOT NULL,
-    state text NOT NULL CHECK (state IN ('active', 'disabled')),
+    state text NOT NULL CHECK (state IN ('pending', 'active', 'disabled')),
     revision bigint NOT NULL CHECK (revision > 0),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL

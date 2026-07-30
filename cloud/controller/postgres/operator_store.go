@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/cloud/controller/account"
-	"github.com/anytty/anytty/cloud/controller/commerce"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -115,9 +114,13 @@ func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.Account
 		return nil, err
 	}
 
-	roles := make([]cloudv1.AccountRole, 0, len(roleNames))
-	for _, role := range roleNames {
-		roles = append(roles, parseAccountRole(role))
+	roles, err := parseAccountRoles(roleNames)
+	if err != nil {
+		return nil, err
+	}
+	accountStateValue, err := parseAccountState(accountState)
+	if err != nil {
+		return nil, err
 	}
 	subscriptionStateValue := parseSubscriptionState(subscriptionState)
 	capability := &cloudv1.CloudCapability{
@@ -145,7 +148,7 @@ func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.Account
 	}
 
 	accountProfile := &cloudv1.AccountProfile{
-		AccountId: accountID, Email: email, DisplayName: displayName, State: parseAccountState(accountState),
+		AccountId: accountID, Email: email, DisplayName: displayName, State: accountStateValue,
 		Revision: accountRevision, CreatedAt: timestamppb.New(accountCreatedAt), UpdatedAt: timestamppb.New(accountUpdatedAt),
 	}
 	subscription := &cloudv1.SubscriptionProjection{
@@ -332,17 +335,30 @@ func decodeAuditCursor(value string) (time.Time, string, error) {
 
 // SetAccountState CAS 更新账号；禁用时同事务撤销全部 session 并写审计。
 func (database *Database) SetAccountState(ctx context.Context, request *cloudv1.SetAccountStateRequest, actorID string, now time.Time) (*cloudv1.AccountProfile, error) {
+	if request.GetAccountId() == actorID && request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
+		return nil, account.ErrAccountConflict
+	}
+	state, err := accountStateName(request.GetState())
+	if err != nil || request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_PENDING {
+		return nil, account.ErrInvalidArgument
+	}
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	result, err := tx.Exec(ctx, `UPDATE accounts SET state=$1,revision=revision+1,updated_at=$2 WHERE account_id=$3 AND revision=$4`, accountStateName(request.GetState()), now, request.GetAccountId(), request.GetExpectedRevision())
+	locked, err := lockAccountCredential(ctx, tx, request.GetAccountId())
 	if err != nil {
 		return nil, err
 	}
-	if result.RowsAffected() != 1 {
-		return nil, commerce.ErrCommerceConflict
+	if locked.Profile.GetRevision() != request.GetExpectedRevision() {
+		return nil, account.ErrAccountConflict
+	}
+	if request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_ACTIVE && !validBcryptHash(locked.PasswordHash) {
+		return nil, account.ErrAccountConflict
+	}
+	if _, err := tx.Exec(ctx, `UPDATE accounts SET state=$1,revision=revision+1,updated_at=$2 WHERE account_id=$3`, state, now, request.GetAccountId()); err != nil {
+		return nil, err
 	}
 	if request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
 		if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, request.GetAccountId()); err != nil {
@@ -352,14 +368,14 @@ func (database *Database) SetAccountState(ctx context.Context, request *cloudv1.
 	if err := insertOperatorAudit(ctx, tx, actorID, "account.state", "account", request.GetAccountId(), request.GetReason(), "applied", now); err != nil {
 		return nil, err
 	}
-	record, err := scanAccountRecord(tx.QueryRow(ctx, accountSelect+` WHERE a.account_id=$1`, request.GetAccountId()))
+	profile, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1`, request.GetAccountId()))
 	if err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return record.Profile, nil
+	return profile, nil
 }
 
 // SetAccountRole 原子添加或删除运营角色；禁止操作者移除自己的 admin 角色。
@@ -372,7 +388,13 @@ func (database *Database) SetAccountRole(ctx context.Context, request *cloudv1.S
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	role := accountRoleName(request.GetRole())
+	if _, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1 FOR UPDATE`, request.GetAccountId())); err != nil {
+		return nil, err
+	}
+	role, err := accountRoleName(request.GetRole())
+	if err != nil {
+		return nil, account.ErrInvalidArgument
+	}
 	if request.GetEnabled() {
 		_, err = tx.Exec(ctx, `INSERT INTO account_roles(account_id,role,created_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, request.GetAccountId(), role, now)
 	} else {
@@ -384,14 +406,14 @@ func (database *Database) SetAccountRole(ctx context.Context, request *cloudv1.S
 	if err := insertOperatorAudit(ctx, tx, actorID, "account.role", "account", request.GetAccountId(), request.GetReason(), "applied", now); err != nil {
 		return nil, err
 	}
-	record, err := scanAccountRecord(tx.QueryRow(ctx, accountSelect+` WHERE a.account_id=$1`, request.GetAccountId()))
+	roles, err := loadAccountRoles(ctx, tx, request.GetAccountId())
 	if err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return record.Roles, nil
+	return roles, nil
 }
 
 // AuditRuntimeCommand 持久记录实时命令结果，不提供命令重放来源。

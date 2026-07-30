@@ -21,7 +21,7 @@ export function money(currency: string, minorUnits: bigint): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: currency || 'CNY' }).format(Number(minorUnits) / 100)
 }
 
-export function accountState(value: AccountState): string { return value === AccountState.ACTIVE ? '正常' : value === AccountState.DISABLED ? '已禁用' : '未知' }
+export function accountState(value: AccountState): string { return value === AccountState.PENDING ? '待设置' : value === AccountState.ACTIVE ? '正常' : value === AccountState.DISABLED ? '已禁用' : '未知' }
 export function role(value: AccountRole): string { return value === AccountRole.ADMIN ? '管理员' : value === AccountRole.OPERATOR ? '运营' : value === AccountRole.USER ? '用户' : '未知' }
 export function planState(value: PlanState): string { return value === PlanState.PUBLISHED ? '已发布' : value === PlanState.DRAFT ? '草稿' : value === PlanState.RETIRED ? '已退休' : '未知' }
 export function orderState(value: OrderStatus): string { return ({ [OrderStatus.PENDING]: '待支付', [OrderStatus.PAID]: '已支付', [OrderStatus.PAYMENT_FAILED]: '支付失败', [OrderStatus.REFUNDED]: '已退款', [OrderStatus.REVOKED]: '已撤销' } as Record<number, string>)[value] ?? '未知' }

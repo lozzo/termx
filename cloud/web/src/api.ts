@@ -28,7 +28,7 @@ async function refreshSession(): Promise<boolean> {
 
 async function fetchWithSession(path: string, init?: RequestInit): Promise<Response> {
   let response = await fetch(path, init)
-  const publicAccountPath = path === '/api/account/login' || path === '/api/account/refresh'
+	const publicAccountPath = path === '/api/account/login' || path === '/api/account/refresh' || path === '/api/account/setup/redeem'
   if (response.status === 401 && !publicAccountPath && await refreshSession()) {
     response = await fetch(path, init)
   }

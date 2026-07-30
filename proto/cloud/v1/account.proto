@@ -6,11 +6,12 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
-// AccountState 是账号持久状态；禁用后所有新的 Cloud 准入都必须拒绝。
+// AccountState 是账号持久状态；只有 active 账号可以登录或持有 session。
 enum AccountState {
   ACCOUNT_STATE_UNSPECIFIED = 0;
-  ACCOUNT_STATE_ACTIVE = 1;
-  ACCOUNT_STATE_DISABLED = 2;
+  ACCOUNT_STATE_PENDING = 1;
+  ACCOUNT_STATE_ACTIVE = 2;
+  ACCOUNT_STATE_DISABLED = 3;
 }
 
 // AccountRole 是 Controller RBAC 的稳定角色，不由浏览器自行推断权限。
@@ -102,6 +103,12 @@ message ChangeAccountPasswordRequest {
 }
 message ChangeAccountPasswordResponse { AccountProfile account = 1; }
 
+message RedeemAccountSetupRequest {
+  string setup_credential = 1;
+  string new_password = 2;
+}
+message RedeemAccountSetupResponse { AccountProfile account = 1; }
+
 message RevokeAccountSessionRequest { string session_id = 1; }
 message RevokeAccountSessionResponse {}
 
@@ -114,5 +121,6 @@ service AccountService {
   rpc VerifyRecentAuthentication(VerifyRecentAuthenticationRequest) returns (VerifyRecentAuthenticationResponse);
   rpc ListSessions(ListAccountSessionsRequest) returns (ListAccountSessionsResponse);
   rpc ChangePassword(ChangeAccountPasswordRequest) returns (ChangeAccountPasswordResponse);
+  rpc RedeemAccountSetup(RedeemAccountSetupRequest) returns (RedeemAccountSetupResponse);
   rpc RevokeSession(RevokeAccountSessionRequest) returns (RevokeAccountSessionResponse);
 }

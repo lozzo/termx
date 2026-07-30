@@ -73,6 +73,23 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 		handler.setSessionCookies(writer, response.GetSession())
 		response.Session = redactedSession(response.GetSession())
 		writeProto(writer, http.StatusOK, response)
+	case "/api/account/setup/redeem":
+		if request.Method != http.MethodPost {
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("account setup redemption requires POST"))
+			return
+		}
+		input := &cloudv1.RedeemAccountSetupRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		if handler.loginLimiter == nil || !handler.loginLimiter.allow(clientAddress(request, handler.trustedProxyCIDRs), input.GetSetupCredential()) {
+			writer.Header().Set("Retry-After", "60")
+			writeError(writer, http.StatusTooManyRequests, errSetupRateLimited)
+			return
+		}
+		response, err := handler.config.Accounts.RedeemAccountSetup(request.Context(), input)
+		writeServiceResult(writer, response, err)
 	default:
 		writeError(writer, http.StatusNotFound, errors.New("account endpoint was not found"))
 	}
@@ -418,6 +435,16 @@ func (handler *handler) operatorAccount(writer http.ResponseWriter, request *htt
 		response, err := handler.config.Operator.SetAccountRole(request.Context(), input)
 		writeServiceResult(writer, response, err)
 		return true
+	case "reset":
+		input := &cloudv1.ResetAccountSetupRequest{AccountId: parts[0]}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return true
+		}
+		input.AccountId = parts[0]
+		response, err := handler.config.Operator.ResetAccountSetup(request.Context(), input)
+		writeServiceResult(writer, response, err)
+		return true
 	}
 	return false
 }
@@ -538,6 +565,14 @@ func serviceHTTPStatus(err error) int {
 		return http.StatusUnauthorized
 	case errors.Is(err, account.ErrAccountDisabled):
 		return http.StatusForbidden
+	case errors.Is(err, account.ErrForbidden), errors.Is(err, account.ErrRecentAuthenticationRequired):
+		return http.StatusForbidden
+	case errors.Is(err, account.ErrInvalidArgument), errors.Is(err, account.ErrSetupCredentialInvalid):
+		return http.StatusBadRequest
+	case errors.Is(err, account.ErrLoginUnavailable):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, account.ErrAccountConflict):
+		return http.StatusConflict
 	default:
 		return http.StatusConflict
 	}

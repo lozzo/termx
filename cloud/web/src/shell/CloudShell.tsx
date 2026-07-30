@@ -45,7 +45,7 @@ export const adminNavigationGroups = [
 const adminNavigation: readonly NavigationItem[] = adminNavigationGroups.map((group) => group.items as readonly NavigationItem[]).flat()
 const mobileNavigationID = 'cloud-mobile-navigation'
 
-type ShellContext = { current: GetCurrentAccountResponse; isOperator: boolean }
+type ShellContext = { current: GetCurrentAccountResponse; isOperator: boolean; isAdmin: boolean }
 
 export function CloudShell() {
   const location = useLocation()
@@ -56,7 +56,8 @@ export function CloudShell() {
   const mainRef = useRef<HTMLElement>(null)
   const focusedPathname = useRef<string | undefined>(undefined)
   const current = useProtoQuery(['account', 'current'], '/api/account/current', GetCurrentAccountResponseSchema, 60_000)
-  const isOperator = Boolean(current.data?.roles.some((value) => value === AccountRole.OPERATOR || value === AccountRole.ADMIN))
+	const isOperator = Boolean(current.data?.roles.some((value) => value === AccountRole.OPERATOR || value === AccountRole.ADMIN))
+	const isAdmin = Boolean(current.data?.roles.some((value) => value === AccountRole.ADMIN))
 
   useEffect(() => {
     if (current.error instanceof APIError && current.error.status === 401) navigate('/login', { replace: true, state: { from: location.pathname } })
@@ -113,7 +114,7 @@ export function CloudShell() {
   const adminNav = () => <nav aria-label="运营管理">
     {adminNavigationGroups.map((group) => <div className="admin-nav-group" key={group.heading}>
       <h2 className="admin-nav-heading">{group.heading}</h2>
-      {group.items.map(({ to, label: itemLabel, icon: Icon }) => <NavLink key={to} to={to} onClick={() => setDrawer(false)} title={collapsed ? itemLabel : undefined}><Icon size={18} /><span>{itemLabel}</span></NavLink>)}
+		{group.items.filter((item) => item.to !== '/app/admin/accounts' || isAdmin).map(({ to, label: itemLabel, icon: Icon }) => <NavLink key={to} to={to} onClick={() => setDrawer(false)} title={collapsed ? itemLabel : undefined}><Icon size={18} /><span>{itemLabel}</span></NavLink>)}
     </div>)}
   </nav>
 
@@ -136,9 +137,9 @@ export function CloudShell() {
       <header className="topbar">
         <IconButton className="menu-button" label="打开导航" aria-controls={mobileNavigationID} aria-expanded={drawer} aria-haspopup="dialog" onClick={() => setDrawer(true)}><Menu size={20} /></IconButton>
         <div className="module-title"><span>{location.pathname.startsWith('/app/admin') ? '运营管理' : '我的 Cloud'}</span><strong>{title}</strong></div>
-        <div className="topbar-account"><NavLink to="/app/security"><b aria-hidden="true">{current.data.account.displayName.trim().slice(0, 1).toUpperCase()}</b><span><strong>{current.data.account.displayName}</strong><small>{isOperator ? '管理员 · ' : ''}{current.data.account.email}</small></span></NavLink><IconButton label="退出登录" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut size={18} /></IconButton></div>
+		<div className="topbar-account"><NavLink to="/app/security"><b aria-hidden="true">{current.data.account.displayName.trim().slice(0, 1).toUpperCase()}</b><span><strong>{current.data.account.displayName}</strong><small>{isAdmin ? '管理员 · ' : isOperator ? '运营 · ' : ''}{current.data.account.email}</small></span></NavLink><IconButton label="退出登录" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut size={18} /></IconButton></div>
       </header>
-      <main className={`content ${location.pathname.startsWith('/app/admin') ? 'content-admin' : 'content-user'}`} id="main-content" ref={mainRef} tabIndex={-1}><Outlet context={{ current: current.data, isOperator } satisfies ShellContext} /></main>
+		<main className={`content ${location.pathname.startsWith('/app/admin') ? 'content-admin' : 'content-user'}`} id="main-content" ref={mainRef} tabIndex={-1}><Outlet context={{ current: current.data, isOperator, isAdmin } satisfies ShellContext} /></main>
       <nav className="mobile-bottom-nav" aria-label="手机主导航">{userNavigation.filter((item) => item.to !== '/app/orders').map(({ to, label, icon: Icon }) => <NavLink key={to} to={to}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
     </div>
   </div>
@@ -147,6 +148,11 @@ export function CloudShell() {
 export function AdminGuard() {
   const context = useOutletContext<ShellContext>()
   return context.isOperator ? <Outlet context={context} /> : <Navigate to="/app/no-permission" replace />
+}
+
+export function AccountAdminGuard() {
+	const context = useOutletContext<ShellContext>()
+	return context.isAdmin ? <Outlet context={context} /> : <Navigate to="/app/no-permission" replace />
 }
 
 export function useCloudAccount() { return useOutletContext<ShellContext>() }

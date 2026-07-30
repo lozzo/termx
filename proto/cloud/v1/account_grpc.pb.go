@@ -26,6 +26,7 @@ const (
 	AccountService_VerifyRecentAuthentication_FullMethodName = "/anytty.cloud.v1.AccountService/VerifyRecentAuthentication"
 	AccountService_ListSessions_FullMethodName               = "/anytty.cloud.v1.AccountService/ListSessions"
 	AccountService_ChangePassword_FullMethodName             = "/anytty.cloud.v1.AccountService/ChangePassword"
+	AccountService_RedeemAccountSetup_FullMethodName         = "/anytty.cloud.v1.AccountService/RedeemAccountSetup"
 	AccountService_RevokeSession_FullMethodName              = "/anytty.cloud.v1.AccountService/RevokeSession"
 )
 
@@ -42,6 +43,7 @@ type AccountServiceClient interface {
 	VerifyRecentAuthentication(ctx context.Context, in *VerifyRecentAuthenticationRequest, opts ...grpc.CallOption) (*VerifyRecentAuthenticationResponse, error)
 	ListSessions(ctx context.Context, in *ListAccountSessionsRequest, opts ...grpc.CallOption) (*ListAccountSessionsResponse, error)
 	ChangePassword(ctx context.Context, in *ChangeAccountPasswordRequest, opts ...grpc.CallOption) (*ChangeAccountPasswordResponse, error)
+	RedeemAccountSetup(ctx context.Context, in *RedeemAccountSetupRequest, opts ...grpc.CallOption) (*RedeemAccountSetupResponse, error)
 	RevokeSession(ctx context.Context, in *RevokeAccountSessionRequest, opts ...grpc.CallOption) (*RevokeAccountSessionResponse, error)
 }
 
@@ -123,6 +125,16 @@ func (c *accountServiceClient) ChangePassword(ctx context.Context, in *ChangeAcc
 	return out, nil
 }
 
+func (c *accountServiceClient) RedeemAccountSetup(ctx context.Context, in *RedeemAccountSetupRequest, opts ...grpc.CallOption) (*RedeemAccountSetupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RedeemAccountSetupResponse)
+	err := c.cc.Invoke(ctx, AccountService_RedeemAccountSetup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *accountServiceClient) RevokeSession(ctx context.Context, in *RevokeAccountSessionRequest, opts ...grpc.CallOption) (*RevokeAccountSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RevokeAccountSessionResponse)
@@ -146,6 +158,7 @@ type AccountServiceServer interface {
 	VerifyRecentAuthentication(context.Context, *VerifyRecentAuthenticationRequest) (*VerifyRecentAuthenticationResponse, error)
 	ListSessions(context.Context, *ListAccountSessionsRequest) (*ListAccountSessionsResponse, error)
 	ChangePassword(context.Context, *ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error)
+	RedeemAccountSetup(context.Context, *RedeemAccountSetupRequest) (*RedeemAccountSetupResponse, error)
 	RevokeSession(context.Context, *RevokeAccountSessionRequest) (*RevokeAccountSessionResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
@@ -177,6 +190,9 @@ func (UnimplementedAccountServiceServer) ListSessions(context.Context, *ListAcco
 }
 func (UnimplementedAccountServiceServer) ChangePassword(context.Context, *ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChangePassword not implemented")
+}
+func (UnimplementedAccountServiceServer) RedeemAccountSetup(context.Context, *RedeemAccountSetupRequest) (*RedeemAccountSetupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RedeemAccountSetup not implemented")
 }
 func (UnimplementedAccountServiceServer) RevokeSession(context.Context, *RevokeAccountSessionRequest) (*RevokeAccountSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeSession not implemented")
@@ -328,6 +344,24 @@ func _AccountService_ChangePassword_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_RedeemAccountSetup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RedeemAccountSetupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).RedeemAccountSetup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_RedeemAccountSetup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).RedeemAccountSetup(ctx, req.(*RedeemAccountSetupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AccountService_RevokeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RevokeAccountSessionRequest)
 	if err := dec(in); err != nil {
@@ -380,6 +414,10 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChangePassword",
 			Handler:    _AccountService_ChangePassword_Handler,
+		},
+		{
+			MethodName: "RedeemAccountSetup",
+			Handler:    _AccountService_RedeemAccountSetup_Handler,
 		},
 		{
 			MethodName: "RevokeSession",

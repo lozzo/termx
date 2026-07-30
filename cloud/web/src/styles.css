@@ -264,6 +264,13 @@ h3 { font-size: 15px; line-height: 1.4; }
 .form-grid { display: grid; gap: 16px; }
 .form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-error { color: var(--danger); line-height: 1.5; }
+.credential-result { min-width: 0; display: grid; gap: 14px; }
+.credential-result .notice { display: grid; gap: 4px; }
+.credential-value { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.credential-value code { min-width: 0; display: flex; align-items: center; padding: 11px 12px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.credential-result > p { color: var(--muted); font-size: 12px; }
+.setup-success { display: grid; justify-items: start; gap: 16px; margin-top: 28px; }
+.setup-success .button { text-decoration: none; }
 .error-state { display: grid; justify-items: start; gap: 12px; }
 .route-resource-error { width: min(100%, 620px); min-width: 0; display: grid; justify-items: start; gap: 12px; }
 .route-resource-error .notice { width: 100%; min-width: 0; overflow-wrap: anywhere; }
@@ -529,7 +536,9 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
   .user-data-table td[data-label=""]::before { display: none; }
   .user-data-table td[data-label=""] .button { width: 100%; }
   .dialog-backdrop { align-items: end; padding: 0; }
-  .dialog { width: 100%; max-height: calc(92dvh - env(safe-area-inset-top)); border-radius: 4px 4px 0 0; border-inline: 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
+	.dialog { width: 100%; max-height: calc(92dvh - env(safe-area-inset-top)); border-radius: 4px 4px 0 0; border-inline: 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
+	.credential-value { grid-template-columns: 1fr; }
+	.credential-value .button { width: 100%; }
   .list-toolbar { align-items: stretch; }
   .list-toolbar .search-input { flex: 1; min-width: 0; }
   .user-data-table .table-scroll-hint { display: none; }

@@ -2,7 +2,8 @@ import { Component, lazy, Suspense, useLayoutEffect, useRef, type ComponentType,
 import { Navigate, Outlet, Route, Routes, useLocation, useOutletContext } from 'react-router'
 import { LoginPage } from './pages/LoginPage'
 import { LandingPage } from './pages/LandingPage'
-import { AdminGuard, CloudShell } from './shell/CloudShell'
+import { SetupPage } from './pages/SetupPage'
+import { AccountAdminGuard, AdminGuard, CloudShell } from './shell/CloudShell'
 import { Button, Notice, Skeleton } from './ui'
 
 type RouteModule = { default: ComponentType }
@@ -100,7 +101,8 @@ function LazyRouteGroup() {
 export default function App() {
   return <Routes>
     <Route path="/" element={<LandingPage />} />
-    <Route path="/login" element={<LoginPage />} />
+	<Route path="/login" element={<LoginPage />} />
+	<Route path="/setup" element={<SetupPage />} />
     <Route path="/app" element={<CloudShell />}>
       <Route index element={<Navigate to="overview" replace />} />
       <Route element={<LazyRouteGroup />}>
@@ -119,8 +121,10 @@ export default function App() {
             <Route path="edges/:edgeId/:tab" element={<EdgeDetailPage />} />
             <Route path="daemons" element={<DaemonsPage />} />
             <Route path="connections" element={<ConnectionsPage />} />
-            <Route path="accounts" element={<AccountsPage />} />
-            <Route path="accounts/:accountId" element={<AccountDetailPage />} />
+			<Route element={<AccountAdminGuard />}>
+				<Route path="accounts" element={<AccountsPage />} />
+				<Route path="accounts/:accountId" element={<AccountDetailPage />} />
+			</Route>
             <Route path="plans" element={<PlansPage />} />
             <Route path="subscriptions" element={<SubscriptionsPage />} />
             <Route path="orders" element={<OrdersPage />} />

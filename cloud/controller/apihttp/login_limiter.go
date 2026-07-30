@@ -11,6 +11,7 @@ import (
 )
 
 var errLoginRateLimited = errors.New("login attempt rate limit exceeded")
+var errSetupRateLimited = errors.New("account setup attempt rate limit exceeded")
 
 type loginLimiterConfig struct {
 	globalLimit       uint32
@@ -29,7 +30,7 @@ type loginBucket struct {
 	lastSeen    time.Time
 }
 
-// loginLimiter is deliberately scoped to the password login endpoint.
+// loginLimiter is deliberately scoped to public credential endpoints.
 type loginLimiter struct {
 	mu       sync.Mutex
 	config   loginLimiterConfig

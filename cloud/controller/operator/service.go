@@ -65,6 +65,11 @@ func (service *Service) ProvisionAccount(ctx context.Context, request *cloudv1.P
 	return service.config.Accounts.ProvisionAccount(ctx, request)
 }
 
+// ResetAccountSetup 委托账号领域原子轮换 setup credential 并撤销旧 session。
+func (service *Service) ResetAccountSetup(ctx context.Context, request *cloudv1.ResetAccountSetupRequest) (*cloudv1.ResetAccountSetupResponse, error) {
+	return service.config.Accounts.ResetAccountSetup(ctx, request)
+}
+
 // ListCertificateProfiles 返回当前档案、绑定和真实在线投影，不包含 PEM。
 func (service *Service) ListCertificateProfiles(ctx context.Context, _ *cloudv1.ListCertificateProfilesRequest) (*cloudv1.ListCertificateProfilesResponse, error) {
 	if _, err := requireOperator(ctx, false); err != nil {
@@ -127,7 +132,7 @@ func (service *Service) GetOverview(ctx context.Context, _ *cloudv1.GetOperatorO
 
 // ListAccounts 返回持久账号、订阅、Entitlement、daemon 数和用量摘要。
 func (service *Service) ListAccounts(ctx context.Context, request *cloudv1.ListOperatorAccountsRequest) (*cloudv1.ListOperatorAccountsResponse, error) {
-	if _, err := requireOperator(ctx, false); err != nil {
+	if _, err := requireAdmin(ctx, false, service.config.Now().UTC()); err != nil {
 		return nil, err
 	}
 	page := pageFrom(request)
@@ -137,7 +142,7 @@ func (service *Service) ListAccounts(ctx context.Context, request *cloudv1.ListO
 
 // GetAccount 返回单账号运营详情。
 func (service *Service) GetAccount(ctx context.Context, request *cloudv1.GetOperatorAccountRequest) (*cloudv1.GetOperatorAccountResponse, error) {
-	if _, err := requireOperator(ctx, false); err != nil {
+	if _, err := requireAdmin(ctx, false, service.config.Now().UTC()); err != nil {
 		return nil, err
 	}
 	if request == nil || strings.TrimSpace(request.GetAccountId()) == "" {
@@ -201,12 +206,15 @@ func (service *Service) ListAudit(ctx context.Context, request *cloudv1.ListOper
 
 // SetAccountState 使用 revision CAS 禁用或恢复账号，并与审计同事务提交。
 func (service *Service) SetAccountState(ctx context.Context, request *cloudv1.SetAccountStateRequest) (*cloudv1.SetAccountStateResponse, error) {
-	actor, err := requireOperator(ctx, true)
+	actor, err := requireAdmin(ctx, true, service.config.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
-	if request == nil || request.GetAccountId() == "" || request.GetExpectedRevision() == 0 || strings.TrimSpace(request.GetReason()) == "" || request.GetState() < cloudv1.AccountState_ACCOUNT_STATE_ACTIVE || request.GetState() > cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
-		return nil, errors.New("valid account state mutation is required")
+	if request == nil || request.GetAccountId() == "" || request.GetExpectedRevision() == 0 || strings.TrimSpace(request.GetReason()) == "" || request.GetState() != cloudv1.AccountState_ACCOUNT_STATE_ACTIVE && request.GetState() != cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
+		return nil, account.ErrInvalidArgument
+	}
+	if request.GetAccountId() == actor.Account.GetAccountId() && request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
+		return nil, account.ErrAccountConflict
 	}
 	value, err := service.config.Store.SetAccountState(ctx, request, actor.Account.GetAccountId(), service.config.Now().UTC())
 	return &cloudv1.SetAccountStateResponse{Account: value}, err
@@ -214,12 +222,15 @@ func (service *Service) SetAccountState(ctx context.Context, request *cloudv1.Se
 
 // SetAccountRole 调整 operator/admin 角色；普通 user 基础角色不可移除。
 func (service *Service) SetAccountRole(ctx context.Context, request *cloudv1.SetAccountRoleRequest) (*cloudv1.SetAccountRoleResponse, error) {
-	actor, err := requireOperator(ctx, true)
+	actor, err := requireAdmin(ctx, true, service.config.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
 	if request == nil || request.GetAccountId() == "" || strings.TrimSpace(request.GetReason()) == "" || (request.GetRole() != cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR && request.GetRole() != cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN) {
-		return nil, errors.New("valid operator role mutation is required")
+		return nil, account.ErrInvalidArgument
+	}
+	if request.GetAccountId() == actor.Account.GetAccountId() && request.GetRole() == cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN && !request.GetEnabled() {
+		return nil, account.ErrAccountConflict
 	}
 	roles, err := service.config.Store.SetAccountRole(ctx, request, actor.Account.GetAccountId(), service.config.Now().UTC())
 	return &cloudv1.SetAccountRoleResponse{Roles: roles}, err
@@ -265,11 +276,28 @@ func (service *Service) DisconnectSession(ctx context.Context, request *cloudv1.
 
 func requireOperator(ctx context.Context, recent bool) (account.Identity, error) {
 	identity, ok := account.IdentityFromContext(ctx)
-	if !ok || !identity.HasRole(cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR) {
+	if !ok {
 		return account.Identity{}, account.ErrUnauthenticated
 	}
+	if !identity.HasRole(cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR) {
+		return account.Identity{}, account.ErrForbidden
+	}
 	if recent && !time.Now().UTC().Before(identity.RecentAuthExpiresAt) {
-		return account.Identity{}, errors.New("recent authentication is required")
+		return account.Identity{}, account.ErrRecentAuthenticationRequired
+	}
+	return identity, nil
+}
+
+func requireAdmin(ctx context.Context, recent bool, now time.Time) (account.Identity, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok {
+		return account.Identity{}, account.ErrUnauthenticated
+	}
+	if !identity.HasRole(cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN) {
+		return account.Identity{}, account.ErrForbidden
+	}
+	if recent && !now.Before(identity.RecentAuthExpiresAt) {
+		return account.Identity{}, account.ErrRecentAuthenticationRequired
 	}
 	return identity, nil
 }

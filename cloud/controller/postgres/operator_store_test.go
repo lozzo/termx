@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -65,14 +66,20 @@ func TestListOperatorAccountsUsesOneQueryAndMatchesDetails(t *testing.T) {
 			roles = append(roles, cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR)
 		}
 		createdAt := now.Add(time.Duration(index) * time.Second)
-		_, err := database.EnsureBootstrapOperator(ctx, account.Record{
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte("operator-list-test-password"), bcrypt.MinCost)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = database.EnsureBootstrapOperator(ctx, account.Record{
 			Profile: &cloudv1.AccountProfile{
 				AccountId: accountID, Email: prefix + "-" + uuid.NewString() + "@example.invalid",
 				DisplayName: prefix + " account", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE,
 				Revision: 1, CreatedAt: timestamppb.New(createdAt), UpdatedAt: timestamppb.New(createdAt),
 			},
-			PasswordHash: []byte("operator-list-test-verifier"),
-			Roles:        roles,
+			PasswordHash:        passwordHash,
+			CredentialRevision:  1,
+			CredentialUpdatedAt: createdAt,
+			Roles:               roles,
 		})
 		if err != nil {
 			t.Fatal(err)

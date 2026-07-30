@@ -16,6 +16,8 @@ import (
 	"github.com/anytty/anytty/cloud/controller/account"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -75,7 +77,7 @@ func TestLoginResponseAndLogContractRedactsCredentialAndStoreDetails(t *testing.
 	var authenticationLog map[string]any
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			accounts, err := account.New(account.Config{Store: test.store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: bcrypt.MinCost})
+			accounts, err := account.New(account.Config{Store: test.store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -148,6 +150,41 @@ func TestWriteErrorMapsOversizeTo413(t *testing.T) {
 	}
 }
 
+func TestAccountErrorsMapToReviewedHTTPAndGRPCStatuses(t *testing.T) {
+	tests := []struct {
+		err      error
+		httpCode int
+		grpcCode codes.Code
+	}{
+		{account.ErrUnauthenticated, http.StatusUnauthorized, codes.Unauthenticated},
+		{account.ErrForbidden, http.StatusForbidden, codes.PermissionDenied},
+		{account.ErrRecentAuthenticationRequired, http.StatusForbidden, codes.PermissionDenied},
+		{account.ErrAccountConflict, http.StatusConflict, codes.Aborted},
+		{account.ErrInvalidArgument, http.StatusBadRequest, codes.InvalidArgument},
+	}
+	for _, test := range tests {
+		if got := serviceHTTPStatus(test.err); got != test.httpCode {
+			t.Fatalf("serviceHTTPStatus(%v) = %d, want %d", test.err, got, test.httpCode)
+		}
+		grpcErr := grpcServiceError(context.Background(), test.err)
+		if status.Code(grpcErr) != test.grpcCode || !strings.Contains(grpcErr.Error(), "correlation_id=") || strings.Contains(grpcErr.Error(), test.err.Error()) {
+			t.Fatalf("gRPC error = %v", grpcErr)
+		}
+	}
+}
+
+func TestSetupErrorsAreRedactedWithCorrelationID(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeError(recorder, http.StatusConflict, account.ErrSetupCredentialInvalid)
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusBadRequest || body["code"] != "setup_invalid" || body["message"] != "一次性凭据无效或已过期。" || body["request_id"] == "" || strings.Contains(recorder.Body.String(), account.ErrSetupCredentialInvalid.Error()) {
+		t.Fatalf("status=%d body=%v", recorder.Code, body)
+	}
+}
+
 type loginContractStore struct {
 	account.Store
 	record    account.Record
@@ -158,7 +195,9 @@ func (store *loginContractStore) AccountByLogin(context.Context, string) (accoun
 	return store.record, store.lookupErr
 }
 
-func (store *loginContractStore) PutSession(context.Context, account.Session) error { return nil }
+func (store *loginContractStore) CreateSession(_ context.Context, record account.Record, _ account.Session, _ time.Time) (account.Record, error) {
+	return record, nil
+}
 
 func cloneLogEvent(event map[string]any) map[string]any {
 	result := make(map[string]any, len(event)-2)

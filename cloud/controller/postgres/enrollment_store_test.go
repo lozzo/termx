@@ -14,6 +14,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/enrollment"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -34,12 +35,16 @@ func TestConsumeDaemonEnrollmentReactivatesSameDeviceIdentity(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	accountID := uuid.NewString()
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("integration-test-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := database.EnsureBootstrapOperator(ctx, account.Record{
 		Profile: &cloudv1.AccountProfile{
 			AccountId: accountID, Email: "reenroll-" + accountID + "@example.com", DisplayName: "Re-enrollment account",
 			State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1, CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now),
 		},
-		PasswordHash: []byte("integration-test-hash"), Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
+		PasswordHash: passwordHash, CredentialRevision: 1, CredentialUpdatedAt: now, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,12 +114,16 @@ func TestConsumeDaemonEnrollmentRejectsDeviceIDKeyReplacement(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	accountID := uuid.NewString()
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("integration-test-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := database.EnsureBootstrapOperator(ctx, account.Record{
 		Profile: &cloudv1.AccountProfile{
 			AccountId: accountID, Email: "identity-conflict-" + accountID + "@example.com", DisplayName: "Identity conflict account",
 			State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1, CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now),
 		},
-		PasswordHash: []byte("integration-test-hash"), Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
+		PasswordHash: passwordHash, CredentialRevision: 1, CredentialUpdatedAt: now, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
 	}); err != nil {
 		t.Fatal(err)
 	}

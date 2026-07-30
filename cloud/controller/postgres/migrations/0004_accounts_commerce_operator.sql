@@ -1,10 +1,19 @@
 ALTER TABLE accounts
-    ADD COLUMN email text,
-    ADD COLUMN password_hash bytea;
+    ADD COLUMN email text;
 
 CREATE UNIQUE INDEX accounts_email_normalized_idx
     ON accounts(lower(email))
     WHERE email IS NOT NULL;
+
+CREATE TABLE account_credentials (
+    account_id uuid PRIMARY KEY REFERENCES accounts(account_id) ON DELETE CASCADE,
+    password_hash bytea,
+    setup_digest bytea UNIQUE CHECK (setup_digest IS NULL OR octet_length(setup_digest) = 32),
+    setup_expires_at timestamptz,
+    revision bigint NOT NULL CHECK (revision > 0),
+    updated_at timestamptz NOT NULL,
+    CHECK ((setup_digest IS NULL) = (setup_expires_at IS NULL))
+);
 
 CREATE TABLE account_roles (
     account_id uuid NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,

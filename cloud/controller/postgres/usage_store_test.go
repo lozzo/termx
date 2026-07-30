@@ -12,6 +12,7 @@ import (
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -565,6 +566,10 @@ func relayTestDatabase(t *testing.T) (*Database, context.Context) {
 func seedRelayFixture(t *testing.T, ctx context.Context, database *Database, now time.Time, quota, maxSession int64, concurrency int32) relayFixture {
 	t.Helper()
 	fixture := relayFixture{edgeID: uuid.NewString(), accountID: uuid.NewString(), daemonID: uuid.NewString(), subscriptionID: uuid.NewString(), planID: "relay-" + uuid.NewString(), periodStart: now.Add(-time.Hour), periodEnd: now.Add(24 * time.Hour)}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("relay-test-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -576,6 +581,7 @@ func seedRelayFixture(t *testing.T, ctx context.Context, database *Database, now
 	}{
 		{`INSERT INTO edge_deployments(edge_id,name,region,capacity,public_endpoint,enabled,desired_config_version,revision,created_at,updated_at) VALUES($1,'relay test','test',10,'edge.test:41102',true,1,1,$2,$2)`, []any{fixture.edgeID, now}},
 		{`INSERT INTO accounts(account_id,display_name,state,revision,created_at,updated_at) VALUES($1,'relay test','active',1,$2,$2)`, []any{fixture.accountID, now}},
+		{`INSERT INTO account_credentials(account_id,password_hash,revision,updated_at) VALUES($1,$2,1,$3)`, []any{fixture.accountID, passwordHash, now}},
 		{`INSERT INTO plans(plan_id,version,catalog_version,name,description,state,billing_period_days,managed_p2p_enabled,managed_p2p_max_concurrency,relay_enabled,relay_max_concurrency,relay_max_bytes_per_period,relay_max_bytes_per_lease,relay_max_rate_bytes_per_second,cloud_daemon_limit,allowed_regions,revision,created_at,published_at) VALUES($1,1,1,'relay test','relay test','published',30,true,1,true,$2,$3,$4,1000,1,ARRAY['test'],1,$5,$5)`, []any{fixture.planID, concurrency, quota, maxSession, now}},
 		{`INSERT INTO plan_prices(plan_id,plan_version,billing_cycle,currency,minor_units) VALUES($1,1,'monthly','USD',100),($1,1,'yearly','USD',1000)`, []any{fixture.planID}},
 		{`INSERT INTO subscriptions(subscription_id,account_id,plan_id,plan_version,state,cancel_at_period_end,period_start,period_end,revision,updated_at) VALUES($1,$2,$3,1,'active',false,$4,$5,1,$6)`, []any{fixture.subscriptionID, fixture.accountID, fixture.planID, fixture.periodStart, fixture.periodEnd, now}},
@@ -603,7 +609,22 @@ func seedRelayEdge(t *testing.T, ctx context.Context, database *Database, now ti
 
 func seedRelayActor(t *testing.T, ctx context.Context, database *Database, actorID string, now time.Time) {
 	t.Helper()
-	if _, err := database.pool.Exec(ctx, `INSERT INTO accounts(account_id,display_name,state,revision,created_at,updated_at) VALUES($1,'relay actor','active',1,$2,$2) ON CONFLICT (account_id) DO NOTHING`, actorID, now); err != nil {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("relay-actor-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err := tx.Exec(ctx, `INSERT INTO accounts(account_id,display_name,state,revision,created_at,updated_at) VALUES($1,'relay actor','active',1,$2,$2) ON CONFLICT (account_id) DO NOTHING`, actorID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO account_credentials(account_id,password_hash,revision,updated_at) VALUES($1,$2,1,$3) ON CONFLICT (account_id) DO NOTHING`, actorID, passwordHash, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
