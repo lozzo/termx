@@ -69,6 +69,11 @@ type relayLifecycle interface {
 	StateCloseSafe() bool
 }
 
+type usageSession interface {
+	Done() <-chan struct{}
+	CommitUsageBatch(context.Context, *cloudv1.UsageBatch) (*cloudv1.UsageAck, error)
+}
+
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
 	config             Config
@@ -96,8 +101,11 @@ type Runtime struct {
 	usageOutbox        *usage.Outbox
 	relayServer        relayLifecycle
 	controlSessionMu   sync.RWMutex
-	controlSession     *controllerlink.Session
+	controlSession     usageSession
 	usagePumpMu        sync.Mutex
+	usagePumpGate      sync.Mutex
+	usagePumpClosing   bool
+	usagePumpWait      sync.WaitGroup
 	usageDegraded      atomic.Bool
 }
 
@@ -261,7 +269,12 @@ func (runtime *Runtime) RelayDegraded() bool {
 
 // UsageOutboxDepth 返回未确认 Relay usage 数量，供健康检查和 R6 故障恢复门禁使用。
 func (runtime *Runtime) UsageOutboxDepth() (int, error) {
-	if runtime == nil || runtime.usageOutbox == nil {
+	if runtime == nil {
+		return 0, nil
+	}
+	runtime.usagePumpMu.Lock()
+	defer runtime.usagePumpMu.Unlock()
+	if runtime.usageOutbox == nil {
 		return 0, nil
 	}
 	return runtime.usageOutbox.Len()
@@ -330,8 +343,13 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 		}
 		_ = runtime.flushUsage(ctx)
 	}
+	runtime.usagePumpGate.Lock()
+	runtime.usagePumpClosing = true
+	runtime.usagePumpGate.Unlock()
 	runtime.cancel()
-	runtime.grpcServer.GracefulStop()
+	runtime.usagePumpWait.Wait()
+	runtime.state.Close()
+	shutdownErr = errors.Join(shutdownErr, stopGRPC(ctx, runtime.grpcServer))
 	if err := runtime.httpServer.Shutdown(ctx); err != nil {
 		shutdownErr = errors.Join(shutdownErr, err)
 	}
@@ -345,14 +363,35 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		shutdownErr = errors.Join(shutdownErr, ctx.Err())
 	}
-	runtime.state.Close()
+	runtime.usagePumpMu.Lock()
 	if runtime.usageOutbox != nil {
 		shutdownErr = errors.Join(shutdownErr, runtime.usageOutbox.Close())
+		runtime.usageOutbox = nil
 	}
+	runtime.usagePumpMu.Unlock()
 	runtime.health.SetAlive(false)
 	runtime.shutdownComplete = true
 	runtime.shutdownErr = shutdownErr
 	return shutdownErr
+}
+
+func stopGRPC(ctx context.Context, server *grpc.Server) error {
+	if server == nil {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		server.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		server.Stop()
+		<-done
+		return ctx.Err()
+	}
 }
 
 func (runtime *Runtime) servePublic() {
@@ -641,12 +680,33 @@ func (runtime *Runtime) setControlSession(session *controllerlink.Session) {
 	runtime.controlSessionMu.Lock()
 	runtime.controlSession = session
 	runtime.controlSessionMu.Unlock()
-	if session != nil && runtime.usageOutbox != nil {
-		go runtime.runUsagePump(session)
+	if session != nil {
+		runtime.startUsagePump(session)
 	}
 }
 
-func (runtime *Runtime) runUsagePump(session *controllerlink.Session) {
+func (runtime *Runtime) startUsagePump(session usageSession) bool {
+	runtime.usagePumpMu.Lock()
+	available := runtime.usageOutbox != nil
+	runtime.usagePumpMu.Unlock()
+	if !available {
+		return false
+	}
+	runtime.usagePumpGate.Lock()
+	if runtime.usagePumpClosing {
+		runtime.usagePumpGate.Unlock()
+		return false
+	}
+	runtime.usagePumpWait.Add(1)
+	runtime.usagePumpGate.Unlock()
+	go func() {
+		defer runtime.usagePumpWait.Done()
+		runtime.runUsagePump(session)
+	}()
+	return true
+}
+
+func (runtime *Runtime) runUsagePump(session usageSession) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -682,7 +742,7 @@ func (runtime *Runtime) flushUsage(ctx context.Context) error {
 	return runtime.flushUsageWithSession(ctx, session)
 }
 
-func (runtime *Runtime) flushUsageWithSession(ctx context.Context, session *controllerlink.Session) error {
+func (runtime *Runtime) flushUsageWithSession(ctx context.Context, session usageSession) error {
 	runtime.usagePumpMu.Lock()
 	defer runtime.usagePumpMu.Unlock()
 	if runtime.usageOutbox == nil {

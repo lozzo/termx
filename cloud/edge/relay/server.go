@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pion/transport/v4/stdnet"
 	turn "github.com/pion/turn/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 // Runtime 是 TURN callback 提交到 Edge 唯一 State actor 的窄边界。
@@ -65,9 +66,10 @@ type Server struct {
 	closeMu           sync.Mutex
 	closeErr          error
 	settlementTimeout time.Duration
-	undurableFrozen   bool
 	pending           map[string]pendingReservation
 	active            map[string]activeAllocation
+	frozenPending     map[string]*cloudv1.UsageEvent
+	callbackFIFO      map[string][]string
 }
 
 type pendingReservation struct {
@@ -78,13 +80,13 @@ type pendingReservation struct {
 
 type activeAllocation struct {
 	id        string
+	key       string
 	sessionID string
 	conn      *trackedPacketConn
 	settling  bool
 }
 
 type claimedAllocation struct {
-	key        string
 	allocation activeAllocation
 }
 
@@ -117,7 +119,7 @@ func Start(config Config) (*Server, error) {
 	generator := newTrackedGenerator(publicIP, listenHost)
 	server := &Server{
 		packetConn: packetConn, listener: listener, generator: generator, runtime: config.Runtime, outbox: config.Outbox, realm: config.Realm, now: config.Now,
-		errors: make(chan error, 1), closed: make(chan struct{}), pending: make(map[string]pendingReservation), active: make(map[string]activeAllocation),
+		errors: make(chan error, 1), closed: make(chan struct{}), pending: make(map[string]pendingReservation), active: make(map[string]activeAllocation), frozenPending: make(map[string]*cloudv1.UsageEvent), callbackFIFO: make(map[string][]string),
 	}
 	turnServer, err := turn.NewServer(turn.ServerConfig{
 		Realm: config.Realm,
@@ -199,6 +201,17 @@ func (server *Server) stop() error {
 
 func (server *Server) drain() error {
 	var drainErrors []error
+	for _, eventID := range server.frozenPendingEventIDs() {
+		ctx, cancel := context.WithTimeout(context.Background(), server.allocationSettlementTimeout())
+		err := server.persistFrozenPending(ctx, eventID)
+		cancel()
+		if err != nil {
+			settlementErr := fmt.Errorf("retry frozen Relay usage %s during shutdown: %w", eventID, err)
+			drainErrors = append(drainErrors, settlementErr)
+			server.fail(settlementErr)
+		}
+	}
+
 	server.mu.Lock()
 	pending := make([]pendingReservation, 0, len(server.pending))
 	for key, reservation := range server.pending {
@@ -235,24 +248,14 @@ func (server *Server) drain() error {
 	return errors.Join(drainErrors...)
 }
 
-// HasUnfrozenAllocations reports whether State still owns usage that Relay has not frozen.
-func (server *Server) HasUnfrozenAllocations() bool {
-	if server == nil {
-		return false
-	}
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	return len(server.active) != 0
-}
-
-// StateCloseSafe reports whether every frozen usage event has reached the durable outbox.
+// StateCloseSafe reports whether every allocation is frozen and every frozen event is durable.
 func (server *Server) StateCloseSafe() bool {
 	if server == nil {
 		return true
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	return len(server.active) == 0 && !server.undurableFrozen
+	return len(server.active) == 0 && len(server.frozenPending) == 0
 }
 
 // CloseSessionAllocations 释放 ClientGateway session 申请中的 reservation 和已激活 allocation。
@@ -387,7 +390,11 @@ func (server *Server) allocationCreated(source, destination net.Addr, protocol, 
 	err := server.runtime.ActivateRelayAllocation(ctx, reservation.id, allocationID, relayTransport(protocol), server.now().UTC())
 	cancel()
 	if err == nil {
-		server.active[key] = activeAllocation{id: allocationID, sessionID: reservation.admission.SessionID, conn: connection}
+		server.active[allocationID] = activeAllocation{id: allocationID, key: key, sessionID: reservation.admission.SessionID, conn: connection}
+		if server.callbackFIFO == nil {
+			server.callbackFIFO = make(map[string][]string)
+		}
+		server.callbackFIFO[key] = append(server.callbackFIFO[key], allocationID)
 	} else {
 		server.degraded.Store(true)
 	}
@@ -405,7 +412,7 @@ func (server *Server) allocationDeleted(source, destination net.Addr, protocol, 
 	}
 	defer server.work.Done()
 	key := allocationKey(source, destination, protocol)
-	claimed, exists := server.claimAllocation(key)
+	claimed, exists := server.claimDeletedAllocation(key)
 	if !exists {
 		return
 	}
@@ -428,47 +435,65 @@ func (server *Server) settleClaimedAllocation(ctx context.Context, claimed claim
 		server.releaseAllocationClaim(claimed)
 		return fmt.Errorf("freeze Relay allocation %s usage: %w", allocation.id, err)
 	}
-	server.removeFrozenAllocation(claimed)
-	if err := server.outbox.Put(event); err != nil {
-		server.mu.Lock()
-		server.undurableFrozen = true
-		server.mu.Unlock()
-		return fmt.Errorf("persist Relay allocation %s usage: %w", allocation.id, err)
+	if err := server.retainFrozenAllocation(claimed, event); err != nil {
+		return err
 	}
-	if err := server.runtime.FinalizeRelayAllocation(ctx, event); err != nil {
-		return fmt.Errorf("finalize Relay allocation %s: %w", allocation.id, err)
+	if err := server.persistFrozenPending(ctx, event.GetEventId()); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (server *Server) claimAllocation(key string) (claimedAllocation, bool) {
+func (server *Server) claimAllocation(allocationID string) (claimedAllocation, bool) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	allocation, exists := server.active[key]
+	allocation, exists := server.active[allocationID]
 	if !exists || allocation.settling {
 		return claimedAllocation{}, false
 	}
 	allocation.settling = true
-	server.active[key] = allocation
-	return claimedAllocation{key: key, allocation: allocation}, true
+	server.active[allocationID] = allocation
+	return claimedAllocation{allocation: allocation}, true
+}
+
+func (server *Server) claimDeletedAllocation(key string) (claimedAllocation, bool) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	queue := server.callbackFIFO[key]
+	if len(queue) == 0 {
+		return claimedAllocation{}, false
+	}
+	allocationID := queue[0]
+	if len(queue) == 1 {
+		delete(server.callbackFIFO, key)
+	} else {
+		server.callbackFIFO[key] = queue[1:]
+	}
+	allocation, exists := server.active[allocationID]
+	if !exists || allocation.settling {
+		return claimedAllocation{}, false
+	}
+	allocation.settling = true
+	server.active[allocationID] = allocation
+	return claimedAllocation{allocation: allocation}, true
 }
 
 func (server *Server) claimAllocations(match func(activeAllocation) bool) []claimedAllocation {
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	keys := make([]string, 0, len(server.active))
-	for key, allocation := range server.active {
+	allocationIDs := make([]string, 0, len(server.active))
+	for allocationID, allocation := range server.active {
 		if !allocation.settling && match(allocation) {
-			keys = append(keys, key)
+			allocationIDs = append(allocationIDs, allocationID)
 		}
 	}
-	sort.Strings(keys)
-	claimed := make([]claimedAllocation, 0, len(keys))
-	for _, key := range keys {
-		allocation := server.active[key]
+	sort.Strings(allocationIDs)
+	claimed := make([]claimedAllocation, 0, len(allocationIDs))
+	for _, allocationID := range allocationIDs {
+		allocation := server.active[allocationID]
 		allocation.settling = true
-		server.active[key] = allocation
-		claimed = append(claimed, claimedAllocation{key: key, allocation: allocation})
+		server.active[allocationID] = allocation
+		claimed = append(claimed, claimedAllocation{allocation: allocation})
 	}
 	return claimed
 }
@@ -476,20 +501,81 @@ func (server *Server) claimAllocations(match func(activeAllocation) bool) []clai
 func (server *Server) releaseAllocationClaim(claimed claimedAllocation) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	allocation, exists := server.active[claimed.key]
+	allocation, exists := server.active[claimed.allocation.id]
 	if exists && allocation.id == claimed.allocation.id && allocation.settling {
 		allocation.settling = false
-		server.active[claimed.key] = allocation
+		server.active[claimed.allocation.id] = allocation
 	}
 }
 
-func (server *Server) removeFrozenAllocation(claimed claimedAllocation) {
+func (server *Server) retainFrozenAllocation(claimed claimedAllocation, event *cloudv1.UsageEvent) error {
+	if event == nil || strings.TrimSpace(event.GetEventId()) == "" || event.GetAllocationId() != claimed.allocation.id {
+		server.releaseAllocationClaim(claimed)
+		return fmt.Errorf("freeze Relay allocation %s returned invalid usage identity", claimed.allocation.id)
+	}
+	event = proto.Clone(event).(*cloudv1.UsageEvent)
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	allocation, exists := server.active[claimed.key]
-	if exists && allocation.id == claimed.allocation.id && allocation.settling {
-		delete(server.active, claimed.key)
+	allocation, exists := server.active[claimed.allocation.id]
+	if !exists || allocation.id != claimed.allocation.id || !allocation.settling {
+		return fmt.Errorf("freeze Relay allocation %s lost its active ownership", claimed.allocation.id)
 	}
+	if server.frozenPending == nil {
+		server.frozenPending = make(map[string]*cloudv1.UsageEvent)
+	}
+	if existing := server.frozenPending[event.GetEventId()]; existing != nil && !proto.Equal(existing, event) {
+		allocation.settling = false
+		server.active[claimed.allocation.id] = allocation
+		return fmt.Errorf("frozen Relay usage event %s conflicts with pending payload", event.GetEventId())
+	}
+	for eventID, existing := range server.frozenPending {
+		if eventID != event.GetEventId() && existing.GetAllocationId() == event.GetAllocationId() {
+			allocation.settling = false
+			server.active[claimed.allocation.id] = allocation
+			return fmt.Errorf("Relay allocation %s has conflicting frozen event IDs", event.GetAllocationId())
+		}
+	}
+	server.frozenPending[event.GetEventId()] = event
+	delete(server.active, claimed.allocation.id)
+	return nil
+}
+
+func (server *Server) frozenPendingEventIDs() []string {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	eventIDs := make([]string, 0, len(server.frozenPending))
+	for eventID := range server.frozenPending {
+		eventIDs = append(eventIDs, eventID)
+	}
+	sort.Strings(eventIDs)
+	return eventIDs
+}
+
+func (server *Server) persistFrozenPending(ctx context.Context, eventID string) error {
+	server.mu.Lock()
+	event := server.frozenPending[eventID]
+	if event != nil {
+		event = proto.Clone(event).(*cloudv1.UsageEvent)
+	}
+	server.mu.Unlock()
+	if event == nil {
+		return nil
+	}
+	if err := server.outbox.Put(proto.Clone(event).(*cloudv1.UsageEvent)); err != nil {
+		return fmt.Errorf("persist Relay allocation %s usage: %w", event.GetAllocationId(), err)
+	}
+	server.mu.Lock()
+	current := server.frozenPending[eventID]
+	if current == nil || !proto.Equal(current, event) {
+		server.mu.Unlock()
+		return fmt.Errorf("durable Relay usage event %s no longer matches pending payload", eventID)
+	}
+	delete(server.frozenPending, eventID)
+	server.mu.Unlock()
+	if err := server.runtime.FinalizeRelayAllocation(ctx, event); err != nil {
+		return fmt.Errorf("finalize Relay allocation %s: %w", event.GetAllocationId(), err)
+	}
+	return nil
 }
 
 func (server *Server) allocationSettlementTimeout() time.Duration {
