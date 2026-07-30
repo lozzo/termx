@@ -705,6 +705,11 @@ func (server *Server) KillTerminal(ctx context.Context, id string) error {
 }
 
 func (server *Server) RestartTerminal(ctx context.Context, id string) error {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	if server.closed.Load() {
+		return ErrServerClosed
+	}
 	terminal, err := server.Terminal(id)
 	if err != nil {
 		return err

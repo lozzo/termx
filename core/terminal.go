@@ -299,13 +299,15 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	options := terminal.options
 	previousProcess := terminal.process
 	terminal.mu.Unlock()
-	terminal.abortOutputBuffer(previousProcess)
 	// 中文说明：restart 生成的是 core 持有的新 terminal process，不能绑定到本次
 	// protocol request/session 的 ctx；否则 TUI 退出关闭 socket 会把刚重启的 PTY 杀掉。
 	process, err := factory.Spawn(context.Background(), processSpecFromTerminal(info, options))
 	if err != nil {
 		return err
 	}
+	// Spawn 成功前旧 generation 必须保持完整可用；只有新 process 已建立后，
+	// 才关闭旧 output handoff 并切换所有权。
+	terminal.abortOutputBuffer(previousProcess)
 	terminal.mu.Lock()
 	old := terminal.process
 	oldInfo := terminal.info.Clone()

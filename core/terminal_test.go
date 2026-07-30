@@ -982,6 +982,151 @@ func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalRestartSpawnFailurePreservesCurrentOutputGeneration(t *testing.T) {
+	factory := newCancelableOutputProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	const terminalID = "term-restart-spawn-failure"
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID: terminalID, Command: []string{"shell"}, Size: Size{Cols: 80, Rows: 20},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := server.Terminal(terminalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldProcess := factory.process(terminalID)
+	terminal.queueMu.Lock()
+	oldBuffer := terminal.outputBuffer
+	terminal.queueMu.Unlock()
+	if oldBuffer == nil {
+		t.Fatal("initial output buffer was not installed")
+	}
+	publishAndFlush := func(process *cancelableOutputProcess, output string) {
+		t.Helper()
+		observedRevision := terminal.LiveRevision()
+		_, published := process.publish([]byte(output))
+		if !receiveOutputTest(t, published, "process output handoff") {
+			t.Fatal("current process output was canceled")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := server.NextLiveInvalidation(ctx, terminalID, observedRevision); err != nil {
+			t.Fatalf("wait for live output: %v", err)
+		}
+		if err := terminal.FlushHistory(ctx); err != nil {
+			t.Fatalf("flush history output: %v", err)
+		}
+	}
+	publishAndFlush(oldProcess, "before failed restart\r\n")
+
+	spawnErr := errors.New("replacement spawn failed")
+	spawnStarted, releaseSpawn := factory.controlNextSpawn(spawnErr)
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseSpawn) })
+	restarted := make(chan error, 1)
+	go func() {
+		restarted <- server.RestartTerminal(context.Background(), terminalID)
+	}()
+	receiveOutputTest(t, spawnStarted, "replacement spawn barrier")
+	publishAndFlush(oldProcess, "while replacement spawn blocked\r\n")
+	select {
+	case <-oldProcess.cancel:
+		t.Fatal("old producer was canceled before replacement spawn completed")
+	default:
+	}
+	if status := oldBuffer.Status(terminalOutputConsumerHistory); status.Closed || status.Unavailable {
+		t.Fatalf("old buffer changed while replacement spawn was pending: %#v", status)
+	}
+
+	releaseOnce.Do(func() { close(releaseSpawn) })
+	if err := receiveOutputTest(t, restarted, "failed restart result"); !errors.Is(err, spawnErr) {
+		t.Fatalf("restart error=%v want=%v", err, spawnErr)
+	}
+	terminal.mu.Lock()
+	currentProcess := terminal.process
+	terminal.mu.Unlock()
+	terminal.queueMu.Lock()
+	currentBuffer := terminal.outputBuffer
+	terminal.queueMu.Unlock()
+	if currentProcess != oldProcess || currentBuffer != oldBuffer {
+		t.Fatalf("failed restart replaced generation: process=%p/%p buffer=%p/%p", currentProcess, oldProcess, currentBuffer, oldBuffer)
+	}
+	oldBuffer.mu.Lock()
+	liveActive := oldBuffer.consumers[terminalOutputConsumerLive].active
+	historyActive := oldBuffer.consumers[terminalOutputConsumerHistory].active
+	oldBuffer.mu.Unlock()
+	if !liveActive || !historyActive {
+		t.Fatalf("failed restart stopped old consumers: live=%t history=%t", liveActive, historyActive)
+	}
+	select {
+	case <-oldProcess.cancel:
+		t.Fatal("failed restart canceled old producer")
+	default:
+	}
+	publishAndFlush(oldProcess, "after failed restart\r\n")
+	info, err := server.GetTerminal(terminalID)
+	if err != nil || info.State != TerminalStateRunning {
+		t.Fatalf("failed restart changed terminal state: info=%#v err=%v", info, err)
+	}
+	liveRows, err := server.LiveRows(terminalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveText := strings.Join(liveRows, "\n")
+	for _, marker := range []string{"before failed restart", "while replacement spawn blocked", "after failed restart"} {
+		if !strings.Contains(liveText, marker) {
+			t.Fatalf("live output lost %q after failed restart: %q", marker, liveText)
+		}
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), terminalID, history.HistoryWindowRequest{
+		TerminalID: terminalID, Mode: history.HistoryWindowModeLatest, Cols: 80, Limit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyText := strings.Join(historyRowTexts(window.Rows), "\n")
+	for _, marker := range []string{"before failed restart", "while replacement spawn blocked", "after failed restart"} {
+		if !strings.Contains(historyText, marker) {
+			t.Fatalf("history lost %q after failed restart: %q", marker, historyText)
+		}
+	}
+
+	if err := server.RestartTerminal(context.Background(), terminalID); err != nil {
+		t.Fatalf("successful restart: %v", err)
+	}
+	newProcess := factory.process(terminalID)
+	if newProcess == oldProcess {
+		t.Fatal("successful restart did not replace process generation")
+	}
+	receiveOutputTest(t, oldProcess.cancel, "old producer cancellation")
+	receiveOutputTest(t, oldProcess.done, "old process shutdown")
+	if status := oldBuffer.Status(terminalOutputConsumerHistory); !status.Closed {
+		t.Fatalf("successful restart left old buffer open: %#v", status)
+	}
+	terminal.markExited(oldProcess, ProcessExit{Code: 99})
+	info, err = server.GetTerminal(terminalID)
+	if err != nil || info.State != TerminalStateRunning || info.ExitCode != nil {
+		t.Fatalf("old watchExit changed new generation: info=%#v err=%v", info, err)
+	}
+	publishAndFlush(newProcess, "new generation output\r\n")
+	newLiveRows, err := server.LiveRows(terminalID)
+	if err != nil || !strings.Contains(strings.Join(newLiveRows, "\n"), "new generation output") {
+		t.Fatalf("new generation output unavailable: rows=%q err=%v", newLiveRows, err)
+	}
+
+	publisherDone := newProcess.publishUntilCanceled([]byte("shutdown output\r\n"))
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	receiveOutputTest(t, publisherDone, "new producer shutdown")
+	receiveOutputTest(t, newProcess.done, "new process shutdown")
+	if resident, _ := server.outputBudget.status(); resident != 0 {
+		t.Fatalf("shutdown left output budget resident: %d", resident)
+	}
+}
+
 func TestTerminalOutputGenerationRejectsPriorProcessCallbacksAfterRestart(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -1492,6 +1637,13 @@ type recordingProcessFactory struct {
 type cancelableOutputProcessFactory struct {
 	mu        sync.Mutex
 	processes map[string][]*cancelableOutputProcess
+	nextSpawn *controlledProcessSpawn
+}
+
+type controlledProcessSpawn struct {
+	started chan struct{}
+	release chan struct{}
+	err     error
 }
 
 func newCancelableOutputProcessFactory() *cancelableOutputProcessFactory {
@@ -1499,6 +1651,17 @@ func newCancelableOutputProcessFactory() *cancelableOutputProcessFactory {
 }
 
 func (factory *cancelableOutputProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
+	factory.mu.Lock()
+	controlled := factory.nextSpawn
+	factory.nextSpawn = nil
+	factory.mu.Unlock()
+	if controlled != nil {
+		close(controlled.started)
+		<-controlled.release
+		if controlled.err != nil {
+			return nil, controlled.err
+		}
+	}
 	process := &cancelableOutputProcess{
 		output: make(chan []byte), cancel: make(chan struct{}),
 		wait: make(chan ProcessExit, 1), done: make(chan struct{}),
@@ -1507,6 +1670,18 @@ func (factory *cancelableOutputProcessFactory) Spawn(_ context.Context, spec Pro
 	factory.processes[spec.TerminalID] = append(factory.processes[spec.TerminalID], process)
 	factory.mu.Unlock()
 	return process, nil
+}
+
+func (factory *cancelableOutputProcessFactory) controlNextSpawn(err error) (<-chan struct{}, chan struct{}) {
+	controlled := &controlledProcessSpawn{started: make(chan struct{}), release: make(chan struct{}), err: err}
+	factory.mu.Lock()
+	if factory.nextSpawn != nil {
+		factory.mu.Unlock()
+		panic("process spawn is already controlled")
+	}
+	factory.nextSpawn = controlled
+	factory.mu.Unlock()
+	return controlled.started, controlled.release
 }
 
 func (factory *cancelableOutputProcessFactory) process(id string) *cancelableOutputProcess {
