@@ -13,7 +13,8 @@ interface FakeXTermInstance {
 
 const terminalHarness = vi.hoisted(() => ({
   instances: [] as unknown[],
-  inputBlocked: false,
+  inputRecoveryFailure: null as string | null,
+  unrelatedBanner: false,
   sessionSendInput: vi.fn(),
 }))
 
@@ -102,13 +103,14 @@ vi.mock('@xterm/xterm', () => ({
 
 vi.mock('./useTerminalSession', () => ({
   useTerminalSession: ({ terminalId }: { terminalId: string }) => ({
-    snapshot: terminalHarness.inputBlocked
+    snapshot: terminalHarness.unrelatedBanner
       ? {
           phase: 'failed',
           terminalChannels: { [terminalId]: { state: 'open' } },
-          visibleError: { message: 'input blocked', recoverable: true, surface: 'banner' },
+          visibleError: { message: 'unrelated connection failure', recoverable: true, surface: 'banner' },
         }
       : { phase: 'connected', terminalChannels: { [terminalId]: { state: 'open' } } },
+    inputRecoveryFailure: terminalHarness.inputRecoveryFailure,
     terminalSnapshot: null,
     terminalText: '',
     terminalInfo: null,
@@ -133,7 +135,8 @@ const session = {} as ProtoClientSession
 describe('Terminal input modifier boundary', () => {
   beforeEach(() => {
     terminalHarness.instances.length = 0
-    terminalHarness.inputBlocked = false
+    terminalHarness.inputRecoveryFailure = null
+    terminalHarness.unrelatedBanner = false
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -347,7 +350,7 @@ describe('Terminal input modifier boundary', () => {
   it('reports rejected onData and binary sends through the same owner boundary without consuming once', async () => {
     const onInput = vi.fn(() => false)
     const onModifierStateChange = vi.fn()
-    terminalHarness.inputBlocked = true
+    terminalHarness.inputRecoveryFailure = 'input blocked'
     render(<Terminal
       machineId="studio"
       terminalId="term-shell"
@@ -368,6 +371,19 @@ describe('Terminal input modifier boundary', () => {
     expect(onInput.mock.calls.map(([data]) => data)).toEqual(['paste', 'binary'])
     expect(onModifierStateChange).not.toHaveBeenCalled()
     expect((await screen.findByRole('alert')).textContent).toBe('Input is paused until the connection recovers.')
+  })
+
+  it('does not show an input-paused alert for an unrelated banner failure', async () => {
+    terminalHarness.unrelatedBanner = true
+    render(<Terminal
+      machineId="studio"
+      terminalId="term-shell"
+      session={session}
+      renderer="dom"
+    />)
+
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('returns the underlying acceptance result from imperative input and paste handles', async () => {

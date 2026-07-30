@@ -522,8 +522,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
   const showConnectingOverlay = !suppressConnectingOverlay && (channelState !== 'open' || !surfaceReady)
-  const inputFailureVisible = terminalSession.snapshot.phase === 'failed' &&
-    terminalSession.snapshot.visibleError?.surface === 'banner'
+  const inputFailureVisible = Boolean(terminalSession.inputRecoveryFailure)
 
   useEffect(() => {
     if (!isOpen || !surfaceReady) return
