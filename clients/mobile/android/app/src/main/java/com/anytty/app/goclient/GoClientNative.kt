@@ -8,7 +8,6 @@ object GoClientNative {
 
     external fun abiVersion(): Int
     external fun create(): Long
-    external fun createSpike(runtimeDir: String): Long
     external fun openSession(engine: Long, requestProto: ByteArray): Long
     external fun execute(engine: Long, session: Long, commandProto: ByteArray): Long
     external fun openResourceStream(engine: Long, session: Long, requestProto: ByteArray): Long

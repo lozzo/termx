@@ -7,7 +7,6 @@ ndk_version="${ANYTTY_ANDROID_NDK_VERSION:-27.2.12479018}"
 ndk_root="${ANDROID_NDK_ROOT:-${sdk_root}/ndk/${ndk_version}}"
 output_root="${1:-${repo_root}/clients/mobile/android/app/build/generated/anyttyJniLibs}"
 api="${ANYTTY_ANDROID_API:-24}"
-go_tags="${ANYTTY_ANDROID_GO_TAGS:-}"
 
 if [[ ! -d "${ndk_root}" ]]; then
   echo "Android NDK ${ndk_version} is not installed at ${ndk_root}" >&2
@@ -31,15 +30,9 @@ build_abi() {
   (
     cd "${repo_root}"
     # Pion 的 Android interface adapter 仍使用受控 linkname；Go 1.23+ 需要显式允许该上游实现。
-    if [[ -n "${go_tags}" ]]; then
-      GOOS=android GOARCH="${goarch}" CGO_ENABLED=1 CC="${toolchain}/${triple}${api}-clang" \
-        go build -trimpath -buildmode=c-shared -ldflags='-checklinkname=0' -tags "${go_tags}" \
-        -o "${destination}/libanytty_client.so" ./client/binding/cabi/androidlib
-    else
-      GOOS=android GOARCH="${goarch}" CGO_ENABLED=1 CC="${toolchain}/${triple}${api}-clang" \
-        go build -trimpath -buildmode=c-shared -ldflags='-checklinkname=0' \
-        -o "${destination}/libanytty_client.so" ./client/binding/cabi/androidlib
-    fi
+    GOOS=android GOARCH="${goarch}" CGO_ENABLED=1 CC="${toolchain}/${triple}${api}-clang" \
+      go build -trimpath -buildmode=c-shared -ldflags='-checklinkname=0' \
+      -o "${destination}/libanytty_client.so" ./client/binding/cabi/androidlib
   )
   "${toolchain}/${triple}${api}-clang" -shared -fPIC \
     -I"${include_dir}" "${jni_source}" \

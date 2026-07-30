@@ -39,7 +39,6 @@ import (
 var androidLibrary = struct {
 	sync.Mutex
 	registry   *binding.Registry
-	runtimeDir string
 	hosts      map[uint64]androidHost
 	platforms  map[uint64]*binding.PlatformBroker
 	buffers    map[uint64]unsafe.Pointer
@@ -52,17 +51,6 @@ var androidLibrary = struct {
 type androidHost interface {
 	binding.Host
 	close() error
-}
-
-//export anytty_android_spike_set_runtime_dir
-func anytty_android_spike_set_runtime_dir(value *C.char) C.anytty_status_v1 {
-	if value == nil {
-		return C.ANYTTY_STATUS_INVALID_ARGUMENT
-	}
-	androidLibrary.Lock()
-	androidLibrary.runtimeDir = C.GoString(value)
-	androidLibrary.Unlock()
-	return C.ANYTTY_STATUS_OK
 }
 
 //export anytty_client_abi_version
@@ -78,17 +66,6 @@ func anytty_engine_create(out *C.anytty_handle_t) C.anytty_status_v1 {
 		return status(err)
 	}
 	return createAndroidEngine(host, host.broker, out)
-}
-
-//export anytty_android_spike_engine_create
-func anytty_android_spike_engine_create(out *C.anytty_handle_t) C.anytty_status_v1 {
-	if out == nil {
-		return C.ANYTTY_STATUS_INVALID_ARGUMENT
-	}
-	androidLibrary.Lock()
-	runtimeDir := androidLibrary.runtimeDir
-	androidLibrary.Unlock()
-	return status(androidSpikeUnavailable(runtimeDir))
 }
 
 func createAndroidEngine(host androidHost, broker *binding.PlatformBroker, out *C.anytty_handle_t) C.anytty_status_v1 {

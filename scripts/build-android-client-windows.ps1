@@ -29,7 +29,6 @@ function Build-Abi([string]$Abi, [string]$GoArch, [string]$Triple) {
         $env:CGO_ENABLED = '1'
         $env:CC = '"' + $compiler + '"'
         $arguments = @('build', '-trimpath', '-buildmode=c-shared', '-ldflags=-checklinkname=0')
-        if ($env:ANYTTY_ANDROID_GO_TAGS) { $arguments += @('-tags', $env:ANYTTY_ANDROID_GO_TAGS) }
         $arguments += @('-o', (Join-Path $destination 'libanytty_client.so'), './client/binding/cabi/androidlib')
         Push-Location $repoRoot
         try { & go @arguments } finally { Pop-Location }

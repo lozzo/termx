@@ -423,14 +423,10 @@ func connectionsDetailLines(item state.EndpointItem, ok bool, width int, activeV
 	if snapshot.RoundTrip > 0 {
 		lines = append(lines, value("RTT", fmt.Sprintf("%.1f ms", float64(snapshot.RoundTrip)/float64(time.Millisecond))))
 	}
-	candidateCutset := " / "
-	candidateCutset = candidateCutset[:2]
-	if candidates := strings.Trim(strings.Join([]string{snapshot.LocalCandidateType, snapshot.RemoteCandidateType}, " / "), candidateCutset); candidates != "" {
+	if candidates := strings.Trim(strings.Join([]string{snapshot.LocalCandidateType, snapshot.RemoteCandidateType}, " / "), " /"); candidates != "" {
 		lines = append(lines, value("Candidates", candidates))
 	}
-	protocolCutset := " / "
-	protocolCutset = protocolCutset[:2]
-	if protocols := strings.Trim(strings.Join([]string{snapshot.LocalProtocol, snapshot.RemoteProtocol}, " / "), protocolCutset); protocols != "" {
+	if protocols := strings.Trim(strings.Join([]string{snapshot.LocalProtocol, snapshot.RemoteProtocol}, " / "), " /"); protocols != "" {
 		lines = append(lines, value("ICE", protocols))
 	}
 	if snapshot.RelayTransport != "" {

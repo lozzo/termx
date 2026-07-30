@@ -57,8 +57,6 @@ android {
     }
 }
 
-def anyttyAndroidGoTags = ""
-
 tasks.register("buildAnyTTYClientNative", Exec) {
     workingDir rootProject.projectDir
     if (System.getProperty("os.name").toLowerCase().contains("windows")) {
@@ -66,8 +64,6 @@ tasks.register("buildAnyTTYClientNative", Exec) {
     } else {
         commandLine file('../../../../scripts/build-android-client.sh').absolutePath, "$buildDir/generated/anyttyJniLibs"
     }
-    environment "ANYTTY_ANDROID_GO_TAGS", anyttyAndroidGoTags
-    inputs.property "anyttyAndroidGoTags", anyttyAndroidGoTags
     inputs.files(
         fileTree('../../../../client'),
         fileTree('../../../../api_layer'),

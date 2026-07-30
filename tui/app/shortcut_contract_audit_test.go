@@ -27,7 +27,7 @@ import (
 
 const shortcutArtifactBaselineSHA256 = "0885316cd1c697c89a4bb49631575eef3b260bb31b3ddd0f8ac2a40bc6cfb443"
 const shortcutCompositeSemanticBaselineSHA256 = "553d3ddff7f48b615488146e870a27be9d6198ca9e63d7dfce669d25e7e53dc8"
-const shortcutRenderStringBaselineSHA256 = "99566799dfa3304b5953a029b529c2ce1b3837ebeabededb30e373a7903b0466"
+const shortcutRenderStringBaselineSHA256 = "5d597d54b9fe2f1cbe8857d333760be1ff19982cf03b3dbcea0f8eaf778d6ef4"
 
 type shortcutDebtManifest struct {
 	SchemaVersion int                    `json:"schema_version"`

@@ -5,9 +5,6 @@
 
 #include "anytty_client.h"
 
-extern anytty_status_v1 anytty_android_spike_set_runtime_dir(const char *runtime_dir);
-extern anytty_status_v1 anytty_android_spike_engine_create(anytty_handle_t *out_engine_handle);
-
 static int throw_status(JNIEnv *env, anytty_status_v1 status) {
   if (status == ANYTTY_STATUS_OK) {
     return 0;
@@ -42,29 +39,6 @@ Java_com_anytty_app_goclient_GoClientNative_create(JNIEnv *env, jobject self) {
   (void)self;
   anytty_handle_t engine = 0;
   if (throw_status(env, anytty_engine_create(&engine)) != 0) {
-    return 0;
-  }
-  return (jlong)engine;
-}
-
-JNIEXPORT jlong JNICALL
-Java_com_anytty_app_goclient_GoClientNative_createSpike(JNIEnv *env, jobject self, jstring runtime_dir) {
-  (void)self;
-  if (runtime_dir == NULL) {
-    throw_status(env, ANYTTY_STATUS_INVALID_ARGUMENT);
-    return 0;
-  }
-  const char *path = (*env)->GetStringUTFChars(env, runtime_dir, NULL);
-  if (path == NULL) {
-    return 0;
-  }
-  anytty_status_v1 status = anytty_android_spike_set_runtime_dir(path);
-  (*env)->ReleaseStringUTFChars(env, runtime_dir, path);
-  if (throw_status(env, status) != 0) {
-    return 0;
-  }
-  anytty_handle_t engine = 0;
-  if (throw_status(env, anytty_android_spike_engine_create(&engine)) != 0) {
     return 0;
   }
   return (jlong)engine;
