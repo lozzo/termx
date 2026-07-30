@@ -4,6 +4,7 @@ package binding
 
 import "github.com/anytty/anytty/proto/apipb"
 
+// requiresTerminalResponse marks binding operations that own late-response resource cleanup.
 func requiresTerminalResponse(command *apipb.CommandEnvelope) bool {
 	switch command.GetCommand().(type) {
 	case *apipb.CommandEnvelope_FileDownloadOpen,

@@ -392,6 +392,7 @@ func generateClientBinding(specs []commandSpec) []byte {
 	var out bytes.Buffer
 	writeGeneratedHeader(&out, "binding")
 	out.WriteString("\nimport \"github.com/anytty/anytty/proto/apipb\"\n\n")
+	out.WriteString("// requiresTerminalResponse marks binding operations that own late-response resource cleanup.\n")
 	out.WriteString("func requiresTerminalResponse(command *apipb.CommandEnvelope) bool {\n\tswitch command.GetCommand().(type) {\n")
 	writeGroupedCases(&out, specs, func(spec commandSpec) bool { return spec.TerminalResponse })
 	out.WriteString("\t\treturn true\n\tdefault:\n\t\treturn false\n\t}\n}\n")
@@ -412,6 +413,8 @@ func writeClientWrapper(out *bytes.Buffer, spec commandSpec) {
 	} else {
 		fmt.Fprintf(out, "func (session *ApplicationSession) %s(ctx context.Context, command *apipb.%s) (*apipb.%s, error) {\n", method, commandType, resultType)
 	}
+	// TerminalResponse is consumed only by the binding owner that can clean up a
+	// late resource. Typed wrappers preserve their Execute-only contract.
 	fmt.Fprintf(out, "\tresult, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_%s{%s: command}})\n", commandGoName, commandGoName)
 	if spec.ResponseKind == "ack" {
 		out.WriteString("\tif err != nil {\n\t\treturn err\n\t}\n\tif result.GetAcknowledge() == nil {\n\t\treturn missingApplicationResult(\"acknowledge\")\n\t}\n\treturn nil\n}\n\n")

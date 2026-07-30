@@ -15,6 +15,19 @@ type recordingProtoExecutor struct {
 	terminal bool
 }
 
+type executeOnlyFileOpenExecutor struct {
+	commands []*apipb.CommandEnvelope
+}
+
+func (executor *executeOnlyFileOpenExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	executor.commands = append(executor.commands, proto.Clone(command).(*apipb.CommandEnvelope))
+	return &apipb.ResultEnvelope{
+		RequestId:     command.GetContext().GetRequestId(),
+		OriginSession: proto.Clone(command.GetContext().GetSession()).(*apipb.EndpointSessionStamp),
+		Result:        &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: &apipb.FileTransferOpenResult{}},
+	}, nil
+}
+
 func (executor *recordingProtoExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
 	executor.command = command
 	if executor.result != nil {
@@ -94,6 +107,26 @@ func TestApplicationSessionTerminalExecutionOwnsContextAndOperationStamp(t *test
 	}
 	if command.GetContext() != nil || command.GetFileUploadOpen().GetOperation() != nil {
 		t.Fatal("terminal execution mutated caller command")
+	}
+}
+
+func TestGeneratedFileOpenWrappersDoNotRequireTerminalResponseExecutor(t *testing.T) {
+	executor := &executeOnlyFileOpenExecutor{}
+	if _, ok := any(executor).(TerminalResponseApplicationExecutor); ok {
+		t.Fatal("test executor unexpectedly supports terminal responses")
+	}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "cloud", Generation: 9}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.FileDownloadOpen(context.Background(), &apipb.FileDownloadOpenCommand{Path: "/tmp/download"}); err != nil {
+		t.Fatalf("FileDownloadOpen with execute-only executor: %v", err)
+	}
+	if _, err := session.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{Path: "/tmp/upload", Size: 8}); err != nil {
+		t.Fatalf("FileUploadOpen with execute-only executor: %v", err)
+	}
+	if len(executor.commands) != 2 || executor.commands[0].GetFileDownloadOpen() == nil || executor.commands[1].GetFileUploadOpen() == nil {
+		t.Fatalf("file-open commands = %#v", executor.commands)
 	}
 }
 
