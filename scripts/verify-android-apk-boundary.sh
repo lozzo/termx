@@ -116,6 +116,24 @@ node "$repo_root/clients/mobile/scripts/verify-android-artifact-resources.mjs" \
   "$tmp_dir/data_extraction_rules.xml" \
   "$index_html" || fail 'final APK resource contract failed'
 
+capacitor_config="$tmp_dir/capacitor.config.json"
+if ! unzip -p "$app_apk" assets/capacitor.config.json >"$capacitor_config" || [[ ! -s "$capacitor_config" ]]; then
+  fail 'final APK is missing assets/capacitor.config.json'
+fi
+node --input-type=module - "$capacitor_config" <<'NODE' || fail 'final APK Capacitor logging must be disabled'
+import { readFileSync } from 'node:fs'
+const config = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+if (config.loggingBehavior !== 'none') process.exit(1)
+NODE
+
+web_root="$tmp_dir/web"
+mkdir -p "$web_root"
+if ! unzip -qq "$app_apk" 'assets/public/*' -d "$web_root"; then
+  fail 'could not extract final APK web assets'
+fi
+node "$repo_root/clients/mobile/scripts/verify-production-bundle.mjs" \
+  "$web_root/assets/public" || fail 'final APK web JavaScript/CSS contract failed'
+
 dex_packages="$tmp_dir/dex-packages.txt"
 if ! "$apkanalyzer" dex packages --defined-only "$app_apk" >"$dex_packages"; then
   fail 'could not inspect final APK DEX packages'

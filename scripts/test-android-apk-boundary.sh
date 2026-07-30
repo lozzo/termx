@@ -61,7 +61,7 @@ gate_env=(
 
 create_complete_root() {
   local root="$1"
-  mkdir -p "$root/fixture" "$root/res/xml" "$root/assets/public" "$root/META-INF/services"
+  mkdir -p "$root/fixture" "$root/res/xml" "$root/assets/public/assets" "$root/META-INF/services"
   for abi in arm64-v8a x86_64; do
     mkdir -p "$root/lib/$abi"
     printf '%s\n' production-native >"$root/lib/$abi/libanytty_client.so"
@@ -71,6 +71,13 @@ create_complete_root() {
   cp "$repo_root/clients/mobile/android/app/src/main/res/xml/backup_rules.xml" "$root/res/xml/backup_rules.xml"
   cp "$repo_root/clients/mobile/android/app/src/main/res/xml/data_extraction_rules.xml" "$root/res/xml/data_extraction_rules.xml"
   cp "$repo_root/clients/mobile/index.html" "$root/assets/public/index.html"
+  printf '%s\n' '{"loggingBehavior":"none"}' >"$root/assets/capacitor.config.json"
+  cat >"$root/assets/public/assets/app.js" <<'JS'
+const words = ['console', 'syntax token']
+const grammar = { console: words[0] }
+globalThis.__fixture = words[0] + Object.keys(grammar)[0]
+JS
+  printf '%s\n' '.console-output { display: none; }' >"$root/assets/public/assets/app.css"
   printf '%s\n' 'P d 1 1 1 org.slf4j.nop' >"$root/fixture/dex-packages.txt"
   printf '%s\n' 'org.slf4j.nop.NOPServiceProvider' >"$root/META-INF/services/org.slf4j.spi.SLF4JServiceProvider"
   cat >"$root/fixture/resources.txt" <<'TEXT'
@@ -205,6 +212,30 @@ printf '%s\n' android-spike-daemon >>"$marker_root/lib/arm64-v8a/libanytty_clien
 marker_apk="$tmp_dir/marker.apk"
 pack_apk "$marker_root" "$marker_apk"
 expect_failure marker 'forbidden Android dev/spike marker' "${gate_env[@]}" "$gate" "$marker_apk"
+
+console_root="$tmp_dir/console"
+cp -R "$complete_root" "$console_root"
+cat >"$console_root/assets/public/assets/app.js" <<'JS'
+const write = console.error
+write(globalThis.__fixtureSideEffect())
+JS
+console_apk="$tmp_dir/console.apk"
+pack_apk "$console_root" "$console_apk"
+expect_failure console 'global console reference' "${gate_env[@]}" "$gate" "$console_apk"
+
+tailwind_root="$tmp_dir/tailwind"
+cp -R "$complete_root" "$tailwind_root"
+printf '%s\n' '@tailwind utilities;' >"$tailwind_root/assets/public/assets/app.css"
+tailwind_apk="$tmp_dir/tailwind.apk"
+pack_apk "$tailwind_root" "$tailwind_apk"
+expect_failure tailwind 'raw @tailwind directive' "${gate_env[@]}" "$gate" "$tailwind_apk"
+
+logging_root="$tmp_dir/logging"
+cp -R "$complete_root" "$logging_root"
+printf '%s\n' '{"loggingBehavior":"production"}' >"$logging_root/assets/capacitor.config.json"
+logging_apk="$tmp_dir/logging.apk"
+pack_apk "$logging_root" "$logging_apk"
+expect_failure logging 'Capacitor logging must be disabled' "${gate_env[@]}" "$gate" "$logging_apk"
 
 corrupt_apk="$tmp_dir/corrupt.apk"
 printf '%s\n' 'not-an-apk' >"$corrupt_apk"
