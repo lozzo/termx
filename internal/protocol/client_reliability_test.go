@@ -207,6 +207,100 @@ func TestClientStreamOverflowClosesAffectedStreamWithTypedError(t *testing.T) {
 	}
 }
 
+func TestClientAbandonedLateResponseReleasesWaiterCapacity(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	client := NewClient(clientTransport)
+	defer client.Close()
+	defer serverTransport.Close()
+	completeClientHello(t, client, serverTransport)
+
+	requestCtx, cancel := context.WithCancel(context.Background())
+	requestDone := make(chan error, 1)
+	go func() {
+		_, err := client.doApplicationRequest(requestCtx, &apipb.CommandEnvelope{}, false)
+		requestDone <- err
+	}()
+	frame, err := serverTransport.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, typ, payload, err := wire.DecodeFrame(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if channel != 0 || typ != wire.TypeRequest {
+		t.Fatalf("request frame = channel:%d type:%d", channel, typ)
+	}
+	request, err := DecodeRequestPayload(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case err := <-requestDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled request error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled request did not return")
+	}
+	waitForClientAccounting(t, client, func() bool {
+		return len(client.waiters) == 0 && len(client.abandonedWaiters) == 1
+	})
+	response, err := EncodeResponsePayload(Response{ID: request.ID, Result: []byte("late")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sendTestFrame(serverTransport, 0, wire.TypeResponse, response); err != nil {
+		t.Fatal(err)
+	}
+	waitForClientAccounting(t, client, func() bool { return len(client.abandonedWaiters) == 0 })
+	select {
+	case <-client.Done():
+		t.Fatalf("late abandoned response closed client: %v", client.Err())
+	default:
+	}
+}
+
+func TestClientPendingAccountingReleasesChannelFrameAndByteCapacity(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	client := newClientWithPendingLimits(clientTransport, clientPendingLimits{channels: 1, frames: 2, framesPerChannel: 2, bytes: 4})
+	defer client.Close()
+	defer serverTransport.Close()
+
+	client.mu.Lock()
+	if err := client.queuePendingFrameLocked(client.pending, 7, wire.TypeFileData, []byte("ab")); err != nil {
+		client.mu.Unlock()
+		t.Fatal(err)
+	}
+	frames := client.takePendingFramesLocked(client.pending, 7)
+	if len(frames) != 1 || client.pendingFrameCount != 0 || client.pendingByteCount != 0 || len(client.pending) != 0 {
+		client.mu.Unlock()
+		t.Fatalf("pending accounting after bind = frames:%d bytes:%d channels:%d", client.pendingFrameCount, client.pendingByteCount, len(client.pending))
+	}
+	if err := client.queuePendingFrameLocked(client.reused, 8, wire.TypeFileData, []byte("cd")); err != nil {
+		client.mu.Unlock()
+		t.Fatalf("released channel capacity was not reusable: %v", err)
+	}
+	client.discardPendingFramesLocked(client.reused, 8)
+	if client.pendingFrameCount != 0 || client.pendingByteCount != 0 || len(client.reused) != 0 {
+		client.mu.Unlock()
+		t.Fatalf("pending accounting after discard = frames:%d bytes:%d channels:%d", client.pendingFrameCount, client.pendingByteCount, len(client.reused))
+	}
+	if err := client.queuePendingFrameLocked(client.pending, 9, wire.TypeFileData, []byte("ef")); err != nil {
+		client.mu.Unlock()
+		t.Fatal(err)
+	}
+	client.mu.Unlock()
+
+	client.failAll(errors.New("test peer failure"))
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.pendingFrameCount != 0 || client.pendingByteCount != 0 || len(client.pending) != 0 || len(client.reused) != 0 {
+		t.Fatalf("pending accounting after failure = frames:%d bytes:%d pending:%d reused:%d", client.pendingFrameCount, client.pendingByteCount, len(client.pending), len(client.reused))
+	}
+}
+
 type pendingTestFrame struct {
 	channel uint16
 	payload []byte
@@ -251,6 +345,21 @@ func assertPeerFailure(t *testing.T, client *Client, code int) {
 	if err := client.Err(); !errors.As(err, &peerErr) || peerErr.Code != code {
 		t.Fatalf("client error = %T %v, want peer code %d", err, err, code)
 	}
+}
+
+func waitForClientAccounting(t *testing.T, client *Client, ready func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		client.mu.Lock()
+		complete := ready()
+		client.mu.Unlock()
+		if complete {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("client accounting did not reach expected state")
 }
 
 func waitForStreamQueueLength(t *testing.T, stream *clientStream, length int) {

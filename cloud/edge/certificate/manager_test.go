@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -139,6 +140,40 @@ func TestAtomicWriteDirectorySyncFailureRestoresMissingState(t *testing.T) {
 	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("failed first write left state file: %v", statErr)
 	}
+}
+
+func TestWriteAtomicPayloadRejectsShortWrite(t *testing.T) {
+	if err := writeAtomicPayload(shortAtomicWriter{}, []byte("replacement")); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("short write error = %v", err)
+	}
+}
+
+func TestAtomicWriteReportsOperationAndRollbackFailures(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "managed-certificate.pb")
+	if err := os.WriteFile(path, []byte("current"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	operationErr := errors.New("injected directory sync failure")
+	rollbackErr := errors.New("injected rollback failure")
+	err := atomicWriteWithFault(path, []byte("replacement"), func(stage atomicWriteStage) error {
+		switch stage {
+		case atomicWriteStageDirectorySync:
+			return operationErr
+		case atomicWriteStageRollback:
+			return rollbackErr
+		default:
+			return nil
+		}
+	})
+	if !errors.Is(err, operationErr) || !errors.Is(err, rollbackErr) {
+		t.Fatalf("joined atomic write error = %v", err)
+	}
+}
+
+type shortAtomicWriter struct{}
+
+func (shortAtomicWriter) Write(payload []byte) (int, error) {
+	return len(payload) - 1, nil
 }
 
 func handshakeSerial(t *testing.T, serverConfig *tls.Config, roots *x509.CertPool) int64 {

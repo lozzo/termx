@@ -137,6 +137,7 @@ const (
 	atomicWriteStageFileClose     atomicWriteStage = "file_close"
 	atomicWriteStageRename        atomicWriteStage = "rename"
 	atomicWriteStageDirectorySync atomicWriteStage = "directory_sync"
+	atomicWriteStageRollback      atomicWriteStage = "rollback"
 )
 
 type atomicWriteFault func(atomicWriteStage) error
@@ -163,12 +164,8 @@ func atomicWriteWithFault(path string, payload []byte, inject atomicWriteFault) 
 		return err
 	}
 	err = injectedAtomicWriteError(inject, atomicWriteStageWrite)
-	written := 0
 	if err == nil {
-		written, err = temporary.Write(payload)
-		if err == nil && written != len(payload) {
-			err = io.ErrShortWrite
-		}
+		err = writeAtomicPayload(temporary, payload)
 	}
 	if err == nil {
 		err = injectedAtomicWriteError(inject, atomicWriteStageFileSync)
@@ -196,8 +193,22 @@ func atomicWriteWithFault(path string, payload []byte, inject atomicWriteFault) 
 		err = filepublish.SyncDirectory(directoryPath)
 	}
 	if err != nil {
-		restoreErr := restoreCurrentFile(path, previousPayload, previousMode, previousExists)
+		restoreErr := injectedAtomicWriteError(inject, atomicWriteStageRollback)
+		if restoreErr == nil {
+			restoreErr = restoreCurrentFile(path, previousPayload, previousMode, previousExists)
+		}
 		return errors.Join(err, restoreErr)
+	}
+	return nil
+}
+
+func writeAtomicPayload(writer io.Writer, payload []byte) error {
+	written, err := writer.Write(payload)
+	if err != nil {
+		return err
+	}
+	if written != len(payload) {
+		return io.ErrShortWrite
 	}
 	return nil
 }
@@ -240,12 +251,8 @@ func restoreCurrentFile(path string, payload []byte, mode os.FileMode, existed b
 	temporaryPath := temporary.Name()
 	defer func() { _ = os.Remove(temporaryPath) }()
 	err = temporary.Chmod(mode)
-	written := 0
 	if err == nil {
-		written, err = temporary.Write(payload)
-		if err == nil && written != len(payload) {
-			err = io.ErrShortWrite
-		}
+		err = writeAtomicPayload(temporary, payload)
 	}
 	if err == nil {
 		err = temporary.Sync()

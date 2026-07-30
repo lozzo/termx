@@ -88,32 +88,36 @@ func claimDaemonBoundaryReclaimHeapSys(heapSys uint64) bool {
 }
 
 type protocolSession struct {
-	server                 *Server
-	conn                   transport.Transport
-	scope                  TransportScope
-	application            ApplicationExecutor
-	sessionID              uint64
-	sendMu                 sync.Mutex
-	nextSnapshot           atomic.Uint64
-	mu                     sync.RWMutex
-	attachments            map[uint16]protocolAttachment
-	attachmentTokens       map[string]uint16
-	eventSubscriptions     map[uint64]applicationEventSubscription
-	rawPTYStreams          map[uint16]*protocolRawPTYStream
-	nextEventSub           uint64
-	requests               sync.WaitGroup
-	requestSlots           chan struct{}
-	resourceMu             sync.Mutex
-	nextChannel            uint16
-	channelKinds           map[uint16]protocolChannelKind
-	attachmentCount        int
-	fileTransferCount      int
-	eventSubscriptionCount int
-	fileMu                 sync.Mutex
-	fileChannels           map[uint16]*sessionFileTransfer
-	fileIDs                map[string]uint16
-	lifecycleObserver      TransportLifecycleObserver
-	helloAccepted          bool
+	server                        *Server
+	conn                          transport.Transport
+	scope                         TransportScope
+	application                   ApplicationExecutor
+	sessionID                     uint64
+	sendMu                        sync.Mutex
+	nextSnapshot                  atomic.Uint64
+	attachmentMu                  sync.Mutex
+	mu                            sync.RWMutex
+	attachments                   map[uint16]protocolAttachment
+	attachmentTokens              map[string]uint16
+	eventSubscriptions            map[uint64]applicationEventSubscription
+	rawPTYStreams                 map[uint16]*protocolRawPTYStream
+	nextEventSub                  uint64
+	requests                      sync.WaitGroup
+	requestSlots                  chan struct{}
+	requestMu                     sync.Mutex
+	activeRequests                map[uint64]struct{}
+	resourceMu                    sync.Mutex
+	nextChannel                   uint32
+	channelKinds                  map[uint16]protocolChannelKind
+	attachmentCount               int
+	fileTransferCount             int
+	eventSubscriptionCount        int
+	fileMu                        sync.Mutex
+	fileChannels                  map[uint16]*sessionFileTransfer
+	fileIDs                       map[string]uint16
+	lifecycleObserver             TransportLifecycleObserver
+	helloAccepted                 bool
+	beforeGlobalAttachmentPublish func(protocolAttachment)
 }
 
 type protocolChannelKind uint8
@@ -238,6 +242,7 @@ func newProtocolSessionObserved(server *Server, conn transport.Transport, scope 
 		eventSubscriptions: make(map[uint64]applicationEventSubscription),
 		rawPTYStreams:      make(map[uint16]*protocolRawPTYStream),
 		requestSlots:       make(chan struct{}, server.cfg.protocolLimits.MaxInFlightRequests),
+		activeRequests:     make(map[uint64]struct{}),
 		channelKinds:       make(map[uint16]protocolChannelKind),
 		lifecycleObserver:  observer,
 	}
@@ -324,9 +329,14 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 		if req.ID == 0 || req.Method == "" {
 			return session.sendError(req.ID, protocolErrorBadRequest, "protocol request ID and method are required")
 		}
+		if !session.claimActiveRequest(req.ID) {
+			_ = session.conn.Close()
+			return fmt.Errorf("duplicate in-flight protocol request ID %d", req.ID)
+		}
 		select {
 		case session.requestSlots <- struct{}{}:
 		default:
+			session.releaseActiveRequest(req.ID)
 			return session.sendError(req.ID, protocolErrorExhausted, "protocol in-flight request capacity is exhausted")
 		}
 		// 中文说明：control request 不能在同一 client 上互相 head-of-line blocking。
@@ -335,6 +345,7 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 		go func() {
 			defer session.requests.Done()
 			defer func() { <-session.requestSlots }()
+			defer session.releaseActiveRequest(req.ID)
 			_ = session.handleRequest(ctx, req)
 		}()
 		return nil
@@ -346,6 +357,22 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 	default:
 		return session.sendError(0, protocolErrorBadRequest, fmt.Sprintf("unsupported control frame type %d", typ))
 	}
+}
+
+func (session *protocolSession) claimActiveRequest(id uint64) bool {
+	session.requestMu.Lock()
+	defer session.requestMu.Unlock()
+	if _, exists := session.activeRequests[id]; exists {
+		return false
+	}
+	session.activeRequests[id] = struct{}{}
+	return true
+}
+
+func (session *protocolSession) releaseActiveRequest(id uint64) {
+	session.requestMu.Lock()
+	delete(session.activeRequests, id)
+	session.requestMu.Unlock()
 }
 
 func (session *protocolSession) handleRequest(ctx context.Context, req protocol.Request) error {
@@ -466,7 +493,7 @@ func (session *protocolSession) clearEventSubscription(id uint64) {
 	}
 }
 
-func (session *protocolSession) attach(params attachmentRequest, publishToken bool) (protocolAttachment, *attachmentResizeControl, error) {
+func (session *protocolSession) attach(params attachmentRequest) (protocolAttachment, *attachmentResizeControl, error) {
 	info, err := session.server.GetTerminal(params.TerminalID)
 	if err != nil {
 		coreLifecycleTrace(session.server.cfg.logger, "protocol.attach.request",
@@ -486,36 +513,35 @@ func (session *protocolSession) attach(params attachmentRequest, publishToken bo
 		"mode", params.Mode,
 	)
 	coreLifecycleTrace(session.server.cfg.logger, "protocol.attach.request", attrs...)
-	channel, err := session.reserveAttachmentChannel()
-	if err != nil {
-		return protocolAttachment{}, nil, err
-	}
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
-		session.releaseChannel(channel, protocolChannelAttachment)
 		return protocolAttachment{}, nil, fmt.Errorf("allocate attachment token: %w", err)
 	}
-	// 中文说明：opaque token 的 channel 前缀只属于 protocol binding，用于把 Proto resource handle
-	// 重新绑定到现有 stream frame；API Layer、TUI 和第三方客户端不得解析这个内部格式。
-	binary.BigEndian.PutUint16(token[:2], channel)
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
 	attachment := protocolAttachment{
 		SessionID:    session.sessionID,
 		TerminalID:   params.TerminalID,
-		Channel:      channel,
 		Mode:         normalizeAttachMode(params.Mode),
 		ResizePolicy: normalizeAttachResizePolicy(params.ResizePolicy),
 		SurfaceID:    params.SurfaceID,
 		ViewID:       params.ViewID,
 		Token:        token,
 	}
-	replaced := session.replaceProtocolAttachmentsForView(attachment)
-	session.unregisterProtocolAttachments(replaced)
-	session.mu.Lock()
-	session.attachments[channel] = attachment
-	if publishToken {
-		session.attachmentTokens[string(token)] = channel
+	replaced := session.protocolAttachmentsForView(attachment)
+	channel, err := session.reserveAttachmentChannel(replaced...)
+	if err != nil {
+		return protocolAttachment{}, nil, err
 	}
-	session.mu.Unlock()
+	// 中文说明：opaque token 的 channel 前缀只属于 protocol binding，用于把 Proto resource handle
+	// 重新绑定到现有 stream frame；API Layer、TUI 和第三方客户端不得解析这个内部格式。
+	binary.BigEndian.PutUint16(token[:2], channel)
+	attachment.Channel = channel
+	session.replaceProtocolAttachmentsForView(attachment, replaced)
+	session.unregisterProtocolAttachments(replaced)
+	if session.beforeGlobalAttachmentPublish != nil {
+		session.beforeGlobalAttachmentPublish(attachment)
+	}
 	control := session.registerProtocolAttachment(attachment, info.Size)
 	if control != nil && (control.Reason == attachmentResizeReasonOwner || control.Reason == attachmentResizeReasonSizeLocked) {
 		if control.ResizeOwnership != nil {
@@ -542,6 +568,8 @@ func (session *protocolSession) attach(params attachmentRequest, publishToken bo
 }
 
 func (session *protocolSession) publishAttachmentToken(attachment protocolAttachment) error {
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	current, ok := session.attachments[attachment.Channel]
@@ -552,24 +580,32 @@ func (session *protocolSession) publishAttachmentToken(attachment protocolAttach
 	return nil
 }
 
-func (session *protocolSession) replaceProtocolAttachmentsForView(next protocolAttachment) []protocolAttachment {
+func (session *protocolSession) protocolAttachmentsForView(next protocolAttachment) []protocolAttachment {
 	if next.ViewID == "" {
 		return nil
 	}
-	session.mu.Lock()
-	defer session.mu.Unlock()
+	session.mu.RLock()
+	defer session.mu.RUnlock()
 	detached := make([]protocolAttachment, 0)
-	for channel, current := range session.attachments {
+	for _, current := range session.attachments {
 		if !sameProtocolViewAttachment(next, current) {
 			continue
 		}
-		// 中文说明：同一个 client view 重新 attach 时，新 channel 才是输入/resize
-		// 真值；旧 channel 必须从 daemon attachment registry 释放，避免 chrome 计数膨胀。
-		delete(session.attachments, channel)
-		delete(session.attachmentTokens, string(current.Token))
 		detached = append(detached, current)
 	}
 	return detached
+}
+
+func (session *protocolSession) replaceProtocolAttachmentsForView(next protocolAttachment, replaced []protocolAttachment) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	for _, current := range replaced {
+		// 中文说明：同一个 client view 重新 attach 时，新 channel 才是输入/resize
+		// 真值；旧 channel 必须从 daemon attachment registry 释放，避免 chrome 计数膨胀。
+		delete(session.attachments, current.Channel)
+		delete(session.attachmentTokens, string(current.Token))
+	}
+	session.attachments[next.Channel] = next
 }
 
 func sameProtocolViewAttachment(next protocolAttachment, current protocolAttachment) bool {
@@ -583,10 +619,25 @@ func sameProtocolViewAttachment(next protocolAttachment, current protocolAttachm
 }
 
 func (session *protocolSession) detach(params attachmentDetachRequest) {
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
+	session.detachLocked(params, nil)
+}
+
+func (session *protocolSession) detachExact(attachment protocolAttachment) {
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
+	session.detachLocked(attachmentDetachRequest{Channel: attachment.Channel}, attachment.Token)
+}
+
+func (session *protocolSession) detachLocked(params attachmentDetachRequest, exactToken []byte) {
 	session.mu.Lock()
 	var detached []protocolAttachment
 	for channel, attachment := range session.attachments {
 		if !detachMatches(params, channel, attachment) {
+			continue
+		}
+		if exactToken != nil && !bytes.Equal(attachment.Token, exactToken) {
 			continue
 		}
 		delete(session.attachments, channel)
@@ -721,6 +772,8 @@ func (session *protocolSession) resizeControlForRequest(attachment protocolAttac
 	if err != nil {
 		return nil, false, err
 	}
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
 	if policy != "" {
 		attachment.ResizePolicy = normalizeResizePolicy(policy)
 	}
@@ -731,13 +784,16 @@ func (session *protocolSession) resizeControlForRequest(attachment protocolAttac
 		attachment.ViewID = viewID
 	}
 	session.mu.Lock()
-	if current, ok := session.attachments[attachment.Channel]; ok {
-		current.ResizePolicy = attachment.ResizePolicy
-		current.SurfaceID = attachment.SurfaceID
-		current.ViewID = attachment.ViewID
-		attachment = current
-		session.attachments[attachment.Channel] = current
+	current, ok := session.attachments[attachment.Channel]
+	if !ok || !bytes.Equal(current.Token, attachment.Token) {
+		session.mu.Unlock()
+		return nil, false, fmt.Errorf("%w: attachment is no longer active", errProtocolAttachmentMismatch)
 	}
+	current.ResizePolicy = attachment.ResizePolicy
+	current.SurfaceID = attachment.SurfaceID
+	current.ViewID = attachment.ViewID
+	attachment = current
+	session.attachments[attachment.Channel] = current
 	session.mu.Unlock()
 	control := session.updateProtocolAttachmentControl(attachment, info.Size, attachment.ResizePolicy == attachmentResizePolicyOwner)
 	return control, control.CanResize, nil
@@ -766,18 +822,23 @@ func (session *protocolSession) setResizeLock(params attachmentResizeControlRequ
 	if err != nil {
 		return nil, err
 	}
-	return session.setGlobalResizeLock(attachment, info.Size, locked), nil
+	return session.setGlobalResizeLock(attachment, info.Size, locked)
 }
 
-func (session *protocolSession) resizeControlForOwner(attachment protocolAttachment, size Size) *attachmentResizeControl {
+func (session *protocolSession) resizeControlForOwner(attachment protocolAttachment, size Size) (*attachmentResizeControl, error) {
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
 	session.mu.Lock()
-	if current, ok := session.attachments[attachment.Channel]; ok {
-		current.ResizePolicy = attachmentResizePolicyOwner
-		attachment = current
-		session.attachments[attachment.Channel] = current
+	current, ok := session.attachments[attachment.Channel]
+	if !ok || !bytes.Equal(current.Token, attachment.Token) {
+		session.mu.Unlock()
+		return nil, fmt.Errorf("%w: attachment is no longer active", errProtocolAttachmentMismatch)
 	}
+	current.ResizePolicy = attachmentResizePolicyOwner
+	attachment = current
+	session.attachments[attachment.Channel] = current
 	session.mu.Unlock()
-	return session.updateProtocolAttachmentControl(attachment, size, true)
+	return session.updateProtocolAttachmentControl(attachment, size, true), nil
 }
 
 func (session *protocolSession) registerProtocolAttachment(attachment protocolAttachment, size Size) *attachmentResizeControl {
@@ -870,6 +931,8 @@ func (session *protocolSession) unregisterProtocolAttachments(detached []protoco
 }
 
 func (session *protocolSession) releaseProtocolAttachments() {
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
 	session.mu.Lock()
 	detached := make([]protocolAttachment, 0, len(session.attachments))
 	for channel, attachment := range session.attachments {
@@ -895,7 +958,16 @@ func (session *protocolSession) promoteGlobalResizeOwnerLocked(terminalID string
 	}
 }
 
-func (session *protocolSession) setGlobalResizeLock(attachment protocolAttachment, size Size, locked bool) *attachmentResizeControl {
+func (session *protocolSession) setGlobalResizeLock(attachment protocolAttachment, size Size, locked bool) (*attachmentResizeControl, error) {
+	session.attachmentMu.Lock()
+	defer session.attachmentMu.Unlock()
+	session.mu.RLock()
+	current, ok := session.attachments[attachment.Channel]
+	session.mu.RUnlock()
+	if !ok || !bytes.Equal(current.Token, attachment.Token) {
+		return nil, fmt.Errorf("%w: attachment is no longer active", errProtocolAttachmentMismatch)
+	}
+	attachment = current
 	session.server.protocolAttachmentMu.Lock()
 	defer session.server.protocolAttachmentMu.Unlock()
 	terminalID := attachment.TerminalID
@@ -914,7 +986,7 @@ func (session *protocolSession) setGlobalResizeLock(attachment protocolAttachmen
 	}
 	control := session.resizeControlForGlobalAttachmentLocked(attachment, size)
 	session.publishProtocolAttachmentChangedLocked(terminalID, true)
-	return control
+	return control, nil
 }
 
 func (session *protocolSession) resizeControlForGlobalAttachmentLocked(attachment protocolAttachment, size Size) *attachmentResizeControl {
@@ -1052,18 +1124,33 @@ func (session *protocolSession) protocolLimits() ProtocolSessionLimits {
 	return session.server.cfg.protocolLimits.normalized()
 }
 
-func (session *protocolSession) reserveAttachmentChannel() (uint16, error) {
+func (session *protocolSession) reserveAttachmentChannel(replaced ...protocolAttachment) (uint16, error) {
 	session.resourceMu.Lock()
 	defer session.resourceMu.Unlock()
 	limits := session.protocolLimits()
-	if session.attachmentCount >= limits.MaxAttachments || session.totalResourcesLocked() >= limits.MaxResources {
+	replacedCount := 0
+	for _, attachment := range replaced {
+		if session.channelKinds[attachment.Channel] == protocolChannelAttachment {
+			replacedCount++
+		}
+	}
+	nextAttachmentCount := session.attachmentCount - replacedCount + 1
+	nextResourceCount := session.totalResourcesLocked() - replacedCount + 1
+	if nextAttachmentCount > limits.MaxAttachments || nextResourceCount > limits.MaxResources {
 		return 0, fmt.Errorf("%w: attachment limit reached", ErrProtocolResourceExhausted)
 	}
-	channel, err := session.reserveChannelLocked(protocolChannelAttachment)
-	if err == nil {
-		session.attachmentCount++
+	channel, err := session.allocateChannelLocked()
+	if err != nil {
+		return 0, err
 	}
-	return channel, err
+	for _, attachment := range replaced {
+		if session.channelKinds[attachment.Channel] == protocolChannelAttachment {
+			delete(session.channelKinds, attachment.Channel)
+		}
+	}
+	session.channelKinds[channel] = protocolChannelAttachment
+	session.attachmentCount = nextAttachmentCount
+	return channel, nil
 }
 
 func (session *protocolSession) reserveFileChannel() (uint16, error) {
@@ -1073,11 +1160,13 @@ func (session *protocolSession) reserveFileChannel() (uint16, error) {
 	if session.fileTransferCount >= limits.MaxFileTransfers || session.totalResourcesLocked() >= limits.MaxResources {
 		return 0, fmt.Errorf("%w: file transfer limit reached", ErrProtocolResourceExhausted)
 	}
-	channel, err := session.reserveChannelLocked(protocolChannelFileTransfer)
-	if err == nil {
-		session.fileTransferCount++
+	channel, err := session.allocateChannelLocked()
+	if err != nil {
+		return 0, err
 	}
-	return channel, err
+	session.channelKinds[channel] = protocolChannelFileTransfer
+	session.fileTransferCount++
+	return channel, nil
 }
 
 func (session *protocolSession) reserveEventSubscription() error {
@@ -1091,22 +1180,17 @@ func (session *protocolSession) reserveEventSubscription() error {
 	return nil
 }
 
-func (session *protocolSession) reserveChannelLocked(kind protocolChannelKind) (uint16, error) {
+const maxProtocolChannelID uint32 = 1<<16 - 1
+
+func (session *protocolSession) allocateChannelLocked() (uint16, error) {
 	if session.channelKinds == nil {
 		session.channelKinds = make(map[uint16]protocolChannelKind)
 	}
-	for range int(^uint16(0)) {
-		session.nextChannel++
-		if session.nextChannel == 0 {
-			session.nextChannel = 1
-		}
-		if _, exists := session.channelKinds[session.nextChannel]; exists {
-			continue
-		}
-		session.channelKinds[session.nextChannel] = kind
-		return session.nextChannel, nil
+	if session.nextChannel >= maxProtocolChannelID {
+		return 0, fmt.Errorf("%w: stream channel IDs are exhausted", ErrProtocolResourceExhausted)
 	}
-	return 0, fmt.Errorf("%w: stream channel IDs are exhausted", ErrProtocolResourceExhausted)
+	session.nextChannel++
+	return uint16(session.nextChannel), nil
 }
 
 func (session *protocolSession) releaseChannel(channel uint16, kind protocolChannelKind) {
@@ -1151,23 +1235,6 @@ func normalizeAttachMode(mode string) string {
 
 func tokenPartHasNumericPrefix(part string, prefix string) bool {
 	return strings.HasPrefix(part, prefix) && len(part) > len(prefix) && part[len(prefix)] >= '0' && part[len(prefix)] <= '9'
-}
-
-func errorCode(err error) int {
-	switch {
-	case errors.Is(err, ErrTerminalNotFound):
-		return protocolErrorNotFound
-	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict), errors.Is(err, ErrDuplicateTerminal), errors.Is(err, errProtocolAttachmentMismatch):
-		return protocolErrorBadRequest
-	case errors.Is(err, ErrStorageEntryNotFound):
-		return protocolErrorNotFound
-	case errors.Is(err, ErrRemoteServiceUnavailable), errors.Is(err, ErrClientAccessServiceUnavailable), errors.Is(err, ErrHistoryNotRebuilt), errors.Is(err, ErrHistoryDisabled):
-		return protocolErrorUnavailable
-	case errors.Is(err, ErrProtocolResourceExhausted):
-		return protocolErrorExhausted
-	default:
-		return protocolErrorInternal
-	}
 }
 
 func fileProtocolErrorCode(err error) int {

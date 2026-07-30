@@ -257,7 +257,7 @@ func (transaction *protocolAttachTransaction) Rollback(context.Context) error {
 	if transaction == nil || transaction.committed {
 		return nil
 	}
-	transaction.session.detach(attachmentDetachRequest{Channel: transaction.attachment.Channel})
+	transaction.session.detachExact(transaction.attachment)
 	return nil
 }
 
@@ -266,7 +266,7 @@ func (session *protocolSession) ApplicationTerminalAttach(_ context.Context, req
 	attachment, control, err := session.attach(attachmentRequest{
 		TerminalID: request.TerminalID, Mode: string(request.Mode), ResizePolicy: string(request.ResizePolicy),
 		SurfaceID: request.SurfaceID, ViewID: request.ViewID,
-	}, false)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +317,10 @@ func (session *protocolSession) ApplicationTerminalResize(ctx context.Context, t
 		}
 		resized = true
 		if policy == TerminalResizePolicyOwner {
-			control = session.resizeControlForOwner(attachment, requested)
+			control, err = session.resizeControlForOwner(attachment, requested)
+			if err != nil {
+				return TerminalResizeResult{}, err
+			}
 		}
 	}
 	info, err := session.server.GetTerminal(attachment.TerminalID)
