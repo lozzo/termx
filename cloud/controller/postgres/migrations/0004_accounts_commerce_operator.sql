@@ -147,7 +147,6 @@ CREATE TABLE usage_periods (
     committed_egress_bytes bigint NOT NULL DEFAULT 0 CHECK (committed_egress_bytes >= 0),
     recovery_bytes bigint NOT NULL DEFAULT 0 CHECK (recovery_bytes >= 0),
     held_bytes bigint NOT NULL DEFAULT 0 CHECK (held_bytes >= 0),
-    held_sessions bigint NOT NULL DEFAULT 0 CHECK (held_sessions >= 0),
     policy_digest bytea NOT NULL CHECK (octet_length(policy_digest) = 32),
     revision bigint NOT NULL CHECK (revision > 0),
     updated_at timestamptz NOT NULL,

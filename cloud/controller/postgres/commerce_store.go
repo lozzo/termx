@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -95,6 +96,9 @@ func (database *Database) PublishPlanVersion(ctx context.Context, request *cloud
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockCommerceAccounts(ctx, tx, actorID); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx, `UPDATE plans SET state='retired',revision=revision+1 WHERE plan_id=$1 AND state='published' AND version<>$2`, request.GetPlanId(), request.GetVersion()); err != nil {
 		return nil, err
 	}
@@ -185,6 +189,19 @@ func (database *Database) ApplyPaymentEvent(ctx context.Context, request *cloudv
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var targetAccountID string
+	if err := tx.QueryRow(ctx, `SELECT account_id::text FROM orders WHERE order_id=$1`, request.GetOrderId()).Scan(&targetAccountID); err != nil {
+		return nil, commerce.ErrInvalidTransition
+	}
+	if err := lockCommerceAccounts(ctx, tx, targetAccountID, actorID); err != nil {
+		return nil, err
+	}
+	if paymentEventMutatesSubscription(request.GetEventType()) {
+		var subscriptionID string
+		if err := tx.QueryRow(ctx, `SELECT subscription_id::text FROM subscriptions WHERE account_id=$1 FOR UPDATE`, targetAccountID).Scan(&subscriptionID); err != nil {
+			return nil, err
+		}
+	}
 	body, err := (proto.MarshalOptions{Deterministic: true}).Marshal(request)
 	if err != nil {
 		return nil, err
@@ -262,6 +279,9 @@ func (database *Database) TransitionSubscription(ctx context.Context, request *c
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockCommerceAccounts(ctx, tx, request.GetAccountId(), actorID); err != nil {
+		return nil, err
+	}
 	current, err := scanSubscription(tx.QueryRow(ctx, subscriptionSelect+` WHERE s.account_id=$1 FOR UPDATE`, request.GetAccountId()))
 	if err != nil || current.GetRevision() != request.GetExpectedRevision() {
 		return nil, commerce.ErrCommerceConflict
@@ -550,6 +570,39 @@ func insertOperatorAudit(ctx context.Context, tx pgx.Tx, actorID, action, resour
 	_, err := tx.Exec(ctx, `INSERT INTO operator_audit_events(audit_id,actor_account_id,action,resource_type,resource_id,reason,result,correlation_id,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, uuid.NewString(), actorID, action, resourceType, resourceID, reason, result, uuid.NewString(), now)
 	return err
 }
+
+func lockCommerceAccounts(ctx context.Context, tx pgx.Tx, accountIDs ...string) error {
+	unique := make(map[string]struct{}, len(accountIDs))
+	ordered := make([]string, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		parsed, err := uuid.Parse(strings.TrimSpace(accountID))
+		if err != nil {
+			return err
+		}
+		accountID = parsed.String()
+		if _, found := unique[accountID]; found {
+			continue
+		}
+		unique[accountID] = struct{}{}
+		ordered = append(ordered, accountID)
+	}
+	slices.Sort(ordered)
+	for _, accountID := range ordered {
+		var locked string
+		if err := tx.QueryRow(ctx, `SELECT account_id::text FROM accounts WHERE account_id=$1 FOR UPDATE`, accountID).Scan(&locked); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func paymentEventMutatesSubscription(eventType cloudv1.PaymentEventType) bool {
+	return eventType == cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED ||
+		eventType == cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED ||
+		eventType == cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_REVOKED ||
+		eventType == cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_CHARGEBACK
+}
+
 func equalDigest(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false

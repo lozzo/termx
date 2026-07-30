@@ -10,7 +10,7 @@
 - 已授权 daemon 和客户端在 Controller 不可达时，仍能连接原 Edge。
 - pairing 由 daemon 提供自己的 Edge locator 和通信凭据，客户端直接访问 Edge。
 - 客户端只在没有可信 locator、locator 明确失效或 Edge 传输不可达时回源 Controller。
-- Relay 的实时连接状态和短租约由 Edge 处理，Controller 不进入单次 session 热路径。
+- Relay 商业授权由 Controller durable reservation 事务提交，Edge 只执行已提交 grant 并记录 durable settlement。
 - 开发期协议一次性升级，不保留旧 RPC、消息、记录兼容代码或旧测试。
 
 ## 2. 当前结果
@@ -23,8 +23,8 @@
 | pairing offer 直连 Edge | 已实现 | offer 只带 Edge 入口和 CA 指纹；Edge 向在线 daemon 实时预检 |
 | 已授权客户端 cache-first | 已实现 | credential locator 命中时 Controller RPC 为零 |
 | 精确 Controller fallback | 已实现 | 仅本地 typed transport error 或明确位置不存在触发 |
-| Relay 创建和续租 Edge-local | 已实现 | 每次租约最多五分钟，不能扩大 binding 委托 |
-| Controller 离线 usage | 已实现 | Edge durable outbox，恢复后幂等补报 |
+| Relay 创建和续租 Controller-authoritative | 已实现 | reserve/renew 必须经 ready Controller generation；短 TTL 不跨 subscription period |
+| Relay settlement durable | 已实现 | Edge durable journal，Controller 恢复后按 reservation ID 幂等重放 |
 | binding 覆盖 locator 完整性 | 已实现 | Controller 签名 claims 内含 locator SHA-256 |
 | 私有 CA 隔离 | 已实现 | locator CA 使用独立 root pool，不继承系统根 |
 | 旧开发协议删除 | 已实现 | proto、服务方法、生成代码、实现和旧测试一并删除 |
@@ -138,25 +138,25 @@ credential -> cached route -> Edge TLS/HTTP2 -> ClientGateway
 
 ## 9. Relay 与“为什么续租”
 
-Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“仍有权消耗 Relay”。短租约用于约束：
+Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“仍有权消耗 Relay”。Controller 提交的短时 reservation authority 用于约束：
 
 - 订阅和账号策略的最大陈旧窗口。
-- 最大字节数、速率和并发 allocation。
+- 最大字节数、速率和每个 ClientGateway session 占用的商业并发 slot。
 - 一个凭据只属于指定 account、Edge、daemon、client 和 session。
 - 异常断连后资源最迟何时自动回收。
 
-当前实现中，Edge 从 Controller 签名的 daemon binding 委托收缩生成五分钟租约。续租复用 lease ID，不访问 Controller，也不触发 ICE restart。
+当前实现中，Edge 先把 REQUESTED 写入 bbolt，再经现有 Controller 双向 stream reserve。Controller 在同一 PostgreSQL 事务中锁定 policy、usage period 和 reservation，提交后 grant 才是唯一授权点。Edge 必须在 ICE credential 离开进程前把 grant 持久化为 EXPOSED。
 
-主动关闭 session 会立即关闭对应 allocation 并撤销租约，不等待五分钟。非正常断开则由 TURN 生命周期和租约到期共同兜底。binding 到期后不能续出更晚的租约。
+续租沿用 reservation ID 和严格递增 sequence，必须连接 ready Controller；它只延长 `authorized_until`，不增加 held bytes 或 slot。主动关闭先停止 admission、排空并关闭同组 allocation，再写一个 aggregate settlement。崩溃后的 EXPOSED 记录重放确定性 RECOVERY_MAX；physical allocation 不单独结算，也不释放商业 slot。
 
 ## 10. Controller 离线矩阵
 
 | 场景 | 能否工作 | 原因 |
 | --- | --- | --- |
 | 已连接 P2P DataChannel | 是 | 数据不经过 Edge/Controller |
-| 已连接 Relay session | 是，至当前有效租约和可续委托边界 | Edge 本地转发和续租 |
+| 已连接 Relay session | 是，至当前 `authorized_until` | Edge 可继续执行已提交 grant，但不能离线续租或新增 allocation |
 | 已授权客户端新建 P2P | 是 | credential 有 locator 与 route grant |
-| 已授权客户端新建 Relay | 是 | Edge 使用当前 daemon binding 委托 |
+| 已授权客户端新建 Relay | 否 | AUTO 退回纯 P2P；RELAY_ONLY 明确返回 unavailable，不产生新 reservation 或 allocation |
 | 新 pairing | 是 | offer 有 Edge 入口和 CA pin，Edge 向在线 daemon 实时预检 |
 | daemon 重连同一 Edge | 是，在 KeyBundle TTL 内 | record 和 Edge 持久 key bundle 足够 |
 | 无 locator 的客户端 | 否 | 没有可信入口，只能 Directory fallback |
@@ -182,7 +182,6 @@ Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“
 | 优先级 | 项目 | 风险/收益 |
 | --- | --- | --- |
 | P0 | Edge 先发单次 nonce，Agent/Client proof 覆盖完整安全相关 Hello | 当前 proof 的 session ID 由发起方选择，捕获包的重放保护不够强 |
-| P0 | 把 Relay entitlement 从长 binding 拆为有硬到期的 Edge policy snapshot | Controller 离线时订阅撤销的收敛窗口目前等于 binding 剩余时间 |
 | P1 | 签名 locator 增加 issued/refresh/expiry 和 revision 防回滚 | 当前签名覆盖完整 locator，但没有独立刷新窗口 |
 | P1 | 结构化 Cloud error detail | 当前已避免宽泛 `Unavailable` fallback，但 `NotFound` 仍不够细 |
 | P1 | Edge HTTP/2 connection pool | 当前每个 signaling session 建一个 ClientConn，增加 TLS RTT |

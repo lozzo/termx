@@ -308,6 +308,62 @@ func TestRestartRequestedReplayNeverExposesAuthorityAndSettlesZero(t *testing.T)
 	}
 }
 
+func TestReplayContinuesAfterDefinitiveRequestedRejection(t *testing.T) {
+	now := time.Date(2026, 7, 31, 2, 3, 4, 0, time.UTC)
+	runtime := newReservationRuntime(t, now)
+	rejected := &cloudv1.RelayReserveRequest{
+		ReservationId: "00000000-0000-4000-8000-000000000211",
+		AccountId:     "00000000-0000-4000-8000-000000000212",
+		DaemonId:      "00000000-0000-4000-8000-000000000213",
+		ClientId:      "client-rejected",
+		SessionId:     "00000000-0000-4000-8000-000000000214",
+		ObservedAt:    timestamppb.New(now),
+	}
+	rejected.RequestDigest, _ = relayquota.ReserveRequestDigest(rejected)
+	if err := runtime.journalCreateRequested(rejected); err != nil {
+		t.Fatal(err)
+	}
+
+	settledRequest := proto.Clone(rejected).(*cloudv1.RelayReserveRequest)
+	settledRequest.ReservationId = "00000000-0000-4000-8000-000000000221"
+	settledRequest.SessionId = "00000000-0000-4000-8000-000000000224"
+	settledRequest.ClientId = "client-settled"
+	settledRequest.RequestDigest, _ = relayquota.ReserveRequestDigest(settledRequest)
+	if err := runtime.journalCreateRequested(settledRequest); err != nil {
+		t.Fatal(err)
+	}
+	grant := runtimeTestGrant(t, settledRequest.GetReservationId(), settledRequest.GetSessionId(), now, 0)
+	if err := runtime.journalApplyGrant(grant); err != nil {
+		t.Fatal(err)
+	}
+	settlement := exactZeroSettlement(grant, now.Add(time.Second))
+	if err := runtime.journalPutSettlement(settlement); err != nil {
+		t.Fatal(err)
+	}
+
+	settlements := 0
+	session := newFakeRelaySession()
+	session.query = func(query *cloudv1.RelayQueryRequest) (*cloudv1.RelayQueryResponse, error) {
+		return &cloudv1.RelayQueryResponse{ReservationId: query.GetReservationId(), Code: cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED}, nil
+	}
+	session.reserve = func(request *cloudv1.RelayReserveRequest) (*cloudv1.RelayReserveResponse, error) {
+		return &cloudv1.RelayReserveResponse{ReservationId: request.GetReservationId(), RequestDigest: request.GetRequestDigest(), Code: cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_CONFLICT, ErrorMessage: "definitive conflict"}, nil
+	}
+	session.settle = func(value *cloudv1.RelaySettlement) (*cloudv1.RelaySettlementAck, error) {
+		settlements++
+		return settlementAck(value, grant, now.Add(2*time.Second)), nil
+	}
+	runtime.replayRelayJournal(session)
+	if settlements != 1 {
+		t.Fatalf("later settlement deliveries=%d want=1", settlements)
+	}
+	for _, reservationID := range []string{rejected.GetReservationId(), settledRequest.GetReservationId()} {
+		if _, found, err := runtime.journalRecord(reservationID); err != nil || found {
+			t.Fatalf("reservation %s remained after replay: found=%v err=%v", reservationID, found, err)
+		}
+	}
+}
+
 type fakeRelaySession struct {
 	done    chan struct{}
 	reserve func(*cloudv1.RelayReserveRequest) (*cloudv1.RelayReserveResponse, error)

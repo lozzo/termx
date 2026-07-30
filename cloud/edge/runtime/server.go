@@ -80,6 +80,18 @@ type relayControlSession interface {
 	QueryRelay(context.Context, *cloudv1.RelayQueryRequest) (*cloudv1.RelayQueryResponse, error)
 }
 
+var errRelayReplayConsumed = errors.New("Relay replay record was consumed")
+
+type relayReplayConsumedError struct{ message string }
+
+func (err relayReplayConsumedError) Error() string {
+	if err.message == "" {
+		return "Controller rejected Relay reservation"
+	}
+	return err.message
+}
+func (relayReplayConsumedError) Unwrap() error { return errRelayReplayConsumed }
+
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
 	config              Config
@@ -1005,6 +1017,9 @@ func (runtime *Runtime) replayRelayRecord(ctx context.Context, session relayCont
 		if err != nil {
 			return err
 		}
+		if query == nil || query.GetReservationId() != reservationID {
+			return errors.New("Controller returned a Relay query replay with invalid identity")
+		}
 		if query.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED {
 			response, reserveErr := session.ReserveRelay(ctx, record.GetReserveRequest())
 			if reserveErr != nil {
@@ -1012,9 +1027,15 @@ func (runtime *Runtime) replayRelayRecord(ctx context.Context, session relayCont
 			}
 			grant, err = runtime.acceptReserveResponse(record.GetReserveRequest(), response)
 			if err != nil {
+				if errors.Is(err, errRelayReplayConsumed) {
+					return nil
+				}
 				return err
 			}
 		} else if query.GetTerminal() != nil && query.GetGrant() != nil {
+			if query.GetGrant().GetReservationId() != reservationID || query.GetTerminal().GetReservationId() != reservationID {
+				return errors.New("Controller returned a terminal Relay query replay with invalid identity")
+			}
 			if err := runtime.journalApplyGrant(query.GetGrant()); err != nil {
 				return err
 			}
@@ -1090,8 +1111,10 @@ func (runtime *Runtime) acceptReserveResponse(request *cloudv1.RelayReserveReque
 		return nil, errors.New("Controller Relay reserve response identity is invalid")
 	}
 	if response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED || response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_CONFLICT || response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_UNAVAILABLE {
-		_ = runtime.journalDropRequested(request.GetReservationId(), request.GetRequestDigest())
-		return nil, errors.New(response.GetErrorMessage())
+		if err := runtime.journalDropRequested(request.GetReservationId(), request.GetRequestDigest()); err != nil {
+			return nil, err
+		}
+		return nil, relayReplayConsumedError{message: response.GetErrorMessage()}
 	}
 	if response.GetTerminal() != nil {
 		if response.GetGrant() == nil {
@@ -1103,7 +1126,7 @@ func (runtime *Runtime) acceptReserveResponse(request *cloudv1.RelayReserveReque
 		if err := runtime.journalAck(response.GetTerminal()); err != nil {
 			return nil, err
 		}
-		return nil, errors.New("Relay reservation is already terminal")
+		return nil, relayReplayConsumedError{message: "Relay reservation is already terminal"}
 	}
 	if response.GetGrant() == nil || (response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_APPLIED && response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REPLAY) {
 		return nil, errors.New("Controller Relay reserve response omitted a committed grant")

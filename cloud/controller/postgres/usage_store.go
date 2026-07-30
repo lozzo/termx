@@ -40,7 +40,6 @@ type relayPolicyRows struct {
 
 type usagePeriodRow struct {
 	quota, ingress, egress, recovery, held int64
-	heldSessions                           int64
 }
 
 type relayReservationRow struct {
@@ -122,17 +121,13 @@ func (database *Database) reserveRelayAt(ctx context.Context, edgeID string, req
 	if err := ensureUsagePeriod(ctx, tx, policyRows, policyDigest, now); err != nil {
 		return nil, err
 	}
-	usage, err := lockUsagePeriod(ctx, tx, policyRows.accountID, policyRows.subscriptionID, policyRows.periodStart, policyRows.periodEnd)
-	if err != nil {
+	if err := recoverExpiredAccountReservations(ctx, tx, policyRows, now); err != nil {
 		return nil, err
 	}
 	if err := updateUsagePolicy(ctx, tx, policyRows, policyDigest, now); err != nil {
 		return nil, err
 	}
-	if err := recoverExpiredReservations(ctx, tx, policyRows, now); err != nil {
-		return nil, err
-	}
-	usage, err = lockUsagePeriod(ctx, tx, policyRows.accountID, policyRows.subscriptionID, policyRows.periodStart, policyRows.periodEnd)
+	usage, err := lockUsagePeriod(ctx, tx, policyRows.accountID, policyRows.subscriptionID, policyRows.periodStart, policyRows.periodEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +141,13 @@ func (database *Database) reserveRelayAt(ctx context.Context, edgeID string, req
 	}
 	if hold < policyRows.maxBytesPerSession {
 		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "remaining Relay quota cannot fund a complete session reservation"), nil
+	}
+	activeReservations, err := activeAccountReservations(ctx, tx, policyRows.accountID, now)
+	if err != nil {
+		return nil, err
+	}
+	if activeReservations >= int64(policyRows.maxConcurrency) {
+		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay concurrency is exhausted"), nil
 	}
 	authorizedUntil := now.Add(relayAuthorizationTTL)
 	if authorizedUntil.After(policyRows.periodEnd) {
@@ -175,16 +177,15 @@ ON CONFLICT DO NOTHING RETURNING reservation_id::text`, request.GetReservationId
 		}
 		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_CONFLICT, "session already has another Relay reservation"), nil
 	}
-	result, err := tx.Exec(ctx, `UPDATE usage_periods SET held_bytes=held_bytes+$1,held_sessions=held_sessions+1,revision=revision+1,updated_at=$2
+	result, err := tx.Exec(ctx, `UPDATE usage_periods SET held_bytes=held_bytes+$1,revision=revision+1,updated_at=$2
 WHERE account_id=$3 AND subscription_id=$4 AND period_start=$5 AND period_end=$6
-AND held_sessions<$7
 AND committed_ingress_bytes::numeric+committed_egress_bytes::numeric+recovery_bytes::numeric+held_bytes::numeric+$1::numeric<=quota_bytes::numeric`,
-		hold, now, policyRows.accountID, policyRows.subscriptionID, policyRows.periodStart, policyRows.periodEnd, policyRows.maxConcurrency)
+		hold, now, policyRows.accountID, policyRows.subscriptionID, policyRows.periodStart, policyRows.periodEnd)
 	if err != nil {
 		return nil, err
 	}
 	if result.RowsAffected() != 1 {
-		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay concurrency or quota is exhausted"), nil
+		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay quota is exhausted"), nil
 	}
 	reservation, _, err := findReservation(ctx, tx, request.GetReservationId(), false)
 	if err != nil {
@@ -328,8 +329,8 @@ func (database *Database) settleRelayAt(ctx context.Context, edgeID string, sett
 	}
 	result, err := tx.Exec(ctx, `UPDATE usage_periods SET
 committed_ingress_bytes=committed_ingress_bytes+$1,committed_egress_bytes=committed_egress_bytes+$2,recovery_bytes=recovery_bytes+$3,
-held_bytes=held_bytes-$4,held_sessions=held_sessions-1,revision=revision+1,updated_at=$5
-WHERE account_id=$6 AND subscription_id=$7 AND period_start=$8 AND period_end=$9 AND held_bytes>=$4 AND held_sessions>0
+held_bytes=held_bytes-$4,revision=revision+1,updated_at=$5
+WHERE account_id=$6 AND subscription_id=$7 AND period_start=$8 AND period_end=$9 AND held_bytes>=$4
 AND committed_ingress_bytes::numeric+committed_egress_bytes::numeric+recovery_bytes::numeric+$1::numeric+$2::numeric+$3::numeric<=9223372036854775807`,
 		ingress, egress, recovery, reservation.reservedBytes, now, reservation.accountID, reservation.subscriptionID, reservation.periodStart, reservation.periodEnd)
 	if err != nil {
@@ -506,27 +507,41 @@ func updateUsagePolicy(ctx context.Context, tx pgx.Tx, rows relayPolicyRows, dig
 
 func lockUsagePeriod(ctx context.Context, tx pgx.Tx, accountID, subscriptionID string, start, end time.Time) (usagePeriodRow, error) {
 	var row usagePeriodRow
-	err := tx.QueryRow(ctx, `SELECT quota_bytes,committed_ingress_bytes,committed_egress_bytes,recovery_bytes,held_bytes,held_sessions FROM usage_periods WHERE account_id=$1 AND subscription_id=$2 AND period_start=$3 AND period_end=$4 FOR UPDATE`,
-		accountID, subscriptionID, start, end).Scan(&row.quota, &row.ingress, &row.egress, &row.recovery, &row.held, &row.heldSessions)
+	err := tx.QueryRow(ctx, `SELECT quota_bytes,committed_ingress_bytes,committed_egress_bytes,recovery_bytes,held_bytes FROM usage_periods WHERE account_id=$1 AND subscription_id=$2 AND period_start=$3 AND period_end=$4 FOR UPDATE`,
+		accountID, subscriptionID, start, end).Scan(&row.quota, &row.ingress, &row.egress, &row.recovery, &row.held)
 	return row, err
 }
 
-func recoverExpiredReservations(ctx context.Context, tx pgx.Tx, rows relayPolicyRows, now time.Time) error {
-	reservations, err := lockedExpiredReservations(ctx, tx, rows, now)
+func recoverExpiredAccountReservations(ctx context.Context, tx pgx.Tx, policy relayPolicyRows, now time.Time) error {
+	reservations, err := expiredAccountReservations(ctx, tx, policy.accountID, now)
 	if err != nil {
 		return err
 	}
+	var lockedSubscription string
+	var lockedStart, lockedEnd time.Time
 	for _, reservation := range reservations {
-		if err := recoverLockedReservation(ctx, tx, reservation, now); err != nil {
+		if reservation.subscriptionID != lockedSubscription || !reservation.periodStart.Equal(lockedStart) || !reservation.periodEnd.Equal(lockedEnd) {
+			if _, err := lockUsagePeriod(ctx, tx, reservation.accountID, reservation.subscriptionID, reservation.periodStart, reservation.periodEnd); err != nil {
+				return err
+			}
+			lockedSubscription, lockedStart, lockedEnd = reservation.subscriptionID, reservation.periodStart, reservation.periodEnd
+		}
+		locked, found, err := findReservation(ctx, tx, reservation.reservationID, true)
+		if err != nil {
+			return err
+		}
+		if !found || locked.accountID != policy.accountID || locked.state != "held" || now.Before(locked.authorizedUntil) {
+			continue
+		}
+		if err := recoverLockedReservation(ctx, tx, locked, now); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func lockedExpiredReservations(ctx context.Context, tx pgx.Tx, policy relayPolicyRows, now time.Time) ([]relayReservationRow, error) {
-	rows, err := tx.Query(ctx, reservationSelect+` WHERE account_id=$1 AND subscription_id=$2 AND period_start=$3 AND period_end=$4 AND state='held' AND authorized_until<=$5 ORDER BY reservation_id FOR UPDATE`,
-		policy.accountID, policy.subscriptionID, policy.periodStart, policy.periodEnd, now)
+func expiredAccountReservations(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) ([]relayReservationRow, error) {
+	rows, err := tx.Query(ctx, reservationSelect+` WHERE account_id=$1 AND state='held' AND authorized_until<=$2 ORDER BY subscription_id,period_start,period_end,reservation_id`, accountID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -542,9 +557,15 @@ func lockedExpiredReservations(ctx context.Context, tx pgx.Tx, policy relayPolic
 	return result, rows.Err()
 }
 
+func activeAccountReservations(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (int64, error) {
+	var count int64
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM relay_reservations WHERE account_id=$1 AND state='held' AND authorized_until>$2`, accountID, now).Scan(&count)
+	return count, err
+}
+
 func recoverLockedReservation(ctx context.Context, tx pgx.Tx, reservation relayReservationRow, now time.Time) error {
-	result, err := tx.Exec(ctx, `UPDATE usage_periods SET recovery_bytes=recovery_bytes+$1,held_bytes=held_bytes-$1,held_sessions=held_sessions-1,revision=revision+1,updated_at=$2
-WHERE account_id=$3 AND subscription_id=$4 AND period_start=$5 AND period_end=$6 AND held_bytes>=$1 AND held_sessions>0
+	result, err := tx.Exec(ctx, `UPDATE usage_periods SET recovery_bytes=recovery_bytes+$1,held_bytes=held_bytes-$1,revision=revision+1,updated_at=$2
+WHERE account_id=$3 AND subscription_id=$4 AND period_start=$5 AND period_end=$6 AND held_bytes>=$1
 AND committed_ingress_bytes::numeric+committed_egress_bytes::numeric+recovery_bytes::numeric+$1::numeric<=9223372036854775807`,
 		reservation.reservedBytes, now, reservation.accountID, reservation.subscriptionID, reservation.periodStart, reservation.periodEnd)
 	if err != nil {
