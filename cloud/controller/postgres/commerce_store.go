@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/anytty/anytty/cloud/controller/commerce"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -413,8 +413,8 @@ func effectiveEntitlement(ctx context.Context, q queryer, accountID string, now 
 	if err != nil {
 		return nil, err
 	}
-	used := uint64(0)
-	_ = q.QueryRow(ctx, `SELECT coalesce(relay_ingress_bytes+relay_egress_bytes,0) FROM usage_periods WHERE account_id=$1 AND period_start<=$2 AND period_end>$2 ORDER BY period_start DESC LIMIT 1`, accountID, now).Scan(&used)
+	used, held := uint64(0), uint64(0)
+	_ = q.QueryRow(ctx, `SELECT committed_ingress_bytes+committed_egress_bytes+recovery_bytes,held_bytes FROM usage_periods WHERE account_id=$1 AND subscription_id=$2 AND period_start=$3 AND period_end=$4`, accountID, subscription.GetSubscriptionId(), subscription.GetPeriodStart().AsTime(), subscription.GetPeriodEnd().AsTime()).Scan(&used, &held)
 	state := cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE
 	if accountState != "active" || subscription.GetState() == cloudv1.SubscriptionState_SUBSCRIPTION_STATE_SUSPENDED {
 		state = cloudv1.EntitlementState_ENTITLEMENT_STATE_SUSPENDED
@@ -424,8 +424,8 @@ func effectiveEntitlement(ctx context.Context, q queryer, accountID string, now 
 	}
 	quota := plan.GetCapability().GetRelayMaxBytesPerPeriod()
 	remaining := uint64(0)
-	if used < quota {
-		remaining = quota - used
+	if used < quota && held < quota-used {
+		remaining = quota - used - held
 	}
 	return &cloudv1.EffectiveEntitlement{AccountId: accountID, State: state, PlanId: plan.GetPlanId(), PlanVersion: plan.GetVersion(), SubscriptionId: subscription.GetSubscriptionId(), Capability: proto.Clone(plan.GetCapability()).(*cloudv1.CloudCapability), RelayUsedBytes: used, RelayRemainingBytes: remaining, EffectiveFrom: subscription.GetPeriodStart(), EffectiveUntil: subscription.GetPeriodEnd(), ComputedAt: timestamppb.New(now)}, nil
 }
@@ -465,8 +465,8 @@ func (database *Database) listPaymentAttempts(ctx context.Context, suffix string
 
 func (database *Database) usagePeriod(ctx context.Context, accountID string, subscription *cloudv1.SubscriptionProjection, quota uint64, now time.Time) (*cloudv1.UsagePeriodProjection, error) {
 	var start, end time.Time
-	var ingress, egress, revision uint64
-	err := database.pool.QueryRow(ctx, `SELECT period_start,period_end,relay_ingress_bytes,relay_egress_bytes,revision FROM usage_periods WHERE account_id=$1 AND period_start<=$2 AND period_end>$2 ORDER BY period_start DESC LIMIT 1`, accountID, now).Scan(&start, &end, &ingress, &egress, &revision)
+	var ingress, egress, recovery, held, revision uint64
+	err := database.pool.QueryRow(ctx, `SELECT period_start,period_end,committed_ingress_bytes,committed_egress_bytes,recovery_bytes,held_bytes,revision FROM usage_periods WHERE account_id=$1 AND subscription_id=$2 AND period_start=$3 AND period_end=$4`, accountID, subscription.GetSubscriptionId(), subscription.GetPeriodStart().AsTime(), subscription.GetPeriodEnd().AsTime()).Scan(&start, &end, &ingress, &egress, &recovery, &held, &revision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		start = subscription.GetPeriodStart().AsTime()
 		end = subscription.GetPeriodEnd().AsTime()
@@ -475,10 +475,10 @@ func (database *Database) usagePeriod(ctx context.Context, accountID string, sub
 	if err != nil {
 		return nil, err
 	}
-	total := ingress + egress
+	total := ingress + egress + recovery
 	remaining := uint64(0)
-	if total < quota {
-		remaining = quota - total
+	if total < quota && held < quota-total {
+		remaining = quota - total - held
 	}
 	return &cloudv1.UsagePeriodProjection{AccountId: accountID, PeriodStart: timestamppb.New(start), PeriodEnd: timestamppb.New(end), RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: total, QuotaBytes: quota, RemainingBytes: remaining, Revision: revision}, nil
 }

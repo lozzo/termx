@@ -16,7 +16,7 @@ enum EdgeCapability {
   EDGE_CAPABILITY_UNSPECIFIED = 0;
   EDGE_CAPABILITY_CONTROL_STREAM = 1;
   EDGE_CAPABILITY_RELAY = 2;
-  EDGE_CAPABILITY_USAGE_OUTBOX = 3;
+  EDGE_CAPABILITY_RESERVATION_JOURNAL = 3;
   EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
 }
 
@@ -51,7 +51,7 @@ message SnapshotChunk {
   uint32 chunk_index = 2;
   repeated AgentPresence agents = 3;
   repeated ClientSessionSummary sessions = 4;
-  repeated RelayAllocationSummary allocations = 5;
+  reserved 5;
 }
 
 // SnapshotEnd 携带完整投影的确定性摘要，Controller 校验后才原子发布。
@@ -147,9 +147,12 @@ message EdgeEvent {
     RuntimeDelta runtime_delta = 24;
     EdgeHeartbeat heartbeat = 25;
     ConfigApplied config_applied = 26;
-    UsageBatch usage_batch = 28;
+    RelayReserveRequest relay_reserve = 28;
     EdgeCommandResult command_result = 29;
     CertificateApplied certificate_applied = 30;
+    RelayRenewRequest relay_renew = 31;
+    RelaySettlement relay_settle = 32;
+    RelayQueryRequest relay_query = 33;
   }
 }
 
@@ -169,10 +172,13 @@ message ControllerCommand {
     ResyncRequired resync_required = 22;
     SignedEdgeDesiredConfig desired_config = 23;
     KeyBundle binding_key_bundle = 24;
-    UsageAck usage_ack = 25;
+    RelayReserveResponse relay_reserve = 25;
     CloseDaemonConnection close_daemon = 26;
     CloseClientSession close_session = 27;
     EdgeCertificateBundle certificate_bundle = 28;
+    RelayRenewResponse relay_renew = 29;
+    RelaySettlementAck relay_settle = 30;
+    RelayQueryResponse relay_query = 31;
   }
 }
 

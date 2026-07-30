@@ -14,6 +14,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/commerce"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	"github.com/anytty/anytty/cloud/controller/postgres"
+	"github.com/anytty/anytty/cloud/relayquota"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -148,14 +149,22 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	usageBytes := uint64(360)
-	usageEvent := &cloudv1.UsageEvent{
-		SchemaVersion: 1, EventId: uuid.NewString(), EdgeId: edgeID, LeaseId: uuid.NewString(), AccountId: registered.GetAccount().GetAccountId(), DaemonId: daemon.ID,
-		ClientId: "client-r7-commerce", SessionId: uuid.NewString(), AllocationId: uuid.NewString(), Transport: cloudv1.RelayTransport_RELAY_TRANSPORT_UDP,
-		IngressBytes: 120, EgressBytes: usageBytes - 120, StartedAt: timestamppb.New(clock.Add(-time.Second)), EndedAt: timestamppb.New(clock),
+	reserve := &cloudv1.RelayReserveRequest{
+		ReservationId: uuid.NewString(), AccountId: registered.GetAccount().GetAccountId(), DaemonId: daemon.ID,
+		ClientId: "client-r7-commerce", SessionId: uuid.NewString(), ObservedAt: timestamppb.New(clock),
 	}
-	acknowledged, err := database.CommitRelayUsage(ctx, edgeID, []*cloudv1.UsageEvent{usageEvent})
-	if err != nil || len(acknowledged) != 1 || acknowledged[0] != usageEvent.GetEventId() {
-		t.Fatalf("commit Relay usage ack=%v err=%v", acknowledged, err)
+	reserve.RequestDigest, err = relayquota.ReserveRequestDigest(reserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reserved, err := database.ReserveRelay(ctx, edgeID, reserve)
+	if err != nil || reserved.GetGrant() == nil {
+		t.Fatalf("reserve Relay usage=%v err=%v", reserved, err)
+	}
+	settlement := &cloudv1.RelaySettlement{ReservationId: reserve.GetReservationId(), Kind: cloudv1.RelaySettlementKind_RELAY_SETTLEMENT_KIND_EXACT, IngressBytes: 120, EgressBytes: usageBytes - 120, PolicyDigest: reserved.GetGrant().GetPolicyDigest(), ObservedAt: timestamppb.New(clock)}
+	acknowledged, err := database.SettleRelay(ctx, edgeID, settlement)
+	if err != nil || acknowledged.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_APPLIED {
+		t.Fatalf("commit Relay settlement ack=%v err=%v", acknowledged, err)
 	}
 	aggregateAfterUsage, err := commercial.GetMyCommerce(userContext, &cloudv1.GetMyCommerceRequest{})
 	if err != nil || aggregateAfterUsage.GetUsage().GetRelayTotalBytes() != usageBytes || aggregateAfterUsage.GetEntitlement().GetRelayUsedBytes() != usageBytes || aggregateAfterUsage.GetEntitlement().GetRelayRemainingBytes() != capability.GetRelayMaxBytesPerPeriod()-usageBytes {

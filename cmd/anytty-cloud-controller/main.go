@@ -210,7 +210,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		HeartbeatTimeout:  config.heartbeatTimeout,
 		Directory:         directoryState,
 		BindingKeyBundle:  bindingKeyOwner.Bundle,
-		UsageStore:        database,
+		RelayStore:        database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err

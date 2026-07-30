@@ -18,6 +18,7 @@ CREATE TABLE daemons (
     revision bigint NOT NULL CHECK (revision > 0),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
+    UNIQUE (account_id, daemon_id),
     CHECK (octet_length(device_public_key) = 32)
 );
 

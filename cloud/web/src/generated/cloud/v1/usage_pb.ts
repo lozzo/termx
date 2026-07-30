@@ -12,87 +12,151 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/usage.proto.
  */
 export const file_cloud_v1_usage: GenFile = /*@__PURE__*/
-  fileDesc("ChRjbG91ZC92MS91c2FnZS5wcm90bxIPYW55dHR5LmNsb3VkLnYxIrwCChBSZWxheUxlYXNlQ2xhaW1zEhAKCGxlYXNlX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHZWRnZV9pZBgDIAEoCRIRCglkYWVtb25faWQYBCABKAkSEQoJY2xpZW50X2lkGAUgASgJEhIKCnNlc3Npb25faWQYBiABKAkSEQoJbWF4X2J5dGVzGAcgASgEEiEKGW1heF9yYXRlX2J5dGVzX3Blcl9zZWNvbmQYCCABKAQSIgoabWF4X2NvbmN1cnJlbnRfYWxsb2NhdGlvbnMYCSABKA0SLQoJaXNzdWVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKsAQoOUmVsYXlMZWFzZVNwZWMSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhEKCWRhZW1vbl9pZBgDIAEoCRIRCgljbGllbnRfaWQYBCABKAkSNAoKcHJlZmVyZW5jZRgFIAEoDjIgLmFueXR0eS5jbG91ZC52MS5SZWxheVByZWZlcmVuY2USFgoOcmVuZXdfbGVhc2VfaWQYBiABKAkihgEKDlJlbGF5SUNFQ29uZmlnEhAKCGxlYXNlX2lkGAEgASgJEgwKBHVybHMYAiADKAkSEAoIdXNlcm5hbWUYAyABKAkSEgoKY3JlZGVudGlhbBgEIAEoCRIuCgpleHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCL9AgoKVXNhZ2VFdmVudBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIQCghldmVudF9pZBgCIAEoCRIPCgdlZGdlX2lkGAMgASgJEhAKCGxlYXNlX2lkGAQgASgJEhIKCmFjY291bnRfaWQYBSABKAkSEQoJZGFlbW9uX2lkGAYgASgJEhEKCWNsaWVudF9pZBgHIAEoCRISCgpzZXNzaW9uX2lkGAggASgJEhUKDWFsbG9jYXRpb25faWQYCSABKAkSMgoJdHJhbnNwb3J0GAogASgOMh8uYW55dHR5LmNsb3VkLnYxLlJlbGF5VHJhbnNwb3J0EhUKDWluZ3Jlc3NfYnl0ZXMYCyABKAQSFAoMZWdyZXNzX2J5dGVzGAwgASgEEi4KCnN0YXJ0ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJLCgpVc2FnZUJhdGNoEhAKCGJhdGNoX2lkGAEgASgJEisKBmV2ZW50cxgCIAMoCzIbLmFueXR0eS5jbG91ZC52MS5Vc2FnZUV2ZW50Ih0KCFVzYWdlQWNrEhEKCWV2ZW50X2lkcxgBIAMoCSqRAQoPUmVsYXlQcmVmZXJlbmNlEiAKHFJFTEFZX1BSRUZFUkVOQ0VfVU5TUEVDSUZJRUQQABIZChVSRUxBWV9QUkVGRVJFTkNFX0FVVE8QARIgChxSRUxBWV9QUkVGRVJFTkNFX0RJUkVDVF9PTkxZEAISHwobUkVMQVlfUFJFRkVSRU5DRV9SRUxBWV9PTkxZEAMqfAoOUmVsYXlUcmFuc3BvcnQSHwobUkVMQVlfVFJBTlNQT1JUX1VOU1BFQ0lGSUVEEAASFwoTUkVMQVlfVFJBTlNQT1JUX1VEUBABEhcKE1JFTEFZX1RSQU5TUE9SVF9UQ1AQAhIXChNSRUxBWV9UUkFOU1BPUlRfVExTEANCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjbG91ZC92MS91c2FnZS5wcm90bxIPYW55dHR5LmNsb3VkLnYxIqYFChNSZWxheVBvbGljeVNuYXBzaG90EhIKCmFjY291bnRfaWQYASABKAkSGAoQYWNjb3VudF9yZXZpc2lvbhgCIAEoBBIVCg1hY2NvdW50X3N0YXRlGAMgASgJEhcKD3N1YnNjcmlwdGlvbl9pZBgEIAEoCRIdChVzdWJzY3JpcHRpb25fcmV2aXNpb24YBSABKAQSGgoSc3Vic2NyaXB0aW9uX3N0YXRlGAYgASgJEjAKDHBlcmlvZF9zdGFydBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKcGVyaW9kX2VuZBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHcGxhbl9pZBgJIAEoCRIUCgxwbGFuX3ZlcnNpb24YCiABKAQSFQoNcGxhbl9yZXZpc2lvbhgLIAEoBBIVCg1yZWxheV9lbmFibGVkGAwgASgIEiIKGnJlbGF5X21heF9ieXRlc19wZXJfcGVyaW9kGA0gASgEEiMKG3JlbGF5X21heF9ieXRlc19wZXJfc2Vzc2lvbhgOIAEoBBInCh9yZWxheV9tYXhfcmF0ZV9ieXRlc19wZXJfc2Vjb25kGA8gASgEEh0KFXJlbGF5X21heF9jb25jdXJyZW5jeRgQIAEoDRIXCg9hbGxvd2VkX3JlZ2lvbnMYESADKAkSDwoHZWRnZV9pZBgSIAEoCRIVCg1lZGdlX3JldmlzaW9uGBMgASgEEhQKDGVkZ2VfZW5hYmxlZBgUIAEoCBITCgtlZGdlX3JlZ2lvbhgVIAEoCRIRCglkYWVtb25faWQYFiABKAkSFwoPZGFlbW9uX3JldmlzaW9uGBcgASgEEhYKDmRhZW1vbl9yZXZva2VkGBggASgIIsQBChNSZWxheVJlc2VydmVSZXF1ZXN0EhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSEQoJZGFlbW9uX2lkGAMgASgJEhEKCWNsaWVudF9pZBgEIAEoCRISCgpzZXNzaW9uX2lkGAUgASgJEi8KC29ic2VydmVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5yZXF1ZXN0X2RpZ2VzdBgHIAEoDCKOAgoKUmVsYXlHcmFudBIWCg5yZXNlcnZhdGlvbl9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhYKDnJlc2VydmVkX2J5dGVzGAMgASgEEiEKGW1heF9yYXRlX2J5dGVzX3Blcl9zZWNvbmQYBCABKAQSFgoOcmVuZXdfc2VxdWVuY2UYBSABKAQSNAoQYXV0aG9yaXplZF91bnRpbBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcG9saWN5X2RpZ2VzdBgHIAEoDBI0CgZwb2xpY3kYCCABKAsyJC5hbnl0dHkuY2xvdWQudjEuUmVsYXlQb2xpY3lTbmFwc2hvdCLyAQoUUmVsYXlSZXNlcnZlUmVzcG9uc2USFgoOcmVzZXJ2YXRpb25faWQYASABKAkSFgoOcmVxdWVzdF9kaWdlc3QYAiABKAwSMAoEY29kZRgDIAEoDjIiLmFueXR0eS5jbG91ZC52MS5SZWxheVJlc3BvbnNlQ29kZRIqCgVncmFudBgEIAEoCzIbLmFueXR0eS5jbG91ZC52MS5SZWxheUdyYW50EjUKCHRlcm1pbmFsGAUgASgLMiMuYW55dHR5LmNsb3VkLnYxLlJlbGF5U2V0dGxlbWVudEFjaxIVCg1lcnJvcl9tZXNzYWdlGAYgASgJIosBChFSZWxheVJlbmV3UmVxdWVzdBIWCg5yZXNlcnZhdGlvbl9pZBgBIAEoCRIWCg5yZW5ld19zZXF1ZW5jZRgCIAEoBBIVCg1wb2xpY3lfZGlnZXN0GAMgASgMEi8KC29ic2VydmVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLwAQoSUmVsYXlSZW5ld1Jlc3BvbnNlEhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEhYKDnJlbmV3X3NlcXVlbmNlGAIgASgEEjAKBGNvZGUYAyABKA4yIi5hbnl0dHkuY2xvdWQudjEuUmVsYXlSZXNwb25zZUNvZGUSKgoFZ3JhbnQYBCABKAsyGy5hbnl0dHkuY2xvdWQudjEuUmVsYXlHcmFudBI1Cgh0ZXJtaW5hbBgFIAEoCzIjLmFueXR0eS5jbG91ZC52MS5SZWxheVNldHRsZW1lbnRBY2sSFQoNZXJyb3JfbWVzc2FnZRgGIAEoCSLSAQoPUmVsYXlTZXR0bGVtZW50EhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEjIKBGtpbmQYAiABKA4yJC5hbnl0dHkuY2xvdWQudjEuUmVsYXlTZXR0bGVtZW50S2luZBIVCg1pbmdyZXNzX2J5dGVzGAMgASgEEhQKDGVncmVzc19ieXRlcxgEIAEoBBIVCg1wb2xpY3lfZGlnZXN0GAUgASgMEi8KC29ic2VydmVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLmAgoSUmVsYXlTZXR0bGVtZW50QWNrEhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEjIKBGtpbmQYAiABKA4yJC5hbnl0dHkuY2xvdWQudjEuUmVsYXlTZXR0bGVtZW50S2luZBIVCg1pbmdyZXNzX2J5dGVzGAMgASgEEhQKDGVncmVzc19ieXRlcxgEIAEoBBIWCg5yZWNvdmVyeV9ieXRlcxgFIAEoBBIVCg1wb2xpY3lfZGlnZXN0GAYgASgMEi8KC29ic2VydmVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzZXR0bGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgRjb2RlGAkgASgOMiIuYW55dHR5LmNsb3VkLnYxLlJlbGF5UmVzcG9uc2VDb2RlEhUKDWVycm9yX21lc3NhZ2UYCiABKAkiKwoRUmVsYXlRdWVyeVJlcXVlc3QSFgoOcmVzZXJ2YXRpb25faWQYASABKAki2AEKElJlbGF5UXVlcnlSZXNwb25zZRIWCg5yZXNlcnZhdGlvbl9pZBgBIAEoCRIwCgRjb2RlGAIgASgOMiIuYW55dHR5LmNsb3VkLnYxLlJlbGF5UmVzcG9uc2VDb2RlEioKBWdyYW50GAMgASgLMhsuYW55dHR5LmNsb3VkLnYxLlJlbGF5R3JhbnQSNQoIdGVybWluYWwYBCABKAsyIy5hbnl0dHkuY2xvdWQudjEuUmVsYXlTZXR0bGVtZW50QWNrEhUKDWVycm9yX21lc3NhZ2UYBSABKAkijAEKDlJlbGF5SUNFQ29uZmlnEhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEgwKBHVybHMYAiADKAkSEAoIdXNlcm5hbWUYAyABKAkSEgoKY3JlZGVudGlhbBgEIAEoCRIuCgpleHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKgAgoSUmVsYXlKb3VybmFsUmVjb3JkEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgNEjEKBXN0YWdlGAIgASgOMiIuYW55dHR5LmNsb3VkLnYxLlJlbGF5Sm91cm5hbFN0YWdlEj0KD3Jlc2VydmVfcmVxdWVzdBgDIAEoCzIkLmFueXR0eS5jbG91ZC52MS5SZWxheVJlc2VydmVSZXF1ZXN0EioKBWdyYW50GAQgASgLMhsuYW55dHR5LmNsb3VkLnYxLlJlbGF5R3JhbnQSHgoWcGVuZGluZ19yZW5ld19zZXF1ZW5jZRgFIAEoBBI0CgpzZXR0bGVtZW50GAYgASgLMiAuYW55dHR5LmNsb3VkLnYxLlJlbGF5U2V0dGxlbWVudCqRAQoPUmVsYXlQcmVmZXJlbmNlEiAKHFJFTEFZX1BSRUZFUkVOQ0VfVU5TUEVDSUZJRUQQABIZChVSRUxBWV9QUkVGRVJFTkNFX0FVVE8QARIgChxSRUxBWV9QUkVGRVJFTkNFX0RJUkVDVF9PTkxZEAISHwobUkVMQVlfUFJFRkVSRU5DRV9SRUxBWV9PTkxZEAMqfAoOUmVsYXlUcmFuc3BvcnQSHwobUkVMQVlfVFJBTlNQT1JUX1VOU1BFQ0lGSUVEEAASFwoTUkVMQVlfVFJBTlNQT1JUX1VEUBABEhcKE1JFTEFZX1RSQU5TUE9SVF9UQ1AQAhIXChNSRUxBWV9UUkFOU1BPUlRfVExTEAMqhQEKE1JlbGF5U2V0dGxlbWVudEtpbmQSJQohUkVMQVlfU0VUVExFTUVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASHwobUkVMQVlfU0VUVExFTUVOVF9LSU5EX0VYQUNUEAESJgoiUkVMQVlfU0VUVExFTUVOVF9LSU5EX1JFQ09WRVJZX01BWBACKoQCChFSZWxheVJlc3BvbnNlQ29kZRIjCh9SRUxBWV9SRVNQT05TRV9DT0RFX1VOU1BFQ0lGSUVEEAASHwobUkVMQVlfUkVTUE9OU0VfQ09ERV9BUFBMSUVEEAESHgoaUkVMQVlfUkVTUE9OU0VfQ09ERV9SRVBMQVkQAhIgChxSRUxBWV9SRVNQT05TRV9DT0RFX1RFUk1JTkFMEAMSIAocUkVMQVlfUkVTUE9OU0VfQ09ERV9SRUpFQ1RFRBAEEiAKHFJFTEFZX1JFU1BPTlNFX0NPREVfQ09ORkxJQ1QQBRIjCh9SRUxBWV9SRVNQT05TRV9DT0RFX1VOQVZBSUxBQkxFEAYqmAIKEVJlbGF5Sm91cm5hbFN0YWdlEiMKH1JFTEFZX0pPVVJOQUxfU1RBR0VfVU5TUEVDSUZJRUQQABIhCh1SRUxBWV9KT1VSTkFMX1NUQUdFX1JFUVVFU1RFRBABEiYKIlJFTEFZX0pPVVJOQUxfU1RBR0VfSEVMRF9VTkVYUE9TRUQQAhIfChtSRUxBWV9KT1VSTkFMX1NUQUdFX0VYUE9TRUQQAxIlCiFSRUxBWV9KT1VSTkFMX1NUQUdFX1JFTkVXX1BFTkRJTkcQBBIfChtSRUxBWV9KT1VSTkFMX1NUQUdFX0NMT1NJTkcQBRIqCiZSRUxBWV9KT1VSTkFMX1NUQUdFX1NFVFRMRU1FTlRfRFVSQUJMRRAGQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
- * RelayLeaseClaims 是 Edge 从 daemon binding 委托收缩生成的单 session 短期 Relay 上限。
+ * RelayPolicySnapshot contains only inputs that actually authorize Relay.
+ * Both Controller and Edge hash its deterministic protobuf encoding.
  *
- * @generated from message anytty.cloud.v1.RelayLeaseClaims
+ * @generated from message anytty.cloud.v1.RelayPolicySnapshot
  */
-export type RelayLeaseClaims = Message<"anytty.cloud.v1.RelayLeaseClaims"> & {
+export type RelayPolicySnapshot = Message<"anytty.cloud.v1.RelayPolicySnapshot"> & {
   /**
-   * @generated from field: string lease_id = 1;
-   */
-  leaseId: string;
-
-  /**
-   * @generated from field: string account_id = 2;
+   * @generated from field: string account_id = 1;
    */
   accountId: string;
 
   /**
-   * @generated from field: string edge_id = 3;
+   * @generated from field: uint64 account_revision = 2;
+   */
+  accountRevision: bigint;
+
+  /**
+   * @generated from field: string account_state = 3;
+   */
+  accountState: string;
+
+  /**
+   * @generated from field: string subscription_id = 4;
+   */
+  subscriptionId: string;
+
+  /**
+   * @generated from field: uint64 subscription_revision = 5;
+   */
+  subscriptionRevision: bigint;
+
+  /**
+   * @generated from field: string subscription_state = 6;
+   */
+  subscriptionState: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp period_start = 7;
+   */
+  periodStart?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp period_end = 8;
+   */
+  periodEnd?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string plan_id = 9;
+   */
+  planId: string;
+
+  /**
+   * @generated from field: uint64 plan_version = 10;
+   */
+  planVersion: bigint;
+
+  /**
+   * @generated from field: uint64 plan_revision = 11;
+   */
+  planRevision: bigint;
+
+  /**
+   * @generated from field: bool relay_enabled = 12;
+   */
+  relayEnabled: boolean;
+
+  /**
+   * @generated from field: uint64 relay_max_bytes_per_period = 13;
+   */
+  relayMaxBytesPerPeriod: bigint;
+
+  /**
+   * @generated from field: uint64 relay_max_bytes_per_session = 14;
+   */
+  relayMaxBytesPerSession: bigint;
+
+  /**
+   * @generated from field: uint64 relay_max_rate_bytes_per_second = 15;
+   */
+  relayMaxRateBytesPerSecond: bigint;
+
+  /**
+   * @generated from field: uint32 relay_max_concurrency = 16;
+   */
+  relayMaxConcurrency: number;
+
+  /**
+   * @generated from field: repeated string allowed_regions = 17;
+   */
+  allowedRegions: string[];
+
+  /**
+   * @generated from field: string edge_id = 18;
    */
   edgeId: string;
 
   /**
-   * @generated from field: string daemon_id = 4;
+   * @generated from field: uint64 edge_revision = 19;
+   */
+  edgeRevision: bigint;
+
+  /**
+   * @generated from field: bool edge_enabled = 20;
+   */
+  edgeEnabled: boolean;
+
+  /**
+   * @generated from field: string edge_region = 21;
+   */
+  edgeRegion: string;
+
+  /**
+   * @generated from field: string daemon_id = 22;
    */
   daemonId: string;
 
   /**
-   * @generated from field: string client_id = 5;
+   * @generated from field: uint64 daemon_revision = 23;
    */
-  clientId: string;
+  daemonRevision: bigint;
 
   /**
-   * @generated from field: string session_id = 6;
+   * @generated from field: bool daemon_revoked = 24;
    */
-  sessionId: string;
-
-  /**
-   * @generated from field: uint64 max_bytes = 7;
-   */
-  maxBytes: bigint;
-
-  /**
-   * @generated from field: uint64 max_rate_bytes_per_second = 8;
-   */
-  maxRateBytesPerSecond: bigint;
-
-  /**
-   * @generated from field: uint32 max_concurrent_allocations = 9;
-   */
-  maxConcurrentAllocations: number;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp issued_at = 10;
-   */
-  issuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 11;
-   */
-  expiresAt?: Timestamp | undefined;
+  daemonRevoked: boolean;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RelayLeaseClaims.
- * Use `create(RelayLeaseClaimsSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RelayPolicySnapshot.
+ * Use `create(RelayPolicySnapshotSchema)` to create a new message.
  */
-export const RelayLeaseClaimsSchema: GenMessage<RelayLeaseClaims> = /*@__PURE__*/
+export const RelayPolicySnapshotSchema: GenMessage<RelayPolicySnapshot> = /*@__PURE__*/
   messageDesc(file_cloud_v1_usage, 0);
 
 /**
- * RelayLeaseSpec 是 Edge 进程内的准入输入，不进入 EdgeControl 协议。
- *
- * @generated from message anytty.cloud.v1.RelayLeaseSpec
+ * @generated from message anytty.cloud.v1.RelayReserveRequest
  */
-export type RelayLeaseSpec = Message<"anytty.cloud.v1.RelayLeaseSpec"> & {
+export type RelayReserveRequest = Message<"anytty.cloud.v1.RelayReserveRequest"> & {
   /**
-   * @generated from field: string session_id = 1;
+   * @generated from field: string reservation_id = 1;
    */
-  sessionId: string;
+  reservationId: string;
 
   /**
    * @generated from field: string account_id = 2;
@@ -110,34 +174,365 @@ export type RelayLeaseSpec = Message<"anytty.cloud.v1.RelayLeaseSpec"> & {
   clientId: string;
 
   /**
-   * @generated from field: anytty.cloud.v1.RelayPreference preference = 5;
+   * @generated from field: string session_id = 5;
    */
-  preference: RelayPreference;
+  sessionId: string;
 
   /**
-   * @generated from field: string renew_lease_id = 6;
+   * @generated from field: google.protobuf.Timestamp observed_at = 6;
    */
-  renewLeaseId: string;
+  observedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bytes request_digest = 7;
+   */
+  requestDigest: Uint8Array;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RelayLeaseSpec.
- * Use `create(RelayLeaseSpecSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RelayReserveRequest.
+ * Use `create(RelayReserveRequestSchema)` to create a new message.
  */
-export const RelayLeaseSpecSchema: GenMessage<RelayLeaseSpec> = /*@__PURE__*/
+export const RelayReserveRequestSchema: GenMessage<RelayReserveRequest> = /*@__PURE__*/
   messageDesc(file_cloud_v1_usage, 1);
 
 /**
- * RelayICEConfig 是 Edge 从已验证或已委托租约派生的一次性 TURN credential。
- * 该消息只在当前 ClientGateway/AgentGateway attempt 内存活，禁止持久化或写日志。
+ * @generated from message anytty.cloud.v1.RelayGrant
+ */
+export type RelayGrant = Message<"anytty.cloud.v1.RelayGrant"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 reserved_bytes = 3;
+   */
+  reservedBytes: bigint;
+
+  /**
+   * @generated from field: uint64 max_rate_bytes_per_second = 4;
+   */
+  maxRateBytesPerSecond: bigint;
+
+  /**
+   * @generated from field: uint64 renew_sequence = 5;
+   */
+  renewSequence: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp authorized_until = 6;
+   */
+  authorizedUntil?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bytes policy_digest = 7;
+   */
+  policyDigest: Uint8Array;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayPolicySnapshot policy = 8;
+   */
+  policy?: RelayPolicySnapshot | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelayGrant.
+ * Use `create(RelayGrantSchema)` to create a new message.
+ */
+export const RelayGrantSchema: GenMessage<RelayGrant> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 2);
+
+/**
+ * @generated from message anytty.cloud.v1.RelayReserveResponse
+ */
+export type RelayReserveResponse = Message<"anytty.cloud.v1.RelayReserveResponse"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: bytes request_digest = 2;
+   */
+  requestDigest: Uint8Array;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayResponseCode code = 3;
+   */
+  code: RelayResponseCode;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayGrant grant = 4;
+   */
+  grant?: RelayGrant | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelaySettlementAck terminal = 5;
+   */
+  terminal?: RelaySettlementAck | undefined;
+
+  /**
+   * @generated from field: string error_message = 6;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelayReserveResponse.
+ * Use `create(RelayReserveResponseSchema)` to create a new message.
+ */
+export const RelayReserveResponseSchema: GenMessage<RelayReserveResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 3);
+
+/**
+ * @generated from message anytty.cloud.v1.RelayRenewRequest
+ */
+export type RelayRenewRequest = Message<"anytty.cloud.v1.RelayRenewRequest"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: uint64 renew_sequence = 2;
+   */
+  renewSequence: bigint;
+
+  /**
+   * @generated from field: bytes policy_digest = 3;
+   */
+  policyDigest: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp observed_at = 4;
+   */
+  observedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelayRenewRequest.
+ * Use `create(RelayRenewRequestSchema)` to create a new message.
+ */
+export const RelayRenewRequestSchema: GenMessage<RelayRenewRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 4);
+
+/**
+ * @generated from message anytty.cloud.v1.RelayRenewResponse
+ */
+export type RelayRenewResponse = Message<"anytty.cloud.v1.RelayRenewResponse"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: uint64 renew_sequence = 2;
+   */
+  renewSequence: bigint;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayResponseCode code = 3;
+   */
+  code: RelayResponseCode;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayGrant grant = 4;
+   */
+  grant?: RelayGrant | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelaySettlementAck terminal = 5;
+   */
+  terminal?: RelaySettlementAck | undefined;
+
+  /**
+   * @generated from field: string error_message = 6;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelayRenewResponse.
+ * Use `create(RelayRenewResponseSchema)` to create a new message.
+ */
+export const RelayRenewResponseSchema: GenMessage<RelayRenewResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 5);
+
+/**
+ * @generated from message anytty.cloud.v1.RelaySettlement
+ */
+export type RelaySettlement = Message<"anytty.cloud.v1.RelaySettlement"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelaySettlementKind kind = 2;
+   */
+  kind: RelaySettlementKind;
+
+  /**
+   * @generated from field: uint64 ingress_bytes = 3;
+   */
+  ingressBytes: bigint;
+
+  /**
+   * @generated from field: uint64 egress_bytes = 4;
+   */
+  egressBytes: bigint;
+
+  /**
+   * @generated from field: bytes policy_digest = 5;
+   */
+  policyDigest: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp observed_at = 6;
+   */
+  observedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelaySettlement.
+ * Use `create(RelaySettlementSchema)` to create a new message.
+ */
+export const RelaySettlementSchema: GenMessage<RelaySettlement> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 6);
+
+/**
+ * @generated from message anytty.cloud.v1.RelaySettlementAck
+ */
+export type RelaySettlementAck = Message<"anytty.cloud.v1.RelaySettlementAck"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelaySettlementKind kind = 2;
+   */
+  kind: RelaySettlementKind;
+
+  /**
+   * @generated from field: uint64 ingress_bytes = 3;
+   */
+  ingressBytes: bigint;
+
+  /**
+   * @generated from field: uint64 egress_bytes = 4;
+   */
+  egressBytes: bigint;
+
+  /**
+   * @generated from field: uint64 recovery_bytes = 5;
+   */
+  recoveryBytes: bigint;
+
+  /**
+   * @generated from field: bytes policy_digest = 6;
+   */
+  policyDigest: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp observed_at = 7;
+   */
+  observedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp settled_at = 8;
+   */
+  settledAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayResponseCode code = 9;
+   */
+  code: RelayResponseCode;
+
+  /**
+   * @generated from field: string error_message = 10;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelaySettlementAck.
+ * Use `create(RelaySettlementAckSchema)` to create a new message.
+ */
+export const RelaySettlementAckSchema: GenMessage<RelaySettlementAck> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 7);
+
+/**
+ * @generated from message anytty.cloud.v1.RelayQueryRequest
+ */
+export type RelayQueryRequest = Message<"anytty.cloud.v1.RelayQueryRequest"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelayQueryRequest.
+ * Use `create(RelayQueryRequestSchema)` to create a new message.
+ */
+export const RelayQueryRequestSchema: GenMessage<RelayQueryRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 8);
+
+/**
+ * @generated from message anytty.cloud.v1.RelayQueryResponse
+ */
+export type RelayQueryResponse = Message<"anytty.cloud.v1.RelayQueryResponse"> & {
+  /**
+   * @generated from field: string reservation_id = 1;
+   */
+  reservationId: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayResponseCode code = 2;
+   */
+  code: RelayResponseCode;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelayGrant grant = 3;
+   */
+  grant?: RelayGrant | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.RelaySettlementAck terminal = 4;
+   */
+  terminal?: RelaySettlementAck | undefined;
+
+  /**
+   * @generated from field: string error_message = 5;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RelayQueryResponse.
+ * Use `create(RelayQueryResponseSchema)` to create a new message.
+ */
+export const RelayQueryResponseSchema: GenMessage<RelayQueryResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 9);
+
+/**
+ * RelayICEConfig is derived from a committed Controller grant. It is durable
+ * before leaving the Edge and never contains commercial authority of its own.
  *
  * @generated from message anytty.cloud.v1.RelayICEConfig
  */
 export type RelayICEConfig = Message<"anytty.cloud.v1.RelayICEConfig"> & {
   /**
-   * @generated from field: string lease_id = 1;
+   * @generated from field: string reservation_id = 1;
    */
-  leaseId: string;
+  reservationId: string;
 
   /**
    * @generated from field: repeated string urls = 2;
@@ -165,138 +560,54 @@ export type RelayICEConfig = Message<"anytty.cloud.v1.RelayICEConfig"> & {
  * Use `create(RelayICEConfigSchema)` to create a new message.
  */
 export const RelayICEConfigSchema: GenMessage<RelayICEConfig> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 2);
+  messageDesc(file_cloud_v1_usage, 10);
 
 /**
- * UsageEvent 是 allocation 关闭或租约窗口结束时冻结的幂等计费事实。
+ * RelayJournalRecord is the single durable bbolt value for one reservation.
  *
- * @generated from message anytty.cloud.v1.UsageEvent
+ * @generated from message anytty.cloud.v1.RelayJournalRecord
  */
-export type UsageEvent = Message<"anytty.cloud.v1.UsageEvent"> & {
+export type RelayJournalRecord = Message<"anytty.cloud.v1.RelayJournalRecord"> & {
   /**
    * @generated from field: uint32 schema_version = 1;
    */
   schemaVersion: number;
 
   /**
-   * @generated from field: string event_id = 2;
+   * @generated from field: anytty.cloud.v1.RelayJournalStage stage = 2;
    */
-  eventId: string;
+  stage: RelayJournalStage;
 
   /**
-   * @generated from field: string edge_id = 3;
+   * @generated from field: anytty.cloud.v1.RelayReserveRequest reserve_request = 3;
    */
-  edgeId: string;
+  reserveRequest?: RelayReserveRequest | undefined;
 
   /**
-   * @generated from field: string lease_id = 4;
+   * @generated from field: anytty.cloud.v1.RelayGrant grant = 4;
    */
-  leaseId: string;
+  grant?: RelayGrant | undefined;
 
   /**
-   * @generated from field: string account_id = 5;
+   * @generated from field: uint64 pending_renew_sequence = 5;
    */
-  accountId: string;
+  pendingRenewSequence: bigint;
 
   /**
-   * @generated from field: string daemon_id = 6;
+   * @generated from field: anytty.cloud.v1.RelaySettlement settlement = 6;
    */
-  daemonId: string;
-
-  /**
-   * @generated from field: string client_id = 7;
-   */
-  clientId: string;
-
-  /**
-   * @generated from field: string session_id = 8;
-   */
-  sessionId: string;
-
-  /**
-   * @generated from field: string allocation_id = 9;
-   */
-  allocationId: string;
-
-  /**
-   * @generated from field: anytty.cloud.v1.RelayTransport transport = 10;
-   */
-  transport: RelayTransport;
-
-  /**
-   * @generated from field: uint64 ingress_bytes = 11;
-   */
-  ingressBytes: bigint;
-
-  /**
-   * @generated from field: uint64 egress_bytes = 12;
-   */
-  egressBytes: bigint;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp started_at = 13;
-   */
-  startedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp ended_at = 14;
-   */
-  endedAt?: Timestamp | undefined;
+  settlement?: RelaySettlement | undefined;
 };
 
 /**
- * Describes the message anytty.cloud.v1.UsageEvent.
- * Use `create(UsageEventSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RelayJournalRecord.
+ * Use `create(RelayJournalRecordSchema)` to create a new message.
  */
-export const UsageEventSchema: GenMessage<UsageEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 3);
+export const RelayJournalRecordSchema: GenMessage<RelayJournalRecord> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_usage, 11);
 
 /**
- * UsageBatch 从 durable outbox 读取；发送失败时保留原 event_id 重试。
- *
- * @generated from message anytty.cloud.v1.UsageBatch
- */
-export type UsageBatch = Message<"anytty.cloud.v1.UsageBatch"> & {
-  /**
-   * @generated from field: string batch_id = 1;
-   */
-  batchId: string;
-
-  /**
-   * @generated from field: repeated anytty.cloud.v1.UsageEvent events = 2;
-   */
-  events: UsageEvent[];
-};
-
-/**
- * Describes the message anytty.cloud.v1.UsageBatch.
- * Use `create(UsageBatchSchema)` to create a new message.
- */
-export const UsageBatchSchema: GenMessage<UsageBatch> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 4);
-
-/**
- * UsageAck 只列出已经在 Controller 数据库事务中提交的 event_id。
- *
- * @generated from message anytty.cloud.v1.UsageAck
- */
-export type UsageAck = Message<"anytty.cloud.v1.UsageAck"> & {
-  /**
-   * @generated from field: repeated string event_ids = 1;
-   */
-  eventIds: string[];
-};
-
-/**
- * Describes the message anytty.cloud.v1.UsageAck.
- * Use `create(UsageAckSchema)` to create a new message.
- */
-export const UsageAckSchema: GenMessage<UsageAck> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_usage, 5);
-
-/**
- * RelayPreference 是客户端本次 Cloud attempt 的 ICE 选择意图。
- * 它只约束当前 attempt，不成为 Endpoint/Route 持久真值。
+ * RelayPreference is the ICE policy for one Cloud connection attempt.
  *
  * @generated from enum anytty.cloud.v1.RelayPreference
  */
@@ -329,7 +640,7 @@ export const RelayPreferenceSchema: GenEnum<RelayPreference> = /*@__PURE__*/
   enumDesc(file_cloud_v1_usage, 0);
 
 /**
- * RelayTransport 是 Edge 实际承载 allocation 的 TURN 传输。
+ * RelayTransport is the physical TURN transport used by an Edge allocation.
  *
  * @generated from enum anytty.cloud.v1.RelayTransport
  */
@@ -360,3 +671,121 @@ export enum RelayTransport {
  */
 export const RelayTransportSchema: GenEnum<RelayTransport> = /*@__PURE__*/
   enumDesc(file_cloud_v1_usage, 1);
+
+/**
+ * @generated from enum anytty.cloud.v1.RelaySettlementKind
+ */
+export enum RelaySettlementKind {
+  /**
+   * @generated from enum value: RELAY_SETTLEMENT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: RELAY_SETTLEMENT_KIND_EXACT = 1;
+   */
+  EXACT = 1,
+
+  /**
+   * @generated from enum value: RELAY_SETTLEMENT_KIND_RECOVERY_MAX = 2;
+   */
+  RECOVERY_MAX = 2,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.RelaySettlementKind.
+ */
+export const RelaySettlementKindSchema: GenEnum<RelaySettlementKind> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_usage, 2);
+
+/**
+ * @generated from enum anytty.cloud.v1.RelayResponseCode
+ */
+export enum RelayResponseCode {
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_APPLIED = 1;
+   */
+  APPLIED = 1,
+
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_REPLAY = 2;
+   */
+  REPLAY = 2,
+
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_TERMINAL = 3;
+   */
+  TERMINAL = 3,
+
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_REJECTED = 4;
+   */
+  REJECTED = 4,
+
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_CONFLICT = 5;
+   */
+  CONFLICT = 5,
+
+  /**
+   * @generated from enum value: RELAY_RESPONSE_CODE_UNAVAILABLE = 6;
+   */
+  UNAVAILABLE = 6,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.RelayResponseCode.
+ */
+export const RelayResponseCodeSchema: GenEnum<RelayResponseCode> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_usage, 3);
+
+/**
+ * @generated from enum anytty.cloud.v1.RelayJournalStage
+ */
+export enum RelayJournalStage {
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_REQUESTED = 1;
+   */
+  REQUESTED = 1,
+
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_HELD_UNEXPOSED = 2;
+   */
+  HELD_UNEXPOSED = 2,
+
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_EXPOSED = 3;
+   */
+  EXPOSED = 3,
+
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_RENEW_PENDING = 4;
+   */
+  RENEW_PENDING = 4,
+
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_CLOSING = 5;
+   */
+  CLOSING = 5,
+
+  /**
+   * @generated from enum value: RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE = 6;
+   */
+  SETTLEMENT_DURABLE = 6,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.RelayJournalStage.
+ */
+export const RelayJournalStageSchema: GenEnum<RelayJournalStage> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_usage, 4);

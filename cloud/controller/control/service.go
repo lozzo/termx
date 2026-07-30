@@ -25,8 +25,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 4 requires persistent, revisioned binding key bundles.
-const ProtocolVersion uint32 = 4
+// ProtocolVersion 5 adds Controller-authorized durable Relay reservations.
+const ProtocolVersion uint32 = 5
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
@@ -39,12 +39,15 @@ type Config struct {
 	DesiredConfig      func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
 	DesiredCertificate func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
 	CertificateApplied func(context.Context, string, *cloudv1.CertificateApplied) error
-	UsageStore         UsageStore
+	RelayStore         RelayStore
 }
 
-// UsageStore 是 Controller 对 Edge 用量批次的持久事务边界。
-type UsageStore interface {
-	CommitRelayUsage(context.Context, string, []*cloudv1.UsageEvent) ([]string, error)
+// RelayStore is the Controller transaction boundary for durable Relay authority.
+type RelayStore interface {
+	ReserveRelay(context.Context, string, *cloudv1.RelayReserveRequest) (*cloudv1.RelayReserveResponse, error)
+	RenewRelay(context.Context, string, *cloudv1.RelayRenewRequest) (*cloudv1.RelayRenewResponse, error)
+	SettleRelay(context.Context, string, *cloudv1.RelaySettlement) (*cloudv1.RelaySettlementAck, error)
+	QueryRelay(context.Context, string, *cloudv1.RelayQueryRequest) (*cloudv1.RelayQueryResponse, error)
 }
 
 // Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
@@ -325,15 +328,30 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 			return nil, errors.New("CertificateApplied is invalid or unavailable")
 		}
 		return nil, service.config.CertificateApplied(ctx, event.GetSenderId(), payload.CertificateApplied)
-	case *cloudv1.EdgeEvent_UsageBatch:
-		if service.config.UsageStore == nil || payload.UsageBatch == nil || strings.TrimSpace(payload.UsageBatch.GetBatchId()) == "" || len(payload.UsageBatch.GetEvents()) == 0 {
-			return nil, errors.New("UsageBatch is invalid or settlement is unavailable")
+	case *cloudv1.EdgeEvent_RelayReserve:
+		if service.config.RelayStore == nil || payload.RelayReserve == nil {
+			return nil, errors.New("Relay reserve is invalid or unavailable")
 		}
-		acknowledged, err := service.config.UsageStore.CommitRelayUsage(ctx, event.GetSenderId(), payload.UsageBatch.GetEvents())
-		if err != nil {
-			return nil, err
+		response, err := service.config.RelayStore.ReserveRelay(ctx, event.GetSenderId(), payload.RelayReserve)
+		return &cloudv1.ControllerCommand_RelayReserve{RelayReserve: response}, err
+	case *cloudv1.EdgeEvent_RelayRenew:
+		if service.config.RelayStore == nil || payload.RelayRenew == nil {
+			return nil, errors.New("Relay renewal is invalid or unavailable")
 		}
-		return &cloudv1.ControllerCommand_UsageAck{UsageAck: &cloudv1.UsageAck{EventIds: acknowledged}}, nil
+		response, err := service.config.RelayStore.RenewRelay(ctx, event.GetSenderId(), payload.RelayRenew)
+		return &cloudv1.ControllerCommand_RelayRenew{RelayRenew: response}, err
+	case *cloudv1.EdgeEvent_RelaySettle:
+		if service.config.RelayStore == nil || payload.RelaySettle == nil {
+			return nil, errors.New("Relay settlement is invalid or unavailable")
+		}
+		response, err := service.config.RelayStore.SettleRelay(ctx, event.GetSenderId(), payload.RelaySettle)
+		return &cloudv1.ControllerCommand_RelaySettle{RelaySettle: response}, err
+	case *cloudv1.EdgeEvent_RelayQuery:
+		if service.config.RelayStore == nil || payload.RelayQuery == nil {
+			return nil, errors.New("Relay query is invalid or unavailable")
+		}
+		response, err := service.config.RelayStore.QueryRelay(ctx, event.GetSenderId(), payload.RelayQuery)
+		return &cloudv1.ControllerCommand_RelayQuery{RelayQuery: response}, err
 	case *cloudv1.EdgeEvent_CommandResult:
 		return nil, service.config.Directory.CompleteCommand(ctx, event.GetConnectionId(), payload.CommandResult)
 	default:
@@ -354,7 +372,13 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_BindingKeyBundle:
 		command.Payload = typed
-	case *cloudv1.ControllerCommand_UsageAck:
+	case *cloudv1.ControllerCommand_RelayReserve:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_RelayRenew:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_RelaySettle:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_RelayQuery:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_CloseDaemon:
 		command.Payload = typed

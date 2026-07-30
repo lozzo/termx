@@ -29,7 +29,7 @@ const (
 	EdgeCapability_EDGE_CAPABILITY_UNSPECIFIED            EdgeCapability = 0
 	EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM         EdgeCapability = 1
 	EdgeCapability_EDGE_CAPABILITY_RELAY                  EdgeCapability = 2
-	EdgeCapability_EDGE_CAPABILITY_USAGE_OUTBOX           EdgeCapability = 3
+	EdgeCapability_EDGE_CAPABILITY_RESERVATION_JOURNAL    EdgeCapability = 3
 	EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD EdgeCapability = 4
 )
 
@@ -39,14 +39,14 @@ var (
 		0: "EDGE_CAPABILITY_UNSPECIFIED",
 		1: "EDGE_CAPABILITY_CONTROL_STREAM",
 		2: "EDGE_CAPABILITY_RELAY",
-		3: "EDGE_CAPABILITY_USAGE_OUTBOX",
+		3: "EDGE_CAPABILITY_RESERVATION_JOURNAL",
 		4: "EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD",
 	}
 	EdgeCapability_value = map[string]int32{
 		"EDGE_CAPABILITY_UNSPECIFIED":            0,
 		"EDGE_CAPABILITY_CONTROL_STREAM":         1,
 		"EDGE_CAPABILITY_RELAY":                  2,
-		"EDGE_CAPABILITY_USAGE_OUTBOX":           3,
+		"EDGE_CAPABILITY_RESERVATION_JOURNAL":    3,
 		"EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD": 4,
 	}
 )
@@ -333,12 +333,11 @@ func (x *SnapshotBegin) GetRevision() uint64 {
 
 // SnapshotChunk 分块传输快照对象；chunk_index 必须从零严格递增。
 type SnapshotChunk struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	SnapshotId    string                    `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	ChunkIndex    uint32                    `protobuf:"varint,2,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
-	Agents        []*AgentPresence          `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
-	Sessions      []*ClientSessionSummary   `protobuf:"bytes,4,rep,name=sessions,proto3" json:"sessions,omitempty"`
-	Allocations   []*RelayAllocationSummary `protobuf:"bytes,5,rep,name=allocations,proto3" json:"allocations,omitempty"`
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	SnapshotId    string                  `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	ChunkIndex    uint32                  `protobuf:"varint,2,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
+	Agents        []*AgentPresence        `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
+	Sessions      []*ClientSessionSummary `protobuf:"bytes,4,rep,name=sessions,proto3" json:"sessions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -397,13 +396,6 @@ func (x *SnapshotChunk) GetAgents() []*AgentPresence {
 func (x *SnapshotChunk) GetSessions() []*ClientSessionSummary {
 	if x != nil {
 		return x.Sessions
-	}
-	return nil
-}
-
-func (x *SnapshotChunk) GetAllocations() []*RelayAllocationSummary {
-	if x != nil {
-		return x.Allocations
 	}
 	return nil
 }
@@ -1031,9 +1023,12 @@ type EdgeEvent struct {
 	//	*EdgeEvent_RuntimeDelta
 	//	*EdgeEvent_Heartbeat
 	//	*EdgeEvent_ConfigApplied
-	//	*EdgeEvent_UsageBatch
+	//	*EdgeEvent_RelayReserve
 	//	*EdgeEvent_CommandResult
 	//	*EdgeEvent_CertificateApplied
+	//	*EdgeEvent_RelayRenew
+	//	*EdgeEvent_RelaySettle
+	//	*EdgeEvent_RelayQuery
 	Payload       isEdgeEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1188,10 +1183,10 @@ func (x *EdgeEvent) GetConfigApplied() *ConfigApplied {
 	return nil
 }
 
-func (x *EdgeEvent) GetUsageBatch() *UsageBatch {
+func (x *EdgeEvent) GetRelayReserve() *RelayReserveRequest {
 	if x != nil {
-		if x, ok := x.Payload.(*EdgeEvent_UsageBatch); ok {
-			return x.UsageBatch
+		if x, ok := x.Payload.(*EdgeEvent_RelayReserve); ok {
+			return x.RelayReserve
 		}
 	}
 	return nil
@@ -1210,6 +1205,33 @@ func (x *EdgeEvent) GetCertificateApplied() *CertificateApplied {
 	if x != nil {
 		if x, ok := x.Payload.(*EdgeEvent_CertificateApplied); ok {
 			return x.CertificateApplied
+		}
+	}
+	return nil
+}
+
+func (x *EdgeEvent) GetRelayRenew() *RelayRenewRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeEvent_RelayRenew); ok {
+			return x.RelayRenew
+		}
+	}
+	return nil
+}
+
+func (x *EdgeEvent) GetRelaySettle() *RelaySettlement {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeEvent_RelaySettle); ok {
+			return x.RelaySettle
+		}
+	}
+	return nil
+}
+
+func (x *EdgeEvent) GetRelayQuery() *RelayQueryRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeEvent_RelayQuery); ok {
+			return x.RelayQuery
 		}
 	}
 	return nil
@@ -1247,8 +1269,8 @@ type EdgeEvent_ConfigApplied struct {
 	ConfigApplied *ConfigApplied `protobuf:"bytes,26,opt,name=config_applied,json=configApplied,proto3,oneof"`
 }
 
-type EdgeEvent_UsageBatch struct {
-	UsageBatch *UsageBatch `protobuf:"bytes,28,opt,name=usage_batch,json=usageBatch,proto3,oneof"`
+type EdgeEvent_RelayReserve struct {
+	RelayReserve *RelayReserveRequest `protobuf:"bytes,28,opt,name=relay_reserve,json=relayReserve,proto3,oneof"`
 }
 
 type EdgeEvent_CommandResult struct {
@@ -1257,6 +1279,18 @@ type EdgeEvent_CommandResult struct {
 
 type EdgeEvent_CertificateApplied struct {
 	CertificateApplied *CertificateApplied `protobuf:"bytes,30,opt,name=certificate_applied,json=certificateApplied,proto3,oneof"`
+}
+
+type EdgeEvent_RelayRenew struct {
+	RelayRenew *RelayRenewRequest `protobuf:"bytes,31,opt,name=relay_renew,json=relayRenew,proto3,oneof"`
+}
+
+type EdgeEvent_RelaySettle struct {
+	RelaySettle *RelaySettlement `protobuf:"bytes,32,opt,name=relay_settle,json=relaySettle,proto3,oneof"`
+}
+
+type EdgeEvent_RelayQuery struct {
+	RelayQuery *RelayQueryRequest `protobuf:"bytes,33,opt,name=relay_query,json=relayQuery,proto3,oneof"`
 }
 
 func (*EdgeEvent_Hello) isEdgeEvent_Payload() {}
@@ -1273,11 +1307,17 @@ func (*EdgeEvent_Heartbeat) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_ConfigApplied) isEdgeEvent_Payload() {}
 
-func (*EdgeEvent_UsageBatch) isEdgeEvent_Payload() {}
+func (*EdgeEvent_RelayReserve) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_CommandResult) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_CertificateApplied) isEdgeEvent_Payload() {}
+
+func (*EdgeEvent_RelayRenew) isEdgeEvent_Payload() {}
+
+func (*EdgeEvent_RelaySettle) isEdgeEvent_Payload() {}
+
+func (*EdgeEvent_RelayQuery) isEdgeEvent_Payload() {}
 
 // ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
 // welcome 之后由 snapshot_accepted 或 resync_required 驱动同步状态机。
@@ -1297,10 +1337,13 @@ type ControllerCommand struct {
 	//	*ControllerCommand_ResyncRequired
 	//	*ControllerCommand_DesiredConfig
 	//	*ControllerCommand_BindingKeyBundle
-	//	*ControllerCommand_UsageAck
+	//	*ControllerCommand_RelayReserve
 	//	*ControllerCommand_CloseDaemon
 	//	*ControllerCommand_CloseSession
 	//	*ControllerCommand_CertificateBundle
+	//	*ControllerCommand_RelayRenew
+	//	*ControllerCommand_RelaySettle
+	//	*ControllerCommand_RelayQuery
 	Payload       isControllerCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1437,10 +1480,10 @@ func (x *ControllerCommand) GetBindingKeyBundle() *KeyBundle {
 	return nil
 }
 
-func (x *ControllerCommand) GetUsageAck() *UsageAck {
+func (x *ControllerCommand) GetRelayReserve() *RelayReserveResponse {
 	if x != nil {
-		if x, ok := x.Payload.(*ControllerCommand_UsageAck); ok {
-			return x.UsageAck
+		if x, ok := x.Payload.(*ControllerCommand_RelayReserve); ok {
+			return x.RelayReserve
 		}
 	}
 	return nil
@@ -1473,6 +1516,33 @@ func (x *ControllerCommand) GetCertificateBundle() *EdgeCertificateBundle {
 	return nil
 }
 
+func (x *ControllerCommand) GetRelayRenew() *RelayRenewResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_RelayRenew); ok {
+			return x.RelayRenew
+		}
+	}
+	return nil
+}
+
+func (x *ControllerCommand) GetRelaySettle() *RelaySettlementAck {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_RelaySettle); ok {
+			return x.RelaySettle
+		}
+	}
+	return nil
+}
+
+func (x *ControllerCommand) GetRelayQuery() *RelayQueryResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_RelayQuery); ok {
+			return x.RelayQuery
+		}
+	}
+	return nil
+}
+
 type isControllerCommand_Payload interface {
 	isControllerCommand_Payload()
 }
@@ -1497,8 +1567,8 @@ type ControllerCommand_BindingKeyBundle struct {
 	BindingKeyBundle *KeyBundle `protobuf:"bytes,24,opt,name=binding_key_bundle,json=bindingKeyBundle,proto3,oneof"`
 }
 
-type ControllerCommand_UsageAck struct {
-	UsageAck *UsageAck `protobuf:"bytes,25,opt,name=usage_ack,json=usageAck,proto3,oneof"`
+type ControllerCommand_RelayReserve struct {
+	RelayReserve *RelayReserveResponse `protobuf:"bytes,25,opt,name=relay_reserve,json=relayReserve,proto3,oneof"`
 }
 
 type ControllerCommand_CloseDaemon struct {
@@ -1513,6 +1583,18 @@ type ControllerCommand_CertificateBundle struct {
 	CertificateBundle *EdgeCertificateBundle `protobuf:"bytes,28,opt,name=certificate_bundle,json=certificateBundle,proto3,oneof"`
 }
 
+type ControllerCommand_RelayRenew struct {
+	RelayRenew *RelayRenewResponse `protobuf:"bytes,29,opt,name=relay_renew,json=relayRenew,proto3,oneof"`
+}
+
+type ControllerCommand_RelaySettle struct {
+	RelaySettle *RelaySettlementAck `protobuf:"bytes,30,opt,name=relay_settle,json=relaySettle,proto3,oneof"`
+}
+
+type ControllerCommand_RelayQuery struct {
+	RelayQuery *RelayQueryResponse `protobuf:"bytes,31,opt,name=relay_query,json=relayQuery,proto3,oneof"`
+}
+
 func (*ControllerCommand_Welcome) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_SnapshotAccepted) isControllerCommand_Payload() {}
@@ -1523,13 +1605,19 @@ func (*ControllerCommand_DesiredConfig) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_BindingKeyBundle) isControllerCommand_Payload() {}
 
-func (*ControllerCommand_UsageAck) isControllerCommand_Payload() {}
+func (*ControllerCommand_RelayReserve) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_CloseDaemon) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_CloseSession) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_CertificateBundle) isControllerCommand_Payload() {}
+
+func (*ControllerCommand_RelayRenew) isControllerCommand_Payload() {}
+
+func (*ControllerCommand_RelaySettle) isControllerCommand_Payload() {}
+
+func (*ControllerCommand_RelayQuery) isControllerCommand_Payload() {}
 
 var File_cloud_v1_edge_control_proto protoreflect.FileDescriptor
 
@@ -1550,15 +1638,14 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\rSnapshotBegin\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\x04R\brevision\"\x97\x02\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\"\xd2\x01\n" +
 	"\rSnapshotChunk\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
 	"\vchunk_index\x18\x02 \x01(\rR\n" +
 	"chunkIndex\x126\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1e.anytty.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
-	"\bsessions\x18\x04 \x03(\v2%.anytty.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
-	"\vallocations\x18\x05 \x03(\v2'.anytty.cloud.v1.RelayAllocationSummaryR\vallocations\"\x83\x01\n" +
+	"\bsessions\x18\x04 \x03(\v2%.anytty.cloud.v1.ClientSessionSummaryR\bsessionsJ\x04\b\x05\x10\x06\"\x83\x01\n" +
 	"\vSnapshotEnd\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
@@ -1614,7 +1701,7 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\x0ecorrelation_id\x18\x02 \x01(\tR\rcorrelationId\x126\n" +
 	"\x04code\x18\x03 \x01(\x0e2\".anytty.cloud.v1.CommandResultCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12=\n" +
-	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xcc\a\n" +
+	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xae\t\n" +
 	"\tEdgeEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1631,12 +1718,16 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\fsnapshot_end\x18\x17 \x01(\v2\x1c.anytty.cloud.v1.SnapshotEndH\x00R\vsnapshotEnd\x12D\n" +
 	"\rruntime_delta\x18\x18 \x01(\v2\x1d.anytty.cloud.v1.RuntimeDeltaH\x00R\fruntimeDelta\x12>\n" +
 	"\theartbeat\x18\x19 \x01(\v2\x1e.anytty.cloud.v1.EdgeHeartbeatH\x00R\theartbeat\x12G\n" +
-	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.anytty.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12>\n" +
-	"\vusage_batch\x18\x1c \x01(\v2\x1b.anytty.cloud.v1.UsageBatchH\x00R\n" +
-	"usageBatch\x12K\n" +
+	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.anytty.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12K\n" +
+	"\rrelay_reserve\x18\x1c \x01(\v2$.anytty.cloud.v1.RelayReserveRequestH\x00R\frelayReserve\x12K\n" +
 	"\x0ecommand_result\x18\x1d \x01(\v2\".anytty.cloud.v1.EdgeCommandResultH\x00R\rcommandResult\x12V\n" +
-	"\x13certificate_applied\x18\x1e \x01(\v2#.anytty.cloud.v1.CertificateAppliedH\x00R\x12certificateAppliedB\t\n" +
-	"\apayload\"\xba\a\n" +
+	"\x13certificate_applied\x18\x1e \x01(\v2#.anytty.cloud.v1.CertificateAppliedH\x00R\x12certificateApplied\x12E\n" +
+	"\vrelay_renew\x18\x1f \x01(\v2\".anytty.cloud.v1.RelayRenewRequestH\x00R\n" +
+	"relayRenew\x12E\n" +
+	"\frelay_settle\x18  \x01(\v2 .anytty.cloud.v1.RelaySettlementH\x00R\vrelaySettle\x12E\n" +
+	"\vrelay_query\x18! \x01(\v2\".anytty.cloud.v1.RelayQueryRequestH\x00R\n" +
+	"relayQueryB\t\n" +
+	"\apayload\"\xa8\t\n" +
 	"\x11ControllerCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1651,17 +1742,22 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\x11snapshot_accepted\x18\x15 \x01(\v2!.anytty.cloud.v1.SnapshotAcceptedH\x00R\x10snapshotAccepted\x12J\n" +
 	"\x0fresync_required\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12Q\n" +
 	"\x0edesired_config\x18\x17 \x01(\v2(.anytty.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x12J\n" +
-	"\x12binding_key_bundle\x18\x18 \x01(\v2\x1a.anytty.cloud.v1.KeyBundleH\x00R\x10bindingKeyBundle\x128\n" +
-	"\tusage_ack\x18\x19 \x01(\v2\x19.anytty.cloud.v1.UsageAckH\x00R\busageAck\x12K\n" +
+	"\x12binding_key_bundle\x18\x18 \x01(\v2\x1a.anytty.cloud.v1.KeyBundleH\x00R\x10bindingKeyBundle\x12L\n" +
+	"\rrelay_reserve\x18\x19 \x01(\v2%.anytty.cloud.v1.RelayReserveResponseH\x00R\frelayReserve\x12K\n" +
 	"\fclose_daemon\x18\x1a \x01(\v2&.anytty.cloud.v1.CloseDaemonConnectionH\x00R\vcloseDaemon\x12J\n" +
 	"\rclose_session\x18\x1b \x01(\v2#.anytty.cloud.v1.CloseClientSessionH\x00R\fcloseSession\x12W\n" +
-	"\x12certificate_bundle\x18\x1c \x01(\v2&.anytty.cloud.v1.EdgeCertificateBundleH\x00R\x11certificateBundleB\t\n" +
-	"\apayload*\xbe\x01\n" +
+	"\x12certificate_bundle\x18\x1c \x01(\v2&.anytty.cloud.v1.EdgeCertificateBundleH\x00R\x11certificateBundle\x12F\n" +
+	"\vrelay_renew\x18\x1d \x01(\v2#.anytty.cloud.v1.RelayRenewResponseH\x00R\n" +
+	"relayRenew\x12H\n" +
+	"\frelay_settle\x18\x1e \x01(\v2#.anytty.cloud.v1.RelaySettlementAckH\x00R\vrelaySettle\x12F\n" +
+	"\vrelay_query\x18\x1f \x01(\v2#.anytty.cloud.v1.RelayQueryResponseH\x00R\n" +
+	"relayQueryB\t\n" +
+	"\apayload*\xc5\x01\n" +
 	"\x0eEdgeCapability\x12\x1f\n" +
 	"\x1bEDGE_CAPABILITY_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eEDGE_CAPABILITY_CONTROL_STREAM\x10\x01\x12\x19\n" +
-	"\x15EDGE_CAPABILITY_RELAY\x10\x02\x12 \n" +
-	"\x1cEDGE_CAPABILITY_USAGE_OUTBOX\x10\x03\x12*\n" +
+	"\x15EDGE_CAPABILITY_RELAY\x10\x02\x12'\n" +
+	"#EDGE_CAPABILITY_RESERVATION_JOURNAL\x10\x03\x12*\n" +
 	"&EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD\x10\x04*\x9a\x01\n" +
 	"\x11CommandResultCode\x12#\n" +
 	"\x1fCOMMAND_RESULT_CODE_UNSPECIFIED\x10\x00\x12\x1f\n" +
@@ -1707,13 +1803,18 @@ var file_cloud_v1_edge_control_proto_goTypes = []any{
 	(*KeyBundle)(nil),               // 18: anytty.cloud.v1.KeyBundle
 	(*AgentPresence)(nil),           // 19: anytty.cloud.v1.AgentPresence
 	(*ClientSessionSummary)(nil),    // 20: anytty.cloud.v1.ClientSessionSummary
-	(*RelayAllocationSummary)(nil),  // 21: anytty.cloud.v1.RelayAllocationSummary
-	(*timestamppb.Timestamp)(nil),   // 22: google.protobuf.Timestamp
-	(*RuntimeDelta)(nil),            // 23: anytty.cloud.v1.RuntimeDelta
-	(*UsageBatch)(nil),              // 24: anytty.cloud.v1.UsageBatch
-	(*SignedEdgeDesiredConfig)(nil), // 25: anytty.cloud.v1.SignedEdgeDesiredConfig
-	(*UsageAck)(nil),                // 26: anytty.cloud.v1.UsageAck
-	(*EdgeCertificateBundle)(nil),   // 27: anytty.cloud.v1.EdgeCertificateBundle
+	(*timestamppb.Timestamp)(nil),   // 21: google.protobuf.Timestamp
+	(*RuntimeDelta)(nil),            // 22: anytty.cloud.v1.RuntimeDelta
+	(*RelayReserveRequest)(nil),     // 23: anytty.cloud.v1.RelayReserveRequest
+	(*RelayRenewRequest)(nil),       // 24: anytty.cloud.v1.RelayRenewRequest
+	(*RelaySettlement)(nil),         // 25: anytty.cloud.v1.RelaySettlement
+	(*RelayQueryRequest)(nil),       // 26: anytty.cloud.v1.RelayQueryRequest
+	(*SignedEdgeDesiredConfig)(nil), // 27: anytty.cloud.v1.SignedEdgeDesiredConfig
+	(*RelayReserveResponse)(nil),    // 28: anytty.cloud.v1.RelayReserveResponse
+	(*EdgeCertificateBundle)(nil),   // 29: anytty.cloud.v1.EdgeCertificateBundle
+	(*RelayRenewResponse)(nil),      // 30: anytty.cloud.v1.RelayRenewResponse
+	(*RelaySettlementAck)(nil),      // 31: anytty.cloud.v1.RelaySettlementAck
+	(*RelayQueryResponse)(nil),      // 32: anytty.cloud.v1.RelayQueryResponse
 }
 var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	0,  // 0: anytty.cloud.v1.EdgeHello.capabilities:type_name -> anytty.cloud.v1.EdgeCapability
@@ -1721,39 +1822,44 @@ var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	18, // 2: anytty.cloud.v1.EdgeWelcome.binding_key_bundle:type_name -> anytty.cloud.v1.KeyBundle
 	19, // 3: anytty.cloud.v1.SnapshotChunk.agents:type_name -> anytty.cloud.v1.AgentPresence
 	20, // 4: anytty.cloud.v1.SnapshotChunk.sessions:type_name -> anytty.cloud.v1.ClientSessionSummary
-	21, // 5: anytty.cloud.v1.SnapshotChunk.allocations:type_name -> anytty.cloud.v1.RelayAllocationSummary
-	22, // 6: anytty.cloud.v1.CloseDaemonConnection.deadline:type_name -> google.protobuf.Timestamp
-	22, // 7: anytty.cloud.v1.CloseClientSession.deadline:type_name -> google.protobuf.Timestamp
-	1,  // 8: anytty.cloud.v1.EdgeCommandResult.code:type_name -> anytty.cloud.v1.CommandResultCode
-	22, // 9: anytty.cloud.v1.EdgeCommandResult.completed_at:type_name -> google.protobuf.Timestamp
-	22, // 10: anytty.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 11: anytty.cloud.v1.EdgeEvent.hello:type_name -> anytty.cloud.v1.EdgeHello
-	4,  // 12: anytty.cloud.v1.EdgeEvent.snapshot_begin:type_name -> anytty.cloud.v1.SnapshotBegin
-	5,  // 13: anytty.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> anytty.cloud.v1.SnapshotChunk
-	6,  // 14: anytty.cloud.v1.EdgeEvent.snapshot_end:type_name -> anytty.cloud.v1.SnapshotEnd
-	23, // 15: anytty.cloud.v1.EdgeEvent.runtime_delta:type_name -> anytty.cloud.v1.RuntimeDelta
-	7,  // 16: anytty.cloud.v1.EdgeEvent.heartbeat:type_name -> anytty.cloud.v1.EdgeHeartbeat
-	10, // 17: anytty.cloud.v1.EdgeEvent.config_applied:type_name -> anytty.cloud.v1.ConfigApplied
-	24, // 18: anytty.cloud.v1.EdgeEvent.usage_batch:type_name -> anytty.cloud.v1.UsageBatch
-	14, // 19: anytty.cloud.v1.EdgeEvent.command_result:type_name -> anytty.cloud.v1.EdgeCommandResult
-	11, // 20: anytty.cloud.v1.EdgeEvent.certificate_applied:type_name -> anytty.cloud.v1.CertificateApplied
-	22, // 21: anytty.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
-	3,  // 22: anytty.cloud.v1.ControllerCommand.welcome:type_name -> anytty.cloud.v1.EdgeWelcome
-	8,  // 23: anytty.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> anytty.cloud.v1.SnapshotAccepted
-	9,  // 24: anytty.cloud.v1.ControllerCommand.resync_required:type_name -> anytty.cloud.v1.ResyncRequired
-	25, // 25: anytty.cloud.v1.ControllerCommand.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
-	18, // 26: anytty.cloud.v1.ControllerCommand.binding_key_bundle:type_name -> anytty.cloud.v1.KeyBundle
-	26, // 27: anytty.cloud.v1.ControllerCommand.usage_ack:type_name -> anytty.cloud.v1.UsageAck
-	12, // 28: anytty.cloud.v1.ControllerCommand.close_daemon:type_name -> anytty.cloud.v1.CloseDaemonConnection
-	13, // 29: anytty.cloud.v1.ControllerCommand.close_session:type_name -> anytty.cloud.v1.CloseClientSession
-	27, // 30: anytty.cloud.v1.ControllerCommand.certificate_bundle:type_name -> anytty.cloud.v1.EdgeCertificateBundle
-	15, // 31: anytty.cloud.v1.EdgeControl.Connect:input_type -> anytty.cloud.v1.EdgeEvent
-	16, // 32: anytty.cloud.v1.EdgeControl.Connect:output_type -> anytty.cloud.v1.ControllerCommand
-	32, // [32:33] is the sub-list for method output_type
-	31, // [31:32] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	21, // 5: anytty.cloud.v1.CloseDaemonConnection.deadline:type_name -> google.protobuf.Timestamp
+	21, // 6: anytty.cloud.v1.CloseClientSession.deadline:type_name -> google.protobuf.Timestamp
+	1,  // 7: anytty.cloud.v1.EdgeCommandResult.code:type_name -> anytty.cloud.v1.CommandResultCode
+	21, // 8: anytty.cloud.v1.EdgeCommandResult.completed_at:type_name -> google.protobuf.Timestamp
+	21, // 9: anytty.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: anytty.cloud.v1.EdgeEvent.hello:type_name -> anytty.cloud.v1.EdgeHello
+	4,  // 11: anytty.cloud.v1.EdgeEvent.snapshot_begin:type_name -> anytty.cloud.v1.SnapshotBegin
+	5,  // 12: anytty.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> anytty.cloud.v1.SnapshotChunk
+	6,  // 13: anytty.cloud.v1.EdgeEvent.snapshot_end:type_name -> anytty.cloud.v1.SnapshotEnd
+	22, // 14: anytty.cloud.v1.EdgeEvent.runtime_delta:type_name -> anytty.cloud.v1.RuntimeDelta
+	7,  // 15: anytty.cloud.v1.EdgeEvent.heartbeat:type_name -> anytty.cloud.v1.EdgeHeartbeat
+	10, // 16: anytty.cloud.v1.EdgeEvent.config_applied:type_name -> anytty.cloud.v1.ConfigApplied
+	23, // 17: anytty.cloud.v1.EdgeEvent.relay_reserve:type_name -> anytty.cloud.v1.RelayReserveRequest
+	14, // 18: anytty.cloud.v1.EdgeEvent.command_result:type_name -> anytty.cloud.v1.EdgeCommandResult
+	11, // 19: anytty.cloud.v1.EdgeEvent.certificate_applied:type_name -> anytty.cloud.v1.CertificateApplied
+	24, // 20: anytty.cloud.v1.EdgeEvent.relay_renew:type_name -> anytty.cloud.v1.RelayRenewRequest
+	25, // 21: anytty.cloud.v1.EdgeEvent.relay_settle:type_name -> anytty.cloud.v1.RelaySettlement
+	26, // 22: anytty.cloud.v1.EdgeEvent.relay_query:type_name -> anytty.cloud.v1.RelayQueryRequest
+	21, // 23: anytty.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
+	3,  // 24: anytty.cloud.v1.ControllerCommand.welcome:type_name -> anytty.cloud.v1.EdgeWelcome
+	8,  // 25: anytty.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> anytty.cloud.v1.SnapshotAccepted
+	9,  // 26: anytty.cloud.v1.ControllerCommand.resync_required:type_name -> anytty.cloud.v1.ResyncRequired
+	27, // 27: anytty.cloud.v1.ControllerCommand.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
+	18, // 28: anytty.cloud.v1.ControllerCommand.binding_key_bundle:type_name -> anytty.cloud.v1.KeyBundle
+	28, // 29: anytty.cloud.v1.ControllerCommand.relay_reserve:type_name -> anytty.cloud.v1.RelayReserveResponse
+	12, // 30: anytty.cloud.v1.ControllerCommand.close_daemon:type_name -> anytty.cloud.v1.CloseDaemonConnection
+	13, // 31: anytty.cloud.v1.ControllerCommand.close_session:type_name -> anytty.cloud.v1.CloseClientSession
+	29, // 32: anytty.cloud.v1.ControllerCommand.certificate_bundle:type_name -> anytty.cloud.v1.EdgeCertificateBundle
+	30, // 33: anytty.cloud.v1.ControllerCommand.relay_renew:type_name -> anytty.cloud.v1.RelayRenewResponse
+	31, // 34: anytty.cloud.v1.ControllerCommand.relay_settle:type_name -> anytty.cloud.v1.RelaySettlementAck
+	32, // 35: anytty.cloud.v1.ControllerCommand.relay_query:type_name -> anytty.cloud.v1.RelayQueryResponse
+	15, // 36: anytty.cloud.v1.EdgeControl.Connect:input_type -> anytty.cloud.v1.EdgeEvent
+	16, // 37: anytty.cloud.v1.EdgeControl.Connect:output_type -> anytty.cloud.v1.ControllerCommand
+	37, // [37:38] is the sub-list for method output_type
+	36, // [36:37] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_edge_control_proto_init() }
@@ -1774,9 +1880,12 @@ func file_cloud_v1_edge_control_proto_init() {
 		(*EdgeEvent_RuntimeDelta)(nil),
 		(*EdgeEvent_Heartbeat)(nil),
 		(*EdgeEvent_ConfigApplied)(nil),
-		(*EdgeEvent_UsageBatch)(nil),
+		(*EdgeEvent_RelayReserve)(nil),
 		(*EdgeEvent_CommandResult)(nil),
 		(*EdgeEvent_CertificateApplied)(nil),
+		(*EdgeEvent_RelayRenew)(nil),
+		(*EdgeEvent_RelaySettle)(nil),
+		(*EdgeEvent_RelayQuery)(nil),
 	}
 	file_cloud_v1_edge_control_proto_msgTypes[14].OneofWrappers = []any{
 		(*ControllerCommand_Welcome)(nil),
@@ -1784,10 +1893,13 @@ func file_cloud_v1_edge_control_proto_init() {
 		(*ControllerCommand_ResyncRequired)(nil),
 		(*ControllerCommand_DesiredConfig)(nil),
 		(*ControllerCommand_BindingKeyBundle)(nil),
-		(*ControllerCommand_UsageAck)(nil),
+		(*ControllerCommand_RelayReserve)(nil),
 		(*ControllerCommand_CloseDaemon)(nil),
 		(*ControllerCommand_CloseSession)(nil),
 		(*ControllerCommand_CertificateBundle)(nil),
+		(*ControllerCommand_RelayRenew)(nil),
+		(*ControllerCommand_RelaySettle)(nil),
+		(*ControllerCommand_RelayQuery)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
