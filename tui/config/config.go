@@ -19,8 +19,8 @@ const DefaultFileName = "tui-v3.yaml"
 const maxHistorySizeMB = 8 * 1024 * 1024
 
 const (
-	DefaultWorkspaceTemplate = "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
-	DefaultTabTemplate       = "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
+	DefaultWorkspaceTemplate = "[style:header-workspace] WS {{workspace | truncate 18}} [/style][style:header-spacer] [/style]"
+	DefaultTabTemplate       = "{{if active}}[style:header-active-edge] [/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge] [/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
 )
 
 func DefaultPath() string {
@@ -52,7 +52,7 @@ func Default() state.TUIConfigStore {
 			Header:            true,
 			Footer:            true,
 			PanelPresentation: "split-line",
-			TabCreateIcon:     "󰐕",
+			TabCreateIcon:     "+",
 			TabCreateTemplate: "",
 			WorkspaceTemplate: DefaultWorkspaceTemplate,
 			TabTemplate:       DefaultTabTemplate,
@@ -70,7 +70,7 @@ func Default() state.TUIConfigStore {
 				TerminalsSummary:         "terminals:{{count}}",
 				TabsSummary:              "tabs:{{count}}",
 				PanesSummary:             "panes:{{count}}",
-				KeylockOn:                "󰌾 KEYLOCK",
+				KeylockOn:                "LOCK",
 			},
 		},
 		Interaction: state.TUIInteractionConfig{

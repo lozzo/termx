@@ -52,7 +52,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, "  main") || !frameContains(cases["workbench-live"].Lines, "▎ 1 main ") || !frameContains(cases["workbench-live"].Lines, render.HeaderTabCreateText) || !frameContains(cases["workbench-live"].Lines, "[Ctrl+P] PANE") || !frameContains(cases["workbench-live"].Lines, "[Ctrl+G] GLOBAL") || !frameContains(cases["workbench-live"].Lines, "ws:main") {
+	if !frameContains(cases["workbench-live"].Lines, " WS main") || !frameContains(cases["workbench-live"].Lines, "▎ 1 main "+render.DefaultPaneChromeGlyphs().Close) || !frameContains(cases["workbench-live"].Lines, render.HeaderTabCreateText) || !frameContains(cases["workbench-live"].Lines, "[Ctrl+P] PANE") || !frameContains(cases["workbench-live"].Lines, "[Ctrl+G] GLOBAL") || !frameContains(cases["workbench-live"].Lines, "ws:main") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;8;8;13m") {
@@ -96,7 +96,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Manager") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "⌕ search 日志") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "▸  日志🚀") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "▸ ● 日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "running · 1 view · 120x36") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "CPU") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "HIST metrics unavailable") ||
@@ -134,7 +134,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("help overlay smoke missing help content: %#v", cases["help-overlay"].Lines)
 	}
 	if !frameContains(cases["tab-workspace"].Lines, " remote ") ||
-		!frameContains(cases["tab-workspace"].Lines, "1 main ") ||
+		!frameContains(cases["tab-workspace"].Lines, "1 main "+render.DefaultPaneChromeGlyphs().Close) ||
 		!frameContains(cases["tab-workspace"].Lines, "WORKSPACE") ||
 		!frameContains(cases["tab-workspace"].Lines, "workspace live") {
 		t.Fatalf("tab/workspace smoke missing product entry content: %#v", cases["tab-workspace"].Lines)
@@ -223,7 +223,8 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl+P] PANE", "[Ctrl+G] GLOBAL", "[PgUp] COPY", "ws:main float:1"}
+	closeGlyph := render.DefaultPaneChromeGlyphs().Close
+	requiredReview := []string{" WS main", "▎ 1 main " + closeGlyph + "   2 logs " + closeGlyph + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl+P] PANE", "[Ctrl+G] GLOBAL", "[PgUp] COPY", "ws:main float:1"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)

@@ -1644,7 +1644,7 @@ func terminalManagerRowLine(row state.TerminalPoolPageItem) Line {
 	stateText := terminalPoolStateLabel(row)
 	cells := []Cell{
 		styledCell(marker, markerStyle),
-		styledCell("", terminalPoolStateStyle(stateText)),
+		styledCell("●", terminalPoolStateStyle(stateText)),
 		NewCell(" "),
 		styledCell(row.Title, titleStyle),
 		NewCell(" "),
@@ -2914,13 +2914,13 @@ func workbenchTreeKindLabel(row state.WorkbenchTreeItem) string {
 func workbenchTreeKindGlyph(row state.WorkbenchTreeItem) string {
 	switch row.Kind {
 	case state.WorkbenchTreeKindWorkspace:
-		return "󰙅"
+		return "W"
 	case state.WorkbenchTreeKindTab:
-		return "󰓩"
+		return "T"
 	case state.WorkbenchTreeKindPane:
-		return ""
+		return "P"
 	case state.WorkbenchTreeKindFloating:
-		return ""
+		return "F"
 	default:
 		return workbenchTreeKindLabel(row)
 	}

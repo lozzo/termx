@@ -192,29 +192,28 @@ tui:
     panel_presentation: split-line
 
     # tab_create_icon 是 tab strip 上创建新 tab 的图标。
-    # 默认值："󰐕"。
-    # 要求：必须是终端能正确显示的 Nerd Font 图标或短文本，后续实现必须校验 cell width。
-    # 示例：tab_create_icon: "+"
-    tab_create_icon: "󰐕"
+    # 默认值："+"；也可以显式配置终端可显示的短文本或任意字形。
+    # Nerd Font opt-in（仅在用户确认字体支持时）：tab_create_icon: "󰐕"
+    tab_create_icon: "+"
 
     # tab_create_template 控制创建 tab 按钮的完整格式。
     # 默认值为空，表示使用内置按钮格式。
     # 可用变量/函数：{{create_icon}}、fg、bg、style、action、end_style。
-    # 示例：tab_create_template: "[fg:#050507;bg:#8ffcff] {{create_icon}} [fg:#8ffcff;bg:#040a0d]"
+    # 示例：tab_create_template: "[fg:#050507;bg:#8ffcff] {{create_icon}} [reset]"
     tab_create_template: ""
 
     # workspace_template 控制 header 左侧 workspace 槽位。
-    # 默认值使用主题派生色做一个紧凑胶囊，点击区域仍是打开 Workbench Navigator。
+    # 默认值使用主题派生色做一个紧凑槽位，点击区域仍是打开 Workbench Navigator。
     # 可用变量/函数：
     # - {{workspace}} / {{workspace_id}} / {{title}}：当前 workspace 展示名。
     # - {{workspace | truncate 18}} 按 terminal cell 宽度裁切。
     # - 可使用和 tab_template 相同的 [style:...]、[fg:#RRGGBB]、[reset] span。
     # 这个模板只影响展示，不保存或修改 workspace truth。
-    # 示例：workspace_template: "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
-    workspace_template: "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
+    # 示例：workspace_template: "[style:header-workspace] WS {{workspace | truncate 18}} [/style][style:header-spacer] [/style]"
+    workspace_template: "[style:header-workspace] WS {{workspace | truncate 18}} [/style][style:header-spacer] [/style]"
 
     # tab_template 控制 header tab 的格式。
-    # 默认值使用主题派生色做 active tab 胶囊；active/inactive 分支保持相同 cell 宽度，避免切换时跳动。
+    # 默认值使用主题派生色突出 active tab；active/inactive 分支保持相同 cell 宽度，避免切换时跳动。
     # 表达式语法使用 Go text/template：
     # - {{tab_id}} / {{index}} / {{title}} / {{marker}} / {{close_icon}} 插入变量。
     # - {{if active}}▎{{else}}|{{end}} 做 active 条件分支。
@@ -224,8 +223,8 @@ tui:
     # - [fg:#ffffff;bg:#332244;font:bold] 切换后续片段的显式 SGR 颜色/字形。
     # - [style:header-active-title] 切换到内置 style token；[/style] 恢复当前 tab 默认样式。
     # - [action:tab.close]...[/action] 把片段绑定到 close action；未标注 action 的片段默认切换 tab。
-    # 示例：tab_template: "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
-    tab_template: "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
+    # 示例：tab_template: "{{if active}}[style:header-active-edge] [/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge] [/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
+    tab_template: "{{if active}}[style:header-active-edge] [/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge] [/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
 
     # pane_title_template 控制 pane/floating 顶部 terminal 标题。
     # 默认值：""，表示使用内置标题：优先 terminal pool 名称，其次 pane title，最后 terminal id。
@@ -244,7 +243,7 @@ tui:
     # 没写表示使用内置默认，显式写成 "" 表示隐藏对应部分。
     # 模板支持 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}、{{active}}、{{not_active}}、{{is_zoom_mode}}、{{not_zoom_mode}}，
     # 并支持和 tab_template 一样的 [fg:#RRGGBB;bg:#RRGGBB;font:bold] / [style:accent] / [reset] span。
-    # 示例：
+    # Nerd Font opt-in 示例（仅在用户确认字体支持时）：
     # action_left: " "
     # action_right: " "
     # action_separator: ""
@@ -328,8 +327,8 @@ tui:
       panes_summary: "panes:{{count}}"
 
       # keylock_on 控制全局快捷键锁开启时右侧摘要里的显示文本。
-      # 默认值："󰌾 KEYLOCK"。
-      keylock_on: "󰌾 KEYLOCK"
+      # 默认值："LOCK"。
+      keylock_on: "LOCK"
 
       # keylock_off 当前预留；关闭时 footer 默认不显示 keylock token。
       # 默认值：""。
@@ -339,7 +338,7 @@ tui:
     # name 可写 live、pane、resize、tab、workspace、floating、global、copy，
     # 也可写 overlay mode，例如 terminal-picker、terminal-pool、workbench-tree、clipboard-history。
     # footer action、快捷键和文案统一由 tui.shortcuts 生成。
-    # 示例：
+    # Nerd Font opt-in 示例（仅在用户确认字体支持时）：
     # modes:
     #   live:
     #     icon: "󰆍"

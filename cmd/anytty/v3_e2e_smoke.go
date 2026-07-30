@@ -323,7 +323,8 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{"  main", "▎ 1 main ", "󰐕", "v3-e2e-smoke", "◆ owner", "ws:main"}
+	glyphs := render.DefaultPaneChromeGlyphs()
+	required := []string{" WS main", "▎ 1 main " + glyphs.Close, render.HeaderTabCreateText, "v3-e2e-smoke", "◆ owner", "ws:main"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {
@@ -336,7 +337,6 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 			return fmt.Errorf("v3 e2e smoke: styled chrome marker %q missing from frame %#v", marker, frame.Lines)
 		}
 	}
-	glyphs := render.DefaultPaneChromeGlyphs()
 	for _, marker := range []string{"⇄2", "1/31"} {
 		for _, line := range frame.Lines {
 			if strings.Contains(line, "┌─") && strings.Contains(line, marker) {

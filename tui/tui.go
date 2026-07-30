@@ -375,7 +375,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 				panel.Active = false
 				panel.Chrome.Title.Style = render.StyleMuted
 				panel.Chrome.Actions = []render.ChromeActionVM{
-					{Text: "", ActionID: render.ActionPaneClose.String(), Style: render.StyleMuted},
+					{Text: render.DefaultPaneChromeGlyphs().Close, ActionID: render.ActionPaneClose.String(), Style: render.StyleMuted},
 				}
 			}
 		}

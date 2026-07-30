@@ -49,6 +49,18 @@ func TestParseDocumentedConfigExample(t *testing.T) {
 	}
 }
 
+func TestDefaultVisibleChromeUsesPortableText(t *testing.T) {
+	cfg := Default()
+	if cfg.Chrome.TabCreateIcon != "+" || cfg.Footer.Templates.KeylockOn != "LOCK" {
+		t.Fatalf("unexpected default create/keylock text: chrome=%#v footer=%#v", cfg.Chrome, cfg.Footer.Templates)
+	}
+	if !strings.Contains(cfg.Chrome.WorkspaceTemplate, " WS {{workspace | truncate 18}} ") ||
+		!strings.Contains(cfg.Chrome.TabTemplate, "{{marker}}") ||
+		!strings.Contains(cfg.Chrome.TabTemplate, "{{close_icon}}") {
+		t.Fatalf("default header templates must keep visible workspace/tab actions, chrome=%#v", cfg.Chrome)
+	}
+}
+
 func TestParseConfigOverridesScalars(t *testing.T) {
 	cfg, err := Parse([]byte(`
 version: 1

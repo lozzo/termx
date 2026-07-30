@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	actiondomain "github.com/anytty/anytty/tui/action"
+	tuiconfig "github.com/anytty/anytty/tui/config"
 )
 
 func TestMeasureLayoutPlansBodyPanelOverlayAndToastRects(t *testing.T) {
@@ -356,10 +357,10 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	switchRegion := hitRegionByAction(t, plan.HitRegions, ActionTabSwitch.String())
 	createRegion := hitRegionByAction(t, plan.HitRegions, ActionTabCreate.String())
 	workspaceRegion := hitRegionByAction(t, plan.HitRegions, "menu.workbench_tree")
-	if workspaceRegion.Kind != HitRegionContentAction || workspaceRegion.Rect.Y != plan.Header.Y || workspaceRegion.Rect.W != DisplayWidth("  main") {
+	if workspaceRegion.Kind != HitRegionContentAction || workspaceRegion.Rect.Y != plan.Header.Y || workspaceRegion.Rect.W != DisplayWidth(" WS main") {
 		t.Fatalf("unexpected workspace navigator region %#v", workspaceRegion)
 	}
-	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth("") {
+	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth(DefaultPaneChromeGlyphs().Close) {
 		t.Fatalf("unexpected tab close region %#v", closeRegion)
 	}
 	if closeRegion.PaneID != "tab-main" {
@@ -373,6 +374,46 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	}
 	if closeRegion.Rect.X >= createRegion.Rect.X {
 		t.Fatalf("tab close should appear before create, close=%#v create=%#v", closeRegion, createRegion)
+	}
+}
+
+func TestMeasureLayoutPortableHeaderHitsStayAlignedAtNarrowUnicodeWidths(t *testing.T) {
+	for _, viewportWidth := range []int{40, 80} {
+		t.Run(strconv.Itoa(viewportWidth), func(t *testing.T) {
+			shell := ShellVM{
+				Header: HeaderVM{
+					Visible:           true,
+					Workspace:         "工作区🚀",
+					WorkspaceTemplate: tuiconfig.DefaultWorkspaceTemplate,
+					TabTemplate:       tuiconfig.DefaultTabTemplate,
+					TabCreateIcon:     "+",
+					Tabs: []HeaderTabVM{{
+						ID: "tab-logs", Title: "日志🚀", Index: 1, Active: true,
+						CloseActionID: ActionTabClose.String(), CloseTargetID: "tab-logs",
+					}},
+				},
+				Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
+			}
+			plan := MeasureLayout(shell, Rect{W: viewportWidth, H: 12})
+			seen := map[string]bool{}
+			for _, region := range plan.HitRegions {
+				if region.Rect.Y != plan.Header.Y {
+					continue
+				}
+				if region.Rect.W <= 0 || region.Rect.X < 0 || region.Rect.X+region.Rect.W > viewportWidth {
+					t.Fatalf("header hit region must stay within %d columns: %#v", viewportWidth, region)
+				}
+				seen[region.ActionID] = true
+				if region.ActionID == ActionTabClose.String() && region.Rect.W != DisplayWidth(DefaultPaneChromeGlyphs().Close) {
+					t.Fatalf("close hit width must follow the built-in glyph: %#v", region)
+				}
+			}
+			for _, actionID := range []string{"menu.workbench_tree", ActionTabSwitch.String(), ActionTabClose.String(), ActionTabCreate.String()} {
+				if !seen[actionID] {
+					t.Fatalf("portable header action %q missing at width %d: %#v", actionID, viewportWidth, plan.HitRegions)
+				}
+			}
+		})
 	}
 }
 
@@ -1105,8 +1146,8 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	if center < 0 || collapse < 0 || zoom < 0 || close < 0 || move < 0 || resize < 0 || pane < 0 || center > pane || collapse > pane || zoom > pane || close > pane || move > pane || resize > pane {
 		t.Fatalf("floating hit regions should precede tiled pane regions, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[center].Rect.W != DisplayWidth(paneChromeBracketToken("")) ||
-		plan.HitRegions[collapse].Rect.W != DisplayWidth(paneChromeBracketToken("")) ||
+	if plan.HitRegions[center].Rect.W != DisplayWidth(paneChromeBracketToken(DefaultPaneChromeGlyphs().CenterFloating)) ||
+		plan.HitRegions[collapse].Rect.W != DisplayWidth(paneChromeBracketToken(DefaultPaneChromeGlyphs().CollapseFloating)) ||
 		plan.HitRegions[zoom].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeZoomGlyph())) ||
 		plan.HitRegions[close].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeCloseGlyph())) ||
 		plan.HitRegions[center].Rect.X >= plan.HitRegions[collapse].Rect.X ||

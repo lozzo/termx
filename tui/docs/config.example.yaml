@@ -142,10 +142,10 @@ tui:
     panel_presentation: split-line
 
     # tab_create_icon 是 tab strip 上创建新 tab 的按钮内容。
-    # 建议使用 Nerd Font glyph；如果宿主字体不支持，可以改成 "+"。
     # 这个按钮的 action 仍是固定的 tab.create；这里只配置显示内容。
-    # 默认值："󰐕"。
-    tab_create_icon: "󰐕"
+    # 默认值："+"。
+    # Nerd Font opt-in（仅在用户确认字体支持时）：tab_create_icon: "󰐕"
+    tab_create_icon: "+"
 
     # tab_create_template 控制创建 tab 按钮的完整格式。
     # 这个模板只改变显示和 tab.create hit region，不改变新建 tab 的 reducer 消息链路。
@@ -156,7 +156,7 @@ tui:
     # workspace_template 控制 header 左侧 workspace 胶囊。
     # 这个模板只改变显示和打开 Navigator 的 hit region，不修改 workspace truth。
     # 可用变量/函数：workspace、workspace_id、title、truncate、fg、bg、style、action、end_style。
-    workspace_template: "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
+    workspace_template: "[style:header-workspace] WS {{workspace | truncate 18}} [/style][style:header-spacer] [/style]"
 
     # tab_template 控制 header tab 的完整格式。
     # 默认值使用主题派生色做 active tab 胶囊，并保证 active/inactive 宽度一致。
@@ -188,9 +188,9 @@ tui:
     #
     # 注意：
     # - 这个字段必须是单行字符串。
-    # - 复杂 Powerline/Nerd Font glyph 是否等宽，取决于宿主终端字体。
+    # - 自定义多 cell 或特殊字形的宽度取决于宿主终端字体。
     # - 为了避免切换 active 状态时 tab 宽度跳动，active 和 inactive 分支最好输出相同 cell 宽度。
-    tab_template: "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
+    tab_template: "{{if active}}[style:header-active-edge] [/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge] [/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
 
     # pane_title_template 控制 pane/floating 顶部 terminal 标题。
     # 默认值：""，表示使用 terminal pool 名称；可以配置成 terminal@机器名 这类格式。
@@ -203,7 +203,7 @@ tui:
     # 它只改显示，不改变 action id、鼠标 hit region 或 reducer 消息链路。
     # 例如右上角默认语义仍是 zoom / split right / split down / close。
     # action_left/action_right 是每个 action token 的左右部，默认等价于 "[" 和 "]"。
-    # action_group_left/action_group_right 是整组 action 的最外层左右部，可做 Powerline 半圆胶囊。
+    # action_group_left/action_group_right 是整组 action 的最外层左右部。
     # 这些模板支持和 tab_template 相同的 text/template 占位符与 AnyTTY span：
     # - action token 可用 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}、{{active}}、{{not_active}}、{{is_zoom_mode}}、{{not_zoom_mode}}。
     # - owner token 可用 {{text}}。
@@ -213,18 +213,18 @@ tui:
       action_left: " "
       action_right: " "
       action_separator: ""
-      action_group_left: "[fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}][fg:#071112;bg:{{if active}}#8ffcff{{else}}#ff6bff{{end}};font:bold]"
-      action_group_right: "[reset][fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}][reset]"
-      owner_left: "[fg:#8ffcff][fg:#071112;bg:#8ffcff;font:bold] "
-      owner_right: " [reset][fg:#8ffcff][reset]"
+      action_group_left: "[fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}]<[fg:#071112;bg:{{if active}}#8ffcff{{else}}#ff6bff{{end}};font:bold]"
+      action_group_right: "[reset][fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}]>[reset]"
+      owner_left: "[fg:#8ffcff]<[fg:#071112;bg:#8ffcff;font:bold] "
+      owner_right: " [reset][fg:#8ffcff]>[reset]"
       owner: "owner"
       owner_pending: "owner?"
       take_owner: "follow"
-      zoom: "󰁌"
-      unzoom: "󰁄"
-      split_vertical: "□"
-      split_horizontal: "▭"
-      close: "⤫"
+      zoom: "↗"
+      unzoom: "↙"
+      split_vertical: "│"
+      split_horizontal: "─"
+      close: "×"
       size_lock: ""
       size_unlock: ""
       center_floating: ""
@@ -284,20 +284,20 @@ tui:
       # - workspace_summary：{{workspace}}、{{value}}。
       # - 其他计数字段：{{count}}、{{value}}。
       # 默认值分别是 "ws:{{workspace}}"、"float:{{count}}"、"collapsed:{{count}}"、"terminals:{{count}}"。
-      workspace_summary: "󰙅 {{workspace}}"
-      floating_summary: "󰹙 {{count}}"
-      floating_collapsed_summary: "󰃄 {{count}}"
-      terminals_summary: " {{count}}"
+      workspace_summary: "ws:{{workspace}}"
+      floating_summary: "float:{{count}}"
+      floating_collapsed_summary: "collapsed:{{count}}"
+      terminals_summary: "terminals:{{count}}"
 
       # tabs_summary / panes_summary 是旧手写 FooterVM 和调试摘要兼容模板。
       # 默认值："tabs:{{count}}" / "panes:{{count}}"。
-      tabs_summary: "󰓩 {{count}}"
-      panes_summary: " {{count}}"
+      tabs_summary: "tabs:{{count}}"
+      panes_summary: "panes:{{count}}"
 
       # keylock_on 是全局 shortcut lock 开启后，右侧 summary 里的显示文本。
       # 它只改变文案，不改变 Ctrl-G 解锁和 root shortcut 透传规则。
-      # 默认值："󰌾 KEYLOCK"。
-      keylock_on: "󰌾 KEYLOCK"
+      # 默认值："LOCK"。
+      keylock_on: "LOCK"
 
       # keylock_off 当前预留；关闭状态默认不显示 keylock token。
       # 默认值：""。
@@ -309,22 +309,22 @@ tui:
     # footer action、快捷键和文案统一由 tui.shortcuts 生成。
     modes:
       live:
-        icon: "󰆍"
+        icon: ">"
         label: "TERM"
         style: footer-accent
 
       copy:
-        icon: "󰆏"
+        icon: "C"
         label: "COPY"
         style: footer-key-copy
 
       terminal-picker:
-        icon: "󰱼"
+        icon: "?"
         label: "PICK"
         style: footer-key-picker
 
       # resize:
-      #   icon: "󰙖"
+      #   icon: "R"
       #   label: "SIZE"
       #   style: footer-key-resize
 

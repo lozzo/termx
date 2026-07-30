@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/tui/config"
 	"github.com/anytty/anytty/tui/input"
 	"github.com/anytty/anytty/tui/state"
 )
@@ -35,6 +36,25 @@ func bindTestPaneTerminal(root state.Root, paneID string, terminalID string) sta
 	root.TerminalViews = root.TerminalViews.BindPane(binding)
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: paneID}, terminalID)
 	return root
+}
+
+func TestDefaultKeylockStatusRendersAsPortableText(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.ShortcutPassthroughLocked = true
+	root := state.Root{
+		Shell:    shell,
+		Config:   config.Default(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 40, Rows: 8},
+	}
+
+	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
+	footer := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footer, "LOCK") || DisplayWidth("LOCK") != 4 {
+		t.Fatalf("default keylock state must render as portable visible text, footer=%q", footer)
+	}
+	if DisplayWidth(footer) != 40 {
+		t.Fatalf("default keylock footer must preserve viewport width, width=%d footer=%q", DisplayWidth(footer), footer)
+	}
 }
 
 func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
@@ -3387,7 +3407,7 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	rendered := plainLines(content.Lines)
 	if !strings.Contains(rendered, "⌕ search 日志") ||
 		!strings.Contains(rendered, "TERMINALS") ||
-		!strings.Contains(rendered, "▸  日志🚀") ||
+		!strings.Contains(rendered, "▸ ● 日志🚀") ||
 		!strings.Contains(rendered, "running · 2 views · 120x36") ||
 		!strings.Contains(rendered, "12% 64M") ||
 		!strings.Contains(rendered, "CPU 12%") ||
@@ -3599,7 +3619,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[3].PlainString(), "日志终端") ||
 		!lineHasStyledANSICell(content.Lines[3], "日志终端", StyleAccent, ANSICellStyle{Underline: true}) ||
 		!strings.Contains(content.Lines[4].PlainString(), "浮窗终端") ||
-		!lineHasStyledCell(content.Lines[4], "  ", StyleSuccess) ||
+		!lineHasStyledCell(content.Lines[4], " F ", StyleSuccess) ||
 		strings.HasPrefix(content.Lines[3].PlainString(), "▸") ||
 		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
 		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
@@ -3645,7 +3665,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		t.Fatalf("expected workbench cursor on search row and no content action row, cursor=%#v meta=%#v lines=%d", content.Cursor, content.Meta, len(content.Lines))
 	}
 	if len(content.Meta.WorkbenchSnapshots) != 1 ||
-		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[3], " P ", StyleAccent) ||
 		!lineHasStyledCell(content.Lines[3], "日志终端", StyleAccent) ||
 		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
 		strings.Contains(content.Lines[3].PlainString(), "term:term-2") {
@@ -3680,6 +3700,23 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	}
 }
 
+func TestWorkbenchTreeKindGlyphsUsePortableSingleCellLabels(t *testing.T) {
+	for name, item := range map[string]struct {
+		kind string
+		want string
+	}{
+		"workspace": {state.WorkbenchTreeKindWorkspace, "W"},
+		"tab":       {state.WorkbenchTreeKindTab, "T"},
+		"pane":      {state.WorkbenchTreeKindPane, "P"},
+		"floating":  {state.WorkbenchTreeKindFloating, "F"},
+	} {
+		glyph := workbenchTreeKindGlyph(state.WorkbenchTreeItem{Kind: item.kind})
+		if glyph != item.want || DisplayWidth(glyph) != 1 {
+			t.Fatalf("%s kind glyph must be a visible single-cell label, got=%q want=%q width=%d", name, glyph, item.want, DisplayWidth(glyph))
+		}
+	}
+}
+
 func TestRenderVMBuilderProjectsWorkbenchTreeFloatingSnapshot(t *testing.T) {
 	shell := state.DefaultShell()
 	var result state.FloatingCommandResult
@@ -3706,7 +3743,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeFloatingSnapshot(t *testing.T) {
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[3].PlainString(), "term-float") ||
-		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[3], " F ", StyleAccent) ||
 		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
 		len(content.Meta.WorkbenchSnapshots) != 1 ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "term-float" ||

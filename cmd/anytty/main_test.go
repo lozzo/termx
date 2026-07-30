@@ -481,7 +481,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 		"WORKBENCH-TREE  • [enter] OPEN • [Ctrl+N] NEW • [Ctrl+R] RENAME",
 		"case: visual-audit-current",
 		"visual review",
-		"[󰁌]─[]",
+		"[↗]─[×]",
 		"case: copy-history",
 		"copy row",
 	} {
@@ -1964,7 +1964,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"  main", "▎ 1 main    2 logs   󰐕", "visual review", "[󰁌]─[]", "└───────────────────────────┘", "[Ctrl+P] PANE", "[PgUp] COPY", "ws:main float:1"} {
+	for _, want := range []string{" WS main", "▎ 1 main ×   2 logs ×  +", "visual review", "[↗]─[×]", "└───────────────────────────┘", "[Ctrl+P] PANE", "[PgUp] COPY", "ws:main float:1"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -2443,7 +2443,7 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read style map diff: %v", err)
 	}
-	if !strings.Contains(string(current), "[󰁌]─[]") ||
+	if !strings.Contains(string(current), "[↗]─[×]") ||
 		!strings.Contains(string(target), "[Ctrl+G] GLOBAL • [Ctrl+O] FLOAT • [Ctrl+T] TAB") ||
 		!strings.Contains(string(target), "[PgUp] COPY") ||
 		!strings.Contains(string(target), "float:1") ||

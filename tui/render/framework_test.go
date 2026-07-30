@@ -97,7 +97,8 @@ func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
 	if !linesContain(lines, " 123 ") || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "x2") || !linesContain(lines, "◇ follow") {
 		t.Fatalf("expected floating terminal header tokens, got %#v", lines)
 	}
-	if !linesContain(lines, paneChromeBracketToken("")+"─"+paneChromeBracketToken("")+"─"+paneChromeBracketToken(paneChromeZoomGlyph())+"─"+paneChromeBracketToken(paneChromeCloseGlyph())) {
+	glyphs := DefaultPaneChromeGlyphs()
+	if !linesContain(lines, paneChromeBracketToken(glyphs.CenterFloating)+"─"+paneChromeBracketToken(glyphs.CollapseFloating)+"─"+paneChromeBracketToken(glyphs.Zoom)+"─"+paneChromeBracketToken(glyphs.Close)) {
 		t.Fatalf("expected floating-specific action glyphs, got %#v", lines)
 	}
 }
@@ -256,7 +257,7 @@ func TestFrameworkRendersUnconnectedPaneWithoutChromeActionCluster(t *testing.T)
 	if !linesContain(lines, paneChromeBracketToken(paneChromeZoomGlyph())) || !linesContain(lines, paneChromeBracketToken(paneChromeSplitVerticalGlyph())) || !linesContain(lines, paneChromeBracketToken(paneChromeSplitHorizontalGlyph())) || !linesContain(lines, paneChromeBracketToken(paneChromeCloseGlyph())) {
 		t.Fatalf("unconnected pane should keep still-available pane chrome actions, got %#v", lines)
 	}
-	if linesContain(lines, paneChromeBracketToken("")) || linesContain(lines, paneChromeBracketToken("")) {
+	if linesContain(lines, paneChromeBracketToken(DefaultPaneChromeGlyphs().CenterFloating)) || linesContain(lines, paneChromeBracketToken(DefaultPaneChromeGlyphs().CollapseFloating)) {
 		t.Fatalf("unconnected pane must not render floating-only chrome action cluster, got %#v", lines)
 	}
 }
@@ -470,7 +471,7 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 	}
 }
 
-func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
+func TestFrameworkUsesUnicodeBoxChrome(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},
 		Footer: FooterVM{Visible: true, Mode: "live"},
@@ -490,8 +491,8 @@ func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
 		t.Fatalf("expected square Unicode card/overlay/toast chrome, got %#v", lines)
 	}
 	for _, line := range lines {
-		if strings.ContainsAny(line, "+|-") {
-			t.Fatalf("default UI chrome must not contain ASCII + - or |, got %q", line)
+		if strings.Contains(line, "|") || strings.Contains(line, "---") {
+			t.Fatalf("default box chrome must not fall back to ASCII borders, got %q", line)
 		}
 	}
 	assertAllRowsWidth(t, lines, 42)
@@ -546,10 +547,10 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if strings.HasPrefix(frame.Lines[0], "┌") || strings.HasSuffix(frame.Lines[0], "┐") || strings.Contains(frame.Lines[0], "─┬─") {
 		t.Fatalf("top bar should be a product bar, not an outer wireframe, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[0], "  main") || !strings.Contains(frame.Lines[0], "▎ 1 1 ") || !strings.Contains(frame.Lines[0], HeaderTabCreateText) || !strings.Contains(frame.Lines[0], "pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
+	if !strings.Contains(frame.Lines[0], " WS main") || !strings.Contains(frame.Lines[0], "▎ 1 1 "+DefaultPaneChromeGlyphs().Close) || !strings.Contains(frame.Lines[0], HeaderTabCreateText) || !strings.Contains(frame.Lines[0], "pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
 		t.Fatalf("top bar should contain tuiv2-like workspace/tab/create/notice slots, got %#v", frame.Lines[0])
 	}
-	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "1:1") || strings.Contains(frame.Lines[0], "×") {
+	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "1:1") {
 		t.Fatalf("top bar should not keep old bracket/indicator tokens, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
@@ -562,7 +563,7 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl] •") || strings.Contains(footer, "»") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
 		t.Fatalf("bottom bar should use status-bar metadata slots, got %#v", footer)
 	}
-	if !styledLinesContainText(frame.StyledLines[:1], "  main", StyleHeaderWorkspace) ||
+	if !styledLinesContainText(frame.StyledLines[:1], " WS main", StyleHeaderWorkspace) ||
 		!styledLinesContainText(frame.StyledLines[:1], HeaderTabCreateText, StyleHeaderCreate) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
 		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "Ctrl+P", StyleFooterKeyPane) ||
@@ -778,7 +779,7 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.Contains(frame.Lines[0], "1 shell ") || !strings.Contains(frame.Lines[0], "▎ 2 build ") {
+	if !strings.Contains(frame.Lines[0], "1 shell "+DefaultPaneChromeGlyphs().Close) || !strings.Contains(frame.Lines[0], "▎ 2 build "+DefaultPaneChromeGlyphs().Close) {
 		t.Fatalf("header should render structured tab slots, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
@@ -1578,7 +1579,7 @@ func TestFrameworkDoesNotRenderMainTabForEmptyWorkspace(t *testing.T) {
 		t.Fatalf("expected empty workspace body, got %#v", frame.Lines)
 	}
 	header := frame.Lines[0]
-	if strings.Contains(header, " main x") || strings.Contains(header, " main ") || strings.Contains(header, " 1 main") {
+	if strings.Contains(header, " main "+DefaultPaneChromeGlyphs().Close) || strings.Contains(header, " 1 main") {
 		t.Fatalf("empty workspace header must not render a synthetic main tab, header=%q", header)
 	}
 	if !strings.Contains(header, HeaderTabCreateText) {

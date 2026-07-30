@@ -5,23 +5,31 @@ import (
 	"testing"
 )
 
-func TestPaneChromeGlyphsDefaultToWireframeUnicodeAndRemainCellSafe(t *testing.T) {
+func TestPaneChromeGlyphDefaultsAreVisiblePortableSingleCellSymbols(t *testing.T) {
 	ResetPaneChromeGlyphs()
 	defer ResetPaneChromeGlyphs()
 
 	glyphs := DefaultPaneChromeGlyphs()
-	if glyphs.Close != "" || glyphs.Zoom != "󰁌" || glyphs.Unzoom != "󰁄" || glyphs.SplitVertical != "" || glyphs.SplitHorizontal != "" {
-		t.Fatalf("unexpected default Nerd Font glyphs: %#v", glyphs)
-	}
-	for name, glyph := range map[string]string{
-		"close":  glyphs.Close,
-		"zoom":   glyphs.Zoom,
-		"unzoom": glyphs.Unzoom,
-		"split":  glyphs.SplitVertical,
-		"run":    glyphs.Running,
+	for name, item := range map[string]struct {
+		got  string
+		want string
+	}{
+		"zoom":              {glyphs.Zoom, "↗"},
+		"unzoom":            {glyphs.Unzoom, "↙"},
+		"split vertical":    {glyphs.SplitVertical, "│"},
+		"split horizontal":  {glyphs.SplitHorizontal, "─"},
+		"close":             {glyphs.Close, "×"},
+		"size lock":         {glyphs.SizeLock, "■"},
+		"size unlock":       {glyphs.SizeUnlock, "□"},
+		"center floating":   {glyphs.CenterFloating, "◎"},
+		"collapse floating": {glyphs.CollapseFloating, "▾"},
+		"running":           {glyphs.Running, "●"},
+		"waiting":           {glyphs.Waiting, "○"},
+		"exited":            {glyphs.Exited, "×"},
+		"killed":            {glyphs.Killed, "×"},
 	} {
-		if DisplayWidth(glyph) != 1 {
-			t.Fatalf("%s glyph must be one terminal cell, got width=%d glyph=%q", name, DisplayWidth(glyph), glyph)
+		if item.got != item.want || DisplayWidth(item.got) != 1 {
+			t.Fatalf("%s default must be visible and one terminal cell, got=%q want=%q width=%d", name, item.got, item.want, DisplayWidth(item.got))
 		}
 	}
 }
@@ -48,8 +56,9 @@ func TestFloatingChromeActionTextKeepsBracketedPaneChromeWithoutSplit(t *testing
 	ResetPaneChromeGlyphs()
 	defer ResetPaneChromeGlyphs()
 
+	glyphs := DefaultPaneChromeGlyphs()
 	got := paneChromeActionTextFromItems(floatingChromeActionItems(30))
-	want := "[]─[]─[" + paneChromeZoomGlyph() + "]─[" + paneChromeCloseGlyph() + "]"
+	want := "[" + glyphs.CenterFloating + "]─[" + glyphs.CollapseFloating + "]─[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
 	if got != want {
 		t.Fatalf("floating actions got=%q want=%q", got, want)
 	}

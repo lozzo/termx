@@ -7,7 +7,7 @@ import (
 	actiondomain "github.com/anytty/anytty/tui/action"
 )
 
-const HeaderTabCreateText = "  󰐕 "
+const HeaderTabCreateText = "  + "
 
 func renderShellFrame(c *canvas, plan LayoutPlan) {
 	// shell 默认不绘制整屏外框；边界由 pane、floating 和 overlay 各自表达。
@@ -60,7 +60,7 @@ func headerWorkspaceSegments(header HeaderVM, workspace string) []barSegment {
 		return segments
 	}
 	return []barSegment{
-		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction("menu.workbench_tree"),
+		barText(" WS "+workspace, StyleHeaderWorkspace, 1).withAction("menu.workbench_tree"),
 	}
 }
 

@@ -974,7 +974,8 @@ func runV3TmuxVisualCompare(ctx context.Context, anyttyBin string) (v3TmuxVisual
 	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "140", "-y", "40", "-s", session, "/bin/sh", scriptPath); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
-	if err := waitForTmuxCapture(ctx, target, "[󰁌]─[]", 5*time.Second); err != nil {
+	glyphs := render.DefaultPaneChromeGlyphs()
+	if err := waitForTmuxCapture(ctx, target, "["+glyphs.Zoom+"]─["+glyphs.Close+"]", 5*time.Second); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
 	currentANSI, err := captureTmuxPane(ctx, target, true)
@@ -1062,14 +1063,14 @@ func runV3TmuxVisualCompare(ctx context.Context, anyttyBin string) (v3TmuxVisual
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		"  main ▎ 1 main    2 logs   󰐕",
-		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[󰁌]─[]─[]─[]──┐─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
+		" WS main ▎ 1 main ×   2 logs ×  + ",
+		"┌─[□] shell ────────────────────────────────────────────────────────── ●  x1 ◆ owner ─[↗]─[│]─[─]─[×]──┐─[□] logs ───── ●  x1 ◇ follow─[×]─┐",
 		"│anytty git:core-tui-v3-migration  go v1.26.0                                      ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
 		"│ok   tui/render                                                                   ····················│ emoji 🚀 and 中文            ·····│",
 		"│>                                                                                 ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",
-		"│                                                                                  ····················│ ┌───────────[]─[]─[󰁌]─[]─┐·····│",
+		"│                                                                                  ····················│ ┌───────────[◎]─[▾]─[↗]─[×]─┐·····│",
 		"│                                                                                  ····················│ │        unconnected        │·····│",
 		"│                                                                                  ····················│ │                           │·····│",
 		"│                                                                                  ····················│ │      Attach existing      │·····│",
@@ -1311,13 +1312,13 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 
 	// 固定视觉基线的目标样式来自 tuiv2-style 单行 tab/status bar 与对象 chrome 语义区域。
 	fill(1, 1, visibleLineWidth(1), visualStyleStatus)
-	fillRangesForSubstrings(1, visualStyleWarn, "")
-	fillRangesForSubstrings(1, visualStyleMuted, " 2 logs ")
+	fillRangesForSubstrings(1, visualStyleWarn, "×")
+	fillRangesForSubstrings(1, visualStyleMuted, " 2 logs ×")
 	fillRangesForSubstrings(1, visualStyleAccent, "▎")
 
 	fill(2, 1, 103, visualStyleAccent)
 	fill(2, 104, width, visualStyleMuted)
-	fillRangesForSubstrings(2, visualStyleAccent, "[󰁌]─[]─[]─[]")
+	fillRangesForSubstrings(2, visualStyleAccent, "[↗]─[│]─[─]─[×]")
 	for row := 3; row <= 38; row++ {
 		fill(row, 1, 1, visualStyleAccent)
 		fill(row, 104, 104, visualStyleMuted)
@@ -1517,9 +1518,9 @@ func visualLineSubstringSpans(line string, marker string) [][2]int {
 func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
 		{Name: "header-workspace-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"1", "38;2;212;192;244", "48;2;60;46;85"}},
-		{Name: "active-tab-marker", Row: 1, Col: 9, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
-		{Name: "inactive-tab-muted", Row: 1, Col: 22, Glyph: "2", MustHave: []string{"38;2;181;163;209", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
-		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "󰁌", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "active-tab-marker", Row: 1, Col: 10, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 23, Glyph: "2", MustHave: []string{"38;2;181;163;209", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
+		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "↗", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "active-pane-right-border-accent", Row: 2, Col: 104, Glyph: "┐", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "active-pane-content-border-accent", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "floating-border-accent", Row: 8, Col: 106, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},

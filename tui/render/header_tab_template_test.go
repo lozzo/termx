@@ -3,6 +3,8 @@ package render
 import (
 	"strings"
 	"testing"
+
+	tuiconfig "github.com/anytty/anytty/tui/config"
 )
 
 func TestHeaderTabDefaultSegmentsKeepStableWidth(t *testing.T) {
@@ -16,6 +18,35 @@ func TestHeaderTabDefaultSegmentsKeepStableWidth(t *testing.T) {
 	}
 	if got := (Line{Cells: cellsFromBarSegments(inactive)}).PlainString(); strings.Contains(got, "▎") || !strings.Contains(got, "  2 logs "+paneChromeCloseGlyph()) {
 		t.Fatalf("inactive tab should keep marker footprint without active marker, got %q", got)
+	}
+}
+
+func TestPortableDefaultHeaderTemplatesKeepUnicodeTabWidthsStable(t *testing.T) {
+	workspace := headerWorkspaceTemplateSegments(tuiconfig.DefaultWorkspaceTemplate, "工作区🚀")
+	if got := (Line{Cells: cellsFromBarSegments(workspace)}).PlainString(); got != " WS 工作区🚀  " {
+		t.Fatalf("portable workspace template got %q", got)
+	}
+	ctx := headerTabTemplateContext{
+		Index:        2,
+		Title:        "日志🚀",
+		TabID:        "tab-logs",
+		SwitchAction: ActionTabSwitch.String(),
+		CloseAction:  ActionTabClose.String(),
+		CloseTarget:  "tab-logs",
+		CloseIcon:    DefaultPaneChromeGlyphs().Close,
+	}
+	ctx.Active = true
+	active := headerTabTemplateSegments(tuiconfig.DefaultTabTemplate, ctx)
+	ctx.Active = false
+	inactive := headerTabTemplateSegments(tuiconfig.DefaultTabTemplate, ctx)
+	if activeWidth, inactiveWidth := barSegmentsWidth(active), barSegmentsWidth(inactive); activeWidth != inactiveWidth || activeWidth <= 0 {
+		t.Fatalf("default unicode tab widths must remain stable, active=%d inactive=%d", activeWidth, inactiveWidth)
+	}
+	for _, segments := range [][]barSegment{active, inactive} {
+		plain := (Line{Cells: cellsFromBarSegments(segments)}).PlainString()
+		if !strings.Contains(plain, "日志🚀") || !strings.Contains(plain, DefaultPaneChromeGlyphs().Close) {
+			t.Fatalf("default tab must keep unicode title and visible close action, got %q", plain)
+		}
 	}
 }
 
