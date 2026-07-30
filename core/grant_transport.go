@@ -25,6 +25,7 @@ const (
 type trackedTransport struct {
 	transport.Transport
 	closeOnce      sync.Once
+	finishOnce     sync.Once
 	closeErr       error
 	reason         transportCloseReason
 	grantOperation atomic.Pointer[grantOperation]
@@ -55,10 +56,10 @@ type grantTimerEntry struct {
 }
 
 // grantOperation is the only coordination state shared by operations for one
-// canonical GrantID. Grant lifecycle lock order is lifecycleMu/wgMu (shutdown
-// only) -> grantOperationsMu -> operation.mu -> server.mu; normal paths enter a
-// suffix of that order and never acquire an earlier lock while holding a later
-// one. Store calls and transport Close calls run without any of these locks held.
+// canonical GrantID. Grant cleanup uses grantOperationsMu -> operation.mu, while
+// transport finish uses the operation.mu -> server.mu suffix. Admission uses the
+// separate wgMu -> server.mu barrier before reaching grant state. Store calls and
+// transport Close calls run without any of these locks held.
 type grantOperation struct {
 	grantID    string
 	mu         sync.Mutex
@@ -68,14 +69,26 @@ type grantOperation struct {
 	refs       int // protected by Server.grantOperationsMu
 }
 
-func (server *Server) admitTransport(ctx context.Context, connection transport.Transport, scope TransportScope) (*trackedTransport, error) {
+func (server *Server) beginTrackedTransport(connection transport.Transport) (*trackedTransport, error) {
 	tracked := &trackedTransport{Transport: connection}
+	server.wgMu.Lock()
+	server.mu.Lock()
+	if server.closed.Load() {
+		server.mu.Unlock()
+		server.wgMu.Unlock()
+		_ = tracked.closeWithReason(transportCloseShutdown)
+		return nil, ErrServerClosed
+	}
+	server.transports[tracked] = struct{}{}
+	server.wg.Add(1)
+	server.mu.Unlock()
+	server.wgMu.Unlock()
+	return tracked, nil
+}
+
+func (server *Server) admitTransport(ctx context.Context, tracked *trackedTransport, scope TransportScope) error {
 	if scope.LocalOwner {
-		if !server.trackTransportIfOpen(tracked) {
-			_ = tracked.closeWithReason(transportCloseShutdown)
-			return nil, ErrServerClosed
-		}
-		return tracked, nil
+		return nil
 	}
 
 	operation := server.acquireGrantOperation(scope.GrantID)
@@ -102,32 +115,20 @@ func (server *Server) admitTransport(ctx context.Context, connection transport.T
 		closeReason = transportCloseExpired
 	case operation.epoch != epoch || !active:
 		closeReason = transportCloseRevoked
-	case !server.trackTransportIfOpen(tracked):
-		closeReason = transportCloseShutdown
 	default:
 		tracked.grantOperation.Store(operation)
 		operation.transports[tracked] = struct{}{}
 		scheduleGrantExpiryLocked(server, operation, scope.GrantExpiresAt, finalNow)
 		operation.mu.Unlock()
-		return tracked, nil
+		return nil
 	}
 	operation.mu.Unlock()
 	closeTrackedTransports(detached, transportCloseExpired)
 	_ = tracked.closeWithReason(closeReason)
 	if closeReason == transportCloseShutdown {
-		return nil, ErrServerClosed
+		return ErrServerClosed
 	}
-	return nil, ErrGrantTransportInactive
-}
-
-func (server *Server) trackTransportIfOpen(tracked *trackedTransport) bool {
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	if server.closed.Load() {
-		return false
-	}
-	server.transports[tracked] = struct{}{}
-	return true
+	return ErrGrantTransportInactive
 }
 
 func (server *Server) untrackTransport(tracked *trackedTransport) {
@@ -145,6 +146,17 @@ func (server *Server) untrackTransport(tracked *trackedTransport) {
 	server.mu.Lock()
 	delete(server.transports, tracked)
 	server.mu.Unlock()
+}
+
+func (server *Server) finishTrackedTransport(tracked *trackedTransport) {
+	if tracked == nil {
+		return
+	}
+	tracked.finishOnce.Do(func() {
+		server.untrackTransport(tracked)
+		_ = tracked.Close()
+		server.wg.Done()
+	})
 }
 
 func scheduleGrantExpiryLocked(server *Server, operation *grantOperation, expiresAt, now time.Time) {

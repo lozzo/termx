@@ -177,6 +177,9 @@ type Server struct {
 	terminals              map[string]*Terminal
 	events                 *eventBroker
 	closed                 atomic.Bool
+	shutdownOnce           sync.Once
+	shutdownDone           chan struct{}
+	shutdownErr            error
 	nextProtocolSessionID  atomic.Uint64
 	protocolRequestSlots   chan struct{}
 	lifecycleMu            sync.Mutex
@@ -270,6 +273,7 @@ func NewServer(opts ...ServerOption) *Server {
 		transports:           make(map[*trackedTransport]struct{}),
 		outputBudget:         newTerminalOutputResidentBudget(cfg.outputResidentBytes),
 		protocolRequestSlots: make(chan struct{}, cfg.protocolRequestBudget),
+		shutdownDone:         make(chan struct{}),
 	}
 }
 
@@ -449,6 +453,9 @@ func (server *Server) TerminalOutputResidentBudget() int64 {
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
 	finishTotal := perftrace.Measure("core.server.register_terminal.total")
 	defer finishTotal(0)
+	if server.closed.Load() {
+		return TerminalInfo{}, ErrServerClosed
+	}
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
@@ -639,6 +646,9 @@ func (server *Server) StorageList(ctx context.Context, appID string, scope Stora
 
 func (server *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) (TerminalInfo, error) {
 	_ = ctx
+	if server.closed.Load() {
+		return TerminalInfo{}, ErrServerClosed
+	}
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
@@ -661,6 +671,9 @@ func (server *Server) SetMetadata(ctx context.Context, id string, name string, t
 }
 
 func (server *Server) RemoveTerminal(id string) error {
+	if server.closed.Load() {
+		return ErrServerClosed
+	}
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
@@ -729,6 +742,9 @@ func (server *Server) KillTerminal(ctx context.Context, id string) error {
 }
 
 func (server *Server) RestartTerminal(ctx context.Context, id string) error {
+	if server.closed.Load() {
+		return ErrServerClosed
+	}
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
@@ -972,34 +988,45 @@ func (server *Server) ListenAndServe(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	server.wgMu.Lock()
 	if server.closed.Load() {
+		server.wgMu.Unlock()
 		return ErrServerClosed
 	}
+	server.wg.Add(1)
+	server.wgMu.Unlock()
+	defer server.wg.Done()
+	defer server.startShutdown()
+
 	listener, err := server.cfg.listenerFactory(server.cfg.socketPath)
 	if err != nil {
 		return err
 	}
+	server.wgMu.Lock()
 	server.mu.Lock()
-	server.listeners = append(server.listeners, listener)
+	late := server.closed.Load()
+	if !late {
+		server.listeners = append(server.listeners, listener)
+	}
 	server.mu.Unlock()
+	server.wgMu.Unlock()
+	if late {
+		_ = listener.Close()
+		return ErrServerClosed
+	}
 	server.events.publish(Event{Type: EventServerListening, SocketPath: listener.Addr()})
 	server.cfg.logger.Info("core-v2 server listening", "socket_path", listener.Addr())
 	server.startHistoryRetention()
-	defer server.waitTransports()
-	defer func() {
-		_ = listener.Close()
-	}()
 	for {
 		conn, err := listener.Accept(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return server.Shutdown(context.Background())
+				return ctx.Err()
 			}
 			if errors.Is(err, transport.ErrListenerClosed) || server.closed.Load() {
 				return nil
 			}
-			server.cfg.logger.Warn("core-v2 server accept failed", "socket_path", listener.Addr(), "error", err)
-			continue
+			return err
 		}
 		if !server.startTransport(ctx, conn) {
 			return nil
@@ -1035,36 +1062,54 @@ func (server *Server) ServeScopedTransportObserved(ctx context.Context, conn tra
 		_ = conn.Close()
 		return err
 	}
-	server.wgMu.Lock()
-	if server.closed.Load() {
-		server.wgMu.Unlock()
-		_ = conn.Close()
-		return ErrServerClosed
-	}
-	server.wg.Add(1)
-	server.wgMu.Unlock()
-	defer server.wg.Done()
-	tracked, err := server.admitTransport(ctx, conn, scope)
+	tracked, err := server.beginTrackedTransport(conn)
 	if err != nil {
+		return err
+	}
+	defer server.finishTrackedTransport(tracked)
+	if err := server.admitTransport(ctx, tracked, scope); err != nil {
 		return err
 	}
 	return server.serveTrackedTransportObserved(ctx, tracked, scope, observer)
 }
 
 func (server *Server) Shutdown(ctx context.Context) error {
-	_ = ctx
-	server.stopHistoryRetention()
-	server.lifecycleMu.Lock()
-	defer server.lifecycleMu.Unlock()
-	server.wgMu.Lock()
-	if !server.closed.CompareAndSwap(false, true) {
-		server.wgMu.Unlock()
-		return nil
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	server.stopGrantOperations()
-	server.outputBudget.close()
+	server.startShutdown()
+	select {
+	case <-server.shutdownDone:
+		return server.shutdownErr
+	default:
+	}
+	select {
+	case <-server.shutdownDone:
+		return server.shutdownErr
+	case <-ctx.Done():
+		select {
+		case <-server.shutdownDone:
+			return server.shutdownErr
+		default:
+			return ctx.Err()
+		}
+	}
+}
+
+func (server *Server) startShutdown() {
+	server.shutdownOnce.Do(func() {
+		server.closed.Store(true)
+		go server.runShutdown()
+	})
+}
+
+func (server *Server) runShutdown() {
+	var result error
+
+	server.wgMu.Lock()
 	server.mu.Lock()
 	listeners := append([]transport.Listener(nil), server.listeners...)
+	server.listeners = nil
 	transports := make([]*trackedTransport, 0, len(server.transports))
 	for conn := range server.transports {
 		transports = append(transports, conn)
@@ -1072,11 +1117,13 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.mu.Unlock()
 	server.wgMu.Unlock()
 	for _, listener := range listeners {
-		_ = listener.Close()
+		result = errors.Join(result, listener.Close())
 	}
 	for _, conn := range transports {
-		_ = conn.closeWithReason(transportCloseShutdown)
+		result = errors.Join(result, conn.closeWithReason(transportCloseShutdown))
 	}
+
+	server.lifecycleMu.Lock()
 	server.mu.Lock()
 	terminals := make([]*Terminal, 0, len(server.terminals))
 	for _, terminal := range server.terminals {
@@ -1084,16 +1131,23 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	}
 	server.terminals = make(map[string]*Terminal)
 	server.mu.Unlock()
+	server.lifecycleMu.Unlock()
 	for _, terminal := range terminals {
-		_ = terminal.closeWithReason()
+		result = errors.Join(result, terminal.closeWithReason())
 	}
+
+	server.stopHistoryRetention()
+	server.stopGrantOperations()
+	server.outputBudget.close()
+	server.wg.Wait()
+
 	server.registry.clear()
 	server.events.publish(Event{Type: EventServerStopped, SocketPath: server.cfg.socketPath})
 	server.events.close()
-	server.waitTransports()
 	server.pruneGrantOperations()
 	server.cfg.logger.Info("core-v2 server stopped", "socket_path", server.cfg.socketPath)
-	return nil
+	server.shutdownErr = result
+	close(server.shutdownDone)
 }
 
 func (server *Server) startHistoryRetention() {
@@ -1101,7 +1155,7 @@ func (server *Server) startHistoryRetention() {
 		return
 	}
 	server.historyRetentionMu.Lock()
-	if server.historyRetentionCancel != nil {
+	if server.closed.Load() || server.historyRetentionCancel != nil {
 		server.historyRetentionMu.Unlock()
 		return
 	}
@@ -1177,7 +1231,7 @@ func (server *Server) removeTerminalHandle(id string) *Terminal {
 }
 
 func (server *Server) handleTransport(ctx context.Context, conn *trackedTransport) {
-	defer server.wg.Done()
+	defer server.finishTrackedTransport(conn)
 	if err := server.serveTrackedTransport(ctx, conn, fullDaemonTransportScope()); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
 		server.cfg.logger.Debug("core-v2 protocol session stopped", "error", err)
 	}
@@ -1188,34 +1242,21 @@ func (server *Server) serveTrackedTransport(ctx context.Context, conn *trackedTr
 }
 
 func (server *Server) serveTrackedTransportObserved(ctx context.Context, conn *trackedTransport, scope TransportScope, observer TransportLifecycleObserver) error {
-	defer server.untrackTransport(conn)
-	defer func() { _ = conn.Close() }()
 	session := newProtocolSessionObserved(server, conn, scope, observer)
 	return session.run(ctx)
 }
 
 func (server *Server) startTransport(ctx context.Context, conn transport.Transport) bool {
-	server.wgMu.Lock()
-	if server.closed.Load() {
-		server.wgMu.Unlock()
-		_ = conn.Close()
+	tracked, err := server.beginTrackedTransport(conn)
+	if err != nil {
 		return false
 	}
-	server.wg.Add(1)
-	server.wgMu.Unlock()
-	tracked, err := server.admitTransport(ctx, conn, fullDaemonTransportScope())
-	if err != nil {
-		server.wg.Done()
+	if err := server.admitTransport(ctx, tracked, fullDaemonTransportScope()); err != nil {
+		server.finishTrackedTransport(tracked)
 		return false
 	}
 	go server.handleTransport(ctx, tracked)
 	return true
-}
-
-func (server *Server) waitTransports() {
-	server.wgMu.Lock()
-	defer server.wgMu.Unlock()
-	server.wg.Wait()
 }
 
 func (server *Server) publishTerminalEvent(typ EventType, info TerminalInfo) {

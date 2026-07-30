@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/anytty/anytty/shared/transport"
 )
 
 func TestGrantRevokePersistenceFailureLeavesEpochTransportsAndAdmissionUnchanged(t *testing.T) {
@@ -82,7 +84,7 @@ func TestGrantRevokeClosesAllMatchingTransportsExactlyOnceAndIsolatesOtherGrant(
 	}
 
 	rejected := newGrantCountingTransport()
-	if _, err := server.admitTransport(context.Background(), rejected, grantTestScope("grant-a", expiresAt)); !errors.Is(err, ErrGrantTransportInactive) {
+	if _, err := beginAndAdmitGrantTestTransport(server, rejected, grantTestScope("grant-a", expiresAt)); !errors.Is(err, ErrGrantTransportInactive) {
 		t.Fatalf("post-revoke admission error = %v", err)
 	}
 	assertGrantCloseCount(t, rejected, 1)
@@ -155,7 +157,7 @@ func TestSlowGrantActiveDoesNotDelayAnotherGrantExpiry(t *testing.T) {
 	aRaw := newGrantCountingTransport()
 	admitDone := make(chan grantAdmissionResult, 1)
 	go func() {
-		tracked, err := server.admitTransport(context.Background(), aRaw, grantTestScope("grant-a", aExpiresAt))
+		tracked, err := beginAndAdmitGrantTestTransport(server, aRaw, grantTestScope("grant-a", aExpiresAt))
 		admitDone <- grantAdmissionResult{tracked: tracked, err: err}
 	}()
 	waitGrantStage(t, activeGate.entered)
@@ -190,7 +192,7 @@ func TestGrantAdmissionRechecksAbsoluteExpiryAfterStoreQuery(t *testing.T) {
 	raw := newGrantCountingTransport()
 	admitDone := make(chan grantAdmissionResult, 1)
 	go func() {
-		tracked, err := server.admitTransport(context.Background(), raw, grantTestScope("grant-boundary", expiresAt))
+		tracked, err := beginAndAdmitGrantTestTransport(server, raw, grantTestScope("grant-boundary", expiresAt))
 		admitDone <- grantAdmissionResult{tracked: tracked, err: err}
 	}()
 	waitGrantStage(t, activeGate.entered)
@@ -227,7 +229,7 @@ func TestGrantAdmissionBeforeDuringAndAfterSuccessfulRevoke(t *testing.T) {
 	duringRaw := newGrantCountingTransport()
 	admitDone := make(chan grantAdmissionResult, 1)
 	go func() {
-		tracked, err := server.admitTransport(context.Background(), duringRaw, grantTestScope("grant-race", expiresAt))
+		tracked, err := beginAndAdmitGrantTestTransport(server, duringRaw, grantTestScope("grant-race", expiresAt))
 		admitDone <- grantAdmissionResult{tracked: tracked, err: err}
 	}()
 	waitGrantStage(t, activeGate.entered)
@@ -249,7 +251,7 @@ func TestGrantAdmissionBeforeDuringAndAfterSuccessfulRevoke(t *testing.T) {
 	assertGrantReverseIndexCleared(t, before)
 	assertGrantReverseIndexCleared(t, during.tracked)
 	afterRaw := newGrantCountingTransport()
-	if _, err := server.admitTransport(context.Background(), afterRaw, grantTestScope("grant-race", expiresAt)); !errors.Is(err, ErrGrantTransportInactive) {
+	if _, err := beginAndAdmitGrantTestTransport(server, afterRaw, grantTestScope("grant-race", expiresAt)); !errors.Is(err, ErrGrantTransportInactive) {
 		t.Fatalf("post-revoke admission error = %v", err)
 	}
 	assertGrantCloseCount(t, afterRaw, 1)
@@ -275,7 +277,7 @@ func TestGrantAdmissionRejectsStaleActiveResultAfterRevokeEpoch(t *testing.T) {
 	duringRaw := newGrantCountingTransport()
 	admitDone := make(chan grantAdmissionResult, 1)
 	go func() {
-		tracked, err := server.admitTransport(context.Background(), duringRaw, grantTestScope("grant-stale", expiresAt))
+		tracked, err := beginAndAdmitGrantTestTransport(server, duringRaw, grantTestScope("grant-stale", expiresAt))
 		admitDone <- grantAdmissionResult{tracked: tracked, err: err}
 	}()
 	waitGrantStage(t, activeReturnGate.entered)
@@ -324,7 +326,7 @@ func TestGrantAbsoluteExpirySharesOneCancelableTimerAndClosesAtBoundary(t *testi
 	assertGrantReverseIndexCleared(t, second)
 
 	rejected := newGrantCountingTransport()
-	if _, err := server.admitTransport(context.Background(), rejected, grantTestScope("grant-expiry", expiresAt)); !errors.Is(err, ErrGrantTransportInactive) {
+	if _, err := beginAndAdmitGrantTestTransport(server, rejected, grantTestScope("grant-expiry", expiresAt)); !errors.Is(err, ErrGrantTransportInactive) {
 		t.Fatalf("expiry-boundary admission error = %v", err)
 	}
 	assertGrantCloseCount(t, rejected, 1)
@@ -673,7 +675,7 @@ func grantTestScope(grantID string, expiresAt time.Time) TransportScope {
 func admitGrantTestTransport(t *testing.T, server *Server, grantID string, expiresAt time.Time) (*grantCountingTransport, *trackedTransport) {
 	t.Helper()
 	raw := newGrantCountingTransport()
-	tracked, err := server.admitTransport(context.Background(), raw, grantTestScope(grantID, expiresAt))
+	tracked, err := beginAndAdmitGrantTestTransport(server, raw, grantTestScope(grantID, expiresAt))
 	if err != nil {
 		t.Fatalf("admit %s: %v", grantID, err)
 	}
@@ -684,8 +686,19 @@ func closeGrantTestTransport(server *Server, tracked *trackedTransport) {
 	if tracked == nil {
 		return
 	}
-	server.untrackTransport(tracked)
-	_ = tracked.Close()
+	server.finishTrackedTransport(tracked)
+}
+
+func beginAndAdmitGrantTestTransport(server *Server, raw transport.Transport, scope TransportScope) (*trackedTransport, error) {
+	tracked, err := server.beginTrackedTransport(raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := server.admitTransport(context.Background(), tracked, scope); err != nil {
+		server.finishTrackedTransport(tracked)
+		return nil, err
+	}
+	return tracked, nil
 }
 
 func grantOperationEpoch(operation *grantOperation) uint64 {
