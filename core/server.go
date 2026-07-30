@@ -193,11 +193,8 @@ type Server struct {
 	historyRetentionCancel context.CancelFunc
 	historyRetentionWG     sync.WaitGroup
 	outputBudget           *terminalOutputResidentBudget
-	grantMu                sync.Mutex
-	grantTransports        map[string]map[*trackedTransport]struct{}
-	transportGrants        map[*trackedTransport]string
-	grantTombstones        map[string]transportCloseReason
-	grantTimers            map[string]*grantTimerEntry
+	grantOperationsMu      sync.Mutex
+	grantOperations        map[string]*grantOperation
 	grantNow               func() time.Time
 	grantAfterFunc         func(time.Duration, func()) grantTimer
 	mu                     sync.Mutex
@@ -257,10 +254,7 @@ func NewServer(opts ...ServerOption) *Server {
 		remoteService:        cfg.remoteService,
 		clientAccessService:  cfg.clientAccessService,
 		fileUploads:          make(map[string]*uploadTransferRecord),
-		grantTransports:      make(map[string]map[*trackedTransport]struct{}),
-		transportGrants:      make(map[*trackedTransport]string),
-		grantTombstones:      make(map[string]transportCloseReason),
-		grantTimers:          make(map[string]*grantTimerEntry),
+		grantOperations:      make(map[string]*grantOperation),
 		grantNow:             cfg.grantNow,
 		grantAfterFunc:       cfg.grantAfterFunc,
 		transports:           make(map[*trackedTransport]struct{}),
@@ -1036,14 +1030,13 @@ func (server *Server) ServeScopedTransportObserved(ctx context.Context, conn tra
 		_ = conn.Close()
 		return ErrServerClosed
 	}
-	tracked, err := server.admitTransport(ctx, conn, scope)
-	if err != nil {
-		server.wgMu.Unlock()
-		return err
-	}
 	server.wg.Add(1)
 	server.wgMu.Unlock()
 	defer server.wg.Done()
+	tracked, err := server.admitTransport(ctx, conn, scope)
+	if err != nil {
+		return err
+	}
 	return server.serveTrackedTransportObserved(ctx, tracked, scope, observer)
 }
 
@@ -1057,7 +1050,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 		server.wgMu.Unlock()
 		return nil
 	}
-	server.stopGrantTimers()
+	server.stopGrantOperations()
 	server.outputBudget.close()
 	server.mu.Lock()
 	listeners := append([]transport.Listener(nil), server.listeners...)
@@ -1087,6 +1080,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.events.publish(Event{Type: EventServerStopped, SocketPath: server.cfg.socketPath})
 	server.events.close()
 	server.waitTransports()
+	server.pruneGrantOperations()
 	server.cfg.logger.Info("core-v2 server stopped", "socket_path", server.cfg.socketPath)
 	return nil
 }
@@ -1191,16 +1185,18 @@ func (server *Server) serveTrackedTransportObserved(ctx context.Context, conn *t
 
 func (server *Server) startTransport(ctx context.Context, conn transport.Transport) bool {
 	server.wgMu.Lock()
-	defer server.wgMu.Unlock()
 	if server.closed.Load() {
+		server.wgMu.Unlock()
 		_ = conn.Close()
 		return false
 	}
+	server.wg.Add(1)
+	server.wgMu.Unlock()
 	tracked, err := server.admitTransport(ctx, conn, fullDaemonTransportScope())
 	if err != nil {
+		server.wg.Done()
 		return false
 	}
-	server.wg.Add(1)
 	go server.handleTransport(ctx, tracked)
 	return true
 }
