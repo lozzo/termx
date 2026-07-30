@@ -20,7 +20,7 @@ type SessionOwner struct {
 	configs      map[endpoint.EndpointID]string
 	stickyRoutes map[endpoint.EndpointID]stickyRouteSelection
 	selections   map[endpoint.EndpointID]routeSelection
-	acquireLocks map[endpoint.EndpointID]*sync.Mutex
+	acquireLocks map[endpoint.EndpointID]*endpointAcquireEntry
 	sharedLeases map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}
 	watchers     map[endpoint.EndpointID]map[chan EndpointEvent]struct{}
 	closed       bool
@@ -29,6 +29,11 @@ type SessionOwner struct {
 type routeSelection struct {
 	generation SessionGeneration
 	reason     string
+}
+
+type endpointAcquireEntry struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // stickyRouteSelection 只在产生显式选择时的连接配置仍未变化时复用 route。
@@ -69,7 +74,7 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 		configs:      make(map[endpoint.EndpointID]string),
 		stickyRoutes: make(map[endpoint.EndpointID]stickyRouteSelection),
 		selections:   make(map[endpoint.EndpointID]routeSelection),
-		acquireLocks: make(map[endpoint.EndpointID]*sync.Mutex),
+		acquireLocks: make(map[endpoint.EndpointID]*endpointAcquireEntry),
 		sharedLeases: make(map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}),
 		watchers:     make(map[endpoint.EndpointID]map[chan EndpointEvent]struct{}),
 	}
@@ -81,9 +86,8 @@ func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.End
 	if owner == nil || dialer == nil || configKey == "" {
 		return nil, runtimeError(ErrorInvalidRequest, "session owner, route dialer, and config key are required", nil)
 	}
-	acquireLock := owner.endpointAcquireLock(target.ID)
-	acquireLock.Lock()
-	defer acquireLock.Unlock()
+	unlock := owner.lockEndpoint(target.ID)
+	defer unlock()
 	owner.mu.Lock()
 	if owner.closed {
 		owner.mu.Unlock()
@@ -120,15 +124,27 @@ func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.End
 	return shared, nil
 }
 
-func (owner *SessionOwner) endpointAcquireLock(endpointID endpoint.EndpointID) *sync.Mutex {
+func (owner *SessionOwner) lockEndpoint(endpointID endpoint.EndpointID) func() {
 	owner.mu.Lock()
-	defer owner.mu.Unlock()
-	lock := owner.acquireLocks[endpointID]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		owner.acquireLocks[endpointID] = lock
+	entry := owner.acquireLocks[endpointID]
+	if entry == nil {
+		entry = &endpointAcquireEntry{}
+		owner.acquireLocks[endpointID] = entry
 	}
-	return lock
+	// refs includes the current holder and every waiter that will use this entry.
+	entry.refs++
+	owner.mu.Unlock()
+
+	entry.mu.Lock()
+	return func() {
+		entry.mu.Unlock()
+		owner.mu.Lock()
+		defer owner.mu.Unlock()
+		entry.refs--
+		if entry.refs == 0 && owner.acquireLocks[endpointID] == entry {
+			delete(owner.acquireLocks, endpointID)
+		}
+	}
 }
 
 // ConnectRoute 为调用方已经选定的唯一 route 建立新 generation。

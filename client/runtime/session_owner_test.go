@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	goruntime "runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -351,6 +352,186 @@ func TestSessionOwnerDelayedOldDoneDoesNotCloseNewGenerationLease(t *testing.T) 
 	_ = second.Close()
 }
 
+func TestSessionOwnerEndpointAcquireLockKeepsEntryForWaiter(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	target := ownerEndpoint()
+	firstStarted := make(chan struct{})
+	firstRelease := make(chan struct{})
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{started: firstStarted, release: firstRelease})
+		firstResult <- err
+	}()
+	<-firstStarted
+
+	secondStarted := make(chan struct{})
+	secondRelease := make(chan struct{})
+	secondResult := make(chan error, 1)
+	go func() {
+		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-b", &ownerDialer{started: secondStarted, release: secondRelease})
+		secondResult <- err
+	}()
+	entry := waitForEndpointAcquireRefs(t, owner, target.ID, 2)
+
+	close(firstRelease)
+	if err := <-firstResult; err != nil {
+		t.Fatal(err)
+	}
+	<-secondStarted
+	owner.mu.Lock()
+	current := owner.acquireLocks[target.ID]
+	refs := 0
+	if current != nil {
+		refs = current.refs
+	}
+	owner.mu.Unlock()
+	if current != entry || refs != 1 {
+		t.Fatalf("waiting acquire entry=%p refs=%d, want entry=%p refs=1", current, refs, entry)
+	}
+
+	close(secondRelease)
+	if err := <-secondResult; err != nil {
+		t.Fatal(err)
+	}
+	assertEndpointAcquireLocksEmpty(t, owner)
+}
+
+func TestSessionOwnerEndpointAcquireLocksReclaimedAcrossOutcomes(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		owner := NewSessionOwner()
+		defer owner.Close()
+		lease, err := owner.AcquireRoute(context.Background(), ownerEndpoint(), "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lease.Close()
+		assertEndpointAcquireLocksEmpty(t, owner)
+	})
+
+	t.Run("dial failure", func(t *testing.T) {
+		owner := NewSessionOwner()
+		defer owner.Close()
+		_, err := owner.AcquireRoute(context.Background(), ownerEndpoint(), "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{err: io.ErrUnexpectedEOF})
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("dial error = %v", err)
+		}
+		assertEndpointAcquireLocksEmpty(t, owner)
+	})
+
+	t.Run("context cancel", func(t *testing.T) {
+		owner := NewSessionOwner()
+		defer owner.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		started := make(chan struct{})
+		result := make(chan error, 1)
+		go func() {
+			_, err := owner.AcquireRoute(ctx, ownerEndpoint(), "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{started: started, waitForContext: true})
+			result <- err
+		}()
+		<-started
+		cancel()
+		if err := <-result; !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancel error = %v", err)
+		}
+		assertEndpointAcquireLocksEmpty(t, owner)
+	})
+
+	t.Run("repeated endpoint", func(t *testing.T) {
+		owner := NewSessionOwner()
+		defer owner.Close()
+		dialer := &ownerDialer{}
+		for index := 0; index < 5; index++ {
+			lease, err := owner.AcquireRoute(context.Background(), ownerEndpoint(), "cloud", ConnectIntentInteractive, "config-a", dialer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lease.Close()
+			assertEndpointAcquireLocksEmpty(t, owner)
+		}
+		if dialer.calls != 1 {
+			t.Fatalf("dial calls = %d, want 1", dialer.calls)
+		}
+	})
+
+	t.Run("multiple endpoints", func(t *testing.T) {
+		owner := NewSessionOwner()
+		defer owner.Close()
+		firstTarget := ownerEndpoint()
+		firstTarget.ID = "first"
+		secondTarget := ownerEndpoint()
+		secondTarget.ID = "second"
+		firstStarted, firstRelease := make(chan struct{}), make(chan struct{})
+		secondStarted, secondRelease := make(chan struct{}), make(chan struct{})
+		results := make(chan error, 2)
+		go func() {
+			_, err := owner.AcquireRoute(context.Background(), firstTarget, "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{started: firstStarted, release: firstRelease})
+			results <- err
+		}()
+		go func() {
+			_, err := owner.AcquireRoute(context.Background(), secondTarget, "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{started: secondStarted, release: secondRelease})
+			results <- err
+		}()
+		<-firstStarted
+		<-secondStarted
+		owner.mu.Lock()
+		lockCount := len(owner.acquireLocks)
+		firstEntry := owner.acquireLocks[firstTarget.ID]
+		secondEntry := owner.acquireLocks[secondTarget.ID]
+		firstRefs, secondRefs := 0, 0
+		if firstEntry != nil {
+			firstRefs = firstEntry.refs
+		}
+		if secondEntry != nil {
+			secondRefs = secondEntry.refs
+		}
+		owner.mu.Unlock()
+		if lockCount != 2 || firstRefs != 1 || secondRefs != 1 {
+			t.Fatalf("active locks=%d refs=%d/%d, want 2 and 1/1", lockCount, firstRefs, secondRefs)
+		}
+		close(firstRelease)
+		close(secondRelease)
+		for range 2 {
+			if err := <-results; err != nil {
+				t.Fatal(err)
+			}
+		}
+		assertEndpointAcquireLocksEmpty(t, owner)
+	})
+}
+
+func waitForEndpointAcquireRefs(t *testing.T, owner *SessionOwner, endpointID endpoint.EndpointID, want int) *endpointAcquireEntry {
+	t.Helper()
+	timeout := time.After(time.Second)
+	for {
+		owner.mu.Lock()
+		entry := owner.acquireLocks[endpointID]
+		refs := 0
+		if entry != nil {
+			refs = entry.refs
+		}
+		owner.mu.Unlock()
+		if refs == want {
+			return entry
+		}
+		select {
+		case <-timeout:
+			t.Fatalf("endpoint %q acquire refs = %d, want %d", endpointID, refs, want)
+		default:
+			goruntime.Gosched()
+		}
+	}
+}
+
+func assertEndpointAcquireLocksEmpty(t *testing.T, owner *SessionOwner) {
+	t.Helper()
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	if len(owner.acquireLocks) != 0 {
+		t.Fatalf("endpoint acquire locks = %#v, want empty", owner.acquireLocks)
+	}
+}
+
 func ownerEndpoint() endpoint.Endpoint {
 	identity := endpoint.DaemonIdentity{DeviceID: "device-1", DeviceFingerprint: "fingerprint-1"}
 	return endpoint.Endpoint{
@@ -365,21 +546,26 @@ func ownerEndpoint() endpoint.Endpoint {
 }
 
 type ownerDialer struct {
-	started   chan struct{}
-	release   chan struct{}
-	session   *ownerSession
-	calls     int
-	err       error
-	delayDone bool
+	started        chan struct{}
+	release        chan struct{}
+	session        *ownerSession
+	calls          int
+	err            error
+	delayDone      bool
+	waitForContext bool
 }
 
-func (dialer *ownerDialer) Connect(_ context.Context, request AttemptRequest) (ReadyPeerSession, error) {
+func (dialer *ownerDialer) Connect(ctx context.Context, request AttemptRequest) (ReadyPeerSession, error) {
 	dialer.calls++
 	if dialer.err != nil {
 		return nil, dialer.err
 	}
 	if dialer.started != nil {
 		close(dialer.started)
+	}
+	if dialer.waitForContext {
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
 	if dialer.release != nil {
 		<-dialer.release

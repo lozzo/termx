@@ -362,6 +362,7 @@ func TestSessionOwnerPlannedRaceCancellationFailsAfterAdapterAttempt(t *testing.
 	if CodeOf(err) != ErrorCanceled || !WasAttempted(err) {
 		t.Fatalf("cancel error = %#v", err)
 	}
+	assertEndpointAcquireLocksEmpty(t, owner)
 }
 
 func TestSessionOwnerPlannedRaceReturnsStableFirstFailure(t *testing.T) {
@@ -380,6 +381,7 @@ func TestSessionOwnerPlannedRaceReturnsStableFirstFailure(t *testing.T) {
 	if !errors.Is(err, io.ErrUnexpectedEOF) || !WasAttempted(err) {
 		t.Fatalf("race error = %#v", err)
 	}
+	assertEndpointAcquireLocksEmpty(t, owner)
 }
 
 func TestSessionOwnerLifecycleMailboxKeepsLatestStateUnderBackpressure(t *testing.T) {
@@ -460,6 +462,37 @@ func TestSessionOwnerSerializesPlannedRacePerEndpoint(t *testing.T) {
 	first, second := <-results, <-results
 	if first.err != nil || second.err != nil || first.lease.Stamp.Generation == second.lease.Stamp.Generation {
 		t.Fatalf("first=%#v err=%v second=%#v err=%v", first.lease, first.err, second.lease, second.err)
+	}
+}
+
+func TestSessionOwnerPlannedEntryPointsReclaimEndpointLocks(t *testing.T) {
+	for _, name := range []string{"connect", "acquire", "ensure"} {
+		t.Run(name, func(t *testing.T) {
+			owner := NewSessionOwner()
+			defer owner.Close()
+			target := plannedEndpoint(false)
+			dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {}})
+			resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{endpoint.RouteSSHWebRTCTCP: dialer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch name {
+			case "connect":
+				_, err = owner.ConnectPlanned(context.Background(), target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
+			case "acquire":
+				var lease ApplicationReadyPeerSession
+				lease, err = owner.AcquirePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+				if lease != nil {
+					defer lease.Close()
+				}
+			case "ensure":
+				_, err = owner.EnsurePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertEndpointAcquireLocksEmpty(t, owner)
+		})
 	}
 }
 
