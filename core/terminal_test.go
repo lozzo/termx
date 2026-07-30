@@ -1885,30 +1885,6 @@ func (factory *recordingProcessFactory) spawnedSpecs(id string) []ProcessSpec {
 	return out
 }
 
-type sessionBoundRecordingProcessFactory struct {
-	*recordingProcessFactory
-}
-
-func newSessionBoundRecordingProcessFactory() *sessionBoundRecordingProcessFactory {
-	return &sessionBoundRecordingProcessFactory{recordingProcessFactory: newRecordingProcessFactory()}
-}
-
-func (factory *sessionBoundRecordingProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalProcess, error) {
-	process, err := factory.recordingProcessFactory.Spawn(ctx, spec)
-	if err != nil {
-		return nil, err
-	}
-	recording, ok := process.(*recordingProcess)
-	if !ok {
-		return process, nil
-	}
-	go func() {
-		<-ctx.Done()
-		recording.exit(-1)
-	}()
-	return recording, nil
-}
-
 type recordingProcess struct {
 	mu         sync.Mutex
 	id         string
@@ -1952,12 +1928,6 @@ func (process *recordingProcess) Resize(size Size) error {
 		hook(size)
 	}
 	return nil
-}
-
-func (process *recordingProcess) setResizeErr(err error) {
-	process.mu.Lock()
-	defer process.mu.Unlock()
-	process.resizeErr = err
 }
 
 func (process *recordingProcess) setResizeHook(hook func(Size)) {

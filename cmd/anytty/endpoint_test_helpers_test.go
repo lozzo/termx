@@ -32,16 +32,3 @@ func testSSHEndpoint(id endpointdomain.EndpointID, label, host, credentialRef st
 	endpoint.Enabled = enabled
 	return endpoint
 }
-
-func testManagedEndpoint(id endpointdomain.EndpointID, label, deviceID, fingerprint, credentialRef string, relayMode endpointdomain.RelayMode, mode endpointdomain.ConnectMode, enabled bool) endpointdomain.Endpoint {
-	endpoint := endpointdomain.NewManagedEndpoint(id, label, endpointdomain.DaemonIdentity{DeviceID: deviceID, DeviceFingerprint: fingerprint}, deviceID, credentialRef, relayMode, mode)
-	endpoint.Enabled = enabled
-	return endpoint
-}
-
-func testOnlyRoute(endpoint endpointdomain.Endpoint) endpointdomain.AccessRoute {
-	for _, route := range endpoint.Routes {
-		return route
-	}
-	return endpointdomain.AccessRoute{}
-}
