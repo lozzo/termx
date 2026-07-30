@@ -667,7 +667,7 @@ func bindingConnectionTransport(value string) bindingpb.ConnectionTransport {
 func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Context, session clientruntime.ApplicationReadyPeerSession, command *apipb.CommandEnvelope) {
 	var result *apipb.ResultEnvelope
 	var err error
-	if command.GetFileDownloadOpen() != nil || command.GetFileUploadOpen() != nil {
+	if requiresTerminalResponse(command) {
 		if executor, ok := session.(clientruntime.TerminalResponseApplicationExecutor); ok {
 			result, err = executor.ExecuteApplicationTerminal(ctx, command)
 		} else {

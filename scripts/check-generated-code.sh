@@ -20,7 +20,7 @@ fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/anytty-generated-check.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
-mkdir -p "$tmp_dir/go" "$tmp_dir/api" "$tmp_dir/runtime" "$tmp_dir/wire" "$tmp_dir/descriptor"
+mkdir -p "$tmp_dir/go" "$tmp_dir/api" "$tmp_dir/runtime" "$tmp_dir/wire" "$tmp_dir/descriptor" "$tmp_dir/application"
 
 api_proto=(
   proto/apipb/common.proto
@@ -115,6 +115,14 @@ check_generated_file() {
   diff -u "$committed" "$generated" | sed -n '1,120p' >&2 || true
   exit 1
 }
+
+go run ./scripts/generate_application_api.go \
+  -spec proto/apipb/application_commands.csv \
+  -out-root "$tmp_dir/application"
+check_generated_file "$tmp_dir/application/api_layer/application_commands.gen.go" api_layer/application_commands.gen.go
+check_generated_file "$tmp_dir/application/api_mapping/application_commands.gen.go" api_mapping/application_commands.gen.go
+check_generated_file "$tmp_dir/application/client/binding/application_commands.gen.go" client/binding/application_commands.gen.go
+check_generated_file "$tmp_dir/application/client/runtime/application_commands.gen.go" client/runtime/application_commands.gen.go
 
 for source in "${api_ts_proto[@]}"; do
   name="$(basename "$source" .proto)"
