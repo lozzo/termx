@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build && node scripts/check-bundle-size.mjs",
     "preview": "vite preview",
-    "cap:sync": "npx cap sync && node scripts/verify-android-source.mjs",
-    "cap:build": "npm run build && npm run cap:sync",
+    "cap:copy": "npx cap copy android && node scripts/verify-android-source.mjs",
+    "cap:build": "npm run build && npm run cap:copy",
     "e2e:android:history": "node scripts/android-terminal-history-e2e.mjs"
   },
   "dependencies": {

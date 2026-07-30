@@ -39,7 +39,7 @@
     "build": "npm run build --workspace @anytty/ui && npm run build --workspace @anytty/mobile && npm run build --workspace @anytty/cloud-web",
     "build:cloud-web": "npm run build --workspace @anytty/cloud-web",
     "test:cloud-web": "npm test --workspace @anytty/cloud-web",
-    "cap:sync": "npm run cap:sync --workspace @anytty/mobile",
+    "cap:copy": "npm run cap:copy --workspace @anytty/mobile",
     "cap:build": "npm run cap:build --workspace @anytty/mobile"
   }
 }

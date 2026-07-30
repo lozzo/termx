@@ -10,9 +10,9 @@ def anyttyCloudControllerCAPEMBase64 = project.findProperty('anyttyCloudControll
 android {
     namespace = "com.anytty.app"
     compileSdk = rootProject.ext.compileSdkVersion
-    ndkVersion "27.2.12479018"
+    ndkVersion = "27.2.12479018"
     compileOptions {
-        coreLibraryDesugaringEnabled true
+        coreLibraryDesugaringEnabled = true
     }
     defaultConfig {
         applicationId "com.anytty.app"
@@ -24,14 +24,12 @@ android {
         buildConfigField "String", "ANYTTY_CLOUD_CONTROLLER_ADDRESS", anyttyBuildString(anyttyCloudControllerAddress)
         buildConfigField "String", "ANYTTY_CLOUD_CONTROLLER_SERVER_NAME", anyttyBuildString(anyttyCloudControllerServerName)
         buildConfigField "String", "ANYTTY_CLOUD_CONTROLLER_CA_PEM_BASE64", anyttyBuildString(anyttyCloudControllerCAPEMBase64)
-        aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
-        }
     }
     buildFeatures {
-        buildConfig true
+        buildConfig = true
+    }
+    androidResources {
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
     sourceSets {
         test.resources.srcDir '../../../../client/endpoint/testdata'
@@ -51,7 +49,7 @@ android {
     buildTypes {
         release {
             minifyEnabled true
-            shrinkResources true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
@@ -82,10 +80,8 @@ tasks.named("preBuild").configure {
     dependsOn tasks.named("buildAnyTTYClientNative")
 }
 
-repositories {
-    flatDir{
-        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
-    }
+configurations.configureEach {
+    resolutionStrategy.force 'org.slf4j:slf4j-api:2.0.6', 'org.slf4j:slf4j-nop:2.0.6'
 }
 
 dependencies {
@@ -93,11 +89,11 @@ dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'
+    implementation 'org.slf4j:slf4j-nop:2.0.6'
     implementation 'com.google.protobuf:protobuf-java:3.25.5'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.79'
     implementation 'androidx.lifecycle:lifecycle-process:2.7.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
@@ -106,7 +102,24 @@ dependencies {
     testImplementation 'org.json:json:20240303'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
-    implementation project(':capacitor-cordova-android-plugins')
+}
+
+def verifyReleaseSlf4j = tasks.register("verifyReleaseSlf4j") {
+    doLast {
+        def actual = configurations.releaseRuntimeClasspath.incoming.resolutionResult.allComponents
+            .collect { component -> component.moduleVersion }
+            .findAll { module -> module != null && module.group == 'org.slf4j' }
+            .collect { module -> "${module.name}:${module.version}" }
+            .toSet()
+        def expected = ['slf4j-api:2.0.6', 'slf4j-nop:2.0.6'].toSet()
+        if (actual != expected) {
+            throw new GradleException("release SLF4J modules must be ${expected}, got ${actual}")
+        }
+    }
+}
+
+tasks.matching { task -> task.name == "preReleaseBuild" }.configureEach {
+    dependsOn verifyReleaseSlf4j
 }
 
 protobuf {

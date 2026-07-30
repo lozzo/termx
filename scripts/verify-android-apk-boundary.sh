@@ -12,20 +12,44 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 
-for tool in unzip strings rg; do
-  command -v "$tool" >/dev/null 2>&1 || fail "required tool is unavailable: $tool"
-done
-
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_apk="$1"
 [[ -s "$app_apk" ]] || fail "APK is missing or empty: $app_apk"
 
+for tool in node unzip strings rg awk cmp; do
+  command -v "$tool" >/dev/null 2>&1 || fail "required tool is unavailable: $tool"
+done
 if ! unzip -tqq "$app_apk" >/dev/null 2>&1; then
   fail "APK archive integrity check failed: $app_apk"
 fi
 
-if ! apk_entries="$(unzip -Z1 "$app_apk")"; then
-  fail "APK is not a readable ZIP archive: $app_apk"
-fi
+resolve_apkanalyzer() {
+  if [[ -n "${ANYTTY_APKANALYZER:-}" && -x "$ANYTTY_APKANALYZER" ]]; then
+    printf '%s\n' "$ANYTTY_APKANALYZER"
+    return
+  fi
+  if [[ -n "${ANDROID_HOME:-}" && -x "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" ]]; then
+    printf '%s\n' "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+    return
+  fi
+  command -v apkanalyzer 2>/dev/null || fail 'apkanalyzer is unavailable'
+}
+
+resolve_aapt2() {
+  if [[ -n "${ANYTTY_AAPT2:-}" && -x "$ANYTTY_AAPT2" ]]; then
+    printf '%s\n' "$ANYTTY_AAPT2"
+    return
+  fi
+  if [[ -n "${ANDROID_HOME:-}" && -x "$ANDROID_HOME/build-tools/36.0.0/aapt2" ]]; then
+    printf '%s\n' "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+    return
+  fi
+  command -v aapt2 2>/dev/null || fail 'aapt2 is unavailable'
+}
+
+apkanalyzer="$(resolve_apkanalyzer)"
+aapt2="$(resolve_aapt2)"
+apk_entries="$(unzip -Z1 "$app_apk")" || fail "APK is not a readable ZIP archive: $app_apk"
 
 expected_abis_value="${ANYTTY_ANDROID_EXPECTED_ABIS:-arm64-v8a x86_64}"
 if [[ "$expected_abis_value" == *$'\n'* || "$expected_abis_value" == *$'\r'* ]]; then
@@ -48,20 +72,82 @@ for abi in "${expected_abis[@]}"; do
   done
 done
 
-native_libraries="$(printf '%s\n' "$apk_entries" | rg '^lib/[^/]+/[^/]+\.so$')"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/anytty-apk-boundary.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+manifest_xml="$tmp_dir/AndroidManifest.xml"
+resource_table="$tmp_dir/resources.txt"
+if ! "$apkanalyzer" manifest print "$app_apk" >"$manifest_xml"; then
+  fail 'could not decode final APK manifest'
+fi
+if ! "$aapt2" dump resources "$app_apk" >"$resource_table"; then
+  fail 'could not decode final APK resource table'
+fi
+node "$repo_root/clients/mobile/scripts/verify-android-merged-manifest.mjs" "$manifest_xml" "$resource_table" || fail 'final APK manifest contract failed'
+
+resolve_xml_resource_path() {
+  local resource_name="$1"
+  awk -v target="xml/$resource_name" '
+    $1 == "resource" && $3 == target { matched = 1; next }
+    matched && $1 == "resource" { exit }
+    matched && $1 == "()" && $2 == "(file)" && $4 == "type=XML" { print $3; exit }
+  ' "$resource_table"
+}
+
+for resource in network_security_config backup_rules data_extraction_rules; do
+  resource_path="$(resolve_xml_resource_path "$resource")"
+  [[ "$resource_path" =~ ^res/[A-Za-z0-9_./-]+\.xml$ ]] || fail "invalid compiled path for xml/$resource: $resource_path"
+  if ! printf '%s\n' "$apk_entries" | rg -F -x "$resource_path" >/dev/null; then
+    fail "compiled resource is missing from APK: xml/$resource -> $resource_path"
+  fi
+  output="$tmp_dir/$resource.xml"
+  if ! "$aapt2" dump xmltree "$app_apk" --file "$resource_path" >"$output"; then
+    fail "could not decode final APK resource: $resource"
+  fi
+done
+
+index_html="$tmp_dir/index.html"
+if ! unzip -p "$app_apk" assets/public/index.html >"$index_html" || [[ ! -s "$index_html" ]]; then
+  fail 'final APK is missing assets/public/index.html'
+fi
+node "$repo_root/clients/mobile/scripts/verify-android-artifact-resources.mjs" \
+  "$tmp_dir/network_security_config.xml" \
+  "$tmp_dir/backup_rules.xml" \
+  "$tmp_dir/data_extraction_rules.xml" \
+  "$index_html" || fail 'final APK resource contract failed'
+
+dex_packages="$tmp_dir/dex-packages.txt"
+if ! "$apkanalyzer" dex packages --defined-only "$app_apk" >"$dex_packages"; then
+  fail 'could not inspect final APK DEX packages'
+fi
+if ! rg -F 'org.slf4j.nop' "$dex_packages" >/dev/null; then
+  fail 'slf4j-nop provider is missing from the final APK'
+fi
+if rg -e 'org\.slf4j\.simple' -e 'ch\.qos\.logback' -e 'org\.apache\.logging\.slf4j' -e 'org\.tinylog' -e 'org\.slf4j\.reload4j' "$dex_packages" >/dev/null; then
+  fail 'a non-NOP SLF4J provider is present in the final APK'
+fi
+slf4j_service='META-INF/services/org.slf4j.spi.SLF4JServiceProvider'
+slf4j_service_file="$tmp_dir/slf4j-service.txt"
+slf4j_service_expected="$tmp_dir/slf4j-service-expected.txt"
+if ! printf '%s\n' "$apk_entries" | rg -F -x "$slf4j_service" >/dev/null; then
+  fail 'final APK is missing the SLF4J service provider entry'
+fi
+unzip -p "$app_apk" "$slf4j_service" >"$slf4j_service_file" || fail 'could not read the SLF4J service provider entry'
+printf '%s\n' 'org.slf4j.nop.NOPServiceProvider' >"$slf4j_service_expected"
+if ! cmp -s "$slf4j_service_file" "$slf4j_service_expected"; then
+  fail 'final APK SLF4J service provider is not exactly NOPServiceProvider'
+fi
+
+native_libraries="$(printf '%s\n' "$apk_entries" | rg '^lib/[^/]+/[^/]+\.so$')"
+[[ -n "$native_libraries" ]] || fail 'final APK contains no native libraries'
+native_index=0
 while IFS= read -r native_path; do
   [[ -n "$native_path" ]] || continue
-  native_file="$tmp_dir/native.so"
-  native_strings="$tmp_dir/native.strings"
-  if ! unzip -p "$app_apk" "$native_path" >"$native_file"; then
-    fail "could not extract native library: $native_path"
-  fi
-  if ! strings "$native_file" >"$native_strings"; then
-    fail "could not inspect native library: $native_path"
-  fi
+  native_index=$((native_index + 1))
+  native_file="$tmp_dir/native-$native_index.so"
+  native_strings="$tmp_dir/native-$native_index.strings"
+  unzip -p "$app_apk" "$native_path" >"$native_file" || fail "could not extract native library: $native_path"
+  strings "$native_file" >"$native_strings" || fail "could not inspect strings in $native_path"
   if rg -F \
     -e 'ANYTTY_ANDROID_GO_TAGS' \
     -e 'anytty_android_spike' \

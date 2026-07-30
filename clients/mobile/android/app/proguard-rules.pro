@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep the one permitted logging provider auditable in the final release APK.
+-keepnames interface org.slf4j.spi.SLF4JServiceProvider
+-keepnames class org.slf4j.nop.NOPServiceProvider

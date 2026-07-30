@@ -79,8 +79,9 @@ jobs:
         run: |
           sdkmanager "ndk;27.2.12479018"
           scripts/test-android-apk-boundary.sh
-          npm run cap:sync --workspace @anytty/mobile
-          clients/mobile/android/gradlew --no-daemon --project-dir clients/mobile/android testDebugUnitTest assembleRelease
+          npm run cap:build
+          clients/mobile/android/gradlew --no-daemon --warning-mode fail --project-dir clients/mobile/android testDebugUnitTest assembleRelease
+          node clients/mobile/scripts/verify-android-merged-manifest.mjs clients/mobile/android/app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
           scripts/verify-android-apk-boundary.sh clients/mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Tracked generated files are current
