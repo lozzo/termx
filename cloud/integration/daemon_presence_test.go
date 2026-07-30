@@ -10,7 +10,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -136,7 +135,7 @@ func TestBindingKeyBundleRecoversAcrossControllerAndEdgeRestart(t *testing.T) {
 	verification := &cloudv1.VerificationKey{KeyId: "binding-restart", Algorithm: "Ed25519", PublicKey: publicKey}
 	firstController, firstDirectory := startPresenceController(t, certificates, "127.0.0.1:0", verification)
 	controllerAddress := firstController.GRPCAddress()
-	cachePath := filepath.Join(t.TempDir(), "binding-key-bundle.pb")
+	cachePath := testBindingKeyCacheFile(t)
 	startEdge := func(bootID string) *edgeruntime.Runtime {
 		t.Helper()
 		runtime, startErr := edgeruntime.Start(context.Background(), edgeruntime.Config{
@@ -223,7 +222,7 @@ func TestPostgresOwnerAndEdgeCacheRecoverAcrossRestarts(t *testing.T) {
 	certificates := newCertificateFiles(t, testEdgeID)
 	firstController, firstDirectory := startPresenceControllerWithProvider(t, certificates, "127.0.0.1:0", firstOwner.Bundle)
 	controllerAddress := firstController.GRPCAddress()
-	cachePath := filepath.Join(t.TempDir(), "binding-key-bundle.pb")
+	cachePath := testBindingKeyCacheFile(t)
 	startEdge := func(bootID string) *edgeruntime.Runtime {
 		t.Helper()
 		runtime, startErr := edgeruntime.Start(context.Background(), edgeruntime.Config{

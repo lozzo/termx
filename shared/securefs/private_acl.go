@@ -9,6 +9,13 @@ func privateDescriptorAllowed(owner, current, system, administrators string, pro
 	if owner == "" || current == "" || owner != current || !protected {
 		return false
 	}
+	return privateAllowRulesAllowed(current, system, administrators, rules)
+}
+
+func privateAllowRulesAllowed(current, system, administrators string, rules []privateAccessRule) bool {
+	if current == "" {
+		return false
+	}
 	currentAllowed := false
 	for _, rule := range rules {
 		if !rule.allow {

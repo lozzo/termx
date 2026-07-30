@@ -26,6 +26,7 @@ import (
 	"github.com/anytty/anytty/cloud/configsignature"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/securefs"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -85,9 +86,11 @@ func Resolve(ctx context.Context, configFile string, client *http.Client) (Resol
 	if config.EdgeID == "" || config.StateDirectory == "" || config.PublicEndpoint == "" || config.ListenOverride == "" {
 		return Resolved{}, errors.New("Edge config requires edge_id, state_directory, public_endpoint, and listen_override")
 	}
-	if err := os.MkdirAll(config.StateDirectory, 0o700); err != nil {
+	stateDirectory, err := securefs.OpenOrCreatePrivateDirectory(config.StateDirectory)
+	if err != nil {
 		return Resolved{}, err
 	}
+	defer stateDirectory.Close()
 	paths := resolvedPaths(config)
 	if config.BootstrapToken != "" {
 		if client == nil {

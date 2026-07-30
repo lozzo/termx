@@ -11,6 +11,12 @@ import (
 // SecureDirectory 在未专门适配的平台保留最小 owner-only mode 请求。
 func SecureDirectory(path string) error { return os.Chmod(path, 0o700) }
 
+// OpenOrCreatePrivateDirectory is unsupported where handle ownership cannot
+// be established.
+func OpenOrCreatePrivateDirectory(string) (*os.File, error) {
+	return nil, errors.New("private directory handle validation is unsupported")
+}
+
 // SecureFile 在未专门适配的平台保留最小 owner-only mode 请求。
 func SecureFile(path string) error { return os.Chmod(path, 0o600) }
 

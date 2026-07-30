@@ -29,3 +29,19 @@ func TestPrivateDescriptorAllowed(t *testing.T) {
 		})
 	}
 }
+
+func TestPrivateAllowRulesAllowed(t *testing.T) {
+	approved := []privateAccessRule{
+		{allow: true, trustee: "current"},
+		{allow: true, trustee: "system"},
+		{allow: true, trustee: "administrators"},
+		{allow: false, trustee: "other"},
+	}
+	if !privateAllowRulesAllowed("current", "system", "administrators", approved) {
+		t.Fatal("approved inherited allow trustees were rejected")
+	}
+	withEveryone := append(append([]privateAccessRule(nil), approved...), privateAccessRule{allow: true, trustee: "everyone"})
+	if privateAllowRulesAllowed("current", "system", "administrators", withEveryone) {
+		t.Fatal("additional inherited allow trustee was accepted")
+	}
+}

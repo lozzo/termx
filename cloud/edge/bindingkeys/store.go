@@ -55,6 +55,11 @@ func Open(path string) (*Store, error) {
 		syncFile:  func(file *os.File) error { return file.Sync() },
 		writeFile: func(file *os.File, payload []byte) (int, error) { return file.Write(payload) },
 	}
+	directory, err := securefs.OpenOrCreatePrivateDirectory(filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("open private binding key cache directory: %w", err)
+	}
+	defer directory.Close()
 	bundle, err := readBundle(path)
 	if err != nil {
 		return nil, err
@@ -141,12 +146,11 @@ func (store *Store) Bundle() *cloudv1.KeyBundle {
 
 func (store *Store) publish(payload []byte) error {
 	directory := filepath.Dir(store.path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
+	directoryHandle, err := securefs.OpenOrCreatePrivateDirectory(directory)
+	if err != nil {
+		return fmt.Errorf("open private binding key cache directory: %w", err)
 	}
-	if err := securefs.SecureDirectory(directory); err != nil {
-		return err
-	}
+	defer directoryHandle.Close()
 	if err := validateExistingTarget(store.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

@@ -30,6 +30,7 @@ import (
 	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/securefs"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -419,7 +420,15 @@ func eventually(t *testing.T, timeout time.Duration, condition func() bool) {
 
 func testBindingKeyCacheFile(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "binding-key-bundle.pb")
+	directory := filepath.Join(t.TempDir(), "binding-key-state")
+	handle, err := securefs.OpenOrCreatePrivateDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(directory, "binding-key-bundle.pb")
 }
 
 func testBindingKeyBundleProvider(keys ...*cloudv1.VerificationKey) func(context.Context) (*cloudv1.KeyBundle, error) {

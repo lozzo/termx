@@ -5,13 +5,47 @@ package securefs
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // SecureDirectory 把私有状态目录限制为当前 Unix 账号可访问。
 // 调用方仍拥有目录内容真值；权限设置失败必须停止读取或写入秘密。
 func SecureDirectory(path string) error { return os.Chmod(path, 0o700) }
+
+// OpenOrCreatePrivateDirectory opens the final path without following a
+// symlink and rejects an existing directory that is not owner-only.
+func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return nil, err
+	}
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	directory := os.NewFile(uintptr(fd), path)
+	if directory == nil {
+		_ = unix.Close(fd)
+		return nil, errors.New("create private directory file handle")
+	}
+	info, err := directory.Stat()
+	if err != nil {
+		_ = directory.Close()
+		return nil, err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !info.IsDir() || info.Mode().Perm() != 0o700 || !ok || int(stat.Uid) != os.Geteuid() {
+		_ = directory.Close()
+		if !ok {
+			return nil, errors.New("private directory owner is unavailable")
+		}
+		return nil, fmt.Errorf("directory is not private to the current user: mode=%#o owner=%d", info.Mode().Perm(), stat.Uid)
+	}
+	return directory, nil
+}
 
 // SecureFile 把私钥、credential 或 runtime record 限制为当前 Unix 账号可读写。
 // 该函数不创建文件，也不替代调用方的原子发布和 Sync 边界。

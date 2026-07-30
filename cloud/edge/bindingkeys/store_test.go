@@ -22,7 +22,7 @@ import (
 
 func TestOpenMissingAndExpiredCacheIsUnavailable(t *testing.T) {
 	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
-	path := filepath.Join(t.TempDir(), "binding.pb")
+	path := privateCachePath(t)
 	store, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestOpenRejectsUnsafeOrCorruptCache(t *testing.T) {
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "binding.pb")
+			path := privateCachePath(t)
 			setup(t, path)
 			if _, err := Open(path); err == nil {
 				t.Fatal("unsafe or corrupt cache was accepted")
@@ -83,7 +83,7 @@ func TestOpenRejectsUnsafeOrCorruptCache(t *testing.T) {
 
 func TestReadBundleValidatesAndReadsTheOpenedDescriptor(t *testing.T) {
 	now := time.Now().UTC()
-	directory := t.TempDir()
+	directory := privateCacheDirectory(t)
 	path := filepath.Join(directory, "binding.pb")
 	originalPath := filepath.Join(directory, "binding.original.pb")
 	replacementPath := filepath.Join(directory, "binding.replacement.pb")
@@ -118,7 +118,7 @@ func TestReadBundleValidatesAndReadsTheOpenedDescriptor(t *testing.T) {
 
 func TestUpdateEnforcesRevisionReplayAndKeyChangeRules(t *testing.T) {
 	now := time.Now().UTC()
-	store, err := Open(filepath.Join(t.TempDir(), "binding.pb"))
+	store, err := Open(privateCachePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,8 +129,22 @@ func TestUpdateEnforcesRevisionReplayAndKeyChangeRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(store.path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("published cache info=%v err=%v", info, err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("published cache mode=%#o want=0600", info.Mode().Perm())
+	}
+	if runtime.GOOS == "windows" {
+		file, openErr := openBundleFileNoFollow(store.path)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		if validateErr := securefs.ValidatePrivateFileHandle(file); validateErr != nil {
+			_ = file.Close()
+			t.Fatalf("published cache DACL: %v", validateErr)
+		}
+		_ = file.Close()
 	}
 	if err := store.Update(proto.Clone(first).(*cloudv1.KeyBundle)); err != nil {
 		t.Fatalf("identical replay: %v", err)
@@ -187,7 +201,7 @@ func TestPreRenamePublishFailuresKeepOldSnapshotAndPermitRetry(t *testing.T) {
 	}
 	for name, inject := range tests {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "binding.pb")
+			path := privateCachePath(t)
 			store, err := Open(path)
 			if err != nil {
 				t.Fatal(err)
@@ -214,7 +228,7 @@ func TestPreRenamePublishFailuresKeepOldSnapshotAndPermitRetry(t *testing.T) {
 
 func TestDirectorySyncFailureIsFatalUntilRestart(t *testing.T) {
 	now := time.Now().UTC()
-	path := filepath.Join(t.TempDir(), "binding.pb")
+	path := privateCachePath(t)
 	store, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +277,7 @@ func TestConcurrentUpdateAndAdmissionObserveCompleteKeysets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := Open(filepath.Join(t.TempDir(), "binding.pb"))
+	store, err := Open(privateCachePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,6 +351,24 @@ func writeBundle(t *testing.T, path string, bundle *cloudv1.KeyBundle, mode os.F
 		t.Fatal(err)
 	}
 	writeBytes(t, path, payload, mode)
+}
+
+func privateCachePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(privateCacheDirectory(t), "binding.pb")
+}
+
+func privateCacheDirectory(t *testing.T) string {
+	t.Helper()
+	directory := filepath.Join(t.TempDir(), "state")
+	handle, err := securefs.OpenOrCreatePrivateDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return directory
 }
 
 func writeBytes(t *testing.T, path string, payload []byte, mode os.FileMode) {
