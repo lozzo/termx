@@ -2125,7 +2125,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }
 
   const nestedOverlayOpen = Boolean(
-    pasteConfirmText || connectionInfoOpen || mobileSheet || terminalFnOpen || terminalToolbarOpen || splitTerminalId,
+    pasteConfirmText
+      || connectionInfoOpen
+      || mobileSheet
+      || (!filesOpen && (terminalFnOpen || terminalToolbarOpen || splitTerminalId)),
   )
   useNativeBackHandler(() => {
     if (pasteConfirmText) {
@@ -2144,16 +2147,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       )
       return
     }
-    if (terminalFnOpen) {
+    if (!filesOpen && terminalFnOpen) {
       setTerminalFnOpen(false)
       return
     }
-    if (terminalToolbarOpen) {
+    if (!filesOpen && terminalToolbarOpen) {
       setTerminalToolbarOpen(false)
       setTerminalToolbarModeAndReset('default')
       return
     }
-    if (splitTerminalId) {
+    if (!filesOpen && splitTerminalId) {
       closeSplitTerminal()
     }
   }, NATIVE_BACK_PRIORITY.NESTED_OVERLAY, nestedOverlayOpen)

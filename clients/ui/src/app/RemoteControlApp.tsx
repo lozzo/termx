@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode, type RefObject, type TouchEvent as ReactTouchEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { ArrowLeft, Camera, Check, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Link2Off, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, WifiOff, X } from 'lucide-react'
@@ -227,6 +227,8 @@ export function RemoteControlApp({
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const cameraScanInFlightRef = useRef(false)
   const cameraScanAbortRef = useRef<AbortController | null>(null)
+  const cameraScanButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreCameraFocusAfterScanRef = useRef(false)
   const runtimeCacheRef = useRef<{
     networkRuntime: RemoteNetworkRuntime
     runtimeFactory: MachineRuntimeFactory
@@ -501,7 +503,7 @@ export function RemoteControlApp({
   const pairScannedValue = useCallback(async (rawValue: string) => {
     if (!storage) {
       setError(t('errors.storageRequired'))
-      return
+      return false
     }
     setPairing(true)
     setScanFlowState('pairing')
@@ -512,18 +514,19 @@ export function RemoteControlApp({
 		const preview = await externalPairingAdapter.inspectShare(rawValue)
 		setSharePreview(preview)
 		setScanFlowState('idle')
-		return
+		return true
 	  }
       const external = await externalPairingAdapter?.import(rawValue, selectedMachine?.id)
       if (external) {
 		storeImportedMachine(external)
-        return
+        return true
       }
       throw new Error('Proto binding pairing adapter is required')
     } catch (err) {
       hapticError()
       console.warn('[anytty:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
       setError(localizedAppError(err, t))
+      return false
     } finally {
       setPairing(false)
       setScanFlowState('idle')
@@ -551,6 +554,7 @@ export function RemoteControlApp({
     const controller = new AbortController()
     cameraScanInFlightRef.current = true
     cameraScanAbortRef.current = controller
+    restoreCameraFocusAfterScanRef.current = false
     hapticImpact()
     setCameraScanning(true)
     setScanFlowState('scanning')
@@ -558,11 +562,8 @@ export function RemoteControlApp({
     try {
       const value = await scanPairingCode({ signal: controller.signal })
       if (cameraScanAbortRef.current === controller) cameraScanAbortRef.current = null
-      if (!value) {
-        closePairSheet()
-        return
-      }
-      await pairScannedValue(value)
+      if (!value) return
+      restoreCameraFocusAfterScanRef.current = !(await pairScannedValue(value))
     } catch (err) {
       setError(isCameraUnavailableError(err) ? t('pairing.cameraUnavailable') : localizedAppError(err, t))
     } finally {
@@ -571,7 +572,18 @@ export function RemoteControlApp({
       setCameraScanning(false)
       setScanFlowState((current) => current === 'scanning' ? 'idle' : current)
     }
-  }, [closePairSheet, pairScannedValue, scanPairingCode, t])
+  }, [pairScannedValue, scanPairingCode, t])
+
+  useEffect(() => {
+    if (cameraScanning || !restoreCameraFocusAfterScanRef.current) return undefined
+    restoreCameraFocusAfterScanRef.current = false
+    const frame = window.requestAnimationFrame(() => {
+      const button = cameraScanButtonRef.current
+      if (!button?.isConnected || button.disabled || button.closest('[inert], [aria-hidden="true"]')) return
+      button.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [cameraScanning])
 
   const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
     if (!storage) return
@@ -683,6 +695,7 @@ export function RemoteControlApp({
           sharePreview={sharePreview}
           sshCredentialNotice={sshCredentialNotice}
           cameraScanning={cameraScanning}
+          cameraButtonRef={cameraScanButtonRef}
           pairIntent={pairIntent}
           selectedMachine={selectedMachine}
           canScanWithCamera={Boolean(scanPairingCode)}
@@ -1607,6 +1620,7 @@ function Switch({
 
 function PairSheet({
   cameraScanning,
+  cameraButtonRef,
   canScanWithCamera,
   pairError,
   scanFlowState,
@@ -1620,6 +1634,7 @@ function PairSheet({
   onScanWithCamera,
 }: {
   cameraScanning: boolean
+  cameraButtonRef: RefObject<HTMLButtonElement | null>
   canScanWithCamera: boolean
   pairError: string | null
   scanFlowState: ScanFlowState
@@ -1723,6 +1738,7 @@ function PairSheet({
 
             {canScanWithCamera ? (
               <button
+                ref={cameraButtonRef}
                 className="anytty-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 onClick={onScanWithCamera}

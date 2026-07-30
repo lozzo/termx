@@ -177,7 +177,6 @@ export function FileManager({
       || bookmarksOpen
       || editingBookmark
       || renamePath
-      || newDirOpen
       || manager.selectionMode
       || clipboardOpen,
   )
@@ -213,11 +212,6 @@ export function FileManager({
       setRenameName('')
       return
     }
-    if (newDirOpen) {
-      manager.setNewDirName('')
-      setNewDirOpen(false)
-      return
-    }
     if (manager.selectionMode) {
       manager.setSelectionMode(false)
       return
@@ -230,6 +224,11 @@ export function FileManager({
   useNativeBackHandler(() => {
     void manager.navigate(parentPath(currentPath))
   }, NATIVE_BACK_PRIORITY.WORKSPACE, active && currentPath !== '/')
+
+  useNativeBackHandler(() => {
+    manager.setNewDirName('')
+    setNewDirOpen(false)
+  }, NATIVE_BACK_PRIORITY.WORKSPACE, active && newDirOpen)
 
   const openBookmarkEditor = (bookmark: PathBookmark) => {
     setEditingBookmarkId(bookmark.id)

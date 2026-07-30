@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { addNativeBackHandler, dispatchNativeBack, NATIVE_BACK_PRIORITY } from '../platform/nativeBack'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { FileTransferPanel } from './FileTransferPanel'
+import type { FileTransferContext } from './fileApi'
 import type { UseFileManagerResult } from './useFileManager'
 import { FileManager } from './FileManager'
 
@@ -147,6 +148,30 @@ describe('FileManager overlays', () => {
     unregisterLeaveFiles()
   })
 
+  it('closes an upload transfer center before discarding a new-directory draft', async () => {
+    useFileManagerMock.mockImplementation(() => {
+      const [newDirName, setNewDirName] = useState('')
+      return createManager({ newDirName, setNewDirName })
+    })
+    const pickAndUpload = vi.fn()
+    const fileTransfer = createFileTransferContext(pickAndUpload)
+    render(<NewDirectoryUploadHarness fileTransfer={fileTransfer} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'New directory' }))
+    const draft = screen.getByRole('textbox', { name: 'Directory name' }) as HTMLInputElement
+    await userEvent.type(draft, 'release-assets')
+    await userEvent.click(screen.getByRole('button', { name: 'Upload files' }))
+    expect(pickAndUpload).toHaveBeenCalledWith('machine-1', '/')
+    expect(screen.getByRole('dialog', { name: 'Data Transfer Center' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('dialog', { name: 'Data Transfer Center' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Directory name' })).toHaveProperty('value', 'release-assets')
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('textbox', { name: 'Directory name' })).toBeNull()
+  })
+
   it('keeps delete confirmation associations unique across two file managers', () => {
     useFileManagerMock.mockReturnValue(createManager({
       currentPath: '/tmp',
@@ -224,6 +249,54 @@ function FileManagerWithTransfer() {
       />
     </>
   )
+}
+
+function NewDirectoryUploadHarness({ fileTransfer }: { fileTransfer: FileTransferContext }) {
+  const [transferOpen, setTransferOpen] = useState(false)
+  const snapshot = fileTransfer.getSnapshot()
+  return (
+    <>
+      <FileManager
+        machineId="machine-1"
+        session={{} as ProtoClientSession}
+        fileTransfer={fileTransfer}
+        onOpenTransferCenter={() => setTransferOpen(true)}
+      />
+      <FileTransferPanel
+        transfers={snapshot.transfers}
+        hasActiveTransfers={snapshot.hasActiveTransfers}
+        onCancel={fileTransfer.cancelTransfer}
+        onDismiss={fileTransfer.dismissTransfer}
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+      />
+    </>
+  )
+}
+
+function createFileTransferContext(pickAndUpload: FileTransferContext['pickAndUpload']): FileTransferContext {
+  return {
+    subscribe: () => () => {},
+    getSnapshot: () => ({
+      transfers: [{
+        id: 'upload-1',
+        name: 'release-assets.zip',
+        direction: 'upload',
+        totalSize: 10,
+        transferredSize: 0,
+        status: 'pending',
+        startedAt: 1,
+        updatedAt: 1,
+      }],
+      hasActiveTransfers: true,
+    }),
+    startDownload: vi.fn(),
+    startUpload: vi.fn(),
+    pickAndUpload,
+    cancelTransfer: vi.fn(),
+    dismissTransfer: vi.fn(),
+    isNative: true,
+  }
 }
 
 function expectAssociation(dialog: HTMLElement, attribute: 'aria-labelledby' | 'aria-describedby', text: string) {

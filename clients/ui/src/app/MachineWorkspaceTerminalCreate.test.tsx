@@ -395,6 +395,74 @@ describe('MachineWorkspace terminal creation', () => {
     expect(dispatchNativeBack()).toBe(false)
   })
 
+  it('closes Files before a split terminal hidden underneath it', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminals = [
+      {
+        terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+        command: '/bin/zsh', cwd: '/', cols: 80, rows: 24,
+      },
+      {
+        terminalId: 'term-logs', machineId: 'studio', title: 'Logs', state: 'running' as const,
+        command: 'tail -f app.log', cwd: '/', cols: 80, rows: 24,
+      },
+    ]
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => terminals),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open terminal menu' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Split terminal' }))
+    await userEvent.click(within(await screen.findByTestId('anytty-split-terminal-sheet')).getByRole('button', { name: 'Open Logs' }))
+    expect(await screen.findByTestId('anytty-split-terminal-panel')).toBeTruthy()
+
+    await userEvent.click(screen.getByTestId('anytty-terminal-files-button'))
+    expect(screen.getByTestId('anytty-machine-files-overlay').classList.contains('visible')).toBe(true)
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.getByTestId('anytty-machine-files-overlay').classList.contains('invisible')).toBe(true)
+    expect(screen.getByTestId('anytty-split-terminal-panel')).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-split-terminal-panel')).toBeNull()
+  })
+
+  it('closes Files before a terminal selection toolbar hidden underneath it', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cwd: '/', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await userEvent.click(screen.getByTestId('anytty-terminal-tools-button'))
+    await userEvent.click(within(screen.getByTestId('anytty-terminal-body')).getByRole('button', { name: 'Select' }))
+    expect(screen.getByRole('button', { name: 'Cancel selection' })).toBeTruthy()
+
+    await userEvent.click(screen.getByTestId('anytty-terminal-files-button'))
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.getByTestId('anytty-machine-files-overlay').classList.contains('invisible')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Cancel selection' })).toBeTruthy()
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByRole('button', { name: 'Cancel selection' })).toBeNull()
+  })
+
   it('returns terminal path picker and bookmarks to their editor before closing it', async () => {
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
     const session = new MockProtoSession('studio', (command) => {
