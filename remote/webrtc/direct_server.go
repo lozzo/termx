@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +18,14 @@ import (
 	pion "github.com/pion/webrtc/v4"
 )
 
-const directSignalingClockSkew = 5 * time.Second
+const (
+	directSignalingClockSkew         = 5 * time.Second
+	directSignalingFirstRequestLimit = 5 * time.Second
+	directSignalingErrorWriteLimit   = 250 * time.Millisecond
+	directSignalingPreAuthLimit      = 64
+	directSignalingPreAuthPerIPLimit = 8
+	directSignalingPeerLimit         = 32
+)
 
 type DirectServerOption func(*directServerOptions)
 
@@ -41,14 +49,22 @@ type DirectServer struct {
 	iceMux            ice.TCPMux
 	peerConnections   PeerConnectionFactory
 	now               func() time.Time
+	firstRequestLimit time.Duration
 
-	mu        sync.Mutex
-	consumed  map[string]time.Time
-	conns     map[net.Conn]struct{}
-	peerSlots chan struct{}
-	closeOnce sync.Once
-	closeErr  error
-	wg        sync.WaitGroup
+	// Test hooks are package-private so production admission limits stay fixed.
+	afterPreAuthAcquire       func()
+	beforeConnectionWorkerRun func()
+
+	mu           sync.Mutex
+	consumed     map[string]time.Time
+	conns        map[net.Conn]struct{}
+	preAuthTotal int
+	preAuthByIP  map[string]int
+	peerSlots    chan struct{}
+	closed       bool
+	closeOnce    sync.Once
+	closeErr     error
+	wg           sync.WaitGroup
 }
 
 // NewDirectServer 使用 daemon 已绑定的 signaling 与 ICE-TCP listener 创建服务。
@@ -80,7 +96,8 @@ func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHan
 	return &DirectServer{
 		identity: identity, handler: handler, signalingListener: signalingListener, iceMux: mux,
 		peerConnections: api.NewPeerConnection, now: now, consumed: make(map[string]time.Time), conns: make(map[net.Conn]struct{}),
-		peerSlots: make(chan struct{}, 32),
+		firstRequestLimit: directSignalingFirstRequestLimit, preAuthByIP: make(map[string]int),
+		peerSlots: make(chan struct{}, directSignalingPeerLimit),
 	}, nil
 }
 
@@ -108,13 +125,30 @@ func (server *DirectServer) Serve(ctx context.Context) error {
 			}
 			return fmt.Errorf("accept direct signaling connection: %w", err)
 		}
-		server.track(connection, true)
+		releasePreAuth, acquired := server.tryAcquirePreAuth(connection.RemoteAddr())
+		if !acquired {
+			server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED, "direct signaling server is overloaded")
+			_ = connection.Close()
+			continue
+		}
+		if server.afterPreAuthAcquire != nil {
+			server.afterPreAuthAcquire()
+		}
+		if !server.track(connection) {
+			releasePreAuth()
+			server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED, "direct signaling server is overloaded")
+			_ = connection.Close()
+			continue
+		}
+		if server.beforeConnectionWorkerRun != nil {
+			server.beforeConnectionWorkerRun()
+		}
 		server.wg.Add(1)
 		go func() {
 			defer server.wg.Done()
-			defer server.track(connection, false)
+			defer server.untrack(connection)
 			defer connection.Close()
-			server.serveConnection(ctx, connection)
+			server.serveConnection(ctx, connection, releasePreAuth)
 		}()
 	}
 }
@@ -126,15 +160,16 @@ func (server *DirectServer) Close() error {
 		return nil
 	}
 	server.closeOnce.Do(func() {
-		if server.signalingListener != nil {
-			server.closeErr = server.signalingListener.Close()
-		}
 		server.mu.Lock()
+		server.closed = true
 		connections := make([]net.Conn, 0, len(server.conns))
 		for connection := range server.conns {
 			connections = append(connections, connection)
 		}
 		server.mu.Unlock()
+		if server.signalingListener != nil {
+			server.closeErr = server.signalingListener.Close()
+		}
 		for _, connection := range connections {
 			_ = connection.Close()
 		}
@@ -147,18 +182,23 @@ func (server *DirectServer) Close() error {
 	return server.closeErr
 }
 
-func (server *DirectServer) serveConnection(ctx context.Context, connection net.Conn) {
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = connection.SetDeadline(deadline)
-	} else {
-		_ = connection.SetDeadline(time.Now().Add(remoteauth.DirectSignalingMaxTTL))
+func (server *DirectServer) serveConnection(ctx context.Context, connection net.Conn, releasePreAuth func()) {
+	defer releasePreAuth()
+	firstRequestLimit := server.firstRequestLimit
+	if firstRequestLimit <= 0 {
+		firstRequestLimit = directSignalingFirstRequestLimit
 	}
+	requestStarted := time.Now()
+	_ = connection.SetReadDeadline(earlierDeadline(requestStarted.Add(firstRequestLimit), ctx))
+	_ = connection.SetWriteDeadline(earlierDeadline(requestStarted.Add(remoteauth.DirectSignalingMaxTTL), ctx))
 	request := &remoteauthpb.DirectSignalingRequestV1{}
 	if err := directsignal.ReadMessage(connection, request); err != nil {
-		server.writeError(connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL, "invalid direct signaling request")
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL, "invalid direct signaling request")
 		return
 	}
-	if code := server.admit(request); code != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
+	code := server.admit(request)
+	releasePreAuth()
+	if code != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
 		message := "direct signaling request rejected"
 		if code == remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_EXPIRED {
 			message = "direct signaling request expired"
@@ -167,18 +207,18 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		} else if code == remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH {
 			message = "direct signaling endpoint identity mismatch"
 		}
-		server.writeError(connection, code, message)
+		server.writeError(ctx, connection, code, message)
 		return
 	}
-	select {
-	case server.peerSlots <- struct{}{}:
-	case <-ctx.Done():
-		server.writeError(connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "direct signaling server is stopping")
+	releasePeer, acquired := server.tryAcquirePeer()
+	if !acquired {
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED, "direct signaling server is overloaded")
 		return
 	}
-	var releaseOnce sync.Once
-	releasePeer := func() {
-		releaseOnce.Do(func() { <-server.peerSlots })
+	if ctx.Err() != nil {
+		releasePeer()
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "direct signaling server is stopping")
+		return
 	}
 	answer, err := (Answerer{
 		Handler: server.handler, PeerConnections: server.peerConnections, CloseOnDisconnected: true, OnPeerClosed: releasePeer,
@@ -187,7 +227,7 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 	}, nil)
 	if err != nil {
 		releasePeer()
-		server.writeError(connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "create direct signaling answer failed")
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "create direct signaling answer failed")
 		return
 	}
 	now := server.currentTime()
@@ -204,7 +244,7 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		})
 	}
 	if err := remoteauth.SignDirectSignalingAnswer(server.identity, wireAnswer); err != nil {
-		server.writeError(connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "sign direct signaling answer failed")
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "sign direct signaling answer failed")
 		return
 	}
 	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV1{
@@ -240,10 +280,18 @@ func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV1
 	return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED
 }
 
-func (server *DirectServer) writeError(connection net.Conn, code remoteauthpb.DirectSignalingErrorCode, message string) {
+func (server *DirectServer) writeError(ctx context.Context, connection net.Conn, code remoteauthpb.DirectSignalingErrorCode, message string) {
+	_ = connection.SetWriteDeadline(earlierDeadline(time.Now().Add(directSignalingErrorWriteLimit), ctx))
 	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV1{
 		Payload: &remoteauthpb.DirectSignalingResponseV1_Error{Error: &remoteauthpb.DirectSignalingErrorV1{Code: code, Message: message}},
 	})
+}
+
+func earlierDeadline(deadline time.Time, ctx context.Context) time.Time {
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		return contextDeadline
+	}
+	return deadline
 }
 
 func (server *DirectServer) currentTime() time.Time {
@@ -253,12 +301,73 @@ func (server *DirectServer) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
-func (server *DirectServer) track(connection net.Conn, add bool) {
+func (server *DirectServer) tryAcquirePreAuth(remoteAddress net.Addr) (func(), bool) {
+	sourceIP := normalizedDirectSourceIP(remoteAddress)
+	server.mu.Lock()
+	if server.closed || server.preAuthTotal >= directSignalingPreAuthLimit || server.preAuthByIP[sourceIP] >= directSignalingPreAuthPerIPLimit {
+		server.mu.Unlock()
+		return nil, false
+	}
+	server.preAuthTotal++
+	server.preAuthByIP[sourceIP]++
+	server.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			server.mu.Lock()
+			server.preAuthTotal--
+			if server.preAuthByIP[sourceIP] == 1 {
+				delete(server.preAuthByIP, sourceIP)
+			} else {
+				server.preAuthByIP[sourceIP]--
+			}
+			server.mu.Unlock()
+		})
+	}, true
+}
+
+func normalizedDirectSourceIP(remoteAddress net.Addr) string {
+	if tcpAddress, ok := remoteAddress.(*net.TCPAddr); ok {
+		if address, valid := netip.AddrFromSlice(tcpAddress.IP); valid {
+			return address.Unmap().WithZone("").String()
+		}
+	}
+	if remoteAddress != nil {
+		host, _, err := net.SplitHostPort(remoteAddress.String())
+		if err == nil {
+			if address, parseErr := netip.ParseAddr(host); parseErr == nil {
+				return address.Unmap().WithZone("").String()
+			}
+		}
+	}
+	return "unknown"
+}
+
+func (server *DirectServer) tryAcquirePeer() (func(), bool) {
+	select {
+	case server.peerSlots <- struct{}{}:
+		var once sync.Once
+		return func() {
+			once.Do(func() { <-server.peerSlots })
+		}, true
+	default:
+		return nil, false
+	}
+}
+
+func (server *DirectServer) track(connection net.Conn) bool {
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	if add {
-		server.conns[connection] = struct{}{}
-	} else {
-		delete(server.conns, connection)
+	if server.closed {
+		return false
 	}
+	server.conns[connection] = struct{}{}
+	return true
+}
+
+func (server *DirectServer) untrack(connection net.Conn) {
+	server.mu.Lock()
+	delete(server.conns, connection)
+	server.mu.Unlock()
 }

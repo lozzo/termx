@@ -233,6 +233,7 @@ enum DirectSignalingErrorCode {
   DIRECT_SIGNALING_ERROR_CODE_REPLAYED = 3;
   DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH = 4;
   DIRECT_SIGNALING_ERROR_CODE_INTERNAL = 5;
+  DIRECT_SIGNALING_ERROR_CODE_OVERLOADED = 6;
 }
 
 // DirectIceCandidate 是 Direct/SSH embedded signaling 使用的 ICE candidate wire contract。

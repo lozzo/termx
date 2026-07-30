@@ -43,6 +43,14 @@ func TestAuthEnvelopeHasSinglePayloadOneof(t *testing.T) {
 	}
 }
 
+func TestDirectSignalingOverloadedErrorCodeIsStable(t *testing.T) {
+	descriptor := DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED.Descriptor()
+	value := descriptor.Values().ByName("DIRECT_SIGNALING_ERROR_CODE_OVERLOADED")
+	if value == nil || value.Number() != 6 {
+		t.Fatalf("DirectSignalingErrorCode OVERLOADED = %v, want 6", value)
+	}
+}
+
 func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T) {
 	offer := (&PairingClaimOffer{}).ProtoReflect().Descriptor()
 	want := map[protoreflect.Name]protoreflect.FieldNumber{
