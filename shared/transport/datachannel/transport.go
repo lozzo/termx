@@ -177,7 +177,8 @@ func (transport *Transport) Close() error {
 			transport.closeErr = transport.channel.Close()
 		}
 		transport.sendMu.Lock()
-		defer transport.sendMu.Unlock()
+		//lint:ignore SA2001 sendMu is an intentional wait barrier for an in-flight Channel.Send.
+		transport.sendMu.Unlock()
 	})
 	return transport.closeErr
 }

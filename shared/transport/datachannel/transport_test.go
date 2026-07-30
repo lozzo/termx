@@ -126,6 +126,59 @@ func TestTransportCloseUnblocksInFlightChannelSend(t *testing.T) {
 	}
 }
 
+func TestTransportCloseWaitsForInFlightChannelSendToExit(t *testing.T) {
+	channel := newBlockingSendChannel()
+	sendRelease := make(chan struct{})
+	channel.sendRelease = sendRelease
+	var releaseOnce sync.Once
+	releaseSend := func() { releaseOnce.Do(func() { close(sendRelease) }) }
+	t.Cleanup(releaseSend)
+
+	transport := New(channel)
+	sendDone := make(chan error, 1)
+	go func() {
+		sendDone <- transport.Send([]byte("blocked-auth-frame"))
+	}()
+	select {
+	case <-channel.sendStarted:
+	case <-time.After(time.Second):
+		t.Fatal("channel Send did not start")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- transport.Close()
+	}()
+	select {
+	case <-channel.sendUnblocked:
+	case <-time.After(time.Second):
+		t.Fatal("channel Close did not unblock the in-flight Send")
+	}
+	select {
+	case err := <-closeDone:
+		t.Fatalf("transport Close returned before the in-flight Send exited: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	releaseSend()
+	select {
+	case err := <-sendDone:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("closed in-flight Send error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-flight Send did not exit after release")
+	}
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("transport Close error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transport Close did not return after the in-flight Send exited")
+	}
+}
+
 func TestTransportDrainWaitsForQueuedOutboundMessages(t *testing.T) {
 	clientChannel, serverChannel := newFakeChannelPair()
 	clientChannel.setBufferedAmount(1)
@@ -170,16 +223,22 @@ func TestTransportDrainHasInternalDeadlineWithoutCallerDeadline(t *testing.T) {
 }
 
 type blockingSendChannel struct {
-	mu           sync.Mutex
-	closeHandler func()
-	sendOnce     sync.Once
-	closeOnce    sync.Once
-	sendStarted  chan struct{}
-	closed       chan struct{}
+	mu            sync.Mutex
+	closeHandler  func()
+	sendOnce      sync.Once
+	closeOnce     sync.Once
+	sendStarted   chan struct{}
+	sendUnblocked chan struct{}
+	sendRelease   <-chan struct{}
+	closed        chan struct{}
 }
 
 func newBlockingSendChannel() *blockingSendChannel {
-	return &blockingSendChannel{sendStarted: make(chan struct{}), closed: make(chan struct{})}
+	return &blockingSendChannel{
+		sendStarted:   make(chan struct{}),
+		sendUnblocked: make(chan struct{}),
+		closed:        make(chan struct{}),
+	}
 }
 
 func (*blockingSendChannel) SetMessageHandler(func([]byte)) {}
@@ -199,6 +258,10 @@ func (*blockingSendChannel) SetBufferedAmountLowHandler(func()) {}
 func (channel *blockingSendChannel) Send([]byte) error {
 	channel.sendOnce.Do(func() { close(channel.sendStarted) })
 	<-channel.closed
+	if channel.sendRelease != nil {
+		close(channel.sendUnblocked)
+		<-channel.sendRelease
+	}
 	return io.EOF
 }
 
