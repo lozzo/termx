@@ -173,7 +173,7 @@
     "exportDiagnostics": "导出诊断",
     "exporting": "正在导出...",
     "resetLocalPairings": "重置本地配对",
-    "resetWarning": "这会删除本机保存的配对端点与传输记录，不会更改终端设置或目标服务。",
+    "resetWarning": "这会永久删除本机的端点注册表、已保存的访问凭据、SSH 密钥和传输记录。终端设置与目标服务不会改变。",
     "confirmReset": "重置配对",
     "resetting": "正在重置...",
     "previewTitle": "需要原生 App",

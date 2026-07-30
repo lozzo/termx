@@ -13,10 +13,9 @@ const focusableSelector = [
 export interface ModalSurfaceProps extends Omit<ComponentPropsWithoutRef<'section'>, 'role'> {
   onRequestClose: () => void
   initialFocusRef?: RefObject<HTMLElement | null> | undefined
-  returnFocusRef?: RefObject<HTMLElement | null> | undefined
 }
 
-export function ModalSurface({ children, initialFocusRef, onKeyDown, onRequestClose, returnFocusRef, tabIndex = -1, ...props }: ModalSurfaceProps) {
+export function ModalSurface({ children, initialFocusRef, onKeyDown, onRequestClose, tabIndex = -1, ...props }: ModalSurfaceProps) {
   const surfaceRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -41,10 +40,9 @@ export function ModalSurface({ children, initialFocusRef, onKeyDown, onRequestCl
         else item.element.setAttribute('aria-hidden', item.ariaHidden)
         if (!item.inert) item.element.removeAttribute('inert')
       }
-      const returnTarget = returnFocusRef?.current?.isConnected ? returnFocusRef.current : previousFocus
-      if (returnTarget?.isConnected) returnTarget.focus()
+      if (previousFocus?.isConnected) previousFocus.focus()
     }
-  }, [initialFocusRef, returnFocusRef])
+  }, [initialFocusRef])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     onKeyDown?.(event)

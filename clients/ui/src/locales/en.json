@@ -173,7 +173,7 @@
     "exportDiagnostics": "Export diagnostics",
     "exporting": "Exporting...",
     "resetLocalPairings": "Reset local pairings",
-    "resetWarning": "This removes paired endpoints and transfer history from this device. Terminal settings and target services are not changed.",
+    "resetWarning": "This permanently deletes the endpoint registry, saved access credentials, SSH keys, and transfer history from this device. Terminal settings and target services are not changed.",
     "confirmReset": "Reset pairings",
     "resetting": "Resetting...",
     "previewTitle": "Native app required",

@@ -22,5 +22,6 @@ export default defineConfig({
     { name: 'tablet-chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } } },
     { name: 'mobile-360-chromium', use: { ...devices['Pixel 7'], viewport: { width: 360, height: 800 } } },
     { name: 'mobile-320-chromium', use: { ...devices['Pixel 7'], viewport: { width: 320, height: 720 } } },
+    { name: 'mobile-landscape-chromium', use: { ...devices['Pixel 7'], viewport: { width: 844, height: 390 } } },
   ],
 })

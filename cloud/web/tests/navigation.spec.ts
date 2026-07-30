@@ -118,18 +118,9 @@ test('普通用户共享 Shell、复用页面缓存且不能进入运营页面',
 test('用户创建订单并完成 Development 支付', async ({ page }) => {
   await mockAPI(page)
   await page.goto('/app/subscription')
-  const openPayment = page.getByRole('button', { name: '选择专业版' })
-  await openPayment.click()
+  await page.getByRole('button', { name: '选择专业版' }).click()
   const paymentDialog = page.getByRole('dialog', { name: 'Development 支付确认' })
   await expect(paymentDialog).toBeVisible()
-  const closePayment = paymentDialog.getByRole('button', { name: '关闭' })
-  await expect(closePayment).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(paymentDialog.getByRole('button', { name: '确认测试支付' })).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(paymentDialog).toHaveCount(0)
-  await expect(openPayment).toBeFocused()
-  await openPayment.click()
   await expect(paymentDialog.getByText('¥39.00', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '确认测试支付' }).click()
   await expect(page.getByRole('dialog', { name: 'Development 支付确认' })).toHaveCount(0)
@@ -170,7 +161,7 @@ test('管理员在同一 Shell 进入全部运营模块', async ({ page }, testI
   expect(errors).toEqual([])
 })
 
-test('证书页在三种视口完成双文件选择并展示自动同步状态', async ({ page }, testInfo) => {
+test('证书页在响应式视口完成对话框生命周期与双文件选择', async ({ page }, testInfo) => {
   await mockAPI(page, true)
   const errors = captureErrors(page)
   await page.goto('/app/admin/certificates')
@@ -178,8 +169,18 @@ test('证书页在三种视口完成双文件选择并展示自动同步状态',
   await expect(page.getByRole('row').filter({ hasText: '中国区 Edge 证书' }).first()).toContainText('待同步')
   await expect(page.getByRole('row').filter({ hasText: 'CN1 Edge' }).last()).toContainText('已应用')
   await expect(page.getByRole('row').filter({ hasText: '备用 Edge' }).last()).toContainText('离线待同步')
-  await page.getByRole('button', { name: '上传证书', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '上传证书' })
+  const openUpload = page.getByRole('button', { name: '上传证书', exact: true })
+  await openUpload.click()
+  let dialog = page.getByRole('dialog', { name: '上传证书' })
+  await expect(dialog.getByRole('button', { name: '关闭' })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(dialog.getByRole('button', { name: '上传证书', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(openUpload).toBeFocused()
+
+  await openUpload.click()
+  dialog = page.getByRole('dialog', { name: '上传证书' })
   await dialog.getByLabel('档案名称').fill('海外 Edge 证书')
   await dialog.getByLabel('证书链文件').setInputFiles({ name: 'fullchain.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n') })
   await dialog.getByLabel('私钥文件').setInputFiles({ name: 'privkey.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n') })
@@ -214,6 +215,17 @@ test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) =>
   await expect.poll(async () => { const box = await page.locator('.sidebar').boundingBox(); return box ? box.x + box.width : 0 }).toBeLessThanOrEqual(0)
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('mobile-admin.png'), fullPage: true })
+})
+
+test('手机横屏保持导航和主要内容可用', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-landscape-chromium')
+  await mockAPI(page)
+  await page.goto('/app/overview')
+  expect(page.viewportSize()).toEqual({ width: 844, height: 390 })
+  await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '手机主导航' })).toBeVisible()
+  await assertNoHorizontalOverflow(page)
+  await page.screenshot({ path: testInfo.outputPath('user-overview-landscape.png') })
 })
 
 test('注册后直接进入普通用户概览', async ({ page }) => {

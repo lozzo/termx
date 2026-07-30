@@ -28,7 +28,7 @@ describe('mobile registry startup recovery', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Export diagnostics' }))
     await userEvent.click(screen.getByRole('button', { name: 'Reset local pairings' }))
     expect(onResetLocalPairings).not.toHaveBeenCalled()
-    expect(screen.getByText(/removes paired endpoints and transfer history/i)).toBeTruthy()
+    expect(screen.getByText(/endpoint registry, saved access credentials, SSH keys, and transfer history/i)).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Reset pairings' }))
 
     expect(onRetry).toHaveBeenCalledTimes(1)
