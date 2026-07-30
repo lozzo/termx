@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -326,14 +327,172 @@ func TestDirectServerCloseBetweenAcquireAndTrackReleasesWithoutWorker(t *testing
 	}
 }
 
+func TestDirectServerConnectionClosePanicDoesNotInterruptShutdownCleanup(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	harness.allowedCloseErr = errDirectConnectionClosePanic
+	var workers atomic.Int32
+	harness.server.beforeConnectionWorkerRun = func() { workers.Add(1) }
+	harness.start(t)
+
+	closeStarted := make(chan struct{})
+	resumeClose := make(chan struct{})
+	serverConnections := make([]*directTestConn, 0, 3)
+	clients := make([]net.Conn, 0, 3)
+	for index := 0; index < 3; index++ {
+		serverSide, clientSide := net.Pipe()
+		connection := &directTestConn{
+			Conn: serverSide, remoteAddress: directTestAddress(fmt.Sprintf("192.0.2.%d:6400", index+100)),
+		}
+		if index == 1 {
+			connection.closePanic = "sensitive connection close panic"
+			connection.closeStarted = closeStarted
+			connection.closeResume = resumeClose
+		}
+		harness.acceptConnection(t, connection)
+		serverConnections = append(serverConnections, connection)
+		clients = append(clients, clientSide)
+	}
+	waitDirectServerState(t, harness.server, 3, 1)
+	waitAtomicInt32(t, &workers, 3)
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- harness.server.Close() }()
+	select {
+	case <-closeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("panicking connection Close was not reached")
+	}
+	waitAtomicInt32(t, &serverConnections[1].readReturns, 1)
+	close(resumeClose)
+	select {
+	case err := <-closeDone:
+		if !errors.Is(err, errDirectConnectionClosePanic) || err.Error() != errDirectConnectionClosePanic.Error() {
+			t.Fatalf("server Close error = %v, want fixed internal close error", err)
+		}
+		if strings.Contains(err.Error(), "sensitive") {
+			t.Fatalf("server Close leaked panic text: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server Close did not finish after connection panic")
+	}
+
+	harness.stop(t)
+	assertDirectServerSlotsEmpty(t, harness.server)
+	for index, connection := range serverConnections {
+		if got := connection.closes.Load(); got != 1 {
+			t.Fatalf("underlying connection %d Close calls = %d, want 1", index, got)
+		}
+	}
+	if got := harness.mux.closes.Load(); got != 1 {
+		t.Fatalf("ICE mux Close calls = %d, want 1", got)
+	}
+	if got := harness.listener.closes.Load(); got != 1 {
+		t.Fatalf("signaling listener Close calls = %d, want 1", got)
+	}
+	for _, client := range clients {
+		_ = client.Close()
+	}
+}
+
+func TestDirectServerHandlerAndPeerCleanupPanicsReleaseSlotAndContinue(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	handler := &panickingAuthorizedHandler{called: make(chan int32, 1), canceled: make(chan int32, 1)}
+	harness.server.handler = handler
+	harness.server.peerConnections = pion.NewPeerConnection
+	peerClosed := make(chan struct{}, 1)
+	var peerCloseCalls atomic.Int32
+	var peerClosedCalls atomic.Int32
+	harness.server.answerForTest = func(ctx context.Context, answerer Answerer, offer *SignalingOffer) (*SignalingAnswer, error) {
+		releasePeer := answerer.OnPeerClosed
+		answerer.OnPeerClosed = func() {
+			releasePeer()
+			peerClosedCalls.Add(1)
+			peerClosed <- struct{}{}
+			panic("sensitive OnPeerClosed panic")
+		}
+		answerer.closePeerForTest = func(peer *pion.PeerConnection) error {
+			peerCloseCalls.Add(1)
+			_ = peer.Close()
+			panic("sensitive peer Close panic")
+		}
+		return answerer.Answer(ctx, offer, nil)
+	}
+	harness.start(t)
+
+	clientPeer, err := pion.NewPeerConnection(pion.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientPeer.Close()
+	if _, err := clientPeer.CreateDataChannel(protocolChannelLabel, nil); err != nil {
+		t.Fatal(err)
+	}
+	offer := createGatheredOffer(t, clientPeer)
+	request := harness.request("stacked-handler-cleanup-panics")
+	request.OfferSdp = offer.SDP
+	response := harness.exchange(t, directTestAddress("192.0.2.110:6500"), request)
+	if response.GetAnswer() == nil {
+		t.Fatalf("direct response = %#v, want answer", response)
+	}
+	answer := response.GetAnswer()
+	if err := clientPeer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeAnswer, SDP: answer.GetAnswerSdp()}); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range answer.GetCandidates() {
+		if err := clientPeer.AddICECandidate(pion.ICECandidateInit{
+			Candidate: candidate.GetCandidate(), SDPMid: stringPointer(candidate.GetSdpMid()),
+			SDPMLineIndex: uint16Pointer(uint16(candidate.GetSdpMlineIndex())), UsernameFragment: stringPointer(candidate.GetUsernameFragment()),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case <-handler.called:
+	case <-time.After(10 * time.Second):
+		t.Fatal("panicking direct handler was not invoked")
+	}
+	select {
+	case <-handler.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("panicking direct handler context was not canceled")
+	}
+	select {
+	case <-peerClosed:
+	case <-time.After(time.Second):
+		t.Fatal("panicking peer close callback was not invoked")
+	}
+	if got := peerCloseCalls.Load(); got != 1 {
+		t.Fatalf("peer Close calls = %d, want 1", got)
+	}
+	if got := peerClosedCalls.Load(); got != 1 {
+		t.Fatalf("OnPeerClosed calls = %d, want 1", got)
+	}
+	if got := len(harness.server.peerSlots); got != 0 {
+		t.Fatalf("peer slots after stacked panics = %d", got)
+	}
+	assertPeerSlotsReusable(t, harness.server)
+
+	harness.server.answerForTest = func(context.Context, Answerer, *SignalingOffer) (*SignalingAnswer, error) {
+		return nil, errors.New("answerer remains available")
+	}
+	response = harness.exchange(t, directTestAddress("192.0.2.110:6501"), harness.request("after-stacked-handler-cleanup-panics"))
+	assertDirectErrorCode(t, response, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL)
+	if message := response.GetError().GetMessage(); message != "create direct signaling answer failed" || strings.Contains(message, "sensitive") {
+		t.Fatalf("follow-up response message = %q", message)
+	}
+	waitDirectServerState(t, harness.server, 0, 0)
+}
+
 type directServerHarness struct {
-	server   *DirectServer
-	listener *directTestListener
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan error
-	now      time.Time
-	stopOnce sync.Once
+	server          *DirectServer
+	listener        *directTestListener
+	mux             *directTestTCPMux
+	ctx             context.Context
+	cancel          context.CancelFunc
+	done            chan error
+	now             time.Time
+	stopOnce        sync.Once
+	allowedCloseErr error
 }
 
 func newDirectServerHarness(t *testing.T) *directServerHarness {
@@ -347,15 +506,16 @@ func newDirectServerHarness(t *testing.T) *directServerHarness {
 		t.Fatal(err)
 	}
 	listener := newDirectTestListener()
+	mux := &directTestTCPMux{}
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now().UTC()
 	harness := &directServerHarness{
-		listener: listener, ctx: ctx, cancel: cancel, done: make(chan error, 1), now: now,
+		listener: listener, mux: mux, ctx: ctx, cancel: cancel, done: make(chan error, 1), now: now,
 		server: &DirectServer{
-			identity: identity, handler: directTestHandler{}, signalingListener: listener, iceMux: &directTestTCPMux{},
+			identity: identity, handler: directTestHandler{}, signalingListener: listener, iceMux: mux,
 			peerConnections: func(pion.Configuration) (*pion.PeerConnection, error) { return nil, errors.New("unused peer factory") },
 			now:             func() time.Time { return now }, firstRequestLimit: directSignalingFirstRequestLimit,
-			consumed: make(map[string]time.Time), conns: make(map[net.Conn]struct{}), preAuthByIP: make(map[string]int),
+			consumed: make(map[string]time.Time), conns: make(map[*directConnection]struct{}), preAuthByIP: make(map[string]int),
 			peerSlots: make(chan struct{}, directSignalingPeerLimit),
 		},
 	}
@@ -372,7 +532,7 @@ func (harness *directServerHarness) stop(t *testing.T) {
 	t.Helper()
 	harness.stopOnce.Do(func() {
 		harness.cancel()
-		if err := harness.server.Close(); err != nil {
+		if err := harness.server.Close(); err != nil && !errors.Is(err, harness.allowedCloseErr) {
 			t.Errorf("close direct server: %v", err)
 		}
 		select {
@@ -390,12 +550,17 @@ func (harness *directServerHarness) acceptPipe(t *testing.T, remoteAddress net.A
 	t.Helper()
 	serverSide, clientSide := net.Pipe()
 	connection := &directTestConn{Conn: serverSide, remoteAddress: remoteAddress}
+	harness.acceptConnection(t, connection)
+	return connection, clientSide
+}
+
+func (harness *directServerHarness) acceptConnection(t *testing.T, connection net.Conn) {
+	t.Helper()
 	select {
 	case harness.listener.connections <- connection:
 	case <-time.After(time.Second):
 		t.Fatal("direct test listener did not accept connection")
 	}
-	return connection, clientSide
 }
 
 func (harness *directServerHarness) exchange(t *testing.T, remoteAddress net.Addr, request *remoteauthpb.DirectSignalingRequestV1) *remoteauthpb.DirectSignalingResponseV1 {
@@ -582,6 +747,7 @@ type directTestListener struct {
 	connections chan net.Conn
 	closed      chan struct{}
 	closeOnce   sync.Once
+	closes      atomic.Int32
 }
 
 func newDirectTestListener() *directTestListener {
@@ -598,15 +764,23 @@ func (listener *directTestListener) Accept() (net.Conn, error) {
 }
 
 func (listener *directTestListener) Close() error {
-	listener.closeOnce.Do(func() { close(listener.closed) })
+	listener.closeOnce.Do(func() {
+		listener.closes.Add(1)
+		close(listener.closed)
+	})
 	return nil
 }
 
 func (listener *directTestListener) Addr() net.Addr { return directTestAddress("127.0.0.1:0") }
 
-type directTestTCPMux struct{}
+type directTestTCPMux struct {
+	closes atomic.Int32
+}
 
-func (*directTestTCPMux) Close() error { return nil }
+func (mux *directTestTCPMux) Close() error {
+	mux.closes.Add(1)
+	return nil
+}
 func (*directTestTCPMux) GetConnByUfrag(string, bool, net.IP) (net.PacketConn, error) {
 	return nil, net.ErrClosed
 }
@@ -614,19 +788,36 @@ func (*directTestTCPMux) RemoveConnByUfrag(string) {}
 
 type directTestConn struct {
 	net.Conn
-	remoteAddress net.Addr
-	reads         atomic.Int32
-	closes        atomic.Int32
+	remoteAddress  net.Addr
+	reads          atomic.Int32
+	readReturns    atomic.Int32
+	closes         atomic.Int32
+	closePanic     any
+	closeStarted   chan struct{}
+	closeResume    <-chan struct{}
+	closeStartOnce sync.Once
 }
 
 func (connection *directTestConn) Read(buffer []byte) (int, error) {
 	connection.reads.Add(1)
-	return connection.Conn.Read(buffer)
+	count, err := connection.Conn.Read(buffer)
+	connection.readReturns.Add(1)
+	return count, err
 }
 
 func (connection *directTestConn) Close() error {
 	connection.closes.Add(1)
-	return connection.Conn.Close()
+	err := connection.Conn.Close()
+	if connection.closeStarted != nil {
+		connection.closeStartOnce.Do(func() { close(connection.closeStarted) })
+	}
+	if connection.closeResume != nil {
+		<-connection.closeResume
+	}
+	if connection.closePanic != nil {
+		panic(connection.closePanic)
+	}
+	return err
 }
 
 func (connection *directTestConn) RemoteAddr() net.Addr { return connection.remoteAddress }

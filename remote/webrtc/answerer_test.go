@@ -106,11 +106,18 @@ func TestAnswererRecoversDataChannelHandlerPanicAndClosesExactlyOnce(t *testing.
 	peerClosed := make(chan int32, 2)
 	sessionErrors := make(chan error, 1)
 	var peerCloseCount atomic.Int32
+	var underlyingCloseCount atomic.Int32
 	answerer := Answerer{
 		Handler:        handler,
 		OnSessionError: func(err error) { sessionErrors <- err },
 		OnPeerClosed: func() {
 			peerClosed <- peerCloseCount.Add(1)
+			panic("sensitive OnPeerClosed panic")
+		},
+		closePeerForTest: func(peer *pion.PeerConnection) error {
+			underlyingCloseCount.Add(1)
+			_ = peer.Close()
+			panic("sensitive peer Close panic")
 		},
 	}
 
@@ -170,6 +177,9 @@ func TestAnswererRecoversDataChannelHandlerPanicAndClosesExactlyOnce(t *testing.
 	}
 	if peerCloseCount.Load() != 2 {
 		t.Fatalf("peer close callbacks = %d, want 2", peerCloseCount.Load())
+	}
+	if underlyingCloseCount.Load() != 2 {
+		t.Fatalf("underlying peer Close calls = %d, want 2", underlyingCloseCount.Load())
 	}
 	select {
 	case err := <-sessionErrors:

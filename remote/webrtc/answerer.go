@@ -76,7 +76,8 @@ type Answerer struct {
 	// 它只用于连接级可观测性，不能修改授权、session generation 或 PeerConnection lifecycle。
 	OnSessionStart func()
 	// OnSessionError 接收 DataChannel 端到端认证或 application handler 的失败。
-	OnSessionError func(error)
+	OnSessionError   func(error)
+	closePeerForTest func(*pion.PeerConnection) error
 }
 
 // Answer 创建 WebRTC answer，并把唯一可靠有序的 anytty DataChannel 交给端到端授权 handler。
@@ -110,14 +111,24 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	var notifyPeerClosedOnce sync.Once
 	notifyPeerClosed := func() {
 		notifyPeerClosedOnce.Do(func() {
-			if answerer.OnPeerClosed != nil {
-				answerer.OnPeerClosed()
-			}
+			func() {
+				defer func() { _ = recover() }()
+				if answerer.OnPeerClosed != nil {
+					answerer.OnPeerClosed()
+				}
+			}()
 		})
 	}
 	closePeer := func() {
 		closePeerOnce.Do(func() {
-			_ = peer.Close()
+			func() {
+				defer func() { _ = recover() }()
+				if answerer.closePeerForTest != nil {
+					_ = answerer.closePeerForTest(peer)
+					return
+				}
+				_ = peer.Close()
+			}()
 			notifyPeerClosed()
 		})
 	}
