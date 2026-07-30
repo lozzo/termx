@@ -26,6 +26,10 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import java.nio.channels.SelectableChannel
+import java.nio.channels.SelectionKey
+import java.nio.channels.Selector
+import java.nio.channels.SocketChannel
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -52,6 +56,53 @@ class BridgeTransportTest {
         accepted.first().close()
         val replacement = eventuallyUpgrade(server)
         assertTrue(replacement.lastHttpResponse.startsWith("HTTP/1.1 101"))
+    }
+
+    @Test
+    fun `eight closing connections retain physical slots until closeConnection returns`() {
+        val registry = BridgeConnectionRegistry()
+        val factory = BridgeWebSocketFactory(registry)
+        val closeEntered = CountDownLatch(BRIDGE_PHYSICAL_LIMIT)
+        val closeRelease = CountDownLatch(1)
+        val closingListener = testWebSocketListener {
+            closeEntered.countDown()
+            closeRelease.await(5, TimeUnit.SECONDS)
+        }
+        val closing = List(BRIDGE_PHYSICAL_LIMIT) {
+            factory.createWebSocket(closingListener, listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+        }
+        val closeThreads = closing.map { connection ->
+            Thread {
+                connection.closeConnection(CloseFrame.GOING_AWAY, "test close", false)
+            }.apply { start() }
+        }
+
+        try {
+            assertTrue(closeEntered.await(1, TimeUnit.SECONDS))
+
+            val rejected = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+            SocketChannel.open().use { channel ->
+                factory.wrapChannel(channel, AttachedSelectionKey(channel, rejected))
+                assertFalse(channel.isOpen)
+            }
+
+            closeRelease.countDown()
+            closeThreads.forEach { thread ->
+                thread.join(1_000)
+                assertFalse(thread.isAlive)
+            }
+
+            val replacement = factory.createWebSocket(testWebSocketListener(), listOf(BridgeDraft6455())) as BridgeWebSocketImpl
+            SocketChannel.open().use { channel ->
+                factory.wrapChannel(channel, AttachedSelectionKey(channel, replacement))
+                assertTrue(channel.isOpen)
+            }
+            replacement.closeConnection(CloseFrame.NORMAL, "test complete", false)
+        } finally {
+            closeRelease.countDown()
+            closeThreads.forEach { it.join(1_000) }
+            factory.close()
+        }
     }
 
     @Test
@@ -358,17 +409,38 @@ class BridgeTransportTest {
         throw AssertionError("replacement did not upgrade", lastFailure)
     }
 
-    private fun testWebSocketListener(): WebSocketAdapter = object : WebSocketAdapter() {
+    private fun testWebSocketListener(onClose: () -> Unit = {}): WebSocketAdapter = object : WebSocketAdapter() {
         override fun onWebsocketMessage(conn: WebSocket, message: String) = Unit
         override fun onWebsocketMessage(conn: WebSocket, blob: ByteBuffer) = Unit
         override fun onWebsocketOpen(conn: WebSocket, handshake: Handshakedata) = Unit
-        override fun onWebsocketClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
+        override fun onWebsocketClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) = onClose()
         override fun onWebsocketClosing(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
         override fun onWebsocketCloseInitiated(conn: WebSocket, code: Int, reason: String) = Unit
         override fun onWebsocketError(conn: WebSocket, ex: Exception) = Unit
         override fun onWriteDemand(conn: WebSocket) = Unit
         override fun getLocalSocketAddress(conn: WebSocket) = null
         override fun getRemoteSocketAddress(conn: WebSocket) = null
+    }
+
+    private class AttachedSelectionKey(
+        private val socketChannel: SocketChannel,
+        connection: BridgeWebSocketImpl,
+    ) : SelectionKey() {
+        private var valid = true
+
+        init {
+            attach(connection)
+        }
+
+        override fun channel(): SelectableChannel = socketChannel
+        override fun selector(): Selector = throw UnsupportedOperationException()
+        override fun isValid(): Boolean = valid
+        override fun cancel() {
+            valid = false
+        }
+        override fun interestOps(): Int = 0
+        override fun interestOps(ops: Int): SelectionKey = this
+        override fun readyOps(): Int = 0
     }
 
     private class FakeEngine(
