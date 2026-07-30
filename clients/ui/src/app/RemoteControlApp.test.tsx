@@ -35,18 +35,59 @@ describe('RemoteControlApp accountless product shell', () => {
     expect(screen.queryByRole('heading', { name: 'Account' })).toBeNull()
   })
 
-  it('keeps pairing QR-only when camera permission is denied', async () => {
+  it.each([
+    ['camera_permission_denied', 'Camera access was denied. Allow camera access in system settings, then try again.'],
+    ['camera_not_found', 'No camera was found on this device.'],
+    ['camera_start_failed', 'The camera could not start. Close other apps using it, then try again.'],
+  ])('keeps pairing QR-only and distinguishes %s', async (code, message) => {
     renderApp({
       scanPairingCode: vi.fn(async () => {
-        throw new Error('Error getting userMedia, error = NotAllowedError: Permission denied')
+        throw Object.assign(new Error('raw camera detail'), { code })
       }),
     })
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
     await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
 
-    expect(await screen.findByText(/QR scanning is unavailable on this device/)).toBeTruthy()
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText(message)).toBeTruthy()
+    expect(alert.textContent).not.toContain('raw camera detail')
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('announces pending camera work and prevents duplicate scans', async () => {
+    const scan = deferred<string | null>()
+    const scanPairingCode = vi.fn(() => scan.promise)
+    renderApp({ scanPairingCode })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    const cameraButton = screen.getByRole('button', { name: 'Scan QR with camera' }) as HTMLButtonElement
+    await userEvent.click(cameraButton)
+
+    expect(cameraButton.disabled).toBe(true)
+    expect(screen.getByRole('status').textContent).toBe('Camera is scanning for an AnyTTY QR code...')
+    cameraButton.click()
+    expect(scanPairingCode).toHaveBeenCalledOnce()
+
+    scan.resolve(null)
+    await waitFor(() => expect(cameraButton.disabled).toBe(false))
+  })
+
+  it('shows a sanitized scanner-load alert with reload as the only recovery', async () => {
+    const scanPairingCode = vi.fn(async () => {
+      throw Object.assign(new Error('secret chunk URL and token'), { code: 'scanner_load_failed' })
+    })
+    renderApp({ scanPairingCode })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('The QR scanner could not be loaded. Reload the application to recover.')).toBeTruthy()
+    expect(within(alert).getByRole('button', { name: 'Reload application' })).toBeTruthy()
+    expect(alert.textContent).not.toContain('secret chunk URL')
+    expect((screen.getByRole('button', { name: 'Scan QR with camera' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(scanPairingCode).toHaveBeenCalledOnce()
   })
 
   it('imports a scanned service QR and saves the resulting endpoint locally', async () => {
@@ -213,4 +254,14 @@ class MemoryStorage implements RemoteRuntimeStorage {
   getItem(key: string): string | null { return this.values.get(key) ?? null }
   removeItem(key: string): void { this.values.delete(key) }
   setItem(key: string, value: string): void { this.values.set(key, value) }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }

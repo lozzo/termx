@@ -62,9 +62,19 @@ function localizedAppError(error: unknown, t: TFunction): string {
   }
 }
 
-function isCameraUnavailableError(error: unknown): boolean {
-  const detail = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '')
-  return /NotAllowedError|Permission denied|PermissionDenied|NotFoundError|DevicesNotFoundError/i.test(detail)
+function cameraScanErrorPresentation(error: unknown, t: TFunction): { message: string; reloadRequired: boolean } {
+  switch (appErrorCode(error)) {
+    case 'scanner_load_failed':
+      return { message: t('pairing.scannerLoadFailed'), reloadRequired: true }
+    case 'camera_permission_denied':
+      return { message: t('pairing.cameraPermissionDenied'), reloadRequired: false }
+    case 'camera_not_found':
+      return { message: t('pairing.cameraNotFound'), reloadRequired: false }
+    case 'camera_start_failed':
+      return { message: t('pairing.cameraStartFailed'), reloadRequired: false }
+    default:
+      return { message: localizedAppError(error, t), reloadRequired: false }
+  }
 }
 
 type AppView = 'home' | 'settings' | 'machine'
@@ -212,6 +222,7 @@ export function RemoteControlApp({
   const [sharePreview, setSharePreview] = useState<EndpointSharePreviewView | null>(null)
   const [sshCredentialNotice, setSSHCredentialNotice] = useState<NonNullable<ExternalPairingImportResult['sshCredentials']> | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
+  const [scannerReloadRequired, setScannerReloadRequired] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
   const [reachabilityRefreshToken, setReachabilityRefreshToken] = useState(0)
   const remoteNetworkStateManager = useMemo(
@@ -419,19 +430,19 @@ export function RemoteControlApp({
     hapticImpact()
     setSelectedMachineId(null)
     setPairIntent('add-local')
-	setSharePreview(null)
-    setError(null)
+    setSharePreview(null)
+    if (!scannerReloadRequired) setError(null)
     setScanOpen(true)
-  }, [])
+  }, [scannerReloadRequired])
 
   const openPairSheet = useCallback((machineId: string) => {
     hapticImpact()
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
-	setSharePreview(null)
-    setError(null)
+    setSharePreview(null)
+    if (!scannerReloadRequired) setError(null)
     setScanOpen(true)
-  }, [])
+  }, [scannerReloadRequired])
 
   const openMachinePairSheet = useCallback((machine: DisplayMachine) => {
     openPairSheet(machine.id)
@@ -565,7 +576,10 @@ export function RemoteControlApp({
       if (!value) return
       restoreCameraFocusAfterScanRef.current = !(await pairScannedValue(value))
     } catch (err) {
-      setError(isCameraUnavailableError(err) ? t('pairing.cameraUnavailable') : localizedAppError(err, t))
+      const presentation = cameraScanErrorPresentation(err, t)
+      restoreCameraFocusAfterScanRef.current = true
+      setScannerReloadRequired(presentation.reloadRequired)
+      setError(presentation.message)
     } finally {
       if (cameraScanAbortRef.current === controller) cameraScanAbortRef.current = null
       cameraScanInFlightRef.current = false
@@ -695,6 +709,7 @@ export function RemoteControlApp({
           sharePreview={sharePreview}
           sshCredentialNotice={sshCredentialNotice}
           cameraScanning={cameraScanning}
+          scannerReloadRequired={scannerReloadRequired}
           cameraButtonRef={cameraScanButtonRef}
           pairIntent={pairIntent}
           selectedMachine={selectedMachine}
@@ -1620,6 +1635,7 @@ function Switch({
 
 function PairSheet({
   cameraScanning,
+  scannerReloadRequired,
   cameraButtonRef,
   canScanWithCamera,
   pairError,
@@ -1634,6 +1650,7 @@ function PairSheet({
   onScanWithCamera,
 }: {
   cameraScanning: boolean
+  scannerReloadRequired: boolean
   cameraButtonRef: RefObject<HTMLButtonElement | null>
   canScanWithCamera: boolean
   pairError: string | null
@@ -1657,7 +1674,7 @@ function PairSheet({
   return (
     <div className="anytty-app-page fixed inset-0 z-50">
       <ModalSurface aria-label={title} className="flex h-full min-h-0 flex-col bg-white" data-testid="anytty-pair-sheet" onRequestClose={onClose}>
-        <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+        <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b pb-3 pl-[calc(env(safe-area-inset-left)+1rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pt-[calc(env(safe-area-inset-top)+0.75rem)]">
           <div className="flex min-w-0 items-center gap-2">
             <QrCode className="h-5 w-5 shrink-0 text-[var(--anytty-accent)]" />
             <h2 className="truncate text-base font-semibold">{title}</h2>
@@ -1672,7 +1689,7 @@ function PairSheet({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pl-[calc(env(safe-area-inset-left)+1rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pt-5">
           <div className="mx-auto w-full max-w-md">
             {sshCredentialNotice ? (
               <div className="anytty-app-panel bg-[var(--anytty-app-soft)] px-3 py-3">
@@ -1728,39 +1745,53 @@ function PairSheet({
               </div>
             ) : null}
 
-            {!sharePreview && !sshCredentialNotice ? <>
-            {selectedMachine ? (
-              <div className="anytty-app-panel bg-[var(--anytty-app-soft)] px-3 py-2">
-                <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
-                <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
-              </div>
-            ) : null}
+            {!sharePreview && !sshCredentialNotice ? (
+              <>
+                {selectedMachine ? (
+                  <div className="anytty-app-panel bg-[var(--anytty-app-soft)] px-3 py-2">
+                    <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
+                    <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
+                  </div>
+                ) : null}
 
-            {canScanWithCamera ? (
-              <button
-                ref={cameraButtonRef}
-                className="anytty-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                type="button"
-                onClick={onScanWithCamera}
-                disabled={pairing || cameraScanning}
-              >
-                {cameraScanning || pairing ? <span className="anytty-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
-                {pairing ? t('pairing.pairing') : cameraScanning ? t('pairing.scanProgress') : t('pairing.scanCamera')}
-              </button>
-            ) : (
-              <p className="mt-4 border border-[var(--anytty-app-line)] bg-[var(--anytty-app-soft)] px-3 py-2 text-sm text-zinc-600">{t('pairing.cameraUnavailable')}</p>
-            )}
+                {canScanWithCamera ? (
+                  <button
+                    ref={cameraButtonRef}
+                    className="anytty-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    onClick={onScanWithCamera}
+                    disabled={pairing || cameraScanning || scannerReloadRequired}
+                  >
+                    {cameraScanning || pairing ? <span className="anytty-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
+                    {pairing ? t('pairing.pairing') : cameraScanning ? t('pairing.scanProgress') : t('pairing.scanCamera')}
+                  </button>
+                ) : (
+                  <p className="mt-4 border border-[var(--anytty-app-line)] bg-[var(--anytty-app-soft)] px-3 py-2 text-sm text-zinc-600">{t('pairing.cameraUnavailable')}</p>
+                )}
 
-            {statusMessage ? (
-              <p className="mt-3 border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700">{statusMessage}</p>
-            ) : null}
+                {statusMessage ? (
+                  <p aria-live="polite" className="mt-3 border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700" role="status">{statusMessage}</p>
+                ) : null}
 
-            {pairError ? (
-              <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
+                {pairError ? (
+                  <div className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm font-medium text-red-600" role="alert">
+                    <p>{pairError}</p>
+                    {scannerReloadRequired ? (
+                      <button
+                        className="anytty-app-secondary-button mt-3 min-h-[44px] w-full gap-2 px-3 text-sm font-semibold"
+                        type="button"
+                        onClick={() => window.location.reload()}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        {t('pairing.reloadApplication')}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            ) : !sshCredentialNotice && pairError ? (
+              <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-600" role="alert">{pairError}</p>
             ) : null}
-				</> : !sshCredentialNotice && pairError ? (
-			  <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
-			) : null}
 
           </div>
         </div>

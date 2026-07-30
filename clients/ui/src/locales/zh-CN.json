@@ -279,12 +279,20 @@
     "scanProgress": "正在扫描...",
     "scanCamera": "使用摄像头扫描",
     "cameraUnavailable": "此设备无法扫描二维码。请使用受支持的原生设备，扫描目标服务显示的二维码。",
+    "cameraPermissionDenied": "摄像头权限已被拒绝。请在系统设置中允许摄像头访问，然后重试。",
+    "cameraNotFound": "此设备上未找到可用的摄像头。",
+    "cameraStartFailed": "无法启动摄像头。请关闭正在使用摄像头的其他应用，然后重试。",
+    "scannerLoadFailed": "无法加载二维码扫描器。请重新加载应用以恢复。",
+    "reloadApplication": "重新加载应用",
     "importConfig": "导入配置",
     "connectModeChanged": "连接模式将发生变化。",
     "selectionPolicyChanged": "路由选择策略将发生变化。"
   },
   "scanner": {
     "title": "扫描 AnyTTY 二维码",
-    "hint": "将摄像头对准 AnyTTY 设备上显示的二维码。"
+    "hint": "将摄像头对准 AnyTTY 设备上显示的二维码。",
+    "loading": "正在加载二维码扫描器...",
+    "starting": "正在启动摄像头...",
+    "scanning": "摄像头已就绪，正在查找 AnyTTY 二维码..."
   }
 }

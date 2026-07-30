@@ -5,11 +5,8 @@ import { gzipSync } from 'node:zlib'
 
 const APP_ENTRY_KEY = 'index.html'
 const FILE_MANAGER_KEY = '../ui/src/files/FileManager.tsx'
-// Transitional baseline with Terminal static and FileManager split; the QR follow-up owns the final budget.
-const INITIAL_RAW_BASELINE = 1_887_311
-const INITIAL_GZIP_BASELINE = 524_193
-const INITIAL_RAW_LIMIT = INITIAL_RAW_BASELINE + 15_000
-const INITIAL_GZIP_LIMIT = INITIAL_GZIP_BASELINE + 6_000
+const INITIAL_RAW_LIMIT = 1_550_000
+const INITIAL_GZIP_LIMIT = 430_000
 const WOFF2_TOTAL_LIMIT = 2_200_000
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(distDir, '.vite/manifest.json'), 'utf8'))
@@ -57,7 +54,7 @@ if (initialGzip > INITIAL_GZIP_LIMIT) fail(`initial gzip ${initialGzip} exceeds 
 if (woff2Total > WOFF2_TOTAL_LIMIT) fail(`woff2 total ${woff2Total} exceeds ${WOFF2_TOTAL_LIMIT}`)
 
 console.log([
-  `mobile bundle transition: initial ${format(initialRaw)} raw / ${format(initialGzip)} gzip`,
+  `mobile bundle: initial ${format(initialRaw)} raw / ${format(initialGzip)} gzip`,
   `limits ${format(INITIAL_RAW_LIMIT)} raw / ${format(INITIAL_GZIP_LIMIT)} gzip`,
   `woff2 ${format(woff2Total)}`,
   `FileManager path ${fileManagerPath.join(' -> ')} (${fileManager.file})`,

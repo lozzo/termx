@@ -270,7 +270,7 @@
     "authorize": "Authorize device",
     "pair": "Pair device",
     "scanned": "QR code scanned. Pairing this device with the machine...",
-    "scanning": "Camera is scanning for a AnyTTY QR code...",
+    "scanning": "Camera is scanning for an AnyTTY QR code...",
     "close": "Close pairing",
     "copyKey": "Copy public key",
     "sshAuthorizedKey": "SSH authorized key for {{routeId}}",
@@ -279,12 +279,20 @@
     "scanProgress": "Scanning QR...",
     "scanCamera": "Scan QR with camera",
     "cameraUnavailable": "QR scanning is unavailable on this device. Use a supported native device and scan the QR shown by the target service.",
+    "cameraPermissionDenied": "Camera access was denied. Allow camera access in system settings, then try again.",
+    "cameraNotFound": "No camera was found on this device.",
+    "cameraStartFailed": "The camera could not start. Close other apps using it, then try again.",
+    "scannerLoadFailed": "The QR scanner could not be loaded. Reload the application to recover.",
+    "reloadApplication": "Reload application",
     "importConfig": "Import configuration",
     "connectModeChanged": "Connection mode changes.",
     "selectionPolicyChanged": "Route selection changes."
   },
   "scanner": {
     "title": "Scan AnyTTY QR",
-    "hint": "Point the camera at the QR code shown on the AnyTTY device."
+    "hint": "Point the camera at the QR code shown on the AnyTTY device.",
+    "loading": "Loading QR scanner...",
+    "starting": "Starting camera...",
+    "scanning": "Camera ready. Looking for an AnyTTY QR code..."
   }
 }

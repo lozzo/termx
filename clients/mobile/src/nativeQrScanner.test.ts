@@ -2,41 +2,62 @@
 
 import { NATIVE_BACK_PRIORITY, addNativeBackHandler, anyttyI18n, dispatchNativeBack } from '@anytty/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { scanPairingCode } from './nativeQrScanner'
 
-const scannerMock = vi.hoisted(() => ({
+type ScanPairingCode = typeof import('./nativeQrScanner')['scanPairingCode']
+
+const scannerMock = {
   constructorOptions: null as unknown,
   start: vi.fn(),
   stop: vi.fn(),
   clear: vi.fn(),
   pause: vi.fn(),
+  construct: vi.fn(),
+  moduleLoads: vi.fn(),
+  moduleGate: null as Promise<void> | null,
+  moduleRejection: null as unknown,
   success: null as ((value: string) => void) | null,
-}))
+}
 
-vi.mock('html5-qrcode', () => ({
-  Html5QrcodeSupportedFormats: { QR_CODE: 0 },
-  Html5Qrcode: class {
-    constructor(_id: string, options: unknown) { scannerMock.constructorOptions = options }
-    start(_camera: unknown, _config: unknown, success: (value: string) => void) {
-      scannerMock.success = success
-      return scannerMock.start()
-    }
-    stop() { return scannerMock.stop() }
-    clear() { return scannerMock.clear() }
-    pause() { return scannerMock.pause() }
-  },
-}))
+async function scannerModuleMock() {
+  scannerMock.moduleLoads()
+  if (scannerMock.moduleGate) await scannerMock.moduleGate
+  if (scannerMock.moduleRejection) throw scannerMock.moduleRejection
+  return {
+    Html5QrcodeSupportedFormats: { QR_CODE: 0 },
+    Html5Qrcode: class {
+      constructor(_id: string, options: unknown) {
+        scannerMock.construct()
+        scannerMock.constructorOptions = options
+      }
+      start(_camera: unknown, _config: unknown, success: (value: string) => void) {
+        scannerMock.success = success
+        return scannerMock.start()
+      }
+      stop() { return scannerMock.stop() }
+      clear() { return scannerMock.clear() }
+      pause() { return scannerMock.pause() }
+    },
+  }
+}
 
 describe('native QR scanner ownership', () => {
   let animationFrames: FrameRequestCallback[]
+  let scanPairingCode: ScanPairingCode
 
   beforeEach(async () => {
+    vi.resetModules()
     scannerMock.start.mockReset()
     scannerMock.constructorOptions = null
     scannerMock.stop.mockReset().mockResolvedValue(undefined)
     scannerMock.clear.mockReset()
     scannerMock.pause.mockReset()
+    scannerMock.construct.mockReset()
+    scannerMock.moduleLoads.mockReset()
+    scannerMock.moduleGate = null
+    scannerMock.moduleRejection = null
     scannerMock.success = null
+    vi.doMock('@anytty/ui', () => ({ NATIVE_BACK_PRIORITY, addNativeBackHandler, anyttyI18n }))
+    vi.doMock('html5-qrcode', scannerModuleMock)
     document.body.replaceChildren()
     animationFrames = []
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -44,6 +65,7 @@ describe('native QR scanner ownership', () => {
       return animationFrames.length
     })
     await anyttyI18n.changeLanguage('en')
+    ;({ scanPairingCode } = await import('./nativeQrScanner'))
   })
 
   afterEach(() => {
@@ -55,9 +77,14 @@ describe('native QR scanner ownership', () => {
     for (const callback of animationFrames.splice(0)) callback(0)
   }
 
+  const waitForScannerConstruction = async () => {
+    await vi.waitFor(() => expect(scannerMock.construct).toHaveBeenCalledOnce())
+  }
+
   it('configures the decoder for QR codes only', async () => {
     scannerMock.start.mockReturnValue(new Promise<void>(() => {}))
     const result = scanPairingCode()
+    await waitForScannerConstruction()
     expect(scannerMock.constructorOptions).toMatchObject({ formatsToSupport: [0] })
     document.querySelector<HTMLButtonElement>('#anytty-camera-qr-scanner button')?.click()
     await expect(result).resolves.toBeNull()
@@ -72,6 +99,7 @@ describe('native QR scanner ownership', () => {
     const underlyingPageBack = vi.fn()
     const unregisterUnderlyingPage = addNativeBackHandler(underlyingPageBack, NATIVE_BACK_PRIORITY.SCANNER)
     const result = scanPairingCode()
+    await waitForScannerConstruction()
 
     expect(dispatchNativeBack()).toBe(true)
     await expect(result).resolves.toBeNull()
@@ -91,6 +119,7 @@ describe('native QR scanner ownership', () => {
     const start = deferred<void>()
     scannerMock.start.mockReturnValue(start.promise)
     const result = scanPairingCode()
+    await waitForScannerConstruction()
 
     document.querySelector<HTMLButtonElement>('#anytty-camera-qr-scanner button')?.click()
     await expect(result).resolves.toBeNull()
@@ -110,6 +139,7 @@ describe('native QR scanner ownership', () => {
     scannerMock.start.mockResolvedValue(undefined)
     scannerMock.stop.mockReturnValue(stop.promise)
     const result = scanPairingCode()
+    await waitForScannerConstruction()
     await Promise.resolve()
 
     document.querySelector<HTMLButtonElement>('#anytty-camera-qr-scanner button')?.click()
@@ -129,6 +159,7 @@ describe('native QR scanner ownership', () => {
     const start = deferred<void>()
     scannerMock.start.mockReturnValue(start.promise)
     const result = scanPairingCode()
+    await waitForScannerConstruction()
 
     document.querySelector<HTMLButtonElement>('#anytty-camera-qr-scanner button')?.click()
     await expect(result).resolves.toBeNull()
@@ -144,6 +175,7 @@ describe('native QR scanner ownership', () => {
   it('shares exact-once cleanup across successful decode and late signals', async () => {
     scannerMock.start.mockResolvedValue(undefined)
     const result = scanPairingCode()
+    await waitForScannerConstruction()
     await Promise.resolve()
     scannerMock.success?.('MXP2-SCANNED')
     scannerMock.success?.('late-result')
@@ -156,10 +188,27 @@ describe('native QR scanner ownership', () => {
     expect(animationFrames).toHaveLength(0)
   })
 
+  it('keeps exact-once cleanup ownership when decode succeeds before start returns', async () => {
+    scannerMock.start.mockImplementation(() => {
+      scannerMock.success?.('MXP2-SYNCHRONOUS')
+      return Promise.resolve()
+    })
+
+    const result = scanPairingCode()
+    await expect(result).resolves.toBe('MXP2-SYNCHRONOUS')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(scannerMock.pause).toHaveBeenCalledOnce()
+    expect(scannerMock.stop).toHaveBeenCalledOnce()
+    expect(scannerMock.clear).toHaveBeenCalledOnce()
+  })
+
   it('uses the same exact-once cleanup when its React owner aborts on unmount', async () => {
     scannerMock.start.mockResolvedValue(undefined)
     const controller = new AbortController()
     const result = scanPairingCode({ signal: controller.signal })
+    await waitForScannerConstruction()
     await Promise.resolve()
 
     controller.abort()
@@ -184,6 +233,7 @@ describe('native QR scanner ownership', () => {
     scannerMock.start.mockReturnValue(new Promise<void>(() => {}))
 
     const result = scanPairingCode()
+    await waitForScannerConstruction()
     const scannerRoot = document.getElementById('anytty-camera-qr-scanner')!
     const cancel = scannerRoot.querySelector<HTMLButtonElement>('button')!
     const alternate = document.createElement('button')
@@ -223,7 +273,7 @@ describe('native QR scanner ownership', () => {
     scannerMock.start.mockRejectedValue(new Error('camera unavailable'))
     previousFocus.disabled = true
 
-    await expect(scanPairingCode()).rejects.toThrow('camera unavailable')
+    await expect(scanPairingCode()).rejects.toMatchObject({ code: 'camera_start_failed' })
     await Promise.resolve()
     expect(scannerMock.stop).not.toHaveBeenCalled()
     expect(scannerMock.clear).toHaveBeenCalledOnce()
@@ -232,6 +282,52 @@ describe('native QR scanner ownership', () => {
     runAnimationFrames()
     expect(document.activeElement).toBe(previousFocus)
     expect(dispatchNativeBack()).toBe(false)
+  })
+
+  it('cancels, aborts, and handles native Back immediately while the module import is pending', async () => {
+    const moduleGate = deferred<void>()
+    scannerMock.moduleGate = moduleGate.promise
+
+    const first = scanPairingCode()
+    const duplicate = scanPairingCode()
+    expect(duplicate).toBe(first)
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('Loading QR scanner...')
+    expect(scannerMock.construct).not.toHaveBeenCalled()
+
+    document.querySelector<HTMLButtonElement>('#anytty-camera-qr-scanner button')?.click()
+    await expect(first).resolves.toBeNull()
+
+    const controller = new AbortController()
+    const aborted = scanPairingCode({ signal: controller.signal })
+    controller.abort()
+    await expect(aborted).resolves.toBeNull()
+
+    const backedOut = scanPairingCode()
+    expect(dispatchNativeBack()).toBe(true)
+    await expect(backedOut).resolves.toBeNull()
+
+    moduleGate.resolve()
+    await moduleGate.promise
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(scannerMock.moduleLoads).toHaveBeenCalledOnce()
+    expect(scannerMock.construct).not.toHaveBeenCalled()
+  })
+
+  it('sanitizes and retains an import rejection without retrying the module import', async () => {
+    scannerMock.moduleRejection = new Error('secret CDN URL and bearer token')
+
+    const first = scanPairingCode()
+    await expect(first).rejects.toMatchObject({
+      name: 'NativeQrScannerError',
+      code: 'scanner_load_failed',
+      message: 'QR scanner error: scanner_load_failed',
+    })
+    expect(document.body.textContent).not.toContain('secret CDN URL')
+
+    await expect(scanPairingCode()).rejects.toMatchObject({ code: 'scanner_load_failed' })
+    expect(scannerMock.moduleLoads).toHaveBeenCalledOnce()
+    expect(scannerMock.construct).not.toHaveBeenCalled()
   })
 })
 
