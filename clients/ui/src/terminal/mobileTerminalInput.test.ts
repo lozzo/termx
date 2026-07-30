@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { applyTerminalModifiers, nextModifierState, type TerminalModifierState } from './mobileTerminalInput'
+import {
+  applyTerminalModifiers,
+  applyXtermNavigationModifiers,
+  nextModifierState,
+  type TerminalModifierState,
+} from './mobileTerminalInput'
 
 describe('mobile terminal input helpers', () => {
   it('maps supported single characters and consumes only modifiers that applied', () => {
@@ -37,6 +42,18 @@ describe('mobile terminal input helpers', () => {
 
     for (const [input, state, data] of cases) {
       expect(applyTerminalModifiers(input, state)).toEqual({ data, ctrl: 'off', alt: 'off' })
+    }
+  })
+
+  it('only applies xterm onData modifiers to the explicit navigation whitelist', () => {
+    const state: TerminalModifierState = { ctrl: 'once', alt: 'once' }
+    expect(applyXtermNavigationModifiers('\x1b[A', state)).toEqual({
+      data: '\x1b[1;7A',
+      ctrl: 'off',
+      alt: 'off',
+    })
+    for (const input of ['c', '中', 'paste', '\x1b[200~c\x1b[201~', '\x1b[Z']) {
+      expect(applyXtermNavigationModifiers(input, state)).toEqual({ data: input, ...state })
     }
   })
 

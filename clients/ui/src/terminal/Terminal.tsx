@@ -6,7 +6,11 @@ import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { hapticSelection } from '../platform/haptics'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
-import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
+import {
+  applyTerminalModifiers,
+  applyXtermNavigationModifiers,
+  type TerminalModifierState,
+} from './mobileTerminalInput'
 import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { holdTerminalFrame, type TerminalFrameHold } from './terminalFrameHold'
@@ -1022,10 +1026,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       const currentModifiers = modifierStateRef.current
       if (currentModifiers && (currentModifiers.ctrl !== 'off' || currentModifiers.alt !== 'off')) {
-        const result = applyTerminalModifiers(data, currentModifiers)
+        const result = applyXtermNavigationModifiers(data, currentModifiers)
         const accepted = sendUserInput(result.data)
         if (accepted && (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt)) {
-          onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
+          const nextModifiers = { ctrl: result.ctrl, alt: result.alt }
+          modifierStateRef.current = nextModifiers
+          onModifierStateChangeRef.current?.(nextModifiers)
         }
         return
       }
@@ -1046,7 +1052,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (result.data === event.key) return true
       const accepted = sendUserInput(result.data)
       if (accepted && (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt)) {
-        onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
+        const nextModifiers = { ctrl: result.ctrl, alt: result.alt }
+        modifierStateRef.current = nextModifiers
+        onModifierStateChangeRef.current?.(nextModifiers)
       }
       return false
     })

@@ -50,6 +50,7 @@ export interface UseTerminalSessionResult {
   terminalText: string
   terminalInfo: Terminal | null
   resizeControl: TerminalResizeControl
+  /** True once the active channel accepts the input or recovery takes ownership of replaying it. */
   sendInput(data: string, size?: { cols: number; rows: number }): boolean
   sendResize(cols: number, rows: number): boolean
   requestResizeOwner(size?: { cols: number; rows: number }): Promise<TerminalResizeControl>
@@ -307,6 +308,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     const session = sessionRef.current
     const client = clientRef.current
     if (!client) {
+      clearPendingRecoveryInput(pending)
       recoveringInputRef.current = false
       return
     }
@@ -316,6 +318,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         forceTerminalChannel: true,
       })
       if (!recovered || pendingRecoveryInputRef.current !== pending) {
+        clearPendingRecoveryInput(pending)
         recoveringInputRef.current = false
         return
       }
@@ -567,13 +570,22 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   }, [callbacks, clearPendingRecoveryInput, clearTerminalTextPublishTimer, logSession, options.machineId, options.terminalId, options.session])
 
   const sendInput = useCallback((data: string, size?: { cols: number; rows: number }) => {
+    const client = clientRef.current
+    if (!client || !sessionRef.current.isAlive() || recoveringInputRef.current) return false
+
     const message = { data, ...(size ? { size } : {}) }
     rememberRecoveryInput(message)
-    const sent = clientRef.current?.sendInput(data, size) ?? false
+    const sent = client.sendInput(data, size)
     if (sent) return true
-    void recoverInputChannel(message, 'terminal input send failed')
-    return false
-  }, [recoverInputChannel, rememberRecoveryInput])
+    if (!sessionRef.current.isAlive()) {
+      clearPendingRecoveryInput(message)
+      return false
+    }
+    if (!recoveringInputRef.current) {
+      void recoverInputChannel(message, 'terminal input send failed')
+    }
+    return recoveringInputRef.current && pendingRecoveryInputRef.current === message
+  }, [clearPendingRecoveryInput, recoverInputChannel, rememberRecoveryInput])
 
   const sendResize = useCallback((cols: number, rows: number) => {
     return clientRef.current?.sendResize(cols, rows) ?? false

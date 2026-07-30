@@ -129,7 +129,104 @@ describe('Terminal input modifier boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('applies xterm onData modifiers and consumes once only after the delegate accepts', async () => {
+  it('applies an ASCII modifier in the custom key handler and updates once state before the next synchronous key', async () => {
+    const onInput = vi.fn(() => true)
+    const onModifierStateChange = vi.fn()
+    render(<Terminal
+      machineId="studio"
+      terminalId="term-shell"
+      session={session}
+      modifierState={{ ctrl: 'once', alt: 'off' }}
+      onModifierStateChange={onModifierStateChange}
+      onInput={onInput}
+      renderer="dom"
+    />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    const first = createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent
+    const second = createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent
+
+    act(() => {
+      expect(xterm.emitKey(first)).toBe(false)
+      expect(xterm.emitKey(second)).toBe(true)
+      xterm.emitData('c')
+    })
+
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x03', 'c'])
+    expect(onModifierStateChange).toHaveBeenCalledOnce()
+    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
+  })
+
+  it('keeps a custom-key once modifier after failure and consumes it after a later accepted send', async () => {
+    const onInput = vi.fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    const onModifierStateChange = vi.fn()
+    render(<Terminal
+      machineId="studio"
+      terminalId="term-shell"
+      session={session}
+      modifierState={{ ctrl: 'once', alt: 'off' }}
+      onModifierStateChange={onModifierStateChange}
+      onInput={onInput}
+      renderer="dom"
+    />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    const event = () => createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent
+
+    act(() => expect(xterm.emitKey(event())).toBe(false))
+    expect(onInput).toHaveBeenLastCalledWith('\x03')
+    expect(onModifierStateChange).not.toHaveBeenCalled()
+
+    act(() => expect(xterm.emitKey(event())).toBe(false))
+    expect(onInput).toHaveBeenCalledTimes(2)
+    expect(onModifierStateChange).toHaveBeenCalledOnce()
+    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
+  })
+
+  it('keeps arbitrary onData and toolbar paste raw, then applies only navigation and consumes once synchronously', async () => {
+    const onInput = vi.fn(() => true)
+    const onModifierStateChange = vi.fn()
+    const ref = createRef<TerminalHandle>()
+    render(<Terminal
+      ref={ref}
+      machineId="studio"
+      terminalId="term-shell"
+      session={session}
+      modifierState={{ ctrl: 'once', alt: 'once' }}
+      onModifierStateChange={onModifierStateChange}
+      onInput={onInput}
+      renderer="dom"
+    />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+
+    act(() => {
+      xterm.emitData('c')
+      xterm.emitData('中')
+      xterm.emitData('p')
+      xterm.emitData('paste batch')
+      xterm.emitData('\x1b[Z')
+    })
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['c', '中', 'p', 'paste batch', '\x1b[Z'])
+    expect(onModifierStateChange).not.toHaveBeenCalled()
+
+    expect(ref.current?.pasteText('p')).toBe(true)
+    expect(ref.current?.pasteText('paste text')).toBe(true)
+    expect(terminalHarness.sessionSendInput.mock.calls.map(([data]) => data)).toEqual(['p', 'paste text'])
+    expect(onModifierStateChange).not.toHaveBeenCalled()
+
+    act(() => {
+      xterm.emitData('\x1b[A')
+      xterm.emitData('\x1b[A')
+    })
+    expect(onInput.mock.calls.slice(-2).map(([data]) => data)).toEqual(['\x1b[1;7A', '\x1b[A'])
+    expect(onModifierStateChange).toHaveBeenCalledOnce()
+    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
+  })
+
+  it('keeps an onData navigation once modifier until the target accepts it', async () => {
     const onInput = vi.fn()
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(true)
@@ -146,40 +243,44 @@ describe('Terminal input modifier boundary', () => {
     await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
     const xterm = terminalHarness.instances[0] as FakeXTermInstance
 
-    act(() => xterm.emitData('c'))
-    expect(onInput).toHaveBeenLastCalledWith('\x03')
-    expect(onModifierStateChange).not.toHaveBeenCalled()
+    act(() => {
+      xterm.emitData('\x1b[C')
+      xterm.emitData('\x1b[C')
+    })
 
-    act(() => xterm.emitData('c'))
-    expect(onInput).toHaveBeenCalledTimes(2)
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x1b[1;5C', '\x1b[1;5C'])
     expect(onModifierStateChange).toHaveBeenCalledOnce()
     expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
   })
 
-  it('sends the same text batch raw from xterm onData and toolbar paste without consuming once', async () => {
+  it('keeps locked modifiers across custom ASCII keys and onData navigation', async () => {
     const onInput = vi.fn(() => true)
     const onModifierStateChange = vi.fn()
-    const ref = createRef<TerminalHandle>()
     render(<Terminal
-      ref={ref}
       machineId="studio"
       terminalId="term-shell"
       session={session}
-      modifierState={{ ctrl: 'once', alt: 'once' }}
+      modifierState={{ ctrl: 'locked', alt: 'locked' }}
       onModifierStateChange={onModifierStateChange}
       onInput={onInput}
       renderer="dom"
     />)
     await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
     const xterm = terminalHarness.instances[0] as FakeXTermInstance
-    const batch = '你好 world'
 
-    act(() => xterm.emitData(batch))
-    expect(onInput).toHaveBeenCalledWith(batch)
-    expect(onModifierStateChange).not.toHaveBeenCalled()
+    act(() => {
+      expect(xterm.emitKey(createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent)).toBe(false)
+      expect(xterm.emitKey(createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent)).toBe(false)
+      xterm.emitData('\x1b[D')
+      xterm.emitData('\x1b[D')
+    })
 
-    expect(ref.current?.pasteText(batch)).toBe(true)
-    expect(terminalHarness.sessionSendInput).toHaveBeenCalledWith(batch, { cols: 80, rows: 24 })
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual([
+      '\x1b\x03',
+      '\x1b\x03',
+      '\x1b[1;7D',
+      '\x1b[1;7D',
+    ])
     expect(onModifierStateChange).not.toHaveBeenCalled()
   })
 

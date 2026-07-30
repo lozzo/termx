@@ -21,15 +21,8 @@ const XTERM_MODIFIABLE_SEQUENCES: Readonly<Record<string, readonly [prefix: stri
 }
 
 export function applyTerminalModifiers(data: string, state: TerminalModifierState): TerminalModifierResult {
-  const specialSequence = XTERM_MODIFIABLE_SEQUENCES[data]
-  if (specialSequence && (state.ctrl !== 'off' || state.alt !== 'off')) {
-    const modifierParameter = 1 + (state.alt !== 'off' ? 2 : 0) + (state.ctrl !== 'off' ? 4 : 0)
-    return {
-      data: `${specialSequence[0]}${modifierParameter}${specialSequence[1]}`,
-      ctrl: consumeOnce(state.ctrl),
-      alt: consumeOnce(state.alt),
-    }
-  }
+  const navigationResult = applyXtermNavigationModifiers(data, state)
+  if (navigationResult.data !== data) return navigationResult
 
   if (data.length !== 1) {
     return { data, ctrl: state.ctrl, alt: state.alt }
@@ -57,6 +50,19 @@ export function applyTerminalModifiers(data: string, state: TerminalModifierStat
     ctrl: nextCtrl,
     alt: nextAlt,
   }
+}
+
+export function applyXtermNavigationModifiers(data: string, state: TerminalModifierState): TerminalModifierResult {
+  const specialSequence = XTERM_MODIFIABLE_SEQUENCES[data]
+  if (specialSequence && (state.ctrl !== 'off' || state.alt !== 'off')) {
+    const modifierParameter = 1 + (state.alt !== 'off' ? 2 : 0) + (state.ctrl !== 'off' ? 4 : 0)
+    return {
+      data: `${specialSequence[0]}${modifierParameter}${specialSequence[1]}`,
+      ctrl: consumeOnce(state.ctrl),
+      alt: consumeOnce(state.alt),
+    }
+  }
+  return { data, ctrl: state.ctrl, alt: state.alt }
 }
 
 export function nextModifierState(current: ModifierState): ModifierState {
