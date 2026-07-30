@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -22,6 +23,20 @@ const rootWorkspaces = rootPackage.workspaces.map((path) => {
 
 function readPackage(relativePath) {
   return JSON.parse(readFileSync(join(repoRoot, relativePath), 'utf8'))
+}
+
+function npmCommand(args, platform = process.platform, comSpec = process.env.ComSpec) {
+  if (platform === 'win32') {
+    return { command: comSpec ?? 'cmd.exe', args: ['/d', '/s', '/c', 'npm.cmd', ...args] }
+  }
+  return { command: 'npm', args }
+}
+
+function runNpm(args, cwd) {
+  const invocation = npmCommand(args)
+  const result = spawnSync(invocation.command, invocation.args, { cwd, encoding: 'utf8' })
+  if (result.error) throw result.error
+  return result
 }
 
 function runLifecycleFixture(lifecycle) {
@@ -48,10 +63,8 @@ function runLifecycleFixture(lifecycle) {
       }))
     }
 
-    execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', lifecycle, '--silent'], {
-      cwd: fixture,
-      stdio: 'pipe',
-    })
+    const result = runNpm(['run', lifecycle, '--silent'], fixture)
+    assert.equal(result.status, 0, `${lifecycle} fixture failed:\n${result.stdout}${result.stderr}`)
     return readFileSync(join(fixture, 'calls.log'), 'utf8').trim().split('\n').sort()
   } finally {
     rmSync(fixture, { recursive: true, force: true })
@@ -69,39 +82,24 @@ function requireWorkspaceLifecycle(lifecycle) {
   assert.equal(typeof rootPackage.scripts?.[lifecycle], 'string', `root must expose ${lifecycle}`)
 }
 
-function runLintWarningFixture(workspace) {
-  const fixture = mkdtempSync(join(tmpdir(), 'anytty-lint-warning-'))
+function withLintWarningFixture(workspace, callback) {
+  const id = `${process.pid}-${randomUUID()}`
+  const warningPath = join(repoRoot, workspace.path, `eslint-warning-fixture-${id}.js`)
+  const configPath = join(repoRoot, `eslint-warning-fixture-${id}.config.mjs`)
   try {
-    const workspaceDirectory = join(fixture, workspace.path)
-    mkdirSync(workspaceDirectory, { recursive: true })
-    writeFileSync(join(fixture, 'package.json'), JSON.stringify({
-      private: true,
-      workspaces: [workspace.path],
-    }))
-    writeFileSync(join(fixture, 'eslint.config.mjs'), `
-export default [{
-  files: ['**/*.js'],
+    writeFileSync(configPath, `
+import baseConfig from './eslint.config.mjs'
+
+export default [...baseConfig, {
+  files: ['**/${basename(warningPath)}'],
   rules: { 'no-warning-comments': ['warn', { terms: ['TODO'] }] },
 }]
 `)
-    writeFileSync(join(workspaceDirectory, 'package.json'), JSON.stringify({
-      name: workspace.name,
-      version: '0.0.0',
-      private: true,
-      scripts: { lint: workspace.package.scripts.lint },
-    }))
-    writeFileSync(join(workspaceDirectory, 'warning.js'), '// TODO: warning fixture\n')
-
-    return spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'lint', '--silent'], {
-      cwd: workspaceDirectory,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${join(repoRoot, 'node_modules', '.bin')}${delimiter}${process.env.PATH ?? ''}`,
-      },
-    })
+    writeFileSync(warningPath, '// TODO: warning fixture\n')
+    return { result: callback({ configPath, warningPath }), configPath, warningPath }
   } finally {
-    rmSync(fixture, { recursive: true, force: true })
+    if (existsSync(warningPath)) unlinkSync(warningPath)
+    if (existsSync(configPath)) unlinkSync(configPath)
   }
 }
 
@@ -110,6 +108,15 @@ test('root workspaces match the UI, Mobile, and Cloud product contract', () => {
   const expected = [...productWorkspaces].sort(byPathAndName)
   const actual = rootWorkspaces.map(({ path, name }) => ({ path, name })).sort(byPathAndName)
   assert.deepEqual(actual, expected)
+})
+
+test('npm runner builds Windows and POSIX command arguments', () => {
+  const args = ['run', 'lint', '--workspace', '@anytty/ui']
+  assert.deepEqual(npmCommand(args, 'win32', 'C:\\Windows\\System32\\cmd.exe'), {
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/s', '/c', 'npm.cmd', ...args],
+  })
+  assert.deepEqual(npmCommand(args, 'linux'), { command: 'npm', args })
 })
 
 for (const lifecycle of ['lint', 'typecheck', 'test', 'build']) {
@@ -122,10 +129,32 @@ for (const lifecycle of ['lint', 'typecheck', 'test', 'build']) {
 
 test('workspace lint scripts reject warnings', () => {
   for (const workspace of rootWorkspaces) {
-    const result = runLintWarningFixture(workspace)
+    const fixture = withLintWarningFixture(workspace, ({ configPath, warningPath }) => runNpm([
+      'run',
+      'lint',
+      '--workspace',
+      workspace.name,
+      '--',
+      '--config',
+      configPath,
+      warningPath,
+    ], repoRoot))
+    const { result } = fixture
     const output = `${result.stdout}${result.stderr}`
     assert.equal(result.status, 1, `${workspace.path} lint must fail on a warning:\n${output}`)
     assert.match(output, /no-warning-comments/, `${workspace.path} lint did not report the fixture warning`)
     assert.match(output, /too many warnings/i, `${workspace.path} lint did not fail because of the warning`)
+    assert.equal(existsSync(fixture.warningPath), false, `${workspace.path} warning fixture was not removed`)
+    assert.equal(existsSync(fixture.configPath), false, `${workspace.path} config fixture was not removed`)
   }
+})
+
+test('lint warning fixture removes both files when execution throws', () => {
+  let paths
+  assert.throws(() => withLintWarningFixture(rootWorkspaces[0], (fixturePaths) => {
+    paths = fixturePaths
+    throw new Error('fixture execution failed')
+  }), /fixture execution failed/)
+  assert.equal(existsSync(paths.warningPath), false)
+  assert.equal(existsSync(paths.configPath), false)
 })
