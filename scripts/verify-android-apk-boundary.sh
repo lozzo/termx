@@ -19,13 +19,23 @@ done
 app_apk="$1"
 [[ -s "$app_apk" ]] || fail "APK is missing or empty: $app_apk"
 
+if ! unzip -tqq "$app_apk" >/dev/null 2>&1; then
+  fail "APK archive integrity check failed: $app_apk"
+fi
+
 if ! apk_entries="$(unzip -Z1 "$app_apk")"; then
   fail "APK is not a readable ZIP archive: $app_apk"
 fi
 
 expected_abis_value="${ANYTTY_ANDROID_EXPECTED_ABIS:-arm64-v8a x86_64}"
+if [[ "$expected_abis_value" == *$'\n'* || "$expected_abis_value" == *$'\r'* ]]; then
+  fail 'ANYTTY_ANDROID_EXPECTED_ABIS must not contain CR or LF'
+fi
+if [[ "$expected_abis_value" =~ [[:cntrl:]] ]]; then
+  fail 'ANYTTY_ANDROID_EXPECTED_ABIS may only use spaces or commas as separators'
+fi
 expected_abis_value="${expected_abis_value//,/ }"
-read -r -a expected_abis <<<"$expected_abis_value"
+IFS=' ' read -r -a expected_abis <<<"$expected_abis_value"
 (( ${#expected_abis[@]} > 0 )) || fail 'ANYTTY_ANDROID_EXPECTED_ABIS must name at least one ABI'
 
 for abi in "${expected_abis[@]}"; do

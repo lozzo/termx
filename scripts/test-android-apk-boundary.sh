@@ -12,7 +12,7 @@ fail() {
   exit 1
 }
 
-for tool in zip rg; do
+for tool in node zip unzip rg; do
   command -v "$tool" >/dev/null 2>&1 || fail "required test tool is unavailable: $tool"
 done
 
@@ -23,6 +23,24 @@ add_library() {
   local content="${4:-production-native}"
   mkdir -p "$root/lib/$abi"
   printf '%s\n' "$content" >"$root/lib/$abi/$library"
+}
+
+corrupt_stored_payload() {
+  local apk="$1"
+  local marker="$2"
+  node --input-type=commonjs - "$apk" "$marker" <<'NODE'
+const { readFileSync, writeFileSync } = require('node:fs')
+
+const apk = process.argv[2]
+const marker = Buffer.from(process.argv[3], 'utf8')
+const archive = readFileSync(apk)
+const offset = archive.indexOf(marker)
+if (offset < 0 || archive.indexOf(marker, offset + 1) >= 0) {
+  throw new Error('stored fixture payload is missing or not unique')
+}
+archive[offset] ^= 1
+writeFileSync(apk, archive)
+NODE
 }
 
 pack_apk() {
@@ -59,6 +77,7 @@ add_complete_fixture "$complete_root"
 complete_apk="$tmp_dir/complete.apk"
 pack_apk "$complete_root" "$complete_apk"
 ANYTTY_ANDROID_EXPECTED_ABIS='arm64-v8a x86_64' "$gate" "$complete_apk"
+ANYTTY_ANDROID_EXPECTED_ABIS='arm64-v8a,x86_64' "$gate" "$complete_apk"
 
 missing_abi_root="$tmp_dir/missing-abi"
 add_library "$missing_abi_root" arm64-v8a libanytty_client.so
@@ -68,6 +87,10 @@ pack_apk "$missing_abi_root" "$missing_abi_apk"
 expect_failure missing-abi 'missing required native library: lib/x86_64/libanytty_client.so' \
   env ANYTTY_ANDROID_EXPECTED_ABIS='arm64-v8a x86_64' "$gate" "$missing_abi_apk"
 ANYTTY_ANDROID_EXPECTED_ABIS=arm64-v8a "$gate" "$missing_abi_apk"
+expect_failure abi-newline 'ANYTTY_ANDROID_EXPECTED_ABIS must not contain CR or LF' \
+  env ANYTTY_ANDROID_EXPECTED_ABIS=$'arm64-v8a\nx86_64' "$gate" "$missing_abi_apk"
+expect_failure abi-cr 'ANYTTY_ANDROID_EXPECTED_ABIS must not contain CR or LF' \
+  env ANYTTY_ANDROID_EXPECTED_ABIS=$'arm64-v8a\rx86_64' "$gate" "$missing_abi_apk"
 
 missing_jni_root="$tmp_dir/missing-jni"
 add_complete_fixture "$missing_jni_root"
@@ -84,6 +107,22 @@ marker_apk="$tmp_dir/marker.apk"
 pack_apk "$marker_root" "$marker_apk"
 expect_failure marker 'forbidden Android dev/spike marker found in lib/arm64-v8a/libanytty_client.so' \
   env ANYTTY_ANDROID_EXPECTED_ABIS='arm64-v8a x86_64' "$gate" "$marker_apk"
+
+corrupt_root="$tmp_dir/corrupt-non-native"
+add_complete_fixture "$corrupt_root"
+mkdir -p "$corrupt_root/assets"
+corrupt_marker='non-native-integrity-fixture'
+printf '%s\n' "$corrupt_marker" >"$corrupt_root/assets/integrity.txt"
+corrupt_apk="$tmp_dir/corrupt-non-native.apk"
+pack_apk "$corrupt_root" "$corrupt_apk"
+(cd "$corrupt_root" && zip -q -0 "$corrupt_apk" assets/integrity.txt)
+corrupt_stored_payload "$corrupt_apk" "$corrupt_marker"
+unzip -Z1 "$corrupt_apk" >/dev/null
+for abi in arm64-v8a x86_64; do
+  unzip -p "$corrupt_apk" "lib/$abi/libanytty_client.so" >/dev/null
+  unzip -p "$corrupt_apk" "lib/$abi/libanytty_client_jni.so" >/dev/null
+done
+expect_failure corrupt-non-native 'APK archive integrity check failed' "$gate" "$corrupt_apk"
 
 empty_apk="$tmp_dir/empty.apk"
 : >"$empty_apk"
