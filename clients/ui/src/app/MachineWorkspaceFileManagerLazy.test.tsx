@@ -1,38 +1,81 @@
 import { create } from '@bufbuild/protobuf'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Machine } from '../core/model'
+import type { FileManagerComponent } from '../files/loadFileManager'
 import { AcknowledgeResultSchema } from '../generated/apipb/application_pb'
 import { anyttyI18n } from '../i18n'
 import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { MachineWorkspace } from './MachineWorkspace'
 
-const fileManagerModule = vi.hoisted(() => ({ evaluations: 0 }))
+const fileManagerLoader = vi.hoisted(() => ({ load: vi.fn<() => Promise<unknown>>() }))
 
 vi.mock('../terminal/Terminal', () => ({ Terminal: () => null }))
+vi.mock('../files/loadFileManager', () => ({ loadFileManager: fileManagerLoader.load }))
 
-vi.mock('../files/FileManager', async () => {
-  const { useState } = await vi.importActual<typeof import('react')>('react')
-  fileManagerModule.evaluations += 1
+function StatefulFileManager({ active }: { active?: boolean }) {
+  const [value, setValue] = useState('')
+  return (
+    <div data-active={String(active)} data-testid="mock-file-manager">
+      <input
+        aria-label="Lazy file manager state"
+        value={value}
+        onChange={(event) => setValue(event.currentTarget.value)}
+      />
+    </div>
+  )
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
+}
+
+function renderWorkspace(initialMachine: Machine = { machineId: 'studio', name: 'Studio', state: 'online' }) {
+  let currentMachine = initialMachine
+  const sessions = new Map<string, MockProtoSession>()
+  const sessionFor = (machineId: string) => {
+    const existing = sessions.get(machineId)
+    if (existing) return existing
+    const session = new MockProtoSession(
+      machineId,
+      () => protoResult('acknowledge', create(AcknowledgeResultSchema)),
+    )
+    sessions.set(machineId, session)
+    return session
+  }
+  const api = {
+    getStatus: vi.fn(async () => ({ machine: currentMachine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+    listTerminals: vi.fn(async () => []),
+  }
+  const connector = {
+    connect: vi.fn(async ({ machineId }: { machineId: string }) => sessionFor(machineId)),
+  }
+  const workspace = render(
+    <MachineWorkspace api={api} connector={connector} initialMachine={currentMachine} />,
+  )
   return {
-    FileManager({ active }: { active?: boolean }) {
-      const [value, setValue] = useState('')
-      return (
-        <div data-active={String(active)} data-testid="mock-file-manager">
-          <input
-            aria-label="Lazy file manager state"
-            value={value}
-            onChange={(event) => setValue(event.currentTarget.value)}
-          />
-        </div>
+    ...workspace,
+    rerenderMachine(machine: Machine) {
+      currentMachine = machine
+      workspace.rerender(
+        <MachineWorkspace api={api} connector={connector} initialMachine={currentMachine} />,
       )
     },
   }
-})
+}
 
 describe('MachineWorkspace FileManager loading', () => {
   beforeEach(async () => {
-    fileManagerModule.evaluations = 0
+    fileManagerLoader.load.mockReset()
+    fileManagerLoader.load.mockResolvedValue(StatefulFileManager)
     await anyttyI18n.changeLanguage('en')
   })
 
@@ -41,30 +84,15 @@ describe('MachineWorkspace FileManager loading', () => {
   })
 
   it('loads on first open, stays mounted while closed, and reuses the loaded module', async () => {
-    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
-    const session = new MockProtoSession(
-      machine.machineId,
-      () => protoResult('acknowledge', create(AcknowledgeResultSchema)),
-    )
-
-    render(
-      <MachineWorkspace
-        api={{
-          getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
-          listTerminals: vi.fn(async () => []),
-        }}
-        connector={{ connect: vi.fn(async () => session) }}
-        initialMachine={machine}
-      />,
-    )
+    renderWorkspace()
 
     await screen.findByTestId('anytty-terminal-list-page')
-    expect(fileManagerModule.evaluations).toBe(0)
+    expect(fileManagerLoader.load).not.toHaveBeenCalled()
     expect(screen.queryByTestId('anytty-machine-files-overlay')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
     const stateInput = await screen.findByRole('textbox', { name: 'Lazy file manager state' })
-    expect(fileManagerModule.evaluations).toBe(1)
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
     await userEvent.type(stateInput, '/remembered')
 
     await userEvent.click(screen.getByRole('button', { name: 'Close files' }))
@@ -74,6 +102,79 @@ describe('MachineWorkspace FileManager loading', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
     await waitFor(() => expect(screen.getByTestId('mock-file-manager').dataset.active).toBe('true'))
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Lazy file manager state' }).value).toBe('/remembered')
-    expect(fileManagerModule.evaluations).toBe(1)
-  }, 15_000)
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
+  })
+
+  it('contains an import rejection in the overlay and retries with a new load', async () => {
+    fileManagerLoader.load
+      .mockRejectedValueOnce(new Error('chunk unavailable'))
+      .mockResolvedValueOnce(StatefulFileManager)
+    renderWorkspace()
+
+    await screen.findByTestId('anytty-terminal-list-page')
+    await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Files could not be loaded.')
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading files' }))
+    expect(await screen.findByRole('textbox', { name: 'Lazy file manager state' })).not.toBeNull()
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(2)
+  })
+
+  it('reuses one pending load across a rapid close and reopen', async () => {
+    const pending = createDeferred<FileManagerComponent>()
+    fileManagerLoader.load.mockReturnValueOnce(pending.promise)
+    renderWorkspace()
+
+    await screen.findByTestId('anytty-terminal-list-page')
+    await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close files' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(1)
+
+    await act(async () => pending.resolve(StatefulFileManager))
+    expect(await screen.findByRole('textbox', { name: 'Lazy file manager state' })).not.toBeNull()
+    expect(screen.getByTestId('mock-file-manager').dataset.active).toBe('true')
+  })
+
+  it('ignores a pending load after unmount', async () => {
+    const pending = createDeferred<FileManagerComponent>()
+    let renders = 0
+    const CountingFileManager = () => {
+      renders += 1
+      return <div data-testid="counting-file-manager" />
+    }
+    fileManagerLoader.load.mockReturnValueOnce(pending.promise)
+    const workspace = renderWorkspace()
+
+    await screen.findByTestId('anytty-terminal-list-page')
+    await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
+    workspace.unmount()
+    await act(async () => pending.resolve(CountingFileManager))
+
+    expect(renders).toBe(0)
+  })
+
+  it('invalidates a pending load when the machine context changes', async () => {
+    const pending = createDeferred<FileManagerComponent>()
+    fileManagerLoader.load
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(StatefulFileManager)
+    const workspace = renderWorkspace()
+
+    await screen.findByTestId('anytty-terminal-list-page')
+    await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
+
+    workspace.rerenderMachine({ machineId: 'lab', name: 'Lab', state: 'online' })
+    await waitFor(() => expect(screen.queryByTestId('anytty-machine-files-overlay')).toBeNull())
+    await act(async () => pending.resolve(StatefulFileManager))
+    expect(screen.queryByTestId('mock-file-manager')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open files' }))
+    expect(await screen.findByRole('textbox', { name: 'Lazy file manager state' })).not.toBeNull()
+    expect(fileManagerLoader.load).toHaveBeenCalledTimes(2)
+  })
 })

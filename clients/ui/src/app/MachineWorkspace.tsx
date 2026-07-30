@@ -1,10 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { create } from '@bufbuild/protobuf'
 import { Bookmark, BookmarkMinus, BookmarkPlus, Check, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, Scaling, SlidersHorizontal, SquarePen, Trash2, Unlock, WifiOff, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { connectionErrorDisplayMessage, connectionFailurePresentation, isAuthorizationConnectionError, isCancelledConnectionError, type ConnectionFailurePresentation } from '../connection/connectionErrorPresentation'
 import { ConnectionRouteManager, type ConnectionRouteManagementAdapter } from '../connection/ConnectionRouteManager'
 import { FileTransferPanel } from '../files/FileTransferPanel'
+import { loadFileManager, type FileManagerComponent } from '../files/loadFileManager'
 import { createFileApi, type FileEntry } from '../files/fileApi'
 import { fileEntryPath, joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
 import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
@@ -15,7 +16,7 @@ import { createRemoteClipboardApi, type RemoteClipboardEntry } from '../clipboar
 import { MobileTerminalKeybar } from '../terminal/MobileTerminalKeybar'
 import type { TerminalModifierState } from '../terminal/mobileTerminalInput'
 import { PasteConfirmDialog } from '../terminal/PasteConfirmDialog'
-import type { TerminalHandle } from '../terminal/Terminal'
+import { Terminal, type TerminalHandle } from '../terminal/Terminal'
 import { TerminalActionToolbar, type TerminalToolbarMode } from '../terminal/TerminalActionToolbar'
 import { TerminalEnvironmentEditor } from '../terminal/TerminalEnvironmentEditor'
 import { TerminalFnPanel } from '../terminal/TerminalFnPanel'
@@ -79,15 +80,12 @@ type TerminalEditorSheet = 'create-terminal' | 'edit-terminal'
 type MobileSheet = 'terminals' | 'terminal-menu' | 'split-terminal' | 'manage-terminal' | TerminalEditorSheet | 'terminal-path-picker' | 'terminal-path-bookmarks' | 'clipboard-history' | null
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
+type FileManagerLoadState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; component: FileManagerComponent }
+  | { status: 'error' }
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
-const LazyFileManager = lazy(async () => {
-  const module = await import('../files/FileManager')
-  return { default: module.FileManager }
-})
-const LazyTerminal = lazy(async () => {
-  const module = await import('../terminal/Terminal')
-  return { default: module.Terminal }
-})
 const machineWorkspaceInventoryCache = new WeakMap<MachineWorkspaceConnector, Map<string, {
   machine: Machine
   terminals: RemoteTerminal[]
@@ -150,6 +148,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [page, setPage] = useState<AppPage>('terminal-list')
   const [filesOpen, setFilesOpen] = useState(false)
   const [hasOpenedFiles, setHasOpenedFiles] = useState(false)
+  const [fileManagerLoadState, setFileManagerLoadState] = useState<FileManagerLoadState>({ status: 'idle' })
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null)
@@ -199,6 +198,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings())
   const terminalRef = useRef<TerminalHandle | null>(null)
   const splitTerminalRef = useRef<TerminalHandle | null>(null)
+  const fileManagerLoadRequestRef = useRef(0)
+  const fileManagerLoadStatusRef = useRef<FileManagerLoadState['status']>('idle')
+  const fileManagerLoaderMountedRef = useRef(true)
+  const fileManagerContextRef = useRef(machine?.machineId ?? null)
   const outerContainerRef = useRef<HTMLDivElement | null>(null)
   const terminalAreaRef = useRef<HTMLDivElement | null>(null)
   const terminalWrapperRef = useRef<HTMLDivElement | null>(null)
@@ -250,6 +253,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   // connectedSession 是 React 投影，不是 generation 真值。底层 Go session 已失效时，
   // Terminal/FileManager 必须等待新 lease，不能先挂载旧资源再由 effect 事后清理。
   const renderSession = connectedSession && isProtoSessionAlive(connectedSession) ? connectedSession : null
+  const LoadedFileManager = fileManagerLoadState.status === 'ready' ? fileManagerLoadState.component : null
   const selectedTerminal = terminals.find((terminal) => terminal.terminalId === selectedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || t('terminal.defaultTitle')
   const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || t('terminal.defaultTitle')
@@ -300,6 +304,22 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     () => terminalThemeCssVariables(effectiveTerminalSettings.themeId) as CSSProperties,
     [effectiveTerminalSettings.themeId],
   )
+  const startFileManagerLoad = useCallback(() => {
+    if (fileManagerLoadStatusRef.current === 'loading' || fileManagerLoadStatusRef.current === 'ready') return
+    const request = fileManagerLoadRequestRef.current + 1
+    fileManagerLoadRequestRef.current = request
+    fileManagerLoadStatusRef.current = 'loading'
+    setFileManagerLoadState({ status: 'loading' })
+    void loadFileManager().then((component) => {
+      if (!fileManagerLoaderMountedRef.current || fileManagerLoadRequestRef.current !== request) return
+      fileManagerLoadStatusRef.current = 'ready'
+      setFileManagerLoadState({ status: 'ready', component })
+    }).catch(() => {
+      if (!fileManagerLoaderMountedRef.current || fileManagerLoadRequestRef.current !== request) return
+      fileManagerLoadStatusRef.current = 'error'
+      setFileManagerLoadState({ status: 'error' })
+    })
+  }, [])
   const keyboardShouldResize = useCallback(() => {
     if (splitTerminalId) return true
     if (effectiveTerminalSettings.keyboardMode === 'resize') return true
@@ -327,6 +347,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       })
     },
   })
+
+  useEffect(() => {
+    fileManagerLoaderMountedRef.current = true
+    return () => {
+      fileManagerLoaderMountedRef.current = false
+      fileManagerLoadRequestRef.current += 1
+    }
+  }, [])
 
   useEffect(() => {
     reapplyKeyboardLayout()
@@ -368,6 +396,20 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return current
     })
   }, [initialMachine])
+
+  useEffect(() => {
+    const context = machine?.machineId ?? null
+    if (fileManagerContextRef.current === context) return
+    fileManagerContextRef.current = context
+    fileManagerLoadRequestRef.current += 1
+    fileManagerLoadStatusRef.current = 'idle'
+    setFileManagerLoadState({ status: 'idle' })
+    setFilesOpen(false)
+    setHasOpenedFiles(false)
+    setFileTerminalId(null)
+    setFileInitialPath('/')
+    setFileContextKey('machine:/')
+  }, [machine?.machineId])
 
   useEffect(() => {
     setMachineNetworkMachineId(machine?.machineId ?? null)
@@ -1365,9 +1407,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setFileTerminalId(null)
       })
     setHasOpenedFiles(true)
+    startFileManagerLoad()
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, requireVerification, t, terminals, updateConnectionStatus, updateFromConnectionState])
+  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, requireVerification, startFileManagerLoad, t, terminals, updateConnectionStatus, updateFromConnectionState])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -2654,30 +2697,23 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               }}
             >
               {activeTerminalId && renderSession && connectedTerminalId === activeTerminalId ? (
-                <Suspense fallback={(
-                  <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--anytty-muted)]">
-                    <span className="anytty-square-spinner" aria-hidden="true" />
-                    <span>{t('workspace.connectingTerminal')}</span>
-                  </div>
-                )}>
-                  <LazyTerminal
-                    ref={terminalRef}
-                    machineId={machine.machineId}
-                    terminalId={activeTerminalId}
-                    session={renderSession}
-                    className="absolute inset-0 outline-none"
-                    modifierState={modifierState}
-                    onModifierStateChange={setModifierState}
-                    onCursorMove={handleCursorMove}
-                    onInput={sendTerminalInput}
-                    onBufferChange={(isAlternate) => handleTerminalBufferChange(0, isAlternate)}
-                    onResizeControl={setTerminalResizeControl}
-                    selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
-                    settings={effectiveTerminalSettings}
-                    preventFocus={keyboardFocusLocked || connectionInputBlocked}
-                    suppressConnectingOverlay={showInitialNetworkOverlay}
-                  />
-                </Suspense>
+                <Terminal
+                  ref={terminalRef}
+                  machineId={machine.machineId}
+                  terminalId={activeTerminalId}
+                  session={renderSession}
+                  className="absolute inset-0 outline-none"
+                  modifierState={modifierState}
+                  onModifierStateChange={setModifierState}
+                  onCursorMove={handleCursorMove}
+                  onInput={sendTerminalInput}
+                  onBufferChange={(isAlternate) => handleTerminalBufferChange(0, isAlternate)}
+                  onResizeControl={setTerminalResizeControl}
+                  selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
+                  settings={effectiveTerminalSettings}
+                  preventFocus={keyboardFocusLocked || connectionInputBlocked}
+                  suppressConnectingOverlay={showInitialNetworkOverlay}
+                />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-[var(--anytty-muted)]">
                   {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (displayedConnectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
@@ -2709,29 +2745,22 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 }}
               >
                 {renderSession ? (
-                  <Suspense fallback={(
-                    <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--anytty-muted)]">
-                      <span className="anytty-square-spinner" aria-hidden="true" />
-                      <span>{t('workspace.connectingTerminal')}</span>
-                    </div>
-                  )}>
-                    <LazyTerminal
-                      ref={splitTerminalRef}
-                      machineId={machine.machineId}
-                      terminalId={splitTerminalId}
-                      session={renderSession}
-                      className="absolute inset-0 outline-none"
-                      modifierState={modifierState}
-                      onModifierStateChange={setModifierState}
-                      onCursorMove={handleCursorMove}
-                      onInput={sendTerminalInput}
-                      onBufferChange={(isAlternate) => handleTerminalBufferChange(1, isAlternate)}
-                      selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
-                      settings={effectiveTerminalSettings}
-                      preventFocus={keyboardFocusLocked || connectionInputBlocked}
-                      suppressConnectingOverlay={showInitialNetworkOverlay}
-                    />
-                  </Suspense>
+                  <Terminal
+                    ref={splitTerminalRef}
+                    machineId={machine.machineId}
+                    terminalId={splitTerminalId}
+                    session={renderSession}
+                    className="absolute inset-0 outline-none"
+                    modifierState={modifierState}
+                    onModifierStateChange={setModifierState}
+                    onCursorMove={handleCursorMove}
+                    onInput={sendTerminalInput}
+                    onBufferChange={(isAlternate) => handleTerminalBufferChange(1, isAlternate)}
+                    selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
+                    settings={effectiveTerminalSettings}
+                    preventFocus={keyboardFocusLocked || connectionInputBlocked}
+                    suppressConnectingOverlay={showInitialNetworkOverlay}
+                  />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--anytty-muted)]">
                     {showMachineNetworkOverlay ? null : displayedConnectionStatus ?? t('workspace.connectingTerminal')}
@@ -2852,25 +2881,35 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <X className="h-5 w-5" />
             </button>
           </div>
-          {renderSession ? (
-            <Suspense fallback={(
+          {renderSession ? LoadedFileManager ? (
+            <LoadedFileManager
+              key={fileContextKey}
+              machineId={machine.machineId}
+              terminalId={fileTerminalId ?? undefined}
+              session={renderSession}
+              initialPath={fileInitialPath}
+              className="flex h-full min-h-0 flex-col relative"
+              active={filesOpen}
+              fileTransfer={fileTransfer}
+              onOpenTransferCenter={() => setTransferCenterOpen(true)}
+            />
+          ) : fileManagerLoadState.status === 'error' ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" role="alert">
+              <p className="text-sm font-medium text-zinc-700">{t('files.loadFailed')}</p>
+              <button
+                type="button"
+                className="anytty-app-secondary-button min-h-11 gap-2 px-4 text-sm font-semibold"
+                onClick={() => { hapticSelection(); startFileManagerLoad() }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {t('files.retryLoad')}
+              </button>
+            </div>
+          ) : (
               <div className="flex h-full items-center justify-center gap-2 text-sm text-zinc-500">
                 <span className="anytty-square-spinner" aria-hidden="true" />
                 <span>{t('common.loading')}</span>
               </div>
-            )}>
-              <LazyFileManager
-                key={fileContextKey}
-                machineId={machine.machineId}
-                terminalId={fileTerminalId ?? undefined}
-                session={renderSession}
-                initialPath={fileInitialPath}
-                className="flex h-full min-h-0 flex-col relative"
-                active={filesOpen}
-                fileTransfer={fileTransfer}
-                onOpenTransferCenter={() => setTransferCenterOpen(true)}
-              />
-            </Suspense>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-zinc-500">
               {showMachineNetworkOverlay ? null : filesOpen ? (
