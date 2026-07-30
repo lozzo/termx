@@ -45,4 +45,17 @@ describe('账号 session 轮换', () => {
       message: '服务暂时不可用。',
     })
   })
+
+  it('does not refresh or replay a forbidden request', async () => {
+    vi.stubGlobal('document', { cookie: 'anytty_cloud_csrf=csrf-proof' })
+    const fetchMock = vi.fn(async (_input: string | URL | Request) => new Response(JSON.stringify({ code: 'forbidden', message: '没有权限。', request_id: 'req-forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(protoGet('/api/operator/accounts', GetCurrentAccountResponseSchema)).rejects.toMatchObject({ status: 403, code: 'forbidden' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/operator/accounts')
+  })
 })

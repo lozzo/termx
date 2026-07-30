@@ -347,9 +347,15 @@ func (database *Database) SetAccountState(ctx context.Context, request *cloudv1.
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	locked, err := lockAccountCredential(ctx, tx, request.GetAccountId())
+	if err := lockAccountRows(ctx, tx, actorID, request.GetAccountId()); err != nil {
+		return nil, err
+	}
+	locked, err := lockAccountCredentialRowsLocked(ctx, tx, request.GetAccountId())
 	if err != nil {
 		return nil, err
+	}
+	if locked.Profile.GetState() == cloudv1.AccountState_ACCOUNT_STATE_PENDING {
+		return nil, account.ErrAccountConflict
 	}
 	if locked.Profile.GetRevision() != request.GetExpectedRevision() {
 		return nil, account.ErrAccountConflict
@@ -361,6 +367,9 @@ func (database *Database) SetAccountState(ctx context.Context, request *cloudv1.
 		return nil, err
 	}
 	if request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
+		if _, err := tx.Exec(ctx, `UPDATE account_credentials SET setup_digest=NULL,setup_expires_at=NULL,revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, request.GetAccountId()); err != nil {
+			return nil, err
+		}
 		if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, request.GetAccountId()); err != nil {
 			return nil, err
 		}
@@ -388,7 +397,10 @@ func (database *Database) SetAccountRole(ctx context.Context, request *cloudv1.S
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1 FOR UPDATE`, request.GetAccountId())); err != nil {
+	if err := lockAccountRows(ctx, tx, actorID, request.GetAccountId()); err != nil {
+		return nil, err
+	}
+	if _, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1`, request.GetAccountId())); err != nil {
 		return nil, err
 	}
 	role, err := accountRoleName(request.GetRole())

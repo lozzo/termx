@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
@@ -75,7 +76,7 @@ type Store interface {
 	SetRecentAuthentication(context.Context, string, string, Record, time.Time, time.Time) error
 	ListAccountSessions(context.Context, string, time.Time) ([]Session, error)
 	UpdatePassword(context.Context, string, Record, []byte, time.Time) (*cloudv1.AccountProfile, error)
-	RedeemAccountSetup(context.Context, [sha256.Size]byte, []byte, time.Time) (*cloudv1.AccountProfile, error)
+	RedeemAccountSetup(context.Context, [sha256.Size]byte, []byte, Session, time.Time) (Record, error)
 	ResetAccountSetup(context.Context, string, string, string, [sha256.Size]byte, time.Time, time.Time) (*cloudv1.AccountProfile, error)
 }
 
@@ -136,7 +137,7 @@ func (service *Service) EnsureBootstrapOperator(ctx context.Context, login, pass
 	if !errors.Is(err, ErrAccountNotFound) {
 		return nil, err
 	}
-	if len(password) < 8 {
+	if !validPassword(password) {
 		return nil, errors.New("bootstrap administrator password is required for first creation")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), service.bcryptCost)
@@ -219,7 +220,7 @@ func (service *Service) Login(ctx context.Context, request *cloudv1.LoginAccount
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
 		return nil, ErrLoginUnavailable
 	}
-	if !recordValid || passwordErr != nil {
+	if !recordValid || !validPassword(request.GetPassword()) || passwordErr != nil {
 		return nil, ErrUnauthenticated
 	}
 	switch record.Profile.GetState() {
@@ -293,7 +294,7 @@ func (service *Service) GetCurrent(ctx context.Context, _ *cloudv1.GetCurrentAcc
 // VerifyRecentAuthentication 验证当前密码并延长精确 session 的高风险操作窗口。
 func (service *Service) VerifyRecentAuthentication(ctx context.Context, request *cloudv1.VerifyRecentAuthenticationRequest) (*cloudv1.VerifyRecentAuthenticationResponse, error) {
 	identity, ok := IdentityFromContext(ctx)
-	if !ok || request == nil {
+	if !ok || request == nil || !validPassword(request.GetPassword()) {
 		return nil, ErrUnauthenticated
 	}
 	record, err := service.store.AccountByID(ctx, identity.Account.GetAccountId())
@@ -338,12 +339,15 @@ func (service *Service) ListSessions(ctx context.Context, _ *cloudv1.ListAccount
 // ChangePassword 校验当前 verifier 后原子替换密码，并撤销全部旧 session。
 func (service *Service) ChangePassword(ctx context.Context, request *cloudv1.ChangeAccountPasswordRequest) (*cloudv1.ChangeAccountPasswordResponse, error) {
 	identity, ok := IdentityFromContext(ctx)
-	if !ok || request == nil || len(request.GetNewPassword()) < 8 || request.GetCurrentPassword() == request.GetNewPassword() {
+	if !ok || request == nil || !validPassword(request.GetCurrentPassword()) {
 		return nil, ErrUnauthenticated
 	}
 	record, err := service.store.AccountByID(ctx, identity.Account.GetAccountId())
 	if err != nil || bcrypt.CompareHashAndPassword(record.PasswordHash, []byte(request.GetCurrentPassword())) != nil {
 		return nil, ErrUnauthenticated
+	}
+	if !validPassword(request.GetNewPassword()) || request.GetCurrentPassword() == request.GetNewPassword() {
+		return nil, ErrInvalidArgument
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(request.GetNewPassword()), service.bcryptCost)
 	if err != nil {
@@ -358,7 +362,7 @@ func (service *Service) ChangePassword(ctx context.Context, request *cloudv1.Cha
 
 // RedeemAccountSetup 原子消费一次性 setup credential，写入新密码并激活账号。
 func (service *Service) RedeemAccountSetup(ctx context.Context, request *cloudv1.RedeemAccountSetupRequest) (*cloudv1.RedeemAccountSetupResponse, error) {
-	if request == nil || len(request.GetSetupCredential()) != 43 || len(request.GetNewPassword()) < 8 {
+	if request == nil || len(request.GetSetupCredential()) != 43 || !validPassword(request.GetNewPassword()) {
 		return nil, ErrSetupCredentialInvalid
 	}
 	if _, err := base64.RawURLEncoding.DecodeString(request.GetSetupCredential()); err != nil {
@@ -368,14 +372,19 @@ func (service *Service) RedeemAccountSetup(ctx context.Context, request *cloudv1
 	if err != nil {
 		return nil, err
 	}
-	profile, err := service.store.RedeemAccountSetup(ctx, sha256.Sum256([]byte(request.GetSetupCredential())), hash, service.now().UTC())
+	now := service.now().UTC()
+	credential, session, err := service.newSession("", 1, now)
+	if err != nil {
+		return nil, err
+	}
+	record, err := service.store.RedeemAccountSetup(ctx, sha256.Sum256([]byte(request.GetSetupCredential())), hash, session, now)
 	if err != nil {
 		if errors.Is(err, ErrSetupCredentialInvalid) {
 			return nil, ErrSetupCredentialInvalid
 		}
 		return nil, err
 	}
-	return &cloudv1.RedeemAccountSetupResponse{Account: profile}, nil
+	return &cloudv1.RedeemAccountSetupResponse{Account: record.Profile, Roles: record.Roles, Session: credential}, nil
 }
 
 // RevokeSession 撤销当前账号的另一个精确 session；当前 session 必须通过 Logout 退出。
@@ -459,6 +468,10 @@ func newSetupCredential() (string, [sha256.Size]byte, error) {
 func validPasswordHash(hash []byte) bool {
 	_, err := bcrypt.Cost(hash)
 	return err == nil
+}
+
+func validPassword(value string) bool {
+	return utf8.ValidString(value) && len(value) >= 8 && len(value) <= 72
 }
 
 func validateBootstrapRecord(record Record, email string) error {

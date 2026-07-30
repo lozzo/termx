@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/anytty/anytty/cloud/controller/account"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -261,43 +264,54 @@ func (database *Database) UpdatePassword(ctx context.Context, accountID string, 
 }
 
 // RedeemAccountSetup 原子消费 setup digest；过期、重放和并发失败使用同一错误。
-func (database *Database) RedeemAccountSetup(ctx context.Context, digest [sha256.Size]byte, passwordHash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
+func (database *Database) RedeemAccountSetup(ctx context.Context, digest [sha256.Size]byte, passwordHash []byte, session account.Session, now time.Time) (account.Record, error) {
 	var accountID string
 	if err := database.pool.QueryRow(ctx, `SELECT account_id::text FROM account_credentials WHERE setup_digest=$1`, digest[:]).Scan(&accountID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, account.ErrSetupCredentialInvalid
+			return account.Record{}, account.ErrSetupCredentialInvalid
 		}
-		return nil, err
+		return account.Record{}, err
 	}
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return account.Record{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	locked, err := lockAccountCredential(ctx, tx, accountID)
 	if err != nil || locked.Profile.GetState() != cloudv1.AccountState_ACCOUNT_STATE_PENDING || len(locked.PasswordHash) != 0 || len(locked.SetupDigest) != sha256.Size || !bytes.Equal(locked.SetupDigest, digest[:]) || locked.SetupExpiresAt.IsZero() || !now.Before(locked.SetupExpiresAt) || !validBcryptHash(passwordHash) {
-		return nil, account.ErrSetupCredentialInvalid
+		return account.Record{}, account.ErrSetupCredentialInvalid
 	}
 	if _, err := tx.Exec(ctx, `UPDATE account_credentials SET password_hash=$1,setup_digest=NULL,setup_expires_at=NULL,revision=revision+1,updated_at=$2 WHERE account_id=$3`, passwordHash, now, accountID); err != nil {
-		return nil, err
+		return account.Record{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET state='active',revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, accountID); err != nil {
-		return nil, err
+		return account.Record{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, accountID); err != nil {
-		return nil, err
+		return account.Record{}, err
+	}
+	session.AccountID = accountID
+	if !now.Before(session.AccessExpiresAt) || !session.AccessExpiresAt.Before(session.RefreshExpiresAt) {
+		return account.Record{}, account.ErrSetupCredentialInvalid
+	}
+	if err := insertAccountSession(ctx, tx, session); err != nil {
+		return account.Record{}, err
+	}
+	roles, err := loadAccountRoles(ctx, tx, accountID)
+	if err != nil {
+		return account.Record{}, err
 	}
 	if err := insertOperatorAudit(ctx, tx, accountID, "account.setup.redeem", "account", accountID, "setup credential redemption", "applied", now); err != nil {
-		return nil, err
+		return account.Record{}, err
 	}
 	profile, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1`, accountID))
 	if err != nil {
-		return nil, err
+		return account.Record{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, err
+		return account.Record{}, err
 	}
-	return profile, nil
+	return account.Record{Profile: profile, PasswordHash: append([]byte(nil), passwordHash...), CredentialRevision: locked.CredentialRevision + 1, CredentialUpdatedAt: now, Roles: roles}, nil
 }
 
 // ResetAccountSetup 把目标账号置为 pending、轮换 setup digest、清除密码并撤销全部 session。
@@ -307,7 +321,10 @@ func (database *Database) ResetAccountSetup(ctx context.Context, accountID, acto
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := lockAccountCredential(ctx, tx, accountID); err != nil {
+	if err := lockAccountRows(ctx, tx, actorID, accountID); err != nil {
+		return nil, err
+	}
+	if _, err := lockAccountCredentialRowsLocked(ctx, tx, accountID); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE account_credentials SET password_hash=NULL,setup_digest=$1,setup_expires_at=$2,revision=revision+1,updated_at=$3 WHERE account_id=$4`, digest[:], expiresAt, now, accountID); err != nil {
@@ -382,7 +399,14 @@ func insertAccountSession(ctx context.Context, tx pgx.Tx, session account.Sessio
 const accountSessionSelect = `SELECT session_id::text,account_id::text,access_token_digest,refresh_token_digest,csrf_token_digest,created_at,access_expires_at,refresh_expires_at,recent_auth_expires_at,revision,revoked_at IS NOT NULL FROM account_sessions`
 
 func lockAccountCredential(ctx context.Context, tx pgx.Tx, accountID string) (account.Record, error) {
-	profile, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1 FOR UPDATE`, accountID))
+	if err := lockAccountRows(ctx, tx, accountID); err != nil {
+		return account.Record{}, err
+	}
+	return lockAccountCredentialRowsLocked(ctx, tx, accountID)
+}
+
+func lockAccountCredentialRowsLocked(ctx context.Context, tx pgx.Tx, accountID string) (account.Record, error) {
+	profile, err := scanAccountProfile(tx.QueryRow(ctx, accountProfileSelect+` WHERE account_id=$1`, accountID))
 	if err != nil {
 		return account.Record{}, err
 	}
@@ -398,6 +422,31 @@ func lockAccountCredential(ctx context.Context, tx pgx.Tx, accountID string) (ac
 		return account.Record{}, err
 	}
 	return record, nil
+}
+
+func lockAccountRows(ctx context.Context, tx pgx.Tx, accountIDs ...string) error {
+	unique := make(map[string]struct{}, len(accountIDs))
+	ordered := make([]string, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		parsed, err := uuid.Parse(strings.TrimSpace(accountID))
+		if err != nil {
+			return err
+		}
+		accountID = parsed.String()
+		if _, found := unique[accountID]; found {
+			continue
+		}
+		unique[accountID] = struct{}{}
+		ordered = append(ordered, accountID)
+	}
+	slices.Sort(ordered)
+	for _, accountID := range ordered {
+		var locked string
+		if err := tx.QueryRow(ctx, `SELECT account_id::text FROM accounts WHERE account_id=$1 FOR UPDATE`, accountID).Scan(&locked); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func scanAccountRecord(row rowScanner) (account.Record, error) {
@@ -548,10 +597,8 @@ func validateCredentialForState(record account.Record, state cloudv1.AccountStat
 			return errors.New("active account requires only a valid password")
 		}
 	case cloudv1.AccountState_ACCOUNT_STATE_DISABLED:
-		passwordCredential := validBcryptHash(record.PasswordHash) && len(record.SetupDigest) == 0 && record.SetupExpiresAt.IsZero()
-		setupCredential := len(record.PasswordHash) == 0 && len(record.SetupDigest) == sha256.Size && !record.SetupExpiresAt.IsZero()
-		if !passwordCredential && !setupCredential {
-			return errors.New("disabled account credential is invalid")
+		if !validBcryptHash(record.PasswordHash) || len(record.SetupDigest) != 0 || !record.SetupExpiresAt.IsZero() {
+			return errors.New("disabled account requires only a valid password")
 		}
 	default:
 		return errors.New("unknown account credential state")
@@ -567,7 +614,7 @@ func validatePersistedCredential(record account.Record) error {
 }
 
 func activeCredentialMatches(locked, expected account.Record) bool {
-	return locked.Profile != nil && locked.Profile.GetState() == cloudv1.AccountState_ACCOUNT_STATE_ACTIVE && validBcryptHash(locked.PasswordHash) && locked.CredentialRevision == expected.CredentialRevision && bytes.Equal(locked.PasswordHash, expected.PasswordHash)
+	return locked.Profile != nil && expected.Profile != nil && locked.Profile.GetState() == cloudv1.AccountState_ACCOUNT_STATE_ACTIVE && locked.Profile.GetRevision() == expected.Profile.GetRevision() && validBcryptHash(locked.PasswordHash) && locked.CredentialRevision == expected.CredentialRevision && bytes.Equal(locked.PasswordHash, expected.PasswordHash)
 }
 
 func validBcryptHash(value []byte) bool {

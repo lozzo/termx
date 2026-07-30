@@ -61,12 +61,31 @@ func newDefaultLoginLimiter() *loginLimiter {
 	return limiter
 }
 
+func newDefaultSetupLimiter() *loginLimiter {
+	limiter, err := newLoginLimiter(loginLimiterConfig{
+		globalLimit: 120, clientLimit: 20, accountLimit: 5,
+		window: time.Minute, bucketTTL: 10 * time.Minute,
+		maxClientBuckets: 4096, maxAccountBuckets: 16384,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return limiter
+}
+
 func (limiter *loginLimiter) allow(client netip.Addr, login string) bool {
+	return limiter.allowDigest(client, sha256.Sum256([]byte(account.NormalizeLogin(login))))
+}
+
+func (limiter *loginLimiter) allowSetup(client netip.Addr, credential string) bool {
+	return limiter.allowDigest(client, sha256.Sum256([]byte(credential)))
+}
+
+func (limiter *loginLimiter) allowDigest(client netip.Addr, accountDigest [sha256.Size]byte) bool {
 	if !client.IsValid() {
 		return false
 	}
 	client = client.Unmap()
-	accountDigest := sha256.Sum256([]byte(account.NormalizeLogin(login)))
 	now := limiter.config.now().UTC()
 
 	limiter.mu.Lock()

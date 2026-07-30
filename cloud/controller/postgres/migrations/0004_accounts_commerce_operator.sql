@@ -12,7 +12,10 @@ CREATE TABLE account_credentials (
     setup_expires_at timestamptz,
     revision bigint NOT NULL CHECK (revision > 0),
     updated_at timestamptz NOT NULL,
-    CHECK ((setup_digest IS NULL) = (setup_expires_at IS NULL))
+    CHECK (
+        (password_hash IS NOT NULL AND setup_digest IS NULL AND setup_expires_at IS NULL) OR
+        (password_hash IS NULL AND setup_digest IS NOT NULL AND setup_expires_at IS NOT NULL)
+    )
 );
 
 CREATE TABLE account_roles (

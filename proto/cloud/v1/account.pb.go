@@ -1116,8 +1116,10 @@ func (x *RedeemAccountSetupRequest) GetNewPassword() string {
 }
 
 type RedeemAccountSetupResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Account       *AccountProfile        `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Account       *AccountProfile           `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Roles         []AccountRole             `protobuf:"varint,2,rep,packed,name=roles,proto3,enum=anytty.cloud.v1.AccountRole" json:"roles,omitempty"`
+	Session       *AccountSessionCredential `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1155,6 +1157,20 @@ func (*RedeemAccountSetupResponse) Descriptor() ([]byte, []int) {
 func (x *RedeemAccountSetupResponse) GetAccount() *AccountProfile {
 	if x != nil {
 		return x.Account
+	}
+	return nil
+}
+
+func (x *RedeemAccountSetupResponse) GetRoles() []AccountRole {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *RedeemAccountSetupResponse) GetSession() *AccountSessionCredential {
+	if x != nil {
+		return x.Session
 	}
 	return nil
 }
@@ -1312,9 +1328,11 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\"i\n" +
 	"\x19RedeemAccountSetupRequest\x12)\n" +
 	"\x10setup_credential\x18\x01 \x01(\tR\x0fsetupCredential\x12!\n" +
-	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"W\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"\xd0\x01\n" +
 	"\x1aRedeemAccountSetupResponse\x129\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\"<\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.anytty.cloud.v1.AccountProfileR\aaccount\x122\n" +
+	"\x05roles\x18\x02 \x03(\x0e2\x1c.anytty.cloud.v1.AccountRoleR\x05roles\x12C\n" +
+	"\asession\x18\x03 \x01(\v2).anytty.cloud.v1.AccountSessionCredentialR\asession\"<\n" +
 	"\x1bRevokeAccountSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x1e\n" +
@@ -1404,29 +1422,31 @@ var file_cloud_v1_account_proto_depIdxs = []int32{
 	14, // 19: anytty.cloud.v1.ListAccountSessionsResponse.sessions:type_name -> anytty.cloud.v1.AccountSessionProjection
 	2,  // 20: anytty.cloud.v1.ChangeAccountPasswordResponse.account:type_name -> anytty.cloud.v1.AccountProfile
 	2,  // 21: anytty.cloud.v1.RedeemAccountSetupResponse.account:type_name -> anytty.cloud.v1.AccountProfile
-	4,  // 22: anytty.cloud.v1.AccountService.Login:input_type -> anytty.cloud.v1.LoginAccountRequest
-	6,  // 23: anytty.cloud.v1.AccountService.Refresh:input_type -> anytty.cloud.v1.RefreshAccountSessionRequest
-	8,  // 24: anytty.cloud.v1.AccountService.Logout:input_type -> anytty.cloud.v1.LogoutAccountSessionRequest
-	10, // 25: anytty.cloud.v1.AccountService.GetCurrent:input_type -> anytty.cloud.v1.GetCurrentAccountRequest
-	12, // 26: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> anytty.cloud.v1.VerifyRecentAuthenticationRequest
-	15, // 27: anytty.cloud.v1.AccountService.ListSessions:input_type -> anytty.cloud.v1.ListAccountSessionsRequest
-	17, // 28: anytty.cloud.v1.AccountService.ChangePassword:input_type -> anytty.cloud.v1.ChangeAccountPasswordRequest
-	19, // 29: anytty.cloud.v1.AccountService.RedeemAccountSetup:input_type -> anytty.cloud.v1.RedeemAccountSetupRequest
-	21, // 30: anytty.cloud.v1.AccountService.RevokeSession:input_type -> anytty.cloud.v1.RevokeAccountSessionRequest
-	5,  // 31: anytty.cloud.v1.AccountService.Login:output_type -> anytty.cloud.v1.LoginAccountResponse
-	7,  // 32: anytty.cloud.v1.AccountService.Refresh:output_type -> anytty.cloud.v1.RefreshAccountSessionResponse
-	9,  // 33: anytty.cloud.v1.AccountService.Logout:output_type -> anytty.cloud.v1.LogoutAccountSessionResponse
-	11, // 34: anytty.cloud.v1.AccountService.GetCurrent:output_type -> anytty.cloud.v1.GetCurrentAccountResponse
-	13, // 35: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> anytty.cloud.v1.VerifyRecentAuthenticationResponse
-	16, // 36: anytty.cloud.v1.AccountService.ListSessions:output_type -> anytty.cloud.v1.ListAccountSessionsResponse
-	18, // 37: anytty.cloud.v1.AccountService.ChangePassword:output_type -> anytty.cloud.v1.ChangeAccountPasswordResponse
-	20, // 38: anytty.cloud.v1.AccountService.RedeemAccountSetup:output_type -> anytty.cloud.v1.RedeemAccountSetupResponse
-	22, // 39: anytty.cloud.v1.AccountService.RevokeSession:output_type -> anytty.cloud.v1.RevokeAccountSessionResponse
-	31, // [31:40] is the sub-list for method output_type
-	22, // [22:31] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	1,  // 22: anytty.cloud.v1.RedeemAccountSetupResponse.roles:type_name -> anytty.cloud.v1.AccountRole
+	3,  // 23: anytty.cloud.v1.RedeemAccountSetupResponse.session:type_name -> anytty.cloud.v1.AccountSessionCredential
+	4,  // 24: anytty.cloud.v1.AccountService.Login:input_type -> anytty.cloud.v1.LoginAccountRequest
+	6,  // 25: anytty.cloud.v1.AccountService.Refresh:input_type -> anytty.cloud.v1.RefreshAccountSessionRequest
+	8,  // 26: anytty.cloud.v1.AccountService.Logout:input_type -> anytty.cloud.v1.LogoutAccountSessionRequest
+	10, // 27: anytty.cloud.v1.AccountService.GetCurrent:input_type -> anytty.cloud.v1.GetCurrentAccountRequest
+	12, // 28: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> anytty.cloud.v1.VerifyRecentAuthenticationRequest
+	15, // 29: anytty.cloud.v1.AccountService.ListSessions:input_type -> anytty.cloud.v1.ListAccountSessionsRequest
+	17, // 30: anytty.cloud.v1.AccountService.ChangePassword:input_type -> anytty.cloud.v1.ChangeAccountPasswordRequest
+	19, // 31: anytty.cloud.v1.AccountService.RedeemAccountSetup:input_type -> anytty.cloud.v1.RedeemAccountSetupRequest
+	21, // 32: anytty.cloud.v1.AccountService.RevokeSession:input_type -> anytty.cloud.v1.RevokeAccountSessionRequest
+	5,  // 33: anytty.cloud.v1.AccountService.Login:output_type -> anytty.cloud.v1.LoginAccountResponse
+	7,  // 34: anytty.cloud.v1.AccountService.Refresh:output_type -> anytty.cloud.v1.RefreshAccountSessionResponse
+	9,  // 35: anytty.cloud.v1.AccountService.Logout:output_type -> anytty.cloud.v1.LogoutAccountSessionResponse
+	11, // 36: anytty.cloud.v1.AccountService.GetCurrent:output_type -> anytty.cloud.v1.GetCurrentAccountResponse
+	13, // 37: anytty.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> anytty.cloud.v1.VerifyRecentAuthenticationResponse
+	16, // 38: anytty.cloud.v1.AccountService.ListSessions:output_type -> anytty.cloud.v1.ListAccountSessionsResponse
+	18, // 39: anytty.cloud.v1.AccountService.ChangePassword:output_type -> anytty.cloud.v1.ChangeAccountPasswordResponse
+	20, // 40: anytty.cloud.v1.AccountService.RedeemAccountSetup:output_type -> anytty.cloud.v1.RedeemAccountSetupResponse
+	22, // 41: anytty.cloud.v1.AccountService.RevokeSession:output_type -> anytty.cloud.v1.RevokeAccountSessionResponse
+	33, // [33:42] is the sub-list for method output_type
+	24, // [24:33] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_account_proto_init() }

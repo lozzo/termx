@@ -107,7 +107,11 @@ message RedeemAccountSetupRequest {
   string setup_credential = 1;
   string new_password = 2;
 }
-message RedeemAccountSetupResponse { AccountProfile account = 1; }
+message RedeemAccountSetupResponse {
+  AccountProfile account = 1;
+  repeated AccountRole roles = 2;
+  AccountSessionCredential session = 3;
+}
 
 message RevokeAccountSessionRequest { string session_id = 1; }
 message RevokeAccountSessionResponse {}

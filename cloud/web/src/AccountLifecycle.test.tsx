@@ -7,7 +7,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ProvisionAccountResponseSchema } from './generated/cloud/v1/operator_pb'
-import { AccountsPage, AccountDetailPage, SetupCredentialResult } from './pages/AccountsPage'
+import { APIError } from './api'
+import { AccountsPage, AccountDetailPage, MutationError, SetupCredentialResult } from './pages/AccountsPage'
 import { SetupPage } from './pages/SetupPage'
 
 type MockReply = { status: number; body: string }
@@ -72,18 +73,20 @@ describe('account lifecycle UI', () => {
 	it('copies the one-time credential and makes its lifetime explicit', async () => {
 		const writeText = vi.fn().mockResolvedValue(undefined)
 		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-		const value = create(ProvisionAccountResponseSchema, { setupCredential: 'one-time-credential', expiresAt: { seconds: 1_800_000_000n, nanos: 0 } })
+		const credential = 'A'.repeat(43)
+		const value = create(ProvisionAccountResponseSchema, { setupCredential: credential, expiresAt: { seconds: 1_800_000_000n, nanos: 0 } })
 		const rendered = render(<SetupCredentialResult value={value} />)
 		roots.push(rendered.root)
 		expect(rendered.container.textContent).toContain('仅展示一次')
-		await act(async () => clickButton(rendered.container, '复制'))
-		expect(writeText).toHaveBeenCalledWith('one-time-credential')
-		expect(rendered.container.textContent).toContain('已复制')
+		expect(rendered.container.textContent).toContain(`/setup#${credential}`)
+		await act(async () => clickButton(rendered.container, '复制设置链接'))
+		expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/setup#${credential}`)
+		expect(rendered.container.textContent).toContain('已复制设置链接')
 	})
 
 	it('provisions without a password and shows the returned credential once', async () => {
-		const fetchMock = vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
-			if (!init?.method) return reply({ accounts: [] }) as unknown as Response
+		const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => {
+			if (!_init?.method) return reply({ accounts: [] }) as unknown as Response
 			return reply({ account: { account_id: 'new-account', email: 'user@example.com', display_name: 'New User', state: 'ACCOUNT_STATE_PENDING', revision: '1' }, setup_credential: 'provision-once', expires_at: '2027-01-15T00:00:00Z' }, 200) as unknown as Response
 		})
 		vi.stubGlobal('fetch', fetchMock)
@@ -123,24 +126,48 @@ describe('account lifecycle UI', () => {
 
 	it('keeps setup input recoverable after failure and allows a successful retry', async () => {
 		let attempts = 0
-		const fetchMock = vi.fn(async () => {
+		const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => {
 			attempts++
 			if (attempts === 1) return reply({ code: 'setup_invalid', message: '一次性凭据无效或已过期。', request_id: 'request-1' }, 400) as unknown as Response
 			return reply({ account: { account_id: 'target', state: 'ACCOUNT_STATE_ACTIVE', revision: '2' } }) as unknown as Response
 		})
 		vi.stubGlobal('fetch', fetchMock)
-		const rendered = render(withClient(<MemoryRouter><SetupPage /></MemoryRouter>))
+		const credential = 'A'.repeat(43)
+		window.history.replaceState({}, '', `/setup#${credential}`)
+		const rendered = render(withClient(<MemoryRouter initialEntries={['/setup']}><Routes><Route path="/setup" element={<SetupPage />} /><Route path="/app/overview" element={<h1>已登录概览</h1>} /></Routes></MemoryRouter>))
 		roots.push(rendered.root)
+		expect(input(rendered.container, '一次性凭据').value).toBe(credential)
+		await vi.waitFor(() => expect(window.location.hash).toBe(''))
 		act(() => {
-			setInput(input(rendered.container, '一次性凭据'), 'A'.repeat(43))
 			setInput(input(rendered.container, '新密码'), 'new-password')
 			setInput(input(rendered.container, '确认新密码'), 'new-password')
 		})
 		await act(async () => clickButton(rendered.container, '设置密码'))
 		await waitForText(rendered.container, '请向管理员申请重置')
-		expect(input(rendered.container, '一次性凭据').value).toBe('A'.repeat(43))
+		expect(input(rendered.container, '一次性凭据').value).toBe(credential)
+		expect(fetchMock.mock.calls[0]?.[1]?.body).toContain(`"setup_credential":"${credential}"`)
 		await act(async () => clickButton(rendered.container, '设置密码'))
-		await waitForText(rendered.container, '密码已设置')
+		await waitForText(rendered.container, '已登录概览')
 		expect(attempts).toBe(2)
+	})
+
+	it('keeps manual setup input when the fragment is not the reviewed format', async () => {
+		window.history.replaceState({}, '', '/setup#not-a-setup-credential')
+		const rendered = render(withClient(<MemoryRouter><SetupPage /></MemoryRouter>))
+		roots.push(rendered.root)
+		expect(input(rendered.container, '一次性凭据').value).toBe('')
+		await vi.waitFor(() => expect(window.location.hash).toBe(''))
+		act(() => setInput(input(rendered.container, '一次性凭据'), 'B'.repeat(43)))
+		expect(input(rendered.container, '一次性凭据').value).toBe('B'.repeat(43))
+	})
+
+	it('distinguishes recent authentication from ordinary forbidden errors', () => {
+		const recent = render(<MutationError action="调整角色" error={new APIError(403, 'redacted', 'recent-id', 'recent_auth_required')} />)
+		roots.push(recent.root)
+		expect(recent.container.textContent).toContain('完成最近认证')
+		const forbidden = render(<MutationError action="调整角色" error={new APIError(403, 'redacted', 'forbidden-id', 'forbidden')} />)
+		roots.push(forbidden.root)
+		expect(forbidden.container.textContent).toContain('没有执行此操作的权限')
+		expect(forbidden.container.textContent).not.toContain('最近认证')
 	})
 })

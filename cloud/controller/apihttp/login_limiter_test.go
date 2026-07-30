@@ -280,6 +280,26 @@ func TestLoginLimiterEnforcesGlobalAndClientBuckets(t *testing.T) {
 	}
 }
 
+func TestSetupLimiterIsIndependentAndCredentialCaseSensitive(t *testing.T) {
+	config := loginLimiterConfig{
+		globalLimit: 10, clientLimit: 10, accountLimit: 1,
+		window: time.Minute, bucketTTL: 5 * time.Minute,
+		maxClientBuckets: 10, maxAccountBuckets: 10,
+	}
+	login := testLoginLimiter(t, config)
+	setup := testLoginLimiter(t, config)
+	client := netip.MustParseAddr("192.0.2.40")
+	if !login.allow(client, "User@Example.com") || login.allow(client, " user@example.com ") {
+		t.Fatal("login limiter did not retain normalized login buckets")
+	}
+	if !setup.allowSetup(client, "SetupCredential") || !setup.allowSetup(client, "setupCredential") {
+		t.Fatal("setup limiter normalized a case-sensitive credential or shared login state")
+	}
+	if setup.allowSetup(client, "SetupCredential") {
+		t.Fatal("setup limiter did not enforce the exact credential digest bucket")
+	}
+}
+
 func testLoginLimiter(t *testing.T, config loginLimiterConfig) *loginLimiter {
 	t.Helper()
 	limiter, err := newLoginLimiter(config)

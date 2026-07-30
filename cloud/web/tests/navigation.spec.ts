@@ -4,6 +4,8 @@ import { Buffer } from 'node:buffer'
 
 const now = '2026-07-27T12:00:00Z'
 const periodEnd = '2026-08-27T12:00:00Z'
+const provisionSetupCredential = 'P'.repeat(43)
+const resetSetupCredential = 'R'.repeat(43)
 const account = { account_id: '11111111-1111-4111-8111-111111111111', email: 'user@anytty.com', display_name: '测试用户', state: 'ACCOUNT_STATE_ACTIVE', revision: '1', created_at: now, updated_at: now }
 const daemon = { daemon_id: '33333333-3333-4333-8333-333333333333', account_id: account.account_id, account_name: account.display_name, display_name: '开发 Mac', device_id: 'device-1', device_fingerprint: 'fingerprint-1', revision: '1', created_at: now, updated_at: now }
 const plans = [{ plan_id: 'starter', version: '1', name: '基础版', description: '适合个人设备的完整 Cloud 连接能力。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '0' }, yearly_price: { currency: 'CNY', minor_units: '0' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 2, relay_enabled: true, relay_max_concurrency: 2, relay_max_bytes_per_period: '5368709120', cloud_daemon_limit: 3 }, revision: '1', created_at: now }, { plan_id: 'professional', version: '1', name: '专业版', description: '适合多设备与高频远程工作的更高配额。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '3900' }, yearly_price: { currency: 'CNY', minor_units: '39900' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 10, relay_enabled: true, relay_max_concurrency: 8, relay_max_bytes_per_period: '1099511627776', cloud_daemon_limit: 20 }, revision: '1', created_at: now }]
@@ -51,9 +53,9 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path === '/api/operator/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'cn1.edge.anytty.com:41102', generation: '1' } }] })
     if (path === '/api/operator/connections') return json(route, { sessions: [{ session_id: '44444444-4444-4444-8444-444444444444', account_id: account.account_id, daemon_id: daemon.daemon_id, edge_id: '22222222-2222-4222-8222-222222222222', client_id: 'android-client', product: 'CLIENT_PRODUCT_ANDROID', generation: '1', connected_at: now }] })
     if (path === '/api/operator/accounts' && route.request().method() === 'GET') return json(route, { accounts: [{ account, roles: ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'], daemon_count: '1', subscription: commerce.subscription, entitlement: commerce.entitlement, usage: commerce.usage }] })
-    if (path === '/api/operator/accounts' && route.request().method() === 'POST') return json(route, { account: { account_id: '88888888-8888-4888-8888-888888888888', email: 'new.user@example.com', display_name: '新账号', state: 'ACCOUNT_STATE_PENDING', revision: '1', created_at: now, updated_at: now }, setup_credential: 'provision-credential-shown-once', expires_at: periodEnd }, 201)
+    if (path === '/api/operator/accounts' && route.request().method() === 'POST') return json(route, { account: { account_id: '88888888-8888-4888-8888-888888888888', email: 'new.user@example.com', display_name: '新账号', state: 'ACCOUNT_STATE_PENDING', revision: '1', created_at: now, updated_at: now }, setup_credential: provisionSetupCredential, expires_at: periodEnd }, 201)
     if (path === `/api/operator/accounts/${account.account_id}` && route.request().method() === 'GET') return json(route, { account: { account, roles: ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'], daemon_count: '1', subscription: commerce.subscription, entitlement: commerce.entitlement, usage: commerce.usage } })
-    if (path === `/api/operator/accounts/${account.account_id}/reset` && route.request().method() === 'POST') return json(route, { account: { ...account, state: 'ACCOUNT_STATE_PENDING', revision: '2', updated_at: now }, setup_credential: 'reset-credential-shown-once', expires_at: periodEnd })
+    if (path === `/api/operator/accounts/${account.account_id}/reset` && route.request().method() === 'POST') return json(route, { account: { ...account, state: 'ACCOUNT_STATE_PENDING', revision: '2', updated_at: now }, setup_credential: resetSetupCredential, expires_at: periodEnd })
     if (path === `/api/commerce/account/${account.account_id}`) return json(route, commerce)
     if (path === '/api/operator/plans') return json(route, { plans })
     if (path === '/api/operator/subscriptions') return json(route, { subscriptions: [commerce.subscription] })
@@ -246,10 +248,10 @@ test('管理员创建账号、复制一次性凭据并重置账号', async ({ pa
   expect((await provisionRequest).postDataJSON()).toEqual({ email: 'new.user@example.com', display_name: '新账号', reason: '已审批' })
   dialog = page.getByRole('dialog', { name: '一次性凭据' })
   await expect(dialog).toContainText('仅展示一次')
-  await expect(dialog).toContainText('provision-credential-shown-once')
-  await dialog.getByRole('button', { name: '复制', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: '已复制', exact: true })).toBeVisible()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('provision-credential-shown-once')
+  await expect(dialog).toContainText(provisionSetupCredential)
+  await dialog.getByRole('button', { name: '复制设置链接', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '已复制设置链接', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/setup#${provisionSetupCredential}`)
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
 
   await page.getByRole('link', { name: '详情', exact: true }).click()
@@ -259,7 +261,9 @@ test('管理员创建账号、复制一次性凭据并重置账号', async ({ pa
   await dialog.getByLabel('操作原因').fill('用户遗失密码')
   await dialog.getByRole('button', { name: '重置凭据', exact: true }).click()
   dialog = page.getByRole('dialog', { name: '一次性凭据' })
-  await expect(dialog).toContainText('reset-credential-shown-once')
+  await expect(dialog).toContainText(resetSetupCredential)
+  await dialog.getByRole('button', { name: '复制设置链接', exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/setup#${resetSetupCredential}`)
   await expect(dialog).toContainText('仅展示一次')
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('account-lifecycle.png'), fullPage: true })
@@ -529,16 +533,19 @@ test('统一登录页提供字段约束和明确错误反馈', async ({ page }) 
 
 test('公开 setup 失败后保留输入并可成功重试', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium' && testInfo.project.name !== 'mobile-320-chromium')
+  await mockAPI(page)
   let attempts = 0
   await page.route('**/api/account/setup/redeem', async (route) => {
     attempts++
     const request = route.request().postDataJSON()
     expect(request).toEqual({ setup_credential: 'A'.repeat(43), new_password: 'replacement-password' })
     if (attempts === 1) return json(route, { code: 'setup_invalid', message: '一次性凭据无效或已过期。', request_id: 'setup-retry-id' }, 400)
-    return json(route, { account: { ...account, state: 'ACCOUNT_STATE_ACTIVE', revision: '2' } })
+    return json(route, { account: { ...account, state: 'ACCOUNT_STATE_ACTIVE', revision: '2' }, roles: ['ACCOUNT_ROLE_USER'], session: { session_id: 'setup-session', access_expires_at: periodEnd, refresh_expires_at: periodEnd } })
   })
-  await page.goto('/setup')
-  await page.getByLabel('一次性凭据').fill('A'.repeat(43))
+  const setupCredential = 'A'.repeat(43)
+  await page.goto(`/setup#${setupCredential}`)
+  await expect(page.getByLabel('一次性凭据')).toHaveValue(setupCredential)
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('')
   await page.getByLabel('新密码', { exact: true }).fill('replacement-password')
   await page.getByLabel('确认新密码').fill('replacement-password')
   await page.getByRole('button', { name: '设置密码', exact: true }).click()
@@ -547,7 +554,8 @@ test('公开 setup 失败后保留输入并可成功重试', async ({ page }, te
   await expect(page.getByLabel('一次性凭据')).toHaveValue('A'.repeat(43))
   await expect(page.getByLabel('新密码', { exact: true })).toHaveValue('replacement-password')
   await page.getByRole('button', { name: '设置密码', exact: true }).click()
-  await expect(page.getByText('密码已设置，账号现在可以登录。')).toBeVisible()
+  await expect(page).toHaveURL(/\/app\/overview$/)
+  await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
   expect(attempts).toBe(2)
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('setup-success.png'), fullPage: true })

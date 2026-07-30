@@ -83,13 +83,19 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 			writeError(writer, http.StatusBadRequest, err)
 			return
 		}
-		if handler.loginLimiter == nil || !handler.loginLimiter.allow(clientAddress(request, handler.trustedProxyCIDRs), input.GetSetupCredential()) {
+		if handler.setupLimiter == nil || !handler.setupLimiter.allowSetup(clientAddress(request, handler.trustedProxyCIDRs), input.GetSetupCredential()) {
 			writer.Header().Set("Retry-After", "60")
 			writeError(writer, http.StatusTooManyRequests, errSetupRateLimited)
 			return
 		}
 		response, err := handler.config.Accounts.RedeemAccountSetup(request.Context(), input)
-		writeServiceResult(writer, response, err)
+		if err != nil {
+			writeError(writer, serviceHTTPStatus(err), err)
+			return
+		}
+		handler.setSessionCookies(writer, response.GetSession())
+		response.Session = redactedSession(response.GetSession())
+		writeProto(writer, http.StatusOK, response)
 	default:
 		writeError(writer, http.StatusNotFound, errors.New("account endpoint was not found"))
 	}

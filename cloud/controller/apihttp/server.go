@@ -140,7 +140,7 @@ func NewHandler(config Config) (http.Handler, error) {
 		cloudv1.RegisterCommerceServiceServer(grpcServer, config.Commerce)
 		cloudv1.RegisterOperatorServiceServer(grpcServer, config.Operator)
 	}
-	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles, immutableAssetPaths: immutableAssetPaths}
+	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), setupLimiter: newDefaultSetupLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles, immutableAssetPaths: immutableAssetPaths}
 	return handler, nil
 }
 
@@ -148,6 +148,7 @@ type handler struct {
 	config              Config
 	grpcServer          *grpc.Server
 	loginLimiter        *loginLimiter
+	setupLimiter        *loginLimiter
 	trustedProxyCIDRs   []netip.Prefix
 	logger              *slog.Logger
 	staticFiles         fs.FS
@@ -460,7 +461,11 @@ func grpcServiceError(ctx context.Context, err error) error {
 		return nil
 	}
 	correlationID := uuid.NewString()
-	_ = grpc.SetTrailer(ctx, metadata.Pairs("x-correlation-id", correlationID))
+	trailer := metadata.Pairs("x-correlation-id", correlationID)
+	if errors.Is(err, account.ErrRecentAuthenticationRequired) {
+		trailer.Append("x-error-code", "recent_auth_required")
+	}
+	_ = grpc.SetTrailer(ctx, trailer)
 	code := codes.Internal
 	switch {
 	case errors.Is(err, account.ErrUnauthenticated):
@@ -524,6 +529,9 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 	}
 	if errors.Is(err, account.ErrSetupCredentialInvalid) {
 		status, code, message = http.StatusBadRequest, "setup_invalid", "一次性凭据无效或已过期。"
+	}
+	if errors.Is(err, account.ErrRecentAuthenticationRequired) {
+		status, code, message = http.StatusForbidden, "recent_auth_required", "需要重新验证身份。"
 	}
 	requestID := writer.Header().Get("X-Request-ID")
 	if requestID == "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +69,51 @@ func TestAccountSelfServiceUsesAuthenticatedAccountAndCurrentSession(t *testing.
 	}
 }
 
+func TestChangePasswordDistinguishesAuthenticationFromNewPasswordValidation(t *testing.T) {
+	now := time.Unix(1_500, 0).UTC()
+	currentHash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &cloudv1.AccountProfile{AccountId: "account-change", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1, UpdatedAt: timestamppb.New(now)}
+	newPasswordTests := []struct {
+		name     string
+		password string
+	}{
+		{name: "seven bytes", password: strings.Repeat("a", 7)},
+		{name: "seventy three bytes", password: strings.Repeat("a", 73)},
+		{name: "seventy three multibyte bytes", password: strings.Repeat("界", 24) + "a"},
+		{name: "invalid UTF-8", password: string([]byte{0xff, 0xfe, 'a', 'b', 'c', 'd', 'e', 'f'})},
+		{name: "same as current", password: "current-password"},
+	}
+	for _, test := range newPasswordTests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &accountStoreFake{records: map[string]account.Record{"account-change": {Profile: profile, PasswordHash: currentHash, CredentialRevision: 1}}}
+			service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, SessionID: "session-change"})
+			if _, err := service.ChangePassword(ctx, &cloudv1.ChangeAccountPasswordRequest{CurrentPassword: "current-password", NewPassword: test.password}); !errors.Is(err, account.ErrInvalidArgument) {
+				t.Fatalf("new password validation error=%v", err)
+			}
+			if store.passwordAccountID != "" || len(store.passwordHash) != 0 {
+				t.Fatal("invalid new password reached the password store")
+			}
+		})
+	}
+
+	store := &accountStoreFake{records: map[string]account.Record{"account-change": {Profile: profile, PasswordHash: currentHash, CredentialRevision: 1}}}
+	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, SessionID: "session-change"})
+	if _, err := service.ChangePassword(ctx, &cloudv1.ChangeAccountPasswordRequest{CurrentPassword: "wrong-password", NewPassword: strings.Repeat("a", 7)}); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("wrong current password with malformed new password error=%v", err)
+	}
+}
+
 func TestUnknownLoginPerformsDummyBcryptTimingContract(t *testing.T) {
 	now := time.Unix(2_000, 0).UTC()
 	hash, err := bcrypt.GenerateFromPassword([]byte("known-password"), 6)
@@ -97,6 +143,49 @@ func TestUnknownLoginPerformsDummyBcryptTimingContract(t *testing.T) {
 	}
 	if knownDuration > 4*unknownDuration || unknownDuration > 4*knownDuration {
 		t.Fatalf("known wrong-password duration=%v unknown duration=%v", knownDuration, unknownDuration)
+	}
+}
+
+func TestPasswordContractUsesUTF8Bytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		valid    bool
+	}{
+		{name: "seven ASCII bytes", password: strings.Repeat("a", 7)},
+		{name: "eight ASCII bytes", password: strings.Repeat("a", 8), valid: true},
+		{name: "seventy two ASCII bytes", password: strings.Repeat("a", 72), valid: true},
+		{name: "seventy three ASCII bytes", password: strings.Repeat("a", 73)},
+		{name: "seventy two multibyte bytes", password: strings.Repeat("界", 24), valid: true},
+		{name: "seventy three multibyte bytes", password: strings.Repeat("界", 24) + "a"},
+		{name: "invalid UTF-8", password: string([]byte{0xff, 0xfe, 'a', 'b', 'c', 'd', 'e', 'f'})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			persistedPassword := strings.Repeat("v", 8)
+			if test.valid {
+				persistedPassword = test.password
+			}
+			hash, err := bcrypt.GenerateFromPassword([]byte(persistedPassword), bcrypt.MinCost)
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := &accountStoreFake{loginRecords: map[string]account.Record{"user@example.com": {
+				Profile:      &cloudv1.AccountProfile{AccountId: "account-password", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1},
+				PasswordHash: hash, CredentialRevision: 1, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
+			}}}
+			service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := service.Login(context.Background(), &cloudv1.LoginAccountRequest{Login: "user@example.com", Password: test.password})
+			if test.valid && (err != nil || response.GetSession() == nil) {
+				t.Fatalf("valid password rejected: response=%v err=%v", response, err)
+			}
+			if !test.valid && !errors.Is(err, account.ErrUnauthenticated) {
+				t.Fatalf("invalid password error=%v", err)
+			}
+		})
 	}
 }
 
@@ -260,8 +349,8 @@ func (store *accountStoreFake) UpdatePassword(_ context.Context, accountID strin
 	profile.UpdatedAt = timestamppb.New(now)
 	return profile, nil
 }
-func (store *accountStoreFake) RedeemAccountSetup(context.Context, [sha256.Size]byte, []byte, time.Time) (*cloudv1.AccountProfile, error) {
-	return nil, account.ErrSetupCredentialInvalid
+func (store *accountStoreFake) RedeemAccountSetup(context.Context, [sha256.Size]byte, []byte, account.Session, time.Time) (account.Record, error) {
+	return account.Record{}, account.ErrSetupCredentialInvalid
 }
 func (store *accountStoreFake) ResetAccountSetup(context.Context, string, string, string, [sha256.Size]byte, time.Time, time.Time) (*cloudv1.AccountProfile, error) {
 	return nil, nil
