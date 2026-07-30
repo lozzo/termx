@@ -12,16 +12,26 @@ func clientAddress(request *http.Request, trusted []netip.Prefix) netip.Addr {
 	if !ok || len(trusted) == 0 || !addressInPrefixes(peer, trusted) {
 		return peer
 	}
-	forwarded := strings.Split(request.Header.Get("X-Forwarded-For"), ",")
-	if len(forwarded) == 1 && strings.TrimSpace(forwarded[0]) == "" {
+	forwardedFields := request.Header.Values("X-Forwarded-For")
+	if len(forwardedFields) == 0 {
 		return peer
 	}
-	for index := len(forwarded) - 1; index >= 0; index-- {
-		candidate, err := netip.ParseAddr(strings.TrimSpace(forwarded[index]))
-		if err != nil {
-			return peer
+	forwarded := make([]netip.Addr, 0, len(forwardedFields))
+	for _, field := range forwardedFields {
+		for _, value := range strings.Split(field, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				return peer
+			}
+			candidate, err := netip.ParseAddr(value)
+			if err != nil {
+				return peer
+			}
+			forwarded = append(forwarded, candidate.Unmap())
 		}
-		candidate = candidate.Unmap()
+	}
+	for index := len(forwarded) - 1; index >= 0; index-- {
+		candidate := forwarded[index]
 		if !addressInPrefixes(candidate, trusted) {
 			return candidate
 		}
