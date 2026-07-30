@@ -99,7 +99,7 @@ func TestRoutePlanEnvironmentDisablesCloudWithoutAConnector(t *testing.T) {
 			"cloud":  {ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Priority: &cloudPriority, CredentialRef: "grant:studio", Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser, TargetDeviceID: "daemon-1", RelayMode: endpoint.RelayAuto},
 		},
 	}
-	planning, environment, err := routePlanEnvironment(context.Background(), target, Options{DirectPeers: fakeDirectPeerFactory{}}, credentialAvailability{"grant:studio": true})
+	planning, environment, err := routePlanEnvironment(context.Background(), target, Options{DirectPeers: fakeDirectPeerFactory{}}, credentialAvailability{"grant:studio": true}, platformCloudProfiles{})
 	if err != nil {
 		t.Fatal(err)
 	}

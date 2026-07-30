@@ -10,11 +10,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,18 +26,23 @@ import (
 	peeradapter "github.com/anytty/anytty/client/adapter/peer"
 	"github.com/anytty/anytty/client/binding"
 	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
 	clientruntime "github.com/anytty/anytty/client/runtime"
 	cloudclient "github.com/anytty/anytty/cloud/client"
 	"github.com/anytty/anytty/cloud/edge/clientgateway"
+	"github.com/anytty/anytty/cloud/securetransport"
 	"github.com/anytty/anytty/cloud/ticket"
 	"github.com/anytty/anytty/proto/bindingpb"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/remoteauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+var errCloudBootSignalingComplete = errors.New("stop after Cloud signaling")
 
 func TestHostCloudBootIdentitySpansReconnectAttempts(t *testing.T) {
 	gateway, address, serverName, caPEM := startCloudBootGateway(t)
@@ -153,6 +161,311 @@ func TestHostCloudBootIdentitySpansReconnectAttempts(t *testing.T) {
 	if err := ticket.VerifyClientHelloProof(identity.PublicKey, tampered.GetHello().GetClientProof(), hostCaptures[0].challenge, tampered, hostCaptures[0].challenge.GetIssuedAt().AsTime()); err == nil {
 		t.Fatal("ClientHello proof accepted a cross-boot transcript")
 	}
+}
+
+func TestHostPublicCloudEntriesShareBootIdentity(t *testing.T) {
+	gateway, address, serverName, caPEM := startCloudBootGateway(t)
+	platform, target, pairingPayload := newCloudEntryFixture(t, gateway.edgeID, address, serverName, caPEM)
+	host := newPublicCloudBootHost(t, platform, target)
+	otherHost := newPublicCloudBootHost(t, platform, target)
+	if host.cloudBootID == otherHost.cloudBootID {
+		t.Fatal("new public-entry Hosts shared a Cloud boot ID")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	open := func(host *Host) error {
+		_, err := host.OpenSession(ctx, &bindingpb.OpenSessionRequest{
+			EndpointId: string(target.ID), RouteOverride: "cloud", Intent: bindingpb.ConnectIntent_CONNECT_INTENT_INTERACTIVE,
+		})
+		return err
+	}
+	pair := func(host *Host) error {
+		_, err := host.ImportPairing(ctx, &bindingpb.ImportPairingRequest{
+			PortablePayload: pairingPayload, ExpectedEndpointId: string(target.ID),
+		})
+		return err
+	}
+	assertReachedSignaling := func(entry string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Fatalf("%s unexpectedly completed its test transport", entry)
+		}
+	}
+
+	for attempt := range 2 {
+		assertReachedSignaling(fmt.Sprintf("OpenSession %d", attempt), open(host))
+		assertReachedSignaling(fmt.Sprintf("ImportPairing %d", attempt), pair(host))
+	}
+
+	const concurrentAttempts = 8
+	errors := make(chan error, concurrentAttempts)
+	var attempts sync.WaitGroup
+	for index := range concurrentAttempts {
+		index := index
+		attempts.Add(1)
+		go func() {
+			defer attempts.Done()
+			if index%2 == 0 {
+				errors <- open(host)
+				return
+			}
+			errors <- pair(host)
+		}()
+	}
+	attempts.Wait()
+	close(errors)
+	for err := range errors {
+		assertReachedSignaling("concurrent public Cloud entry", err)
+	}
+
+	assertReachedSignaling("new Host OpenSession", open(otherHost))
+	assertReachedSignaling("new Host ImportPairing", pair(otherHost))
+
+	hostCaptures := gateway.capturesForBoot(host.cloudBootID)
+	if len(hostCaptures) != 4+concurrentAttempts {
+		t.Fatalf("public same-Host Hello count=%d want %d", len(hostCaptures), 4+concurrentAttempts)
+	}
+	assertCloudBootGenerations(t, hostCaptures, host.cloudBootID)
+	capability, pairing := 0, 0
+	for _, capture := range hostCaptures {
+		switch {
+		case capture.hello.GetHello().GetCloudRouteGrant() != nil:
+			capability++
+		case capture.hello.GetHello().GetPairingAdmission() != nil:
+			pairing++
+		default:
+			t.Fatal("public Cloud entry emitted Hello without authorization")
+		}
+	}
+	if capability != 2+concurrentAttempts/2 || pairing != 2+concurrentAttempts/2 {
+		t.Fatalf("public Cloud Hello modes capability=%d pairing=%d", capability, pairing)
+	}
+
+	otherCaptures := gateway.capturesForBoot(otherHost.cloudBootID)
+	if len(otherCaptures) != 2 {
+		t.Fatalf("new Host public Hello count=%d want 2", len(otherCaptures))
+	}
+	assertCloudBootGenerations(t, otherCaptures, otherHost.cloudBootID)
+	if hostCaptures[0].hello.GetBootId() == otherCaptures[0].hello.GetBootId() {
+		t.Fatal("public Cloud entries reused boot ID across Hosts")
+	}
+}
+
+func assertCloudBootGenerations(t *testing.T, captures []cloudBootCapture, bootID string) {
+	t.Helper()
+	generations := make([]uint64, 0, len(captures))
+	for _, capture := range captures {
+		if capture.hello.GetBootId() != bootID {
+			t.Fatalf("wire boot_id=%q want %q", capture.hello.GetBootId(), bootID)
+		}
+		generations = append(generations, capture.hello.GetHello().GetAttemptGeneration())
+	}
+	sort.Slice(generations, func(i, j int) bool { return generations[i] < generations[j] })
+	for index, generation := range generations {
+		if generation != uint64(index+1) {
+			t.Fatalf("wire attempt generations=%v", generations)
+		}
+	}
+}
+
+type cloudEntryPlatform struct {
+	t                *testing.T
+	profile          *bindingpb.CloudProfileRecord
+	clientIdentity   remoteauth.ClientAccessIdentity
+	capabilityGrant  string
+	cloudRouteGrant  []byte
+	cloudEdgeLocator []byte
+}
+
+func newCloudEntryFixture(t *testing.T, edgeID, address, serverName string, caPEM []byte) (*cloudEntryPlatform, endpoint.Endpoint, string) {
+	t.Helper()
+	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonIdentity, err := remoteauth.NewIdentity("daemon-engine", daemonPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity("engine-cloud", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	grant, err := remoteauth.Issue(daemonIdentity.PrivateKey, remoteauth.Claims{
+		GrantID: "enginehost-public-grant", IssuerDeviceID: daemonIdentity.DeviceID, SubjectKeyFingerprint: clientIdentity.Fingerprint,
+		Scope: remoteauth.FullDaemonScope(), IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeGrant, err := proto.Marshal(&cloudv1.SignedEnvelope{KeyId: "daemon-route", Payload: []byte("route-grant"), Signature: bytes.Repeat([]byte{0x51}, ed25519.SignatureSize)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeLocator, err := cloudclient.EncodeEdgeLocator(&cloudv1.EdgeLocator{EdgeId: edgeID, PublicEndpoint: address, ServerName: serverName, CaCertificatePem: caPEM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caFingerprint, err := securetransport.EdgeCACertificateDERFingerprint(caPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer, err := remoteauth.EncodePairingClaimOffer(&remoteauthpb.PairingClaimOffer{
+		SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x61}, 16), DeviceId: daemonIdentity.DeviceID,
+		DevicePublicKey: daemonIdentity.PublicKey, ExpiresAtUnixNano: now.Add(time.Hour).UnixNano(),
+		Routes: []*remoteauthpb.PairingRouteSeed{{RouteId: "cloud", Route: &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{
+			DaemonId: daemonIdentity.DeviceID, EdgeId: edgeID, PublicEndpoint: address, ServerName: serverName, CaCertificateDerSha256: caFingerprint,
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := endpoint.Endpoint{
+		ID: "engine-cloud", Label: "Engine Cloud", LabelSource: endpoint.SourceUser, ConnectMode: endpoint.ConnectOnDemand, Enabled: true,
+		DaemonIdentity: endpoint.DaemonIdentity{DeviceID: daemonIdentity.DeviceID, DeviceFingerprint: daemonIdentity.Fingerprint},
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{"cloud": {
+			ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, CredentialRef: "credential:engine", Source: endpoint.SourceCloud,
+			PolicySource: endpoint.SourceUser, TargetDeviceID: daemonIdentity.DeviceID, AccountProfileRef: "account:test", RelayMode: endpoint.RelayAuto,
+		}},
+	}
+	return &cloudEntryPlatform{
+		t: t, profile: &bindingpb.CloudProfileRecord{AccountProfileRef: "account:test", ControllerAddress: address, ControllerServerName: serverName, ControllerCaPem: caPEM},
+		clientIdentity: clientIdentity, capabilityGrant: grant, cloudRouteGrant: routeGrant, cloudEdgeLocator: edgeLocator,
+	}, target, base64.RawURLEncoding.EncodeToString(offer)
+}
+
+func newPublicCloudBootHost(t *testing.T, platform *cloudEntryPlatform, target endpoint.Endpoint) *Host {
+	t.Helper()
+	broker := binding.NewPlatformBroker()
+	go platform.pump(broker)
+	host, err := New(Options{
+		Broker: broker, DirectPeers: signalingOnlyCloudPeerFactory{}, ClientName: "enginehost-public-test", CredentialPrefix: "enginehost:test:",
+		CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.registry = endpoint.Registry{Version: endpoint.RegistryVersion, Default: target.ID, Endpoints: map[endpoint.EndpointID]endpoint.Endpoint{target.ID: target}}
+	host.registryLoaded = true
+	t.Cleanup(func() { _ = host.Close() })
+	return host
+}
+
+func (platform *cloudEntryPlatform) pump(broker *binding.PlatformBroker) {
+	for {
+		payload, err := broker.NextRequest(context.Background())
+		if err != nil {
+			return
+		}
+		request := &bindingpb.PlatformRequest{}
+		if err := proto.Unmarshal(payload, request); err != nil {
+			platform.t.Errorf("decode public Cloud platform request: %v", err)
+			return
+		}
+		response := &bindingpb.PlatformResponse{RequestId: request.GetRequestId()}
+		switch value := request.GetRequest().(type) {
+		case *bindingpb.PlatformRequest_CloudProfileResolve:
+			profile := proto.Clone(platform.profile).(*bindingpb.CloudProfileRecord)
+			profile.AccountProfileRef = value.CloudProfileResolve.GetAccountProfileRef()
+			response.Response = &bindingpb.PlatformResponse_CloudProfile{CloudProfile: profile}
+		case *bindingpb.PlatformRequest_CredentialResolve:
+			response.Response = &bindingpb.PlatformResponse_Credential{Credential: platform.credential(value.CredentialResolve.GetEndpointId(), value.CredentialResolve.GetCredentialRef(), true)}
+		case *bindingpb.PlatformRequest_CredentialPrepare:
+			response.Response = &bindingpb.PlatformResponse_Credential{Credential: platform.credential(value.CredentialPrepare.GetEndpointId(), value.CredentialPrepare.GetCredentialRef(), false)}
+		case *bindingpb.PlatformRequest_CredentialSign:
+			response.Response = &bindingpb.PlatformResponse_CredentialSign{CredentialSign: &bindingpb.CredentialSignResponse{Signature: ed25519.Sign(platform.clientIdentity.PrivateKey, value.CredentialSign.GetPayload())}}
+		default:
+			platform.t.Errorf("unexpected public Cloud platform request: %T", value)
+			return
+		}
+		encoded, err := proto.Marshal(response)
+		if err != nil {
+			platform.t.Errorf("encode public Cloud platform response: %v", err)
+			return
+		}
+		if err := broker.Complete(encoded); err != nil {
+			return
+		}
+	}
+}
+
+func (platform *cloudEntryPlatform) credential(endpointID, reference string, bound bool) *bindingpb.CredentialRecord {
+	record := &bindingpb.CredentialRecord{
+		EndpointId: endpointID, CredentialRef: reference, PublicKey: append([]byte(nil), platform.clientIdentity.PublicKey...),
+		KeyFingerprint: platform.clientIdentity.Fingerprint,
+	}
+	if bound {
+		record.CapabilityGrant = platform.capabilityGrant
+		record.CloudRouteGrant = append([]byte(nil), platform.cloudRouteGrant...)
+		record.CloudEdgeLocator = append([]byte(nil), platform.cloudEdgeLocator...)
+	}
+	return record
+}
+
+type signalingOnlyCloudPeerFactory struct{ fakeDirectPeerFactory }
+
+func (signalingOnlyCloudPeerFactory) OpenCloudPeer(context.Context, port.WebRTCConfig) (port.WebRTCPeer, error) {
+	return &signalingOnlyCloudPeer{channel: &signalingOnlyCloudChannel{}}, nil
+}
+
+type signalingOnlyCloudPeer struct {
+	channel *signalingOnlyCloudChannel
+}
+
+func (peer *signalingOnlyCloudPeer) Channel() port.WebRTCMessageChannel { return peer.channel }
+func (*signalingOnlyCloudPeer) CreateOffer(context.Context) (string, error) {
+	return "enginehost-public-offer", nil
+}
+func (*signalingOnlyCloudPeer) ApplyAnswer(context.Context, string, []port.ICECandidate) error {
+	return nil
+}
+func (*signalingOnlyCloudPeer) WaitReady(context.Context) error { return nil }
+func (*signalingOnlyCloudPeer) RemoteCertificateFingerprint() (string, error) {
+	parts := make([]string, 32)
+	for index := range parts {
+		parts[index] = "11"
+	}
+	return "sha-256:" + strings.Join(parts, ":"), nil
+}
+func (*signalingOnlyCloudPeer) ObservedPath() endpoint.Path { return endpoint.PathDirect }
+func (*signalingOnlyCloudPeer) Snapshot(time.Time) (port.WebRTCPeerSnapshot, bool) {
+	return port.WebRTCPeerSnapshot{}, false
+}
+func (peer *signalingOnlyCloudPeer) Close() error { return peer.channel.Close() }
+
+type signalingOnlyCloudChannel struct {
+	mu           sync.Mutex
+	closeHandler func()
+	closed       bool
+}
+
+func (*signalingOnlyCloudChannel) SetMessageHandler(func([]byte)) {}
+func (channel *signalingOnlyCloudChannel) SetCloseHandler(handler func()) {
+	channel.mu.Lock()
+	channel.closeHandler = handler
+	channel.closed = true
+	channel.mu.Unlock()
+	handler()
+}
+func (*signalingOnlyCloudChannel) BufferedAmount() uint64               { return 0 }
+func (*signalingOnlyCloudChannel) SetBufferedAmountLowThreshold(uint64) {}
+func (*signalingOnlyCloudChannel) SetBufferedAmountLowHandler(func())   {}
+func (*signalingOnlyCloudChannel) Send([]byte) error                    { return errCloudBootSignalingComplete }
+func (channel *signalingOnlyCloudChannel) Close() error {
+	channel.mu.Lock()
+	if channel.closed {
+		channel.mu.Unlock()
+		return nil
+	}
+	channel.closed = true
+	handler := channel.closeHandler
+	channel.mu.Unlock()
+	if handler != nil {
+		handler()
+	}
+	return nil
 }
 
 func cloudProfilesFromHost(t *testing.T, host *Host) platformCloudProfiles {
@@ -378,12 +691,13 @@ func cloudBootCertificate(t *testing.T, serverName string) (tls.Certificate, []b
 	if err != nil {
 		t.Fatal(err)
 	}
+	rootPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})
 	certificate, err := tls.X509KeyPair(
-		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER}),
+		append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER}), rootPEM...),
 		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER}),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return certificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})
+	return certificate, rootPEM
 }

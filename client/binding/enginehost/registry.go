@@ -88,6 +88,7 @@ func (host *Host) connectionPolicyState(ctx context.Context, target endpoint.End
 		target,
 		host.options,
 		platformCredentials{broker: host.options.Broker},
+		host.cloudProfiles(),
 	)
 	if err != nil {
 		return nil, err

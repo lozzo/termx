@@ -109,7 +109,7 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
 	credentials := platformCredentials{broker: host.options.Broker}
 	authorizer := peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}
-	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials)
+	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials, host.cloudProfiles())
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) m
 	cloudPeers, cloudSupported := host.options.DirectPeers.(cloudadapter.PeerFactory)
 	if validCloudProduct(host.options.CloudProduct) && cloudSupported {
 		connectors[endpoint.RouteManagedWebRTC] = &platformCloudConnector{
-			profiles: platformCloudProfiles{broker: host.options.Broker, bootID: host.cloudBootID}, peers: cloudPeers,
+			profiles: host.cloudProfiles(), peers: cloudPeers,
 			authorization: authorizer, product: host.options.CloudProduct, clientName: host.options.ClientName,
 		}
 	}
@@ -302,7 +302,7 @@ func (host *Host) redeemPairingRace(ctx context.Context, attempts []clientruntim
 					err = fmt.Errorf("Cloud pairing peer factory is unavailable")
 					break
 				}
-				protocolClient, resolveErr := (platformCloudProfiles{broker: host.options.Broker}).Resolve(raceContext, attempt.Route().AccountProfileRef)
+				protocolClient, resolveErr := host.cloudProfiles().Resolve(raceContext, attempt.Route().AccountProfileRef)
 				if resolveErr != nil {
 					err = resolveErr
 					break
@@ -381,7 +381,7 @@ type cloudCredentialAvailability interface {
 
 // routePlanEnvironment 生成当前调用的平台、凭据与 Cloud profile 能力快照。
 // 禁用只影响本次规划，不能删除持久 Endpoint，也不能阻断 Direct/SSH。
-func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
+func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability, cloudProfiles platformCloudProfiles) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
 	wireTarget, err := endpoint.EndpointToProto(target)
 	if err != nil {
 		return endpoint.Endpoint{}, clientruntime.RoutePlanEnvironment{}, err
@@ -402,7 +402,6 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 	}
 	_, cloudPeerSupported := options.DirectPeers.(cloudadapter.PeerFactory)
 	cloudSupported := cloudPeerSupported && validCloudProduct(options.CloudProduct)
-	cloudProfiles := platformCloudProfiles{broker: options.Broker}
 	if cloudSupported {
 		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteManagedWebRTC)
 	}
@@ -478,6 +477,10 @@ func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, routes [
 type platformCloudProfiles struct {
 	broker *binding.PlatformBroker
 	bootID string
+}
+
+func (host *Host) cloudProfiles() platformCloudProfiles {
+	return platformCloudProfiles{broker: host.options.Broker, bootID: host.cloudBootID}
 }
 
 // Resolve 只把平台 profile 投影成 Go Cloud protocol client；平台不建立网络连接，也不拥有 attempt。
