@@ -27,6 +27,9 @@
     "cancel": "取消",
     "actions": "操作",
     "close": "关闭",
+    "closeNamed": "关闭{{name}}",
+    "edit": "编辑",
+    "delete": "删除",
     "refresh": "刷新",
     "settings": "设置",
     "backToMachines": "返回设备列表"
@@ -153,7 +156,13 @@
     "decreaseFont": "减小终端字体",
     "increaseFont": "增大终端字体",
     "font": "字体",
+    "terminalFont": "终端字体",
+    "fontPreviews": "字体预览",
     "theme": "主题",
+    "terminalTheme": "终端主题",
+    "themePreviews": "主题预览",
+    "dark": "深色",
+    "light": "浅色",
     "renderer": "渲染器",
     "keyboard": "键盘",
     "scrollback": "回滚行数",
@@ -188,7 +197,7 @@
     "manage": "管理 {{name}}",
     "state": { "running": "运行中", "exited": "已退出", "unknown": "未知" },
     "paste": { "title": "确认粘贴", "summary": "{{lines}} 行，{{characters}} 个字符", "confirm": "粘贴" },
-    "tools": { "selectAll": "全选", "visible": "可见区域", "cancelSelection": "取消选择", "resizeControl": "尺寸控制", "releaseResize": "释放尺寸控制", "acquireResize": "取得尺寸控制", "owner": "控制方", "follower": "跟随方", "snippets": "快捷短语", "toggleFn": "切换 Fn 快捷键", "toggleKeyboard": "切换系统键盘", "unlockKeyboard": "解锁系统键盘", "tabKey": "Tab 键", "output": "终端输出", "loadingHistory": "正在加载终端历史" }
+    "tools": { "selectAll": "全选", "visible": "可见区域", "cancelSelection": "取消选择", "resizeControl": "尺寸控制", "releaseResize": "释放尺寸控制", "acquireResize": "取得尺寸控制", "owner": "控制方", "follower": "跟随方", "snippets": "快捷短语", "toggleFn": "切换 Fn 快捷键", "showKeyboard": "显示系统键盘", "hideKeyboard": "隐藏系统键盘", "lockKeyboard": "锁定系统键盘", "unlockKeyboard": "解锁系统键盘", "tabKey": "Tab 键", "modifierAria": "{{modifier}} 修饰键：{{state}}。下一状态：{{nextState}}", "modifierState": { "off": "关闭", "once": "单次", "locked": "锁定" }, "output": "终端输出", "loadingHistory": "正在加载终端历史" }
   },
   "files": {
     "previewEmptyFile": "文件为空",
@@ -197,7 +206,7 @@
     "list": "文件", "directoryName": "目录名称", "createDirectory": "创建目录", "cancelNewDirectory": "取消新建目录", "directoryError": "目录错误", "loadingDirectory": "正在加载目录...", "emptyDirectory": "目录为空", "copyCurrentPath": "复制当前目录路径", "newDirectory": "新建目录", "uploadFiles": "上传文件", "refreshFiles": "刷新文件", "selectFiles": "选择文件", "hidden": "隐藏文件", "showHidden": "显示隐藏文件", "hideHidden": "隐藏隐藏文件", "deleteConfirm": "删除此项目？", "renameEntry": "重命名项目", "moreActions": "{{name}} 的更多操作", "selectEntry": "选择 {{name}}", "deselectEntry": "取消选择 {{name}}", "openEntry": "打开 {{name}}", "previewEntry": "预览 {{name}}", "clipboardSummary_one": "{{count}} 个项目将{{mode}}", "clipboardSummary_other": "{{count}} 个项目将{{mode}}", "clipboardMode": { "copy": "复制", "cut": "移动" },
     "actions": { "preview": "预览", "download": "下载", "copyPath": "复制路径", "copy": "复制", "cut": "剪切", "rename": "重命名", "delete": "删除", "select": "选择", "new": "新建", "upload": "上传", "path": "路径", "paste": "粘贴", "save": "保存" },
     "sort": { "title": "文件排序", "selected": "已选择", "current": "文件排序：{{sort}}", "foldersFirst": "目录优先", "nameAsc": "名称 A 到 Z", "nameDesc": "名称 Z 到 A", "newest": "最新优先", "oldest": "最早优先", "largest": "最大优先", "smallest": "最小优先", "typeAsc": "类型 A 到 Z", "typeDesc": "类型 Z 到 A" },
-    "bookmarks": { "title": "路径书签", "saved_one": "已保存 {{count}} 个", "saved_other": "已保存 {{count}} 个", "edit": "编辑书签", "alias": "别名", "remove": "移除书签", "updated": "书签已更新", "removed": "书签已移除", "saveCurrent": "保存当前目录", "open": "打开书签 {{name}}", "editNamed": "编辑书签 {{name}}" },
+    "bookmarks": { "title": "路径书签", "saved_one": "已保存 {{count}} 个", "saved_other": "已保存 {{count}} 个", "empty": "没有已保存的路径", "edit": "编辑书签", "alias": "别名", "remove": "移除书签", "removeNamed": "移除 {{name}}", "updated": "书签已更新", "removed": "书签已移除", "saveCurrent": "保存当前目录", "open": "打开书签 {{name}}", "editNamed": "编辑书签 {{name}}" },
     "preview": { "close": "关闭预览", "loading": "正在加载预览...", "error": "预览错误", "none": "无法预览", "unavailable": "预览不可用", "unsupported": "此文件类型不支持应用内预览。", "tooLarge": "文件过大，无法预览。", "tooLargeLimit": "文件超过 {{limit}} 的预览限制。", "invalidImage": "图片预览数据无效。", "invalidVideo": "视频预览数据无效。", "videoUnavailable": "此设备无法在不缓冲完整文件的情况下提供可拖动的视频预览。", "modelFailed": "3D 模型预览失败。", "loadingModel": "正在加载模型", "modelUnavailable": "3D 预览不可用", "plainText": "纯文本", "enableWrap": "开启自动换行", "disableWrap": "关闭自动换行", "fullscreen": "全屏", "fullscreenNamed": "全屏显示 {{name}}", "zoomOut": "缩小", "zoomOutNamed": "缩小 {{name}}", "zoomIn": "放大", "zoomInNamed": "放大 {{name}}", "resetView": "重置视图", "resetViewNamed": "重置模型视图 {{name}}", "resetZoom": "重置缩放", "resetZoomNamed": "重置 {{name}} 的缩放", "rotate": "旋转", "rotateNamed": "旋转 {{name}}" },
     "transfer": {
       "title": "文件传输", "center": "文件传输中心", "openSummary": "打开文件传输中心，{{summary}}", "closeCenter": "关闭文件传输中心", "empty": "还没有文件传输任务。", "unknownDevice": "未知设备",
@@ -217,9 +226,21 @@
     "restoredCopy": "终端现在可以继续使用。"
   },
   "workspace": {
+    "parentDirectory": "上级目录",
+    "useThisPath": "使用此路径",
+    "pathBookmarked": "已保存 {{path}}",
+    "terminalCreated": "已创建 {{name}}",
+    "terminalUpdated": "已更新 {{name}}",
+    "terminalDeleted": "已删除 {{name}}",
+    "terminalRestarted": "已重启 {{name}}",
+    "terminalMachineMismatch": "此终端属于另一台设备。",
+    "connectingAnyTTY": "正在连接 AnyTTY...",
+    "connectingRelay": "正在通过 Relay 连接...",
+    "reconnectingRelay": "正在通过 Relay 重新连接...",
+    "pairedWith": "已与 {{machineId}} 配对",
     "chooseDirectory": "选择目录", "clipboard": "剪贴板", "clipboardText": "剪贴板文本", "clipboardEmpty": "剪贴板为空", "clipboardTextEmpty": "剪贴板文本为空", "clipboardUpdated": "剪贴板条目已更新", "clipboardSaved": "剪贴板条目已保存", "browserClipboardError": "无法读取浏览器剪贴板", "clipboardReadError": "无法读取剪贴板", "browserClipboard": "浏览器", "noClipboardHistory": "没有剪贴板记录", "update": "更新", "connectionInfo": "连接信息", "openFiles": "打开文件", "closeFiles": "关闭文件", "createTerminal": "创建终端", "newTerminal": "新建终端", "saveChanges": "保存修改", "saving": "正在保存...", "browse": "浏览", "connecting": "正在连接...", "connectingTerminal": "正在连接终端...", "verifyDevice": "验证此设备", "verifyDeviceCopy": "请先配对，再打开或管理本地终端。", "restartTerminal": "重启终端", "editTerminal": "编辑终端", "deleteTerminal": "删除终端", "connectionError": "连接错误", "selectTerminal": "选择一个终端开始使用", "showTerminalList": "返回终端列表", "switchTerminal": "切换终端", "openTerminalMenu": "打开终端菜单", "unlockResize": "解锁终端尺寸", "unlocking": "正在解锁...", "terminalTools": "终端工具", "changeSplit": "更换分屏", "splitTerminal": "终端分屏", "releaseResize": "释放尺寸控制", "controlResize": "控制终端尺寸", "syncInput": "同步输入", "closeSplit": "关闭分屏", "openBeforeSplit": "请先打开终端再启用分屏", "chooseDifferentTerminal": "请选择其他终端", "noOtherTerminal": "没有其他可用终端", "fileAccessNotReady": "文件访问尚未就绪", "p2pUnavailable": "P2P 不可用", "p2pUnavailableCopy": "当前网络无法建立直连，是否将本次连接切换到 Relay？", "notNow": "暂不", "copied": "已复制", "copyFailed": "复制失败",
     "resizeMode": { "resizable": "可调整", "warn": "仅提示", "locked": "已锁定" },
-    "resize": { "unlocked": "终端尺寸已解锁", "acquired": "已取得尺寸控制", "locked": "终端尺寸已锁定", "unavailable": "尺寸控制不可用", "released": "已释放尺寸控制" },
+    "resize": { "unlocked": "终端尺寸已解锁", "acquired": "已取得尺寸控制", "locked": "终端尺寸已锁定", "lockedHint": "终端尺寸已锁定，请点击 LK 手动申请。", "unavailable": "尺寸控制不可用", "released": "已释放尺寸控制" },
     "routeManager": { "title": "连接路径", "description": "选择、测试并调整连接这台设备的路径优先级。", "add": { "direct": "添加 Direct", "ssh": "添加 SSH", "cloud": "添加 Cloud" }, "routeId": "路径 ID", "displayName": "显示名称", "signalingAddresses": "信令地址", "iceAddresses": "ICE TCP 地址", "serverName": "TLS 服务名", "sshHost": "SSH 主机", "sshPort": "SSH 端口", "sshUser": "SSH 用户", "hostKeys": "主机密钥指纹", "remoteSignaling": "远端信令地址", "remoteICE": "远端 ICE TCP 地址", "cloudManaged": "Cloud 地址和 Relay 凭据由 AnyTTY Cloud 管理。", "moveUp": "提高路径优先级", "moveDown": "降低路径优先级", "test": "测试路径", "testing": "正在测试完整连接...", "saving": "正在保存...", "saved": "已保存", "testReady": "连接测试通过", "edit": "编辑", "delete": "删除", "deleteConfirm": "删除路径 {{name}}？", "prepareSSH": "准备 SSH 密钥", "sshReady": "SSH 密钥已就绪", "sshPublicKey": "SSH 公钥", "copyKey": "复制公钥", "closeKey": "关闭公钥", "save": "保存路径", "validation": { "routeId": "路径 ID 只能使用字母、数字、点、下划线或连字符。", "duplicate": "这个路径 ID 已存在。", "direct": "Direct 至少需要一个信令地址和一个 ICE TCP 地址。", "ssh": "SSH 需要主机、用户、有效端口和至少一个主机密钥指纹。", "cloud": "Cloud 需要目标设备身份。" }, "errors": { "credential": "此路径的凭据不可用，请更新后重试。", "authorization": "目标设备未授权本次连接。", "entitlement": "当前套餐不包含这条 Cloud 连接路径。", "quota": "本周期的 Cloud Relay 配额已用完。", "identity": "设备身份与此路径不匹配。", "config": "此路径配置不完整或无效。", "unavailable": "当前无法通过此路径连接，请检查两端网络后重试。", "cancelled": "已取消路径测试。", "internal": "AnyTTY 无法测试此路径，请重试。" } },
     "terminalForm": { "name": "名称", "command": "命令", "commandRequired": "基础命令不能为空", "cwd": "工作目录", "environment": "环境变量", "environmentKey": "键", "environmentValue": "值", "addEnvironment": "添加变量", "removeEnvironment": "删除变量", "pasteEnvironment": "粘贴变量", "environmentPasteContent": "待粘贴的环境变量", "applyEnvironment": "应用变量", "sizeLock": "尺寸锁定" },
     "connection": { "label": "连接", "title": "连接与网络", "closeInfo": "关闭连接与网络", "progressTitle": "正在连接设备", "current": "当前连接", "preference": "连接偏好", "route": "连接方式", "routeId": "连接路径 ID", "routeAuto": "自动", "routeLocal": "本地", "routeDirect": "Direct 直连", "routeSSH": "SSH 隧道", "routeCloud": "AnyTTY Cloud", "cloudAdvanced": "Cloud 高级设置", "cloudPath": "Cloud P2P / Relay", "cloudAuto": "自动", "cloudP2P": "仅 P2P", "cloudRelay": "仅 Relay", "relayTransport": "Relay 传输", "transportAuto": "自动", "transportUDP": "仅 UDP", "transportTCP": "仅 TCP", "path": "实际路径", "pathDirect": "P2P 直连", "pathRelay": "Relay 中转", "pathRelayMesh": "Relay Mesh", "localAddress": "本地地址", "remoteAddress": "远端地址", "reason": "选路原因", "candidates": "ICE 候选", "protocols": "ICE 传输", "networkClass": "网络类型", "rtt": "往返延迟", "sampledAt": "采样时间", "traffic": "发送 / 接收", "generation": "连接轮次", "diagnostics": "高级网络详情", "phase": { "ready": "就绪", "probing": "正在寻找可用连接...", "resolving": "正在准备安全连接...", "signaling": "正在连接设备...", "connecting": "正在连接设备...", "authorizing": "正在验证设备访问权限...", "connected": "已连接", "verifying": "正在确认连接状态...", "reconnecting": "连接中断，正在恢复...", "waiting_network": "手机当前无网络", "failed": "连接失败" }, "reading": "正在读取状态...", "notProvided": "未提供", "unavailableShort": "不可用", "unavailableReason": { "route_not_configured": "尚未配置", "route_disabled": "已停用", "platform_unsupported": "此设备不支持", "credential_unavailable": "凭据不可用", "cloud_unavailable": "Cloud 不可用" }, "unavailable": "当前没有可用的设备连接", "policyUnavailable": "当前客户端不支持连接策略", "reconnectConfirm": "应用此设置会中断当前终端并重新连接，是否继续？", "applyReconnect": "应用并重连", "applying": "正在应用...", "retry": "重试", "restoreAuto": "恢复自动", "reconnect": "重新连接", "tryP2P": "尝试 P2P", "useRelay": "使用 Relay", "mode": "模式", "transport": "传输", "smartRoute": "智能路由", "local": "本地", "remote": "远端", "connectionId": "连接标识" }
@@ -234,6 +255,7 @@
     "scanning": "正在扫描 AnyTTY 二维码...",
     "close": "关闭配对",
     "copyKey": "复制公钥",
+    "sshAuthorizedKey": "{{routeId}} 的 SSH 授权密钥",
     "credentialsStayLocal": "凭据和终端授权不会随配置传输。",
     "pairing": "正在配对...",
     "scanProgress": "正在扫描...",

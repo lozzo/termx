@@ -785,10 +785,11 @@ function MachineTerminalListView({
 }
 
 function MachineRuntimeHeader({ machine, onBack }: { machine: DisplayMachine; onBack: () => void }) {
+  const { t } = useTranslation()
   return (
     <header className="anytty-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <button
-        aria-label="Back to machines"
+        aria-label={t('common.backToMachines')}
         className="anytty-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--anytty-app-accent)]"
         type="button"
         onClick={() => { hapticSelection(); onBack() }}
@@ -803,7 +804,7 @@ function MachineRuntimeHeader({ machine, onBack }: { machine: DisplayMachine; on
         </div>
       </div>
       <span className={`shrink-0 border px-2 py-1 text-[10px] font-semibold leading-4 ${machine.online ? 'border-emerald-200 text-emerald-700' : 'border-zinc-300 text-zinc-600'}`}>
-        {machine.online ? 'Online' : 'Offline'}
+        {t(machine.online ? 'machines.state.online' : 'machines.state.offline')}
       </span>
     </header>
   )
@@ -957,7 +958,7 @@ function HomeView({
     <section className="anytty-app-page flex min-h-0 flex-1 flex-col" data-testid="anytty-app-home">
       <header className="anytty-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
         <div className="flex min-w-0 items-center gap-3 lg:gap-5">
-          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center bg-[var(--anytty-app-text)] font-mono text-[10px] font-semibold text-white lg:hidden">MV</span>
+          <span aria-hidden="true" className="shrink-0 text-sm font-bold text-zinc-950 lg:hidden">AnyTTY</span>
           <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">AnyTTY</span>
           <div className="hidden h-5 w-px bg-zinc-200 lg:block" />
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
@@ -1384,10 +1385,11 @@ function FontPicker({
   onChange: (value: string) => void
   value: string
 }) {
+  const { t } = useTranslation()
   return (
     <>
       <select
-        aria-label="Terminal font"
+        aria-label={t('settings.terminalFont')}
         className="sr-only"
         value={value}
         onChange={(event) => {
@@ -1400,7 +1402,7 @@ function FontPicker({
         ))}
       </select>
       <div
-        aria-label="Font previews"
+        aria-label={t('settings.fontPreviews')}
         className="grid w-full min-w-0 gap-2"
         role="radiogroup"
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 13rem), 1fr))' }}
@@ -1464,10 +1466,11 @@ function ThemePicker({
   onChange: (value: TerminalSettings['themeId']) => void
   value: TerminalSettings['themeId']
 }) {
+  const { t } = useTranslation()
   return (
     <>
       <select
-        aria-label="Terminal theme"
+        aria-label={t('settings.terminalTheme')}
         className="sr-only"
         value={value}
         onChange={(event) => {
@@ -1475,19 +1478,19 @@ function ThemePicker({
           onChange(event.currentTarget.value as TerminalSettings['themeId'])
         }}
       >
-        <optgroup label="Dark">
+        <optgroup label={t('settings.dark')}>
           {groups.dark.map((option) => (
             <option key={option.id} value={option.id}>{option.label}</option>
           ))}
         </optgroup>
-        <optgroup label="Light">
+        <optgroup label={t('settings.light')}>
           {groups.light.map((option) => (
             <option key={option.id} value={option.id}>{option.label}</option>
           ))}
         </optgroup>
       </select>
       <div
-        aria-label="Theme previews"
+        aria-label={t('settings.themePreviews')}
         className="grid w-full min-w-0 gap-2"
         role="radiogroup"
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 12rem), 1fr))' }}
@@ -1645,7 +1648,7 @@ function PairSheet({
                       <span className="font-mono text-xs text-zinc-500">{credential.fingerprint}</span>
                     </div>
                     <textarea
-                      aria-label={`SSH authorized key for ${credential.routeId}`}
+                      aria-label={t('pairing.sshAuthorizedKey', { routeId: credential.routeId })}
                       className="mt-3 h-32 w-full resize-none border border-[var(--anytty-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 outline-none"
                       value={credential.authorizedKey}
                       readOnly

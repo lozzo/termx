@@ -196,7 +196,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const mobileKeybarRef = useRef<HTMLDivElement | null>(null)
   const activeTerminalSlotRef = useRef<TerminalSlot>(0)
   const [keyboardLocked, setKeyboardLocked] = useState(false)
-  const keyboardLockedRef = useRef(false)
   const machineSessionRef = useRef<{
     connector: MachineWorkspaceConnector
     machineId: string
@@ -249,6 +248,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const activeTerminalOwnsResize = terminalResizeControl.canResize === true
+  const resizeLockedHint = t('workspace.resize.lockedHint')
   const requireVerification = verifiedDevice === false
   const canManageTerminals = true
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
@@ -433,7 +433,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           setConnectingTerminalId(null)
         }
       }
-      updateConnectionStatus(snapshot.statusText || 'Connected', 'connected')
+      updateConnectionStatus(snapshot.statusText || connectionPhaseLabel('connected', t), 'connected')
       clearConnectionStatusSoon()
     connectionPolicyFailureRef.current = null
     if (connectionPolicyReconnectPendingRef.current) {
@@ -482,8 +482,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network' || snapshot.phase === 'verifying') {
       if (hasConnectedOnceRef.current) connectionInterruptedRef.current = true
     }
-    updateConnectionStatus(snapshot.statusText || connectionPhaseLabel(snapshot.phase), snapshot.phase)
-  }, [clearConnectionStatus, clearConnectionStatusSoon, handleConnectionAuthFailure, updateConnectionStatus])
+    updateConnectionStatus(snapshot.statusText || connectionPhaseLabel(snapshot.phase, t), snapshot.phase)
+  }, [clearConnectionStatus, clearConnectionStatusSoon, handleConnectionAuthFailure, t, updateConnectionStatus])
 
   const updateFromPassiveConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: MachineWorkspaceClientSession) => {
     if (isTransientConnectionPhase(snapshot.phase)) return
@@ -911,7 +911,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         updateFromConnectionState(lastConnectionSnapshot)
         return
       }
-      updateFromConnectionStatusText(lastConnectionStatus ?? (forceRelayConnection ? 'Connecting through relay...' : 'Connecting...'))
+      updateFromConnectionStatusText(lastConnectionStatus ?? (forceRelayConnection
+        ? t('workspace.connectingRelay')
+        : connectionPhaseLabel('connecting', t)))
     }, TERMINAL_CONNECTION_PROGRESS_DELAY_MS)
     ensureMachineSession(machineId, {
       forceRelay: forceRelayConnection,
@@ -945,7 +947,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setConnectedTerminalId(activeTerminalId)
       setConnectingTerminalId(null)
       if (showConnectionProgress) {
-        updateConnectionStatus('Connected', 'connected')
+        updateConnectionStatus(connectionPhaseLabel('connected', t), 'connected')
         clearConnectionStatusSoon()
       } else {
         clearConnectionStatus()
@@ -1006,7 +1008,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       updateFromConnectionState({
         machineId,
         phase: 'connected',
-        statusText: 'Connected',
+        statusText: connectionPhaseLabel('connected', t),
         relayInUse: forceRelayConnection === true,
       }, session)
     }).catch((err: unknown) => {
@@ -1075,7 +1077,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (machine && intent.machineId !== machine.machineId) {
-      setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
+      setError(t('workspace.terminalMachineMismatch'))
       return
     }
     setActiveTerminalId(intent.terminalId)
@@ -1086,7 +1088,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     setPage('terminal')
     setMobileSheet(null)
-  }, [handleConnectionAuthFailure, machine, requireVerification, splitTerminalId])
+  }, [handleConnectionAuthFailure, machine, requireVerification, splitTerminalId, t])
 
   const openSplitTerminalSheet = useCallback(() => {
     if (requireVerification) {
@@ -1105,11 +1107,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setTerminalToolbarOpen(false)
     setTerminalFnOpen(false)
     setMobileSheet('split-terminal')
-  }, [activeTerminalId, handleConnectionAuthFailure, machine?.machineId, requireVerification, terminals])
+  }, [activeTerminalId, handleConnectionAuthFailure, machine?.machineId, requireVerification, t, terminals])
 
   const selectSplitTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (machine && intent.machineId !== machine.machineId) {
-      setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
+      setError(t('workspace.terminalMachineMismatch'))
       return
     }
     if (intent.terminalId === activeTerminalId) {
@@ -1124,7 +1126,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       splitTerminalRef.current?.fit()
       splitTerminalRef.current?.focus()
     }, 0)
-  }, [activeTerminalId, machine])
+  }, [activeTerminalId, machine, t])
 
   const closeSplitTerminal = useCallback(() => {
     setSplitTerminalId(null)
@@ -1193,11 +1195,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const handlePaired = useCallback((machineId: string) => {
     setError(null)
     setVerifiedDevice(true)
-    setPairStatus(`Paired with ${machineId}`)
+    setPairStatus(t('workspace.pairedWith', { machineId }))
     setConnectionRetryToken((current) => current + 1)
     setMobileSheet(null)
     void refreshTerminals()
-  }, [refreshTerminals])
+  }, [refreshTerminals, t])
 
   const retryConnection = useCallback(async (options: { closeDialog?: boolean; preservePolicy?: boolean } = {}) => {
   const targetForceRelay = options.preservePolicy ? undefined : forceRelayConnection
@@ -1205,7 +1207,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     if (options.closeDialog !== false) setConnectionInfoOpen(false)
     setConnectionInfo(null)
     setConnectionInfoError(null)
-    updateConnectionStatus(targetForceRelay ? 'Reconnecting through relay...' : 'Reconnecting...', 'reconnecting')
+    updateConnectionStatus(targetForceRelay
+      ? t('workspace.reconnectingRelay')
+      : connectionPhaseLabel('reconnecting', t), 'reconnecting')
     if (connector.reconnect) {
       const current = machineSessionRef.current
     await connector.reconnect({ forceRelay: targetForceRelay })
@@ -1229,7 +1233,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     setManualReconnectNonce((value) => value + 1)
     setConnectionRetryToken((value) => value + 1)
-  }, [activeTerminalId, connector, forceRelayConnection, releaseMachineSession, updateConnectionStatus])
+  }, [activeTerminalId, connector, forceRelayConnection, releaseMachineSession, t, updateConnectionStatus])
 
   const retryAfterFailure = useCallback(() => {
     setError(null)
@@ -1261,7 +1265,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     if (!phoneOnline) {
       setConnectionRecovered(false)
       if (hasConnectedOnceRef.current) connectionInterruptedRef.current = true
-      updateConnectionStatus('Phone offline', 'waiting_network')
+      updateConnectionStatus(connectionPhaseLabel('waiting_network', t), 'waiting_network')
       return
     }
     if (!connectionReady) {
@@ -1270,30 +1274,30 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setConnectionFailure(null)
       if (hasConnectedOnceRef.current) connectionInterruptedRef.current = true
       if (connectionRecoveryFailed) {
-        updateConnectionStatus(connectionRecoveryFailure?.message || 'Connection recovery failed', 'failed')
+        updateConnectionStatus(connectionRecoveryFailure?.message || t('machines.networkRecoveryFailed'), 'failed')
       } else {
-        updateConnectionStatus('Restoring connection', 'reconnecting')
+        updateConnectionStatus(t('machines.restoringNetwork'), 'reconnecting')
       }
       return
     }
     if (!wasReady) {
-      updateConnectionStatus('Reconnecting', 'reconnecting')
+      updateConnectionStatus(connectionPhaseLabel('reconnecting', t), 'reconnecting')
       retryAfterFailure()
     }
-  }, [connectionReady, connectionRecoveryFailed, connectionRecoveryFailure?.message, phoneOnline, retryAfterFailure, updateConnectionStatus])
+  }, [connectionReady, connectionRecoveryFailed, connectionRecoveryFailure?.message, phoneOnline, retryAfterFailure, t, updateConnectionStatus])
 
   useEffect(() => {
     if (!pairStatus) return
-    const timer = setTimeout(() => setPairStatus(null), pairStatus === 'Resize is locked. Tap LK to request manually.' ? 1800 : 3000)
+    const timer = setTimeout(() => setPairStatus(null), pairStatus === resizeLockedHint ? 1800 : 3000)
     return () => clearTimeout(timer)
-  }, [pairStatus])
+  }, [pairStatus, resizeLockedHint])
 
   useEffect(() => {
     if (!(terminalResizeControl.sizeLocked || terminalResizeControl.reason === 'size_locked')) return
     if (resizeLockedHintShownRef.current) return
     resizeLockedHintShownRef.current = true
-    setPairStatus('Resize is locked. Tap LK to request manually.')
-  }, [terminalResizeControl.reason, terminalResizeControl.sizeLocked])
+    setPairStatus(resizeLockedHint)
+  }, [resizeLockedHint, terminalResizeControl.reason, terminalResizeControl.sizeLocked])
 
   const showTerminalListPage = useCallback(() => {
     setPage('terminal-list')
@@ -1312,7 +1316,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (!machine) {
-      setError('No machine is available for file access')
+      setError(t('workspace.fileAccessNotReady'))
       return
     }
     const fileTerminal = page === 'terminal' ? activeToolTerminal : (activeToolTerminal ?? terminals[0] ?? null)
@@ -1353,7 +1357,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, requireVerification, terminals, updateConnectionStatus, updateFromConnectionState])
+  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, requireVerification, t, terminals, updateConnectionStatus, updateFromConnectionState])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -1362,12 +1366,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     if (!canManageTerminals) return
     if (machine && intent.machineId !== machine.machineId) {
-      setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
+      setError(t('workspace.terminalMachineMismatch'))
       return
     }
     setSelectedTerminalId(intent.terminalId)
     setMobileSheet('manage-terminal')
-  }, [canManageTerminals, handleConnectionAuthFailure, machine, requireVerification])
+  }, [canManageTerminals, handleConnectionAuthFailure, machine, requireVerification, t])
 
   const openCreateTerminal = useCallback(() => {
     if (requireVerification) {
@@ -1473,7 +1477,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     try {
       const session = await withMachineSession()
       await createPathBookmarkApi(session).add(path)
-      setPairStatus(`Bookmarked ${path}`)
+      setPairStatus(t('workspace.pathBookmarked', { path }))
       await loadTerminalPathBookmarks()
     } catch (err) {
       setTerminalPathBookmarksError(t('errors.generic'))
@@ -1516,7 +1520,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       const management = await withManagementApi()
       const created = await management.api.createTerminal(input)
       await refreshTerminals()
-      setPairStatus(`Created ${created.terminalId || input.name || 'terminal'}`)
+      setPairStatus(t('workspace.terminalCreated', { name: created.terminalId || input.name || t('terminal.defaultTitle') }))
       setMobileSheet(null)
     } catch (err) {
       setTerminalSubmitError(t('errors.generic'))
@@ -1539,7 +1543,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       const management = await withManagementApi()
       await management.api.updateTerminal(input)
       await refreshTerminals()
-      setPairStatus(`Updated ${input.name || selectedTerminal?.title || selectedTerminalId}`)
+      setPairStatus(t('workspace.terminalUpdated', { name: input.name || selectedTerminal?.title || selectedTerminalId }))
       setMobileSheet(null)
     } catch (err) {
       setTerminalSubmitError(t('errors.generic'))
@@ -1628,9 +1632,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setSyncSplitInput(false)
     }
     await refreshTerminals()
-    setPairStatus(`Deleted ${deletedTitle}`)
+    setPairStatus(t('workspace.terminalDeleted', { name: deletedTitle }))
     setMobileSheet(null)
-  }, [activeTerminalId, canManageTerminals, fileTerminalId, selectedTerminal, selectedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
+  }, [activeTerminalId, canManageTerminals, fileTerminalId, selectedTerminal, selectedTerminalId, refreshTerminals, splitTerminalId, t, withManagementApi])
 
   const restartManagedTerminal = useCallback(async () => {
     if (!canManageTerminals || !selectedTerminalId) return
@@ -1656,9 +1660,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         splitTerminalRef.current?.fit()
       }, 0)
     }
-    setPairStatus(`Restarted ${restartedTitle}`)
+    setPairStatus(t('workspace.terminalRestarted', { name: restartedTitle }))
     setMobileSheet(null)
-  }, [activeTerminalId, canManageTerminals, selectedTerminal, selectedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
+  }, [activeTerminalId, canManageTerminals, selectedTerminal, selectedTerminalId, refreshTerminals, splitTerminalId, t, withManagementApi])
 
   const openTerminalPanel = useCallback(() => {
     setFilesOpen(false)
@@ -1745,19 +1749,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     retryConnectionPolicy()
   }, [applyConnectionPolicy, retryConnectionPolicy])
 
-  const lockKeyboard = useCallback(() => {
-    setKeyboardLocked((prev) => {
-      const next = !prev
-      keyboardLockedRef.current = next
-      if (next) {
-        terminalRef.current?.blur()
-        splitTerminalRef.current?.blur()
-      } else {
-        terminalRef.current?.focus()
-      }
-      return next
-    })
-  }, [])
+  const toggleKeyboardLock = useCallback(() => {
+    const next = !keyboardLocked
+    setKeyboardLocked(next)
+    if (next) blurActiveTerminal()
+  }, [blurActiveTerminal, keyboardLocked])
 
   const setTerminalToolbarModeAndReset = useCallback((mode: TerminalToolbarMode) => {
     setTerminalToolbarMode(mode)
@@ -1909,7 +1905,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 onClick={() => { hapticImpact(); void loadTerminalPathPicker(parentPath(normalizedPath)) }}
               >
                 <ChevronLeft className="h-4 w-4" />
-                Parent
+                {t('workspace.parentDirectory')}
               </button>
               <button
                 type="button"
@@ -1917,7 +1913,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 onClick={() => { hapticImpact(); selectTerminalWorkingDirectory(normalizedPath) }}
               >
                 <FolderOpen className="h-4 w-4" />
-                Use this path
+                {t('workspace.useThisPath')}
               </button>
             </div>
           </div>
@@ -1935,11 +1931,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             {terminalPathPickerLoading ? (
               <div className="flex h-full items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
                 <span className="anytty-square-spinner" aria-hidden="true" />
-                Loading...
+                {t('common.loading')}
               </div>
             ) : directories.length === 0 ? (
               <div className="flex h-full items-center justify-center text-[13px] font-medium text-zinc-500">
-                Empty
+                {t('files.emptyDirectory')}
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1977,7 +1973,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               onClick={() => { hapticImpact(); void addTerminalPathBookmark() }}
             >
               <BookmarkPlus className="h-4 w-4" />
-              Save path
+              {t('files.bookmarks.saveCurrent')}
             </button>
             <button
               type="button"
@@ -1985,7 +1981,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               onClick={() => { hapticImpact(); void loadTerminalPathBookmarks() }}
             >
               <RefreshCw className="h-4 w-4" />
-              Refresh
+              {t('common.refresh')}
             </button>
           </div>
 
@@ -1999,11 +1995,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             {terminalPathBookmarksLoading ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
                 <span className="anytty-square-spinner" aria-hidden="true" />
-                Loading...
+                {t('common.loading')}
               </div>
             ) : terminalPathBookmarks.length === 0 ? (
               <div className="flex min-h-20 items-center justify-center px-3 text-center text-[13px] font-medium text-zinc-500">
-                No saved paths
+                {t('files.bookmarks.empty')}
               </div>
             ) : (
               terminalPathBookmarks.map((bookmark) => (
@@ -2018,7 +2014,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                   <button
                     type="button"
-                    aria-label={`Remove ${bookmark.label}`}
+                    aria-label={t('files.bookmarks.removeNamed', { name: bookmark.label })}
                     className="flex h-11 w-11 shrink-0 items-center justify-center text-red-500 hover:bg-red-50/80 active:bg-red-50"
                     onClick={() => { hapticImpact(); void removeTerminalPathBookmark(bookmark.id) }}
                   >
@@ -2107,7 +2103,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                       onClick={() => { hapticImpact(); setEditingClipboardId(entry.id); setClipboardDraft(entry.text) }}
                     >
                       <SquarePen className="h-3.5 w-3.5" />
-                      Edit
+                      {t('common.edit')}
                     </button>
                     <button
                       type="button"
@@ -2115,7 +2111,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                       onClick={() => { hapticImpact(); void deleteClipboardEntry(entry.id) }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </div>
                 </div>
@@ -2278,7 +2274,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               onClick={() => { hapticImpact(); handleConnectionAuthFailure(machine.machineId) }}
             >
               <KeyRound className="h-4 w-4" />
-              Verify device
+              {t('workspace.verifyDevice')}
             </button>
           </section>
         ) : null}
@@ -2471,7 +2467,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 ${className || ''}`}>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
           <span className="anytty-square-spinner text-zinc-600" aria-hidden="true" />
-          Connecting to AnyTTY...
+          {t('workspace.connectingAnyTTY')}
         </div>
       </div>
     )
@@ -2728,7 +2724,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onInput={sendTerminalInput}
           onFocusKeyboard={focusActiveTerminal}
           onBlurKeyboard={blurActiveTerminal}
-          onLockKeyboard={lockKeyboard}
+          onToggleKeyboardLock={toggleKeyboardLock}
           fnOpen={terminalFnOpen}
           onToggleFn={() => {
             setTerminalFnOpen((current) => !current)
@@ -3000,6 +2996,7 @@ function MobileSheetPanel({
   testId: string
   title: string
 }) {
+  const { t } = useTranslation()
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={() => { hapticSelection(); onClose() }}>
       <ModalSurface
@@ -3014,7 +3011,7 @@ function MobileSheetPanel({
           <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{title}</h2>
           <button
             type="button"
-            aria-label={`Close ${title}`}
+            aria-label={t('common.closeNamed', { name: title })}
             className="anytty-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyTerminalModifiers } from './mobileTerminalInput'
+import { applyTerminalModifiers, nextModifierState } from './mobileTerminalInput'
 
 describe('mobile terminal input helpers', () => {
   it('maps one-shot Ctrl input to control characters and clears only one-shot modifiers', () => {
@@ -18,8 +18,17 @@ describe('mobile terminal input helpers', () => {
     })
   })
 
-  it('leaves AnyTTY public language free of tgent pane concepts', () => {
-    const publicKeys = Object.keys({ ctrl: 'once', alt: 'off', data: '\t' })
-    expect(publicKeys).not.toEqual(expect.arrayContaining(['paneId', 'sessionId', 'workspaceId', 'tabId']))
+  it('cycles modifiers through off, once, locked, and back to off', () => {
+    expect(nextModifierState('off')).toBe('once')
+    expect(nextModifierState('once')).toBe('locked')
+    expect(nextModifierState('locked')).toBe('off')
+  })
+
+  it('applies Ctrl before Alt and consumes both one-shot modifiers together', () => {
+    expect(applyTerminalModifiers('\\', { ctrl: 'once', alt: 'once' })).toEqual({
+      data: '\x1b\x1c',
+      ctrl: 'off',
+      alt: 'off',
+    })
   })
 })
