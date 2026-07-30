@@ -52,7 +52,7 @@ jobs:
         run: |
           make doctor
           scripts/test-repository-layout-guard.sh
-          node --test scripts/package-scripts.test.mjs
+          node --test scripts/eslint-config.test.mjs scripts/package-scripts.test.mjs
 
       - name: Go correctness and vulnerability gates
         run: |
@@ -79,7 +79,7 @@ jobs:
         run: |
           sdkmanager "ndk;27.2.12479018"
           scripts/test-android-apk-boundary.sh
-          npm run cap:build
+          npm run cap:sync --workspace @anytty/mobile
           clients/mobile/android/gradlew --no-daemon --project-dir clients/mobile/android testDebugUnitTest assembleRelease
           scripts/verify-android-apk-boundary.sh clients/mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
 

@@ -45,6 +45,7 @@ export default defineConfig([
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
       'no-dupe-class-members': 'off',
+      'no-redeclare': 'off',
       'no-undef': 'off',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-duplicate-enum-values': 'error',

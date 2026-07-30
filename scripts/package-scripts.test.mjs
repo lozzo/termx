@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -69,6 +69,42 @@ function requireWorkspaceLifecycle(lifecycle) {
   assert.equal(typeof rootPackage.scripts?.[lifecycle], 'string', `root must expose ${lifecycle}`)
 }
 
+function runLintWarningFixture(workspace) {
+  const fixture = mkdtempSync(join(tmpdir(), 'anytty-lint-warning-'))
+  try {
+    const workspaceDirectory = join(fixture, workspace.path)
+    mkdirSync(workspaceDirectory, { recursive: true })
+    writeFileSync(join(fixture, 'package.json'), JSON.stringify({
+      private: true,
+      workspaces: [workspace.path],
+    }))
+    writeFileSync(join(fixture, 'eslint.config.mjs'), `
+export default [{
+  files: ['**/*.js'],
+  rules: { 'no-warning-comments': ['warn', { terms: ['TODO'] }] },
+}]
+`)
+    writeFileSync(join(workspaceDirectory, 'package.json'), JSON.stringify({
+      name: workspace.name,
+      version: '0.0.0',
+      private: true,
+      scripts: { lint: workspace.package.scripts.lint },
+    }))
+    writeFileSync(join(workspaceDirectory, 'warning.js'), '// TODO: warning fixture\n')
+
+    return spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'lint', '--silent'], {
+      cwd: workspaceDirectory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${join(repoRoot, 'node_modules', '.bin')}${delimiter}${process.env.PATH ?? ''}`,
+      },
+    })
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+}
+
 test('root workspaces match the UI, Mobile, and Cloud product contract', () => {
   const byPathAndName = (left, right) => `${left.path}\0${left.name}`.localeCompare(`${right.path}\0${right.name}`)
   const expected = [...productWorkspaces].sort(byPathAndName)
@@ -86,10 +122,10 @@ for (const lifecycle of ['lint', 'typecheck', 'test', 'build']) {
 
 test('workspace lint scripts reject warnings', () => {
   for (const workspace of rootWorkspaces) {
-    assert.match(
-      workspace.package.scripts.lint,
-      /(?:^|\s)--max-warnings(?:=|\s+)0(?:\s|$)/,
-      `${workspace.path} lint must set max warnings to zero`,
-    )
+    const result = runLintWarningFixture(workspace)
+    const output = `${result.stdout}${result.stderr}`
+    assert.equal(result.status, 1, `${workspace.path} lint must fail on a warning:\n${output}`)
+    assert.match(output, /no-warning-comments/, `${workspace.path} lint did not report the fixture warning`)
+    assert.match(output, /too many warnings/i, `${workspace.path} lint did not fail because of the warning`)
   }
 })
