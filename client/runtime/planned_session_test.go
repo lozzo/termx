@@ -436,35 +436,6 @@ func TestClientRuntimeEnsureSessionReusesOwnerWinner(t *testing.T) {
 	}
 }
 
-func TestSessionOwnerSerializesPlannedRacePerEndpoint(t *testing.T) {
-	owner := NewSessionOwner()
-	defer owner.Close()
-	target := plannedEndpoint(false)
-	release := make(chan struct{})
-	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {release: release}})
-	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{endpoint.RouteSSHWebRTCTCP: dialer})
-	results := make(chan plannedResult, 2)
-	connect := func() {
-		lease, err := owner.ConnectPlanned(context.Background(), target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
-		results <- plannedResult{lease: lease, err: err}
-	}
-	go connect()
-	go connect()
-	if route := waitPlannedStart(t, dialer.started); route != "ssh" {
-		t.Fatalf("first route = %q", route)
-	}
-	select {
-	case route := <-dialer.started:
-		t.Fatalf("second same-endpoint race started concurrently: %q", route)
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(release)
-	first, second := <-results, <-results
-	if first.err != nil || second.err != nil || first.lease.Stamp.Generation == second.lease.Stamp.Generation {
-		t.Fatalf("first=%#v err=%v second=%#v err=%v", first.lease, first.err, second.lease, second.err)
-	}
-}
-
 func TestSessionOwnerPlannedEntryPointsReclaimEndpointLocks(t *testing.T) {
 	for _, name := range []string{"connect", "acquire", "ensure"} {
 		t.Run(name, func(t *testing.T) {

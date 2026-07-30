@@ -352,47 +352,67 @@ func TestSessionOwnerDelayedOldDoneDoesNotCloseNewGenerationLease(t *testing.T) 
 	_ = second.Close()
 }
 
-func TestSessionOwnerEndpointAcquireLockKeepsEntryForWaiter(t *testing.T) {
+func TestSessionOwnerEndpointAcquireLockSurvivesCloseWithWaiter(t *testing.T) {
 	owner := NewSessionOwner()
-	defer owner.Close()
 	target := ownerEndpoint()
-	firstStarted := make(chan struct{})
-	firstRelease := make(chan struct{})
-	firstResult := make(chan error, 1)
+	holderStarted := make(chan struct{})
+	holderRelease := make(chan struct{})
+	holderDialer := &ownerDialer{started: holderStarted, release: holderRelease}
+	holderResult := make(chan error, 1)
 	go func() {
-		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{started: firstStarted, release: firstRelease})
-		firstResult <- err
+		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-a", holderDialer)
+		holderResult <- err
 	}()
-	<-firstStarted
+	<-holderStarted
 
-	secondStarted := make(chan struct{})
-	secondRelease := make(chan struct{})
-	secondResult := make(chan error, 1)
+	waiterDialer := &ownerDialer{}
+	waiterResult := make(chan error, 1)
 	go func() {
-		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-b", &ownerDialer{started: secondStarted, release: secondRelease})
-		secondResult <- err
+		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-b", waiterDialer)
+		waiterResult <- err
 	}()
 	entry := waitForEndpointAcquireRefs(t, owner, target.ID, 2)
 
-	close(firstRelease)
-	if err := <-firstResult; err != nil {
+	if err := owner.Close(); err != nil {
 		t.Fatal(err)
 	}
-	<-secondStarted
 	owner.mu.Lock()
 	current := owner.acquireLocks[target.ID]
-	refs := 0
-	if current != nil {
-		refs = current.refs
-	}
+	refs := entry.refs
+	closed := owner.closed
 	owner.mu.Unlock()
-	if current != entry || refs != 1 {
-		t.Fatalf("waiting acquire entry=%p refs=%d, want entry=%p refs=1", current, refs, entry)
+	if !closed || current != entry || refs != 2 {
+		t.Fatalf("after Close: closed=%v entry=%p refs=%d, want closed and entry=%p refs=2", closed, current, refs, entry)
 	}
 
-	close(secondRelease)
-	if err := <-secondResult; err != nil {
-		t.Fatal(err)
+	close(holderRelease)
+	select {
+	case err := <-holderResult:
+		if CodeOf(err) != ErrorStaleSession {
+			t.Fatalf("holder error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("holder deadlocked after Close")
+	}
+	select {
+	case err := <-waiterResult:
+		if CodeOf(err) != ErrorUnavailable {
+			t.Fatalf("waiter error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter deadlocked after holder release")
+	}
+	if holderDialer.session == nil || holderDialer.session.closeCalls.Load() != 1 {
+		t.Fatalf("holder session=%p close calls=%d, want one closed session", holderDialer.session, closeCalls(holderDialer.session))
+	}
+	if waiterDialer.calls != 0 {
+		t.Fatalf("waiter dial calls = %d, want 0 for closed owner", waiterDialer.calls)
+	}
+	owner.mu.Lock()
+	finalRefs := entry.refs
+	owner.mu.Unlock()
+	if finalRefs != 0 {
+		t.Fatalf("released entry refs = %d, want 0", finalRefs)
 	}
 	assertEndpointAcquireLocksEmpty(t, owner)
 }
