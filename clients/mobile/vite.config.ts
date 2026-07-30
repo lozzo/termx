@@ -4,12 +4,19 @@ import { dirname } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { productionMinify } from './production-minify.mjs'
 
 export default defineConfig({
   plugins: [react(), copySharedUiPreviewWorker()],
   build: {
     outDir: 'dist',
     manifest: true,
+    minify: 'oxc',
+    rolldownOptions: {
+      output: {
+        minify: productionMinify,
+      },
+    },
   },
 })
 
