@@ -169,10 +169,6 @@ func terminalPoolAttachmentCount(root Root, poolItem TerminalPoolItem) int {
 	return poolItem.AttachmentCount
 }
 
-func terminalPoolPickerLocation() string {
-	return "pool"
-}
-
 func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if query == "" {
 		return true

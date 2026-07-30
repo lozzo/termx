@@ -137,10 +137,6 @@ func workbenchFloatingTerminalRef(root Root, floating FloatingPaneState) Termina
 	return workbenchPaneTerminalRef(root, floating.Pane)
 }
 
-func workbenchFloatingTerminalID(root Root, floating FloatingPaneState) string {
-	return workbenchFloatingTerminalRef(root, floating).TerminalID
-}
-
 func workbenchPaneTerminalRef(root Root, pane PaneState) TerminalRef {
 	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID != "" {
 		return binding.TerminalRef()
@@ -149,10 +145,6 @@ func workbenchPaneTerminalRef(root Root, pane PaneState) TerminalRef {
 		return LocalTerminalRef(pane.TerminalID)
 	}
 	return TerminalRef{}
-}
-
-func workbenchPaneTerminalID(root Root, pane PaneState) string {
-	return workbenchPaneTerminalRef(root, pane).TerminalID
 }
 
 func pickerTerminalID(root Root, pane PaneState) string {

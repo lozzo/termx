@@ -463,6 +463,16 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 	}
 }
 
+func TestMergePrependedHistoryLogicalLinesPreservesOuterClippedEdges(t *testing.T) {
+	merged := mergePrependedHistoryLogicalLines(
+		[]HistoryLogicalLine{{Text: "middle", LineID: 10, ClippedBefore: true, ClippedAfter: true}},
+		[]HistoryLogicalLine{{Text: "suffix", LineID: 10, ClippedBefore: true, ClippedAfter: true}},
+	)
+	if len(merged) != 1 || merged[0].Text != "middlesuffix" || !merged[0].ClippedBefore || !merged[0].ClippedAfter {
+		t.Fatalf("boundary merge must preserve unresolved outer clipped edges, got %#v", merged)
+	}
+}
+
 func TestHistoryStoreEnsureSourceLinesPreservesClippedFlagsFromSpans(t *testing.T) {
 	store := HistoryStore{
 		Rows: []HistoryRow{

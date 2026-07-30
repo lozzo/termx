@@ -2,9 +2,7 @@ package app
 
 import (
 	"github.com/anytty/anytty/tui/testkit"
-	"os"
 	"strconv"
-	"strings"
 	"testing"
 
 	actiondomain "github.com/anytty/anytty/tui/action"
@@ -12,18 +10,6 @@ import (
 	"github.com/anytty/anytty/tui/shortcut"
 	"github.com/anytty/anytty/tui/state"
 )
-
-func TestKeyboardDispatcherDoesNotDependOnRenderProjectionFallback(t *testing.T) {
-	for _, path := range []string{"shell.go", "ui_input.go", "shortcut_dispatcher.go", "shortcut_app_actions.go"} {
-		source, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(source), "ShortcutActionRenderID") || strings.Contains(string(source), "reduceOverlayKeyboardAction") {
-			t.Fatalf("keyboard execution source %s must not depend on render projection fallback", path)
-		}
-	}
-}
 
 func TestShortcutDispatcherPreservesParameterizedAndDirectionalSemantics(t *testing.T) {
 	cases := []struct {

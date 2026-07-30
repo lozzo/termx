@@ -1145,10 +1145,6 @@ func reduceTerminalSizeLockToggleResult(root state.Root, msg TerminalSizeLockTog
 	return root.Advance(), nil
 }
 
-func terminalListTags(result port.TerminalListResult, terminalID string) (map[string]string, bool) {
-	return terminalListTagsRef(result, state.LocalTerminalRef(terminalID))
-}
-
 func terminalListTagsRef(result port.TerminalListResult, ref state.TerminalRef) (map[string]string, bool) {
 	ref = ref.Normalize()
 	for _, item := range result.Items {
@@ -1203,10 +1199,6 @@ func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool
 	return terminalSizeLockTarget{}, false
 }
 
-func terminalPoolTags(pool state.TerminalPoolStore, terminalID string) (map[string]string, bool) {
-	return terminalPoolTagsRef(pool, state.LocalTerminalRef(terminalID))
-}
-
 func terminalPoolTagsRef(pool state.TerminalPoolStore, ref state.TerminalRef) (map[string]string, bool) {
 	ref = ref.Normalize()
 	for _, item := range pool.Items {
@@ -1258,10 +1250,6 @@ func terminalAttachResultSizeLocked(root state.Root, result port.TerminalAttachR
 	}
 	tags, ok := terminalPoolTagsRef(root.TerminalPool, ref)
 	return ok && terminalmeta.SizeLocked(tags)
-}
-
-func shouldPreserveTerminalPoolAttachResizePolicy(root state.Root, terminalID string, resizePolicy string) bool {
-	return shouldPreserveTerminalPoolAttachResizePolicyRef(root, state.LocalTerminalRef(terminalID), resizePolicy)
 }
 
 func shouldPreserveTerminalPoolAttachResizePolicyRef(root state.Root, ref state.TerminalRef, resizePolicy string) bool {
@@ -1323,10 +1311,6 @@ func lifecyclePoolItemsSummary(items []state.TerminalPoolItem) string {
 		parts = append(parts, fmt.Sprintf("%s:%s", item.TerminalID, item.State))
 	}
 	return strings.Join(parts, ",")
-}
-
-func terminalPoolItem(pool state.TerminalPoolStore, terminalID string) (state.TerminalPoolItem, bool) {
-	return terminalPoolItemRef(pool, state.LocalTerminalRef(terminalID))
 }
 
 func terminalPoolItemRef(pool state.TerminalPoolStore, ref state.TerminalRef) (state.TerminalPoolItem, bool) {
@@ -1473,10 +1457,6 @@ func endpointRuntimeErrorText(message string) bool {
 	return kind != state.EndpointErrorUnknown && kind != state.EndpointErrorUnavailable
 }
 
-func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
-	return restartTerminalViewEffectsRef(root, state.LocalTerminalRef(terminalID))
-}
-
 func restartTerminalViewEffectsRef(root state.Root, ref state.TerminalRef) []Effect {
 	ref = ref.Normalize()
 	if ref.Empty() {
@@ -1523,10 +1503,6 @@ func restartTerminalViewEffectsRef(root state.Root, ref state.TerminalRef) []Eff
 	return effects
 }
 
-func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {
-	return removeTerminalRefFromRoot(root, state.LocalTerminalRef(terminalID))
-}
-
 func removeTerminalRefFromRoot(root state.Root, ref state.TerminalRef) state.Root {
 	ref = ref.Normalize()
 	root.Shell = root.Shell.RemoveTerminalRefBindings(ref, root.TerminalViews)
@@ -1534,21 +1510,6 @@ func removeTerminalRefFromRoot(root state.Root, ref state.TerminalRef) state.Roo
 	root.Session = root.Session.RemoveTerminalRef(ref)
 	root.Surface = root.Surface.RemoveTerminalRef(ref)
 	return root.WithoutCopyHistorySessionsForTerminalRef(ref)
-}
-
-func terminalPoolAttachSize(root state.Root) (int, int) {
-	// active floating 尚未绑定 terminal 时也要用自己的内容区尺寸发起 attach。
-	if rect, ok := activeFloatingContentRect(root, render.Rect{}, false); ok {
-		return rect.W, rect.H
-	}
-	cols, rows := liveAttachContentSize(root, LiveConfig{Cols: root.Session.Cols, Rows: root.Session.Rows})
-	if cols <= 0 {
-		cols = 80
-	}
-	if rows <= 0 {
-		rows = 24
-	}
-	return cols, rows
 }
 
 func terminalPoolAttachSizeForTarget(root state.Root, target terminalPoolTarget) (int, int) {

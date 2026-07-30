@@ -52,12 +52,6 @@ type paneChromeRenderedText struct {
 	Segments []barSegment
 }
 
-func paneChromeRenderTemplate(format string, ctx paneChromeTemplateContext, defaultStyle StyleToken) paneChromeRenderedText {
-	rendered := paneChromeExecuteTemplateString(format, ctx)
-	segments := paneChromeTemplateSegments(rendered, defaultStyle)
-	return paneChromeRenderedText{Text: paneChromeSegmentsText(segments), Segments: segments}
-}
-
 func paneChromeExecuteTemplateString(format string, ctx paneChromeTemplateContext) string {
 	rendered, ok := executePaneChromeTemplate(format, ctx)
 	if !ok {

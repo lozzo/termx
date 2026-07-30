@@ -193,14 +193,6 @@ func paneChromeActionItemsFromSpecs(ids ...ProjectionID) []paneChromeActionItem 
 	return out
 }
 
-func paneChromeActionClusterText() string {
-	return paneChromeActionTextFromItems(paneChromeActionItemsFromSpecs(ActionPaneSplitDown, ActionPaneSplitRight, ActionPaneZoom, ActionPaneClose))
-}
-
-func paneChromeCompactActionText() string {
-	return paneChromeActionTextFromItems(paneChromeActionItemsFromSpecs(ActionPaneZoom, ActionPaneClose))
-}
-
 func paneChromeBracketToken(glyph string) string {
 	return paneChromeActionItemFromGlyph(glyph, "", "", "", false, 0, 1).Text
 }

@@ -83,11 +83,3 @@ func copyModeContentRect(root state.Root) (render.Rect, bool) {
 	}
 	return render.Rect{}, false
 }
-
-func copyModeRowsHint(root state.Root) int {
-	rect, ok := copyModeContentRect(root)
-	if ok {
-		return rect.H
-	}
-	return root.Session.Rows
-}

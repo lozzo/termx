@@ -31,10 +31,6 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
 }
 
-func overlayInnerRect(rect Rect) Rect {
-	return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
-}
-
 func overlayTitle(kind OverlayKind) string {
 	if kind == OverlayClipboardHistory {
 		return "Clipboard History"
@@ -141,17 +137,6 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 	return layers
 }
 
-func toastTitleLine(toast ToastVM) string {
-	title := toast.Title
-	if title == "" {
-		title = string(toast.Severity)
-	}
-	if toast.Pending {
-		title += " ..."
-	}
-	return title
-}
-
 func toastMessageLine(toast ToastVM) string {
 	title := strings.TrimSpace(toast.Title)
 	if title == "" {
@@ -190,26 +175,6 @@ func paneChromeSplitHorizontalActionText() string {
 
 func paneChromeSplitVerticalActionText() string {
 	return paneChromeSplitVerticalGlyph()
-}
-
-func toastBodyLine(toast ToastVM) string {
-	if toast.Body == "" {
-		return string(toast.Severity)
-	}
-	return string(toast.Severity) + "  " + toast.Body
-}
-
-func toastSeverityStyle(severity ToastSeverity) StyleToken {
-	switch severity {
-	case ToastSuccess:
-		return StyleSuccess
-	case ToastWarning:
-		return StyleWarning
-	case ToastError:
-		return StyleDanger
-	default:
-		return StyleInfo
-	}
 }
 
 func minInt(left int, right int) int {

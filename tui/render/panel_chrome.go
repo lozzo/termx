@@ -141,36 +141,6 @@ func paneChromeStyle(panel PanelVM) StyleToken {
 	return StyleMuted
 }
 
-func paneChromeStateText(panel PanelVM) string {
-	state := "idle"
-	if panel.Active {
-		state = "active"
-	}
-	if panel.Content.Pending {
-		state = "pending"
-	}
-	if panel.Content.Error != "" {
-		state = "error"
-	}
-	if panel.Content.Empty {
-		state = "empty"
-	}
-	marker := paneChromeWaitingGlyph()
-	if panel.Active {
-		marker = paneChromeRunningGlyph()
-	}
-	if panel.Content.Pending {
-		marker = "…"
-	}
-	if panel.Content.Error != "" {
-		marker = paneChromeExitedGlyph()
-	}
-	if panel.Content.Empty {
-		marker = paneChromeWaitingGlyph()
-	}
-	return marker + " " + state
-}
-
 func (c *canvas) drawStyledSplitPaneChrome(rect Rect, body Rect, style StyleToken, owner string, layer LayerKind) {
 	startX := rect.X
 	endX := splitPaneBorderEndX(rect, body)
@@ -493,27 +463,6 @@ func floatingChromeControlItems(items []paneChromeActionItem) []paneChromeAction
 		}
 	}
 	return out
-}
-
-func chromeSlotClusterText(slots []ChromeSlot) string {
-	if len(slots) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(slots))
-	for _, slot := range slots {
-		parts = append(parts, slot.Text)
-	}
-	return strings.Join(parts, "─")
-}
-
-func chromeBracketActionClusterText(slots []ChromeSlot) string {
-	filtered := make([]ChromeSlot, 0, len(slots))
-	for _, slot := range slots {
-		if strings.HasPrefix(strings.TrimSpace(slot.Text), "[") {
-			filtered = append(filtered, slot)
-		}
-	}
-	return chromeSlotClusterText(filtered)
 }
 
 // floating 没有分屏动作；右上角只复用 pane chrome 的括号化可用动作。

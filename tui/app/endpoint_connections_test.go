@@ -11,28 +11,6 @@ import (
 	"github.com/anytty/anytty/tui/state"
 )
 
-type endpointConnectionsStub struct {
-	store     state.EndpointStore
-	applyErr  error
-	toggleErr error
-}
-
-func (stub endpointConnectionsStub) LoadConnections(context.Context) (state.EndpointStore, error) {
-	return stub.store, nil
-}
-
-func (stub endpointConnectionsStub) SampleConnection(context.Context, state.EndpointID) (state.EndpointConnectionSnapshot, bool, error) {
-	return state.EndpointConnectionSnapshot{}, false, nil
-}
-
-func (stub endpointConnectionsStub) ApplyConnectionSettings(context.Context, state.EndpointID, state.EndpointConnectionPolicy, map[string]*int) (state.EndpointStore, error) {
-	return stub.store, stub.applyErr
-}
-
-func (stub endpointConnectionsStub) SetEndpointEnabled(context.Context, state.EndpointID, bool) (state.EndpointStore, error) {
-	return stub.store, stub.toggleErr
-}
-
 func TestConnectionsPriorityFormIsCompleteAtomicAndPreservesRuntimeTruth(t *testing.T) {
 	root := connectionsTestRoot()
 	next, effects := NewShellReducer()(root, ShellOpenConnectionsMsg{})

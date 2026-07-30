@@ -1225,39 +1225,6 @@ func terminalPickerEndpointLabel(row state.TerminalPickerItem) string {
 	return "-"
 }
 
-func terminalPickerGroupedLinesAndRegions(root state.Root, rows []state.TerminalPickerItem, query string, rowOffset int) ([]Line, []HitRegion) {
-	groups := state.TerminalPickerGroups(root)
-	lines := []Line{}
-	regions := []HitRegion{}
-	lineIndex := rowOffset
-	for index, row := range rows {
-		if !row.CreateNew {
-			continue
-		}
-		lines = append(lines, terminalPickerLine(row, query))
-		regions = append(regions, terminalPickerHitRegionForRow(row, index, lineIndex))
-		lineIndex++
-	}
-	for _, group := range groups {
-		lines = append(lines, terminalPickerEndpointHeaderLine(group))
-		lineIndex++
-		if len(group.VisibleTerminalRows) == 0 {
-			lines = append(lines, terminalPickerEndpointEmptyLine(group))
-			lineIndex++
-			continue
-		}
-		for _, row := range group.VisibleTerminalRows {
-			itemIndex := terminalPickerItemIndex(rows, row)
-			lines = append(lines, terminalPickerLine(row, query))
-			if itemIndex >= 0 {
-				regions = append(regions, terminalPickerHitRegionForRow(row, itemIndex, lineIndex))
-			}
-			lineIndex++
-		}
-	}
-	return lines, regions
-}
-
 func terminalPickerEndpointHeaderLine(group state.EndpointPickerGroup) Line {
 	status := string(group.Status)
 	if group.Status == state.EndpointStatusConnecting && group.ConnectionPhase != "" {
@@ -1292,60 +1259,6 @@ func terminalPickerEndpointHeaderLine(group state.EndpointPickerGroup) Line {
 		cells = append(cells, NewCell(" "), styledCell(endpointErrorLabel(group.ErrorKind, group.LastError), StyleWarning))
 	}
 	return Line{Cells: cells}
-}
-
-func terminalPickerEndpointEmptyLine(group state.EndpointPickerGroup) Line {
-	label := "no terminals"
-	switch group.Status {
-	case state.EndpointStatusOnDemand:
-		label = "on demand"
-	case state.EndpointStatusManual:
-		label = "manual connect"
-	case state.EndpointStatusDisabled:
-		label = "disabled"
-	case state.EndpointStatusOffline:
-		label = "offline"
-	case state.EndpointStatusReconnectRequired:
-		label = "reconnect required"
-	case state.EndpointStatusUnregistered:
-		label = "unregistered"
-	}
-	return Line{Cells: []Cell{
-		styledCell("    ", StyleMuted),
-		styledCell(label, endpointStatusStyle(group.Status)),
-	}}
-}
-
-func terminalPickerHitRegionForRow(row state.TerminalPickerItem, rowIndex int, lineIndex int) HitRegion {
-	action := ActionPickerAttach
-	if row.CreateNew {
-		action = ActionPickerNew
-	}
-	return HitRegion{
-		Kind:       HitRegionContentAction,
-		Rect:       Rect{Y: lineIndex, W: terminalPickerHitRegionWidth, H: 1},
-		PaneID:     row.PaneID,
-		Row:        rowIndex,
-		HasRow:     true,
-		ActionID:   action.String(),
-		Invocation: invocationForProjection(action),
-		TargetMode: HitTargetExplicit,
-	}
-}
-
-func terminalPickerItemIndex(rows []state.TerminalPickerItem, target state.TerminalPickerItem) int {
-	for index, row := range rows {
-		if row.CreateNew && target.CreateNew {
-			return index
-		}
-		if row.CreateNew || target.CreateNew {
-			continue
-		}
-		if state.NewTerminalRef(row.EndpointID, row.TerminalID).Equal(state.NewTerminalRef(target.EndpointID, target.TerminalID)) {
-			return index
-		}
-	}
-	return -1
 }
 
 func terminalPickerColumnCells(value string, query string, baseStyle StyleToken, width int) []Cell {
@@ -2842,28 +2755,6 @@ func floatingOverviewSizeText(row state.FloatingOverviewItem) string {
 	return floatingOverviewSizeLabel(row)
 }
 
-func workbenchTreeDetailLines(rows []state.WorkbenchTreeItem) []Line {
-	if len(rows) == 0 {
-		return []Line{
-			{Cells: []Cell{styledCell("detail ", StyleMuted), NewCell("no workbench node selected")}},
-			{Cells: []Cell{styledCell("preview ", StyleMuted), NewCell("type to search workspace, tab, pane or floating")}},
-		}
-	}
-	selected := rows[0]
-	for _, row := range rows {
-		if row.Selected {
-			selected = row
-			break
-		}
-	}
-	return []Line{
-		detailHeaderLine("detail", workbenchTreeTitle(selected)),
-		detailTokenLine([]string{"kind " + selected.Kind, "path " + workbenchTreePath(selected)}),
-		detailHeaderLine("target", workbenchTreeTarget(selected)),
-		detailHeaderLine("preview", workbenchTreePreview(selected)),
-	}
-}
-
 func terminalManagerHitRegions(rows []state.TerminalPoolPageItem, rowOffset int, listStart int, layout terminalManagerLayout) []HitRegion {
 	regions := make([]HitRegion, 0, len(rows))
 	for index := range rows {
@@ -3150,28 +3041,6 @@ func workbenchTreePath(row state.WorkbenchTreeItem) string {
 	return strings.Join(parts, " / ")
 }
 
-func workbenchTreeTarget(row state.WorkbenchTreeItem) string {
-	switch row.Kind {
-	case state.WorkbenchTreeKindPane:
-		terminalID := row.TerminalID
-		if terminalID == "" {
-			terminalID = "none"
-		}
-		return "pane:" + row.PaneID + " term:" + terminalID
-	case state.WorkbenchTreeKindTab:
-		return "tab:" + row.TabID + " active-pane:" + row.PaneID
-	case state.WorkbenchTreeKindWorkspace:
-		return "workspace:" + row.WorkspaceID
-	case state.WorkbenchTreeKindFloating:
-		if row.FloatingID != "" {
-			return "floating:" + row.FloatingID
-		}
-		return row.Summary
-	default:
-		return "-"
-	}
-}
-
 func workbenchTreePreview(row state.WorkbenchTreeItem) string {
 	if row.Kind == state.WorkbenchTreeKindFloating {
 		if row.FloatingID != "" {
@@ -3303,16 +3172,6 @@ func terminalManagerLayoutForViewport(viewport state.ViewportStore) terminalMana
 	}
 }
 
-func selectedTerminalPickerItem(rows []state.TerminalPickerItem) state.TerminalPickerItem {
-	selected := rows[0]
-	for _, row := range rows {
-		if row.Selected {
-			return row
-		}
-	}
-	return selected
-}
-
 func terminalPoolPageStatus(pool state.TerminalPoolStore, count int, query string) string {
 	prefix := "terminal manager"
 	switch pool.Status {
@@ -3367,10 +3226,6 @@ func terminalPoolStateLabel(row state.TerminalPoolPageItem) string {
 	return stateText
 }
 
-func terminalPoolAttachmentLabel(row state.TerminalPoolPageItem) string {
-	return "views:" + terminalPoolAttachmentValue(row)
-}
-
 func terminalPoolAttachmentValue(row state.TerminalPoolPageItem) string {
 	count := row.AttachmentCount
 	if count <= 0 && row.Attached {
@@ -3392,23 +3247,6 @@ func terminalPoolDetailStatus(row state.TerminalPoolPageItem) string {
 	}, " · ")
 }
 
-func terminalPoolEndpointDetailLabel(row state.TerminalPoolPageItem) string {
-	parts := []string{row.EndpointLabel}
-	if row.EndpointStatus != "" {
-		parts = append(parts, string(row.EndpointStatus))
-	}
-	if row.EndpointConnectMode != "" {
-		parts = append(parts, string(row.EndpointConnectMode))
-	}
-	if row.EndpointTransport != "" {
-		parts = append(parts, string(row.EndpointTransport))
-	}
-	if row.EndpointLastError != "" {
-		parts = append(parts, endpointErrorLabel(row.EndpointErrorKind, row.EndpointLastError))
-	}
-	return strings.Join(parts, " ")
-}
-
 func endpointErrorLabel(kind state.EndpointErrorKind, message string) string {
 	kind = state.NormalizeEndpointErrorKind(kind)
 	message = strings.TrimSpace(message)
@@ -3419,36 +3257,6 @@ func endpointErrorLabel(kind state.EndpointErrorKind, message string) string {
 		return string(kind)
 	}
 	return string(kind) + ": " + message
-}
-
-func terminalPoolResourceDetailLabel(row state.TerminalPoolPageItem) string {
-	usage := row.Resources
-	if usage.SampledAt.IsZero() {
-		return "n/a"
-	}
-	parts := []string{
-		"cpu " + terminalPoolCPUPercentLabel(usage.CPUPercentX100),
-		"mem " + terminalPoolMemoryDetailLabel(usage.MemoryBytes),
-	}
-	if usage.PID > 0 {
-		parts = append(parts, fmt.Sprintf("pid %d", usage.PID))
-	}
-	return strings.Join(parts, " · ")
-}
-
-func terminalPoolResourceShortLabel(row state.TerminalPoolPageItem) string {
-	usage := row.Resources
-	if usage.SampledAt.IsZero() {
-		return ""
-	}
-	return fmt.Sprintf("%s %s", terminalPoolCPUPercentShortLabel(usage.CPUPercentX100), terminalPoolMemoryShortLabel(usage.MemoryBytes))
-}
-
-func terminalPoolCPUPercentLabel(percentX100 int) string {
-	if percentX100 < 0 {
-		percentX100 = 0
-	}
-	return fmt.Sprintf("%.1f%%", float64(percentX100)/100)
 }
 
 func terminalPoolCPUPercentShortLabel(percentX100 int) string {
@@ -3474,19 +3282,6 @@ func terminalPoolMemoryShortLabel(bytes uint64) string {
 	}
 }
 
-func terminalPoolMemoryDetailLabel(bytes uint64) string {
-	switch {
-	case bytes >= 1024*1024*1024:
-		return fmt.Sprintf("%.1f GiB", float64(bytes)/(1024*1024*1024))
-	case bytes >= 1024*1024:
-		return fmt.Sprintf("%.1f MiB", float64(bytes)/(1024*1024))
-	case bytes >= 1024:
-		return fmt.Sprintf("%.1f KiB", float64(bytes)/1024)
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}
-
 func terminalPoolCommandLabel(command []string) string {
 	if len(command) == 0 {
 		return "-"
@@ -3506,17 +3301,6 @@ func terminalPoolExitLabel(row state.TerminalPoolPageItem) string {
 		parts = append(parts, row.ExitedAt.Format("2006-01-02 15:04"))
 	}
 	return strings.Join(parts, " ")
-}
-
-func terminalPoolTagsLabel(tags map[string]string) string {
-	if len(tags) == 0 {
-		return "-"
-	}
-	parts := make([]string, 0, len(tags))
-	for key, value := range tags {
-		parts = append(parts, key+"="+value)
-	}
-	return strings.Join(parts, ",")
 }
 
 func terminalPoolStateLine(pool state.TerminalPoolStore) (Line, bool) {
@@ -3585,27 +3369,6 @@ func searchRowLine(query string, placeholder string) Line {
 
 func searchCursorCol(query string) int {
 	return DisplayWidth("⌕ search ") + DisplayWidth(query)
-}
-
-func detailHeaderLine(label string, value string) Line {
-	if strings.TrimSpace(value) == "" {
-		value = "-"
-	}
-	return Line{Cells: []Cell{
-		styledCell(strings.ToUpper(label)+" ", StyleMuted),
-		NewCell(value),
-	}}
-}
-
-func detailTokenLine(tokens []string) Line {
-	cells := make([]Cell, 0, len(tokens)*2)
-	for index, token := range tokens {
-		if index > 0 {
-			cells = append(cells, NewCell(" "))
-		}
-		cells = append(cells, tokenCell(token, StyleMuted))
-	}
-	return Line{Cells: cells}
 }
 
 func formFieldLine(label string, value string, filled bool) Line {

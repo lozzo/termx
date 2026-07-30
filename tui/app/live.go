@@ -962,10 +962,6 @@ func liveAttachFloatingViewID(root state.Root, floatingID string) string {
 	return root.TerminalViews.FloatingViewID(floatingID)
 }
 
-func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
-	return invalidateCopyModeForTerminalRebindRef(root, paneID, viewID, state.LocalTerminalRef(terminalID))
-}
-
 func invalidateCopyModeForTerminalRebindRef(root state.Root, paneID string, viewID string, ref state.TerminalRef) state.Root {
 	ref = ref.Normalize()
 	if viewID != "" {
@@ -1379,10 +1375,6 @@ func applyTerminalAttachmentProjectionFromResize(root state.Root, result port.Te
 	return root
 }
 
-func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
-	return maybeScheduleDirtyLiveSurfaceRefreshRef(root, state.LocalTerminalRef(terminalID), fallbackCols, fallbackRows, deps)
-}
-
 func maybeScheduleDirtyLiveSurfaceRefreshRef(root state.Root, ref state.TerminalRef, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
 	var cols, rows int
 	var shouldFetch bool
@@ -1485,10 +1477,6 @@ func logLiveInvalidationTrace(logger *slog.Logger, event string, attrs ...any) {
 	}
 	args := append([]any{"event", event}, attrs...)
 	logger.Info("tui-v3 live invalidation", args...)
-}
-
-func liveSurfaceRefreshSize(root state.Root, terminalID string) (int, int) {
-	return liveSurfaceRefreshSizeRef(root, state.LocalTerminalRef(terminalID))
 }
 
 func liveSurfaceRefreshSizeRef(root state.Root, ref state.TerminalRef) (int, int) {
@@ -1910,10 +1898,6 @@ func recoverLatestResizeAfterStaleResult(root state.Root, msg LiveResizeResultMs
 	}}
 }
 
-func staleResizeResultTerminalID(root state.Root, msg LiveResizeResultMsg) string {
-	return staleResizeResultRef(root, msg).TerminalID
-}
-
 func staleResizeResultRef(root state.Root, msg LiveResizeResultMsg) state.TerminalRef {
 	if msg.Result.TerminalID != "" {
 		endpointID := msg.Result.EndpointID
@@ -1931,10 +1915,6 @@ func staleResizeResultRef(root state.Root, msg LiveResizeResultMsg) state.Termin
 		return state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	}
 	return root.Session.TerminalRef()
-}
-
-func desiredResizeForTerminal(root state.Root, terminalID string) (int, int, string, bool) {
-	return desiredResizeForTerminalRef(root, state.LocalTerminalRef(terminalID))
 }
 
 func desiredResizeForTerminalRef(root state.Root, ref state.TerminalRef) (int, int, string, bool) {
@@ -2061,10 +2041,6 @@ func liveErrorRefOwnsActiveProjection(root state.Root, ref state.TerminalRef) bo
 	return root.Session.TerminalID == "" && root.Surface.TerminalID == ""
 }
 
-func markTerminalExitedFromError(root state.Root, terminalID string, err error) (state.Root, bool) {
-	return markTerminalExitedFromErrorRef(root, state.LocalTerminalRef(terminalID), err)
-}
-
 func markTerminalExitedFromErrorRef(root state.Root, ref state.TerminalRef, err error) (state.Root, bool) {
 	if err == nil {
 		return root, false
@@ -2093,17 +2069,6 @@ func terminalNotFoundError(err error) bool {
 	}
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "terminal not found") || strings.Contains(text, "protocol error 404")
-}
-
-func setLiveInputError(root state.Root, terminalID string, message string) state.Root {
-	return setLiveInputErrorRef(root, state.LocalTerminalRef(terminalID), message)
-}
-
-func setLiveInputErrorRef(root state.Root, ref state.TerminalRef, message string) state.Root {
-	if message == "" {
-		message = "unknown terminal input error"
-	}
-	return applyLiveErrorRef(root, ref, message)
 }
 
 func setLiveInputViewError(root state.Root, ref state.TerminalRef, viewID, message string) state.Root {

@@ -281,11 +281,6 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	}
 }
 
-func paneChromeFullActionMarker() string {
-	glyphs := render.DefaultPaneChromeGlyphs()
-	return "[" + glyphs.Zoom + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.SplitHorizontal + "]─[" + glyphs.Close + "]"
-}
-
 func floatingChromeFullActionMarker() string {
 	glyphs := render.DefaultPaneChromeGlyphs()
 	return "[" + glyphs.CenterFloating + "]─[" + glyphs.CollapseFloating + "]─[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
@@ -294,10 +289,6 @@ func floatingChromeFullActionMarker() string {
 func paneChromeCompactActionMarker() string {
 	glyphs := render.DefaultPaneChromeGlyphs()
 	return "[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
-}
-
-func paneChromeCloseActionMarker() string {
-	return "[" + render.DefaultPaneChromeGlyphs().Close + "]"
 }
 
 func isPaneBorderGlyph(value string) bool {

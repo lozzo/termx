@@ -209,14 +209,6 @@ func activeTerminalContentRect(root state.Root, fallbackViewport render.Rect) (r
 	return render.Rect{}, false
 }
 
-func activeFloatingContentRect(root state.Root, fallbackViewport render.Rect, requireTerminal bool) (render.Rect, bool) {
-	plan, ok := terminalLayoutPlan(root, fallbackViewport)
-	if !ok {
-		return render.Rect{}, false
-	}
-	return activeFloatingContentRectFromPlan(root, plan, requireTerminal)
-}
-
 func terminalLayoutPlan(root state.Root, fallbackViewport render.Rect) (render.LayoutPlan, bool) {
 	if !root.Viewport.Valid {
 		if fallbackViewport.W <= 0 || fallbackViewport.H <= 0 {

@@ -16,24 +16,14 @@ type boxStyle struct {
 	Vertical    string
 }
 
-var (
-	roundedBoxStyle = boxStyle{
-		TopLeft:     "╭",
-		TopRight:    "╮",
-		BottomLeft:  "╰",
-		BottomRight: "╯",
-		Horizontal:  "─",
-		Vertical:    "│",
-	}
-	squareBoxStyle = boxStyle{
-		TopLeft:     "┌",
-		TopRight:    "┐",
-		BottomLeft:  "└",
-		BottomRight: "┘",
-		Horizontal:  "─",
-		Vertical:    "│",
-	}
-)
+var squareBoxStyle = boxStyle{
+	TopLeft:     "┌",
+	TopRight:    "┐",
+	BottomLeft:  "└",
+	BottomRight: "┘",
+	Horizontal:  "─",
+	Vertical:    "│",
+}
 
 var boxGlyphConnections = map[string]uint8{
 	"│": boxConnUp | boxConnDown,

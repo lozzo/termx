@@ -136,10 +136,6 @@ func copyHistoryPatchSetANSILines(patch *render.FramePatch, history state.Histor
 	patch.LinesANSI = copyHistoryPatchANSILinesAt(history, copyMode, startRow, count, width, patch.LineX, theme)
 }
 
-func copyHistoryPatchANSILines(history state.HistoryStore, copyMode state.CopyModeStore, startRow int, count int, width int, theme render.Theme) []string {
-	return copyHistoryPatchANSILinesAt(history, copyMode, startRow, count, width, 0, theme)
-}
-
 func copyHistoryPatchANSILinesAt(history state.HistoryStore, copyMode state.CopyModeStore, startRow int, count int, width int, lineX int, theme render.Theme) []string {
 	if count <= 0 {
 		return nil

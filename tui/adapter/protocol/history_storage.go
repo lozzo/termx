@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	clientruntime "github.com/anytty/anytty/client/runtime"
 	"github.com/anytty/anytty/proto/apipb"
 	"github.com/anytty/anytty/shared/perftrace"
 	"github.com/anytty/anytty/tui/port"
 	"github.com/anytty/anytty/tui/state"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 // ProtocolPathServiceAdapter 把 endpoint path completion service 映射到 core-v2 protocol。
@@ -177,21 +177,6 @@ func historySegmentToProto(segment string) apipb.HistoryCursorSegment {
 		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_CURRENT_ALT_FRAME
 	default:
 		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_UNSPECIFIED
-	}
-}
-
-func protocolHistoryWindowPerfMode(mode string) string {
-	switch strings.TrimSpace(mode) {
-	case "", "latest":
-		return "latest"
-	case "older":
-		return "older"
-	case "newer":
-		return "newer"
-	case "oldest":
-		return "oldest"
-	default:
-		return "other"
 	}
 }
 

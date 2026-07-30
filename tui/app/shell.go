@@ -1373,10 +1373,6 @@ func workspaceHasPaneID(workspace state.WorkspaceState, paneID string) bool {
 	return false
 }
 
-func terminalIDForContentAction(root state.Root, paneID string) string {
-	return terminalRefForContentAction(root, paneID).TerminalID
-}
-
 func terminalRefForContentAction(root state.Root, paneID string) state.TerminalRef {
 	if binding, ok := root.TerminalViews.PaneBinding(paneID); ok && binding.TerminalID != "" {
 		return binding.TerminalRef()

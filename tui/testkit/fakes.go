@@ -541,20 +541,6 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return cloned
 }
 
-type FakeSessionService struct {
-	Snapshot port.SessionSnapshot
-	Saved    []port.SessionSnapshot
-}
-
-func (service *FakeSessionService) Load(context.Context) (port.SessionSnapshot, error) {
-	return service.Snapshot, nil
-}
-
-func (service *FakeSessionService) Save(_ context.Context, snapshot port.SessionSnapshot) error {
-	service.Saved = append(service.Saved, snapshot)
-	return nil
-}
-
 type FakeClipboardService struct {
 	ReadResult port.ClipboardReadResult
 	ReadErr    error

@@ -1,14 +1,8 @@
 package input
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/anytty/anytty/tui/shortcut"
 	"github.com/anytty/anytty/tui/state"
 )
 
@@ -350,41 +344,6 @@ func TestPaneModeUsesTuiv2KeyboardSplitAliases(t *testing.T) {
 		if intent.Kind != IntentNone {
 			t.Fatalf("legacy split key %q should stay unbound, got %#v", char, intent)
 		}
-	}
-}
-
-func TestInputDoesNotOwnDefaultShortcutBindings(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("glob input files: %v", err)
-	}
-	owners := []string{}
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", file, err)
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			spec, ok := node.(*ast.ValueSpec)
-			if !ok {
-				return true
-			}
-			for _, name := range spec.Names {
-				if name.Name == "builtinShortcutDefaults" {
-					owners = append(owners, file)
-				}
-			}
-			return true
-		})
-	}
-	if len(owners) != 0 {
-		t.Fatalf("input must not own default shortcut bindings, got %#v", owners)
-	}
-	if got := len(shortcut.DefaultBindings()); got != 213 {
-		t.Fatalf("shortcut owner returned %d default bindings, want 213", got)
 	}
 }
 

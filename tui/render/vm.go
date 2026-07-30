@@ -929,17 +929,6 @@ func paneChromeZoomActionVM(style StyleToken, zoomMode bool) ChromeActionVM {
 	return action
 }
 
-func splitActionLabel(action string) (string, string) {
-	parts := strings.Fields(strings.TrimSpace(action))
-	if len(parts) == 0 {
-		return "", ""
-	}
-	if len(parts) == 1 {
-		return parts[0], ""
-	}
-	return parts[0], strings.Join(parts[1:], " ")
-}
-
 func (projector ShellProjector) buildActiveContentVM(root state.Root, shell state.ShellStore) ContentVM {
 	shell = shell.ReadonlyDefaults()
 	if floatingID := shell.ActiveFloatingID(); floatingID != "" && copyModeBelongsToFloating(root, floatingID) {
@@ -978,10 +967,6 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 	surface, session := terminalContentStoresForPane(root, pane)
 	binding, _ := root.TerminalViews.PaneBinding(pane.ID)
 	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.ReadonlyDefaults(), Pane: pane, Binding: binding, Kind: contentKindForPaneRoot(root, pane), Surface: surface, Session: session, Active: false})
-}
-
-func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
-	return projector.copyHistoryContentForPane(root, shell, pane, active)
 }
 
 func (projector ShellProjector) copyHistoryContentForPane(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
@@ -1082,15 +1067,6 @@ func copyHistoryViewIDForPane(root state.Root, paneID string) string {
 func copyHistoryViewIDForFloating(root state.Root, floatingID string) string {
 	// 中文说明：floating 也可能拥有非派生 ViewID；必须和 pane 一样以 TerminalViewStore 为准。
 	return root.TerminalViews.FloatingViewID(floatingID)
-}
-
-func copyModeIsFloating(root state.Root, copyMode state.CopyModeStore) bool {
-	if copyMode.ViewID != "" {
-		if binding, ok := root.TerminalViews.Views[copyMode.ViewID]; ok {
-			return binding.FloatingID != ""
-		}
-	}
-	return strings.HasPrefix(copyMode.ViewID, "floating:")
 }
 
 func contentKindForPane(pane state.PaneState) ContentKind {
@@ -1510,17 +1486,6 @@ func liveDisconnectedReason(surface state.TerminalSurfaceStore, session state.Te
 		return strings.TrimSpace(session.LastError)
 	}
 	return strings.TrimSpace(surface.Err)
-}
-
-func liveDisconnectedRefLabel(ref state.TerminalRef) string {
-	ref = ref.Normalize()
-	if ref.TerminalID == "" {
-		return "unknown"
-	}
-	if ref.EndpointID == "" || ref.EndpointID == state.DefaultEndpointID {
-		return ref.TerminalID
-	}
-	return string(ref.EndpointID) + "/" + ref.TerminalID
 }
 
 func endpointErrorMessageWithoutKind(kind state.EndpointErrorKind, message string) string {

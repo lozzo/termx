@@ -57,14 +57,6 @@ const (
 	ActionHelpClose ProjectionID = "help.close"
 )
 
-func actionID(id ProjectionID) string {
-	return string(id)
-}
-
-func prefixedActionID(prefix string, action string) string {
-	return prefix + "." + action
-}
-
 type ActionSurface string
 
 const (

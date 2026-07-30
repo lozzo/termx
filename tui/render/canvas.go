@@ -237,10 +237,6 @@ func canWriteCanvasCellAsSingleSegment(text string, cell Cell, cellWidth int) bo
 	return true
 }
 
-func (c *canvas) writeBoxCell(x int, y int, glyph string) {
-	c.writeStyledBoxCell(x, y, glyph, StyleMuted, "chrome", LayerChrome)
-}
-
 func (c *canvas) writeStyledBoxCell(x int, y int, glyph string, style StyleToken, owner string, layer LayerKind) {
 	if DisplayWidth(glyph) != 1 {
 		c.writeTextStyled(x, y, 1, glyph, style, owner, layer)
@@ -254,10 +250,6 @@ func (c *canvas) writeStyledBoxCell(x int, y int, glyph string, style StyleToken
 		layer: layer,
 		safe:  true,
 	})
-}
-
-func (c *canvas) mergeBoxCell(x int, y int, connections uint8) {
-	c.mergeStyledBoxCell(x, y, connections, StyleMuted, "chrome", LayerChrome)
 }
 
 func (c *canvas) mergeStyledBoxCell(x int, y int, connections uint8, style StyleToken, owner string, layer LayerKind) {
@@ -277,10 +269,6 @@ func (c *canvas) mergeStyledBoxCell(x int, y int, connections uint8, style Style
 	c.writeStyledBoxCell(x, y, glyph, style, owner, layer)
 }
 
-func (c *canvas) drawRoundedBox(rect Rect) {
-	c.drawBox(rect, roundedBoxStyle)
-}
-
 func (c *canvas) fillStyledRect(rect Rect, style StyleToken, owner string, layer LayerKind) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
@@ -297,10 +285,6 @@ func (c *canvas) fillRect(rect Rect, owner string, layer LayerKind) {
 	for y := rect.Y; y < rect.Y+rect.H; y++ {
 		c.writeLine(rect.X, y, rect.W, Line{}, owner, layer)
 	}
-}
-
-func (c *canvas) drawBox(rect Rect, style boxStyle) {
-	c.drawStyledBox(rect, style, StyleMuted, "chrome", LayerChrome)
 }
 
 func (c *canvas) drawStyledBox(rect Rect, style boxStyle, token StyleToken, owner string, layer LayerKind) {
@@ -367,52 +351,6 @@ func (c *canvas) drawStyledPaneVBorder(x int, startY int, endY int, style StyleT
 	}
 	for y := startY; y <= endY; y++ {
 		c.mergeStyledBoxCell(x, y, boxConnUp|boxConnDown, style, owner, layer)
-	}
-}
-
-func (c *canvas) drawConnectedHLine(x int, y int, width int) {
-	c.drawStyledConnectedHLine(x, y, width, StyleMuted, "chrome", LayerChrome)
-}
-
-func (c *canvas) drawStyledConnectedHLine(x int, y int, width int, style StyleToken, owner string, layer LayerKind) {
-	if width <= 0 {
-		return
-	}
-	for col := 0; col < width; col++ {
-		connections := uint8(boxConnLeft | boxConnRight)
-		if col == 0 {
-			connections = boxConnRight
-		}
-		if col == width-1 {
-			connections = boxConnLeft
-		}
-		if width == 1 {
-			connections = boxConnLeft | boxConnRight
-		}
-		c.mergeStyledBoxCell(x+col, y, connections, style, owner, layer)
-	}
-}
-
-func (c *canvas) drawConnectedVLine(x int, y int, height int) {
-	c.drawStyledConnectedVLine(x, y, height, StyleMuted, "chrome", LayerChrome)
-}
-
-func (c *canvas) drawStyledConnectedVLine(x int, y int, height int, style StyleToken, owner string, layer LayerKind) {
-	if height <= 0 {
-		return
-	}
-	for row := 0; row < height; row++ {
-		connections := uint8(boxConnUp | boxConnDown)
-		if row == 0 {
-			connections = boxConnDown
-		}
-		if row == height-1 {
-			connections = boxConnUp
-		}
-		if height == 1 {
-			connections = boxConnUp | boxConnDown
-		}
-		c.mergeStyledBoxCell(x, y+row, connections, style, owner, layer)
 	}
 }
 

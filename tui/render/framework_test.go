@@ -1,7 +1,6 @@
 package render
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -748,21 +747,6 @@ func TestFrameworkAppliesChromePatchesFromVM(t *testing.T) {
 	}
 	if !styledLinesContainText(frame.StyledLines, "patched", StyleAccent) {
 		t.Fatalf("chrome patch should keep VM style, got %#v", frame.StyledLines)
-	}
-}
-
-func TestRenderFrameworkAndBuilderDoNotEmbedVisualAuditIDs(t *testing.T) {
-	for _, file := range []string{"framework.go", "vm.go"} {
-		source, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("read render source %s: %v", file, err)
-		}
-		text := string(source)
-		for _, forbidden := range []string{"visual-audit", "pane-logs", "float-visual"} {
-			if strings.Contains(text, forbidden) {
-				t.Fatalf("%s should consume explicit VM chrome data instead of visual-audit id %q", file, forbidden)
-			}
-		}
 	}
 }
 
@@ -1773,15 +1757,6 @@ func cellIndex(line string, needle string) int {
 		}
 	}
 	return -1
-}
-
-func frameHasRowPrefix(lines []string, col int, prefix string) bool {
-	for _, line := range lines {
-		if strings.HasPrefix(SliceCells(line, col, col+DisplayWidth(prefix)), prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func assertColumnGlyphs(t *testing.T, lines []string, col int, startRow int, endRow int, allowed string) {

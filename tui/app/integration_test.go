@@ -7178,7 +7178,6 @@ type blockingHistoryClient struct {
 	allowOlder    bool
 	latestReqs    []port.HistoryLatestRequest
 	olderReqs     []port.HistoryOlderRequest
-	newerReqs     []port.HistoryNewerRequest
 	latestResultC chan blockingHistoryResult
 	olderResultC  chan blockingHistoryResult
 }
@@ -7255,14 +7254,6 @@ func (client *blockingHistoryClient) olderRequests() []port.HistoryOlderRequest 
 	defer client.mu.Unlock()
 	out := make([]port.HistoryOlderRequest, len(client.olderReqs))
 	copy(out, client.olderReqs)
-	return out
-}
-
-func (client *blockingHistoryClient) newerRequests() []port.HistoryNewerRequest {
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	out := make([]port.HistoryNewerRequest, len(client.newerReqs))
-	copy(out, client.newerReqs)
 	return out
 }
 

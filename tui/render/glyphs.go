@@ -242,14 +242,6 @@ func paneChromeRunningGlyph() string {
 	return paneChromeGlyphs.Running
 }
 
-func paneChromeWaitingGlyph() string {
-	return paneChromeGlyphs.Waiting
-}
-
-func paneChromeExitedGlyph() string {
-	return paneChromeGlyphs.Exited
-}
-
 func paneChromeActionLeft() string {
 	return paneChromeGlyphs.ActionLeft
 }

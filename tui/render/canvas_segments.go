@@ -40,23 +40,3 @@ func cellSegments(text string, style StyleToken, owner string, layer LayerKind) 
 	}
 	return segments
 }
-
-func cellsFromSegments(segments []canvasSegment) []Cell {
-	if len(segments) == 0 {
-		return nil
-	}
-	cells := make([]Cell, len(segments))
-	for i, segment := range segments {
-		cells[i] = Cell{
-			Text:            segment.text,
-			Width:           segment.width,
-			Style:           segment.style,
-			ANSIStyle:       segment.ansiStyle,
-			LinkURL:         segment.linkURL,
-			LinkParams:      segment.linkParams,
-			TerminalContent: segment.terminal,
-			Safe:            segment.safe,
-		}
-	}
-	return cells
-}

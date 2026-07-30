@@ -10,10 +10,6 @@ import (
 	"github.com/anytty/anytty/tui/state"
 )
 
-func intPtr(value int) *int {
-	return &value
-}
-
 func bindTestPaneTerminal(root state.Root, paneID string, terminalID string) state.Root {
 	if paneID == "" {
 		paneID = state.DefaultPaneID

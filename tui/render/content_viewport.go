@@ -371,13 +371,6 @@ func renderContentViewportRow(lines []Line, extent ContentExtent, width int, row
 	return Line{Cells: cells}
 }
 
-func contentViewportInsideExtent(extent ContentExtent, col int, row int) bool {
-	return row >= extent.Y &&
-		row < extent.Y+extent.Rows &&
-		col >= extent.X &&
-		col < extent.X+extent.Cols
-}
-
 func contentViewportLineWindow(line Line, start int, width int) Line {
 	if width <= 0 {
 		return Line{}

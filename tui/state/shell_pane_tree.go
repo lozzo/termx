@@ -638,23 +638,6 @@ func paneResizeGroupExtent(node SplitNode, axis SplitDirection, group map[string
 	return extent, extent > 0
 }
 
-func flattenSameAxisSplit(node SplitNode, axis SplitDirection, out []string) ([]string, bool) {
-	if node.PaneID != "" {
-		return append(out, node.PaneID), true
-	}
-	if node.Direction != axis || len(node.Children) < 2 {
-		return out, false
-	}
-	for _, child := range node.Children {
-		var ok bool
-		out, ok = flattenSameAxisSplit(child, axis, out)
-		if !ok {
-			return out, false
-		}
-	}
-	return out, true
-}
-
 func samePaneOrder(panes []string, group []PaneResizeGroupItem) bool {
 	if len(panes) != len(group) {
 		return false
@@ -665,29 +648,6 @@ func samePaneOrder(panes []string, group []PaneResizeGroupItem) bool {
 		}
 	}
 	return true
-}
-
-func buildFixedAxisSplit(axis SplitDirection, group []PaneResizeGroupItem) SplitNode {
-	if len(group) == 0 {
-		return SplitNode{}
-	}
-	if len(group) == 1 {
-		return SplitNode{PaneID: group[0].PaneID}
-	}
-	first := SplitNode{PaneID: group[0].PaneID}
-	rest := buildFixedAxisSplit(axis, group[1:])
-	node := SplitNode{
-		Direction: axis,
-		Children:  []SplitNode{first, rest},
-	}
-	// 鼠标拖动视觉相邻 pane 时，后侧 subtree 必须保持自己的原始总尺寸，避免后续 pane 被比例缩放。
-	node.FixedPaneID = group[0].PaneID
-	if axis == SplitDirectionVertical {
-		node.FixedCols = group[0].Cells
-	} else {
-		node.FixedRows = group[0].Cells
-	}
-	return node
 }
 
 func clonePaneResizeGroupItems(items []PaneResizeGroupItem) []PaneResizeGroupItem {

@@ -4328,25 +4328,6 @@ func TestTerminalPoolEditResultUpdatesVisibleManagerTitle(t *testing.T) {
 	}
 }
 
-func assertShellMsgEffect[T Msg](t *testing.T, effects []Effect) T {
-	t.Helper()
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and shell msg effects, got %#v", effects)
-	}
-	if _, ok := effects[0].(handledEffect); !ok {
-		t.Fatalf("expected handled effect, got %#v", effects[0])
-	}
-	effect, ok := effects[1].(FuncEffect)
-	if !ok || effect.Run == nil {
-		t.Fatalf("expected shell msg func effect, got %#v", effects[1])
-	}
-	msg, ok := effect.Run(context.Background()).(T)
-	if !ok {
-		t.Fatalf("unexpected shell msg %#v", msg)
-	}
-	return msg
-}
-
 func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{
 		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 80, Rows: 24},

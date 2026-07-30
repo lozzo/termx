@@ -288,25 +288,6 @@ func paneIDsInSplitOrder(split SplitVM, out []string) []string {
 	return out
 }
 
-func appendPanelEdgeResizeRegions(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
-	rect := panel.Rect
-	if rect.W <= 0 || rect.H <= 0 {
-		return out
-	}
-	paneID := panel.Panel.ID
-	rightX := rect.X + rect.W - 1
-	if panel.Panel.Presentation == PanelPresentationSplitLine && rect.X+rect.W >= panel.Body.X+panel.Body.W {
-		rightX = panel.Body.X + panel.Body.W - 1
-	}
-	if rect.W > 1 {
-		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rightX, Y: rect.Y, W: 1, H: rect.H}, PaneID: paneID, ActionID: ActionPaneResize.String(), Invocation: invocationForProjection(ActionPaneResize), TargetMode: HitTargetExplicit, Direction: "right"}, viewport)
-	}
-	if rect.H > 1 {
-		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rect.X, Y: rect.Y + rect.H - 1, W: rect.W, H: 1}, PaneID: paneID, ActionID: ActionPaneResize.String(), Invocation: invocationForProjection(ActionPaneResize), TargetMode: HitTargetExplicit, Direction: "down"}, viewport)
-	}
-	return out
-}
-
 func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
 	if panel.ContentRect.W <= 0 || panel.ContentRect.H <= 0 {
 		return out
@@ -318,10 +299,6 @@ func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewpor
 
 func paneActionRect(panel PanelVM, rect Rect) Rect {
 	return chromeActionRect(rect, paneChromeActionItemsWidthForState(visiblePaneChromeActionItems(panel, rect.W), panel.Active))
-}
-
-func floatingActionRect(rect Rect) Rect {
-	return floatingActionRectForItems(rect, floatingChromeActionItems(rect.W), false)
 }
 
 func floatingActionRectForItems(rect Rect, items []paneChromeActionItem, active bool) Rect {
@@ -339,10 +316,6 @@ func chromeActionRect(rect Rect, width int) Rect {
 	}
 	width = minInt(width, inner)
 	return Rect{X: maxInt(rect.X, rect.X+rect.W-2-width), Y: rect.Y, W: width, H: 1}
-}
-
-func paneResizeRect(rect Rect) Rect {
-	return Rect{X: maxInt(rect.X, rect.X+rect.W-1), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: 1, H: 1}
 }
 
 func floatingResizeRect(rect Rect) Rect {

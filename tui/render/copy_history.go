@@ -60,26 +60,6 @@ func CopyHistoryContentANSILineAt(history state.HistoryStore, copyMode state.Cop
 	return ensureANSIReset(contentViewportFitLine(line, width).ansiString(theme.WithFallback(), baseColumn))
 }
 
-func copyHistorySearchLine(history state.HistoryStore, copyMode state.CopyModeStore, totalRows int) Line {
-	query := copyMode.Query
-	if query == "" {
-		return Line{Cells: []Cell{
-			styledCell("⌕ search ", StyleMuted),
-			styledCell("[/ query]", StyleMuted),
-			NewCell(" "),
-			styledCell(fmt.Sprintf(" rows:%d ", totalRows), StyleMuted),
-			copyHistoryOlderToken(history),
-		}}
-	}
-	return Line{Cells: []Cell{
-		styledCell("⌕ search ", StyleMuted),
-		styledCell(query, StyleAccent),
-		NewCell(" "),
-		styledCell(fmt.Sprintf(" match:%d/%d ", activeCopyMatchOrdinal(copyMode), len(copyMode.Matches)), StyleMuted),
-		copyHistoryOlderToken(history),
-	}}
-}
-
 // clipped-start 只表达窗口边界，不再给普通 logical line 起始/续行加工程 marker。
 func copyHistoryPrefixCells(row state.HistoryRow) []Cell {
 	if row.ClippedStart {
@@ -554,37 +534,6 @@ func searchColumnsForRow(match state.CopyMatch, row int, lineLen int) (int, int,
 	return from, to, true
 }
 
-func copyHistoryScrollbarLine(history state.HistoryStore, copyMode state.CopyModeStore, visible int) Line {
-	total := len(history.Rows)
-	top := copyHistoryViewportTop(history, copyMode)
-	thumb := "█"
-	if total > 0 && visible < total {
-		ratio := float64(top) / float64(maxInt(1, total-visible))
-		switch {
-		case ratio <= 0:
-			thumb = "▁"
-		case ratio >= 1:
-			thumb = "▔"
-		default:
-			thumb = "█"
-		}
-	}
-	return Line{Cells: []Cell{
-		styledCell("SCROLL ", StyleMuted),
-		styledCell(thumb, StyleAccent),
-		NewCell(" "),
-		styledCell(fmt.Sprintf("%d-%d/%d", top+1, minInt(total, top+visible), total), StyleMuted),
-		NewCell(" "),
-		copyHistoryBottomToken(history, copyMode, visible),
-		NewCell(" "),
-		styledCell(copyHistoryBoundarySummary(history, copyMode), StyleMuted),
-	}}
-}
-
-func copyHistoryOlderToken(history state.HistoryStore) Cell {
-	return styledCell(copyHistoryOlderLabel(history), copyHistoryOlderStyle(history))
-}
-
 func copyHistoryOlderLabel(history state.HistoryStore) string {
 	switch history.OlderRequestState() {
 	case state.OlderRequestPending:
@@ -601,20 +550,6 @@ func copyHistoryOlderLabel(history state.HistoryStore) string {
 	}
 }
 
-func copyHistoryOlderStyle(history state.HistoryStore) StyleToken {
-	if history.OlderRequestState() == state.OlderRequestPending {
-		return StyleWarning
-	}
-	if history.OlderRequestState() == state.OlderRequestReady {
-		return StyleAccent
-	}
-	return StyleMuted
-}
-
-func copyHistoryBottomToken(history state.HistoryStore, copyMode state.CopyModeStore, visible int) Cell {
-	return styledCell(copyHistoryBottomLabel(history, copyMode, visible), copyHistoryBottomStyle(history, copyMode, visible))
-}
-
 func copyHistoryBottomLabel(history state.HistoryStore, copyMode state.CopyModeStore, visible int) string {
 	total := len(history.Rows)
 	top := copyHistoryViewportTop(history, copyMode)
@@ -622,13 +557,6 @@ func copyHistoryBottomLabel(history state.HistoryStore, copyMode state.CopyModeS
 		return "latest"
 	}
 	return "loaded"
-}
-
-func copyHistoryBottomStyle(history state.HistoryStore, copyMode state.CopyModeStore, visible int) StyleToken {
-	if copyHistoryBottomLabel(history, copyMode, visible) == "loaded" {
-		return StyleAccent
-	}
-	return StyleMuted
 }
 
 func copyHistoryPrefixWidth(row state.HistoryRow) int {

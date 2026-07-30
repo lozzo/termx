@@ -1627,13 +1627,6 @@ func copyModePageRows(copyMode state.CopyModeStore) int {
 	return 8
 }
 
-func copyModeVisibleRows(copyMode state.CopyModeStore) int {
-	if copyMode.ViewRows > 0 {
-		return copyMode.ViewRows
-	}
-	return 8
-}
-
 func copyModeLineScrollRows() int {
 	return 1
 }

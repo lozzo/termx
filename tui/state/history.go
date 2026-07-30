@@ -1762,19 +1762,6 @@ func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
 	return store
 }
 
-func cloneHistoryRows(rows []HistoryRow) []HistoryRow {
-	if len(rows) == 0 {
-		return nil
-	}
-	cloned := make([]HistoryRow, len(rows))
-	copy(cloned, rows)
-	for i := range cloned {
-		cloned[i].Cells = cloneHistoryCells(rows[i].Cells)
-		cloned[i].TailFill = cloneHistoryCellStyle(rows[i].TailFill)
-	}
-	return cloned
-}
-
 func cloneHistoryLogicalLines(lines []HistoryLogicalLine) []HistoryLogicalLine {
 	if len(lines) == 0 {
 		return nil
@@ -2078,22 +2065,6 @@ func applyTailFillToLastHistoryRow(rows []HistoryRow, fill *HistoryCellStyle) {
 	}
 	tail := *fill
 	rows[len(rows)-1].TailFill = &tail
-}
-
-func splitHistoryLogicalLineText(text string) []HistoryCell {
-	clusters := textGraphemeClusters(text)
-	if len(clusters) == 0 {
-		return nil
-	}
-	out := make([]HistoryCell, 0, len(clusters))
-	for _, cluster := range clusters {
-		width := textDisplayWidth(cluster)
-		if width <= 0 {
-			continue
-		}
-		out = append(out, HistoryCell{Text: cluster, Width: width})
-	}
-	return out
 }
 
 func normalizeHistoryLogicalLineCells(cells []HistoryCell, cols int) []HistoryCell {
@@ -2400,14 +2371,6 @@ func historyCellsEqual(left HistoryCell, right HistoryCell) bool {
 	return left == right
 }
 
-func rebaseExistingLineSpans(spans []HistoryLineSpan, delta int) []HistoryLineSpan {
-	for i := range spans {
-		spans[i].StartRow += delta
-		spans[i].EndRow += delta
-	}
-	return spans
-}
-
 func appendRebasedHistoryLineSpans(out []HistoryLineSpan, spans []HistoryLineSpan, delta int) []HistoryLineSpan {
 	for _, span := range spans {
 		span.StartRow += delta
@@ -2432,14 +2395,6 @@ func maxCopyInt(left int, right int) int {
 		return left
 	}
 	return right
-}
-
-func copyVisibleHistoryRowsAfterPadding(visibleRows int, padding int) int {
-	if visibleRows <= 0 {
-		return 1
-	}
-	padding = clampCopyInt(padding, 0, visibleRows-1)
-	return maxCopyInt(1, visibleRows-padding)
 }
 
 func copyVisibleRowsForStore(store CopyModeStore) int {

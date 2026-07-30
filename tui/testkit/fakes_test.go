@@ -125,7 +125,7 @@ func TestFakeCoreClientMissingResponse(t *testing.T) {
 	}
 }
 
-func TestFakeTerminalSessionClipboardServices(t *testing.T) {
+func TestFakeTerminalClipboardServices(t *testing.T) {
 	terminal := &FakeTerminalService{AttachResult: TerminalAttachResult{Channel: 3}}
 	attached, err := terminal.Attach(context.Background(), TerminalAttachRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
 	if err != nil {
@@ -150,21 +150,6 @@ func TestFakeTerminalSessionClipboardServices(t *testing.T) {
 	}
 	if len(terminal.Resizes) != 1 || terminal.Resizes[0].Cols != 100 {
 		t.Fatalf("unexpected terminal resizes %#v", terminal.Resizes)
-	}
-
-	session := &FakeSessionService{Snapshot: SessionSnapshot{ActiveTerminalID: "term-1"}}
-	snapshot, err := session.Load(context.Background())
-	if err != nil {
-		t.Fatalf("load session: %v", err)
-	}
-	if snapshot.ActiveTerminalID != "term-1" {
-		t.Fatalf("unexpected loaded session %#v", snapshot)
-	}
-	if err := session.Save(context.Background(), SessionSnapshot{ActiveTerminalID: "term-2"}); err != nil {
-		t.Fatalf("save session: %v", err)
-	}
-	if len(session.Saved) != 1 || session.Saved[0].ActiveTerminalID != "term-2" {
-		t.Fatalf("unexpected saved sessions %#v", session.Saved)
 	}
 
 	clipboard := &FakeClipboardService{}

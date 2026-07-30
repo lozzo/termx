@@ -1047,10 +1047,6 @@ func (binding TerminalViewBinding) withDefaultEndpoint() TerminalViewBinding {
 	return binding
 }
 
-func (binding TerminalViewBinding) hasAuthoritativeResizeOwner() bool {
-	return binding.HasAuthoritativeResizeOwner()
-}
-
 func (binding TerminalViewBinding) HasAuthoritativeResizeOwner() bool {
 	if !binding.CanResize {
 		return false

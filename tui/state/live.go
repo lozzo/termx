@@ -907,10 +907,6 @@ func (store TerminalSurfaceStore) resizeBoundaryRejects(snapshot LiveSurfaceSnap
 	return snapshot.Cols == store.ResizeBoundary.PreviousCols && snapshot.Rows == store.ResizeBoundary.PreviousRows
 }
 
-func (store TerminalSurfaceStore) snapshotForTerminal(terminalID string) (LiveSurfaceSnapshot, bool) {
-	return store.snapshotForTerminalRef(LocalTerminalRef(terminalID))
-}
-
 func (store TerminalSurfaceStore) snapshotForTerminalRef(ref TerminalRef) (LiveSurfaceSnapshot, bool) {
 	ref = ref.Normalize()
 	if ref.Empty() {
@@ -940,10 +936,6 @@ func (store TerminalSurfaceStore) snapshotForTerminalRef(ref TerminalRef) (LiveS
 		Command:    cloneStrings(store.Command),
 		Err:        store.Err,
 	}, true
-}
-
-func shouldRejectLiveSnapshot(current LiveSurfaceSnapshot, incoming LiveSurfaceSnapshot) bool {
-	return shouldRejectLiveSnapshotWithLifecycle(current, incoming, false)
 }
 
 func shouldRejectLiveSnapshotWithLifecycle(current LiveSurfaceSnapshot, incoming LiveSurfaceSnapshot, lifecycleKnown bool) bool {
@@ -1204,14 +1196,6 @@ func CloneLiveSurfaceSnapshot(value LiveSurfaceSnapshot) LiveSurfaceSnapshot {
 	value.Screen = cloneLiveCellRows(value.Screen)
 	value.Command = cloneStrings(value.Command)
 	return value
-}
-
-func cloneLiveSurfaceSnapshotPtr(value LiveSurfaceSnapshot) *LiveSurfaceSnapshot {
-	if value.TerminalID == "" && len(value.Lines) == 0 && len(value.Screen) == 0 && value.Title == "" && !value.Cursor.Visible {
-		return nil
-	}
-	cloned := CloneLiveSurfaceSnapshot(value)
-	return &cloned
 }
 
 func liveSurfaceRefKey(ref TerminalRef) string {

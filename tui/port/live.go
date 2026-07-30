@@ -19,16 +19,6 @@ type LiveInvalidationSource interface {
 	ArmLiveInvalidation(context.Context, TerminalLiveEventRequest) (TerminalLiveEvent, error)
 }
 
-// TerminalSurfaceService 组合 TUI live render 所需的 native screen source。
-type TerminalSurfaceService interface {
-	NativeScreenSource
-}
-
-// TerminalLiveEventService 组合 TUI effect 所需的 one-shot live invalidation source。
-type TerminalLiveEventService interface {
-	LiveInvalidationSource
-}
-
 // TerminalSurfaceResult 返回当前 live native screen projection，不包含 committed history truth。
 type TerminalSurfaceResult struct {
 	Snapshot state.LiveSurfaceSnapshot

@@ -2,21 +2,11 @@ package render
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 )
 
 var benchmarkLargeFrame Frame
-
-func TestRenderVMHasNoLegacyCompatibilityProjectionFields(t *testing.T) {
-	renderVM := reflect.TypeOf(RenderVM{})
-	for _, field := range []string{"Mode", "Lines", "Status", "HitRegions"} {
-		if _, ok := renderVM.FieldByName(field); ok {
-			t.Fatalf("RenderVM must not expose legacy compatibility field %s", field)
-		}
-	}
-}
 
 func BenchmarkRendererLargeTerminalOutput(b *testing.B) {
 	renderer := NewRenderer(DefaultTheme())

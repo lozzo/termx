@@ -168,22 +168,6 @@ func footerHintIsCritical(footer FooterVM) bool {
 	return strings.HasPrefix(footer.Hint, "error:") || strings.HasPrefix(footer.Hint, "exited:")
 }
 
-func shellBandLineRect(rect Rect, frame Rect) Rect {
-	if frame.W <= 0 {
-		return rect
-	}
-	if frame.X < rect.X || frame.X >= rect.X+rect.W {
-		frame.X = rect.X
-	}
-	if frame.X+frame.W > rect.X+rect.W {
-		frame.W = rect.X + rect.W - frame.X
-	}
-	if frame.W <= 0 {
-		return rect
-	}
-	return Rect{X: frame.X, Y: rect.Y, W: frame.W, H: rect.H}
-}
-
 func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
 	right := []barSegment{}
 	if hintIsCritical {
@@ -200,10 +184,6 @@ func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
 
 func compactFooterSummary(value string) string {
 	return compactGlobalSummary(value)
-}
-
-func footerSummarySegments(value string) []barSegment {
-	return footerSummarySegmentsForFooter(FooterVM{GlobalSummary: value})
 }
 
 func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
@@ -431,17 +411,6 @@ func appendFooterKeySegmentsWithInvocation(segments []barSegment, key string, st
 	return segments
 }
 
-func appendFooterBracketTokenSegmentsWithInvocation(segments []barSegment, token string, style StyleToken, actionID string, invocation actiondomain.Invocation) []barSegment {
-	start := len(segments)
-	segments = appendFooterBracketTokenSegments(segments, token, style, actionID)
-	for index := start; index < len(segments); index++ {
-		if segments[index].actionID != "" {
-			segments[index].invocation = invocation
-		}
-	}
-	return segments
-}
-
 func appendFooterKeySegments(segments []barSegment, key string, style StyleToken, actionID string) []barSegment {
 	for tokenIndex, token := range formatFooterKeySegments(key) {
 		if tokenIndex > 0 {
@@ -542,10 +511,6 @@ func footerTailActionWidth(selected []FooterActionVM, tail FooterActionVM, separ
 		width += separatorWidth
 	}
 	return width
-}
-
-func footerActionTokenDisplayWidth(action FooterActionVM) int {
-	return footerActionTokenDisplayWidthForSelection(action, defaultFooterKeyTemplate, defaultFooterActionTemplate)
 }
 
 func footerActionTokenDisplayWidthForSelection(action FooterActionVM, keyTemplate string, actionTemplate string) int {
@@ -724,10 +689,6 @@ func (segment barSegment) withTarget(targetID string) barSegment {
 	return segment
 }
 
-func barSep() barSegment {
-	return barText("│", StyleStatusMuted, 1)
-}
-
 func headerSep() barSegment {
 	return barText(" ", StyleHeaderSpacer, 1)
 }
@@ -744,34 +705,6 @@ func footerActionSep(width int, separatorText string) barSegment {
 		return barText(" "+separatorText+" ", StyleFooterMuted, 1)
 	}
 	return footerSep()
-}
-
-func appendBarSegment(segments []barSegment, text string, style StyleToken, priority int) []barSegment {
-	if text == "" {
-		return segments
-	}
-	return append(segments, barSep(), barText(" "+text+" ", style, priority))
-}
-
-func composeBarLine(left []barSegment, right []barSegment, width int) Line {
-	if width <= 0 {
-		return Line{}
-	}
-	left = trimBarSegments(left, width)
-	right = trimBarSegments(right, width-barSegmentsWidth(left))
-	total := barSegmentsWidth(left) + barSegmentsWidth(right)
-	if total > width {
-		right = trimBarSegments(right, width-barSegmentsWidth(left))
-		total = barSegmentsWidth(left) + barSegmentsWidth(right)
-	}
-	spacer := width - total
-	cells := make([]Cell, 0, len(left)+len(right)+1)
-	cells = append(cells, cellsFromBarSegments(left)...)
-	if spacer > 0 {
-		cells = append(cells, Cell{Text: strings.Repeat(" ", spacer), Width: spacer, Style: StyleStatus, Safe: true})
-	}
-	cells = append(cells, cellsFromBarSegments(right)...)
-	return Line{Cells: cells}
 }
 
 func composeHeaderBarLine(left []barSegment, right []barSegment, width int) Line {
@@ -798,110 +731,6 @@ func composeBarLineWithFill(left []barSegment, right []barSegment, width int, fi
 	cells = append(cells, cellsFromBarSegments(left)...)
 	if spacer > 0 {
 		cells = append(cells, Cell{Text: strings.Repeat(" ", spacer), Width: spacer, Style: fillStyle, Safe: true})
-	}
-	cells = append(cells, cellsFromBarSegments(right)...)
-	return Line{Cells: cells}
-}
-
-func composeFramedBarLine(left []barSegment, right []barSegment, width int, leftGlyph string, rightGlyph string, spacerGlyph string) Line {
-	if width <= 0 {
-		return Line{}
-	}
-	if width == 1 {
-		return NewLine(TruncateCells(leftGlyph, 1))
-	}
-	inner := composeBarLineWithSpacer(left, right, width-2, spacerGlyph)
-	cells := make([]Cell, 0, len(inner.Cells)+2)
-	cells = append(cells, Cell{Text: leftGlyph, Width: DisplayWidth(leftGlyph), Style: StyleStatus, Safe: true})
-	cells = append(cells, inner.Cells...)
-	cells = append(cells, Cell{Text: rightGlyph, Width: DisplayWidth(rightGlyph), Style: StyleStatus, Safe: true})
-	return Line{Cells: cells}
-}
-
-func shellDividerLine(width int, leftGlyph string, rightGlyph string) Line {
-	if width <= 0 {
-		return Line{}
-	}
-	if width == 1 {
-		return NewLine(TruncateCells(leftGlyph, 1))
-	}
-	return Line{Cells: []Cell{
-		{Text: leftGlyph, Width: DisplayWidth(leftGlyph), Style: StyleStatus, Safe: true},
-		{Text: strings.Repeat("─", maxInt(0, width-2)), Width: maxInt(0, width-2), Style: StyleStatus, Safe: true},
-		{Text: rightGlyph, Width: DisplayWidth(rightGlyph), Style: StyleStatus, Safe: true},
-	}}
-}
-
-func shellHeaderDividerLine(width int, left []barSegment, right []barSegment) Line {
-	if width <= 0 {
-		return Line{}
-	}
-	if width == 1 {
-		return NewLine(TruncateCells("├", 1))
-	}
-	cells := make([]Cell, 0, width)
-	cells = append(cells, Cell{Text: "├", Width: 1, Style: StyleStatus, Safe: true})
-	left = trimBarSegments(left, width-2)
-	right = trimBarSegments(right, width-2-barSegmentsWidth(left))
-	// 第一行 tab strip 的 ┬ 位置必须在第二行落成 ┴，否则 header/body 分隔无法贴近目标线稿。
-	joints := headerJointColumns(left, 1)
-	rightStart := width - 1 - barSegmentsWidth(right)
-	joints = append(joints, headerJointColumns(right, rightStart)...)
-	jointSet := make(map[int]struct{}, len(joints))
-	for _, column := range joints {
-		if column > 0 && column < width-1 {
-			jointSet[column] = struct{}{}
-		}
-	}
-	for x := 1; x < width-1; x++ {
-		glyph := "─"
-		if _, ok := jointSet[x]; ok {
-			glyph = "┴"
-		}
-		cells = append(cells, Cell{Text: glyph, Width: 1, Style: StyleStatus, Safe: true})
-	}
-	cells = append(cells, Cell{Text: "┤", Width: 1, Style: StyleStatus, Safe: true})
-	return Line{Cells: cells}
-}
-
-func headerJointColumns(segments []barSegment, start int) []int {
-	columns := []int{}
-	x := start
-	jointIndex := 0
-	for _, segment := range segments {
-		width := DisplayWidth(segment.text)
-		if segment.joint && width > 0 {
-			column := x + width/2
-			if jointIndex > 0 {
-				column++
-			}
-			columns = append(columns, column)
-			jointIndex++
-		}
-		x += width
-	}
-	return columns
-}
-
-func composeBarLineWithSpacer(left []barSegment, right []barSegment, width int, spacerGlyph string) Line {
-	if spacerGlyph == "" {
-		spacerGlyph = " "
-	}
-	if width <= 0 {
-		return Line{}
-	}
-	left = trimBarSegments(left, width)
-	right = trimBarSegments(right, width-barSegmentsWidth(left))
-	total := barSegmentsWidth(left) + barSegmentsWidth(right)
-	if total > width {
-		right = trimBarSegments(right, width-barSegmentsWidth(left))
-		total = barSegmentsWidth(left) + barSegmentsWidth(right)
-	}
-	spacer := width - total
-	cells := make([]Cell, 0, len(left)+len(right)+1)
-	cells = append(cells, cellsFromBarSegments(left)...)
-	if spacer > 0 {
-		cells = append(cells, Cell{Text: strings.Repeat(spacerGlyph, spacer), Width: spacer, Style: StyleStatus, Safe: true})
 	}
 	cells = append(cells, cellsFromBarSegments(right)...)
 	return Line{Cells: cells}

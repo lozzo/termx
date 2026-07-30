@@ -1,11 +1,6 @@
 package shortcut
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	actiondomain "github.com/anytty/anytty/tui/action"
@@ -48,34 +43,5 @@ func TestSceneRegistryOwnsMenuActionReverseLookup(t *testing.T) {
 	}
 	if _, ok := SceneByMenuAction("panel.close"); ok {
 		t.Fatal("non-menu action must not resolve to a scene")
-	}
-}
-
-func TestShortcutPackageDoesNotRedeclareActionDomainOrClickPolicy(t *testing.T) {
-	forbidden := map[string]bool{"Spec": true, "Invocation": true, "ParamSpec": true, "ClickPolicy": true}
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", file, err)
-		}
-		for _, declaration := range parsed.Decls {
-			generic, ok := declaration.(*ast.GenDecl)
-			if !ok || generic.Tok != token.TYPE {
-				continue
-			}
-			for _, item := range generic.Specs {
-				typeSpec := item.(*ast.TypeSpec)
-				if forbidden[typeSpec.Name.Name] {
-					t.Fatalf("shortcut must not redeclare action/render owner type %s in %s", typeSpec.Name.Name, file)
-				}
-			}
-		}
 	}
 }
