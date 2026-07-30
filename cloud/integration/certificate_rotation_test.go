@@ -20,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/anytty/anytty/cloud/controller/account"
 	controllercertificate "github.com/anytty/anytty/cloud/controller/certificate"
 	"github.com/anytty/anytty/cloud/controller/control"
@@ -31,6 +29,8 @@ import (
 	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
 	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -81,6 +81,7 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	var dropNextCertificateApplied atomic.Bool
 	controlService, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: 100 * time.Millisecond, HeartbeatTimeout: time.Second, Directory: directoryState,
+		BindingKeyBundle: testBindingKeyBundleProvider(),
 		DesiredCertificate: func(ctx context.Context, edgeID string) (*cloudv1.EdgeCertificateBundle, error) {
 			return certificateService.BundleForEdge(ctx, edgeID)
 		},
@@ -131,7 +132,8 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 			ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
 			ControllerAddress: controllerRuntime.GRPCAddress(), ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
 			IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
-			EdgeID: edge.ID, BootID: bootID, SoftwareVersion: "r8-integration", ManagedCertificateStateFile: stateFile,
+			BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
+			EdgeID:                    edge.ID, BootID: bootID, SoftwareVersion: "r8-integration", ManagedCertificateStateFile: stateFile,
 		})
 		if err != nil {
 			t.Fatalf("start R8 Edge: %v", err)

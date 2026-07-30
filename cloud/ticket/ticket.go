@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,22 +26,88 @@ const (
 
 	EdgeChallengeNonceSize = 32
 	EdgeChallengeLifetime  = 10 * time.Second
+	// MaxKeyBundleTTL 限制 Edge 可离线信任 Controller binding keyset 的最长窗口。
+	MaxKeyBundleTTL = 24 * time.Hour
 )
 
-// KeySet 是 Edge 当前从 EdgeWelcome 获得的 daemon binding 公钥集合。
+var verificationKeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
+// KeySet 是 Edge 当前有效 KeyBundle 中的 daemon binding 公钥集合。
 type KeySet map[string]ed25519.PublicKey
 
-// FromVerificationKeys 严格解析 Ed25519 公钥集合；重复 key_id 和未知算法都会失败。
-func FromVerificationKeys(keys []*cloudv1.VerificationKey) (KeySet, error) {
+// ValidateKeyBundle 严格校验 revision、有效期和规范化 Ed25519 keyset，并返回只读验签快照。
+func ValidateKeyBundle(bundle *cloudv1.KeyBundle) (KeySet, error) {
+	if bundle == nil || len(bundle.ProtoReflect().GetUnknown()) != 0 || bundle.GetRevision() == 0 ||
+		bundle.GetIssuedAt() == nil || bundle.GetExpiresAt() == nil || bundle.GetIssuedAt().CheckValid() != nil || bundle.GetExpiresAt().CheckValid() != nil {
+		return nil, errors.New("binding key bundle is invalid")
+	}
+	issuedAt, expiresAt := bundle.GetIssuedAt().AsTime(), bundle.GetExpiresAt().AsTime()
+	if !expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > MaxKeyBundleTTL {
+		return nil, errors.New("binding key bundle validity window is invalid")
+	}
+	return parseVerificationKeys(bundle.GetKeys())
+}
+
+// KeyBundleUsableAt 要求 bundle 已生效且尚未到达严格 expires_at 边界。
+func KeyBundleUsableAt(bundle *cloudv1.KeyBundle, now time.Time) bool {
+	if now.IsZero() {
+		return false
+	}
+	if _, err := ValidateKeyBundle(bundle); err != nil {
+		return false
+	}
+	now = now.UTC()
+	return !now.Before(bundle.GetIssuedAt().AsTime()) && now.Before(bundle.GetExpiresAt().AsTime())
+}
+
+// CanonicalKeyBundle 深拷贝并按 key ID 排序，确保持久 payload 和 keyset 比较稳定。
+func CanonicalKeyBundle(bundle *cloudv1.KeyBundle) (*cloudv1.KeyBundle, KeySet, error) {
+	keys, err := ValidateKeyBundle(bundle)
+	if err != nil {
+		return nil, nil, err
+	}
+	canonical := proto.Clone(bundle).(*cloudv1.KeyBundle)
+	sort.Slice(canonical.Keys, func(i, j int) bool { return canonical.Keys[i].GetKeyId() < canonical.Keys[j].GetKeyId() })
+	return canonical, keys, nil
+}
+
+// SameKeySet 比较 KeyBundle 的规范化 key ID、算法和公钥，不比较 revision 或有效期。
+func SameKeySet(first, second *cloudv1.KeyBundle) bool {
+	if first == nil || second == nil || len(first.GetKeys()) != len(second.GetKeys()) {
+		return false
+	}
+	left, _, leftErr := CanonicalKeyBundle(first)
+	right, _, rightErr := CanonicalKeyBundle(second)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	for index := range left.GetKeys() {
+		if !proto.Equal(left.GetKeys()[index], right.GetKeys()[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func parseVerificationKeys(keys []*cloudv1.VerificationKey) (KeySet, error) {
 	result := make(KeySet, len(keys))
+	publicKeys := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
-		id := strings.TrimSpace(key.GetKeyId())
-		if id == "" || key.GetAlgorithm() != "Ed25519" || len(key.GetPublicKey()) != ed25519.PublicKeySize {
+		if key == nil || len(key.ProtoReflect().GetUnknown()) != 0 {
+			return nil, errors.New("binding verification key is invalid")
+		}
+		id := key.GetKeyId()
+		if id != strings.TrimSpace(id) || !verificationKeyIDPattern.MatchString(id) || key.GetAlgorithm() != "Ed25519" || len(key.GetPublicKey()) != ed25519.PublicKeySize {
 			return nil, errors.New("binding verification key is invalid")
 		}
 		if _, exists := result[id]; exists {
 			return nil, errors.New("binding verification key ID is duplicated")
 		}
+		encodedPublicKey := string(key.GetPublicKey())
+		if _, exists := publicKeys[encodedPublicKey]; exists {
+			return nil, errors.New("binding verification public key is duplicated")
+		}
+		publicKeys[encodedPublicKey] = struct{}{}
 		result[id] = append(ed25519.PublicKey(nil), key.GetPublicKey()...)
 	}
 	if len(result) == 0 {

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -64,6 +65,19 @@ func TestAgentHelloReplayFailsUnderSerialAndConcurrentFreshChallenges(t *testing
 	close(failures)
 	for index := range failures {
 		t.Errorf("concurrent replay %d was accepted", index)
+	}
+}
+
+func TestAgentAdmissionFailsWhenCurrentBindingBundleIsUnavailable(t *testing.T) {
+	service, identity, binding, now := newAgentGatewayFixture(t)
+	service.config.VerificationKeys = func(time.Time) (ticket.KeySet, error) { return nil, errors.New("expired") }
+	_, challenge, err := service.challengeCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hello := signedAgentHello(t, identity, binding, challenge, now)
+	if _, err := service.admit(hello, challenge); err == nil {
+		t.Fatal("Agent admission accepted an unavailable binding key bundle")
 	}
 }
 
@@ -138,7 +152,7 @@ func newAgentGatewayFixture(t *testing.T) (*Service, remoteauth.Identity, *cloud
 		t.Fatal(err)
 	}
 	service, err := NewService(Config{
-		EdgeID: "edge-agent", EdgeBootID: "edge-agent-boot", Runtime: &agentGatewayRuntime{}, VerificationKeys: func() ticket.KeySet { return ticket.KeySet{"binding-key": controllerPublic} },
+		EdgeID: "edge-agent", EdgeBootID: "edge-agent-boot", Runtime: &agentGatewayRuntime{}, VerificationKeys: func(time.Time) (ticket.KeySet, error) { return ticket.KeySet{"binding-key": controllerPublic}, nil },
 		Heartbeat: time.Second, HeartbeatTimeout: 2 * time.Second, Now: func() time.Time { return now },
 	})
 	if err != nil {

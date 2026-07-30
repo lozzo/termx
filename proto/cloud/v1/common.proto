@@ -15,6 +15,15 @@ message VerificationKey {
   bytes public_key = 3;
 }
 
+// KeyBundle 是 Controller 发布并由 Edge 原子持久化的完整 binding 验签 keyset。
+// revision 只随 keyset owner 单调变化；issued_at/expires_at 限制离线 admission 窗口。
+message KeyBundle {
+  uint64 revision = 1;
+  google.protobuf.Timestamp issued_at = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  repeated VerificationKey keys = 4;
+}
+
 // HeartbeatPolicy 约束 EdgeControl 的心跳频率和 Controller 失联判定。
 message HeartbeatPolicy {
   google.protobuf.Duration interval = 1;

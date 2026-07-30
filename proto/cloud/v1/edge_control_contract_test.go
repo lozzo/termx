@@ -68,6 +68,29 @@ func TestS2GatewayContracts(t *testing.T) {
 	}
 }
 
+func TestS2B3BindingKeyBundleContract(t *testing.T) {
+	bundle := (&KeyBundle{}).ProtoReflect().Descriptor()
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"revision": 1, "issued_at": 2, "expires_at": 3, "keys": 4} {
+		field := bundle.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("KeyBundle.%s field=%v want=%d", name, field, number)
+		}
+	}
+	welcome := (&EdgeWelcome{}).ProtoReflect().Descriptor()
+	field := welcome.Fields().ByName("binding_key_bundle")
+	if field == nil || field.Number() != 3 || field.Message() != bundle {
+		t.Fatalf("EdgeWelcome.binding_key_bundle=%v", field)
+	}
+	if welcome.Fields().ByName("binding_verification_keys") != nil {
+		t.Fatal("legacy naked binding_verification_keys remains in EdgeWelcome")
+	}
+	command := (&ControllerCommand{}).ProtoReflect().Descriptor()
+	update := command.Fields().ByName("binding_key_bundle")
+	if update == nil || update.Number() != 24 || update.Message() != bundle {
+		t.Fatalf("ControllerCommand.binding_key_bundle=%v", update)
+	}
+}
+
 func TestClientHelloSeparatesCapabilityAndPairingAdmission(t *testing.T) {
 	hello := (&ClientHello{}).ProtoReflect().Descriptor()
 	authorization := hello.Oneofs().ByName("authorization")
@@ -102,7 +125,7 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "usage_batch": 28, "command_result": 29, "certificate_applied": 30,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "usage_ack": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28,
 	})
 }
 

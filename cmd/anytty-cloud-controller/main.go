@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/apihttp"
+	controllerbindingkeys "github.com/anytty/anytty/cloud/controller/bindingkeys"
 	"github.com/anytty/anytty/cloud/controller/certificate"
 	"github.com/anytty/anytty/cloud/controller/commerce"
 	"github.com/anytty/anytty/cloud/controller/control"
@@ -121,6 +123,13 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
+	bindingKeyOwner, err := controllerbindingkeys.New(ctx, controllerbindingkeys.Config{
+		Store: database, TTL: 24 * time.Hour,
+		Keys: []*cloudv1.VerificationKey{{KeyId: strings.TrimSpace(config.bindingSigningKeyID), Algorithm: "Ed25519", PublicKey: append([]byte(nil), bindingKey.Public().(ed25519.PublicKey)...)}},
+	})
+	if err != nil {
+		return fmt.Errorf("initialize binding key bundle: %w", err)
+	}
 	edgeCAPayload, err := os.ReadFile(filepath.Clean(config.edgeCA))
 	if err != nil {
 		return fmt.Errorf("read Edge CA: %w", err)
@@ -195,13 +204,13 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	service, err = control.NewService(control.Config{
-		ControllerID:            config.controllerID,
-		ControllerBootID:        uuid.NewString(),
-		HeartbeatInterval:       config.heartbeatInterval,
-		HeartbeatTimeout:        config.heartbeatTimeout,
-		Directory:               directoryState,
-		BindingVerificationKeys: []*cloudv1.VerificationKey{enrollmentService.BindingVerificationKey()},
-		UsageStore:              database,
+		ControllerID:      config.controllerID,
+		ControllerBootID:  uuid.NewString(),
+		HeartbeatInterval: config.heartbeatInterval,
+		HeartbeatTimeout:  config.heartbeatTimeout,
+		Directory:         directoryState,
+		BindingKeyBundle:  bindingKeyOwner.Bundle,
+		UsageStore:        database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err

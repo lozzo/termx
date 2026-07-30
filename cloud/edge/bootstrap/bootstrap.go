@@ -67,6 +67,7 @@ type Resolved struct {
 	TURNPublicEndpoint          string
 	TURNRealm                   string
 	UsageOutboxFile             string
+	BindingKeyBundleCacheFile   string
 }
 
 // Resolve 读取配置；未注册时生成或复用本机私钥并消费一次性 bootstrap token。
@@ -217,6 +218,7 @@ func resolvedPaths(config FileConfig) Resolved {
 		ControllerCAFile: filepath.Join(config.StateDirectory, "controller-ca.pem"), ConfigSigningKeyID: config.ConfigKeyID,
 		ConfigSigningPublicKeyFile: filepath.Join(config.StateDirectory, "config-signing-public.key"), DesiredConfigCacheFile: filepath.Join(config.StateDirectory, "desired-config.pb"),
 		ManagedCertificateStateFile: filepath.Join(config.StateDirectory, "managed-certificate.pb"),
+		BindingKeyBundleCacheFile:   filepath.Join(config.StateDirectory, "binding-key-bundle.pb"),
 		TURNListenAddress:           config.TURNListenOverride, TURNPublicEndpoint: net.JoinHostPort(publicHost, "3478"), TURNRealm: publicHost, UsageOutboxFile: filepath.Join(config.StateDirectory, "usage-outbox.db"),
 	}
 }

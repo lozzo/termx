@@ -58,7 +58,8 @@ func TestCorruptUsageOutboxDegradesRelayWithoutStoppingEdge(t *testing.T) {
 		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
 		ControllerAddress: "127.0.0.1:1", ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
 		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
-		EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r6-integration", TURNListenAddress: freeTURNAddress(t), TURNPublicEndpoint: "127.0.0.1:3478", TURNRealm: "r6.local", UsageOutboxFile: outboxPath,
+		BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
+		EdgeID:                    testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r6-integration", TURNListenAddress: freeTURNAddress(t), TURNPublicEndpoint: "127.0.0.1:3478", TURNRealm: "r6.local", UsageOutboxFile: outboxPath,
 	})
 	if err != nil {
 		t.Fatalf("usage corruption stopped the whole Edge: %v", err)
@@ -133,7 +134,8 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
 		ControllerAddress: controllerAddress, ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
 		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
-		EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r6-integration", TURNListenAddress: turnAddress, TURNPublicEndpoint: turnAddress, TURNRealm: "r6.local", UsageOutboxFile: outboxPath,
+		BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
+		EdgeID:                    testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r6-integration", TURNListenAddress: turnAddress, TURNPublicEndpoint: turnAddress, TURNRealm: "r6.local", UsageOutboxFile: outboxPath,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +311,7 @@ func startR6ControlController(t *testing.T, certificates certificateFiles, liste
 	}
 	service, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: 250 * time.Millisecond, HeartbeatTimeout: time.Second,
-		BindingVerificationKeys: []*cloudv1.VerificationKey{{KeyId: keyID, Algorithm: "Ed25519", PublicKey: publicKey}}, Directory: directoryState,
+		BindingKeyBundle: testBindingKeyBundleProvider(&cloudv1.VerificationKey{KeyId: keyID, Algorithm: "Ed25519", PublicKey: publicKey}), Directory: directoryState,
 		UsageStore: usageStore,
 	})
 	if err != nil {

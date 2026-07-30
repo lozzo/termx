@@ -36,7 +36,7 @@ message EdgeHello {
 message EdgeWelcome {
   uint32 accepted_protocol_version = 1;
   HeartbeatPolicy heartbeat = 2;
-  repeated VerificationKey binding_verification_keys = 3;
+  KeyBundle binding_key_bundle = 3;
 }
 
 // SnapshotBegin 开始当前 connection generation 的临时快照命名空间。
@@ -168,6 +168,7 @@ message ControllerCommand {
     SnapshotAccepted snapshot_accepted = 21;
     ResyncRequired resync_required = 22;
     SignedEdgeDesiredConfig desired_config = 23;
+    KeyBundle binding_key_bundle = 24;
     UsageAck usage_ack = 25;
     CloseDaemonConnection close_daemon = 26;
     CloseClientSession close_session = 27;

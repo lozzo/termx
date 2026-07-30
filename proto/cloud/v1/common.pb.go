@@ -135,6 +135,76 @@ func (x *VerificationKey) GetPublicKey() []byte {
 	return nil
 }
 
+// KeyBundle 是 Controller 发布并由 Edge 原子持久化的完整 binding 验签 keyset。
+// revision 只随 keyset owner 单调变化；issued_at/expires_at 限制离线 admission 窗口。
+type KeyBundle struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Revision      uint64                 `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
+	IssuedAt      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Keys          []*VerificationKey     `protobuf:"bytes,4,rep,name=keys,proto3" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyBundle) Reset() {
+	*x = KeyBundle{}
+	mi := &file_cloud_v1_common_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyBundle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyBundle) ProtoMessage() {}
+
+func (x *KeyBundle) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_common_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyBundle.ProtoReflect.Descriptor instead.
+func (*KeyBundle) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *KeyBundle) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *KeyBundle) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *KeyBundle) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *KeyBundle) GetKeys() []*VerificationKey {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
 // HeartbeatPolicy 约束 EdgeControl 的心跳频率和 Controller 失联判定。
 type HeartbeatPolicy struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -146,7 +216,7 @@ type HeartbeatPolicy struct {
 
 func (x *HeartbeatPolicy) Reset() {
 	*x = HeartbeatPolicy{}
-	mi := &file_cloud_v1_common_proto_msgTypes[1]
+	mi := &file_cloud_v1_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -158,7 +228,7 @@ func (x *HeartbeatPolicy) String() string {
 func (*HeartbeatPolicy) ProtoMessage() {}
 
 func (x *HeartbeatPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_common_proto_msgTypes[1]
+	mi := &file_cloud_v1_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -171,7 +241,7 @@ func (x *HeartbeatPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPolicy.ProtoReflect.Descriptor instead.
 func (*HeartbeatPolicy) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HeartbeatPolicy) GetInterval() *durationpb.Duration {
@@ -200,7 +270,7 @@ type SignedEnvelope struct {
 
 func (x *SignedEnvelope) Reset() {
 	*x = SignedEnvelope{}
-	mi := &file_cloud_v1_common_proto_msgTypes[2]
+	mi := &file_cloud_v1_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -212,7 +282,7 @@ func (x *SignedEnvelope) String() string {
 func (*SignedEnvelope) ProtoMessage() {}
 
 func (x *SignedEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_common_proto_msgTypes[2]
+	mi := &file_cloud_v1_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -225,7 +295,7 @@ func (x *SignedEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignedEnvelope.ProtoReflect.Descriptor instead.
 func (*SignedEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SignedEnvelope) GetKeyId() string {
@@ -266,7 +336,7 @@ type EdgeChallenge struct {
 
 func (x *EdgeChallenge) Reset() {
 	*x = EdgeChallenge{}
-	mi := &file_cloud_v1_common_proto_msgTypes[3]
+	mi := &file_cloud_v1_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +348,7 @@ func (x *EdgeChallenge) String() string {
 func (*EdgeChallenge) ProtoMessage() {}
 
 func (x *EdgeChallenge) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_common_proto_msgTypes[3]
+	mi := &file_cloud_v1_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,7 +361,7 @@ func (x *EdgeChallenge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeChallenge.ProtoReflect.Descriptor instead.
 func (*EdgeChallenge) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EdgeChallenge) GetNonce() []byte {
@@ -352,7 +422,13 @@ const file_cloud_v1_common_proto_rawDesc = "" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1c\n" +
 	"\talgorithm\x18\x02 \x01(\tR\talgorithm\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x03 \x01(\fR\tpublicKey\"}\n" +
+	"public_key\x18\x03 \x01(\fR\tpublicKey\"\xd1\x01\n" +
+	"\tKeyBundle\x12\x1a\n" +
+	"\brevision\x18\x01 \x01(\x04R\brevision\x127\n" +
+	"\tissued_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x124\n" +
+	"\x04keys\x18\x04 \x03(\v2 .anytty.cloud.v1.VerificationKeyR\x04keys\"}\n" +
 	"\x0fHeartbeatPolicy\x125\n" +
 	"\binterval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\binterval\x123\n" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"_\n" +
@@ -388,27 +464,31 @@ func file_cloud_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_cloud_v1_common_proto_goTypes = []any{
 	(EdgeChallengeTarget)(0),      // 0: anytty.cloud.v1.EdgeChallengeTarget
 	(*VerificationKey)(nil),       // 1: anytty.cloud.v1.VerificationKey
-	(*HeartbeatPolicy)(nil),       // 2: anytty.cloud.v1.HeartbeatPolicy
-	(*SignedEnvelope)(nil),        // 3: anytty.cloud.v1.SignedEnvelope
-	(*EdgeChallenge)(nil),         // 4: anytty.cloud.v1.EdgeChallenge
-	(*durationpb.Duration)(nil),   // 5: google.protobuf.Duration
+	(*KeyBundle)(nil),             // 2: anytty.cloud.v1.KeyBundle
+	(*HeartbeatPolicy)(nil),       // 3: anytty.cloud.v1.HeartbeatPolicy
+	(*SignedEnvelope)(nil),        // 4: anytty.cloud.v1.SignedEnvelope
+	(*EdgeChallenge)(nil),         // 5: anytty.cloud.v1.EdgeChallenge
 	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 7: google.protobuf.Duration
 }
 var file_cloud_v1_common_proto_depIdxs = []int32{
-	5, // 0: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
-	5, // 1: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
-	6, // 2: anytty.cloud.v1.EdgeChallenge.issued_at:type_name -> google.protobuf.Timestamp
-	6, // 3: anytty.cloud.v1.EdgeChallenge.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 4: anytty.cloud.v1.EdgeChallenge.target:type_name -> anytty.cloud.v1.EdgeChallengeTarget
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 0: anytty.cloud.v1.KeyBundle.issued_at:type_name -> google.protobuf.Timestamp
+	6, // 1: anytty.cloud.v1.KeyBundle.expires_at:type_name -> google.protobuf.Timestamp
+	1, // 2: anytty.cloud.v1.KeyBundle.keys:type_name -> anytty.cloud.v1.VerificationKey
+	7, // 3: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
+	7, // 4: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
+	6, // 5: anytty.cloud.v1.EdgeChallenge.issued_at:type_name -> google.protobuf.Timestamp
+	6, // 6: anytty.cloud.v1.EdgeChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	0, // 7: anytty.cloud.v1.EdgeChallenge.target:type_name -> anytty.cloud.v1.EdgeChallengeTarget
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_common_proto_init() }
@@ -422,7 +502,7 @@ func file_cloud_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_common_proto_rawDesc), len(file_cloud_v1_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -100,7 +100,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	controlService, err := control.NewService(control.Config{ControllerID: "controller-test", ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, Directory: directoryState})
+	controlService, err := control.NewService(control.Config{ControllerID: "controller-test", ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, BindingKeyBundle: testBindingKeyBundleProvider(), Directory: directoryState})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve real Edge bootstrap: %v", err)
 	}
-	if resolved.EdgeID != bootstrapEdge.ID || resolved.ControllerAddress != "controller.example.com:18443" {
+	if resolved.EdgeID != bootstrapEdge.ID || resolved.ControllerAddress != "controller.example.com:18443" || resolved.BindingKeyBundleCacheFile != filepath.Join(stateDirectory, "binding-key-bundle.pb") {
 		t.Fatalf("resolved bootstrap = %+v", resolved)
 	}
 	persistedConfig, err := os.ReadFile(configFile)

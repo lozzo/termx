@@ -33,21 +33,22 @@ type RuntimeFeed struct {
 // Config 是一次 EdgeControl 连接尝试的完整输入。
 // OpenRuntimeFeed 必须从 Edge Runtime actor 原子取得快照与后续增量订阅。
 type Config struct {
-	ControllerAddress    string
-	TLSConfig            *tls.Config
-	EdgeID               string
-	BootID               string
-	SoftwareVersion      string
-	DesiredConfigVersion uint64
-	CertificateProfileID string
-	CertificateVersion   uint64
-	WriterQueueSize      int
-	OpenRuntimeFeed      func(context.Context) (*RuntimeFeed, error)
-	ApplyDesiredConfig   func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
-	ApplyCertificate     func(context.Context, *cloudv1.EdgeCertificateBundle) error
-	CloseDaemon          func(context.Context, string, uint64) error
-	CloseSession         func(context.Context, string, uint64) error
-	Capabilities         []cloudv1.EdgeCapability
+	ControllerAddress     string
+	TLSConfig             *tls.Config
+	EdgeID                string
+	BootID                string
+	SoftwareVersion       string
+	DesiredConfigVersion  uint64
+	CertificateProfileID  string
+	CertificateVersion    uint64
+	WriterQueueSize       int
+	OpenRuntimeFeed       func(context.Context) (*RuntimeFeed, error)
+	ApplyDesiredConfig    func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
+	ApplyBindingKeyBundle func(*cloudv1.KeyBundle) error
+	ApplyCertificate      func(context.Context, *cloudv1.EdgeCertificateBundle) error
+	CloseDaemon           func(context.Context, string, uint64) error
+	CloseSession          func(context.Context, string, uint64) error
+	Capabilities          []cloudv1.EdgeCapability
 }
 
 // Session 拥有一个 EdgeControl generation、唯一 reader、唯一 writer 与同步 coordinator。
@@ -81,8 +82,8 @@ func Open(parent context.Context, config Config) (*Session, error) {
 	if len(config.Capabilities) == 0 {
 		config.Capabilities = []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
 	}
-	if config.ControllerAddress == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.TLSConfig == nil || config.OpenRuntimeFeed == nil || config.WriterQueueSize <= 0 {
-		return nil, errors.New("controller address, TLS, Edge identity, runtime feed, and positive writer queue are required")
+	if config.ControllerAddress == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.TLSConfig == nil || config.OpenRuntimeFeed == nil || config.ApplyBindingKeyBundle == nil || config.WriterQueueSize <= 0 {
+		return nil, errors.New("controller address, TLS, Edge identity, runtime feed, binding key store, and positive writer queue are required")
 	}
 	ctx, cancel := context.WithCancel(parent)
 	connection, err := grpc.NewClient(config.ControllerAddress, grpc.WithTransportCredentials(credentials.NewTLS(config.TLSConfig.Clone())))
@@ -117,6 +118,11 @@ func Open(parent context.Context, config Config) (*Session, error) {
 		cancel()
 		_ = connection.Close()
 		return nil, err
+	}
+	if err := config.ApplyBindingKeyBundle(welcome.GetBindingKeyBundle()); err != nil {
+		cancel()
+		_ = connection.Close()
+		return nil, fmt.Errorf("persist EdgeWelcome binding key bundle: %w", err)
 	}
 	session := &Session{
 		connectionID: connectionID, welcome: welcome, stream: stream, connection: connection, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}),
@@ -275,6 +281,11 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 				}
 				desiredApplied = true
 				markReady()
+			case *cloudv1.ControllerCommand_BindingKeyBundle:
+				if err := config.ApplyBindingKeyBundle(payload.BindingKeyBundle); err != nil {
+					session.finish(fmt.Errorf("persist binding key bundle update: %w", err))
+					return
+				}
 			case *cloudv1.ControllerCommand_CertificateBundle:
 				result := &cloudv1.CertificateApplied{CertificateProfileId: payload.CertificateBundle.GetCertificateProfileId(), Revision: payload.CertificateBundle.GetRevision()}
 				if config.ApplyCertificate == nil {
@@ -509,7 +520,7 @@ func validateWelcome(command *cloudv1.ControllerCommand, connectionID string) (*
 		return nil, err
 	}
 	heartbeat := command.GetWelcome().GetHeartbeat()
-	if heartbeat == nil || heartbeat.GetInterval() == nil || heartbeat.GetTimeout() == nil || heartbeat.GetInterval().AsDuration() <= 0 || heartbeat.GetTimeout().AsDuration() < heartbeat.GetInterval().AsDuration() {
+	if heartbeat == nil || heartbeat.GetInterval() == nil || heartbeat.GetTimeout() == nil || heartbeat.GetInterval().AsDuration() <= 0 || heartbeat.GetTimeout().AsDuration() < heartbeat.GetInterval().AsDuration() || command.GetWelcome().GetBindingKeyBundle() == nil {
 		return nil, errors.New("EdgeWelcome heartbeat policy is invalid")
 	}
 	return command.GetWelcome(), nil

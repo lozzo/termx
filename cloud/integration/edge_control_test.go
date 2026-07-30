@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -63,17 +64,18 @@ func TestEdgeControllerHelloWelcomeOverMutualTLS(t *testing.T) {
 	certificates := newCertificateFiles(t, testEdgeID)
 	controllerRuntime := startController(t, certificates)
 	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
-		ListenAddress:           "127.0.0.1:0",
-		PublicCertificateFile:   certificates.edgePublicCert,
-		PublicPrivateKeyFile:    certificates.edgePublicKey,
-		ControllerAddress:       controllerRuntime.GRPCAddress(),
-		ControllerServerName:    testControllerServer,
-		ControllerCAFile:        certificates.rootCA,
-		IdentityCertificateFile: certificates.edgeIdentityCert,
-		IdentityPrivateKeyFile:  certificates.edgeIdentityKey,
-		EdgeID:                  testEdgeID,
-		BootID:                  testEdgeBootID,
-		SoftwareVersion:         testEdgeSoftwareVersion,
+		ListenAddress:             "127.0.0.1:0",
+		PublicCertificateFile:     certificates.edgePublicCert,
+		PublicPrivateKeyFile:      certificates.edgePublicKey,
+		ControllerAddress:         controllerRuntime.GRPCAddress(),
+		ControllerServerName:      testControllerServer,
+		ControllerCAFile:          certificates.rootCA,
+		IdentityCertificateFile:   certificates.edgeIdentityCert,
+		IdentityPrivateKeyFile:    certificates.edgeIdentityKey,
+		EdgeID:                    testEdgeID,
+		BootID:                    testEdgeBootID,
+		SoftwareVersion:           testEdgeSoftwareVersion,
+		BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
 	})
 	if err != nil {
 		t.Fatalf("start Edge: %v", err)
@@ -172,6 +174,7 @@ func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.
 			return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 		},
 		CloseDaemon: state.CloseAgentConnection, CloseSession: state.CloseSession,
+		ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +227,7 @@ func TestEdgeAppliesSignedDesiredConfigBeforeReady(t *testing.T) {
 		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
 		EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: testEdgeSoftwareVersion,
 		ConfigSigningKeyID: "config-key-r3", ConfigSigningPublicKeyFile: publicKeyFile, DesiredConfigCacheFile: cacheFile,
+		BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -259,12 +263,13 @@ func TestControllerRejectsHelloIdentityMismatch(t *testing.T) {
 	openContext, cancelOpen := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelOpen()
 	_, err = controllerlink.Open(openContext, controllerlink.Config{
-		ControllerAddress: controllerRuntime.GRPCAddress(),
-		TLSConfig:         tlsConfig,
-		EdgeID:            "edge-does-not-match-certificate",
-		BootID:            testEdgeBootID,
-		SoftwareVersion:   testEdgeSoftwareVersion,
-		OpenRuntimeFeed:   emptyRuntimeFeed,
+		ControllerAddress:     controllerRuntime.GRPCAddress(),
+		TLSConfig:             tlsConfig,
+		EdgeID:                "edge-does-not-match-certificate",
+		BootID:                testEdgeBootID,
+		SoftwareVersion:       testEdgeSoftwareVersion,
+		OpenRuntimeFeed:       emptyRuntimeFeed,
+		ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("mismatched Edge identity code = %s, want InvalidArgument; error: %v", status.Code(err), err)
@@ -274,17 +279,18 @@ func TestControllerRejectsHelloIdentityMismatch(t *testing.T) {
 func TestEdgeStaysAliveButNotReadyWhileControllerIsUnavailable(t *testing.T) {
 	certificates := newCertificateFiles(t, testEdgeID)
 	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
-		ListenAddress:           "127.0.0.1:0",
-		PublicCertificateFile:   certificates.edgePublicCert,
-		PublicPrivateKeyFile:    certificates.edgePublicKey,
-		ControllerAddress:       unavailableAddress(t),
-		ControllerServerName:    testControllerServer,
-		ControllerCAFile:        certificates.rootCA,
-		IdentityCertificateFile: certificates.edgeIdentityCert,
-		IdentityPrivateKeyFile:  certificates.edgeIdentityKey,
-		EdgeID:                  testEdgeID,
-		BootID:                  testEdgeBootID,
-		SoftwareVersion:         testEdgeSoftwareVersion,
+		ListenAddress:             "127.0.0.1:0",
+		PublicCertificateFile:     certificates.edgePublicCert,
+		PublicPrivateKeyFile:      certificates.edgePublicKey,
+		ControllerAddress:         unavailableAddress(t),
+		ControllerServerName:      testControllerServer,
+		ControllerCAFile:          certificates.rootCA,
+		IdentityCertificateFile:   certificates.edgeIdentityCert,
+		IdentityPrivateKeyFile:    certificates.edgeIdentityKey,
+		EdgeID:                    testEdgeID,
+		BootID:                    testEdgeBootID,
+		SoftwareVersion:           testEdgeSoftwareVersion,
+		BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
 	})
 	if err != nil {
 		t.Fatalf("start Edge without Controller: %v", err)
@@ -298,7 +304,7 @@ func TestEdgeStaysAliveButNotReadyWhileControllerIsUnavailable(t *testing.T) {
 	}}}
 	t.Cleanup(httpClient.CloseIdleConnections)
 	assertHTTPStatus(t, httpClient, "https://"+edgeRuntime.PublicAddress()+"/healthz", http.StatusOK)
-	assertHTTPStatus(t, httpClient, "https://"+edgeRuntime.PublicAddress()+"/readyz", http.StatusServiceUnavailable)
+	assertEdgeReadiness(t, httpClient, edgeRuntime.PublicAddress(), http.StatusServiceUnavailable, false, false)
 }
 
 func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
@@ -314,12 +320,13 @@ func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
 		t.Fatalf("load Edge identity TLS: %v", err)
 	}
 	session, err := controllerlink.Open(context.Background(), controllerlink.Config{
-		ControllerAddress: controllerRuntime.GRPCAddress(),
-		TLSConfig:         tlsConfig,
-		EdgeID:            testEdgeID,
-		BootID:            testEdgeBootID,
-		SoftwareVersion:   testEdgeSoftwareVersion,
-		OpenRuntimeFeed:   emptyRuntimeFeed,
+		ControllerAddress:     controllerRuntime.GRPCAddress(),
+		TLSConfig:             tlsConfig,
+		EdgeID:                testEdgeID,
+		BootID:                testEdgeBootID,
+		SoftwareVersion:       testEdgeSoftwareVersion,
+		OpenRuntimeFeed:       emptyRuntimeFeed,
+		ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("open active EdgeControl stream: %v", err)
@@ -365,6 +372,7 @@ func startControllerWithDesired(t *testing.T, certificates certificateFiles, des
 		HeartbeatInterval: time.Second,
 		HeartbeatTimeout:  3 * time.Second,
 		Directory:         directoryState,
+		BindingKeyBundle:  testBindingKeyBundleProvider(),
 		DesiredConfig:     desired,
 	})
 	if err != nil {
@@ -409,6 +417,21 @@ func eventually(t *testing.T, timeout time.Duration, condition func() bool) {
 	t.Fatal("condition did not become true before timeout")
 }
 
+func testBindingKeyCacheFile(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "binding-key-bundle.pb")
+}
+
+func testBindingKeyBundleProvider(keys ...*cloudv1.VerificationKey) func() *cloudv1.KeyBundle {
+	if len(keys) == 0 {
+		keys = []*cloudv1.VerificationKey{{KeyId: "integration-binding", Algorithm: "Ed25519", PublicKey: make([]byte, ed25519.PublicKeySize)}}
+	}
+	return func() *cloudv1.KeyBundle {
+		now := time.Now().UTC()
+		return &cloudv1.KeyBundle{Revision: 1, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(24 * time.Hour)), Keys: keys}
+	}
+}
+
 func shutdownEdge(t *testing.T, runtime *edgeruntime.Runtime) {
 	t.Helper()
 	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
@@ -428,6 +451,25 @@ func assertHTTPStatus(t *testing.T, client *http.Client, target string, expected
 	_, _ = io.Copy(io.Discard, response.Body)
 	if response.StatusCode != expected {
 		t.Fatalf("GET %s status = %d, want %d", target, response.StatusCode, expected)
+	}
+}
+
+func assertEdgeReadiness(t *testing.T, client *http.Client, address string, expectedStatus int, controllerConnected, bindingKeysUsable bool) {
+	t.Helper()
+	response, err := client.Get("https://" + address + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var body struct {
+		ControllerConnected bool `json:"controller_connected"`
+		BindingKeysUsable   bool `json:"binding_keys_usable"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != expectedStatus || body.ControllerConnected != controllerConnected || body.BindingKeysUsable != bindingKeysUsable {
+		t.Fatalf("readyz status=%d body=%+v", response.StatusCode, body)
 	}
 }
 

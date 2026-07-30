@@ -110,7 +110,8 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
 		ControllerAddress: controllerRuntime.GRPCAddress(), ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
 		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
-		EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r5-integration",
+		BindingKeyBundleCacheFile: testBindingKeyCacheFile(t),
+		EdgeID:                    testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r5-integration",
 	})
 	if err != nil {
 		t.Fatal(err)

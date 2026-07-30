@@ -105,12 +105,6 @@ func NewService(config Config) (*Service, error) {
 	return &Service{config: config, challenges: make(map[string]challengeState)}, nil
 }
 
-// BindingVerificationKey 返回只能下发给 Edge 的 Controller Ed25519 公钥。
-func (service *Service) BindingVerificationKey() *cloudv1.VerificationKey {
-	publicKey := service.config.BindingSigningKey.Public().(ed25519.PublicKey)
-	return &cloudv1.VerificationKey{KeyId: service.config.BindingSigningKeyID, Algorithm: "Ed25519", PublicKey: append([]byte(nil), publicKey...)}
-}
-
 // CreateEnrollment 为已存在账号创建至少 192 bit 随机 code，数据库只接收摘要。
 func (service *Service) CreateEnrollment(ctx context.Context, request *cloudv1.CreateDaemonEnrollmentRequest, commandPrefix string) (*cloudv1.CreateDaemonEnrollmentResponse, error) {
 	if request == nil || strings.TrimSpace(request.GetDaemonName()) == "" {

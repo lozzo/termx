@@ -163,6 +163,8 @@ Wants=network-online.target
 Type=simple
 User=anytty-edge
 Group=anytty-edge
+StateDirectory=anytty-cloud-edge
+StateDirectoryMode=0700
 ExecStart=/opt/anytty-cloud-edge/current/anytty-cloud-edge --config=/etc/anytty-cloud-edge/config.yaml
 Restart=on-failure
 RestartSec=3

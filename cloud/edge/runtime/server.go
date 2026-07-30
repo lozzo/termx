@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/anytty/anytty/cloud/configsignature"
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
+	edgebindingkeys "github.com/anytty/anytty/cloud/edge/bindingkeys"
 	edgecertificate "github.com/anytty/anytty/cloud/edge/certificate"
 	"github.com/anytty/anytty/cloud/edge/clientgateway"
 	"github.com/anytty/anytty/cloud/edge/controllerlink"
@@ -27,7 +29,6 @@ import (
 	"github.com/anytty/anytty/cloud/edge/usage"
 	"github.com/anytty/anytty/cloud/processhealth"
 	"github.com/anytty/anytty/cloud/securetransport"
-	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -59,6 +60,7 @@ type Config struct {
 	TURNPublicEndpoint          string
 	TURNRealm                   string
 	UsageOutboxFile             string
+	BindingKeyBundleCacheFile   string
 }
 
 type relayLifecycle interface {
@@ -76,37 +78,38 @@ type usageSession interface {
 
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
-	config             Config
-	publicTLS          *tls.Config
-	controllerTLS      *tls.Config
-	listener           net.Listener
-	httpServer         *http.Server
-	grpcServer         *grpc.Server
-	grpcHealth         *grpc_health.Server
-	health             *processhealth.State
-	errors             chan error
-	readyChanges       chan struct{}
-	ctx                context.Context
-	cancel             context.CancelFunc
-	waitGroup          sync.WaitGroup
-	shutdownMu         sync.Mutex
-	shutdownComplete   bool
-	shutdownErr        error
-	state              *State
-	configPublicKey    ed25519.PublicKey
-	certificateManager *edgecertificate.Manager
-	bindingKeysMu      sync.RWMutex
-	bindingKeys        ticket.KeySet
-	credentialDeriver  *policy.CredentialDeriver
-	usageOutbox        *usage.Outbox
-	relayServer        relayLifecycle
-	controlSessionMu   sync.RWMutex
-	controlSession     usageSession
-	usagePumpMu        sync.Mutex
-	usagePumpGate      sync.Mutex
-	usagePumpClosing   bool
-	usagePumpWait      sync.WaitGroup
-	usageDegraded      atomic.Bool
+	config              Config
+	publicTLS           *tls.Config
+	controllerTLS       *tls.Config
+	listener            net.Listener
+	httpServer          *http.Server
+	grpcServer          *grpc.Server
+	grpcHealth          *grpc_health.Server
+	health              *processhealth.State
+	errors              chan error
+	readyChanges        chan struct{}
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	waitGroup           sync.WaitGroup
+	shutdownMu          sync.Mutex
+	shutdownComplete    bool
+	shutdownErr         error
+	state               *State
+	configPublicKey     ed25519.PublicKey
+	certificateManager  *edgecertificate.Manager
+	bindingKeys         *edgebindingkeys.Store
+	bindingKeyChanges   chan struct{}
+	controllerConnected atomic.Bool
+	credentialDeriver   *policy.CredentialDeriver
+	usageOutbox         *usage.Outbox
+	relayServer         relayLifecycle
+	controlSessionMu    sync.RWMutex
+	controlSession      usageSession
+	usagePumpMu         sync.Mutex
+	usagePumpGate       sync.Mutex
+	usagePumpClosing    bool
+	usagePumpWait       sync.WaitGroup
+	usageDegraded       atomic.Bool
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -115,6 +118,10 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	config = normalizeConfig(config)
 	if err := validateConfig(config); err != nil {
 		return nil, err
+	}
+	bindingKeyStore, err := edgebindingkeys.Open(config.BindingKeyBundleCacheFile)
+	if err != nil {
+		return nil, fmt.Errorf("load binding key bundle cache: %w", err)
 	}
 	publicTLS, publicCertificateLoader, err := securetransport.NewReloadableServerTLSConfig(securetransport.ServerOptions{
 		CertificateFile: config.PublicCertificateFile,
@@ -170,6 +177,8 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		state:              state,
 		configPublicKey:    configPublicKey,
 		certificateManager: certificateManager,
+		bindingKeys:        bindingKeyStore,
+		bindingKeyChanges:  make(chan struct{}, 1),
 	}
 	if config.TURNListenAddress != "" {
 		outbox, openErr := usage.Open(config.UsageOutboxFile, 2*time.Second)
@@ -201,7 +210,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	}
 	agentService, err := agentgateway.NewService(agentgateway.Config{
 		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state,
-		VerificationKeys: runtime.currentBindingKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
+		VerificationKeys: runtime.bindingKeys.VerificationKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
 	})
 	if err != nil {
 		_ = listener.Close()
@@ -239,9 +248,10 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		runtime.relayServer = relayServer
 	}
 	runtime.httpServer = &http.Server{Handler: runtime, ReadHeaderTimeout: 5 * time.Second, TLSConfig: publicTLS}
-	runtime.waitGroup.Add(2)
+	runtime.waitGroup.Add(3)
 	go runtime.servePublic()
 	go runtime.runControllerLink()
+	go runtime.monitorBindingKeyValidity()
 	return runtime, nil
 }
 
@@ -280,10 +290,16 @@ func (runtime *Runtime) UsageOutboxDepth() (int, error) {
 	return runtime.usageOutbox.Len()
 }
 
-// Ready 表示 Controller 已校验并原子接受当前 generation 的完整 Runtime 快照。
+// Ready requires both an accepted Controller generation and a currently usable binding key bundle.
 func (runtime *Runtime) Ready() bool {
-	return runtime.health.Ready()
+	return runtime.ControllerConnected() && runtime.BindingKeysUsable()
 }
+
+// ControllerConnected reports whether the current EdgeControl generation completed snapshot synchronization.
+func (runtime *Runtime) ControllerConnected() bool { return runtime.controllerConnected.Load() }
+
+// BindingKeysUsable reports whether AgentGateway admission can use the current persisted bundle.
+func (runtime *Runtime) BindingKeysUsable() bool { return runtime.bindingKeys.Usable(time.Now().UTC()) }
 
 // WaitReady 等待 ControllerLink 就绪，超时或进程关闭时返回 context error。
 func (runtime *Runtime) WaitReady(ctx context.Context) error {
@@ -322,6 +338,27 @@ func (runtime *Runtime) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		runtime.grpcServer.ServeHTTP(writer, request)
 		return
 	}
+	if request.URL.Path == "/readyz" {
+		controllerConnected := runtime.ControllerConnected()
+		bindingKeysUsable := runtime.BindingKeysUsable()
+		ready := controllerConnected && bindingKeysUsable
+		statusText := "ready"
+		if !controllerConnected {
+			statusText = "controller_disconnected"
+		} else if !bindingKeysUsable {
+			statusText = "binding_keys_unusable"
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		code := http.StatusOK
+		if !ready {
+			code = http.StatusServiceUnavailable
+		}
+		writer.WriteHeader(code)
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"ok": ready, "status": statusText, "controller_connected": controllerConnected, "binding_keys_usable": bindingKeysUsable,
+		})
+		return
+	}
 	runtime.health.ServeHTTP(writer, request)
 }
 
@@ -333,8 +370,7 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 		return runtime.shutdownErr
 	}
 
-	runtime.setReady(false)
-	runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	runtime.setControllerConnected(false)
 	var shutdownErr error
 	if runtime.relayServer != nil {
 		shutdownErr = runtime.relayServer.Close()
@@ -431,23 +467,13 @@ func (runtime *Runtime) runControllerLink() {
 				}
 				return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 			},
-			ApplyDesiredConfig: applyDesiredConfig,
-			ApplyCertificate:   runtime.certificateManager.Apply,
-			CloseDaemon:        runtime.state.CloseAgentConnection,
-			CloseSession:       runtime.state.CloseSession,
+			ApplyDesiredConfig:    applyDesiredConfig,
+			ApplyBindingKeyBundle: runtime.applyBindingKeyBundle,
+			ApplyCertificate:      runtime.certificateManager.Apply,
+			CloseDaemon:           runtime.state.CloseAgentConnection,
+			CloseSession:          runtime.state.CloseSession,
 		})
 		if err == nil {
-			if keys := session.Welcome().GetBindingVerificationKeys(); len(keys) != 0 {
-				parsed, parseErr := ticket.FromVerificationKeys(keys)
-				if parseErr != nil {
-					_ = session.Close()
-					err = parseErr
-				} else {
-					runtime.bindingKeysMu.Lock()
-					runtime.bindingKeys = parsed
-					runtime.bindingKeysMu.Unlock()
-				}
-			}
 			if runtime.ctx.Err() != nil {
 				_ = session.Close()
 				return
@@ -456,14 +482,12 @@ func (runtime *Runtime) runControllerLink() {
 				_ = session.Close()
 			} else {
 				runtime.setControlSession(session)
-				runtime.setReady(true)
-				runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+				runtime.setControllerConnected(true)
 				delay = 100 * time.Millisecond
 				err = session.Wait()
 				runtime.setControlSession(nil)
 				_ = session.Close()
-				runtime.setReady(false)
-				runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+				runtime.setControllerConnected(false)
 			}
 		}
 		if runtime.ctx.Err() != nil || controllerlink.IsExpectedClosure(runtime.ctx, err) {
@@ -485,24 +509,70 @@ func (runtime *Runtime) runControllerLink() {
 	}
 }
 
-func (runtime *Runtime) currentBindingKeys() ticket.KeySet {
-	runtime.bindingKeysMu.RLock()
-	defer runtime.bindingKeysMu.RUnlock()
-	result := make(ticket.KeySet, len(runtime.bindingKeys))
-	for id, publicKey := range runtime.bindingKeys {
-		result[id] = append(ed25519.PublicKey(nil), publicKey...)
+func (runtime *Runtime) applyBindingKeyBundle(bundle *cloudv1.KeyBundle) error {
+	if err := runtime.bindingKeys.Update(bundle); err != nil {
+		return err
 	}
-	return result
+	select {
+	case runtime.bindingKeyChanges <- struct{}{}:
+	default:
+	}
+	runtime.refreshReadiness()
+	return nil
 }
 
-func (runtime *Runtime) setReady(value bool) {
-	if runtime.health.Ready() == value {
+func (runtime *Runtime) setControllerConnected(value bool) {
+	runtime.controllerConnected.Store(value)
+	runtime.refreshReadiness()
+}
+
+func (runtime *Runtime) refreshReadiness() {
+	value := runtime.Ready()
+	changed := runtime.health.Ready() != value
+	runtime.health.SetReady(value)
+	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	if value {
+		status = grpc_health_v1.HealthCheckResponse_SERVING
+	}
+	runtime.grpcHealth.SetServingStatus("", status)
+	if !changed {
 		return
 	}
-	runtime.health.SetReady(value)
 	select {
 	case runtime.readyChanges <- struct{}{}:
 	default:
+	}
+}
+
+func (runtime *Runtime) monitorBindingKeyValidity() {
+	defer runtime.waitGroup.Done()
+	for {
+		var deadline <-chan time.Time
+		var timer *time.Timer
+		if bundle := runtime.bindingKeys.Bundle(); bundle != nil {
+			now := time.Now().UTC()
+			wakeAt := bundle.GetExpiresAt().AsTime()
+			if now.Before(bundle.GetIssuedAt().AsTime()) {
+				wakeAt = bundle.GetIssuedAt().AsTime()
+			}
+			if wakeAt.After(now) {
+				timer = time.NewTimer(wakeAt.Sub(now))
+				deadline = timer.C
+			}
+		}
+		select {
+		case <-runtime.ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case <-runtime.bindingKeyChanges:
+			if timer != nil {
+				timer.Stop()
+			}
+		case <-deadline:
+			runtime.refreshReadiness()
+		}
 	}
 }
 
@@ -524,6 +594,7 @@ func normalizeConfig(config Config) Config {
 	config.TURNPublicEndpoint = strings.TrimSpace(config.TURNPublicEndpoint)
 	config.TURNRealm = strings.TrimSpace(config.TURNRealm)
 	config.UsageOutboxFile = strings.TrimSpace(config.UsageOutboxFile)
+	config.BindingKeyBundleCacheFile = strings.TrimSpace(config.BindingKeyBundleCacheFile)
 	return config
 }
 
@@ -557,8 +628,8 @@ func (runtime *Runtime) applyDesiredConfig(_ context.Context, signed *cloudv1.Si
 }
 
 func validateConfig(config Config) error {
-	if config.ListenAddress == "" || config.ControllerAddress == "" || config.ControllerServerName == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" {
-		return errors.New("Edge listen, Controller, identity, boot ID, and software version are required")
+	if config.ListenAddress == "" || config.ControllerAddress == "" || config.ControllerServerName == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.BindingKeyBundleCacheFile == "" {
+		return errors.New("Edge listen, Controller, identity, boot ID, software version, and binding key bundle cache are required")
 	}
 	if _, err := securetransport.EdgeIdentityURI(config.EdgeID); err != nil {
 		return err

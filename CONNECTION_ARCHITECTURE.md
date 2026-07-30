@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | enrollment 一次性访问 Controller | 已实现 | 完成后返回 daemon binding 与 Edge locator |
 | daemon 启动直连 Edge | 已实现 | runtime 只读取 version 2 record，不创建 Controller client |
-| Controller 离线时 daemon 重连原 Edge | 已实现 | 前提是 Edge 进程仍持有 verification keys |
+| Controller 离线时 daemon 重连原 Edge | 已实现 | Edge 使用仍在 TTL 内的持久 KeyBundle，过期立即停止 admission |
 | pairing offer 直连 Edge | 已实现 | offer 只带 Edge 入口和 CA 指纹；Edge 向在线 daemon 实时预检 |
 | 已授权客户端 cache-first | 已实现 | credential locator 命中时 Controller RPC 为零 |
 | 精确 Controller fallback | 已实现 | 仅本地 typed transport error 或明确位置不存在触发 |
@@ -85,7 +85,7 @@ load record
 
 该路径没有 Controller DNS、TCP、TLS 或 RPC。AgentGateway 断开只对同一 Edge 退避重连。
 
-当前限制：Edge 只从活跃 EdgeControl Welcome 获取 binding verification keys，尚未把最后验证的 key bundle 持久化。因此“Controller 已停止但 Edge 未重启”支持直连；“Edge 和 Controller 同时重启失败”会 fail closed。
+Edge 从 EdgeControl Welcome 和后续刷新命令接收完整 `KeyBundle`，完成 revision/TTL/keyset 校验和 0600 原子落盘后才发布 admission snapshot。Controller 与 Edge 同时重启时，只要最后 bundle 仍在 TTL 内，daemon 可以直接重连原 Edge；cache 缺失或过期仍允许 Edge 连接 Controller，但 AgentGateway admission fail closed。`/readyz` 分别报告 `controller_connected` 与 `binding_keys_usable`，总体 ready 要求二者同时为真。
 
 ## 6. pairing 快路径
 
@@ -158,9 +158,9 @@ Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“
 | 已授权客户端新建 P2P | 是 | credential 有 locator 与 route grant |
 | 已授权客户端新建 Relay | 是 | Edge 使用当前 daemon binding 委托 |
 | 新 pairing | 是 | offer 有 Edge 入口和 CA pin，Edge 向在线 daemon 实时预检 |
-| daemon 重连同一未重启 Edge | 是 | record 和 Edge 内存 key bundle 足够 |
+| daemon 重连同一 Edge | 是，在 KeyBundle TTL 内 | record 和 Edge 持久 key bundle 足够 |
 | 无 locator 的客户端 | 否 | 没有可信入口，只能 Directory fallback |
-| Edge 重启后 daemon admission | 否 | key bundle 未持久化，安全地拒绝 |
+| Edge/Controller 同时重启后 daemon admission | 是，在 KeyBundle TTL 内 | Edge 从 0600 原子 cache 恢复完整 revisioned keyset |
 | 跨 Edge 自动迁移 | 否 | 当前没有签名 redirect/recovery 协议 |
 
 ## 11. 已完成的安全收口
@@ -183,7 +183,6 @@ Edge 知道 TCP/gRPC/TURN 连接是否活着，但“连接活着”不等于“
 | --- | --- | --- |
 | P0 | Edge 先发单次 nonce，Agent/Client proof 覆盖完整安全相关 Hello | 当前 proof 的 session ID 由发起方选择，捕获包的重放保护不够强 |
 | P0 | 把 Relay entitlement 从长 binding 拆为有硬到期的 Edge policy snapshot | Controller 离线时订阅撤销的收敛窗口目前等于 binding 剩余时间 |
-| P0 | Edge 持久化已验证 verification keys 和 policy revision | Edge/Controller 同时重启时无法保持有限离线服务 |
 | P1 | 签名 locator 增加 issued/refresh/expiry 和 revision 防回滚 | 当前签名覆盖完整 locator，但没有独立刷新窗口 |
 | P1 | 结构化 Cloud error detail | 当前已避免宽泛 `Unavailable` fallback，但 `NotFound` 仍不够细 |
 | P1 | Edge HTTP/2 connection pool | 当前每个 signaling session 建一个 ClientConn，增加 TLS RTT |

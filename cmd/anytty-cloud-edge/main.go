@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anytty/anytty/cloud/edge/bootstrap"
 	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
+	"github.com/google/uuid"
 )
 
 const defaultSoftwareVersion = "development"
@@ -42,6 +42,7 @@ type options struct {
 	turnPublicEndpoint      string
 	turnRealm               string
 	usageOutbox             string
+	bindingKeyBundleCache   string
 }
 
 func main() {
@@ -84,6 +85,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		config.turnPublicEndpoint = resolved.TURNPublicEndpoint
 		config.turnRealm = resolved.TURNRealm
 		config.usageOutbox = resolved.UsageOutboxFile
+		config.bindingKeyBundleCache = resolved.BindingKeyBundleCacheFile
 	}
 	if strings.TrimSpace(config.edgeID) == "" {
 		return errors.New("--edge-id is required")
@@ -111,6 +113,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		TURNPublicEndpoint:          config.turnPublicEndpoint,
 		TURNRealm:                   config.turnRealm,
 		UsageOutboxFile:             config.usageOutbox,
+		BindingKeyBundleCacheFile:   config.bindingKeyBundleCache,
 	})
 	if err != nil {
 		return err
@@ -155,6 +158,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.turnRealm, "turn-realm", "", "generated TURN authentication realm")
 	flags.StringVar(&config.usageOutbox, "usage-outbox", "", "durable unacknowledged Relay usage outbox")
 	flags.StringVar(&config.managedCertificateState, "managed-certificate-state", "", "atomic Edge managed certificate state file")
+	flags.StringVar(&config.bindingKeyBundleCache, "binding-key-bundle-cache", "", "durable Controller binding key bundle cache file")
 	if err := flags.Parse(arguments); err != nil {
 		return options{}, fmt.Errorf("parse Edge flags: %w", err)
 	}

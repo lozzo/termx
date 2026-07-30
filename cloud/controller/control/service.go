@@ -14,32 +14,32 @@ import (
 
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/securetransport"
+	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 3 removes per-session Relay decisions from EdgeControl.
-const ProtocolVersion uint32 = 3
+// ProtocolVersion 4 requires persistent, revisioned binding key bundles.
+const ProtocolVersion uint32 = 4
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
-	ControllerID            string
-	ControllerBootID        string
-	HeartbeatInterval       time.Duration
-	HeartbeatTimeout        time.Duration
-	BindingVerificationKeys []*cloudv1.VerificationKey
-	Directory               *directory.Directory
-	DesiredConfig           func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
-	DesiredCertificate      func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
-	CertificateApplied      func(context.Context, string, *cloudv1.CertificateApplied) error
-	UsageStore              UsageStore
+	ControllerID       string
+	ControllerBootID   string
+	HeartbeatInterval  time.Duration
+	HeartbeatTimeout   time.Duration
+	BindingKeyBundle   func() *cloudv1.KeyBundle
+	Directory          *directory.Directory
+	DesiredConfig      func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
+	DesiredCertificate func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
+	CertificateApplied func(context.Context, string, *cloudv1.CertificateApplied) error
+	UsageStore         UsageStore
 }
 
 // UsageStore 是 Controller 对 Edge 用量批次的持久事务边界。
@@ -69,13 +69,15 @@ type externalCommand struct {
 func NewService(config Config) (*Service, error) {
 	config.ControllerID = strings.TrimSpace(config.ControllerID)
 	config.ControllerBootID = strings.TrimSpace(config.ControllerBootID)
-	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil {
-		return nil, errors.New("controller ID, boot ID, and Directory are required")
+	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil {
+		return nil, errors.New("controller ID, boot ID, Directory, and binding key bundle provider are required")
 	}
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
 	}
-	config.BindingVerificationKeys = cloneKeys(config.BindingVerificationKeys)
+	if _, err := validPublishedBundle(config.BindingKeyBundle(), time.Now().UTC()); err != nil {
+		return nil, fmt.Errorf("binding key bundle provider: %w", err)
+	}
 	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand), edgeConnections: make(map[string]string)}, nil
 }
 
@@ -150,10 +152,14 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	}()
 
 	commandSeq := uint64(1)
+	bindingBundle, err := validPublishedBundle(service.config.BindingKeyBundle(), time.Now().UTC())
+	if err != nil {
+		return status.Errorf(codes.FailedPrecondition, "load binding key bundle: %v", err)
+	}
 	if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_Welcome{Welcome: &cloudv1.EdgeWelcome{
 		AcceptedProtocolVersion: ProtocolVersion,
 		Heartbeat:               &cloudv1.HeartbeatPolicy{Interval: durationpb.New(service.config.HeartbeatInterval), Timeout: durationpb.New(service.config.HeartbeatTimeout)},
-		BindingVerificationKeys: cloneKeys(service.config.BindingVerificationKeys),
+		BindingKeyBundle:        bindingBundle,
 	}})); err != nil {
 		return status.Errorf(codes.Unavailable, "send EdgeWelcome: %v", err)
 	}
@@ -194,6 +200,8 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		}
 	}()
 	expectedEventSeq := uint64(2)
+	bundleRefresh := time.NewTimer(bindingBundleRefreshDelay(bindingBundle, time.Now().UTC()))
+	defer bundleRefresh.Stop()
 	for {
 		select {
 		case <-service.drain:
@@ -202,6 +210,16 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 			return context.Cause(stream.Context())
 		case err = <-writerErrors:
 			return status.Errorf(codes.Unavailable, "send Controller command: %v", err)
+		case <-bundleRefresh.C:
+			bindingBundle, err = validPublishedBundle(service.config.BindingKeyBundle(), time.Now().UTC())
+			if err != nil {
+				return status.Errorf(codes.FailedPrecondition, "refresh binding key bundle: %v", err)
+			}
+			commandSeq++
+			if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_BindingKeyBundle{BindingKeyBundle: bindingBundle})); err != nil {
+				return status.Errorf(codes.Unavailable, "send binding key bundle: %v", err)
+			}
+			bundleRefresh.Reset(bindingBundleRefreshDelay(bindingBundle, time.Now().UTC()))
 		case request := <-external:
 			payload, shouldSend, resolveErr := service.resolveExternalCommand(stream.Context(), certificateEdgeID, request)
 			if resolveErr != nil {
@@ -330,6 +348,8 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_ResyncRequired:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_DesiredConfig:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_BindingKeyBundle:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_UsageAck:
 		command.Payload = typed
@@ -538,12 +558,21 @@ func validateEventEnvelope(event *cloudv1.EdgeEvent, certificateEdgeID, senderID
 	return nil
 }
 
-func cloneKeys(keys []*cloudv1.VerificationKey) []*cloudv1.VerificationKey {
-	cloned := make([]*cloudv1.VerificationKey, 0, len(keys))
-	for _, key := range keys {
-		if key != nil {
-			cloned = append(cloned, proto.Clone(key).(*cloudv1.VerificationKey))
-		}
+func validPublishedBundle(bundle *cloudv1.KeyBundle, now time.Time) (*cloudv1.KeyBundle, error) {
+	canonical, _, err := ticket.CanonicalKeyBundle(bundle)
+	if err != nil {
+		return nil, err
 	}
-	return cloned
+	if !ticket.KeyBundleUsableAt(canonical, now) {
+		return nil, errors.New("binding key bundle is not currently usable")
+	}
+	return canonical, nil
+}
+
+func bindingBundleRefreshDelay(bundle *cloudv1.KeyBundle, now time.Time) time.Duration {
+	remaining := bundle.GetExpiresAt().AsTime().Sub(now)
+	if remaining <= 0 {
+		return time.Nanosecond
+	}
+	return remaining / 2
 }

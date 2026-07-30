@@ -36,7 +36,7 @@ type Config struct {
 	EdgeID           string
 	EdgeBootID       string
 	Runtime          Runtime
-	VerificationKeys func() ticket.KeySet
+	VerificationKeys func(time.Time) (ticket.KeySet, error)
 	Heartbeat        time.Duration
 	HeartbeatTimeout time.Duration
 	Now              func() time.Time
@@ -175,7 +175,11 @@ func (service *Service) admit(event *cloudv1.AgentEvent, challenge *cloudv1.Edge
 		challenge.GetEdgeId() != service.config.EdgeID || challenge.GetEdgeBootId() != service.config.EdgeBootID {
 		return nil, errors.New("AgentGateway challenge is invalid")
 	}
-	claims, err := ticket.VerifyDaemonBinding(event.GetHello().GetDaemonBinding(), service.config.VerificationKeys(), service.config.EdgeID, service.config.Now().UTC(), 30*time.Second)
+	keys, err := service.config.VerificationKeys(now)
+	if err != nil {
+		return nil, errors.New("binding verification keys are unavailable")
+	}
+	claims, err := ticket.VerifyDaemonBinding(event.GetHello().GetDaemonBinding(), keys, service.config.EdgeID, now, 30*time.Second)
 	if err != nil {
 		return nil, err
 	}

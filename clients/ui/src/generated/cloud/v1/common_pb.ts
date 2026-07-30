@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/common.proto.
  */
 export const file_cloud_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD2FueXR0eS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMImoKD0hlYXJ0YmVhdFBvbGljeRIrCghpbnRlcnZhbBgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIqCgd0aW1lb3V0GAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIkQKDlNpZ25lZEVudmVsb3BlEg4KBmtleV9pZBgBIAEoCRIPCgdwYXlsb2FkGAIgASgMEhEKCXNpZ25hdHVyZRgDIAEoDCLtAQoNRWRnZUNoYWxsZW5nZRINCgVub25jZRgBIAEoDBIPCgdlZGdlX2lkGAIgASgJEhQKDGVkZ2VfYm9vdF9pZBgDIAEoCRIRCglzdHJlYW1faWQYBCABKAkSLQoJaXNzdWVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0CgZ0YXJnZXQYByABKA4yJC5hbnl0dHkuY2xvdWQudjEuRWRnZUNoYWxsZW5nZVRhcmdldCqPAQoTRWRnZUNoYWxsZW5nZVRhcmdldBIlCiFFREdFX0NIQUxMRU5HRV9UQVJHRVRfVU5TUEVDSUZJRUQQABInCiNFREdFX0NIQUxMRU5HRV9UQVJHRVRfQUdFTlRfR0FURVdBWRABEigKJEVER0VfQ0hBTExFTkdFX1RBUkdFVF9DTElFTlRfR0FURVdBWRACQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_duration, file_google_protobuf_timestamp]);
+  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD2FueXR0eS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMIqwBCglLZXlCdW5kbGUSEAoIcmV2aXNpb24YASABKAQSLQoJaXNzdWVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgRrZXlzGAQgAygLMiAuYW55dHR5LmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSJqCg9IZWFydGJlYXRQb2xpY3kSKwoIaW50ZXJ2YWwYASABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SKgoHdGltZW91dBgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiJECg5TaWduZWRFbnZlbG9wZRIOCgZrZXlfaWQYASABKAkSDwoHcGF5bG9hZBgCIAEoDBIRCglzaWduYXR1cmUYAyABKAwi7QEKDUVkZ2VDaGFsbGVuZ2USDQoFbm9uY2UYASABKAwSDwoHZWRnZV9pZBgCIAEoCRIUCgxlZGdlX2Jvb3RfaWQYAyABKAkSEQoJc3RyZWFtX2lkGAQgASgJEi0KCWlzc3VlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNAoGdGFyZ2V0GAcgASgOMiQuYW55dHR5LmNsb3VkLnYxLkVkZ2VDaGFsbGVuZ2VUYXJnZXQqjwEKE0VkZ2VDaGFsbGVuZ2VUYXJnZXQSJQohRURHRV9DSEFMTEVOR0VfVEFSR0VUX1VOU1BFQ0lGSUVEEAASJwojRURHRV9DSEFMTEVOR0VfVEFSR0VUX0FHRU5UX0dBVEVXQVkQARIoCiRFREdFX0NIQUxMRU5HRV9UQVJHRVRfQ0xJRU5UX0dBVEVXQVkQAkIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_duration, file_google_protobuf_timestamp]);
 
 /**
  * VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
@@ -45,6 +45,41 @@ export const VerificationKeySchema: GenMessage<VerificationKey> = /*@__PURE__*/
   messageDesc(file_cloud_v1_common, 0);
 
 /**
+ * KeyBundle 是 Controller 发布并由 Edge 原子持久化的完整 binding 验签 keyset。
+ * revision 只随 keyset owner 单调变化；issued_at/expires_at 限制离线 admission 窗口。
+ *
+ * @generated from message anytty.cloud.v1.KeyBundle
+ */
+export type KeyBundle = Message<"anytty.cloud.v1.KeyBundle"> & {
+  /**
+   * @generated from field: uint64 revision = 1;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp issued_at = 2;
+   */
+  issuedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 3;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: repeated anytty.cloud.v1.VerificationKey keys = 4;
+   */
+  keys: VerificationKey[];
+};
+
+/**
+ * Describes the message anytty.cloud.v1.KeyBundle.
+ * Use `create(KeyBundleSchema)` to create a new message.
+ */
+export const KeyBundleSchema: GenMessage<KeyBundle> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_common, 1);
+
+/**
  * HeartbeatPolicy 约束 EdgeControl 的心跳频率和 Controller 失联判定。
  *
  * @generated from message anytty.cloud.v1.HeartbeatPolicy
@@ -66,7 +101,7 @@ export type HeartbeatPolicy = Message<"anytty.cloud.v1.HeartbeatPolicy"> & {
  * Use `create(HeartbeatPolicySchema)` to create a new message.
  */
 export const HeartbeatPolicySchema: GenMessage<HeartbeatPolicy> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_common, 1);
+  messageDesc(file_cloud_v1_common, 2);
 
 /**
  * SignedEnvelope 使用 domain-separated Ed25519 签名保护确定性 Proto payload。
@@ -95,7 +130,7 @@ export type SignedEnvelope = Message<"anytty.cloud.v1.SignedEnvelope"> & {
  * Use `create(SignedEnvelopeSchema)` to create a new message.
  */
 export const SignedEnvelopeSchema: GenMessage<SignedEnvelope> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_common, 2);
+  messageDesc(file_cloud_v1_common, 3);
 
 /**
  * EdgeChallenge 是 Edge 在每条 Gateway stream 上先发的单次新鲜度证明材料。
@@ -145,7 +180,7 @@ export type EdgeChallenge = Message<"anytty.cloud.v1.EdgeChallenge"> & {
  * Use `create(EdgeChallengeSchema)` to create a new message.
  */
 export const EdgeChallengeSchema: GenMessage<EdgeChallenge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_common, 3);
+  messageDesc(file_cloud_v1_common, 4);
 
 /**
  * EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
