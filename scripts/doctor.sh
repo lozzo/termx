@@ -49,6 +49,7 @@ fi
 
 # doctor 只读取源码、锁文件和临时生成物，不修复或重写工作树。
 scripts/repository-layout-guard.sh
+node scripts/client-workspace-guard.mjs
 npm ls --all --json >/dev/null
 scripts/check-generated-code.sh
 clients/mobile/scripts/verify-android-source.sh

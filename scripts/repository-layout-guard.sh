@@ -17,15 +17,31 @@ for path in \
   [[ ! -e "$path" ]] || fail "legacy path still exists: $path"
 done
 
-tracked_markdown="$(git ls-files '*.md')"
-expected_markdown=$'ARCHITECTURE.md\nworkflow.md'
-[[ "$tracked_markdown" == "$expected_markdown" ]] || fail "tracked Markdown must only contain ARCHITECTURE.md and workflow.md: ${tracked_markdown:-none}"
+required_documents=(
+  README.md
+  CONTRIBUTING.md
+  SECURITY.md
+  CHANGELOG.md
+  ARCHITECTURE.md
+  CONNECTION_ARCHITECTURE.md
+  workflow.md
+)
+for path in "${required_documents[@]}"; do
+  [[ -f "$path" ]] || fail "required document is missing: $path"
+done
 
 for path in bin .build; do
   [[ ! -e "$path" ]] || fail "legacy build output still exists: $path (run make clean)"
 done
-if find . -mindepth 1 -maxdepth 1 -type f \( -name '*.test' -o -name '*.cover' -o -name 'cover.out' \) -print -quit | grep -q .; then
-  fail "legacy Go test output exists at repository root (run make clean)"
+root_build_output="$(find . -mindepth 1 -maxdepth 1 -type f \( \
+  -name '*.apk' -o -name '*.aab' -o -name '*.test' -o -name '*.cover' -o -name 'cover.out' \
+  -o -name 'anytty' -o -name 'anytty.exe' -o -name 'muxvia' -o -name 'muxvia.exe' \
+  -o -name 'anytty-cloud-controller' -o -name 'anytty-cloud-controller.exe' \
+  -o -name 'anytty-cloud-edge' -o -name 'anytty-cloud-edge.exe' \
+  -o -name '*.bin' -o -name '*.dll' -o -name '*.dylib' -o -name '*.so' -o -name '*.exe' \
+  \) -print -quit)"
+if [[ -n "$root_build_output" ]]; then
+  fail "build output exists at repository root: ${root_build_output#./} (use .artifacts or make clean)"
 fi
 if [[ -d clients/mobile/native/android ]]; then
   fail "duplicate Android source mirror exists: clients/mobile/native/android"
@@ -33,8 +49,15 @@ fi
 if ! rg -Fxq '/.artifacts/' .gitignore; then
   fail ".artifacts must be the ignored repository artifact root"
 fi
-if [[ -d .git ]] && [[ -n "$(git ls-files .artifacts)" ]]; then
+if [[ -n "$(git ls-files .artifacts)" ]]; then
   fail ".artifacts must not contain tracked files"
+fi
+tracked_android_outputs="$({
+  git ls-files -- '*.apk' '*.aab'
+  git ls-files clients/mobile/android | rg '(^|/)(build|\.gradle|\.cxx)/' || true
+} | LC_ALL=C sort -u)"
+if [[ -n "$tracked_android_outputs" ]]; then
+  fail "Android build output must not be tracked: $tracked_android_outputs"
 fi
 
 lockfiles=()
@@ -63,7 +86,8 @@ if [[ "${actual_modules[*]}" != "${expected_modules_sorted[*]}" ]]; then
 fi
 
 scan_candidates=(
-  .gitignore ARCHITECTURE.md workflow.md Makefile THIRD_PARTY_NOTICES.txt go.mod go.work package.json
+  .gitignore README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md ARCHITECTURE.md
+  CONNECTION_ARCHITECTURE.md workflow.md Makefile THIRD_PARTY_NOTICES.txt go.mod go.work package.json
   clients cmd core docs internal proto remote scripts shared testkit tui vterm
 )
 scan_paths=()
@@ -86,5 +110,4 @@ if rg -n '^(termx-build|test-core|test-tui|test-repository|test-cli-v3[^:]*):' M
   fail "Makefile still exposes a legacy build or test target"
 fi
 
-node scripts/client-workspace-guard.mjs
 echo "repository layout passed"

@@ -48,6 +48,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Repository doctor and tooling fixtures
+        run: |
+          make doctor
+          scripts/test-repository-layout-guard.sh
+          node --test scripts/package-scripts.test.mjs
+
       - name: Go correctness and vulnerability gates
         run: |
           go test ./... -count=1
@@ -59,15 +65,12 @@ jobs:
         run: |
           npm audit
           npm audit --omit=dev
-          node scripts/client-workspace-guard.mjs
           npm run test:i18n
           npm test
-          scripts/check-generated-code.sh
 
       - name: Android release gate
         run: |
           sdkmanager "ndk;27.2.12479018"
-          clients/mobile/scripts/verify-android-source.sh
           scripts/test-android-apk-boundary.sh
           npm run cap:build
           clients/mobile/android/gradlew --no-daemon --project-dir clients/mobile/android testDebugUnitTest assembleRelease
