@@ -61,6 +61,14 @@ type Config struct {
 	UsageOutboxFile             string
 }
 
+type relayLifecycle interface {
+	Address() string
+	Degraded() bool
+	Close() error
+	CloseSessionAllocations(context.Context, string) error
+	StateCloseSafe() bool
+}
+
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
 	config             Config
@@ -76,7 +84,9 @@ type Runtime struct {
 	ctx                context.Context
 	cancel             context.CancelFunc
 	waitGroup          sync.WaitGroup
-	shutdownOnce       sync.Once
+	shutdownMu         sync.Mutex
+	shutdownComplete   bool
+	shutdownErr        error
 	state              *State
 	configPublicKey    ed25519.PublicKey
 	certificateManager *edgecertificate.Manager
@@ -84,7 +94,7 @@ type Runtime struct {
 	bindingKeys        ticket.KeySet
 	credentialDeriver  *policy.CredentialDeriver
 	usageOutbox        *usage.Outbox
-	relayServer        *relay.Server
+	relayServer        relayLifecycle
 	controlSessionMu   sync.RWMutex
 	controlSession     *controllerlink.Session
 	usagePumpMu        sync.Mutex
@@ -304,41 +314,44 @@ func (runtime *Runtime) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 
 // Shutdown 进入 not-ready，取消 ControllerLink，关闭公网 listener 并等待有界 goroutine 退出。
 func (runtime *Runtime) Shutdown(ctx context.Context) error {
+	runtime.shutdownMu.Lock()
+	defer runtime.shutdownMu.Unlock()
+	if runtime.shutdownComplete {
+		return runtime.shutdownErr
+	}
+
+	runtime.setReady(false)
+	runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 	var shutdownErr error
-	runtime.shutdownOnce.Do(func() {
-		runtime.setReady(false)
-		runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
-		if runtime.relayServer != nil {
-			if err := runtime.relayServer.Close(); err != nil {
-				shutdownErr = err
-			}
-			_ = runtime.flushUsage(ctx)
+	if runtime.relayServer != nil {
+		shutdownErr = runtime.relayServer.Close()
+		if !runtime.relayServer.StateCloseSafe() {
+			return errors.Join(shutdownErr, errors.New("Relay shutdown retained undurable allocation usage in Runtime State"))
 		}
-		runtime.cancel()
-		runtime.grpcServer.GracefulStop()
-		if err := runtime.httpServer.Shutdown(ctx); err != nil {
-			shutdownErr = err
-		}
-		waitDone := make(chan struct{})
-		go func() {
-			runtime.waitGroup.Wait()
-			close(waitDone)
-		}()
-		select {
-		case <-waitDone:
-		case <-ctx.Done():
-			if shutdownErr == nil {
-				shutdownErr = ctx.Err()
-			}
-		}
-		runtime.state.Close()
-		if runtime.usageOutbox != nil {
-			if err := runtime.usageOutbox.Close(); shutdownErr == nil {
-				shutdownErr = err
-			}
-		}
-		runtime.health.SetAlive(false)
-	})
+		_ = runtime.flushUsage(ctx)
+	}
+	runtime.cancel()
+	runtime.grpcServer.GracefulStop()
+	if err := runtime.httpServer.Shutdown(ctx); err != nil {
+		shutdownErr = errors.Join(shutdownErr, err)
+	}
+	waitDone := make(chan struct{})
+	go func() {
+		runtime.waitGroup.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-ctx.Done():
+		shutdownErr = errors.Join(shutdownErr, ctx.Err())
+	}
+	runtime.state.Close()
+	if runtime.usageOutbox != nil {
+		shutdownErr = errors.Join(shutdownErr, runtime.usageOutbox.Close())
+	}
+	runtime.health.SetAlive(false)
+	runtime.shutdownComplete = true
+	runtime.shutdownErr = shutdownErr
 	return shutdownErr
 }
 
