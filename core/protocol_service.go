@@ -308,6 +308,16 @@ func (session *protocolSession) run(ctx context.Context) error {
 	}
 }
 
+func (session *protocolSession) lifetimeContext(fallback context.Context) context.Context {
+	session.mu.RLock()
+	ctx := session.sessionCtx
+	session.mu.RUnlock()
+	if ctx != nil {
+		return ctx
+	}
+	return fallback
+}
+
 func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint8, payload []byte) error {
 	switch typ {
 	case wire.TypeHello:

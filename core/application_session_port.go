@@ -461,12 +461,8 @@ func (session *protocolSession) ApplicationEventSubscribe(ctx context.Context, f
 	if err := session.reserveEventSubscription(); err != nil {
 		return nil, err
 	}
+	eventCtx, cancel := context.WithCancel(session.lifetimeContext(ctx))
 	session.mu.Lock()
-	baseCtx := session.sessionCtx
-	if baseCtx == nil {
-		baseCtx = ctx
-	}
-	eventCtx, cancel := context.WithCancel(baseCtx)
 	session.nextEventSub++
 	subscriptionID := session.nextEventSub
 	session.eventSubscriptions[subscriptionID] = applicationEventSubscription{cancel: cancel, filter: filter}
@@ -574,7 +570,7 @@ func (session *protocolSession) ApplicationFileMove(_ context.Context, request F
 
 // ApplicationFileDownloadOpen 创建 session-bound download transfer。
 func (session *protocolSession) ApplicationFileDownloadOpen(ctx context.Context, request FileDownloadOpenRequest) (FileTransfer, error) {
-	return session.openFileDownload(ctx, request)
+	return session.openFileDownload(session.lifetimeContext(ctx), request)
 }
 
 // ApplicationFileUploadOpen 创建或恢复 session-bound upload transfer。
