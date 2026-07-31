@@ -1895,6 +1895,7 @@ type recordingProcess struct {
 	resizes    []Size
 	resizeErr  error
 	resizeHook func(Size)
+	closeHook  func()
 	outputCh   chan []byte
 	waitCh     chan ProcessExit
 	exitOnce   sync.Once
@@ -1968,7 +1969,11 @@ func (process *recordingProcess) Close() error {
 	process.mu.Lock()
 	process.closed = true
 	err := process.closeErr
+	hook := process.closeHook
 	process.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	process.closeOutput()
 	process.exit(-1)
 	return err
@@ -1977,6 +1982,12 @@ func (process *recordingProcess) Close() error {
 func (process *recordingProcess) setCloseError(err error) {
 	process.mu.Lock()
 	process.closeErr = err
+	process.mu.Unlock()
+}
+
+func (process *recordingProcess) setCloseHook(hook func()) {
+	process.mu.Lock()
+	process.closeHook = hook
 	process.mu.Unlock()
 }
 

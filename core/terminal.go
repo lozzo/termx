@@ -276,8 +276,9 @@ func (terminal *Terminal) closeWithReason() error {
 
 	var result error
 	if shouldCloseHistory && terminal.historyEnabled {
-		// Drain only the history payloads already present at this close boundary.
-		// The final lineHistory.Close below performs the single durability sync.
+		// Flush captures the shared-buffer sequence at this Close boundary. Bytes
+		// produced later, including before process.Close returns, are future output
+		// and may be canceled below; the final lineHistory.Close performs the only sync.
 		result = errors.Join(result, terminal.flushHistoryOutput(context.Background()))
 	}
 
@@ -332,7 +333,6 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	info = terminal.info.Clone()
 	terminal.mu.Unlock()
 	terminal.replaceRawPTYProcess(process, -1)
-	_ = oldInfo
 	terminal.queueMu.Lock()
 	terminal.outputBuffer = nil
 	wasLiveUnavailable := terminal.liveOutputError != nil
@@ -359,10 +359,18 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	}
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
-	closeErr := old.Close()
 	terminal.publishLifecycle(EventTerminalChanged, info)
 	terminal.publishLiveInvalidated(info.ID, uint64(revision))
-	return closeErr
+	if err := old.Close(); err != nil {
+		// The new generation is already committed and observable. Cleanup failure
+		// must not turn Restart into a retryable whole-operation failure.
+		terminal.logger.Warn("close previous terminal process after restart failed",
+			"terminal_id", info.ID,
+			"state_before", string(oldInfo.State),
+			"error", err,
+		)
+	}
+	return nil
 }
 
 func (terminal *Terminal) Wait() <-chan ProcessExit {

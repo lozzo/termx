@@ -1,8 +1,10 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,7 +259,7 @@ func TestTerminalFlushHistoryMakesSmallPendingBlockRecoverable(t *testing.T) {
 	}
 }
 
-func TestTerminalCloseDrainsHistoryFenceAndSyncsOnce(t *testing.T) {
+func TestTerminalCloseDrainsPayloadAlreadyInSharedBufferAndSyncsOnce(t *testing.T) {
 	storage := &durabilityTerminalLineStorage{}
 	server, factory := newDurabilityHistoryServer(storage)
 	const terminalID = "term-history-close-durable"
@@ -277,6 +279,8 @@ func TestTerminalCloseDrainsHistoryFenceAndSyncsOnce(t *testing.T) {
 			terminal.tapOpMu.Unlock()
 		}
 	}()
+	// The durability contract starts after this payload has entered the shared
+	// buffer; bytes produced after RemoveTerminal starts are future output.
 	factory.process(terminalID).emitOutput("close durable payload")
 	terminal.queueMu.Lock()
 	buffer := terminal.outputBuffer
@@ -427,19 +431,53 @@ func TestProcessExitSealFailureMarksHistoryUnavailableWithoutClosingProcess(t *t
 	}
 }
 
-func TestTerminalRestartReturnsOldProcessCloseErrorAfterPublishingNewGeneration(t *testing.T) {
+func TestTerminalRestartLogsOldProcessCloseErrorAfterCommittingNewGeneration(t *testing.T) {
 	closeErr := errors.New("close old process generation")
 	storage := &durabilityTerminalLineStorage{}
-	server, factory := newDurabilityHistoryServer(storage)
+	factory := newRecordingProcessFactory()
+	var logs bytes.Buffer
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
+		WithHistoryStoreFactory(func(id string) (history.HistoryStore, error) {
+			return linehist.NewStore(id, linehist.NewEngine(storage)), nil
+		}),
+	)
 	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
 	const terminalID = "term-restart-close-error"
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: terminalID, Command: []string{"shell"}}); err != nil {
 		t.Fatal(err)
 	}
+	eventCtx, cancelEvents := context.WithCancel(context.Background())
+	defer cancelEvents()
+	events := server.Events(eventCtx, EventFilter{
+		TerminalID: terminalID,
+		Types:      []EventType{EventTerminalChanged, EventTerminalLiveInvalidated},
+	})
 	old := factory.process(terminalID)
 	old.setCloseError(closeErr)
-	if err := server.RestartTerminal(context.Background(), terminalID); !errors.Is(err, closeErr) {
-		t.Fatalf("RestartTerminal error = %v, want %v", err, closeErr)
+	var committedEvents []Event
+	old.setCloseHook(func() {
+		for len(committedEvents) < 2 {
+			select {
+			case event := <-events:
+				committedEvents = append(committedEvents, event)
+			default:
+				return
+			}
+		}
+	})
+	if err := server.RestartTerminal(context.Background(), terminalID); err != nil {
+		t.Fatalf("committed restart returned old-generation cleanup error: %v", err)
+	}
+	if len(committedEvents) != 2 || committedEvents[0].Type != EventTerminalChanged || committedEvents[1].Type != EventTerminalLiveInvalidated {
+		t.Fatalf("restart events were not committed before old process cleanup: %#v", committedEvents)
+	}
+	if !committedEvents[0].LifecycleKnown || committedEvents[0].Terminal == nil || committedEvents[0].Terminal.State != TerminalStateRunning {
+		t.Fatalf("restart lifecycle event = %#v", committedEvents[0])
+	}
+	if committedEvents[1].Live == nil || committedEvents[1].Live.Revision == 0 {
+		t.Fatalf("restart live event = %#v", committedEvents[1])
 	}
 	current := factory.process(terminalID)
 	if current == old {
@@ -448,5 +486,24 @@ func TestTerminalRestartReturnsOldProcessCloseErrorAfterPublishingNewGeneration(
 	info, err := server.GetTerminal(terminalID)
 	if err != nil || info.State != TerminalStateRunning {
 		t.Fatalf("new process generation was not published: info=%#v err=%v", info, err)
+	}
+	if specs := factory.spawnedSpecs(terminalID); len(specs) != 2 {
+		t.Fatalf("successful restart triggered retry spawn semantics: %d total spawns", len(specs))
+	}
+	current.emitOutput("new generation watcher active")
+	outputEvent := assertEventValue(t, events, EventTerminalLiveInvalidated, terminalID)
+	if outputEvent.Live == nil || outputEvent.Live.Revision <= committedEvents[1].Live.Revision {
+		t.Fatalf("new generation watcher did not advance live output: %#v", outputEvent)
+	}
+	logText := logs.String()
+	for _, want := range []string{
+		"close previous terminal process after restart failed",
+		"terminal_id=" + terminalID,
+		"state_before=running",
+		closeErr.Error(),
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("restart cleanup log missing %q: %s", want, logText)
+		}
 	}
 }
