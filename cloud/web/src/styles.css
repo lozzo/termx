@@ -297,6 +297,7 @@ tbody tr:hover { background: var(--hover); }
 td > strong, td > small { display: block; }
 td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .table-link { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--accent-hover); font-weight: 630; text-decoration: none; }
+.table-frame td:has(> :is(.table-link, .table-button, .table-select)) { padding-block: 8px; }
 .table-frame td .button { white-space: nowrap; }
 .empty-state, .empty-inline { padding: 46px 20px; color: var(--muted); text-align: center; line-height: 1.6; }
 .empty-inline { padding: 28px 17px; text-align: left; }
