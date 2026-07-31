@@ -143,10 +143,6 @@ type clientStream struct {
 	terminalAfterQueue  bool
 }
 
-func newClientStream() *clientStream {
-	return newClientStreamWithSharedBudget(newStreamPayloadBudget(maxClientPayloadBytes))
-}
-
 func newClientStreamWithConfig(queueLimit, channelCapacity int) *clientStream {
 	return newClientStreamWithLimits(queueLimit, channelCapacity, maxClientStreamPayloadBytes, newStreamPayloadBudget(maxClientPayloadBytes))
 }
@@ -182,7 +178,7 @@ func (s *clientStream) channel() chan StreamFrame {
 func (s *clientStream) send(frame StreamFrame) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || s.rawSyncLostSent {
 		return
 	}
 	if s.rawOverflow {
