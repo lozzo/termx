@@ -25,6 +25,8 @@ const (
 	directSignalingPreAuthLimit      = 64
 	directSignalingPreAuthPerIPLimit = 8
 	directSignalingPeerLimit         = 32
+	directSignalingRequestIDMaxBytes = 128
+	directSignalingConsumedLimit     = 4096
 )
 
 type DirectServerOption func(*directServerOptions)
@@ -340,7 +342,8 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 }
 
 func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV2) remoteauthpb.DirectSignalingErrorCode {
-	if request == nil || request.GetSchemaVersion() != remoteauth.DirectSignalingSchemaVersion || strings.TrimSpace(request.GetRequestId()) == "" ||
+	if request == nil || request.GetSchemaVersion() != remoteauth.DirectSignalingSchemaVersion || len(request.GetRequestId()) == 0 ||
+		len(request.GetRequestId()) > directSignalingRequestIDMaxBytes || strings.TrimSpace(request.GetRequestId()) == "" ||
 		strings.TrimSpace(request.GetOfferSdp()) == "" || request.GetIssuedAtUnixNano() <= 0 || request.GetExpiresAtUnixNano() <= 0 {
 		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL
 	}
@@ -380,6 +383,9 @@ func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV2
 	}
 	if _, exists := server.consumed[request.GetRequestId()]; exists {
 		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED
+	}
+	if len(server.consumed) >= directSignalingConsumedLimit {
+		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED
 	}
 	server.consumed[request.GetRequestId()] = expiresAt
 	return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED

@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	pathpkg "path"
 	"strings"
 	"sync"
@@ -43,6 +44,11 @@ import (
 
 //go:embed web/*
 var webFiles embed.FS
+
+const (
+	defaultBodyReadTimeout     = 10 * time.Second
+	certificateBodyReadTimeout = 30 * time.Second
+)
 
 // Config 是 Controller 原生 HTTPS 管理/安装 listener 的装配输入。
 type Config struct {
@@ -153,6 +159,11 @@ type handler struct {
 	logger              *slog.Logger
 	staticFiles         fs.FS
 	immutableAssetPaths map[string]struct{}
+
+	// Package-private hooks keep production deadlines fixed while allowing fast, deterministic tests.
+	bodyReadTimeout        time.Duration
+	certificateReadTimeout time.Duration
+	setReadDeadlineForTest func(time.Time) error
 }
 
 func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -162,6 +173,9 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	if handler.grpcServer != nil && request.ProtoMajor == 2 && strings.HasPrefix(strings.ToLower(request.Header.Get("Content-Type")), "application/grpc") {
 		handler.grpcServer.ServeHTTP(writer, request)
 		return
+	}
+	if body := handler.limitRequestBodyRead(writer, request); body != nil {
+		defer body.clearDeadline()
 	}
 	requestID := uuid.NewString()
 	writer.Header().Set("X-Request-ID", requestID)
@@ -504,6 +518,90 @@ func readProtoLimit(request *http.Request, message proto.Message, limit int64) e
 	return (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, message)
 }
 
+func (handler *handler) limitRequestBodyRead(writer http.ResponseWriter, request *http.Request) *lazyReadDeadlineBody {
+	if request == nil || request.Body == nil || request.Body == http.NoBody || !requestBodyMayBeRead(request) {
+		return nil
+	}
+	timeout := handler.bodyReadTimeout
+	if timeout <= 0 {
+		timeout = defaultBodyReadTimeout
+	}
+	if certificateUploadRequest(request) {
+		timeout = handler.certificateReadTimeout
+		if timeout <= 0 {
+			timeout = certificateBodyReadTimeout
+		}
+	}
+	setReadDeadline := handler.setReadDeadlineForTest
+	if setReadDeadline == nil {
+		setReadDeadline = http.NewResponseController(writer).SetReadDeadline
+	}
+	body := &lazyReadDeadlineBody{ReadCloser: request.Body, timeout: timeout, setReadDeadline: setReadDeadline}
+	request.Body = body
+	return body
+}
+
+func requestBodyMayBeRead(request *http.Request) bool {
+	if !strings.HasPrefix(request.URL.Path, "/api/") && !strings.HasPrefix(request.URL.Path, "/install/") {
+		return false
+	}
+	switch request.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func certificateUploadRequest(request *http.Request) bool {
+	return request.Method == http.MethodPost && request.URL.Path == "/api/operator/certificates" ||
+		request.Method == http.MethodPut && strings.HasPrefix(request.URL.Path, "/api/operator/certificates/")
+}
+
+type lazyReadDeadlineBody struct {
+	io.ReadCloser
+	timeout         time.Duration
+	setReadDeadline func(time.Time) error
+	once            sync.Once
+	mu              sync.Mutex
+	deadlineSet     bool
+}
+
+func (body *lazyReadDeadlineBody) Read(buffer []byte) (int, error) {
+	body.once.Do(func() {
+		if err := body.setReadDeadline(time.Now().Add(body.timeout)); err == nil {
+			body.mu.Lock()
+			body.deadlineSet = true
+			body.mu.Unlock()
+		}
+	})
+	read, err := body.ReadCloser.Read(buffer)
+	if bodyReadTimedOut(err) {
+		return read, errRequestBodyTimeout
+	}
+	return read, err
+}
+
+func (body *lazyReadDeadlineBody) clearDeadline() {
+	body.mu.Lock()
+	set := body.deadlineSet
+	body.mu.Unlock()
+	if set {
+		_ = body.setReadDeadline(time.Time{})
+	}
+}
+
+func bodyReadTimedOut(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var timeoutError net.Error
+	return errors.As(err, &timeoutError) && timeoutError.Timeout()
+}
+
 func writeProto(writer http.ResponseWriter, status int, message proto.Message) {
 	payload, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
 	if err != nil {
@@ -519,6 +617,9 @@ func writeProto(writer http.ResponseWriter, status int, message proto.Message) {
 func writeError(writer http.ResponseWriter, status int, err error) {
 	if errors.Is(err, errRequestBodyTooLarge) {
 		status = http.StatusRequestEntityTooLarge
+	}
+	if errors.Is(err, errRequestBodyTimeout) {
+		status = http.StatusRequestTimeout
 	}
 	if errors.Is(err, errLoginRateLimited) {
 		status = http.StatusTooManyRequests
@@ -551,7 +652,10 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 	_ = json.NewEncoder(writer).Encode(map[string]string{"code": code, "message": message, "request_id": requestID})
 }
 
-var errRequestBodyTooLarge = errors.New("request body exceeds limit")
+var (
+	errRequestBodyTooLarge = errors.New("request body exceeds limit")
+	errRequestBodyTimeout  = errors.New("request body read timed out")
+)
 
 type apiResponseWriter struct {
 	http.ResponseWriter
@@ -583,6 +687,8 @@ func publicHTTPError(status int) (string, string) {
 		return "gone", "请求的资源已失效。"
 	case http.StatusRequestEntityTooLarge:
 		return "payload_too_large", "请求体超过大小限制。"
+	case http.StatusRequestTimeout:
+		return "request_timeout", "请求体读取超时。"
 	case http.StatusUnsupportedMediaType:
 		return "unsupported_media_type", "请求内容类型不受支持。"
 	case http.StatusTooManyRequests:

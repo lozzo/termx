@@ -1,16 +1,20 @@
 package apihttp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -150,6 +154,175 @@ func TestWriteErrorMapsOversizeTo413(t *testing.T) {
 	}
 	if recorder.Code != http.StatusRequestEntityTooLarge || body["code"] != "payload_too_large" || body["request_id"] == "" {
 		t.Fatalf("status=%d body=%v", recorder.Code, body)
+	}
+}
+
+func TestSlowRequestBodyReturnsStable408WithoutCallingService(t *testing.T) {
+	store := &loginContractStore{}
+	accounts, err := account.New(account.Config{
+		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
+		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := &handler{
+		config:          Config{Accounts: accounts, PublicOrigin: "https://cloud.example"},
+		loginLimiter:    testLoginLimiter(t, loginLimiterConfig{globalLimit: 10, clientLimit: 10, accountLimit: 10, window: time.Minute, bucketTTL: time.Minute, maxClientBuckets: 10, maxAccountBuckets: 10}),
+		bodyReadTimeout: 35 * time.Millisecond,
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	connection, err := net.Dial("tcp", server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err = io.WriteString(connection, "POST /api/account/login HTTP/1.1\r\nHost: "+server.Listener.Addr().String()+"\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n{\"login\":\"sensitive-slow-login@example.com\"")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: http.MethodPost})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 750*time.Millisecond {
+		t.Fatalf("slow body timeout took %s", elapsed)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(payload, &body); err != nil {
+		t.Fatalf("decode timeout response %q: %v", payload, err)
+	}
+	if response.StatusCode != http.StatusRequestTimeout || body["code"] != "request_timeout" || body["message"] != "请求体读取超时。" || body["request_id"] == "" || response.Header.Get("X-Request-ID") != body["request_id"] {
+		t.Fatalf("status=%d header=%q body=%v", response.StatusCode, response.Header.Get("X-Request-ID"), body)
+	}
+	if strings.Contains(string(payload), "sensitive-slow-login") || strings.Contains(string(payload), errRequestBodyTimeout.Error()) {
+		t.Fatalf("timeout response leaked request or internal error: %s", payload)
+	}
+	if got := store.calls.Load(); got != 0 {
+		t.Fatalf("account service store calls = %d, want 0", got)
+	}
+}
+
+func TestOversizedBodyStillReturns413ThroughDeadlineWrapper(t *testing.T) {
+	handler := &handler{config: Config{PublicOrigin: "https://cloud.example"}}
+	request := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader(strings.Repeat("x", (1<<20)+1)))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusRequestEntityTooLarge || body["code"] != "payload_too_large" || body["message"] != "请求体超过大小限制。" || body["request_id"] == "" {
+		t.Fatalf("status=%d body=%v", recorder.Code, body)
+	}
+}
+
+func TestRequestBodyDeadlineStartsOnFirstReadAndClearsOnReturn(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		method  string
+		path    string
+		timeout time.Duration
+	}{
+		{name: "ordinary JSON", method: http.MethodPost, path: "/api/account/login", timeout: 2 * time.Second},
+		{name: "certificate create", method: http.MethodPost, path: "/api/operator/certificates", timeout: 7 * time.Second},
+		{name: "certificate update", method: http.MethodPut, path: "/api/operator/certificates/profile-1", timeout: 7 * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deadlines := make([]time.Time, 0, 2)
+			handler := &handler{
+				bodyReadTimeout:        2 * time.Second,
+				certificateReadTimeout: 7 * time.Second,
+				setReadDeadlineForTest: func(deadline time.Time) error {
+					deadlines = append(deadlines, deadline)
+					return nil
+				},
+			}
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
+			body := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+			if body == nil {
+				t.Fatal("request body was not wrapped")
+			}
+			if len(deadlines) != 0 {
+				t.Fatalf("deadline set before first Read: %v", deadlines)
+			}
+			started := time.Now()
+			if _, err := io.ReadAll(request.Body); err != nil {
+				t.Fatal(err)
+			}
+			if len(deadlines) != 1 {
+				t.Fatalf("deadline calls after Read = %v", deadlines)
+			}
+			if got := deadlines[0].Sub(started); got < test.timeout-time.Second || got > test.timeout+time.Second {
+				t.Fatalf("read deadline offset = %s, want about %s", got, test.timeout)
+			}
+			body.clearDeadline()
+			if len(deadlines) != 2 || !deadlines[1].IsZero() {
+				t.Fatalf("deadline was not cleared: %v", deadlines)
+			}
+		})
+	}
+}
+
+func TestProductionRequestBodyDeadlineDurations(t *testing.T) {
+	handler := &handler{setReadDeadlineForTest: func(time.Time) error { return nil }}
+	for _, test := range []struct {
+		method string
+		path   string
+		want   time.Duration
+	}{
+		{method: http.MethodPost, path: "/api/account/login", want: defaultBodyReadTimeout},
+		{method: http.MethodPost, path: "/api/install/register", want: defaultBodyReadTimeout},
+		{method: http.MethodPost, path: "/api/operator/certificates", want: certificateBodyReadTimeout},
+		{method: http.MethodPut, path: "/api/operator/certificates/profile-1", want: certificateBodyReadTimeout},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
+		body := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+		if body == nil || body.timeout != test.want {
+			t.Fatalf("%s %s timeout = %v, want %s", test.method, test.path, body, test.want)
+		}
+	}
+}
+
+func TestGRPCAndGetRequestsAreNotDeadlineWrapped(t *testing.T) {
+	grpcServer := grpc.NewServer()
+	defer grpcServer.Stop()
+	var deadlineCalls atomic.Int32
+	handler := &handler{grpcServer: grpcServer, setReadDeadlineForTest: func(time.Time) error {
+		deadlineCalls.Add(1)
+		return nil
+	}}
+
+	grpcRequest := httptest.NewRequest(http.MethodPost, "https://cloud.example/test.Service/Method", strings.NewReader(""))
+	grpcRequest.ProtoMajor = 2
+	grpcRequest.ProtoMinor = 0
+	grpcRequest.Header.Set("Content-Type", "application/grpc")
+	grpcBody := grpcRequest.Body
+	handler.ServeHTTP(httptest.NewRecorder(), grpcRequest)
+	if grpcRequest.Body != grpcBody || deadlineCalls.Load() != 0 {
+		t.Fatalf("gRPC body was wrapped or deadline set: body_changed=%v calls=%d", grpcRequest.Body != grpcBody, deadlineCalls.Load())
+	}
+
+	for _, path := range []string{"/api/operator/events", "/"} {
+		request := httptest.NewRequest(http.MethodGet, path, strings.NewReader("ignored GET body"))
+		originalBody := request.Body
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+		if request.Body != originalBody || deadlineCalls.Load() != 0 {
+			t.Fatalf("GET %s body was wrapped or deadline set: body_changed=%v calls=%d", path, request.Body != originalBody, deadlineCalls.Load())
+		}
 	}
 }
 
@@ -328,6 +501,7 @@ type loginContractStore struct {
 	account.Store
 	record    account.Record
 	lookupErr error
+	calls     atomic.Int32
 }
 
 type setupContractStore struct {
@@ -369,6 +543,7 @@ func (stream *testServerTransportStream) SetTrailer(value metadata.MD) error {
 }
 
 func (store *loginContractStore) AccountByLogin(context.Context, string) (account.Record, error) {
+	store.calls.Add(1)
 	return store.record, store.lookupErr
 }
 

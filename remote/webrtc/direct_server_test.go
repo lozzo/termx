@@ -83,6 +83,7 @@ func TestDirectServerPreAuthNormalizesSourceIPAndRejectsNinth(t *testing.T) {
 		clients = append(clients, client)
 	}
 	waitDirectServerState(t, harness.server, directSignalingPreAuthPerIPLimit, directSignalingPreAuthPerIPLimit)
+	waitAtomicInt32(t, &workers, directSignalingPreAuthPerIPLimit)
 
 	rejectedServer, rejectedClient := harness.acceptPipe(t, &net.TCPAddr{IP: net.ParseIP("192.0.2.44"), Port: 3000})
 	assertDirectErrorCode(t, readDirectResponse(t, rejectedClient), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED)
@@ -304,6 +305,144 @@ func TestDirectServerAdmissionRejectionsReleasePreAuth(t *testing.T) {
 	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.70:7005"), replay), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED)
 	waitDirectServerState(t, harness.server, 0, 0)
 
+	for index := 0; index < directSignalingPeerLimit; index++ {
+		<-harness.server.peerSlots
+	}
+}
+
+func TestDirectServerRequestIDRawByteLengthBoundary(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		requestID string
+		want      remoteauthpb.DirectSignalingErrorCode
+	}{
+		{name: "one byte", requestID: "x", want: remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED},
+		{name: "128 bytes", requestID: strings.Repeat("x", directSignalingRequestIDMaxBytes), want: remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED},
+		{name: "129 bytes", requestID: strings.Repeat("x", directSignalingRequestIDMaxBytes+1), want: remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_PROTOCOL},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			harness := newDirectServerHarness(t)
+			harness.start(t)
+			if got := harness.server.admit(harness.request(test.requestID)); got != test.want {
+				t.Fatalf("admit request ID of %d bytes = %s, want %s", len(test.requestID), got, test.want)
+			}
+			wantConsumed := 0
+			if test.want == remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
+				wantConsumed = 1
+			}
+			if got := len(harness.server.consumed); got != wantConsumed {
+				t.Fatalf("consumed entries = %d, want %d", got, wantConsumed)
+			}
+		})
+	}
+}
+
+func TestDirectServerConsumedCapacityAndReplayPriority(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	harness.start(t)
+	expiresAt := harness.now.Add(remoteauth.DirectSignalingMaxTTL)
+	for index := 0; index < directSignalingConsumedLimit-1; index++ {
+		harness.server.consumed[fmt.Sprintf("used-%04d", index)] = expiresAt
+	}
+
+	last := harness.request("last-capacity-slot")
+	if got := harness.server.admit(last); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
+		t.Fatalf("last capacity admission = %s", got)
+	}
+	if got := len(harness.server.consumed); got != directSignalingConsumedLimit {
+		t.Fatalf("consumed entries at boundary = %d, want %d", got, directSignalingConsumedLimit)
+	}
+	if got := harness.server.admit(harness.request("one-over-capacity")); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED {
+		t.Fatalf("new full-capacity admission = %s, want OVERLOADED", got)
+	}
+	if got := harness.server.admit(last); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED {
+		t.Fatalf("existing full-capacity admission = %s, want REPLAYED", got)
+	}
+	if got := len(harness.server.consumed); got != directSignalingConsumedLimit {
+		t.Fatalf("full consumed entries changed to %d", got)
+	}
+}
+
+func TestDirectServerExpiredRequestIDCanBeReusedAfterClockAdvance(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	harness.start(t)
+	now := harness.now
+	harness.server.now = func() time.Time { return now }
+	request := directRequestAt(harness, "reusable-request", now)
+	if got := harness.server.admit(request); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
+		t.Fatalf("initial admission = %s", got)
+	}
+	if got := harness.server.admit(request); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED {
+		t.Fatalf("immediate replay admission = %s", got)
+	}
+
+	now = time.Unix(0, request.GetExpiresAtUnixNano()).UTC()
+	if got := harness.server.admit(directRequestAt(harness, request.GetRequestId(), now)); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
+		t.Fatalf("admission after consumed expiry = %s, want success", got)
+	}
+	if got := len(harness.server.consumed); got != 1 {
+		t.Fatalf("consumed entries after reuse = %d, want 1", got)
+	}
+}
+
+func TestDirectServerConcurrentAdmissionNeverExceedsConsumedLimit(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	harness.start(t)
+	const extraRequests = 64
+	start := make(chan struct{})
+	var admitted atomic.Int32
+	var overloaded atomic.Int32
+	var wait sync.WaitGroup
+	for index := 0; index < directSignalingConsumedLimit+extraRequests; index++ {
+		request := harness.request(fmt.Sprintf("concurrent-%04d", index))
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			switch harness.server.admit(request) {
+			case remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED:
+				admitted.Add(1)
+			case remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED:
+				overloaded.Add(1)
+			default:
+				t.Errorf("unexpected concurrent admission result")
+			}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	if got := admitted.Load(); got != directSignalingConsumedLimit {
+		t.Fatalf("concurrent admissions = %d, want %d", got, directSignalingConsumedLimit)
+	}
+	if got := overloaded.Load(); got != extraRequests {
+		t.Fatalf("concurrent overloads = %d, want %d", got, extraRequests)
+	}
+	if got := len(harness.server.consumed); got != directSignalingConsumedLimit {
+		t.Fatalf("concurrent consumed entries = %d, want %d", got, directSignalingConsumedLimit)
+	}
+}
+
+func TestDirectServerPeerFullDoesNotExceedConsumedLimit(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	expiresAt := harness.now.Add(remoteauth.DirectSignalingMaxTTL)
+	for index := 0; index < directSignalingConsumedLimit-1; index++ {
+		harness.server.consumed[fmt.Sprintf("peer-full-used-%04d", index)] = expiresAt
+	}
+	for index := 0; index < directSignalingPeerLimit; index++ {
+		harness.server.peerSlots <- struct{}{}
+	}
+	harness.start(t)
+
+	last := harness.request("peer-full-last-slot")
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.71:7100"), last), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED)
+	if got := len(harness.server.consumed); got != directSignalingConsumedLimit {
+		t.Fatalf("peer-full consumed entries = %d, want %d", got, directSignalingConsumedLimit)
+	}
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.71:7101"), harness.request("peer-full-over-capacity")), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED)
+	assertDirectErrorCode(t, harness.exchange(t, directTestAddress("192.0.2.71:7102"), last), remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED)
+	if got := len(harness.server.consumed); got != directSignalingConsumedLimit {
+		t.Fatalf("peer-full consumed entries after rejections = %d, want %d", got, directSignalingConsumedLimit)
+	}
 	for index := 0; index < directSignalingPeerLimit; index++ {
 		<-harness.server.peerSlots
 	}
@@ -626,6 +765,14 @@ func (harness *directServerHarness) request(id string) *remoteauthpb.DirectSigna
 		ExpiresAtUnixNano: harness.now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
 		GrantId:           "grant-direct-test", GrantExpiresAtUnixNano: harness.now.Add(time.Hour).UnixNano(),
 	}
+}
+
+func directRequestAt(harness *directServerHarness, id string, now time.Time) *remoteauthpb.DirectSignalingRequestV2 {
+	request := harness.request(id)
+	request.IssuedAtUnixNano = now.UnixNano()
+	request.ExpiresAtUnixNano = now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano()
+	request.GrantExpiresAtUnixNano = now.Add(time.Hour).UnixNano()
+	return request
 }
 
 func readDirectResponse(t *testing.T, connection net.Conn) *remoteauthpb.DirectSignalingResponseV2 {
