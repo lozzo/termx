@@ -137,7 +137,7 @@ jobs:
             ./shared/securefs
 
       - name: Build macOS CLI
-        run: go build -trimpath ./cmd/anytty
+        run: go build -trimpath -o "$RUNNER_TEMP/anytty" ./cmd/anytty
 
       - name: Tracked generated files are current
         run: git diff --exit-code --
