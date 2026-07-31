@@ -1285,6 +1285,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       historyRestoreViewportOnLoadRef.current = restoreViewport
       pendingHistoryViewportRef.current = restoreViewport ? term.buffer.active.viewportY : null
       let keepVisibleForApply = false
+      let loadFailed = false
       try {
         const result = await loadScrollbackRef.current(requestRows, alternate, term.cols)
         setHistoryLoadFailure('none')
@@ -1309,6 +1310,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
         return result
       } catch (error) {
+        loadFailed = true
         const historyError = error as Error & { code?: string, retryable?: boolean }
         const lineTooLarge = historyError instanceof Error
           && historyError.code === 'resource_exhausted'
@@ -1332,6 +1334,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         if (!keepVisibleForApply) {
           hideHistoryLoading()
           resumeFrozenHistoryAtBottomRef.current(true)
+          if (loadFailed) {
+            historyHasMoreRef.current = false
+            historyLoadArmedByUserRef.current = false
+          }
         }
       }
     }

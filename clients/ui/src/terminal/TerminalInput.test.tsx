@@ -5,6 +5,7 @@ import type { ProtoClientSession } from '../core/protoClientSession'
 import { Terminal, type TerminalHandle } from './Terminal'
 
 interface FakeXTermInstance {
+  element: HTMLElement | null
   textarea: HTMLTextAreaElement | null
   emitBinary(data: string): void
   emitData(data: string): void
@@ -16,6 +17,7 @@ const terminalHarness = vi.hoisted(() => ({
   inputRecoveryFailure: null as string | null,
   unrelatedBanner: false,
   sessionSendInput: vi.fn(),
+  sessionSendResize: vi.fn(),
   historySnapshot: false,
   historyLoad: vi.fn(),
   historyReset: vi.fn(),
@@ -121,7 +123,7 @@ vi.mock('./useTerminalSession', () => ({
     terminalInfo: null,
     resizeControl: { canResize: false, reason: 'follower' },
     sendInput: terminalHarness.sessionSendInput,
-    sendResize: () => false,
+    sendResize: terminalHarness.sessionSendResize,
     requestResizeOwner: async () => ({ canResize: true, reason: 'owner' }),
     releaseResizeOwner: async () => ({ canResize: false, reason: 'follower' }),
     loadScrollback: terminalHarness.historyLoad,
@@ -145,6 +147,7 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.unrelatedBanner = false
     terminalHarness.historySnapshot = false
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
+    terminalHarness.sessionSendResize.mockReset().mockReturnValue(false)
     terminalHarness.historyLoad.mockReset().mockResolvedValue({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
     terminalHarness.historyReset.mockReset()
     vi.stubGlobal('ResizeObserver', class {
@@ -401,15 +404,14 @@ describe('Terminal input modifier boundary', () => {
       .mockRejectedValueOnce(Object.assign(new Error('expired token'), { code: 'stale_resource' }))
       .mockResolvedValueOnce({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
     render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
-    await waitFor(() => expect(terminalHarness.instances.length).toBeGreaterThan(0))
-    const outputs = document.querySelectorAll('.xterm-screen')
-    const output = outputs.item(outputs.length - 1)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const output = (terminalHarness.instances[0] as FakeXTermInstance).element?.querySelector('.xterm-screen')
     if (!output) throw new Error('missing terminal screen')
 
     fireEvent.wheel(output, { deltaY: -1 })
     const alert = await screen.findByTestId('anytty-history-error')
-    expect(alert).toHaveAttribute('role', 'alert')
-    expect(screen.getByRole('button', { name: 'Reload history' })).toHaveClass('min-h-11')
+    expect(alert.getAttribute('role')).toBe('alert')
+    expect(screen.getByRole('button', { name: 'Reload history' }).className).toContain('min-h-11')
     expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1)
 
     fireEvent.wheel(output, { deltaY: -1 })
@@ -428,18 +430,19 @@ describe('Terminal input modifier boundary', () => {
       retryable: false,
     }))
     render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
-    await waitFor(() => expect(terminalHarness.instances.length).toBeGreaterThan(0))
-    const outputs = document.querySelectorAll('.xterm-screen')
-    const output = outputs.item(outputs.length - 1)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const output = (terminalHarness.instances[0] as FakeXTermInstance).element?.querySelector('.xterm-screen')
     if (!output) throw new Error('missing terminal screen')
 
     fireEvent.wheel(output, { deltaY: -1 })
     const alert = await screen.findByTestId('anytty-history-error')
-    expect(alert).toHaveTextContent('A terminal history line is too large to display.')
+    expect(alert.textContent).toContain('A terminal history line is too large to display.')
     expect(screen.queryByRole('button', { name: 'Reload history' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(screen.queryByTestId('anytty-history-error')).toBeNull())
+    fireEvent.wheel(output, { deltaY: -1 })
+    await Promise.resolve()
     expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1)
     expect(terminalHarness.historyReset).not.toHaveBeenCalled()
   })
