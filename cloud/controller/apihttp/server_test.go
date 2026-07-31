@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"reflect"
 	"strings"
 	"sync"
@@ -339,6 +340,105 @@ func TestSlowRequestBodyReturnsStable408WithoutCallingService(t *testing.T) {
 	}
 	if got := store.calls.Load(); got != 0 {
 		t.Fatalf("account service store calls = %d, want 0", got)
+	}
+}
+
+func TestSlowHTTP2RequestBodyTimesOutWithoutClosingConnection(t *testing.T) {
+	store := &loginContractStore{}
+	accounts, err := account.New(account.Config{
+		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
+		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := &handler{
+		config:          Config{Accounts: accounts, PublicOrigin: "https://cloud.example"},
+		loginLimiter:    testLoginLimiter(t, loginLimiterConfig{globalLimit: 10, clientLimit: 10, accountLimit: 10, window: time.Minute, bucketTTL: time.Minute, maxClientBuckets: 10, maxAccountBuckets: 10}),
+		bodyReadTimeout: 35 * time.Millisecond,
+	}
+	server := httptest.NewUnstartedServer(handler)
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = 2 * time.Second
+	bodyReader, bodyWriter := io.Pipe()
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/account/login", bodyReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ContentLength = 1024
+	request.Header.Set("Content-Type", "application/json")
+	var firstConnection net.Conn
+	request = request.WithContext(httptrace.WithClientTrace(request.Context(), &httptrace.ClientTrace{
+		GotConn: func(info httptrace.GotConnInfo) { firstConnection = info.Conn },
+	}))
+	type responseResult struct {
+		response *http.Response
+		err      error
+	}
+	responseDone := make(chan responseResult, 1)
+	go func() {
+		response, requestErr := client.Do(request)
+		responseDone <- responseResult{response: response, err: requestErr}
+	}()
+	if _, err := io.WriteString(bodyWriter, `{"login":"sensitive-slow-login@example.com"`); err != nil {
+		t.Fatal(err)
+	}
+
+	var result responseResult
+	select {
+	case result = <-responseDone:
+	case <-time.After(time.Second):
+		_ = bodyWriter.Close()
+		t.Fatal("HTTP/2 slow body request did not reach its read deadline")
+	}
+	_ = bodyWriter.Close()
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	defer result.response.Body.Close()
+	payload, err := io.ReadAll(result.response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var responseBody map[string]string
+	if err := json.Unmarshal(payload, &responseBody); err != nil {
+		t.Fatalf("decode HTTP/2 timeout response %q: %v", payload, err)
+	}
+	if result.response.ProtoMajor != 2 || result.response.StatusCode != http.StatusRequestTimeout || responseBody["code"] != "request_timeout" {
+		t.Fatalf("protocol=%s status=%d body=%v", result.response.Proto, result.response.StatusCode, responseBody)
+	}
+	if got := store.calls.Load(); got != 0 {
+		t.Fatalf("account service store calls = %d, want 0", got)
+	}
+
+	var nextConnection net.Conn
+	nextRequest, err := http.NewRequest(http.MethodGet, server.URL+"/api/unknown", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextRequest = nextRequest.WithContext(httptrace.WithClientTrace(nextRequest.Context(), &httptrace.ClientTrace{
+		GotConn: func(info httptrace.GotConnInfo) {
+			if !info.Reused {
+				t.Error("request after HTTP/2 body timeout did not reuse its connection")
+			}
+			nextConnection = info.Conn
+		},
+	}))
+	nextResponse, err := client.Do(nextRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nextResponse.Body.Close()
+	_, _ = io.Copy(io.Discard, nextResponse.Body)
+	if firstConnection == nil || nextConnection != firstConnection {
+		t.Fatal("HTTP/2 body timeout closed the underlying connection")
+	}
+	if nextResponse.ProtoMajor != 2 || nextResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("follow-up protocol=%s status=%d", nextResponse.Proto, nextResponse.StatusCode)
 	}
 }
 
