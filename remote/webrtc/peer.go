@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/anytty/anytty/proto/wire"
 	pion "github.com/pion/webrtc/v4"
 )
 
@@ -27,7 +28,12 @@ func NewPeerConnectionWithLogger(configuration pion.Configuration, logger *slog.
 	if containsLoopbackTURN(configuration.ICEServers) {
 		settingEngine.SetIncludeLoopbackCandidate(true)
 	}
-	return pion.NewAPI(pion.WithSettingEngine(settingEngine)).NewPeerConnection(configuration)
+	return newPeerConnectionAPI(settingEngine).NewPeerConnection(configuration)
+}
+
+func newPeerConnectionAPI(settingEngine pion.SettingEngine) *pion.API {
+	settingEngine.SetSCTPMaxMessageSize(wire.MaxEncodedFrameSize)
+	return pion.NewAPI(pion.WithSettingEngine(settingEngine))
 }
 
 func containsLoopbackTURN(servers []pion.ICEServer) bool {

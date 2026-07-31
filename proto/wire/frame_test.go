@@ -23,6 +23,12 @@ func TestFrameRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMaxEncodedFrameSizeIncludesWireHeader(t *testing.T) {
+	if MaxEncodedFrameSize != MaxFrameSize+7 {
+		t.Fatalf("max encoded frame size = %d want=%d", MaxEncodedFrameSize, MaxFrameSize+7)
+	}
+}
+
 func TestFrameRejectsOversizePayload(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf)

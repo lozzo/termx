@@ -18,8 +18,9 @@ import (
 )
 
 type Client struct {
-	transport transport.Transport
-	nextID    atomic.Uint64
+	transport           transport.Transport
+	nextID              atomic.Uint64
+	streamPayloadBudget *streamPayloadBudget
 
 	doneErrMu sync.Mutex
 	doneErr   error
@@ -78,25 +79,83 @@ type StreamFrame struct {
 	Payload []byte
 }
 
+const (
+	maxClientStreamPayloadBytes = 8 << 20
+	maxClientPayloadBytes       = 64 << 20
+)
+
+type streamPayloadBudget struct {
+	mu       sync.Mutex
+	limit    int
+	retained int
+}
+
+func newStreamPayloadBudget(limit int) *streamPayloadBudget {
+	return &streamPayloadBudget{limit: limit}
+}
+
+func (b *streamPayloadBudget) reserve(size int) bool {
+	if b == nil || size == 0 {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if size > b.limit-b.retained {
+		return false
+	}
+	b.retained += size
+	return true
+}
+
+func (b *streamPayloadBudget) release(size int) {
+	if b == nil || size == 0 {
+		return
+	}
+	b.mu.Lock()
+	b.retained -= size
+	if b.retained < 0 {
+		b.mu.Unlock()
+		panic("protocol: negative stream payload budget")
+	}
+	b.mu.Unlock()
+}
+
+type retainedStreamFrame struct {
+	frame         StreamFrame
+	payloadBytes  int
+	countsAsFrame bool
+}
+
 type clientStream struct {
-	mu                 sync.Mutex
-	cond               *sync.Cond
-	ch                 chan StreamFrame
-	done               chan struct{}
-	queue              []StreamFrame
-	queueLimit         int
-	closed             bool
-	rawOverflow        bool
-	rawSyncLostSent    bool
-	rawDroppedBytes    uint64
-	terminalAfterQueue bool
+	mu                  sync.Mutex
+	cond                *sync.Cond
+	ch                  chan StreamFrame
+	done                chan struct{}
+	queue               []retainedStreamFrame
+	queueLimit          int
+	retainedFrames      int
+	payloadBudget       *streamPayloadBudget
+	sharedPayloadBudget *streamPayloadBudget
+	closed              bool
+	rawOverflow         bool
+	rawSyncLostSent     bool
+	rawDroppedBytes     uint64
+	terminalAfterQueue  bool
 }
 
 func newClientStream() *clientStream {
-	return newClientStreamWithConfig(256, 1)
+	return newClientStreamWithSharedBudget(newStreamPayloadBudget(maxClientPayloadBytes))
 }
 
 func newClientStreamWithConfig(queueLimit, channelCapacity int) *clientStream {
+	return newClientStreamWithLimits(queueLimit, channelCapacity, maxClientStreamPayloadBytes, newStreamPayloadBudget(maxClientPayloadBytes))
+}
+
+func newClientStreamWithSharedBudget(shared *streamPayloadBudget) *clientStream {
+	return newClientStreamWithLimits(256, 0, maxClientStreamPayloadBytes, shared)
+}
+
+func newClientStreamWithLimits(queueLimit, channelCapacity, payloadLimit int, shared *streamPayloadBudget) *clientStream {
 	if queueLimit <= 0 {
 		queueLimit = 1
 	}
@@ -104,10 +163,12 @@ func newClientStreamWithConfig(queueLimit, channelCapacity int) *clientStream {
 		channelCapacity = 0
 	}
 	s := &clientStream{
-		ch:         make(chan StreamFrame, channelCapacity),
-		done:       make(chan struct{}),
-		queueLimit: queueLimit,
-		queue:      make([]StreamFrame, 0, min(queueLimit, 16)),
+		ch:                  make(chan StreamFrame, channelCapacity),
+		done:                make(chan struct{}),
+		queueLimit:          queueLimit,
+		queue:               make([]retainedStreamFrame, 0, min(queueLimit, 16)),
+		payloadBudget:       newStreamPayloadBudget(payloadLimit),
+		sharedPayloadBudget: shared,
 	}
 	s.cond = sync.NewCond(&s.mu)
 	go s.run()
@@ -133,18 +194,35 @@ func (s *clientStream) send(frame StreamFrame) {
 	if s.terminalAfterQueue {
 		return
 	}
-	if len(s.queue) >= s.queueLimit && frame.Type == wire.TypePTYOutput {
+	if s.retainedFrames >= s.queueLimit {
+		s.overflowLocked(frame, "resource stream frame capacity is exhausted")
+		return
+	}
+	if !s.reservePayloadLocked(len(frame.Payload)) {
+		s.overflowLocked(frame, "resource stream payload capacity is exhausted")
+		return
+	}
+	payload := frame.Payload
+	if len(payload) > 0 {
+		payload = append([]byte(nil), payload...)
+	}
+	s.queue = append(s.queue, retainedStreamFrame{
+		frame:         StreamFrame{Type: frame.Type, Payload: payload},
+		payloadBytes:  len(payload),
+		countsAsFrame: true,
+	})
+	s.retainedFrames++
+	s.cond.Signal()
+}
+
+func (s *clientStream) overflowLocked(frame StreamFrame, message string) {
+	if frame.Type == wire.TypePTYOutput {
 		s.rawOverflow = true
 		s.addRawDroppedBytesLocked(len(frame.Payload))
 		s.cond.Signal()
 		return
 	}
-	if len(s.queue) >= s.queueLimit {
-		s.failLocked(ProtocolErrorCodeResourceExhausted, "resource stream frame capacity is exhausted")
-		return
-	}
-	s.enqueueFrameLocked(frame)
-	s.cond.Signal()
+	s.failLocked(ProtocolErrorCodeResourceExhausted, message)
 }
 
 func (s *clientStream) fail(code int, message string) {
@@ -161,12 +239,13 @@ func (s *clientStream) failLocked(code int, message string) {
 	if err != nil {
 		s.closed = true
 		close(s.done)
-		s.queue = nil
+		s.resetQueueLocked()
 		s.cond.Broadcast()
 		return
 	}
-	s.queue = s.queue[:0]
-	s.enqueueFrameLocked(StreamFrame{Type: wire.TypeError, Payload: payload})
+	s.resetQueueLocked()
+	// The terminal error is locally created and bounded; it does not retain peer payload.
+	s.queue = append(s.queue, retainedStreamFrame{frame: StreamFrame{Type: wire.TypeError, Payload: payload}})
 	s.terminalAfterQueue = true
 	s.cond.Signal()
 }
@@ -192,7 +271,7 @@ func (s *clientStream) close() {
 	}
 	s.closed = true
 	close(s.done)
-	s.queue = nil
+	s.resetQueueLocked()
 	s.cond.Broadcast()
 }
 
@@ -205,14 +284,16 @@ func (s *clientStream) run() {
 			return
 		}
 		select {
-		case ch <- frame:
+		case ch <- frame.frame:
+			s.releaseFrame(frame)
 		case <-s.done:
+			s.releaseFrame(frame)
 			return
 		}
 	}
 }
 
-func (s *clientStream) nextFrame() (StreamFrame, bool) {
+func (s *clientStream) nextFrame() (retainedStreamFrame, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for {
@@ -220,43 +301,67 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 			frame := s.queue[0]
 			copy(s.queue, s.queue[1:])
 			last := len(s.queue) - 1
-			s.queue[last] = StreamFrame{}
+			s.queue[last] = retainedStreamFrame{}
 			s.queue = s.queue[:last]
 			return frame, true
 		}
+		if s.closed {
+			return retainedStreamFrame{}, false
+		}
 		if s.rawOverflow && !s.rawSyncLostSent {
 			s.rawSyncLostSent = true
-			return StreamFrame{Type: wire.TypeSyncLost, Payload: wire.EncodeSyncLostPayload(s.rawDroppedBytes)}, true
+			return retainedStreamFrame{frame: StreamFrame{Type: wire.TypeSyncLost, Payload: wire.EncodeSyncLostPayload(s.rawDroppedBytes)}}, true
 		}
 		if s.rawSyncLostSent {
 			s.closed = true
 			close(s.done)
-			return StreamFrame{}, false
+			return retainedStreamFrame{}, false
 		}
 		if s.terminalAfterQueue {
 			s.closed = true
 			close(s.done)
-			return StreamFrame{}, false
-		}
-		if s.closed {
-			return StreamFrame{}, false
+			return retainedStreamFrame{}, false
 		}
 		s.cond.Wait()
 	}
 }
 
-func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
-	if len(s.queue) >= s.queueLimit {
+func (s *clientStream) reservePayloadLocked(size int) bool {
+	if !s.payloadBudget.reserve(size) {
+		return false
+	}
+	if !s.sharedPayloadBudget.reserve(size) {
+		s.payloadBudget.release(size)
+		return false
+	}
+	return true
+}
+
+func (s *clientStream) releasePayloadLocked(size int) {
+	s.payloadBudget.release(size)
+	s.sharedPayloadBudget.release(size)
+}
+
+func (s *clientStream) releaseFrame(frame retainedStreamFrame) {
+	if !frame.countsAsFrame {
 		return
 	}
-	payload := frame.Payload
-	if len(payload) > 0 {
-		payload = append([]byte(nil), payload...)
+	s.mu.Lock()
+	s.retainedFrames--
+	s.releasePayloadLocked(frame.payloadBytes)
+	s.mu.Unlock()
+}
+
+func (s *clientStream) resetQueueLocked() {
+	for index := range s.queue {
+		frame := s.queue[index]
+		if frame.countsAsFrame {
+			s.retainedFrames--
+			s.releasePayloadLocked(frame.payloadBytes)
+		}
+		s.queue[index] = retainedStreamFrame{}
 	}
-	s.queue = append(s.queue, StreamFrame{
-		Type:    frame.Type,
-		Payload: payload,
-	})
+	s.queue = nil
 }
 
 func NewClient(t transport.Transport) *Client {
@@ -266,6 +371,7 @@ func NewClient(t transport.Transport) *Client {
 func newClientWithPendingLimits(t transport.Transport, limits clientPendingLimits) *Client {
 	c := &Client{
 		transport:                   t,
+		streamPayloadBudget:         newStreamPayloadBudget(maxClientPayloadBytes),
 		waiters:                     make(map[uint64]*responseWaiter),
 		abandonedWaiters:            make(map[uint64]struct{}),
 		streams:                     make(map[uint16]*clientStream),
@@ -503,7 +609,7 @@ func (c *Client) bindApplicationAttachment(channel uint16, resource *apipb.Resou
 	c.mu.Lock()
 	stream := c.streams[channel]
 	if stream == nil {
-		stream = newClientStream()
+		stream = newClientStreamWithSharedBudget(c.streamPayloadBudget)
 		c.streams[channel] = stream
 	}
 	c.applicationAttachments[channel] = proto.Clone(resource).(*apipb.ResourceHandle)
@@ -570,7 +676,7 @@ func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 			delete(c.dropped, channel)
 			c.discardPendingFramesLocked(c.reused, channel)
 		}
-		stream = newClientStream()
+		stream = newClientStreamWithSharedBudget(c.streamPayloadBudget)
 		c.streams[channel] = stream
 	}
 	pending := c.takePendingFramesLocked(c.pending, channel)

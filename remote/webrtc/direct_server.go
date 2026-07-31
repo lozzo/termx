@@ -128,7 +128,7 @@ func NewDirectServer(identity remoteauth.Identity, handler DataChannelSessionHan
 	// Direct/SSH 的底层是 TCP；对端 socket 已关闭后无需沿用 media 场景的 5s/25s ICE 恢复窗口。
 	// 两秒 disconnected 窗口仍允许短暂调度停顿，同时阻止快速重连把已结束 ufrag 堆积到共享 mux。
 	settings.SetICETimeouts(2*time.Second, 5*time.Second, 500*time.Millisecond)
-	api := pion.NewAPI(pion.WithSettingEngine(settings))
+	api := newPeerConnectionAPI(settings)
 	return &DirectServer{
 		identity: identity, handler: handler, admission: admission, signalingListener: signalingListener, iceMux: mux,
 		peerConnections: api.NewPeerConnection, now: now, consumed: make(map[string]time.Time), conns: make(map[*directConnection]struct{}),

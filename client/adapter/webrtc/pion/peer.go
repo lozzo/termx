@@ -14,6 +14,7 @@ import (
 
 	"github.com/anytty/anytty/client/endpoint"
 	"github.com/anytty/anytty/client/port"
+	"github.com/anytty/anytty/proto/wire"
 	remotewebrtc "github.com/anytty/anytty/remote/webrtc"
 	pionice "github.com/pion/ice/v4"
 	"github.com/pion/transport/v4"
@@ -54,7 +55,7 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 			// Direct 使用 daemon-signed locator，Cloud 使用显式 ICE server，二者均不依赖 mDNS candidate。
 			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
 		}
-		peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection
+		peerFactory = newPeerConnectionAPI(settings).NewPeerConnection
 	}
 	return openPeer(peerFactory, pionwebrtc.Configuration{}, false, true, directGatherTimeout, remotewebrtc.ICEGatheringDirectGrace)
 }
@@ -73,7 +74,7 @@ func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig
 			settings.LoggerFactory = remotewebrtc.NewLoggerFactory(factory.Logger)
 			settings.SetNet(factory.Network)
 			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
-			peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection
+			peerFactory = newPeerConnectionAPI(settings).NewPeerConnection
 		}
 	}
 	configuration := pionwebrtc.Configuration{ICEServers: make([]pionwebrtc.ICEServer, 0, len(config.Servers))}
@@ -91,6 +92,11 @@ func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig
 		cloudGatherTimeout,
 		remotewebrtc.ICEGatheringCloudGrace,
 	)
+}
+
+func newPeerConnectionAPI(settings pionwebrtc.SettingEngine) *pionwebrtc.API {
+	settings.SetSCTPMaxMessageSize(wire.MaxEncodedFrameSize)
+	return pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings))
 }
 
 func openPeer(

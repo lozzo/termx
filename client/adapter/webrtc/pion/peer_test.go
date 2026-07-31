@@ -3,13 +3,35 @@ package pion
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/proto/wire"
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
+
+func TestProductionPionAPIAdvertisesEncodedFrameLimit(t *testing.T) {
+	peer, err := newPeerConnectionAPI(pionwebrtc.SettingEngine{}).NewPeerConnection(pionwebrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	if _, err := peer.CreateDataChannel("protocol", nil); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := peer.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("a=max-message-size:%d\r\n", wire.MaxEncodedFrameSize)
+	if !strings.Contains(offer.SDP, want) {
+		t.Fatalf("production Pion offer does not contain %q", want)
+	}
+}
 
 func TestDefaultRouteNetUsesSocketSelectedAddresses(t *testing.T) {
 	dials := make([]string, 0, 2)

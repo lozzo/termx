@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anytty/anytty/proto/wire"
 	"github.com/anytty/anytty/shared/transport"
 	"github.com/klauspost/compress/zstd"
 )
@@ -48,6 +49,7 @@ const (
 
 const (
 	maxPacketPayloadSize = 64 << 10
+	maxLogicalFrameSize  = wire.MaxEncodedFrameSize
 	sendBatchWindow      = time.Millisecond
 	maxBatchedBytes      = 128 << 10
 	acceptPollInterval   = 50 * time.Millisecond
@@ -81,6 +83,9 @@ func DialContext(ctx context.Context, path string) (*Transport, error) {
 // Send 发送一个完整 protocol frame。
 // unix transport 是 frame 边界 owner：大 frame 会在本层按 packet 上限分片，但不会解释 protocol payload。
 func (t *Transport) Send(frame []byte) error {
+	if len(frame) > maxLogicalFrameSize {
+		return wire.ErrFrameTooLarge
+	}
 	if t == nil || t.zstdW == nil || t.sendQ == nil {
 		return io.EOF
 	}
@@ -124,8 +129,14 @@ func (t *Transport) Recv() ([]byte, error) {
 				}
 				switch nextKind {
 				case packetKindFragmentContinue:
+					if len(nextPayload) > maxLogicalFrameSize-len(buf) {
+						return nil, wire.ErrFrameTooLarge
+					}
 					buf = append(buf, nextPayload...)
 				case packetKindFragmentEnd:
+					if len(nextPayload) > maxLogicalFrameSize-len(buf) {
+						return nil, wire.ErrFrameTooLarge
+					}
 					buf = append(buf, nextPayload...)
 					return buf, nil
 				default:

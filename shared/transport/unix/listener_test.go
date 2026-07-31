@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/proto/wire"
 	"github.com/anytty/anytty/shared/transport"
 	"github.com/klauspost/compress/zstd"
 )
@@ -203,6 +204,87 @@ func TestTransportRejectsOversizedPacketHeader(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out writing oversized packet header")
 	}
+}
+
+func TestTransportSendRejectsOversizedLogicalFrameBeforeClone(t *testing.T) {
+	transport := &Transport{}
+	frame := make([]byte, maxLogicalFrameSize+1)
+	var err error
+	allocations := testing.AllocsPerRun(100, func() {
+		err = transport.Send(frame)
+	})
+	if !errors.Is(err, wire.ErrFrameTooLarge) {
+		t.Fatalf("oversized logical frame error = %v", err)
+	}
+	if allocations != 0 {
+		t.Fatalf("oversized logical frame rejection allocated %.2f times", allocations)
+	}
+}
+
+func TestTransportRecvRejectsEndlessFragmentsBeforeOversizedAppend(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	server, err := newTransport(serverConn)
+	if err != nil {
+		t.Fatalf("new transport failed: %v", err)
+	}
+	defer server.Close()
+
+	writer, err := zstd.NewWriter(
+		clientConn,
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithEncoderLevel(zstd.SpeedFastest),
+		zstd.WithWindowSize(zstdTransportEncoderWindowSize),
+		zstd.WithLowerEncoderMem(true),
+	)
+	if err != nil {
+		t.Fatalf("new zstd writer failed: %v", err)
+	}
+	defer writer.Close()
+	defer clientConn.Close()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		fullPayload := make([]byte, maxPacketPayloadSize)
+		fullPackets := maxLogicalFrameSize / maxPacketPayloadSize
+		for index := 0; index < fullPackets; index++ {
+			kind := byte(packetKindFragmentContinue)
+			if index == 0 {
+				kind = packetKindFragmentStart
+			}
+			if err := writeTestPacket(writer, kind, fullPayload); err != nil {
+				writeDone <- err
+				return
+			}
+		}
+		overflow := make([]byte, maxLogicalFrameSize%maxPacketPayloadSize+1)
+		if err := writeTestPacket(writer, packetKindFragmentContinue, overflow); err != nil {
+			writeDone <- err
+			return
+		}
+		writeDone <- writer.Flush()
+	}()
+
+	if _, err := server.Recv(); !errors.Is(err, wire.ErrFrameTooLarge) {
+		t.Fatalf("endless fragmented frame error = %v", err)
+	}
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("fragment writer failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fragment writer did not finish")
+	}
+}
+
+func writeTestPacket(writer io.Writer, kind byte, payload []byte) error {
+	var header [5]byte
+	header[0] = kind
+	binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
+	if err := writeAll(writer, header[:]); err != nil {
+		return err
+	}
+	return writeAll(writer, payload)
 }
 
 func TestTransportCloseUnblocksBlockedWrite(t *testing.T) {

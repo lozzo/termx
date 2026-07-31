@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/anytty/anytty/proto/wire"
 )
 
 func TestTransportRoundTripsProtocolFrames(t *testing.T) {
@@ -60,6 +62,206 @@ func TestTransportRemoteCloseUnblocksRecv(t *testing.T) {
 	case <-server.Done():
 	case <-time.After(time.Second):
 		t.Fatal("remote close did not close Done")
+	}
+}
+
+func TestTransportSendRejectsOversizedLogicalFrameBeforeClone(t *testing.T) {
+	clientChannel, _ := newFakeChannelPair()
+	transport := New(clientChannel)
+	defer transport.Close()
+	frame := make([]byte, maxLogicalFrameSize+1)
+	var err error
+	allocations := testing.AllocsPerRun(100, func() {
+		err = transport.Send(frame)
+	})
+	if !errors.Is(err, wire.ErrFrameTooLarge) {
+		t.Fatalf("oversized logical frame error = %v", err)
+	}
+	clientChannel.mu.Lock()
+	sendCalls := clientChannel.sendCalls
+	clientChannel.mu.Unlock()
+	if sendCalls != 0 {
+		t.Fatalf("oversized logical frame reached Channel.Send %d times", sendCalls)
+	}
+	if allocations != 0 {
+		t.Fatalf("oversized logical frame rejection allocated %.2f times", allocations)
+	}
+}
+
+func TestTransportPreAuthReceiveQueueByteOverflowClosesChannel(t *testing.T) {
+	sender, receiverChannel := newFakeChannelPair()
+	receiver := New(receiverChannel)
+	chunk := make([]byte, maxReceiveQueuedBytes/2)
+	if err := sender.Send(chunk); err != nil {
+		t.Fatalf("first pre-auth message: %v", err)
+	}
+	if err := sender.Send(chunk); err != nil {
+		t.Fatalf("second pre-auth message: %v", err)
+	}
+	if got := receiveQueuedBytes(receiver); got != maxReceiveQueuedBytes {
+		t.Fatalf("pre-auth queued bytes = %d want=%d", got, maxReceiveQueuedBytes)
+	}
+	if err := sender.Send([]byte{1}); err != nil {
+		t.Fatalf("overflowing pre-auth message delivery: %v", err)
+	}
+	select {
+	case <-receiver.Done():
+	case <-time.After(time.Second):
+		t.Fatal("pre-auth queue overflow did not close transport")
+	}
+	receiverChannel.mu.Lock()
+	closed := receiverChannel.closed
+	receiverChannel.mu.Unlock()
+	if !closed {
+		t.Fatal("pre-auth queue overflow did not close underlying channel")
+	}
+	if got := receiveQueuedBytes(receiver); got != 0 {
+		t.Fatalf("closed pre-auth queue retained %d bytes", got)
+	}
+	if _, err := receiver.Recv(); !errors.Is(err, ErrReceiveQueueExhausted) {
+		t.Fatalf("Recv after pre-auth overflow = %v", err)
+	}
+	if err := receiver.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if calls := channelCloseCalls(receiverChannel); calls != 1 {
+		t.Fatalf("pre-auth overflow channel close calls = %d want=1", calls)
+	}
+}
+
+func TestTransportPreAuthReceiveQueueFrameOverflowReturnsStableError(t *testing.T) {
+	sender, receiverChannel := newFakeChannelPair()
+	receiver := New(receiverChannel)
+	for range defaultReceiveQueueCapacity + 1 {
+		if err := sender.Send(nil); err != nil {
+			t.Fatalf("deliver pre-auth frame: %v", err)
+		}
+	}
+	if _, err := receiver.Recv(); !errors.Is(err, ErrReceiveQueueExhausted) {
+		t.Fatalf("Recv after pre-auth frame overflow = %v", err)
+	}
+	if got := receiveQueuedBytes(receiver); got != 0 {
+		t.Fatalf("frame-overflowed pre-auth queue retained %d bytes", got)
+	}
+	if err := receiver.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if calls := channelCloseCalls(receiverChannel); calls != 1 {
+		t.Fatalf("pre-auth frame overflow channel close calls = %d want=1", calls)
+	}
+}
+
+func TestTransportOversizedInboundFrameClosesBeforeQueueing(t *testing.T) {
+	sender, receiverChannel := newFakeChannelPair()
+	receiver := New(receiverChannel)
+	if err := sender.Send(make([]byte, maxLogicalFrameSize+1)); err != nil {
+		t.Fatalf("deliver oversized inbound frame: %v", err)
+	}
+	select {
+	case <-receiver.Done():
+	case <-time.After(time.Second):
+		t.Fatal("oversized inbound frame did not close transport")
+	}
+	if got := receiveQueuedBytes(receiver); got != 0 {
+		t.Fatalf("oversized inbound frame queued %d bytes", got)
+	}
+	receiverChannel.mu.Lock()
+	closed := receiverChannel.closed
+	receiverChannel.mu.Unlock()
+	if !closed {
+		t.Fatal("oversized inbound frame did not close underlying channel")
+	}
+	if _, err := receiver.Recv(); !errors.Is(err, wire.ErrFrameTooLarge) {
+		t.Fatalf("Recv after oversized inbound frame = %v", err)
+	}
+	if err := receiver.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if calls := channelCloseCalls(receiverChannel); calls != 1 {
+		t.Fatalf("oversized inbound channel close calls = %d want=1", calls)
+	}
+}
+
+func TestTransportReceiveQueueReleasesBytesOnDequeueAndClose(t *testing.T) {
+	t.Run("dequeue", func(t *testing.T) {
+		sender, receiverChannel := newFakeChannelPair()
+		receiver := New(receiverChannel)
+		defer receiver.Close()
+		payload := make([]byte, 1<<20)
+		if err := sender.Send(payload); err != nil {
+			t.Fatal(err)
+		}
+		if got := receiveQueuedBytes(receiver); got != len(payload) {
+			t.Fatalf("queued bytes before dequeue = %d want=%d", got, len(payload))
+		}
+		if _, err := receiver.Recv(); err != nil {
+			t.Fatal(err)
+		}
+		if got := receiveQueuedBytes(receiver); got != 0 {
+			t.Fatalf("queued bytes after dequeue = %d", got)
+		}
+	})
+
+	t.Run("close", func(t *testing.T) {
+		sender, receiverChannel := newFakeChannelPair()
+		receiver := New(receiverChannel)
+		if err := sender.Send(make([]byte, 1<<20)); err != nil {
+			t.Fatal(err)
+		}
+		if err := receiver.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if got := receiveQueuedBytes(receiver); got != 0 {
+			t.Fatalf("queued bytes after close = %d", got)
+		}
+	})
+}
+
+func TestTransportReceiveAccountingIsRaceSafe(t *testing.T) {
+	channel, _ := newFakeChannelPair()
+	transport := New(channel)
+	channel.mu.Lock()
+	handler := channel.messageHandler
+	channel.mu.Unlock()
+	if handler == nil {
+		t.Fatal("message handler was not installed")
+	}
+
+	var handlers sync.WaitGroup
+	for range 64 {
+		handlers.Add(1)
+		go func() {
+			defer handlers.Done()
+			handler(make([]byte, 64<<10))
+		}()
+	}
+	recvDone := make(chan struct{})
+	go func() {
+		for {
+			if _, err := transport.Recv(); err != nil {
+				close(recvDone)
+				return
+			}
+		}
+	}()
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- transport.Close() }()
+	handlers.Wait()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("concurrent close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("concurrent close blocked")
+	}
+	select {
+	case <-recvDone:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent Recv did not unblock")
+	}
+	if got := receiveQueuedBytes(transport); got != 0 {
+		t.Fatalf("concurrent close retained %d bytes", got)
 	}
 }
 
@@ -285,6 +487,8 @@ type fakeChannel struct {
 	closeHandler      func()
 	bufferedLowHandle func()
 	bufferedAmount    uint64
+	sendCalls         int
+	closeCalls        int
 	closed            bool
 }
 
@@ -324,6 +528,7 @@ func (channel *fakeChannel) SetBufferedAmountLowHandler(handler func()) {
 
 func (channel *fakeChannel) Send(payload []byte) error {
 	channel.mu.Lock()
+	channel.sendCalls++
 	if channel.closed {
 		channel.mu.Unlock()
 		return io.EOF
@@ -341,8 +546,15 @@ func (channel *fakeChannel) Send(payload []byte) error {
 	return nil
 }
 
+func receiveQueuedBytes(transport *Transport) int {
+	transport.recvMu.Lock()
+	defer transport.recvMu.Unlock()
+	return transport.recvQueuedBytes
+}
+
 func (channel *fakeChannel) Close() error {
 	channel.mu.Lock()
+	channel.closeCalls++
 	if channel.closed {
 		channel.mu.Unlock()
 		return nil
@@ -362,6 +574,12 @@ func (channel *fakeChannel) Close() error {
 		peerHandler()
 	}
 	return nil
+}
+
+func channelCloseCalls(channel *fakeChannel) int {
+	channel.mu.Lock()
+	defer channel.mu.Unlock()
+	return channel.closeCalls
 }
 
 func (channel *fakeChannel) setBufferedAmount(amount uint64) {

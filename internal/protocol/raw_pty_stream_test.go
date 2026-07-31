@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -9,15 +8,10 @@ import (
 )
 
 func TestClientRawPTYQueueOverflowEmitsSyncLostAndCloses(t *testing.T) {
-	stream := &clientStream{
-		ch: make(chan StreamFrame, 4), done: make(chan struct{}), queueLimit: 2,
-		queue: make([]StreamFrame, 0, 2),
-	}
-	stream.cond = sync.NewCond(&stream.mu)
+	stream := newClientStreamWithLimits(2, 0, maxClientStreamPayloadBytes, newStreamPayloadBudget(maxClientPayloadBytes))
 	stream.send(StreamFrame{Type: wire.TypePTYOutput, Payload: []byte("one")})
 	stream.send(StreamFrame{Type: wire.TypePTYOutput, Payload: []byte("two")})
 	stream.send(StreamFrame{Type: wire.TypePTYOutput, Payload: []byte("lost")})
-	go stream.run()
 
 	frames := stream.channel()
 	for _, want := range []string{"one", "two"} {

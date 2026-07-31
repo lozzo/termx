@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -207,6 +208,152 @@ func TestClientStreamOverflowClosesAffectedStreamWithTypedError(t *testing.T) {
 	}
 }
 
+func TestClientStreamPayloadBudgetRejectsBeforeRetentionAndReleasesOnHandoff(t *testing.T) {
+	shared := newStreamPayloadBudget(64)
+	stream := newClientStreamWithLimits(256, 0, 8, shared)
+	frames := stream.channel()
+
+	stream.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("12345678")})
+	waitForPayloadBudget(t, shared, 8)
+	waitForStreamQueueLength(t, stream, 0)
+	stream.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("overflow")})
+	if got := retainedPayloadBytes(shared); got != 8 {
+		t.Fatalf("rejected frame changed retained bytes: got=%d want=8", got)
+	}
+
+	if first := receiveReliabilityStreamFrame(t, frames); string(first.Payload) != "12345678" {
+		t.Fatalf("first retained frame payload = %q", first.Payload)
+	}
+	waitForPayloadBudget(t, shared, 0)
+	failure := receiveReliabilityStreamFrame(t, frames)
+	if failure.Type != wire.TypeError {
+		t.Fatalf("payload overflow frame type = %d", failure.Type)
+	}
+	message, err := DecodeErrorPayload(failure.Payload)
+	if err != nil || message.Error.Code != ProtocolErrorCodeResourceExhausted {
+		t.Fatalf("payload overflow error = %#v, %v", message, err)
+	}
+}
+
+func TestClientStreamPayloadBudgetQueueResetAndCloseReleaseExactly(t *testing.T) {
+	t.Run("queue reset preserves only in-flight reservation", func(t *testing.T) {
+		shared := newStreamPayloadBudget(64)
+		stream := newClientStreamWithLimits(256, 0, 6, shared)
+		frames := stream.channel()
+		stream.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("one")})
+		waitForStreamQueueLength(t, stream, 0)
+		stream.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("two")})
+		waitForPayloadBudget(t, shared, 6)
+		stream.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("x")})
+		waitForPayloadBudget(t, shared, 3)
+		if frame := receiveReliabilityStreamFrame(t, frames); string(frame.Payload) != "one" {
+			t.Fatalf("in-flight frame payload = %q", frame.Payload)
+		}
+		waitForPayloadBudget(t, shared, 0)
+		if frame := receiveReliabilityStreamFrame(t, frames); frame.Type != wire.TypeError {
+			t.Fatalf("queue reset terminal frame type = %d", frame.Type)
+		}
+	})
+
+	t.Run("close drops in-flight reservation", func(t *testing.T) {
+		shared := newStreamPayloadBudget(64)
+		stream := newClientStreamWithLimits(256, 0, 8, shared)
+		stream.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("data")})
+		waitForPayloadBudget(t, shared, 4)
+		stream.close()
+		waitForPayloadBudget(t, shared, 0)
+		select {
+		case _, ok := <-stream.channel():
+			if ok {
+				t.Fatal("closed stream delivered a dropped frame")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("closed stream channel did not close")
+		}
+	})
+}
+
+func TestClientActiveStreamsSharePayloadBudget(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	client := NewClient(clientTransport)
+	defer client.Close()
+	defer serverTransport.Close()
+
+	shared := newStreamPayloadBudget(10)
+	client.mu.Lock()
+	client.streamPayloadBudget = shared
+	client.mu.Unlock()
+	framesA, _ := client.Stream(1)
+	framesB, _ := client.Stream(2)
+	client.mu.Lock()
+	streamA := client.streams[1]
+	streamB := client.streams[2]
+	client.mu.Unlock()
+
+	streamA.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("123456")})
+	waitForPayloadBudget(t, shared, 6)
+	streamB.send(StreamFrame{Type: wire.TypeFileData, Payload: []byte("12345")})
+	if got := retainedPayloadBytes(shared); got != 6 {
+		t.Fatalf("shared budget retained bytes = %d want=6", got)
+	}
+	if frame := receiveReliabilityStreamFrame(t, framesA); string(frame.Payload) != "123456" {
+		t.Fatalf("first stream payload = %q", frame.Payload)
+	}
+	waitForPayloadBudget(t, shared, 0)
+	if frame := receiveReliabilityStreamFrame(t, framesB); frame.Type != wire.TypeError {
+		t.Fatalf("shared budget overflow frame type = %d", frame.Type)
+	}
+}
+
+func TestClientPTYByteOverflowCountsTriggeringAndSubsequentFrames(t *testing.T) {
+	shared := newStreamPayloadBudget(64)
+	stream := newClientStreamWithLimits(256, 0, 5, shared)
+	frames := stream.channel()
+	stream.send(StreamFrame{Type: wire.TypePTYOutput, Payload: []byte("abc")})
+	stream.send(StreamFrame{Type: wire.TypePTYOutput, Payload: []byte("defg")})
+	stream.send(StreamFrame{Type: wire.TypePTYOutput, Payload: []byte("hi")})
+
+	if frame := receiveReliabilityStreamFrame(t, frames); string(frame.Payload) != "abc" {
+		t.Fatalf("PTY prefix payload = %q", frame.Payload)
+	}
+	waitForPayloadBudget(t, shared, 0)
+	syncLost := receiveReliabilityStreamFrame(t, frames)
+	dropped, err := wire.DecodeSyncLostPayload(syncLost.Payload)
+	if syncLost.Type != wire.TypeSyncLost || err != nil || dropped != 6 {
+		t.Fatalf("PTY sync lost frame = %#v dropped=%d err=%v", syncLost, dropped, err)
+	}
+}
+
+func TestClientStreamBudgetAccountingIsRaceSafeDuringClose(t *testing.T) {
+	shared := newStreamPayloadBudget(64 << 10)
+	stream := newClientStreamWithLimits(256, 0, 64<<10, shared)
+	drained := make(chan struct{})
+	go func() {
+		for range stream.channel() {
+		}
+		close(drained)
+	}()
+	var senders sync.WaitGroup
+	for range 16 {
+		senders.Add(1)
+		go func() {
+			defer senders.Done()
+			for range 100 {
+				stream.send(StreamFrame{Type: wire.TypeFileData, Payload: make([]byte, 32)})
+			}
+		}()
+	}
+	stream.close()
+	senders.Wait()
+	select {
+	case <-drained:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent stream close did not stop consumer")
+	}
+	waitForPayloadBudget(t, shared, 0)
+	waitForPayloadBudget(t, stream.payloadBudget, 0)
+}
+
 func TestClientAbandonedLateResponseReleasesWaiterCapacity(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
 	client := NewClient(clientTransport)
@@ -389,4 +536,22 @@ func receiveReliabilityStreamFrame(t *testing.T, frames <-chan StreamFrame) Stre
 		t.Fatal("timed out waiting for stream frame")
 		return StreamFrame{}
 	}
+}
+
+func retainedPayloadBytes(budget *streamPayloadBudget) int {
+	budget.mu.Lock()
+	defer budget.mu.Unlock()
+	return budget.retained
+}
+
+func waitForPayloadBudget(t *testing.T, budget *streamPayloadBudget, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if got := retainedPayloadBytes(budget); got == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("payload budget retained bytes = %d want=%d", retainedPayloadBytes(budget), want)
 }

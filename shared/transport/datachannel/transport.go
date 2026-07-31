@@ -3,18 +3,26 @@ package datachannel
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
+
+	"github.com/anytty/anytty/proto/wire"
 )
 
 const (
 	defaultReceiveQueueCapacity = 256
+	maxReceiveQueuedBytes       = 8 << 20
+	maxLogicalFrameSize         = wire.MaxEncodedFrameSize
 	defaultSendBufferHigh       = 512 * 1024
 	defaultSendBufferLow        = 128 * 1024
 	defaultDrainTimeout         = 30 * time.Second
 	defaultDrainPoll            = time.Millisecond
 )
+
+// ErrReceiveQueueExhausted reports that the bounded pre-auth/protocol receive queue was exceeded.
+var ErrReceiveQueueExhausted = errors.New("transport/datachannel: receive queue exhausted")
 
 // Channel 是 WebRTC 实现需要适配的可靠有序消息通道。
 // 该接口只暴露 protocol frame 传输和 buffered amount 背压，不承担信令、身份验证、grant 校验或 terminal lifecycle。
@@ -32,11 +40,15 @@ type Channel interface {
 // 同一实例可以先承载 remote auth envelope，再在 CapabilityAccepted 后承载 anytty frame；调用方在授权成功前不得交给 protocol client 或 core-v2。
 type Transport struct {
 	channel          Channel
-	recvCh           chan []byte
+	recvMu           sync.Mutex
+	recvQueue        [][]byte
+	recvQueuedBytes  int
+	recvClosed       bool
+	recvErr          error
+	recvNotify       chan struct{}
 	drainCh          chan struct{}
 	done             chan struct{}
 	sendMu           sync.Mutex
-	doneOnce         sync.Once
 	channelCloseOnce sync.Once
 	closeErr         error
 	drainTimeout     time.Duration
@@ -47,7 +59,8 @@ type Transport struct {
 func New(channel Channel) *Transport {
 	transport := &Transport{
 		channel:      channel,
-		recvCh:       make(chan []byte, defaultReceiveQueueCapacity),
+		recvQueue:    make([][]byte, 0, defaultReceiveQueueCapacity),
+		recvNotify:   make(chan struct{}, 1),
 		drainCh:      make(chan struct{}, 1),
 		done:         make(chan struct{}),
 		drainTimeout: defaultDrainTimeout,
@@ -56,13 +69,7 @@ func New(channel Channel) *Transport {
 		transport.closeDone()
 		return transport
 	}
-	channel.SetMessageHandler(func(payload []byte) {
-		frame := append([]byte(nil), payload...)
-		select {
-		case <-transport.done:
-		case transport.recvCh <- frame:
-		}
-	})
+	channel.SetMessageHandler(transport.handleMessage)
 	channel.SetCloseHandler(transport.closeDone)
 	channel.SetBufferedAmountLowThreshold(defaultSendBufferLow)
 	channel.SetBufferedAmountLowHandler(func() {
@@ -77,6 +84,9 @@ func New(channel Channel) *Transport {
 // Send 发送一个完整 anytty protocol frame。
 // 当 DataChannel 缓冲超过高水位时等待低水位通知；超时或关闭会失败，不允许丢帧或切换到其他 transport。
 func (transport *Transport) Send(frame []byte) error {
+	if len(frame) > maxLogicalFrameSize {
+		return wire.ErrFrameTooLarge
+	}
 	if transport == nil || transport.channel == nil {
 		return io.EOF
 	}
@@ -145,21 +155,38 @@ func (transport *Transport) Drain(ctx context.Context) error {
 }
 
 // Recv 接收一个完整 anytty protocol frame。
-// DataChannel 关闭时返回 io.EOF；接收内容是独立副本，不能被底层实现后续复用或修改。
+// DataChannel 正常关闭时返回 io.EOF；本地接收边界关闭会返回对应的稳定错误。
+// 接收内容是独立副本，不能被底层实现后续复用或修改。
 func (transport *Transport) Recv() ([]byte, error) {
 	if transport == nil {
 		return nil, io.EOF
 	}
-	select {
-	case <-transport.done:
-		return nil, io.EOF
-	default:
-	}
-	select {
-	case <-transport.done:
-		return nil, io.EOF
-	case frame := <-transport.recvCh:
-		return frame, nil
+	for {
+		transport.recvMu.Lock()
+		if transport.recvClosed {
+			err := transport.recvErr
+			transport.recvMu.Unlock()
+			if err != nil {
+				return nil, err
+			}
+			return nil, io.EOF
+		}
+		if len(transport.recvQueue) > 0 {
+			frame := transport.recvQueue[0]
+			copy(transport.recvQueue, transport.recvQueue[1:])
+			last := len(transport.recvQueue) - 1
+			transport.recvQueue[last] = nil
+			transport.recvQueue = transport.recvQueue[:last]
+			transport.recvQueuedBytes -= len(frame)
+			transport.recvMu.Unlock()
+			return frame, nil
+		}
+		transport.recvMu.Unlock()
+		select {
+		case <-transport.done:
+			continue
+		case <-transport.recvNotify:
+		}
 	}
 }
 
@@ -170,16 +197,10 @@ func (transport *Transport) Close() error {
 		return nil
 	}
 	transport.closeDone()
-	transport.channelCloseOnce.Do(func() {
-		if transport.channel != nil {
-			// 底层 channel 必须先关闭，才能解除可能阻塞在 Channel.Send 内的 in-flight 发送；
-			// 随后等待 sendMu 只用于确认发送已退出，不能把锁序反过来形成 auth deadline 死锁。
-			transport.closeErr = transport.channel.Close()
-		}
-		transport.sendMu.Lock()
-		//lint:ignore SA2001 sendMu is an intentional wait barrier for an in-flight Channel.Send.
-		transport.sendMu.Unlock()
-	})
+	transport.closeChannel()
+	transport.sendMu.Lock()
+	//lint:ignore SA2001 sendMu is an intentional wait barrier for an in-flight Channel.Send.
+	transport.sendMu.Unlock()
 	return transport.closeErr
 }
 
@@ -194,7 +215,64 @@ func (transport *Transport) Done() <-chan struct{} {
 }
 
 func (transport *Transport) closeDone() {
-	transport.doneOnce.Do(func() {
-		close(transport.done)
+	transport.closeReceive(nil)
+}
+
+func (transport *Transport) handleMessage(payload []byte) {
+	if len(payload) > maxLogicalFrameSize {
+		transport.closeForReceiveOverflow(wire.ErrFrameTooLarge)
+		return
+	}
+	transport.recvMu.Lock()
+	if transport.recvClosed {
+		transport.recvMu.Unlock()
+		return
+	}
+	if len(transport.recvQueue) >= defaultReceiveQueueCapacity || len(payload) > maxReceiveQueuedBytes-transport.recvQueuedBytes {
+		transport.closeReceiveLocked(ErrReceiveQueueExhausted)
+		transport.recvMu.Unlock()
+		transport.closeChannel()
+		return
+	}
+	transport.recvQueuedBytes += len(payload)
+	frame := append([]byte(nil), payload...)
+	transport.recvQueue = append(transport.recvQueue, frame)
+	transport.recvMu.Unlock()
+	select {
+	case transport.recvNotify <- struct{}{}:
+	default:
+	}
+}
+
+func (transport *Transport) closeForReceiveOverflow(err error) {
+	transport.closeReceive(err)
+	transport.closeChannel()
+}
+
+func (transport *Transport) closeReceive(err error) {
+	transport.recvMu.Lock()
+	transport.closeReceiveLocked(err)
+	transport.recvMu.Unlock()
+}
+
+func (transport *Transport) closeReceiveLocked(err error) {
+	if transport.recvClosed {
+		return
+	}
+	transport.recvClosed = true
+	transport.recvErr = err
+	for index := range transport.recvQueue {
+		transport.recvQueue[index] = nil
+	}
+	transport.recvQueue = nil
+	transport.recvQueuedBytes = 0
+	close(transport.done)
+}
+
+func (transport *Transport) closeChannel() {
+	transport.channelCloseOnce.Do(func() {
+		if transport.channel != nil {
+			transport.closeErr = transport.channel.Close()
+		}
 	})
 }
