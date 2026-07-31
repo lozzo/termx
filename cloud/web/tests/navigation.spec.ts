@@ -170,12 +170,14 @@ test('从登录或 setup 返回公开首页时恢复 title 与 main focus，quer
 
 test('公开落地页在确认视口保留完整首屏产品信号', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium')
+  test.setTimeout(60_000)
   await mockAPI(page)
   const viewports = [
     { width: 1710, height: 982 },
     { width: 390, height: 844 },
     { width: 320, height: 568 },
     { width: 844, height: 390 },
+    { width: 844, height: 320 },
   ]
 
   for (const viewport of viewports) {
@@ -191,7 +193,65 @@ test('公开落地页在确认视口保留完整首屏产品信号', async ({ pa
     await assertMinimumHitArea(page, '.landing-header a, .hero-actions a')
     await assertNoHorizontalOverflow(page)
     await assertNoTextClipping(page, '.hero-copy h1, .hero-statement, .hero-copy > p, .hero-actions .button, .route-stage, .terminal-window header, .terminal-window pre, .terminal-window footer, .product-band .eyebrow')
+    const geometry = await page.evaluate(() => {
+      const bounds = (selector: string) => {
+        const rect = document.querySelector(selector)!.getBoundingClientRect()
+        return { top: rect.top, bottom: rect.bottom }
+      }
+      return {
+        hero: bounds('.landing-hero'),
+        cta: bounds('.hero-actions .button'),
+        product: bounds('.hero-product'),
+        terminal: bounds('.terminal-window'),
+        productBand: bounds('.product-band'),
+        heroOverflow: getComputedStyle(document.querySelector('.landing-hero')!).overflow,
+      }
+    })
+    expect(viewport.height - geometry.productBand.top, `${viewport.width}x${viewport.height} 下一节露出高度`).toBeGreaterThanOrEqual(24)
+    for (const [name, bounds] of [['主 CTA', geometry.cta], ['产品可视化', geometry.product], ['终端', geometry.terminal]] as const) {
+      expect(bounds.top, `${viewport.width}x${viewport.height} ${name} 顶部未被 hero 裁切`).toBeGreaterThanOrEqual(geometry.hero.top - 1)
+      expect(bounds.bottom, `${viewport.width}x${viewport.height} ${name} 底部未被 hero 裁切`).toBeLessThanOrEqual(geometry.hero.bottom + 1)
+    }
+    if (viewport.width === 844 && viewport.height <= 390) expect(geometry.heroOverflow).toBe('visible')
     await page.screenshot({ path: testInfo.outputPath(`landing-first-viewport-${viewport.width}x${viewport.height}.png`) })
+  }
+
+  await page.setViewportSize({ width: 1710, height: 982 })
+  await page.goto('/')
+  await page.getByRole('link', { name: '如何连接', exact: true }).click()
+  await expect(page).toHaveURL(/#connect$/)
+  const anchorGeometry = await page.evaluate(() => ({
+    headerBottom: document.querySelector('.landing-header')!.getBoundingClientRect().bottom,
+    sectionTop: document.querySelector('#connect')!.getBoundingClientRect().top,
+    headingTop: document.querySelector('#connect h2')!.getBoundingClientRect().top,
+  }))
+  expect(anchorGeometry.sectionTop).toBeGreaterThanOrEqual(anchorGeometry.headerBottom - 1)
+  expect(anchorGeometry.headingTop).toBeGreaterThanOrEqual(anchorGeometry.headerBottom)
+})
+
+test('公开页焦点环在明暗表面均满足非文本对比', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page)
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await page.goto('/')
+    await page.keyboard.press('Tab')
+    const colors = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement)
+      const focus = getComputedStyle(document.activeElement!)
+      return {
+        activeTag: document.activeElement?.tagName,
+        outline: focus.outlineColor,
+        outlineStyle: focus.outlineStyle,
+        surface: root.getPropertyValue('--surface').trim(),
+        background: root.getPropertyValue('--bg').trim(),
+      }
+    })
+    expect(colors.activeTag).toBe('A')
+    expect(colors.outlineStyle).toBe('solid')
+    expect(cssColor(colors.outline).alpha).toBe(1)
+    expect(contrastRatio(colors.outline, colors.surface), `${colorScheme} focus ring / surface`).toBeGreaterThanOrEqual(3)
+    expect(contrastRatio(colors.outline, colors.background), `${colorScheme} focus ring / background`).toBeGreaterThanOrEqual(3)
   }
 })
 
@@ -944,6 +1004,23 @@ async function assertNoTextClipping(page: Page, selector: string) {
     return horizontal || vertical ? [element.className || element.tagName] : []
   }))
   expect(clipped, '首屏文本被容器裁切').toEqual([])
+}
+
+function cssColor(value: string) {
+  const hex = value.match(/^#([\da-f]{6})$/i)?.[1]
+  if (hex) return { channels: [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)), alpha: 1 }
+  const components = value.match(/[\d.]+/g)?.map(Number) ?? []
+  if (components.length < 3) throw new Error(`Unsupported CSS color: ${value}`)
+  return { channels: components.slice(0, 3), alpha: components[3] ?? 1 }
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const luminance = (value: string) => cssColor(value).channels
+    .map((channel) => channel / 255)
+    .map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0)
+  const values = [luminance(foreground), luminance(background)].sort((left, right) => right - left)
+  return (values[0] + .05) / (values[1] + .05)
 }
 
 async function assertNoAxeViolations(page: Page, surface: string) {
