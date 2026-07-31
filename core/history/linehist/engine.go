@@ -25,6 +25,7 @@ type LineStorage interface {
 	LineCount() int
 	Base() int
 	Lines(start int, end int) ([]Line, error)
+	Sync() error
 	Close() error
 }
 
@@ -261,6 +262,17 @@ func (e *Engine) AppendLifecycleLines(texts []string) error {
 	return e.file.AppendLines(batch)
 }
 
+// Sync flushes pending logical-line blocks and establishes the storage
+// durability fence without sealing the assembler's open tail.
+func (e *Engine) Sync() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.file.Sync()
+}
+
 // Close 把未闭合尾部按硬结束落盘后关闭文件：重启后旧行的续写上下文
 // 已不存在，把已滚出的内容留在内存里只会丢数据。
 func (e *Engine) Close() error {
@@ -269,13 +281,11 @@ func (e *Engine) Close() error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	var result error
 	if line, ok := e.asm.SealOpen(); ok {
-		if err := e.file.AppendLines([]Line{line}); err != nil {
-			_ = e.file.Close()
-			return err
-		}
+		result = errors.Join(result, e.file.AppendLines([]Line{line}))
 	}
-	return e.file.Close()
+	return errors.Join(result, e.file.Close())
 }
 
 func cloneScreenRowCells(cells []vterm.Cell) []vterm.Cell {

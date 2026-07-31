@@ -30,7 +30,9 @@ type Terminal struct {
 	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
 	// 它同时是 linehist 的查询 gate：ingest 与查询共享同一把锁，滚出行在
 	// 冷段（文件）与热段（emulator 当前屏）之间不重不漏。
-	tapOpMu      sync.Mutex
+	tapOpMu sync.Mutex
+	// historyMu 串行化显式 history API 与 terminal close/process-exit 的 store
+	// 所有权；锁序固定为 historyMu -> tapOpMu。
 	historyMu    sync.Mutex
 	historyStore history.HistoryStore
 	// 中文说明：lineHistory 是 R436 后唯一的 history 引擎（logical-line 文件历史）。
@@ -266,9 +268,20 @@ func (terminal *Terminal) Close() error {
 }
 
 func (terminal *Terminal) closeWithReason() error {
+	terminal.historyMu.Lock()
 	terminal.mu.Lock()
 	process := terminal.process
 	shouldCloseHistory := terminal.info.State == TerminalStateRunning
+	terminal.mu.Unlock()
+
+	var result error
+	if shouldCloseHistory && terminal.historyEnabled {
+		// Drain only the history payloads already present at this close boundary.
+		// The final lineHistory.Close below performs the single durability sync.
+		result = errors.Join(result, terminal.flushHistoryOutput(context.Background()))
+	}
+
+	terminal.mu.Lock()
 	terminal.info.State = TerminalStateRemoved
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
@@ -276,21 +289,22 @@ func (terminal *Terminal) closeWithReason() error {
 	if shouldCloseHistory && terminal.historyEnabled {
 		// 中文说明：remove/shutdown 不一定会经过 process-exit watcher；running terminal
 		// 的最后 open line 必须交给 linehist 强制闭合。
-		terminal.forceCloseHistory()
+		result = errors.Join(result, terminal.forceCloseHistory())
 	}
 	if terminal.lineHistory != nil {
 		// 中文说明：terminal remove/shutdown 后不再有查询与续写；linehist 把
 		// 未闭合尾部按硬结束落盘并关闭文件，重启进程不丢已滚出内容。
-		_ = terminal.lineHistory.Close()
+		result = errors.Join(result, terminal.lineHistory.Close())
 	}
+	terminal.historyMu.Unlock()
 	terminal.syncInfo(info)
 	if process == nil {
 		terminal.finishRawPTYProcess(nil, -1)
-		return nil
+		return result
 	}
-	err := process.Close()
+	result = errors.Join(result, process.Close())
 	terminal.finishRawPTYProcess(process, -1)
-	return err
+	return result
 }
 
 func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) error {
@@ -345,10 +359,10 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	}
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
-	_ = old.Close()
+	closeErr := old.Close()
 	terminal.publishLifecycle(EventTerminalChanged, info)
 	terminal.publishLiveInvalidated(info.ID, uint64(revision))
-	return nil
+	return closeErr
 }
 
 func (terminal *Terminal) Wait() <-chan ProcessExit {
@@ -442,11 +456,19 @@ func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
 	return status
 }
 
-// FlushHistory 等待调用时已经进入共享 output buffer 的 history payload 落盘。
-// 它不等待 future output 或客户端 render，调用边界是 history.window/freeze/copy
-// 和 lifecycle close。
+// FlushHistory 等待调用时已经进入共享 output buffer 的 history payload，然后
+// 建立一次显式 durability fence。它不等待 future output、不封存当前 hot screen；
+// normal Close 使用同一 consumer fence，并由最终 store Close 执行唯一一次 sync。
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
-	return terminal.flushHistoryOutput(ctx)
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if err := terminal.flushHistoryOutput(ctx); err != nil {
+		return err
+	}
+	if terminal.lineHistory == nil {
+		return nil
+	}
+	return terminal.lineHistory.Sync()
 }
 
 func (terminal *Terminal) pruneHistoryRetention() error {
@@ -915,9 +937,11 @@ func (terminal *Terminal) ingestHistorySemanticOutput(output string) error {
 }
 
 func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {
+	terminal.historyMu.Lock()
 	terminal.mu.Lock()
 	if terminal.process != process || terminal.info.State == TerminalStateRemoved {
 		terminal.mu.Unlock()
+		terminal.historyMu.Unlock()
 		return
 	}
 	terminal.info.State = TerminalStateExited
@@ -929,9 +953,12 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	terminal.mu.Unlock()
 	terminal.finishRawPTYProcess(process, code)
 	if terminal.historyEnabled {
-		terminal.forceCloseHistory()
+		if err := terminal.forceCloseHistory(); err != nil {
+			terminal.recordHistoryUnavailable(err)
+		}
 	}
 	terminal.appendExitMarker(info)
+	terminal.historyMu.Unlock()
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
 }
@@ -1181,13 +1208,32 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 	return terminal.historyStore.Release(token)
 }
 
-func (terminal *Terminal) forceCloseHistory() {
+func (terminal *Terminal) forceCloseHistory() error {
 	if terminal.lineHistory != nil && !terminal.historyOutputIsSticky() {
 		// 中文说明：process exit/remove/restart 会重置旧 process 的 history tap；
 		// 尚未滚出屏幕的最后一屏必须在同一 gate 下封存，否则 live 保留屏幕但
 		// copy/history 只能看到冷段尾部，出现旧进程最后几行缺失。
-		_ = terminal.lineHistory.SealLifecycleTail()
+		return terminal.lineHistory.SealLifecycleTail()
 	}
+	return nil
+}
+
+func (terminal *Terminal) recordHistoryUnavailable(err error) {
+	if err == nil {
+		return
+	}
+	terminal.mu.Lock()
+	id := terminal.info.ID
+	terminal.mu.Unlock()
+	wrapped := &TerminalOutputError{
+		TerminalID: id,
+		Consumer:   terminalOutputConsumerHistory.String(),
+		Cause:      err,
+	}
+	terminal.queueMu.Lock()
+	terminal.historyOutputError = errors.Join(terminal.historyOutputError, wrapped)
+	terminal.queueMu.Unlock()
+	terminal.logger.Error("terminal history unavailable", "terminal_id", id, "error", wrapped)
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {

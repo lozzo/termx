@@ -368,20 +368,12 @@ func (f *CompressedLineFile) Close() error {
 	}
 	var result error
 	if f.file != nil {
-		if err := f.flushPending(); err != nil {
-			result = err
-		} else if err := f.file.Sync(); err != nil {
-			result = err
-		}
-		if err := f.file.Close(); result == nil {
-			result = err
-		}
+		result = errors.Join(result, f.flushPending())
+		result = errors.Join(result, f.file.Sync())
+		result = errors.Join(result, f.file.Close())
 		f.file = nil
 	}
-	if err := f.closeCodecs(); result == nil {
-		result = err
-	}
-	return result
+	return errors.Join(result, f.closeCodecs())
 }
 
 func (f *CompressedLineFile) closeCodecs() error {

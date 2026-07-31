@@ -1796,6 +1796,8 @@ func (storage *failingTerminalLineStorage) Lines(start int, end int) ([]linehist
 	return append([]linehist.Line(nil), storage.lines[start:end]...), nil
 }
 
+func (storage *failingTerminalLineStorage) Sync() error { return nil }
+
 func (storage *failingTerminalLineStorage) Close() error { return nil }
 
 type controlledTerminalLineStorage struct {
@@ -1845,6 +1847,7 @@ func (storage *controlledTerminalLineStorage) Base() int      { return storage.f
 func (storage *controlledTerminalLineStorage) Lines(start int, end int) ([]linehist.Line, error) {
 	return storage.file.Lines(start, end)
 }
+func (storage *controlledTerminalLineStorage) Sync() error  { return storage.file.Sync() }
 func (storage *controlledTerminalLineStorage) Close() error { return storage.file.Close() }
 
 func newRecordingProcessFactory() *recordingProcessFactory {
@@ -1898,6 +1901,7 @@ type recordingProcess struct {
 	outputOnce sync.Once
 	killed     bool
 	closed     bool
+	closeErr   error
 }
 
 func (process *recordingProcess) Input(data []byte) error {
@@ -1963,10 +1967,17 @@ func (process *recordingProcess) Wait() <-chan ProcessExit {
 func (process *recordingProcess) Close() error {
 	process.mu.Lock()
 	process.closed = true
+	err := process.closeErr
 	process.mu.Unlock()
 	process.closeOutput()
 	process.exit(-1)
-	return nil
+	return err
+}
+
+func (process *recordingProcess) setCloseError(err error) {
+	process.mu.Lock()
+	process.closeErr = err
+	process.mu.Unlock()
 }
 
 func (process *recordingProcess) snapshot() ([][]byte, []Size, bool, bool) {

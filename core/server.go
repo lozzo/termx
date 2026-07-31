@@ -684,11 +684,12 @@ func (server *Server) RemoveTerminal(id string) error {
 		return err
 	}
 	terminal := server.removeTerminalHandle(id)
+	var closeErr error
 	if terminal != nil {
-		_ = terminal.Close()
+		closeErr = terminal.Close()
 	}
 	server.publishTerminalEvent(EventTerminalRemoved, info)
-	return nil
+	return closeErr
 }
 
 func (server *Server) updateTerminalInfo(info TerminalInfo) {

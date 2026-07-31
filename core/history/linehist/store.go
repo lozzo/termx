@@ -266,6 +266,17 @@ func (store *Store) TransitionOutputEpoch(reset func()) error {
 	return nil
 }
 
+// Sync establishes an explicit durability fence under the existing ingest
+// gate. It does not seal the assembler tail or snapshot the current screen.
+func (store *Store) Sync() error {
+	if store == nil {
+		return nil
+	}
+	unlock := store.lockGate()
+	defer unlock()
+	return store.engine.Sync()
+}
+
 // Close 落盘未闭合尾部并关闭文件（terminal remove/shutdown 边界）。
 func (store *Store) Close() error {
 	if store == nil {
