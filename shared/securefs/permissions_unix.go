@@ -22,6 +22,19 @@ func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return nil, err
 	}
+	return openPrivateDirectory(path)
+}
+
+// CreatePrivateDirectory atomically creates one private directory and rejects
+// an existing path instead of adopting or repairing it.
+func CreatePrivateDirectory(path string) (*os.File, error) {
+	if err := os.Mkdir(path, 0o700); err != nil {
+		return nil, err
+	}
+	return openPrivateDirectory(path)
+}
+
+func openPrivateDirectory(path string) (*os.File, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, err
@@ -31,20 +44,30 @@ func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
 		_ = unix.Close(fd)
 		return nil, errors.New("create private directory file handle")
 	}
-	info, err := directory.Stat()
-	if err != nil {
+	if err := ValidatePrivateDirectoryHandle(directory); err != nil {
 		_ = directory.Close()
 		return nil, err
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !info.IsDir() || info.Mode().Perm() != 0o700 || !ok || int(stat.Uid) != os.Geteuid() {
-		_ = directory.Close()
-		if !ok {
-			return nil, errors.New("private directory owner is unavailable")
-		}
-		return nil, fmt.Errorf("directory is not private to the current user: mode=%#o owner=%d", info.Mode().Perm(), stat.Uid)
-	}
 	return directory, nil
+}
+
+// ValidatePrivateDirectoryHandle verifies owner and mode on an already-open directory.
+func ValidatePrivateDirectoryHandle(directory *os.File) error {
+	if directory == nil {
+		return errors.New("private directory handle is required")
+	}
+	info, err := directory.Stat()
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return errors.New("private directory owner is unavailable")
+	}
+	if !info.IsDir() || info.Mode().Perm() != 0o700 || int(stat.Uid) != os.Geteuid() {
+		return fmt.Errorf("directory is not private to the current user: mode=%#o owner=%d", info.Mode().Perm(), stat.Uid)
+	}
+	return nil
 }
 
 // SecureFile 把私钥、credential 或 runtime record 限制为当前 Unix 账号可读写。

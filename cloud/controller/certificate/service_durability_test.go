@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -306,7 +307,7 @@ func TestReconcileSecretsFailsClosedWhenStartupActiveSecretIsMissing(t *testing.
 	store := &serviceStoreStub{listProfiles: func(context.Context) ([]Profile, error) {
 		return []Profile{{ID: "profile-1", SecretRef: uuid.NewString()}}, nil
 	}}
-	fileStore, err := NewFileSecretStore(t.TempDir())
+	fileStore, err := NewFileSecretStore(filepath.Join(physicalTempDir(t), "certificates"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -56,7 +56,7 @@ func TestValidatePairAndEndpointWithIPAddress(t *testing.T) {
 }
 
 func TestFileSecretStorePermissionsAndRoundTrip(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +67,7 @@ func TestFileSecretStorePermissionsAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertMode(t, root, 0o700)
+	assertMode(t, filepath.Join(root, storeMarkerFile), 0o600)
 	assertMode(t, filepath.Join(root, reference), 0o700)
 	assertMode(t, filepath.Join(root, reference, certificateFile), 0o600)
 	assertMode(t, filepath.Join(root, reference, privateKeyFile), 0o600)
@@ -89,7 +90,7 @@ func TestFileSecretStorePermissionsAndRoundTrip(t *testing.T) {
 }
 
 func TestFileSecretStoreRejectsAnUnsyncedPublishedDirectory(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -109,10 +110,7 @@ func TestFileSecretStoreRejectsAnUnsyncedPublishedDirectory(t *testing.T) {
 	if syncCalls != 3 {
 		t.Fatalf("root sync calls = %d, want publish + tombstone + deletion sync", syncCalls)
 	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := secretDataEntries(t, root)
 	if len(entries) != 0 {
 		t.Fatalf("failed publication left secret directories: %v", entries)
 	}
@@ -127,6 +125,15 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	if got := info.Mode().Perm(); got != want {
 		t.Fatalf("%s mode=%#o want=%#o", path, got, want)
 	}
+}
+
+func physicalTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return directory
 }
 
 func testPair(t *testing.T, now time.Time, dnsName string) ([]byte, []byte) {

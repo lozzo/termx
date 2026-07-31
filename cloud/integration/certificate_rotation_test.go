@@ -95,11 +95,16 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	secretRoot := filepath.Join(t.TempDir(), "controller-certificates")
+	temporary, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretRoot := filepath.Join(temporary, "controller-certificates")
 	secrets, err := controllercertificate.NewFileSecretStore(secretRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer secrets.Close()
 	certificateService, err = controllercertificate.New(controllercertificate.Config{
 		Store: database, Secrets: secrets, Edges: edges, Dispatcher: controlService,
 		Online: func(ctx context.Context, edgeID string) (bool, error) {

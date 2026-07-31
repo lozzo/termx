@@ -28,6 +28,16 @@ func SecureDirectory(path string) error { return secureWindowsPath(path, true) }
 // New directories receive their protected DACL as part of CreateDirectory;
 // existing directories are never repaired and must pass same-handle checks.
 func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
+	return openOrCreatePrivateDirectory(path, true)
+}
+
+// CreatePrivateDirectory atomically creates one protected-DACL directory and
+// rejects an existing path instead of adopting or repairing it.
+func CreatePrivateDirectory(path string) (*os.File, error) {
+	return openOrCreatePrivateDirectory(path, false)
+}
+
+func openOrCreatePrivateDirectory(path string, allowExisting bool) (*os.File, error) {
 	path = filepath.Clean(path)
 	descriptor, err := privateWindowsSecurityDescriptor(true)
 	if err != nil {
@@ -42,6 +52,9 @@ func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
 		SecurityDescriptor: descriptor,
 	}
 	createErr := windows.CreateDirectory(pathPointer, attributes)
+	if createErr != nil && (!allowExisting || !errors.Is(createErr, windows.ERROR_ALREADY_EXISTS)) {
+		return nil, createErr
+	}
 	handle, err := windows.CreateFile(
 		pathPointer,
 		windows.READ_CONTROL|windows.FILE_READ_ATTRIBUTES,
@@ -52,9 +65,6 @@ func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
 		0,
 	)
 	if err != nil {
-		if createErr != nil && !errors.Is(createErr, windows.ERROR_ALREADY_EXISTS) {
-			return nil, createErr
-		}
 		return nil, err
 	}
 	directory := os.NewFile(uintptr(handle), path)
@@ -62,7 +72,7 @@ func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
 		_ = windows.CloseHandle(handle)
 		return nil, errors.New("create private directory file handle")
 	}
-	if err := validatePrivateDirectoryHandle(directory); err != nil {
+	if err := ValidatePrivateDirectoryHandle(directory); err != nil {
 		_ = directory.Close()
 		return nil, err
 	}
@@ -111,7 +121,8 @@ func ValidatePrivateFileHandle(file *os.File) error {
 	return validatePrivateWindowsDescriptor(descriptor)
 }
 
-func validatePrivateDirectoryHandle(directory *os.File) error {
+// ValidatePrivateDirectoryHandle validates owner, reparse state, and protected DACL.
+func ValidatePrivateDirectoryHandle(directory *os.File) error {
 	if directory == nil {
 		return errors.New("private directory handle is required")
 	}

@@ -17,6 +17,16 @@ func OpenOrCreatePrivateDirectory(string) (*os.File, error) {
 	return nil, errors.New("private directory handle validation is unsupported")
 }
 
+// CreatePrivateDirectory is unsupported where directory identity cannot be established.
+func CreatePrivateDirectory(string) (*os.File, error) {
+	return nil, errors.New("private directory creation is unsupported")
+}
+
+// ValidatePrivateDirectoryHandle fails closed where directory ownership is unavailable.
+func ValidatePrivateDirectoryHandle(*os.File) error {
+	return errors.New("private directory handle validation is unsupported")
+}
+
 // SecureFile 在未专门适配的平台保留最小 owner-only mode 请求。
 func SecureFile(path string) error { return os.Chmod(path, 0o600) }
 

@@ -174,6 +174,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return fmt.Errorf("open certificate secret store: %w", err)
 	}
+	defer secretStore.Close()
 	var service *control.Service
 	certificateService, err := certificate.New(certificate.Config{
 		Store: database, Secrets: secretStore, Edges: edgeService,

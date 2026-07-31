@@ -30,3 +30,22 @@ func TestSecureFileAndDirectoryArePrivate(t *testing.T) {
 		t.Fatal("secured file did not satisfy the platform privacy contract")
 	}
 }
+
+func TestCreatePrivateDirectoryDoesNotAdoptExistingPath(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "create-only")
+	handle, err := CreatePrivateDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidatePrivateDirectoryHandle(handle); err != nil {
+		_ = handle.Close()
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if adopted, err := CreatePrivateDirectory(directory); err == nil {
+		_ = adopted.Close()
+		t.Fatal("create-only private directory adopted an existing path")
+	}
+}

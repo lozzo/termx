@@ -12,7 +12,7 @@ import (
 )
 
 func TestFileSecretStorePutSyncFailureUsesDurableDeleteOrder(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestFileSecretStorePutSyncFailureUsesDurableDeleteOrder(t *testing.T) {
 }
 
 func TestFileSecretStorePutJoinsPublishAndCleanupSyncFailures(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -72,10 +72,7 @@ func TestFileSecretStorePutJoinsPublishAndCleanupSyncFailures(t *testing.T) {
 	if _, err := store.Put([]byte("certificate"), []byte("private key")); !errors.Is(err, publishErr) || !errors.Is(err, cleanupErr) {
 		t.Fatalf("Put error = %v, want joined publish and cleanup sync failures", err)
 	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := secretDataEntries(t, root)
 	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), deletePrefix) {
 		t.Fatalf("failed durable cleanup state = %v, want one tombstone", entries)
 	}
@@ -87,7 +84,7 @@ func TestFileSecretStorePutJoinsPublishAndCleanupSyncFailures(t *testing.T) {
 }
 
 func TestFileSecretStoreDeleteRetriesInterruptedTombstone(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +126,7 @@ func TestFileSecretStoreDeleteRetriesInterruptedTombstone(t *testing.T) {
 }
 
 func TestFileSecretStoreDeleteRetriesFinalRootSyncFromNeitherState(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +159,7 @@ func TestFileSecretStoreDeleteRetriesFinalRootSyncFromNeitherState(t *testing.T)
 }
 
 func TestFileSecretStoreReconcileRetriesFinalRootSyncAfterCleanup(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +192,7 @@ func TestFileSecretStoreReconcileRetriesFinalRootSyncAfterCleanup(t *testing.T) 
 }
 
 func TestFileSecretStoreReconcileRestoresAndCleansManagedState(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +247,7 @@ func TestFileSecretStoreReconcileRestoresAndCleansManagedState(t *testing.T) {
 }
 
 func TestFileSecretStoreReconcileSyncsRestoredTruthBeforeCleanup(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +289,7 @@ func TestFileSecretStoreReconcileSyncsRestoredTruthBeforeCleanup(t *testing.T) {
 }
 
 func TestFileSecretStoreReconcileFailsClosedBeforeCleanup(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +308,7 @@ func TestFileSecretStoreReconcileFailsClosedBeforeCleanup(t *testing.T) {
 }
 
 func TestFileSecretStoreReconcileRejectsIncompleteActiveTombstone(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "certificates")
+	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +331,7 @@ func TestFileSecretStoreReconcileRejectsIncompleteActiveTombstone(t *testing.T) 
 
 func TestFileSecretStoreReconcileRejectsUnsafeEntries(t *testing.T) {
 	t.Run("symlink", func(t *testing.T) {
-		root := filepath.Join(t.TempDir(), "certificates")
+		root := filepath.Join(physicalTempDir(t), "certificates")
 		store, err := NewFileSecretStore(root)
 		if err != nil {
 			t.Fatal(err)
@@ -353,7 +350,7 @@ func TestFileSecretStoreReconcileRejectsUnsafeEntries(t *testing.T) {
 	})
 
 	t.Run("unmanaged file", func(t *testing.T) {
-		root := filepath.Join(t.TempDir(), "certificates")
+		root := filepath.Join(physicalTempDir(t), "certificates")
 		store, err := NewFileSecretStore(root)
 		if err != nil {
 			t.Fatal(err)
@@ -391,4 +388,19 @@ func secretPathKind(path string) string {
 	default:
 		return base
 	}
+}
+
+func secretDataEntries(t *testing.T, root string) []os.DirEntry {
+	t.Helper()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make([]os.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Name() != storeMarkerFile {
+			result = append(result, entry)
+		}
+	}
+	return result
 }

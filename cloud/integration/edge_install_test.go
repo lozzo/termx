@@ -64,7 +64,10 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	caCertificate, caKey := newCertificateAuthority(t)
-	temporary := t.TempDir()
+	temporary, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	caCertificateFile := writeTestFile(t, temporary, "edge-ca.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCertificate.Raw}))
 	caKeyDER, err := x509.MarshalPKCS8PrivateKey(caKey)
 	if err != nil {
@@ -110,6 +113,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer secretStore.Close()
 	certificateService, err := certificate.New(certificate.Config{Store: database, Secrets: secretStore, Edges: edges, Dispatcher: controlService, Online: func(ctx context.Context, edgeID string) (bool, error) {
 		_, found, err := directoryState.Edge(ctx, edgeID)
 		return found, err

@@ -18,7 +18,7 @@ func TestOpenOrCreatePrivateDirectoryUsesProtectedPrivateDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer handle.Close()
-	if err := validatePrivateDirectoryHandle(handle); err != nil {
+	if err := ValidatePrivateDirectoryHandle(handle); err != nil {
 		t.Fatalf("validate created directory: %v", err)
 	}
 
