@@ -68,7 +68,7 @@ type Store interface {
 	ListCertificateProfiles(context.Context) ([]Profile, error)
 	GetCertificateProfile(context.Context, string) (Profile, error)
 	CreateCertificateProfile(context.Context, Profile, string) error
-	ReplaceCertificateProfile(context.Context, uint64, Profile, string) (string, []Binding, error)
+	ReplaceCertificateProfile(context.Context, uint64, Profile, string) ([]Binding, error)
 	GetCertificateBinding(context.Context, string) (Binding, bool, error)
 	BindCertificateProfile(context.Context, edgeconfig.Edge, Profile, uint64, string, time.Time) (Binding, error)
 	UnbindCertificateProfile(context.Context, string, uint64, string, time.Time) (Binding, error)
@@ -79,7 +79,6 @@ type Store interface {
 type SecretStore interface {
 	Put([]byte, []byte) (string, error)
 	Read(string) ([]byte, []byte, error)
-	Delete(string) error
 	Reconcile([]string) error
 }
 
@@ -196,7 +195,7 @@ func (service *Service) uploadProfileLocked(ctx context.Context, request *cloudv
 	if strings.TrimSpace(request.GetCertificateProfileId()) == "" {
 		err = service.config.Store.CreateCertificateProfile(ctx, profile, actorID)
 	} else {
-		_, bindings, err = service.config.Store.ReplaceCertificateProfile(ctx, request.GetExpectedRevision(), profile, actorID)
+		bindings, err = service.config.Store.ReplaceCertificateProfile(ctx, request.GetExpectedRevision(), profile, actorID)
 	}
 	if err != nil {
 		profiles, truthErr := service.config.Store.ListCertificateProfiles(ctx)

@@ -84,11 +84,11 @@ func TestFileSecretStorePermissionsAndRoundTrip(t *testing.T) {
 	if _, _, err := store.Read("../escape"); err == nil {
 		t.Fatal("path traversal secret reference was accepted")
 	}
-	if err := store.Delete(reference); err != nil {
+	if err := store.Reconcile(nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, reference)); !os.IsNotExist(err) {
-		t.Fatalf("secret directory still exists after delete: %v", err)
+		t.Fatalf("orphan secret directory still exists after reconcile: %v", err)
 	}
 }
 

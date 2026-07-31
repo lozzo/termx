@@ -170,9 +170,6 @@ func TestFileSecretStoreCloseIsIdempotentAndFailsClosed(t *testing.T) {
 	if _, _, err := store.Read(reference); err == nil {
 		t.Fatal("Read succeeded after Close")
 	}
-	if err := store.Delete(reference); err == nil {
-		t.Fatal("Delete succeeded after Close")
-	}
 	if err := store.Reconcile(nil); err == nil {
 		t.Fatal("Reconcile succeeded after Close")
 	}

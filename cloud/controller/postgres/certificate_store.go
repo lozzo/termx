@@ -6,10 +6,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/anytty/anytty/cloud/controller/certificate"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/jackc/pgx/v5"
 )
 
 const certificateProfileSelect = `SELECT certificate_profile_id::text,name,dns_names,sha256_fingerprint,not_before,not_after,revision,secret_ref,created_at,updated_at FROM certificate_profiles`
@@ -81,55 +81,54 @@ func (database *Database) CreateCertificateProfile(ctx context.Context, profile 
 }
 
 // ReplaceCertificateProfile 使用 revision CAS 替换当前 secret 引用，并原子推进全部绑定 desired revision。
-func (database *Database) ReplaceCertificateProfile(ctx context.Context, expectedRevision uint64, profile certificate.Profile, actorID string) (string, []certificate.Binding, error) {
+func (database *Database) ReplaceCertificateProfile(ctx context.Context, expectedRevision uint64, profile certificate.Profile, actorID string) ([]certificate.Binding, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var oldSecretRef string
 	var currentRevision uint64
-	err = tx.QueryRow(ctx, `SELECT secret_ref,revision FROM certificate_profiles WHERE certificate_profile_id=$1 FOR UPDATE`, profile.ID).Scan(&oldSecretRef, &currentRevision)
+	err = tx.QueryRow(ctx, `SELECT revision FROM certificate_profiles WHERE certificate_profile_id=$1 FOR UPDATE`, profile.ID).Scan(&currentRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil, certificate.ErrNotFound
+		return nil, certificate.ErrNotFound
 	}
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if currentRevision != expectedRevision || profile.Revision != expectedRevision+1 {
-		return "", nil, certificate.ErrRevisionConflict
+		return nil, certificate.ErrRevisionConflict
 	}
 	if _, err := tx.Exec(ctx, `UPDATE certificate_profiles SET name=$1,dns_names=$2,sha256_fingerprint=$3,not_before=$4,not_after=$5,revision=$6,secret_ref=$7,updated_at=$8 WHERE certificate_profile_id=$9`, profile.Name, profile.DNSNames, profile.Fingerprint, profile.NotBefore, profile.NotAfter, profile.Revision, profile.SecretRef, profile.UpdatedAt, profile.ID); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE edge_certificate_bindings SET desired_revision=$1,last_error_code='',last_error_message='',updated_at=$2 WHERE certificate_profile_id=$3`, profile.Revision, profile.UpdatedAt, profile.ID); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if err := insertOperatorAudit(ctx, tx, actorID, "certificate.replace", "certificate_profile", profile.ID, "替换证书链与私钥", "applied", profile.UpdatedAt); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	rows, err := tx.Query(ctx, certificateBindingSelect+` WHERE binding.certificate_profile_id=$1 ORDER BY binding.edge_id`, profile.ID)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	bindings := make([]certificate.Binding, 0)
 	for rows.Next() {
 		binding, err := scanCertificateBinding(rows)
 		if err != nil {
 			rows.Close()
-			return "", nil, err
+			return nil, err
 		}
 		bindings = append(bindings, binding)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return "", nil, err
+		return nil, err
 	}
 	rows.Close()
 	if err := tx.Commit(ctx); err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	return oldSecretRef, bindings, nil
+	return bindings, nil
 }
 
 // GetCertificateBinding 返回指定 Edge 的当前持久绑定。

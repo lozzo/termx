@@ -51,10 +51,10 @@ func TestUploadProfileResolvesAmbiguousCommittedMutationFromDatabaseTruth(t *tes
 		getProfile: func(context.Context, string) (Profile, error) {
 			return Profile{ID: "profile-1", Revision: 1, SecretRef: uuid.NewString(), CreatedAt: now.Add(-time.Hour)}, nil
 		},
-		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) (string, []Binding, error) {
+		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) ([]Binding, error) {
 			committed = profile
 			committed.Bindings = []Binding{{EdgeID: "edge-1", ProfileID: profile.ID, DesiredRevision: profile.Revision}}
-			return "", nil, mutationErr
+			return nil, mutationErr
 		},
 		listProfiles: func(context.Context) ([]Profile, error) {
 			return []Profile{committed}, nil
@@ -98,8 +98,8 @@ func TestUploadProfileMutationErrorReconcilesOnlyWhenDatabaseTruthIsReadable(t *
 			getProfile: func(context.Context, string) (Profile, error) {
 				return Profile{ID: "profile-1", Revision: 1, SecretRef: oldRef, CreatedAt: now.Add(-time.Hour)}, nil
 			},
-			replaceProfile: func(context.Context, uint64, Profile, string) (string, []Binding, error) {
-				return "", nil, mutationErr
+			replaceProfile: func(context.Context, uint64, Profile, string) ([]Binding, error) {
+				return nil, mutationErr
 			},
 			listProfiles: func(context.Context) ([]Profile, error) {
 				return []Profile{{ID: "profile-1", Revision: 1, SecretRef: oldRef}}, nil
@@ -123,28 +123,27 @@ func TestUploadProfileMutationErrorReconcilesOnlyWhenDatabaseTruthIsReadable(t *
 	})
 
 	t.Run("unreadable truth preserves files", func(t *testing.T) {
-		reconcileCalls, deleteCalls := 0, 0
+		reconcileCalls := 0
 		store := &serviceStoreStub{
 			getProfile: func(context.Context, string) (Profile, error) {
 				return Profile{ID: "profile-1", Revision: 1, SecretRef: oldRef, CreatedAt: now.Add(-time.Hour)}, nil
 			},
-			replaceProfile: func(context.Context, uint64, Profile, string) (string, []Binding, error) {
-				return "", nil, mutationErr
+			replaceProfile: func(context.Context, uint64, Profile, string) ([]Binding, error) {
+				return nil, mutationErr
 			},
 			listProfiles: func(context.Context) ([]Profile, error) { return nil, truthErr },
 		}
 		secrets := &secretStoreStub{
 			put:       func([]byte, []byte) (string, error) { return newRef, nil },
 			reconcile: func([]string) error { reconcileCalls++; return nil },
-			delete:    func(string) error { deleteCalls++; return nil },
 		}
 		service := newDurabilityTestService(t, store, secrets, now, nil)
 		_, err := service.UploadProfile(context.Background(), replacementRequest(certificatePEM, privateKeyPEM), "operator")
 		if !errors.Is(err, mutationErr) || !errors.Is(err, truthErr) {
 			t.Fatalf("UploadProfile error = %v, want mutation and truth errors", err)
 		}
-		if reconcileCalls != 0 || deleteCalls != 0 {
-			t.Fatalf("unreadable truth triggered cleanup: reconcile=%d delete=%d", reconcileCalls, deleteCalls)
+		if reconcileCalls != 0 {
+			t.Fatalf("unreadable truth triggered cleanup: reconcile=%d", reconcileCalls)
 		}
 	})
 }
@@ -157,9 +156,9 @@ func TestUploadProfilePostCommitCleanupFailureReturnsSuccessAndRetries(t *testin
 	var committed Profile
 	store := &serviceStoreStub{
 		getProfile: func(context.Context, string) (Profile, error) { return current, nil },
-		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) (string, []Binding, error) {
+		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) ([]Binding, error) {
 			committed = profile
-			return oldRef, nil, nil
+			return nil, nil
 		},
 		listProfiles: func(context.Context) ([]Profile, error) { return []Profile{committed}, nil },
 	}
@@ -200,9 +199,9 @@ func TestUploadProfileDispatchesOutsideSecretStateLock(t *testing.T) {
 	var committed Profile
 	store := &serviceStoreStub{
 		getProfile: func(context.Context, string) (Profile, error) { return current, nil },
-		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) (string, []Binding, error) {
+		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) ([]Binding, error) {
 			committed = profile
-			return oldRef, []Binding{{EdgeID: "edge-1", ProfileID: profile.ID, DesiredRevision: profile.Revision}}, nil
+			return []Binding{{EdgeID: "edge-1", ProfileID: profile.ID, DesiredRevision: profile.Revision}}, nil
 		},
 		listProfiles: func(context.Context) ([]Profile, error) { return []Profile{committed}, nil },
 	}
@@ -248,9 +247,9 @@ func TestBundleForEdgeHoldsReadLockThroughSecretRead(t *testing.T) {
 			return Binding{EdgeID: "edge-1", ProfileID: current.ID, DesiredRevision: current.Revision}, true, nil
 		},
 		getProfile: func(context.Context, string) (Profile, error) { return current, nil },
-		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) (string, []Binding, error) {
+		replaceProfile: func(_ context.Context, _ uint64, profile Profile, _ string) ([]Binding, error) {
 			committed = profile
-			return oldRef, nil, nil
+			return nil, nil
 		},
 		listProfiles: func(context.Context) ([]Profile, error) { return []Profile{committed}, nil },
 	}
@@ -342,7 +341,6 @@ func newDurabilityTestService(t *testing.T, store Store, secrets SecretStore, no
 type secretStoreStub struct {
 	put       func([]byte, []byte) (string, error)
 	read      func(string) ([]byte, []byte, error)
-	delete    func(string) error
 	reconcile func([]string) error
 }
 
@@ -360,13 +358,6 @@ func (store *secretStoreStub) Read(reference string) ([]byte, []byte, error) {
 	return store.read(reference)
 }
 
-func (store *secretStoreStub) Delete(reference string) error {
-	if store.delete == nil {
-		return errors.New("unexpected secret Delete")
-	}
-	return store.delete(reference)
-}
-
 func (store *secretStoreStub) Reconcile(references []string) error {
 	if store.reconcile == nil {
 		return errors.New("unexpected secret Reconcile")
@@ -378,7 +369,7 @@ type serviceStoreStub struct {
 	listProfiles   func(context.Context) ([]Profile, error)
 	getProfile     func(context.Context, string) (Profile, error)
 	createProfile  func(context.Context, Profile, string) error
-	replaceProfile func(context.Context, uint64, Profile, string) (string, []Binding, error)
+	replaceProfile func(context.Context, uint64, Profile, string) ([]Binding, error)
 	getBinding     func(context.Context, string) (Binding, bool, error)
 }
 
@@ -403,9 +394,9 @@ func (store *serviceStoreStub) CreateCertificateProfile(ctx context.Context, pro
 	return store.createProfile(ctx, profile, actorID)
 }
 
-func (store *serviceStoreStub) ReplaceCertificateProfile(ctx context.Context, revision uint64, profile Profile, actorID string) (string, []Binding, error) {
+func (store *serviceStoreStub) ReplaceCertificateProfile(ctx context.Context, revision uint64, profile Profile, actorID string) ([]Binding, error) {
 	if store.replaceProfile == nil {
-		return "", nil, errors.New("unexpected profile Replace")
+		return nil, errors.New("unexpected profile Replace")
 	}
 	return store.replaceProfile(ctx, revision, profile, actorID)
 }

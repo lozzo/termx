@@ -272,19 +272,6 @@ func (store *FileSecretStore) Read(reference string) (certificatePEM, privateKey
 	return certificatePEM, privateKeyPEM, nil
 }
 
-// Delete 把 UUID secret 原子改名为持久 tombstone，再只删除两个已知文件。
-func (store *FileSecretStore) Delete(reference string) error {
-	if _, err := canonicalReference(reference); err != nil {
-		return err
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if err := store.validateOpenLocked(); err != nil {
-		return err
-	}
-	return store.deleteLocked(reference)
-}
-
 // Reconcile 以数据库当前引用为真值恢复活跃 tombstone 并清理其余受管目录。
 func (store *FileSecretStore) Reconcile(liveReferences []string) error {
 	live := make(map[string]struct{}, len(liveReferences))

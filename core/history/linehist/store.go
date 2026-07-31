@@ -113,8 +113,7 @@ type liveView struct {
 // Store 实现 history.HistoryStore：冷段 = logical-line 文件，热段 =
 // emulator 当前屏，查询时按 logical-line 窗口返回 source rows。visual
 // reflow 由 TUI 根据当前 cols 本地完成；本层不持有第二份屏幕模型，也不
-// 构建全局 visual row 坐标。Apply(mutation batch) 是 no-op，写 truth 的
-// 唯一入口是 ApplyTransaction。
+// 构建全局 visual row 坐标。写 truth 的唯一入口是 ApplyTransaction。
 type Store struct {
 	mu         sync.Mutex
 	terminalID string
@@ -302,28 +301,6 @@ func (store *Store) PruneRetention() error {
 		store.noteHistoryMutation()
 	}
 	return err
-}
-
-// Apply 是 HistoryStore 兼容入口。linehist 的写 truth 只来自
-// ApplyTransaction 的 EvictedRows，renderer mutation batch 一律忽略。
-func (store *Store) Apply(batch history.HistoryMutationBatch) error {
-	return nil
-}
-
-// ReadState 返回只读边界诊断。linehist 路径没有 classifier；这里只暴露
-// generation 与是否已有 sealed timeline，不能从中派生 payload。
-func (store *Store) ReadState() history.HistoryReadState {
-	if store == nil {
-		return history.HistoryReadState{}
-	}
-	store.mu.Lock()
-	generation := store.generation
-	store.mu.Unlock()
-	_, visible := store.engine.VisibleLineRange()
-	return history.HistoryReadState{
-		Generation:  generation,
-		HasTimeline: visible > 0,
-	}
 }
 
 // LatestWindow 返回投影尾部 replace window。

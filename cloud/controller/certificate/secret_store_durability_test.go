@@ -79,13 +79,12 @@ func TestFileSecretStorePutJoinsPublishAndCleanupSyncFailures(t *testing.T) {
 		t.Fatalf("failed durable cleanup state = %v, want one tombstone", entries)
 	}
 	store.syncRoot = func() error { return nil }
-	reference := strings.TrimPrefix(entries[0].Name(), deletePrefix)
-	if err := store.Delete(reference); err != nil {
+	if err := store.Reconcile(nil); err != nil {
 		t.Fatalf("retry tombstone cleanup: %v", err)
 	}
 }
 
-func TestFileSecretStoreDeleteRetriesInterruptedTombstone(t *testing.T) {
+func TestFileSecretStoreReconcileRetriesInterruptedTombstone(t *testing.T) {
 	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
@@ -106,8 +105,8 @@ func TestFileSecretStoreDeleteRetriesInterruptedTombstone(t *testing.T) {
 		}
 		return realRemove(path)
 	}
-	if err := store.Delete(reference); !errors.Is(err, wantErr) {
-		t.Fatalf("Delete error = %v, want %v", err, wantErr)
+	if err := store.Reconcile(nil); !errors.Is(err, wantErr) {
+		t.Fatalf("Reconcile error = %v, want %v", err, wantErr)
 	}
 	if _, err := os.Lstat(filepath.Join(root, reference)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("live directory exists after tombstone rename: %v", err)
@@ -117,18 +116,18 @@ func TestFileSecretStoreDeleteRetriesInterruptedTombstone(t *testing.T) {
 	}
 
 	store.remove = realRemove
-	if err := store.Delete(reference); err != nil {
-		t.Fatalf("retry interrupted Delete: %v", err)
+	if err := store.Reconcile(nil); err != nil {
+		t.Fatalf("retry interrupted Reconcile: %v", err)
 	}
-	if err := store.Delete(reference); err != nil {
-		t.Fatalf("idempotent Delete: %v", err)
+	if err := store.Reconcile(nil); err != nil {
+		t.Fatalf("idempotent Reconcile: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(root, deletePrefix+reference)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("tombstone remains after retry: %v", err)
 	}
 }
 
-func TestFileSecretStoreDeleteRetriesFinalRootSyncFromNeitherState(t *testing.T) {
+func TestFileSecretStoreReconcileRetriesFinalRootSyncFromNeitherState(t *testing.T) {
 	root := filepath.Join(physicalTempDir(t), "certificates")
 	store, err := NewFileSecretStore(root)
 	if err != nil {
@@ -148,13 +147,13 @@ func TestFileSecretStoreDeleteRetriesFinalRootSyncFromNeitherState(t *testing.T)
 		}
 		return nil
 	}
-	if err := store.Delete(reference); !errors.Is(err, wantErr) {
-		t.Fatalf("Delete error = %v, want final sync failure", err)
+	if err := store.Reconcile(nil); !errors.Is(err, wantErr) {
+		t.Fatalf("Reconcile error = %v, want final sync failure", err)
 	}
 	if _, err := os.Lstat(filepath.Join(root, deletePrefix+reference)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("removed tombstone unexpectedly remains: %v", err)
 	}
-	if err := store.Delete(reference); err != nil {
+	if err := store.Reconcile(nil); err != nil {
 		t.Fatalf("retry from neither state: %v", err)
 	}
 	if syncCalls != 3 {
@@ -374,8 +373,8 @@ func TestFileSecretStoreReconcileRejectsUnsafeEntries(t *testing.T) {
 		if err := os.WriteFile(unexpected, []byte("keep"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.Delete(reference); err == nil {
-			t.Fatal("Delete accepted an unmanaged secret directory")
+		if err := store.Reconcile(nil); err == nil {
+			t.Fatal("Reconcile accepted an unmanaged secret directory")
 		}
 		if payload, err := os.ReadFile(unexpected); err != nil || string(payload) != "keep" {
 			t.Fatalf("unmanaged file was changed: payload=%q err=%v", payload, err)

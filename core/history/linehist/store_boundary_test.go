@@ -114,10 +114,6 @@ func TestStoreClearThenEd2ComboKeepsEverything(t *testing.T) {
 			t.Fatalf("ED2+ED3 clear must keep %q exactly once, got %q", want, joined)
 		}
 	}
-	state := harness.store.ReadState()
-	if !state.HasTimeline {
-		t.Fatalf("visible timeline must remain available after full clear, got %#v", state)
-	}
 }
 
 func TestStoreClearScrollbackBoundaryKeepsHistoryAcrossReopen(t *testing.T) {
