@@ -67,7 +67,7 @@ type Config struct {
 type relayLifecycle interface {
 	Address() string
 	Degraded() bool
-	Close() error
+	Close(context.Context) error
 	CloseSessionAllocations(context.Context, string) error
 	StateCloseSafe() bool
 }
@@ -405,9 +405,13 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	}
 	var shutdownErr error
 	if runtime.relayServer != nil {
-		shutdownErr = runtime.relayServer.Close()
-		if !runtime.relayServer.StateCloseSafe() {
-			return errors.Join(shutdownErr, errors.New("Relay shutdown retained a live allocation in Runtime State"))
+		shutdownErr = runtime.relayServer.Close(ctx)
+		closeSafe := runtime.relayServer.StateCloseSafe()
+		if errors.Is(shutdownErr, context.Canceled) || errors.Is(shutdownErr, context.DeadlineExceeded) || !closeSafe {
+			if !closeSafe {
+				shutdownErr = errors.Join(shutdownErr, errors.New("Relay shutdown did not reach a close-safe state"))
+			}
+			return shutdownErr
 		}
 	}
 	if err := runtime.finishRelayShutdown(ctx, closingRecords); err != nil {

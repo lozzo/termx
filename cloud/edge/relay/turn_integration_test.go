@@ -20,7 +20,7 @@ func TestRealTURNUDPAndBlockedUDPFallsBackToTCP(t *testing.T) {
 	server, state, material := startRealTURN(t)
 	defer state.Close()
 	defer func() {
-		if err := server.Close(); err != nil {
+		if err := server.Close(context.Background()); err != nil {
 			t.Errorf("close TURN server: %v", err)
 		}
 	}()
@@ -67,7 +67,7 @@ func TestRealTURNUDPAndBlockedUDPFallsBackToTCP(t *testing.T) {
 func TestRealTURNSameCredentialAllowsFourAllocationsAndRejectsFifth(t *testing.T) {
 	server, state, material := startRealTURN(t)
 	defer state.Close()
-	defer func() { _ = server.Close() }()
+	defer func() { _ = server.Close(context.Background()) }()
 
 	clients := make([]*turn.Client, 0, edgeruntime.MaxPhysicalAllocationsPerReservation+1)
 	controls := make([]net.PacketConn, 0, edgeruntime.MaxPhysicalAllocationsPerReservation+1)

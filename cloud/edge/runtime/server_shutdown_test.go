@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/anytty/anytty/cloud/processhealth"
 	"google.golang.org/grpc"
@@ -63,6 +64,58 @@ func TestRuntimeShutdownRetainsStateUntilRelayUsageIsFrozen(t *testing.T) {
 	}
 }
 
+func TestRuntimeShutdownRelayDeadlineKeepsRuntimeLiveForRetry(t *testing.T) {
+	runtime := newReservationRuntime(t, time.Date(2026, 7, 31, 2, 3, 4, 0, time.UTC))
+	health := &processhealth.State{}
+	health.SetAlive(true)
+	relay := &deadlineShutdownRelay{stopDone: make(chan struct{})}
+	runtime.health = health
+	runtime.grpcHealth = grpc_health.NewServer()
+	runtime.grpcServer = grpc.NewServer()
+	runtime.httpServer = &http.Server{}
+	runtime.relayServer = relay
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	if err := runtime.Shutdown(shutdownCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown error = %v", err)
+	}
+	if _, err := runtime.state.Snapshot(context.Background()); err != nil {
+		t.Fatalf("State closed after Relay deadline: %v", err)
+	}
+	if !health.Alive() {
+		t.Fatal("health was marked dead after Relay deadline")
+	}
+	if runtime.relayJournal == nil {
+		t.Fatal("Relay journal was detached after Relay deadline")
+	}
+	if depth, err := runtime.RelayJournalDepth(); err != nil || depth != 0 {
+		t.Fatalf("live Relay journal depth = %d, error = %v", depth, err)
+	}
+	if runtime.shutdownComplete {
+		t.Fatal("deadline marked Runtime shutdown complete")
+	}
+	select {
+	case <-runtime.ctx.Done():
+		t.Fatal("Runtime background context was canceled after Relay deadline")
+	default:
+	}
+
+	close(relay.stopDone)
+	if err := runtime.Shutdown(context.Background()); err != nil {
+		t.Fatalf("retry Shutdown: %v", err)
+	}
+	if _, err := runtime.state.Snapshot(context.Background()); !errors.Is(err, ErrStateClosed) {
+		t.Fatalf("State remained open after retry: %v", err)
+	}
+	if health.Alive() || !runtime.shutdownComplete || runtime.relayJournal != nil {
+		t.Fatalf("retry completion: alive=%v complete=%v journal=%v", health.Alive(), runtime.shutdownComplete, runtime.relayJournal)
+	}
+	if calls := relay.calls(); calls != 2 {
+		t.Fatalf("Relay Close calls = %d", calls)
+	}
+}
+
 type shutdownRelay struct {
 	mu       sync.Mutex
 	unfrozen bool
@@ -77,7 +130,7 @@ func (*shutdownRelay) Degraded() bool { return false }
 
 func (*shutdownRelay) CloseSessionAllocations(context.Context, string) error { return nil }
 
-func (relay *shutdownRelay) Close() error {
+func (relay *shutdownRelay) Close(context.Context) error {
 	relay.mu.Lock()
 	relay.closeN++
 	call := relay.closeN
@@ -100,6 +153,46 @@ func (relay *shutdownRelay) StateCloseSafe() bool {
 }
 
 func (relay *shutdownRelay) calls() int {
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	return relay.closeN
+}
+
+type deadlineShutdownRelay struct {
+	mu       sync.Mutex
+	closeN   int
+	stopDone chan struct{}
+	stopped  bool
+}
+
+func (*deadlineShutdownRelay) Address() string { return "" }
+
+func (*deadlineShutdownRelay) Degraded() bool { return false }
+
+func (*deadlineShutdownRelay) CloseSessionAllocations(context.Context, string) error { return nil }
+
+func (relay *deadlineShutdownRelay) Close(ctx context.Context) error {
+	relay.mu.Lock()
+	relay.closeN++
+	relay.mu.Unlock()
+	select {
+	case <-relay.stopDone:
+		relay.mu.Lock()
+		relay.stopped = true
+		relay.mu.Unlock()
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (relay *deadlineShutdownRelay) StateCloseSafe() bool {
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	return relay.stopped
+}
+
+func (relay *deadlineShutdownRelay) calls() int {
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
 	return relay.closeN

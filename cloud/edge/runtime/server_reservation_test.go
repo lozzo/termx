@@ -183,7 +183,7 @@ func TestRelayShutdownFreezesExactAggregateBeforeAck(t *testing.T) {
 	if err != nil || record.GetStage() != cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_CLOSING {
 		t.Fatalf("journal before drain = %v err=%v", record, err)
 	}
-	if err := relay.Close(); err != nil {
+	if err := relay.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.finishRelayShutdown(context.Background(), records); err != nil {
@@ -204,7 +204,7 @@ func (*shutdownReservationRelay) Degraded() bool  { return false }
 func (*shutdownReservationRelay) CloseSessionAllocations(context.Context, string) error {
 	return nil
 }
-func (relay *shutdownReservationRelay) Close() error {
+func (relay *shutdownReservationRelay) Close(context.Context) error {
 	relay.closed = true
 	return nil
 }

@@ -54,9 +54,11 @@ type Server struct {
 	closing           bool
 	closed            chan struct{}
 	work              sync.WaitGroup
-	closeOnce         sync.Once
-	closeMu           sync.Mutex
-	closeErr          error
+	stopOnce          sync.Once
+	stopDone          chan struct{}
+	stopErr           error
+	drainOnce         sync.Once
+	drainGate         chan struct{}
 	settlementTimeout time.Duration
 	pending           map[string]pendingReservation
 	active            map[string]activeAllocation
@@ -67,6 +69,11 @@ type pendingReservation struct {
 	id        string
 	admission policy.RelayAdmission
 	created   time.Time
+}
+
+type pendingReservationEntry struct {
+	key         string
+	reservation pendingReservation
 }
 
 type activeAllocation struct {
@@ -146,18 +153,41 @@ func (server *Server) Errors() <-chan error { return server.errors }
 func (server *Server) Degraded() bool { return server != nil && server.degraded.Load() }
 
 // Close 关闭 TURN allocation 和 listener，并在 socket 静止后累加 group counters。
-func (server *Server) Close() error {
+func (server *Server) Close(ctx context.Context) error {
 	if server == nil {
 		return nil
 	}
-	server.closeOnce.Do(func() { server.closeErr = server.stop() })
-	server.closeMu.Lock()
-	defer server.closeMu.Unlock()
-	err := errors.Join(server.closeErr, server.drain())
+	if ctx == nil {
+		return errors.New("Relay shutdown requires context")
+	}
+	stopDone := server.startStop()
+	select {
+	case <-stopDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	err := errors.Join(server.stopErr, server.drainWithContext(ctx))
 	if server.degraded.Load() {
 		err = errors.Join(err, errors.New("Relay is degraded during shutdown"))
 	}
 	return err
+}
+
+func (server *Server) startStop() <-chan struct{} {
+	server.stopOnce.Do(func() {
+		done := make(chan struct{})
+		server.mu.Lock()
+		server.stopDone = done
+		server.mu.Unlock()
+		go func() {
+			server.stopErr = server.stop()
+			close(done)
+		}()
+	})
+	server.mu.Lock()
+	done := server.stopDone
+	server.mu.Unlock()
+	return done
 }
 
 func (server *Server) stop() error {
@@ -190,47 +220,81 @@ func (server *Server) stop() error {
 	return errors.Join(stopErrors...)
 }
 
-func (server *Server) drain() error {
-	var drainErrors []error
-	server.mu.Lock()
-	pending := make([]pendingReservation, 0, len(server.pending))
-	for key, reservation := range server.pending {
-		pending = append(pending, reservation)
-		delete(server.pending, key)
+func (server *Server) drainWithContext(ctx context.Context) error {
+	server.drainOnce.Do(func() {
+		server.drainGate = make(chan struct{}, 1)
+		server.drainGate <- struct{}{}
+	})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-server.drainGate:
 	}
-	server.mu.Unlock()
-	active := server.claimAllocations(func(activeAllocation) bool { return true })
+	defer func() { server.drainGate <- struct{}{} }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return server.drain(ctx)
+}
 
-	for _, reservation := range pending {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		err := server.runtime.CancelRelayAllocationReservation(ctx, reservation.id)
+func (server *Server) drain(ctx context.Context) error {
+	var drainErrors []error
+	for _, pending := range server.pendingReservations(func(pendingReservation) bool { return true }) {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(errors.Join(drainErrors...), err)
+		}
+		itemCtx, cancel := context.WithTimeout(ctx, time.Second)
+		err := server.runtime.CancelRelayAllocationReservation(itemCtx, pending.reservation.id)
 		cancel()
 		if err != nil {
-			drainErrors = append(drainErrors, fmt.Errorf("cancel Relay reservation %s during shutdown: %w", reservation.id, err))
+			drainErrors = append(drainErrors, fmt.Errorf("cancel Relay reservation %s during shutdown: %w", pending.reservation.id, err))
+			if ctx.Err() != nil {
+				return errors.Join(errors.Join(drainErrors...), ctx.Err())
+			}
+			continue
 		}
+		server.removePendingReservation(pending)
 	}
-	for _, claimed := range active {
+	for _, allocationID := range server.allocationIDs(func(activeAllocation) bool { return true }) {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(errors.Join(drainErrors...), err)
+		}
+		claimed, exists := server.claimAllocation(allocationID)
+		if !exists {
+			continue
+		}
 		allocation := claimed.allocation
-		ctx, cancel := context.WithTimeout(context.Background(), server.allocationSettlementTimeout())
-		err := server.settleClaimedAllocation(ctx, claimed)
+		itemCtx, cancel := context.WithTimeout(ctx, server.allocationSettlementTimeout())
+		err := server.settleClaimedAllocation(itemCtx, claimed)
 		cancel()
 		if err != nil {
 			settlementErr := fmt.Errorf("settle Relay allocation %s during shutdown: %w", allocation.id, err)
 			drainErrors = append(drainErrors, settlementErr)
+			if ctx.Err() != nil {
+				return errors.Join(errors.Join(drainErrors...), ctx.Err())
+			}
 			server.fail(settlementErr)
 		}
 	}
 	return errors.Join(drainErrors...)
 }
 
-// StateCloseSafe reports whether no pending or active allocation remains in the data plane.
+// StateCloseSafe reports whether the data plane stopped and no pending or active allocation remains.
 func (server *Server) StateCloseSafe() bool {
 	if server == nil {
 		return true
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	return len(server.pending) == 0 && len(server.active) == 0
+	if server.stopDone == nil || len(server.pending) != 0 || len(server.active) != 0 {
+		return false
+	}
+	select {
+	case <-server.stopDone:
+		return true
+	default:
+		return false
+	}
 }
 
 // CloseSessionAllocations 释放 ClientGateway session 申请中的 reservation 和已激活 allocation。
@@ -248,30 +312,44 @@ func (server *Server) CloseSessionAllocations(ctx context.Context, sessionID str
 		return nil
 	}
 	defer server.work.Done()
-	server.mu.Lock()
-	pending := make([]pendingReservation, 0)
-	for key, reservation := range server.pending {
-		if reservation.admission.SessionID == sessionID {
-			pending = append(pending, reservation)
-			delete(server.pending, key)
-		}
-	}
-	server.mu.Unlock()
-	active := server.claimAllocations(func(allocation activeAllocation) bool { return allocation.sessionID == sessionID })
+	pending := server.pendingReservations(func(reservation pendingReservation) bool { return reservation.admission.SessionID == sessionID })
+	allocationIDs := server.allocationIDs(func(allocation activeAllocation) bool { return allocation.sessionID == sessionID })
 
 	var cleanupErrors []error
 	recordFailure := func(err error) {
 		cleanupErrors = append(cleanupErrors, err)
-		server.fail(fmt.Errorf("clean up Relay session %s: %w", sessionID, err))
-	}
-	for _, reservation := range pending {
-		if err := server.runtime.CancelRelayAllocationReservation(ctx, reservation.id); err != nil {
-			recordFailure(fmt.Errorf("cancel Relay reservation %s: %w", reservation.id, err))
+		if ctx.Err() == nil {
+			server.fail(fmt.Errorf("clean up Relay session %s: %w", sessionID, err))
 		}
 	}
-	for _, claimed := range active {
+	for _, pending := range pending {
+		if err := ctx.Err(); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+			return errors.Join(cleanupErrors...)
+		}
+		if err := server.runtime.CancelRelayAllocationReservation(ctx, pending.reservation.id); err != nil {
+			recordFailure(fmt.Errorf("cancel Relay reservation %s: %w", pending.reservation.id, err))
+			if ctx.Err() != nil {
+				return errors.Join(cleanupErrors...)
+			}
+			continue
+		}
+		server.removePendingReservation(pending)
+	}
+	for _, allocationID := range allocationIDs {
+		if err := ctx.Err(); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+			return errors.Join(cleanupErrors...)
+		}
+		claimed, exists := server.claimAllocation(allocationID)
+		if !exists {
+			continue
+		}
 		if err := server.settleClaimedAllocation(ctx, claimed); err != nil {
 			recordFailure(err)
+			if ctx.Err() != nil {
+				return errors.Join(cleanupErrors...)
+			}
 		}
 	}
 	return errors.Join(cleanupErrors...)
@@ -292,7 +370,11 @@ func (server *Server) reserve(username string, source net.Addr) bool {
 	server.mu.Lock()
 	if server.closing || server.degraded.Load() {
 		server.mu.Unlock()
-		_ = server.runtime.CancelRelayAllocationReservation(context.Background(), reservationID)
+		if err := server.runtime.CancelRelayAllocationReservation(context.Background(), reservationID); err != nil {
+			server.mu.Lock()
+			server.pending[reservationID] = pendingReservation{id: reservationID, admission: admission, created: server.now().UTC()}
+			server.mu.Unlock()
+		}
 		return false
 	}
 	created := server.now().UTC()
@@ -316,14 +398,14 @@ func (server *Server) expireReservation(reservationID string, created time.Time,
 	defer server.work.Done()
 	server.mu.Lock()
 	reservation, exists := server.pending[reservationID]
-	if exists && reservation.created.Equal(created) {
-		delete(server.pending, reservationID)
-	} else {
+	if !exists || !reservation.created.Equal(created) {
 		exists = false
 	}
 	server.mu.Unlock()
 	if exists {
-		_ = server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id)
+		if err := server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id); err == nil {
+			server.removePendingReservation(pendingReservationEntry{key: reservationID, reservation: reservation})
+		}
 	}
 }
 
@@ -335,7 +417,7 @@ func (server *Server) allocationCreated(source, destination net.Addr, protocol, 
 	reservationID := reservationKey(username, source)
 	server.mu.Lock()
 	reservation, reserved := server.pending[reservationID]
-	delete(server.pending, reservationID)
+	pending := pendingReservationEntry{key: reservationID, reservation: reservation}
 	connection := server.generator.take(relayAddress)
 	allocationID := uuid.NewString()
 	key := allocationKey(source, destination, protocol)
@@ -345,13 +427,20 @@ func (server *Server) allocationCreated(source, destination net.Addr, protocol, 
 		if connection != nil {
 			_ = connection.Close()
 		}
+		if reserved {
+			if err := server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id); err == nil {
+				server.removePendingReservation(pending)
+			}
+		}
 		server.reportFailure(errors.New("TURN allocation callback has no Runtime reservation or relay socket"))
 		return
 	}
 	if server.closing || server.degraded.Load() {
 		server.mu.Unlock()
 		_ = connection.Close()
-		_ = server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id)
+		if err := server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id); err == nil {
+			server.removePendingReservation(pending)
+		}
 		return
 	}
 	connection.bind(reservation.admission)
@@ -359,6 +448,7 @@ func (server *Server) allocationCreated(source, destination net.Addr, protocol, 
 	err := server.runtime.ActivateRelayAllocation(ctx, reservation.id, allocationID, relayTransport(protocol), server.now().UTC())
 	cancel()
 	if err == nil {
+		delete(server.pending, reservationID)
 		server.active[allocationID] = activeAllocation{id: allocationID, key: key, sessionID: reservation.admission.SessionID, conn: connection}
 		if server.callbackFIFO == nil {
 			server.callbackFIFO = make(map[string][]string)
@@ -370,7 +460,9 @@ func (server *Server) allocationCreated(source, destination net.Addr, protocol, 
 	server.mu.Unlock()
 	if err != nil {
 		_ = connection.Close()
-		_ = server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id)
+		if cancelErr := server.runtime.CancelRelayAllocationReservation(context.Background(), reservation.id); cancelErr == nil {
+			server.removePendingReservation(pending)
+		}
 		server.reportFailure(fmt.Errorf("activate Relay allocation: %w", err))
 	}
 }
@@ -444,7 +536,33 @@ func (server *Server) claimDeletedAllocation(key string) (claimedAllocation, boo
 	return claimedAllocation{allocation: allocation}, true
 }
 
-func (server *Server) claimAllocations(match func(activeAllocation) bool) []claimedAllocation {
+func (server *Server) pendingReservations(match func(pendingReservation) bool) []pendingReservationEntry {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	keys := make([]string, 0, len(server.pending))
+	for key, reservation := range server.pending {
+		if match(reservation) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	pending := make([]pendingReservationEntry, 0, len(keys))
+	for _, key := range keys {
+		pending = append(pending, pendingReservationEntry{key: key, reservation: server.pending[key]})
+	}
+	return pending
+}
+
+func (server *Server) removePendingReservation(pending pendingReservationEntry) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	reservation, exists := server.pending[pending.key]
+	if exists && reservation.id == pending.reservation.id && reservation.created.Equal(pending.reservation.created) {
+		delete(server.pending, pending.key)
+	}
+}
+
+func (server *Server) allocationIDs(match func(activeAllocation) bool) []string {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	allocationIDs := make([]string, 0, len(server.active))
@@ -454,14 +572,7 @@ func (server *Server) claimAllocations(match func(activeAllocation) bool) []clai
 		}
 	}
 	sort.Strings(allocationIDs)
-	claimed := make([]claimedAllocation, 0, len(allocationIDs))
-	for _, allocationID := range allocationIDs {
-		allocation := server.active[allocationID]
-		allocation.settling = true
-		server.active[allocationID] = allocation
-		claimed = append(claimed, claimedAllocation{allocation: allocation})
-	}
-	return claimed
+	return allocationIDs
 }
 
 func (server *Server) releaseAllocationClaim(claimed claimedAllocation) {
