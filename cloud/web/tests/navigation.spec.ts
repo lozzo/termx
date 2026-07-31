@@ -176,6 +176,8 @@ test('公开落地页在确认视口保留完整首屏产品信号', async ({ pa
     { width: 1710, height: 982 },
     { width: 390, height: 844 },
     { width: 320, height: 568 },
+    { width: 812, height: 375 },
+    { width: 768, height: 375 },
     { width: 844, height: 390 },
     { width: 844, height: 320 },
   ]
