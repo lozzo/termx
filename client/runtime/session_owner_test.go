@@ -366,23 +366,36 @@ func TestSessionOwnerEndpointAcquireLockSurvivesCloseWithWaiter(t *testing.T) {
 	<-holderStarted
 
 	waiterDialer := &ownerDialer{}
+	waiterCtx := newAcquireTestContext(false)
 	waiterResult := make(chan error, 1)
 	go func() {
-		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-b", waiterDialer)
+		_, err := owner.AcquireRoute(waiterCtx, target, "cloud", ConnectIntentInteractive, "config-b", waiterDialer)
 		waiterResult <- err
 	}()
-	entry := waitForEndpointAcquireRefs(t, owner, target.ID, 2)
+	<-waiterCtx.observed
+	entry := endpointAcquireEntryForTest(t, owner, target.ID, 2)
 
 	if err := owner.Close(); err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case err := <-waiterResult:
+		if CodeOf(err) != ErrorUnavailable || WasAttempted(err) {
+			t.Fatalf("waiter error = %v code=%q attempted=%v", err, CodeOf(err), WasAttempted(err))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not wake endpoint acquire waiter")
 	}
 	owner.mu.Lock()
 	current := owner.acquireLocks[target.ID]
 	refs := entry.refs
 	closed := owner.closed
 	owner.mu.Unlock()
-	if !closed || current != entry || refs != 2 {
-		t.Fatalf("after Close: closed=%v entry=%p refs=%d, want closed and entry=%p refs=2", closed, current, refs, entry)
+	if !closed || current != entry || refs != 1 {
+		t.Fatalf("after Close: closed=%v entry=%p refs=%d, want closed and entry=%p refs=1", closed, current, refs, entry)
+	}
+	if waiterDialer.calls != 0 {
+		t.Fatalf("waiter dial calls = %d, want 0 for closed owner", waiterDialer.calls)
 	}
 
 	close(holderRelease)
@@ -394,19 +407,8 @@ func TestSessionOwnerEndpointAcquireLockSurvivesCloseWithWaiter(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("holder deadlocked after Close")
 	}
-	select {
-	case err := <-waiterResult:
-		if CodeOf(err) != ErrorUnavailable {
-			t.Fatalf("waiter error = %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("waiter deadlocked after holder release")
-	}
 	if holderDialer.session == nil || holderDialer.session.closeCalls.Load() != 1 {
 		t.Fatalf("holder session=%p close calls=%d, want one closed session", holderDialer.session, closeCalls(holderDialer.session))
-	}
-	if waiterDialer.calls != 0 {
-		t.Fatalf("waiter dial calls = %d, want 0 for closed owner", waiterDialer.calls)
 	}
 	owner.mu.Lock()
 	finalRefs := entry.refs
@@ -417,65 +419,78 @@ func TestSessionOwnerEndpointAcquireLockSurvivesCloseWithWaiter(t *testing.T) {
 	assertEndpointAcquireLocksEmpty(t, owner)
 }
 
-func TestSessionOwnerEndpointAcquireLockReleaseKeepsWaiterEntry(t *testing.T) {
+func TestSessionOwnerEndpointAcquireDeadlineReleasesWaiterRef(t *testing.T) {
 	owner := NewSessionOwner()
-	const endpointID endpoint.EndpointID = "lock-window"
-	holderUnlock := owner.lockEndpoint(endpointID)
-	owner.mu.Lock()
-	entry := owner.acquireLocks[endpointID]
-	initialRefs := entry.refs
-	owner.mu.Unlock()
-	if initialRefs != 1 {
-		t.Fatalf("holder refs = %d, want 1", initialRefs)
-	}
-
-	waiterUnlocks := make(chan func())
-	releaseWaiter := make(chan struct{})
-	waiterDone := make(chan struct{})
+	defer owner.Close()
+	target := ownerEndpoint()
+	holderStarted := make(chan struct{})
+	holderRelease := make(chan struct{})
+	holderResult := make(chan error, 1)
 	go func() {
-		unlock := owner.lockEndpoint(endpointID)
-		waiterUnlocks <- unlock
-		<-releaseWaiter
-		unlock()
-		close(waiterDone)
+		_, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{started: holderStarted, release: holderRelease})
+		holderResult <- err
 	}()
-	retained := waitForEndpointAcquireRefs(t, owner, endpointID, 2)
-	if retained != entry {
-		t.Fatalf("waiter entry = %p, want holder entry %p", retained, entry)
-	}
-	if err := owner.Close(); err != nil {
-		t.Fatal(err)
-	}
+	<-holderStarted
 
-	holderUnlock()
+	waiterCtx := newAcquireTestContext(true)
+	waiterDialer := &ownerDialer{}
+	waiterResult := make(chan error, 1)
+	go func() {
+		_, err := owner.AcquireRoute(waiterCtx, target, "cloud", ConnectIntentInteractive, "config-b", waiterDialer)
+		waiterResult <- err
+	}()
+	<-waiterCtx.observed
+	entry := endpointAcquireEntryForTest(t, owner, target.ID, 2)
+	waiterCtx.finish(context.DeadlineExceeded)
+
 	select {
-	case unlock := <-waiterUnlocks:
-		if unlock == nil {
-			t.Fatal("waiter returned nil unlock closure")
+	case err := <-waiterResult:
+		var runtimeErr *Error
+		if !errors.As(err, &runtimeErr) || runtimeErr.Cause != context.DeadlineExceeded {
+			t.Fatalf("deadline error = %#v, want preserved context cause", err)
+		}
+		if CodeOf(err) != ErrorCanceled || !errors.Is(err, context.DeadlineExceeded) || WasAttempted(err) {
+			t.Fatalf("deadline error = %v code=%q attempted=%v", err, CodeOf(err), WasAttempted(err))
 		}
 	case <-time.After(time.Second):
-		t.Fatal("waiter did not acquire endpoint lock")
+		t.Fatal("deadline did not wake endpoint acquire waiter")
 	}
 	owner.mu.Lock()
-	current := owner.acquireLocks[endpointID]
-	waiterRefs := entry.refs
-	closed := owner.closed
+	current := owner.acquireLocks[target.ID]
+	refs := entry.refs
 	owner.mu.Unlock()
+	if current != entry || refs != 1 {
+		t.Fatalf("after deadline: entry=%p refs=%d, want entry=%p refs=1", current, refs, entry)
+	}
+	if waiterDialer.calls != 0 {
+		t.Fatalf("deadline waiter dial calls = %d, want 0", waiterDialer.calls)
+	}
 
-	close(releaseWaiter)
+	close(holderRelease)
 	select {
-	case <-waiterDone:
+	case err := <-holderResult:
+		if err != nil {
+			t.Fatal(err)
+		}
 	case <-time.After(time.Second):
-		t.Fatal("waiter release deadlocked")
+		t.Fatal("holder did not finish after release")
 	}
-	if !closed || current != entry || waiterRefs != 1 {
-		t.Fatalf("waiter window: closed=%v entry=%p refs=%d, want closed and entry=%p refs=1", closed, current, waiterRefs, entry)
+	assertEndpointAcquireLocksEmpty(t, owner)
+}
+
+func TestSessionOwnerEndpointAcquireChecksCanceledContextAfterToken(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	ctx := newAcquireTestContext(false)
+	ctx.state.Store(1)
+	dialer := &ownerDialer{}
+
+	_, err := owner.AcquireRoute(ctx, ownerEndpoint(), "cloud", ConnectIntentInteractive, "config-a", dialer)
+	if CodeOf(err) != ErrorCanceled || !errors.Is(err, context.Canceled) || WasAttempted(err) {
+		t.Fatalf("post-token cancellation error = %v code=%q attempted=%v", err, CodeOf(err), WasAttempted(err))
 	}
-	owner.mu.Lock()
-	finalRefs := entry.refs
-	owner.mu.Unlock()
-	if finalRefs != 0 {
-		t.Fatalf("released entry refs = %d, want 0", finalRefs)
+	if dialer.calls != 0 {
+		t.Fatalf("post-token cancellation dial calls = %d, want 0", dialer.calls)
 	}
 	assertEndpointAcquireLocksEmpty(t, owner)
 }
@@ -604,6 +619,69 @@ func waitForEndpointAcquireRefs(t *testing.T, owner *SessionOwner, endpointID en
 			goruntime.Gosched()
 		}
 	}
+}
+
+func endpointAcquireEntryForTest(t *testing.T, owner *SessionOwner, endpointID endpoint.EndpointID, wantRefs int) *endpointAcquireEntry {
+	t.Helper()
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	entry := owner.acquireLocks[endpointID]
+	if entry == nil || entry.refs != wantRefs {
+		t.Fatalf("endpoint %q acquire entry=%p refs=%d, want non-nil refs=%d", endpointID, entry, acquireRefs(entry), wantRefs)
+	}
+	return entry
+}
+
+func acquireRefs(entry *endpointAcquireEntry) int {
+	if entry == nil {
+		return 0
+	}
+	return entry.refs
+}
+
+type acquireTestContext struct {
+	context.Context
+	done        chan struct{}
+	observed    chan struct{}
+	observeOnce sync.Once
+	state       atomic.Int32
+	hasDeadline bool
+}
+
+func newAcquireTestContext(hasDeadline bool) *acquireTestContext {
+	return &acquireTestContext{
+		Context: context.Background(),
+		done:    make(chan struct{}), observed: make(chan struct{}), hasDeadline: hasDeadline,
+	}
+}
+
+func (ctx *acquireTestContext) Deadline() (time.Time, bool) {
+	return time.Time{}, ctx.hasDeadline
+}
+
+func (ctx *acquireTestContext) Done() <-chan struct{} {
+	ctx.observeOnce.Do(func() { close(ctx.observed) })
+	return ctx.done
+}
+
+func (ctx *acquireTestContext) Err() error {
+	switch ctx.state.Load() {
+	case 1:
+		return context.Canceled
+	case 2:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
+func (ctx *acquireTestContext) finish(err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		ctx.state.Store(2)
+	} else {
+		ctx.state.Store(1)
+	}
+	close(ctx.done)
 }
 
 func assertEndpointAcquireLocksEmpty(t *testing.T, owner *SessionOwner) {

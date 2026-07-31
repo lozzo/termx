@@ -536,6 +536,93 @@ func TestSessionOwnerPlannedEntryPointsReclaimEndpointLocks(t *testing.T) {
 	}
 }
 
+func TestSessionOwnerPlannedEntryPointsCancelWhileWaitingForEndpoint(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(context.Context, *SessionOwner, endpoint.Endpoint, PeerConnectorMap) error
+	}{
+		{
+			name: "connect",
+			call: func(ctx context.Context, owner *SessionOwner, target endpoint.Endpoint, resolver PeerConnectorMap) error {
+				_, err := owner.ConnectPlanned(ctx, target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
+				return err
+			},
+		},
+		{
+			name: "acquire",
+			call: func(ctx context.Context, owner *SessionOwner, target endpoint.Endpoint, resolver PeerConnectorMap) error {
+				_, err := owner.AcquirePlanned(ctx, target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+				return err
+			},
+		},
+		{
+			name: "ensure",
+			call: func(ctx context.Context, owner *SessionOwner, target endpoint.Endpoint, resolver PeerConnectorMap) error {
+				_, err := owner.EnsurePlanned(ctx, target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+				return err
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			owner := NewSessionOwner()
+			target := plannedEndpoint(false)
+			dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {}})
+			resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{endpoint.RouteSSHWebRTCTCP: dialer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			holderUnlock, err := owner.acquireEndpoint(context.Background(), target.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			holderReleased := false
+			t.Cleanup(func() {
+				if !holderReleased {
+					holderUnlock()
+				}
+				_ = owner.Close()
+			})
+
+			ctx := newAcquireTestContext(false)
+			result := make(chan error, 1)
+			go func() { result <- testCase.call(ctx, owner, target, resolver) }()
+			<-ctx.observed
+			entry := endpointAcquireEntryForTest(t, owner, target.ID, 2)
+			ctx.finish(context.Canceled)
+			select {
+			case err := <-result:
+				if CodeOf(err) != ErrorCanceled || !errors.Is(err, context.Canceled) || WasAttempted(err) {
+					t.Fatalf("gate cancellation error = %v code=%q attempted=%v", err, CodeOf(err), WasAttempted(err))
+				}
+			case <-time.After(time.Second):
+				t.Fatal("gate cancellation did not wake planned entry point")
+			}
+
+			owner.authority.mu.Lock()
+			generation, generated := owner.authority.generations[target.ID]
+			owner.authority.mu.Unlock()
+			owner.mu.Lock()
+			current := owner.acquireLocks[target.ID]
+			refs := entry.refs
+			owner.mu.Unlock()
+			if generated || generation != 0 {
+				t.Fatalf("generation after gate cancellation = %d present=%v, want absent", generation, generated)
+			}
+			if current != entry || refs != 1 {
+				t.Fatalf("after gate cancellation: entry=%p refs=%d, want entry=%p refs=1", current, refs, entry)
+			}
+			if calls := dialer.calls("ssh"); calls != 0 {
+				t.Fatalf("connector calls after gate cancellation = %d, want 0", calls)
+			}
+
+			holderUnlock()
+			holderReleased = true
+			assertEndpointAcquireLocksEmpty(t, owner)
+		})
+	}
+}
+
 type plannedResult struct {
 	lease SessionLease
 	err   error

@@ -23,6 +23,7 @@ type SessionOwner struct {
 	acquireLocks map[endpoint.EndpointID]*endpointAcquireEntry
 	sharedLeases map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}
 	watchers     map[endpoint.EndpointID]map[chan EndpointEvent]struct{}
+	ownerDone    chan struct{}
 	closed       bool
 }
 
@@ -32,8 +33,8 @@ type routeSelection struct {
 }
 
 type endpointAcquireEntry struct {
-	mu   sync.Mutex
-	refs int
+	token chan struct{}
+	refs  int
 }
 
 // stickyRouteSelection 只在产生显式选择时的连接配置仍未变化时复用 route。
@@ -77,16 +78,20 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 		acquireLocks: make(map[endpoint.EndpointID]*endpointAcquireEntry),
 		sharedLeases: make(map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}),
 		watchers:     make(map[endpoint.EndpointID]map[chan EndpointEvent]struct{}),
+		ownerDone:    make(chan struct{}),
 	}
 }
 
 // AcquireRoute 复用同 endpoint、同 config key 的当前 ready session，并返回独立 consumer lease。
 // config key 由 adapter 对已验证连接配置生成，runtime 只比较 opaque key；lease Close 只释放 consumer，配置变化或 owner teardown 才提升 generation。
 func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.Endpoint, routeID endpoint.RouteID, intent ConnectIntent, configKey string, dialer PeerConnector) (ApplicationReadyPeerSession, error) {
-	if owner == nil || dialer == nil || configKey == "" {
-		return nil, runtimeError(ErrorInvalidRequest, "session owner, route dialer, and config key are required", nil)
+	if owner == nil || ctx == nil || dialer == nil || configKey == "" {
+		return nil, runtimeError(ErrorInvalidRequest, "session owner, context, route dialer, and config key are required", nil)
 	}
-	unlock := owner.lockEndpoint(target.ID)
+	unlock, err := owner.acquireEndpoint(ctx, target.ID)
+	if err != nil {
+		return nil, err
+	}
 	defer unlock()
 	owner.mu.Lock()
 	if owner.closed {
@@ -124,26 +129,52 @@ func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.End
 	return shared, nil
 }
 
-func (owner *SessionOwner) lockEndpoint(endpointID endpoint.EndpointID) func() {
+func (owner *SessionOwner) acquireEndpoint(ctx context.Context, endpointID endpoint.EndpointID) (func(), error) {
 	owner.mu.Lock()
 	entry := owner.acquireLocks[endpointID]
 	if entry == nil {
-		entry = &endpointAcquireEntry{}
+		entry = &endpointAcquireEntry{token: make(chan struct{}, 1)}
+		entry.token <- struct{}{}
 		owner.acquireLocks[endpointID] = entry
 	}
 	// refs includes the current holder and every waiter that will use this entry.
 	entry.refs++
 	owner.mu.Unlock()
 
-	entry.mu.Lock()
-	return func() {
-		entry.mu.Unlock()
-		owner.mu.Lock()
-		defer owner.mu.Unlock()
-		entry.refs--
-		if entry.refs == 0 && owner.acquireLocks[endpointID] == entry {
-			delete(owner.acquireLocks, endpointID)
+	select {
+	case <-entry.token:
+		if err := ctx.Err(); err != nil {
+			entry.token <- struct{}{}
+			owner.releaseEndpointAcquireRef(endpointID, entry)
+			return nil, runtimeError(ErrorCanceled, "endpoint acquire was canceled", err)
 		}
+		owner.mu.Lock()
+		closed := owner.closed
+		owner.mu.Unlock()
+		if closed {
+			entry.token <- struct{}{}
+			owner.releaseEndpointAcquireRef(endpointID, entry)
+			return nil, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+		}
+		return func() {
+			entry.token <- struct{}{}
+			owner.releaseEndpointAcquireRef(endpointID, entry)
+		}, nil
+	case <-ctx.Done():
+		owner.releaseEndpointAcquireRef(endpointID, entry)
+		return nil, runtimeError(ErrorCanceled, "endpoint acquire was canceled", ctx.Err())
+	case <-owner.ownerDone:
+		owner.releaseEndpointAcquireRef(endpointID, entry)
+		return nil, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+	}
+}
+
+func (owner *SessionOwner) releaseEndpointAcquireRef(endpointID endpoint.EndpointID, entry *endpointAcquireEntry) {
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	entry.refs--
+	if entry.refs == 0 && owner.acquireLocks[endpointID] == entry {
+		delete(owner.acquireLocks, endpointID)
 	}
 }
 
@@ -388,6 +419,7 @@ func (owner *SessionOwner) Close() error {
 		return nil
 	}
 	owner.closed = true
+	close(owner.ownerDone)
 	sessions := make([]ApplicationReadyPeerSession, 0, len(owner.current))
 	for endpointID, session := range owner.current {
 		sessions = append(sessions, session)

@@ -62,7 +62,10 @@ func (owner *SessionOwner) ConnectPlanned(
 	if owner == nil || ctx == nil || clock == nil || dialers == nil {
 		return SessionLease{}, runtimeError(ErrorInvalidRequest, "session owner, context, clock, and route dialers are required", nil)
 	}
-	unlock := owner.lockEndpoint(target.ID)
+	unlock, err := owner.acquireEndpoint(ctx, target.ID)
+	if err != nil {
+		return SessionLease{}, err
+	}
 	defer unlock()
 	return owner.connectPlanned(ctx, target, routeOverride, "", intent, environment, clock, dialers)
 }
@@ -120,7 +123,10 @@ func (owner *SessionOwner) AcquirePlanned(
 	if owner == nil || ctx == nil || configKey == "" || clock == nil || dialers == nil {
 		return nil, runtimeError(ErrorInvalidRequest, "session owner, context, config key, clock, and route dialers are required", nil)
 	}
-	unlock := owner.lockEndpoint(target.ID)
+	unlock, err := owner.acquireEndpoint(ctx, target.ID)
+	if err != nil {
+		return nil, err
+	}
 	defer unlock()
 	owner.mu.Lock()
 	if owner.closed {
@@ -176,7 +182,10 @@ func (owner *SessionOwner) EnsurePlanned(
 	if owner == nil || ctx == nil || configKey == "" || clock == nil || dialers == nil {
 		return SessionLease{}, runtimeError(ErrorInvalidRequest, "session owner, context, config key, clock, and route dialers are required", nil)
 	}
-	unlock := owner.lockEndpoint(target.ID)
+	unlock, err := owner.acquireEndpoint(ctx, target.ID)
+	if err != nil {
+		return SessionLease{}, err
+	}
 	defer unlock()
 	owner.mu.Lock()
 	if owner.closed {
