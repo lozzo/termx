@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +28,151 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+func TestServerShutdownConcurrentWaiterHonorsOwnDeadline(t *testing.T) {
+	httpServer, releaseHandler, requestDone := blockingShutdownHTTPServer(t)
+	server := &Server{httpServer: httpServer}
+	ownerStarted := make(chan struct{})
+	httpServer.RegisterOnShutdown(func() { close(ownerStarted) })
+	ownerDone := make(chan error, 1)
+	go func() { ownerDone <- server.Shutdown(context.Background()) }()
+	<-ownerStarted
+
+	waiterCtx, cancelWaiter := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancelWaiter()
+	waiterDone := make(chan error, 1)
+	go func() { waiterDone <- server.Shutdown(waiterCtx) }()
+	select {
+	case err := <-waiterDone:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("concurrent Shutdown error = %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		releaseHandler()
+		t.Fatal("concurrent Shutdown ignored its own deadline while waiting for the owner")
+	}
+
+	releaseHandler()
+	if err := <-ownerDone; err != nil {
+		t.Fatalf("owner Shutdown error = %v", err)
+	}
+	if err := <-requestDone; err != nil {
+		t.Fatalf("active HTTP request error = %v", err)
+	}
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatalf("completed Shutdown error = %v", err)
+	}
+}
+
+func TestServerShutdownDeadlineRetriesAndCachesCompletion(t *testing.T) {
+	httpServer, releaseHandler, requestDone := blockingShutdownHTTPServer(t)
+	server := &Server{httpServer: httpServer}
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancelShutdown()
+	firstErr := server.Shutdown(shutdownCtx)
+	if !errors.Is(firstErr, context.DeadlineExceeded) {
+		releaseHandler()
+		t.Fatalf("first Shutdown error = %v", firstErr)
+	}
+	if server.shutdownDone {
+		t.Fatal("caller deadline was cached as final shutdown completion")
+	}
+	releaseHandler()
+	if err := <-requestDone; err != nil {
+		t.Fatalf("active HTTP request error = %v", err)
+	}
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatalf("retry Shutdown error = %v", err)
+	}
+	if !server.shutdownDone {
+		t.Fatal("successful retry was not cached as final completion")
+	}
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatalf("cached successful Shutdown error = %v", err)
+	}
+}
+
+func TestServerShutdownCachesPersistentError(t *testing.T) {
+	persistentErr := errors.New("persistent HTTP shutdown failure")
+	httpServer, serveDone := shutdownErrorHTTPServer(t, persistentErr)
+	server := &Server{httpServer: httpServer}
+
+	if err := server.Shutdown(context.Background()); !errors.Is(err, persistentErr) {
+		t.Fatalf("first Shutdown error = %v", err)
+	}
+	if !server.shutdownDone {
+		t.Fatal("persistent shutdown result was not recorded as final")
+	}
+	if err := server.Shutdown(context.Background()); !errors.Is(err, persistentErr) {
+		t.Fatalf("repeated Shutdown lost persistent error: %v", err)
+	}
+	if err := <-serveDone; !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("Serve error = %v", err)
+	}
+}
+
+func blockingShutdownHTTPServer(t *testing.T) (*http.Server, func(), <-chan error) {
+	t.Helper()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	requestDone := make(chan error, 1)
+	go func() {
+		response, err := server.Client().Get(server.URL)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, response.Body)
+			err = response.Body.Close()
+		}
+		requestDone <- err
+	}()
+	<-started
+	t.Cleanup(func() {
+		releaseHandler()
+		server.Close()
+	})
+	return server.Config, releaseHandler, requestDone
+}
+
+type shutdownErrorListener struct {
+	net.Listener
+	closeErr   error
+	accepting  chan struct{}
+	acceptOnce sync.Once
+}
+
+func (listener *shutdownErrorListener) Accept() (net.Conn, error) {
+	listener.acceptOnce.Do(func() { close(listener.accepting) })
+	return listener.Listener.Accept()
+}
+
+func (listener *shutdownErrorListener) Close() error {
+	return errors.Join(listener.Listener.Close(), listener.closeErr)
+}
+
+func shutdownErrorHTTPServer(t *testing.T, closeErr error) (*http.Server, <-chan error) {
+	t.Helper()
+	baseListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := &shutdownErrorListener{
+		Listener:  baseListener,
+		closeErr:  closeErr,
+		accepting: make(chan struct{}),
+	}
+	server := &http.Server{}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	<-listener.accepting
+	t.Cleanup(func() { _ = baseListener.Close() })
+	return server, serveDone
+}
 
 func TestReadProtoLimitDetectsLimitPlusOne(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader(`{"login":"a"}`))

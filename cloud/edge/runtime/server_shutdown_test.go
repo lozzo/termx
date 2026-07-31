@@ -15,6 +15,88 @@ import (
 
 var errInjectedRelayFreeze = errors.New("injected Relay freeze failure")
 
+func TestRuntimeShutdownConcurrentWaiterHonorsOwnDeadline(t *testing.T) {
+	runtime := newShutdownRuntime(t)
+	relay := &shutdownRelay{
+		unfrozen: true,
+		entered:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	runtime.relayServer = relay
+	var releaseOnce sync.Once
+	releaseRelay := func() { releaseOnce.Do(func() { close(relay.release) }) }
+	t.Cleanup(releaseRelay)
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- runtime.Shutdown(context.Background()) }()
+	<-relay.entered
+
+	waiterCtx, cancelWaiter := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancelWaiter()
+	waiterDone := make(chan error, 1)
+	go func() { waiterDone <- runtime.Shutdown(waiterCtx) }()
+	select {
+	case err := <-waiterDone:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("concurrent Shutdown error = %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		releaseRelay()
+		t.Fatal("concurrent Shutdown ignored its own deadline while waiting for the owner")
+	}
+
+	releaseRelay()
+	if err := <-firstDone; !errors.Is(err, errInjectedRelayFreeze) {
+		t.Fatalf("owner Shutdown error = %v", err)
+	}
+	if err := runtime.Shutdown(context.Background()); !errors.Is(err, errInjectedRelayFreeze) {
+		t.Fatalf("retry Shutdown error = %v", err)
+	}
+	if !runtime.shutdownComplete {
+		t.Fatal("owner retry did not complete the staged shutdown")
+	}
+}
+
+func TestWaitRelayReplayReusesWaiterAcrossDeadlineRetries(t *testing.T) {
+	runtime := &Runtime{}
+	runtime.replayWait.Add(1)
+	var releaseOnce sync.Once
+	releaseReplay := func() { releaseOnce.Do(runtime.replayWait.Done) }
+	t.Cleanup(releaseReplay)
+	runtime.replayGate.Lock()
+	runtime.replayClosing = true
+	runtime.replayGate.Unlock()
+
+	firstCtx, cancelFirst := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelFirst()
+	if err := runtime.waitRelayReplay(firstCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first replay wait error = %v", err)
+	}
+	firstDone := runtime.replayDone
+	if firstDone == nil {
+		t.Fatal("first replay wait did not publish a completion channel")
+	}
+
+	secondCtx, cancelSecond := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelSecond()
+	if err := runtime.waitRelayReplay(secondCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second replay wait error = %v", err)
+	}
+	if runtime.replayDone != firstDone {
+		t.Fatal("deadline retry created a second replay waiter")
+	}
+
+	releaseReplay()
+	finalCtx, cancelFinal := context.WithTimeout(context.Background(), time.Second)
+	defer cancelFinal()
+	if err := runtime.waitRelayReplay(finalCtx); err != nil {
+		t.Fatalf("completed replay wait error = %v", err)
+	}
+	if runtime.replayDone != firstDone {
+		t.Fatal("completed replay wait replaced the shared completion channel")
+	}
+}
+
 func TestRuntimeShutdownRetainsStateUntilRelayUsageIsFrozen(t *testing.T) {
 	state, err := NewState(StateConfig{MailboxSize: 8, DeltaBuffer: 8})
 	if err != nil {

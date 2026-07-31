@@ -34,16 +34,21 @@ type Config struct {
 
 // Runtime 拥有 Controller 的 gRPC/health listener 和优雅关闭顺序。
 type Runtime struct {
-	grpcServer     *grpc.Server
-	grpcHealth     *grpc_health.Server
-	healthServer   *http.Server
-	grpcListener   net.Listener
-	healthListener net.Listener
-	health         *processhealth.State
-	drainer        interface{ BeginShutdown() }
-	errors         chan error
-	shutdownOnce   sync.Once
-	notReady       atomic.Bool
+	grpcServer      *grpc.Server
+	grpcHealth      *grpc_health.Server
+	healthServer    *http.Server
+	grpcListener    net.Listener
+	healthListener  net.Listener
+	health          *processhealth.State
+	drainer         interface{ BeginShutdown() }
+	errors          chan error
+	shutdownGateMu  sync.Mutex
+	shutdownGate    chan struct{}
+	shutdownStarted bool
+	grpcStopped     bool
+	shutdownDone    bool
+	shutdownErr     error
+	notReady        atomic.Bool
 }
 
 // Start 绑定 listener，注册 EdgeControl 并在两个独立 goroutine 中启动 gRPC 与 loopback health。
@@ -122,12 +127,34 @@ func (runtime *Runtime) Errors() <-chan error {
 
 // Shutdown 先撤销 ready，再停止 gRPC 接入和 HTTP health，超时时强制终止 gRPC。
 func (runtime *Runtime) Shutdown(ctx context.Context) error {
-	var shutdownErr error
-	runtime.shutdownOnce.Do(func() {
+	if ctx == nil {
+		return errors.New("Controller Runtime shutdown requires context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	shutdownGate := runtime.shutdownGateChannel()
+	select {
+	case shutdownGate <- struct{}{}:
+		defer func() { <-shutdownGate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if runtime.shutdownDone {
+		return runtime.shutdownErr
+	}
+
+	if !runtime.shutdownStarted {
 		runtime.markNotReady()
+		runtime.shutdownStarted = true
 		if runtime.drainer != nil {
 			runtime.drainer.BeginShutdown()
 		}
+	}
+	if !runtime.grpcStopped {
 		grpcDone := make(chan struct{})
 		go func() {
 			runtime.grpcServer.GracefulStop()
@@ -135,16 +162,34 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 		}()
 		select {
 		case <-grpcDone:
+			runtime.grpcStopped = true
 		case <-ctx.Done():
 			runtime.grpcServer.Stop()
-			shutdownErr = ctx.Err()
+			<-grpcDone
+			runtime.grpcStopped = true
+			return ctx.Err()
 		}
-		if err := runtime.healthServer.Shutdown(ctx); err != nil && shutdownErr == nil {
-			shutdownErr = err
-		}
-		runtime.health.SetAlive(false)
-	})
-	return shutdownErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	shutdownErr := runtime.healthServer.Shutdown(ctx)
+	if errors.Is(shutdownErr, context.Canceled) || errors.Is(shutdownErr, context.DeadlineExceeded) {
+		return shutdownErr
+	}
+	runtime.shutdownErr = shutdownErr
+	runtime.health.SetAlive(false)
+	runtime.shutdownDone = true
+	return runtime.shutdownErr
+}
+
+func (runtime *Runtime) shutdownGateChannel() chan struct{} {
+	runtime.shutdownGateMu.Lock()
+	defer runtime.shutdownGateMu.Unlock()
+	if runtime.shutdownGate == nil {
+		runtime.shutdownGate = make(chan struct{}, 1)
+	}
+	return runtime.shutdownGate
 }
 
 func (runtime *Runtime) markNotReady() {

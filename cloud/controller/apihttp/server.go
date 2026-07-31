@@ -75,7 +75,10 @@ type Server struct {
 	listener     net.Listener
 	httpServer   *http.Server
 	errors       chan error
-	shutdownOnce sync.Once
+	shutdownMu   sync.Mutex
+	shutdownGate chan struct{}
+	shutdownDone bool
+	shutdownErr  error
 }
 
 // Start 验证 TLS/认证配置、绑定 listener 并启动 HTTPS。
@@ -115,9 +118,41 @@ func (server *Server) Errors() <-chan error { return server.errors }
 
 // Shutdown 停止接收新的浏览器和安装请求。
 func (server *Server) Shutdown(ctx context.Context) error {
-	var result error
-	server.shutdownOnce.Do(func() { result = server.httpServer.Shutdown(ctx) })
-	return result
+	if ctx == nil {
+		return errors.New("Controller HTTP Server shutdown requires context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	shutdownGate := server.shutdownGateChannel()
+	select {
+	case shutdownGate <- struct{}{}:
+		defer func() { <-shutdownGate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if server.shutdownDone {
+		return server.shutdownErr
+	}
+	shutdownErr := server.httpServer.Shutdown(ctx)
+	if errors.Is(shutdownErr, context.Canceled) || errors.Is(shutdownErr, context.DeadlineExceeded) {
+		return shutdownErr
+	}
+	server.shutdownErr = shutdownErr
+	server.shutdownDone = true
+	return server.shutdownErr
+}
+
+func (server *Server) shutdownGateChannel() chan struct{} {
+	server.shutdownMu.Lock()
+	defer server.shutdownMu.Unlock()
+	if server.shutdownGate == nil {
+		server.shutdownGate = make(chan struct{}, 1)
+	}
+	return server.shutdownGate
 }
 
 // NewHandler 构造可测试的 HTTP adapter；调用方仍必须在生产使用 TLS listener。

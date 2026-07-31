@@ -107,7 +107,8 @@ type Runtime struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	waitGroup           sync.WaitGroup
-	shutdownMu          sync.Mutex
+	shutdownGateInit    sync.Mutex
+	shutdownGate        chan struct{}
 	teardownStarted     bool
 	stateDone           chan struct{}
 	grpcStopped         bool
@@ -132,6 +133,7 @@ type Runtime struct {
 	replayGate          sync.Mutex
 	replayClosing       bool
 	replayWait          sync.WaitGroup
+	replayDone          chan struct{}
 	beforeReplayLock    func(string)
 	relayDegraded       atomic.Bool
 	shuttingDown        atomic.Bool
@@ -393,8 +395,19 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("Runtime shutdown requires context")
 	}
-	runtime.shutdownMu.Lock()
-	defer runtime.shutdownMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	shutdownGate := runtime.shutdownGateChannel()
+	select {
+	case shutdownGate <- struct{}{}:
+		defer func() { <-shutdownGate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if runtime.shutdownComplete {
 		return runtime.shutdownErr
 	}
@@ -499,6 +512,15 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	return runtime.shutdownErr
 }
 
+func (runtime *Runtime) shutdownGateChannel() chan struct{} {
+	runtime.shutdownGateInit.Lock()
+	defer runtime.shutdownGateInit.Unlock()
+	if runtime.shutdownGate == nil {
+		runtime.shutdownGate = make(chan struct{}, 1)
+	}
+	return runtime.shutdownGate
+}
+
 func (runtime *Runtime) recordShutdownFailure(ctx context.Context, err error) error {
 	runtime.rememberShutdownError(err)
 	return errors.Join(runtime.shutdownErr, shutdownContextError(ctx, err))
@@ -550,11 +572,19 @@ func nonContextShutdownError(err error) error {
 }
 
 func (runtime *Runtime) waitRelayReplay(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		runtime.replayWait.Wait()
-		close(done)
-	}()
+	runtime.replayGate.Lock()
+	if runtime.replayDone == nil {
+		// Shutdown sets replayClosing under replayGate before reaching this point,
+		// so the WaitGroup cannot receive another Add after this waiter starts.
+		runtime.replayDone = make(chan struct{})
+		done := runtime.replayDone
+		go func() {
+			runtime.replayWait.Wait()
+			close(done)
+		}()
+	}
+	done := runtime.replayDone
+	runtime.replayGate.Unlock()
 	select {
 	case <-done:
 		return nil
