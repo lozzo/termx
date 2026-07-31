@@ -361,8 +361,7 @@ func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, re
 	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
 		return history.HistoryWindow{}, err
 	}
-	flush := request.Token == ""
-	if request.Mode == history.HistoryWindowModeLatest {
+	if request.Mode == "" || request.Mode == history.HistoryWindowModeLatest {
 		snapshot, err := session.server.TerminalHistoryFreeze(ctx, request.TerminalID, history.FreezeHistoryRequest{
 			TerminalID: request.TerminalID,
 			Cols:       request.Cols,
@@ -372,9 +371,8 @@ func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, re
 			return history.HistoryWindow{}, err
 		}
 		request.Token = snapshot.Token
-		flush = false
 	}
-	return session.server.terminalHistoryWindow(ctx, request.TerminalID, request, flush)
+	return session.server.TerminalHistoryWindow(ctx, request.TerminalID, request)
 }
 
 // ApplicationHistoryCopy 从 core frozen history token 复制文本。

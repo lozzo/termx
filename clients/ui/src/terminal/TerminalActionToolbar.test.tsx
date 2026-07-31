@@ -80,4 +80,24 @@ describe('TerminalActionToolbar', () => {
     expect(onRendererChange).toHaveBeenCalledWith('webgl')
     expect(onAcquireResizeOwner).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps all default tools reachable in a short terminal viewport', () => {
+    render(
+      <TerminalActionToolbar
+        mode="default"
+        hasSelection={false}
+        onModeChange={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectVisible={vi.fn()}
+        onCopy={vi.fn()}
+        onPaste={vi.fn()}
+        onOpenClipboardHistory={vi.fn()}
+        onOpenSnippets={vi.fn()}
+      />,
+    )
+
+    const toolbar = screen.getByTestId('anytty-terminal-action-toolbar')
+    expect(toolbar.classList.contains('max-h-full')).toBe(true)
+    expect(toolbar.classList.contains('overflow-y-auto')).toBe(true)
+  })
 })

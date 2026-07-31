@@ -21,6 +21,18 @@ func ValidateHistoryLiveCommand(command *apipb.CommandEnvelope) error {
 		if value.HistoryWindow.GetLimit() < 0 || value.HistoryWindow.GetCols() < 0 {
 			return validation("history_window", "limit and cols must not be negative")
 		}
+		switch value.HistoryWindow.GetMode() {
+		case apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED,
+			apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST:
+		case apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDER,
+			apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_NEWER,
+			apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDEST:
+			if value.HistoryWindow.GetToken() == "" {
+				return validation("history_window.token", "frozen history token is required for pagination")
+			}
+		default:
+			return validation("history_window.mode", "unsupported history window mode")
+		}
 	case *apipb.CommandEnvelope_HistoryCopy:
 		if err := validateTerminalRefForContext(value.HistoryCopy.GetTerminal(), requestContext); err != nil {
 			return err
@@ -200,14 +212,14 @@ func historyCursorFromProto(cursor *apipb.HistoryCursor, generation uint64, toke
 	if cursor == nil {
 		return history.HistoryCursor{}
 	}
-	return history.HistoryCursor{Segment: historySegmentFromProto(cursor.GetSegment()), LineID: history.LogicalLineID(cursor.GetLineId()), RowInLine: int(cursor.GetRowInLine()), BeforeRowIndex: int(cursor.GetRowIndex()), Generation: history.Generation(generation), Token: history.HistoryToken(token), Valid: true}
+	return history.HistoryCursor{Segment: historySegmentFromProto(cursor.GetSegment()), LineID: history.LogicalLineID(cursor.GetLineId()), RowInLine: int(cursor.GetRowInLine()), Generation: history.Generation(generation), Token: history.HistoryToken(token), Valid: true}
 }
 
 func historyCursorToProto(cursor history.HistoryCursor) *apipb.HistoryCursor {
 	if !cursor.Valid {
 		return nil
 	}
-	return &apipb.HistoryCursor{LineId: uint64(cursor.LineID), RowInLine: int32(cursor.RowInLine), RowIndex: int32(cursor.BeforeRowIndex), Segment: historySegmentToProto(cursor.Segment)}
+	return &apipb.HistoryCursor{LineId: uint64(cursor.LineID), RowInLine: int32(cursor.RowInLine), Segment: historySegmentToProto(cursor.Segment)}
 }
 
 func historySegmentFromProto(segment apipb.HistoryCursorSegment) history.HistorySegment {
@@ -246,7 +258,7 @@ func historyRowToProto(row history.HistoryRow) *apipb.HistoryRow {
 		Ownership: historyRowOwnershipToProto(row), Segment: historySegmentToProto(row.Segment),
 		SessionId: uint64(row.SessionID), FrameId: uint64(row.FrameID), FixedGrid: row.FixedGrid,
 		ScreenCols: int32(row.ScreenCols), ScreenRows: int32(row.ScreenRow), ScreenRowSet: row.ScreenRowSet,
-		RowIndex: int32(row.ProjectionRowIndex), LogicalLineId: uint64(row.LineID), RowInLine: int32(row.RowInLine),
+		LogicalLineId: uint64(row.LineID), RowInLine: int32(row.RowInLine),
 	}
 }
 

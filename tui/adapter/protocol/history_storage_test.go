@@ -35,6 +35,24 @@ func TestProtocolCoreClientAdapterUsesGeneratedHistoryWindow(t *testing.T) {
 	}
 }
 
+func TestHistoryCursorUsesLogicalCoordinates(t *testing.T) {
+	want := state.HistoryCursor{
+		Valid:           true,
+		BeforeLineID:    42,
+		BeforeRowInLine: 3,
+		Segment:         state.HistoryCursorSegmentArchivedPrimaryFrame,
+	}
+	wire := historyCursorToProto(want)
+	window := historyWindowFromProto(&apipb.HistoryWindowResult{
+		Terminal: &apipb.TerminalRef{TerminalId: "term-1"},
+		Size:     &apipb.TerminalSize{Cols: 80},
+		Cursor:   wire,
+	}, 80)
+	if window.Cursor != want {
+		t.Fatalf("history cursor round trip = %#v, want %#v", window.Cursor, want)
+	}
+}
+
 func TestProtocolCoreClientAdapterUsesGeneratedCopyAndRelease(t *testing.T) {
 	executor := &recordingProtoExecutor{}
 	executor.handle = func(command *apipb.CommandEnvelope) *apipb.ResultEnvelope {

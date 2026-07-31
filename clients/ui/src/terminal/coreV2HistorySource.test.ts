@@ -55,7 +55,7 @@ describe('CoreV2HistorySource generated Proto API', () => {
     expect(session.executeSignals[historyIndex]).toBe(controller.signal)
   })
 
-  it('projects generated Proto history rows, styles, line spans, and cursors', async () => {
+  it('projects generated Proto history rows, styles, and line spans', async () => {
     const session = new MockProtoSession('machine-local', () => protoResult('historyWindow', create(HistoryWindowResultSchema, {
       terminal: create(TerminalRefSchema, { endpointId: 'machine-local', terminalId: 'terminal-1' }),
       token: 'hist-token',
@@ -99,7 +99,6 @@ describe('CoreV2HistorySource generated Proto API', () => {
     expect(result).toMatchObject({
       terminalId: 'terminal-1',
       op: 'prepend',
-      cursor: { lineId: '42', rowInLine: 1 },
       renderRows: [{
         logicalLineId: '42',
         rowInLine: 1,

@@ -147,7 +147,7 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
     expect(replays.at(-1)).toContain('\u001b[1;38;5;2;48;5;24mCOLOR')
   })
 
-  it('paginates visual scrollback with the frozen history cursor instead of beforeOffset', async () => {
+  it('paginates visual scrollback with the frozen history cursor', async () => {
     let historyCall = 0
     let session: MockProtoSession
     session = new MockProtoSession('machine-history', (command) => {
@@ -192,7 +192,6 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
       case: 'historyWindow',
       value: {
         mode: 2,
-        beforeOffset: 0,
         token: 'history-token',
         historyGeneration: 7n,
         beforeCursor: { lineId: 42n, rowInLine: 0 },

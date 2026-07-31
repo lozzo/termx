@@ -114,7 +114,6 @@ function window(input: {
     token: input.token,
     op: input.op ?? 'replace',
     cols: 80,
-    rows: 24,
     renderRows: [{
       index: 0,
       cells: [{ text: `line-${input.lineId}`, width: 7 }],
@@ -122,10 +121,7 @@ function window(input: {
       rowInLine: 0,
     }],
     lines: [],
-    beforeOffset: 0,
-    loadedRows: 1,
     totalRows: 42,
-    loadedLines: 1,
     logicalTotal: 42,
     hasMore: input.hasMore,
     generation: input.generation,

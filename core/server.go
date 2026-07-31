@@ -869,19 +869,18 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 // projection。调用边界包括 protocol history.window 和 domain harness；实现只能读取
 // core history store，不能 fallback 到 live rows 或 snapshot。
 func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
-	return server.terminalHistoryWindow(ctx, id, req, true)
-}
-
-func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest, flush bool) (history.HistoryWindow, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if req.Token == "" && req.Mode != "" && req.Mode != history.HistoryWindowModeLatest {
+		return history.HistoryWindow{}, history.ErrHistoryInvalidMutation
 	}
 	mode := historyWindowPerfMode(req.Mode)
 	terminal, err := server.Terminal(id)
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
-	if flush {
+	if req.Token == "" {
 		// Live windows only need the consumer fence for a consistent view. Freeze
 		// owns the durability fence; token pagination must not repeat file.Sync.
 		finishFlush := perftrace.Measure("core.server.history_window." + mode + ".flush")
@@ -890,8 +889,6 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 			return history.HistoryWindow{}, err
 		}
 		finishFlush(0)
-	} else if req.Token == "" {
-		return history.HistoryWindow{}, history.ErrHistoryInvalidMutation
 	}
 	if req.TerminalID == "" {
 		req.TerminalID = id
@@ -909,18 +906,13 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 // TerminalHistoryCopy 从 core-v2 terminal 内部 authoritative history domain 复制文本。
 // 调用边界包括 protocol history.copy；复制文本必须来自 tokenized history payload，
 // 不能由 TUI rows 或 live surface cache 组装。
-func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req history.HistoryCopyRequest) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
+func (server *Server) TerminalHistoryCopy(_ context.Context, id string, req history.HistoryCopyRequest) (string, error) {
+	if req.Token == "" {
+		return "", history.ErrHistoryInvalidMutation
 	}
 	terminal, err := server.Terminal(id)
 	if err != nil {
 		return "", err
-	}
-	if req.Token == "" {
-		if err := terminal.FlushHistory(ctx); err != nil {
-			return "", err
-		}
 	}
 	if req.TerminalID == "" {
 		req.TerminalID = id

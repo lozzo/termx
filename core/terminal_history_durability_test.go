@@ -278,9 +278,16 @@ func TestHistoryReadsSyncOnlyWhenCreatingFrozenSnapshot(t *testing.T) {
 	if _, err := server.TerminalHistoryWindow(context.Background(), terminalID, history.HistoryWindowRequest{Limit: 10}); err != nil {
 		t.Fatal(err)
 	}
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	if _, err := server.TerminalHistoryCopy(context.Background(), terminalID, history.HistoryCopyRequest{TerminalID: terminalID}); !errors.Is(err, history.ErrHistoryInvalidMutation) {
+		t.Fatalf("tokenless server copy error = %v, want %v", err, history.ErrHistoryInvalidMutation)
+	}
+	if _, err := session.ApplicationHistoryCopy(context.Background(), history.HistoryCopyRequest{TerminalID: terminalID}); !errors.Is(err, history.ErrHistoryInvalidMutation) {
+		t.Fatalf("tokenless application copy error = %v, want %v", err, history.ErrHistoryInvalidMutation)
+	}
 	_, syncCalls, _ := storage.counts()
 	if syncCalls != 0 {
-		t.Fatalf("live history read sync calls = %d, want 0", syncCalls)
+		t.Fatalf("live history read and rejected copy sync calls = %d, want 0", syncCalls)
 	}
 
 	snapshot, err := server.TerminalHistoryFreeze(context.Background(), terminalID, history.FreezeHistoryRequest{Limit: 10})
@@ -292,7 +299,6 @@ func TestHistoryReadsSyncOnlyWhenCreatingFrozenSnapshot(t *testing.T) {
 		t.Fatalf("history freeze sync calls = %d, want 1", syncCalls)
 	}
 
-	session := newProtocolSession(server, nil, fullDaemonTransportScope())
 	if _, err := session.ApplicationHistoryWindow(context.Background(), history.HistoryWindowRequest{
 		TerminalID: terminalID,
 		Mode:       history.HistoryWindowModeOldest,

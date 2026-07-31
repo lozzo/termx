@@ -11,11 +11,7 @@ import {
 } from '../generated/apipb/history_pb'
 import { TerminalRefSchema } from '../generated/apipb/terminal_pb'
 import {
-  CORE_V2_TERMINAL_METHODS,
-  assertLiveCacheOnlyAPIName,
-  coreV2HistoryCopyRequestToProtocolRequest,
   coreV2HistoryWindowFromAPI,
-  coreV2HistoryWindowRequestToParams,
   type CoreV2HistoryCopyRequest,
   type CoreV2HistoryReleaseRequest,
   type CoreV2HistoryWindow,
@@ -46,7 +42,6 @@ function createProtoHistorySource(session: ProtoClientSession, machineId: string
   const windowCommand = (request: CoreV2HistoryWindowRequest) => create(HistoryWindowCommandSchema, {
     terminal: terminal(request.terminalId),
     mode: protoHistoryMode(request.mode),
-    beforeOffset: request.beforeOffset ?? 0,
     limit: request.limit,
     cols: request.cols,
     token: request.token ?? '',

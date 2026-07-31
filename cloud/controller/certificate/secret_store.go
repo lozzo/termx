@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/anytty/anytty/shared/filepublish"
 	"github.com/google/uuid"
 )
 
@@ -17,7 +18,8 @@ const (
 // FileSecretStore 在 Controller 本机仅服务用户可访问的目录保存当前证书材料。
 // 每次 Put 都创建不可猜测的新引用，数据库提交后才由业务层淘汰旧引用。
 type FileSecretStore struct {
-	root string
+	root          string
+	syncDirectory func(string) error
 }
 
 // NewFileSecretStore 创建并收紧 secret 根目录权限；符号链接根目录会被拒绝。
@@ -39,7 +41,7 @@ func NewFileSecretStore(root string) (*FileSecretStore, error) {
 	if err := os.Chmod(clean, 0o700); err != nil {
 		return nil, err
 	}
-	return &FileSecretStore{root: clean}, nil
+	return &FileSecretStore{root: clean, syncDirectory: filepublish.SyncDirectory}, nil
 }
 
 // Put 原子发布包含 fullchain.pem 和 privkey.pem 的新 secret 目录。
@@ -88,10 +90,14 @@ func (store *FileSecretStore) Put(certificatePEM, privateKeyPEM []byte) (string,
 	if closeErr != nil {
 		return "", closeErr
 	}
-	if err := os.Rename(temporary, filepath.Join(store.root, reference)); err != nil {
+	target := filepath.Join(store.root, reference)
+	if err := filepublish.Rename(temporary, target); err != nil {
 		return "", err
 	}
 	cleanup = false
+	if err := store.syncDirectory(store.root); err != nil {
+		return "", errors.Join(err, removeSecretDirectory(target))
+	}
 	return reference, nil
 }
 
@@ -118,15 +124,23 @@ func (store *FileSecretStore) Delete(reference string) error {
 	if err != nil {
 		return err
 	}
+	if err := removeSecretDirectory(directory); err != nil {
+		return err
+	}
+	return store.syncDirectory(store.root)
+}
+
+func removeSecretDirectory(directory string) error {
+	var result error
 	for _, name := range []string{certificateFile, privateKeyFile} {
 		if err := os.Remove(filepath.Join(directory, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+			result = errors.Join(result, err)
 		}
 	}
 	if err := os.Remove(directory); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		result = errors.Join(result, err)
 	}
-	return nil
+	return result
 }
 
 func (store *FileSecretStore) resolve(reference string) (string, error) {

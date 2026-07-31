@@ -1,17 +1,15 @@
-export const CORE_V2_TERMINAL_METHODS = {
-  attach: 'attach',
-  ensureResize: 'ensure_resize',
-  snapshot: 'snapshot',
-  historyWindow: 'history.window',
-  historyCopy: 'history.copy',
-  historyRelease: 'history.release',
-} as const
+import {
+  HistoryWindowOperation,
+  RowOwnership,
+  type CellStyle,
+  type HistoryLineSpan,
+  type HistoryRow,
+  type HistoryWindowResult,
+  type ScreenCell,
+} from '../generated/apipb/history_pb'
 
-export const CORE_V2_HISTORY_WINDOW_OPS = ['replace', 'prepend', 'append'] as const
-export type CoreV2HistoryWindowOp = typeof CORE_V2_HISTORY_WINDOW_OPS[number]
-
-export const CORE_V2_HISTORY_WINDOW_MODES = ['latest', 'older', 'newer', 'oldest', 'range'] as const
-export type CoreV2HistoryWindowMode = typeof CORE_V2_HISTORY_WINDOW_MODES[number]
+export type CoreV2HistoryWindowOp = 'replace' | 'prepend' | 'append'
+export type CoreV2HistoryWindowMode = 'latest' | 'older' | 'newer' | 'oldest' | 'range'
 
 export interface CoreV2HistoryCursor {
   lineId: string
@@ -32,35 +30,11 @@ export interface CoreV2HistoryWindowRequest {
   cols: number
   token?: string | undefined
   generation?: string | number | bigint | undefined
-  beforeOffset?: number | undefined
   beforeCursor?: CoreV2HistoryCursor | undefined
   afterCursor?: CoreV2HistoryCursor | undefined
   boundaryFirstLineId?: string | undefined
   boundaryLastLineId?: string | undefined
   range?: CoreV2HistoryRange | undefined
-}
-
-export interface CoreV2HistoryWindowParams {
-  terminal_id: string
-  before_offset: number
-  limit: number
-  cols: number
-  mode: string
-  token: string
-  history_generation: number
-  cursor_valid: boolean
-  before_line_id: number
-  before_row_in_line: number
-  after_cursor_valid: boolean
-  after_line_id: number
-  after_row_in_line: number
-  boundary_first_line_id: number
-  boundary_last_line_id: number
-  range_valid: boolean
-  range_start_line_id: number
-  range_start_col: number
-  range_end_line_id: number
-  range_end_col: number
 }
 
 export interface CoreV2HistoryCellStyle {
@@ -110,13 +84,9 @@ export interface CoreV2HistoryWindow {
   token: string
   op: CoreV2HistoryWindowOp
   cols: number
-  rows: number
   renderRows: CoreV2HistoryRow[]
   lines: CoreV2HistoryLineSpan[]
-  beforeOffset: number
-  loadedRows: number
   totalRows: number
-  loadedLines: number
   logicalTotal: number
   hasMore: boolean
   generation: string
@@ -124,8 +94,6 @@ export interface CoreV2HistoryWindow {
   lastRowId?: string | undefined
   firstLineId?: string | undefined
   lastLineId?: string | undefined
-  cursor?: CoreV2HistoryCursor | undefined
-  timestampUnixMs?: number | undefined
 }
 
 export interface CoreV2HistoryCopyRequest {
@@ -143,377 +111,108 @@ export interface CoreV2HistoryReleaseRequest {
   token: string
 }
 
-export interface CoreV2TerminalProtocolRequest {
-  method: typeof CORE_V2_TERMINAL_METHODS.historyWindow | typeof CORE_V2_TERMINAL_METHODS.historyCopy | typeof CORE_V2_TERMINAL_METHODS.historyRelease
-  params: CoreV2HistoryWindowParams
-}
-
-export interface CoreV2TerminalProtocolEvent {
-  type: 'terminal.created' | 'terminal.state_changed' | 'terminal.resized' | 'terminal.removed' | 'terminal.metadata_changed' | 'storage.changed' | 'terminal.read_error' | 'unknown'
-  protocolType: number
-  terminalId?: string | undefined
-  timestampUnixMs?: number | undefined
-  payload?: unknown
-}
-
-export function coreV2HistoryWindowRequestToParams(request: CoreV2HistoryWindowRequest): CoreV2HistoryWindowParams {
-  assertHistoryWindowRequest(request)
-  const beforeCursor = request.beforeCursor
-  const afterCursor = request.afterCursor
-  const range = request.range
+export function coreV2HistoryWindowFromAPI(value: HistoryWindowResult): CoreV2HistoryWindow {
   return {
-    terminal_id: request.terminalId,
-    before_offset: nonNegativeInt(request.beforeOffset),
-    limit: positiveInt(request.limit),
-    cols: positiveInt(request.cols),
-    mode: request.mode === 'latest' || request.mode === 'older' ? '' : request.mode,
-    token: request.token ?? '',
-    history_generation: numberFromID(request.generation),
-    cursor_valid: Boolean(beforeCursor),
-    before_line_id: beforeCursor ? numberFromID(beforeCursor.lineId) : 0,
-    before_row_in_line: beforeCursor ? nonNegativeInt(beforeCursor.rowInLine) : 0,
-    after_cursor_valid: Boolean(afterCursor),
-    after_line_id: afterCursor ? numberFromID(afterCursor.lineId) : 0,
-    after_row_in_line: afterCursor ? nonNegativeInt(afterCursor.rowInLine) : 0,
-    boundary_first_line_id: numberFromID(request.boundaryFirstLineId),
-    boundary_last_line_id: numberFromID(request.boundaryLastLineId),
-    range_valid: Boolean(range),
-    range_start_line_id: range ? numberFromID(range.startLineId) : 0,
-    range_start_col: range ? nonNegativeInt(range.startCol) : 0,
-    range_end_line_id: range ? numberFromID(range.endLineId) : 0,
-    range_end_col: range ? nonNegativeInt(range.endCol) : 0,
+    terminalId: value.terminal?.terminalId ?? '',
+    token: value.token,
+    op: historyWindowOp(value.operation),
+    cols: value.size?.cols ?? 0,
+    renderRows: value.rows.map(historyRowFromAPI),
+    lines: value.lines.map(historyLineFromAPI),
+    totalRows: value.totalRows,
+    logicalTotal: value.logicalTotal,
+    hasMore: value.hasMore,
+    generation: value.historyGeneration.toString(),
+    firstRowId: optionalID(value.firstRowId),
+    lastRowId: optionalID(value.lastRowId),
+    firstLineId: optionalID(value.firstLineId),
+    lastLineId: optionalID(value.lastLineId),
   }
 }
 
-export function coreV2HistoryCopyRequestToProtocolRequest(request: CoreV2HistoryCopyRequest): CoreV2TerminalProtocolRequest {
-  if (!request.token) throw new Error('history.copy requires a frozen history token')
-  return {
-    method: CORE_V2_TERMINAL_METHODS.historyCopy,
-    params: coreV2HistoryWindowRequestToParams({
-      terminalId: request.terminalId,
-      mode: 'range',
-      limit: 1,
-      cols: request.cols,
-      token: request.token,
-      generation: request.generation,
-      boundaryFirstLineId: request.boundaryFirstLineId,
-      boundaryLastLineId: request.boundaryLastLineId,
-      range: request.range,
-    }),
-  }
-}
-
-export function coreV2HistoryReleaseRequestToProtocolRequest(request: CoreV2HistoryReleaseRequest): CoreV2TerminalProtocolRequest {
-  if (!request.terminalId.trim()) throw new Error('history.release requires terminalId')
-  if (!request.token.trim()) throw new Error('history.release requires token')
-  return {
-    method: CORE_V2_TERMINAL_METHODS.historyRelease,
-    params: coreV2HistoryWindowRequestToParams({
-      terminalId: request.terminalId,
-      mode: 'latest',
-      limit: 1,
-      cols: 1,
-      token: request.token,
-    }),
-  }
-}
-
-export function coreV2HistoryWindowFromAPI(value: unknown): CoreV2HistoryWindow {
-  const record = asRecord(value)
-  const cols = numberValue(asRecord(record.size).cols)
-  const rows = numberValue(asRecord(record.size).rows)
-  const renderRows = recordArray(record.rows).map((row, index) => historyRowFromAPI(row, index, record))
-  const terminal = asRecord(record.terminal)
-  const cursor = historyCursorFromAPI(record)
-  return {
-    terminalId: stringValue(record.terminal_id ?? record.terminalId ?? terminal.terminal_id ?? terminal.terminalId),
-    token: stringValue(record.token),
-    op: historyWindowOp(record.op ?? record.operation),
-    cols,
-    rows,
-    renderRows,
-    lines: historyLinesFromAPI(record),
-    beforeOffset: numberValue(record.before_offset ?? record.beforeOffset),
-    loadedRows: numberValue(record.loaded_rows ?? record.loadedRows),
-    totalRows: numberValue(record.total_rows ?? record.totalRows),
-    loadedLines: numberValue(record.loaded_lines ?? record.loadedLines),
-    logicalTotal: numberValue(record.logical_total ?? record.logicalTotal),
-    hasMore: booleanValue(record.has_more ?? record.hasMore),
-    generation: idString(record.history_generation ?? record.historyGeneration),
-    firstRowId: optionalID(record.first_row_id ?? record.firstRowId),
-    lastRowId: optionalID(record.last_row_id ?? record.lastRowId),
-    firstLineId: optionalID(record.first_line_id ?? record.firstLineId),
-    lastLineId: optionalID(record.last_line_id ?? record.lastLineId),
-    cursor,
-    timestampUnixMs: unixNanoToMs(record.timestamp_unix_nano ?? record.timestampUnixNano),
-  }
-}
-
-export function coreV2EventFromRuntimeEvent(event: {
-  protocolType?: number | undefined
-  protocol_type?: number | undefined
-  terminalId?: string | undefined
-  terminal_id?: string | undefined
-  timestampUnixNano?: bigint | number | undefined
-  timestamp_unix_nano?: bigint | number | undefined
-  payload?: unknown
-}): CoreV2TerminalProtocolEvent {
-  const protocolType = numberValue(event.protocolType ?? event.protocol_type)
-  return {
-    type: eventTypeName(protocolType),
-    protocolType,
-    terminalId: optionalString(event.terminalId ?? event.terminal_id),
-    timestampUnixMs: unixNanoToMs(event.timestampUnixNano ?? event.timestamp_unix_nano),
-    payload: event.payload,
-  }
-}
-
-export function assertLiveCacheOnlyAPIName(name: string): void {
-  if (/snapshot|scrollback|historyReplay|loadScrollback|xterm/i.test(name)) {
-    throw new Error(`${name} is a live display cache API; App copy/history must use core-v2 history.window/history.copy`)
-  }
-}
-
-function assertHistoryWindowRequest(request: CoreV2HistoryWindowRequest): void {
-  if (!request.terminalId.trim()) throw new Error('history.window requires terminalId')
-  if (!CORE_V2_HISTORY_WINDOW_MODES.includes(request.mode)) throw new Error(`invalid history.window mode ${request.mode}`)
-  if (!Number.isFinite(request.limit) || request.limit <= 0) throw new Error('history.window requires positive limit')
-  if (!Number.isFinite(request.cols) || request.cols <= 0) throw new Error('history.window requires positive cols')
-  if (request.mode === 'older' && (!request.token || !request.beforeCursor)) {
-    throw new Error('older history.window requires token and beforeCursor')
-  }
-  if (request.mode === 'newer' && (!request.token || !request.afterCursor)) {
-    throw new Error('newer history.window requires token and afterCursor')
-  }
-  if (request.mode === 'oldest' && !request.token) {
-    throw new Error('oldest history.window requires token')
-  }
-  if (request.mode === 'range' && !request.range) {
-    throw new Error('range history.window requires logical range')
-  }
-}
-
-function historyRowFromAPI(row: Record<string, unknown>, index: number, owner: Record<string, unknown>): CoreV2HistoryRow {
-  const rowLineIds = arrayValue(owner.row_logical_line_ids ?? owner.rowLogicalLineIds)
-  const rowInLine = arrayValue(owner.row_in_line ?? owner.rowInLine)
-  const screenRow = asRecord(row.row)
-  const payload = Object.keys(screenRow).length > 0 ? screenRow : row
-  const logicalLineId = optionalID(row.logical_line_id ?? row.logicalLineId ?? rowLineIds[index])
+function historyRowFromAPI(row: HistoryRow, index: number): CoreV2HistoryRow {
   return {
     index,
-    cells: recordArray(payload.cells).map(historyCellFromAPI),
-    tailFillStyle: historyStyleFromAPI(payload.tail_fill ?? payload.tailFill),
-    kind: optionalString(row.kind ?? row.row_kind ?? row.rowKind),
-    wrapped: optionalBool(row.wrapped),
-    ownership: historyOwnership(row.ownership ?? arrayValue(owner.row_ownership ?? owner.rowOwnership)[index]),
-    timestampUnixMs: unixNanoToMs(arrayValue(owner.row_timestamps_unix_nano ?? owner.rowTimestampsUnixNano)[index] ?? row.timestamp_unix_nano ?? row.timestampUnixNano),
-    logicalLineId,
-    rowInLine: optionalNumber(row.row_in_line ?? row.rowInLine ?? rowInLine[index]),
+    cells: (row.row?.cells ?? []).map(historyCellFromAPI),
+    tailFillStyle: historyStyleFromAPI(row.row?.tailFill),
+    kind: optionalText(row.rowKind),
+    wrapped: row.wrapped,
+    ownership: historyOwnership(row.ownership),
+    timestampUnixMs: unixNanoToMs(row.timestampUnixNano),
+    logicalLineId: optionalID(row.logicalLineId),
+    rowInLine: row.rowInLine,
   }
 }
 
-function historyCellFromAPI(cell: Record<string, unknown>): CoreV2HistoryCell {
-  const styleRecord = asRecord(cell.style ?? cell.s)
+function historyCellFromAPI(cell: ScreenCell): CoreV2HistoryCell {
   return {
-    text: stringValue(cell.content ?? cell.r ?? cell.text),
-    width: numberValue(cell.width ?? cell.w) || 1,
-    style: historyStyleFromAPI(styleRecord),
-    linkUrl: optionalString(cell.link_url ?? cell.linkUrl),
-    linkParams: optionalString(cell.link_params ?? cell.linkParams),
+    text: cell.content,
+    width: cell.width || 1,
+    style: historyStyleFromAPI(cell.style),
+    linkUrl: optionalText(cell.linkUrl),
+    linkParams: optionalText(cell.linkParams),
   }
 }
 
-function historyLinesFromAPI(record: Record<string, unknown>): CoreV2HistoryLineSpan[] {
-  const generatedLines = recordArray(record.lines)
-  if (generatedLines.length > 0) {
-    return generatedLines.map((line) => ({
-      startRow: numberValue(line.start_row ?? line.startRow),
-      endRow: numberValue(line.end_row ?? line.endRow),
-      rowKind: optionalString(line.row_kind ?? line.rowKind),
-      logicalLineId: idString(line.logical_line_id ?? line.logicalLineId),
-      timestampStartUnixMs: unixNanoToMs(line.timestamp_start_unix_nano ?? line.timestampStartUnixNano),
-      timestampEndUnixMs: unixNanoToMs(line.timestamp_end_unix_nano ?? line.timestampEndUnixNano),
-      clippedBefore: booleanValue(line.clipped_before ?? line.clippedBefore),
-      clippedAfter: booleanValue(line.clipped_after ?? line.clippedAfter),
-    }))
-  }
-  const starts = arrayValue(record.line_start_rows ?? record.lineStartRows)
-  const ends = arrayValue(record.line_end_rows ?? record.lineEndRows)
-  const kinds = arrayValue(record.line_row_kinds ?? record.lineRowKinds)
-  const ids = arrayValue(record.line_logical_line_ids ?? record.lineLogicalLineIds)
-  const clippedBefore = arrayValue(record.line_clipped_before ?? record.lineClippedBefore)
-  const clippedAfter = arrayValue(record.line_clipped_after ?? record.lineClippedAfter)
-  const timestampStart = arrayValue(record.line_timestamp_start_unix_nano ?? record.lineTimestampStartUnixNano)
-  const timestampEnd = arrayValue(record.line_timestamp_end_unix_nano ?? record.lineTimestampEndUnixNano)
-  const count = Math.max(starts.length, ends.length, ids.length)
-  const lines: CoreV2HistoryLineSpan[] = []
-  for (let index = 0; index < count; index += 1) {
-    lines.push({
-      startRow: numberValue(starts[index]),
-      endRow: numberValue(ends[index]),
-      rowKind: optionalString(kinds[index]),
-      logicalLineId: idString(ids[index]),
-      timestampStartUnixMs: unixNanoToMs(timestampStart[index]),
-      timestampEndUnixMs: unixNanoToMs(timestampEnd[index]),
-      clippedBefore: booleanValue(clippedBefore[index]),
-      clippedAfter: booleanValue(clippedAfter[index]),
-    })
-  }
-  return lines
-}
-
-function eventTypeName(protocolType: number): CoreV2TerminalProtocolEvent['type'] {
-  switch (protocolType) {
-    case 1:
-      return 'terminal.created'
-    case 2:
-      return 'terminal.state_changed'
-    case 3:
-      return 'terminal.resized'
-    case 4:
-      return 'terminal.removed'
-    case 5:
-      return 'terminal.read_error'
-    case 10:
-      return 'terminal.metadata_changed'
-    case 12:
-      return 'storage.changed'
-    default:
-      return 'unknown'
-  }
-}
-
-function historyCursorFromAPI(record: Record<string, unknown>): CoreV2HistoryCursor | undefined {
-  const generated = asRecord(record.cursor)
-  if (Object.keys(generated).length > 0) {
-    const lineId = idString(generated.line_id ?? generated.lineId)
-    if (lineId && lineId !== '0') {
-      return {
-        lineId,
-        rowInLine: numberValue(generated.row_in_line ?? generated.rowInLine),
-      }
-    }
-  }
-  if (!booleanValue(record.cursor_valid ?? record.cursorValid)) return undefined
-  const lineId = idString(record.cursor_before_line_id ?? record.cursorBeforeLineId)
-  if (!lineId || lineId === '0') return undefined
+function historyLineFromAPI(line: HistoryLineSpan): CoreV2HistoryLineSpan {
   return {
-    lineId,
-    rowInLine: numberValue(record.cursor_before_row_in_line ?? record.cursorBeforeRowInLine),
+    startRow: line.startRow,
+    endRow: line.endRow,
+    rowKind: optionalText(line.rowKind),
+    logicalLineId: line.logicalLineId.toString(),
+    timestampStartUnixMs: unixNanoToMs(line.timestampStartUnixNano),
+    timestampEndUnixMs: unixNanoToMs(line.timestampEndUnixNano),
+    clippedBefore: line.clippedBefore,
+    clippedAfter: line.clippedAfter,
   }
 }
 
-function historyStyleFromAPI(value: unknown): CoreV2HistoryCellStyle | undefined {
-  const style = asRecord(value)
+function historyStyleFromAPI(style: CellStyle | undefined): CoreV2HistoryCellStyle | undefined {
+  if (!style) return undefined
   return cleanStyle({
-    fg: optionalString(style.fg ?? style.foreground),
-    bg: optionalString(style.bg ?? style.background),
-    bold: optionalBool(style.bold ?? style.b),
-    italic: optionalBool(style.italic ?? style.i),
-    underline: optionalBool(style.underline ?? style.u),
-    blink: optionalBool(style.blink),
-    reverse: optionalBool(style.reverse),
-    strikethrough: optionalBool(style.strikethrough),
+    fg: optionalText(style.foreground),
+    bg: optionalText(style.background),
+    bold: style.bold,
+    italic: style.italic,
+    underline: style.underline,
+    blink: style.blink,
+    reverse: style.reverse,
+    strikethrough: style.strikethrough,
   })
 }
 
-function historyOwnership(value: unknown): string | undefined {
-  if (typeof value === 'string') return value || undefined
-  if (typeof value !== 'number') return undefined
+function historyOwnership(value: RowOwnership): string | undefined {
   switch (value) {
-    case 1: return 'persisted'
-    case 2: return 'live_tail_reclaimed'
-    case 3: return 'live_tail_live'
-    case 4: return 'screen'
-    default: return undefined
+    case RowOwnership.PERSISTED: return 'persisted'
+    case RowOwnership.LIVE_TAIL_RECLAIMED: return 'live_tail_reclaimed'
+    case RowOwnership.LIVE_TAIL_LIVE: return 'live_tail_live'
+    case RowOwnership.SCREEN: return 'screen'
+    case RowOwnership.UNSPECIFIED: return undefined
+    default: throw new Error(`unsupported history row ownership ${value}`)
   }
 }
 
-function historyWindowOp(value: unknown): CoreV2HistoryWindowOp {
-  if (value === 'prepend' || value === 'append' || value === 'replace') return value
-  if (value === 2 || value === 'HISTORY_WINDOW_OPERATION_PREPEND') return 'prepend'
-  if (value === 3 || value === 'HISTORY_WINDOW_OPERATION_APPEND') return 'append'
-  return 'replace'
+function historyWindowOp(value: HistoryWindowOperation): CoreV2HistoryWindowOp {
+  switch (value) {
+    case HistoryWindowOperation.REPLACE: return 'replace'
+    case HistoryWindowOperation.PREPEND: return 'prepend'
+    case HistoryWindowOperation.APPEND: return 'append'
+    default: throw new Error(`unsupported history window operation ${value}`)
+  }
 }
 
 function cleanStyle(style: CoreV2HistoryCellStyle): CoreV2HistoryCellStyle | undefined {
-  return Object.values(style).some((value) => value !== undefined) ? style : undefined
+  return Object.values(style).some((value) => value !== undefined && value !== false) ? style : undefined
 }
 
-function nonNegativeInt(value: unknown): number {
-  const number = numberValue(value)
-  return number > 0 ? number : 0
+function optionalText(value: string): string | undefined {
+  return value || undefined
 }
 
-function positiveInt(value: unknown): number {
-  const number = numberValue(value)
-  return number > 0 ? number : 1
+function optionalID(value: bigint): string | undefined {
+  return value === 0n ? undefined : value.toString()
 }
 
-function numberFromID(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.trunc(value))
-  if (typeof value === 'bigint') return Number(value)
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0
-  }
-  return 0
-}
-
-function idString(value: unknown): string {
-  if (typeof value === 'bigint') return value.toString()
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value).toString()
-  return typeof value === 'string' ? value : ''
-}
-
-function optionalID(value: unknown): string | undefined {
-  const id = idString(value)
-  return id && id !== '0' ? id : undefined
-}
-
-function unixNanoToMs(value: unknown): number | undefined {
-  if (typeof value === 'bigint') return value === 0n ? undefined : Number(value / 1_000_000n)
-  if (typeof value === 'number' && Number.isFinite(value)) return value === 0 ? undefined : Math.floor(value / 1_000_000)
-  return undefined
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function recordArray(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null && !Array.isArray(item)) : []
-}
-
-function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function optionalString(value: unknown): string | undefined {
-  const text = stringValue(value)
-  return text ? text : undefined
-}
-
-function numberValue(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
-  if (typeof value === 'bigint') return Number(value)
-  return 0
-}
-
-function optionalNumber(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
-  if (typeof value === 'bigint') return Number(value)
-  return undefined
-}
-
-function booleanValue(value: unknown): boolean {
-  return value === true
-}
-
-function optionalBool(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined
+function unixNanoToMs(value: bigint): number | undefined {
+  return value === 0n ? undefined : Number(value / 1_000_000n)
 }

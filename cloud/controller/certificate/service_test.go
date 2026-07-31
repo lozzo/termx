@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"os"
@@ -84,6 +85,26 @@ func TestFileSecretStorePermissionsAndRoundTrip(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, reference)); !os.IsNotExist(err) {
 		t.Fatalf("secret directory still exists after delete: %v", err)
+	}
+}
+
+func TestFileSecretStoreRejectsAnUnsyncedPublishedDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "certificates")
+	store, err := NewFileSecretStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("directory sync failed")
+	store.syncDirectory = func(string) error { return wantErr }
+	if _, err := store.Put([]byte("certificate"), []byte("private key")); !errors.Is(err, wantErr) {
+		t.Fatalf("Put error = %v, want %v", err, wantErr)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("failed publication left secret directories: %v", entries)
 	}
 }
 

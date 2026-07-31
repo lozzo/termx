@@ -664,26 +664,42 @@ func TestR370ProtocolLatestReadsFrozenTokenWithoutSecondFlush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("freeze latest: %v", err)
 	}
-	window, err := server.terminalHistoryWindow(context.Background(), "term-r370-no-second-flush", history.HistoryWindowRequest{
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r370-no-second-flush", history.HistoryWindowRequest{
 		TerminalID: "term-r370-no-second-flush",
 		Mode:       history.HistoryWindowModeLatest,
 		Token:      snapshot.Token,
 		Cols:       30,
 		Limit:      10,
-	}, false)
+	})
 	if err != nil {
 		t.Fatalf("frozen latest window should not need a second flush: %v", err)
 	}
 	if got := historyRowTexts(window.Rows); strings.Join(got, "|") != "alpha|beta" {
 		t.Fatalf("unexpected frozen latest rows %v window=%#v", got, window)
 	}
-	if _, err := server.terminalHistoryWindow(context.Background(), "term-r370-no-second-flush", history.HistoryWindowRequest{
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	for _, mode := range []history.HistoryWindowMode{
+		history.HistoryWindowModeOlder,
+		history.HistoryWindowModeNewer,
+		history.HistoryWindowModeOldest,
+	} {
+		request := history.HistoryWindowRequest{
+			TerminalID: "term-r370-no-second-flush",
+			Mode:       mode,
+			Cols:       30,
+			Limit:      10,
+		}
+		if _, err := server.TerminalHistoryWindow(context.Background(), request.TerminalID, request); !errors.Is(err, history.ErrHistoryInvalidMutation) {
+			t.Fatalf("server %s pagination must require a frozen token, got %v", mode, err)
+		}
+		if _, err := session.ApplicationHistoryWindow(context.Background(), request); !errors.Is(err, history.ErrHistoryInvalidMutation) {
+			t.Fatalf("application %s pagination must require a frozen token, got %v", mode, err)
+		}
+	}
+	if _, err := server.TerminalHistoryCopy(context.Background(), "term-r370-no-second-flush", history.HistoryCopyRequest{
 		TerminalID: "term-r370-no-second-flush",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      10,
-	}, false); !errors.Is(err, history.ErrHistoryInvalidMutation) {
-		t.Fatalf("no-flush window must require a frozen token, got %v", err)
+	}); !errors.Is(err, history.ErrHistoryInvalidMutation) {
+		t.Fatalf("copy must require a frozen token, got %v", err)
 	}
 }
 

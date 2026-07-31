@@ -313,8 +313,7 @@ func (engine *Engine) OpenSession(payload []byte) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	requestSnapshot := proto.Clone(request).(*bindingpb.OpenSessionRequest)
-	go engine.runOpen(handle, operationContext, requestSnapshot)
+	go engine.runOpen(handle, operationContext, request)
 	return handle, nil
 }
 
@@ -335,8 +334,7 @@ func (engine *Engine) Execute(sessionHandle uint64, payload []byte) (uint64, err
 	if err != nil {
 		return 0, err
 	}
-	commandSnapshot := proto.Clone(command).(*apipb.CommandEnvelope)
-	go engine.runExecute(handle, sessionHandle, operationContext, session, commandSnapshot)
+	go engine.runExecute(handle, sessionHandle, operationContext, session, command)
 	return handle, nil
 }
 

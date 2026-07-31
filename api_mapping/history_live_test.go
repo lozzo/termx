@@ -6,9 +6,73 @@ import (
 
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/core/history"
+	"github.com/anytty/anytty/proto/apipb"
 	vterm "github.com/anytty/anytty/vterm/vterm"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestValidateHistoryWindowRequiresFrozenPaginationToken(t *testing.T) {
+	terminal := &apipb.TerminalRef{EndpointId: "studio", TerminalId: "term-1"}
+	for _, mode := range []apipb.HistoryWindowMode{
+		apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDER,
+		apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_NEWER,
+		apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDEST,
+	} {
+		t.Run(mode.String(), func(t *testing.T) {
+			command := &apipb.CommandEnvelope{
+				Context: terminalRequestContext("history-pagination"),
+				Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
+					Terminal: terminal,
+					Mode:     mode,
+				}},
+			}
+			if err := ValidateHistoryLiveCommand(command); err == nil {
+				t.Fatal("tokenless pagination must fail validation")
+			}
+		})
+	}
+	for _, mode := range []apipb.HistoryWindowMode{
+		apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED,
+		apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST,
+	} {
+		command := &apipb.CommandEnvelope{
+			Context: terminalRequestContext("history-latest"),
+			Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
+				Terminal: terminal,
+				Mode:     mode,
+			}},
+		}
+		if err := ValidateHistoryLiveCommand(command); err != nil {
+			t.Fatalf("latest mode %s failed validation: %v", mode, err)
+		}
+	}
+	unknown := &apipb.CommandEnvelope{
+		Context: terminalRequestContext("history-unknown"),
+		Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
+			Terminal: terminal,
+			Mode:     apipb.HistoryWindowMode(99),
+		}},
+	}
+	if err := ValidateHistoryLiveCommand(unknown); err == nil {
+		t.Fatal("unknown history window mode must fail validation")
+	}
+}
+
+func TestHistoryCursorRoundTripsLogicalCoordinates(t *testing.T) {
+	want := history.HistoryCursor{
+		LineID:     42,
+		RowInLine:  3,
+		Segment:    history.HistorySegmentArchivedPrimaryFrame,
+		Generation: 7,
+		Token:      "frozen-token",
+		Valid:      true,
+	}
+	wire := historyCursorToProto(want)
+	got := historyCursorFromProto(wire, uint64(want.Generation), string(want.Token))
+	if got != want {
+		t.Fatalf("history cursor round trip = %#v, want %#v", got, want)
+	}
+}
 
 func TestHistoryWindowToProtoCoalescesAdjacentStyleRuns(t *testing.T) {
 	red := history.CellStyle{FG: "ansi:1", Bold: true}

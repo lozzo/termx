@@ -114,7 +114,7 @@ export function TerminalActionToolbar({
   const ownsResize = resizeControl?.canResize === true
 
   return (
-    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-3 py-3 text-[var(--anytty-text)] md:hidden animate-in slide-in-from-top-2" data-testid="anytty-terminal-action-toolbar">
+    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 max-h-full overflow-y-auto border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-3 py-3 text-[var(--anytty-text)] md:hidden animate-in slide-in-from-top-2" data-testid="anytty-terminal-action-toolbar">
       <div className="flex flex-col gap-3">
         {/* Settings Row: Font Size */}
         <div className="flex items-center justify-between">

@@ -136,17 +136,6 @@ export {
   CoreV2HistorySurfaceStaleError,
   createCoreV2HistorySurface,
 } from './terminal/coreV2HistorySurface'
-export {
-  CORE_V2_HISTORY_WINDOW_MODES,
-  CORE_V2_HISTORY_WINDOW_OPS,
-  CORE_V2_TERMINAL_METHODS,
-  assertLiveCacheOnlyAPIName,
-  coreV2EventFromRuntimeEvent,
-  coreV2HistoryCopyRequestToProtocolRequest,
-  coreV2HistoryReleaseRequestToProtocolRequest,
-  coreV2HistoryWindowFromAPI,
-  coreV2HistoryWindowRequestToParams,
-} from './terminal/coreV2TerminalProtocol'
 export { createCoreV2HistorySource } from './terminal/coreV2HistorySource'
 export type {
   CoreV2HistoryCellPoint,
@@ -172,10 +161,7 @@ export type {
   CoreV2HistoryWindow,
   CoreV2HistoryWindowMode,
   CoreV2HistoryWindowOp,
-  CoreV2HistoryWindowParams,
   CoreV2HistoryWindowRequest,
-  CoreV2TerminalProtocolEvent,
-  CoreV2TerminalProtocolRequest,
 } from './terminal/coreV2TerminalProtocol'
 export type { CoreV2HistorySource } from './terminal/coreV2HistorySource'
 export {

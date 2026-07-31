@@ -107,11 +107,23 @@ func shellQuote(value string) string {
 
 func r326CollectAllHistoryRows(t *testing.T, server *Server, terminalID string, cols int, limit int) ([]history.HistoryRow, int) {
 	t.Helper()
+	snapshot, err := server.TerminalHistoryFreeze(context.Background(), terminalID, history.FreezeHistoryRequest{
+		TerminalID: terminalID,
+		Cols:       cols,
+		Limit:      limit,
+	})
+	if err != nil {
+		t.Fatalf("freeze history window: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = server.TerminalHistoryRelease(context.Background(), terminalID, snapshot.Token)
+	})
 	latest, err := server.TerminalHistoryWindow(context.Background(), terminalID, history.HistoryWindowRequest{
 		TerminalID: terminalID,
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       cols,
 		Limit:      limit,
+		Token:      snapshot.Token,
 	})
 	if err != nil {
 		t.Fatalf("latest history window: %v", err)
@@ -125,6 +137,7 @@ func r326CollectAllHistoryRows(t *testing.T, server *Server, terminalID string, 
 			Mode:       history.HistoryWindowModeOlder,
 			Cols:       cols,
 			Limit:      limit,
+			Token:      snapshot.Token,
 			Cursor:     cursor,
 		})
 		if err != nil {

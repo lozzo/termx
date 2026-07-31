@@ -202,19 +202,14 @@ function historyWindow(input: {
     token: input.token,
     op: input.op ?? 'replace',
     cols,
-    rows: 24,
     renderRows,
     lines,
-    beforeOffset: input.startLine,
-    loadedRows: renderRows.length,
     totalRows: input.startLine + input.count,
-    loadedLines: lines.length,
     logicalTotal: input.startLine + input.count,
     hasMore: input.hasMore,
     generation: input.generation,
     firstLineId: String(input.startLine),
     lastLineId: String(input.startLine + input.count - 1),
-    cursor: { lineId: String(input.startLine), rowInLine: 0 },
   }
 }
 

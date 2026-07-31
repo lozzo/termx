@@ -722,7 +722,6 @@ type HistoryCursor struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LineId        uint64                 `protobuf:"varint,1,opt,name=line_id,json=lineId,proto3" json:"line_id,omitempty"`
 	RowInLine     int32                  `protobuf:"varint,2,opt,name=row_in_line,json=rowInLine,proto3" json:"row_in_line,omitempty"`
-	RowIndex      int32                  `protobuf:"varint,3,opt,name=row_index,json=rowIndex,proto3" json:"row_index,omitempty"`
 	Segment       HistoryCursorSegment   `protobuf:"varint,4,opt,name=segment,proto3,enum=anytty.api.v1.HistoryCursorSegment" json:"segment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -768,13 +767,6 @@ func (x *HistoryCursor) GetLineId() uint64 {
 func (x *HistoryCursor) GetRowInLine() int32 {
 	if x != nil {
 		return x.RowInLine
-	}
-	return 0
-}
-
-func (x *HistoryCursor) GetRowIndex() int32 {
-	if x != nil {
-		return x.RowIndex
 	}
 	return 0
 }
@@ -858,7 +850,6 @@ type HistoryWindowCommand struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Terminal            *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	Mode                HistoryWindowMode      `protobuf:"varint,3,opt,name=mode,proto3,enum=anytty.api.v1.HistoryWindowMode" json:"mode,omitempty"`
-	BeforeOffset        int32                  `protobuf:"varint,4,opt,name=before_offset,json=beforeOffset,proto3" json:"before_offset,omitempty"`
 	Limit               int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`
 	Cols                int32                  `protobuf:"varint,6,opt,name=cols,proto3" json:"cols,omitempty"`
 	Token               string                 `protobuf:"bytes,7,opt,name=token,proto3" json:"token,omitempty"`
@@ -914,13 +905,6 @@ func (x *HistoryWindowCommand) GetMode() HistoryWindowMode {
 		return x.Mode
 	}
 	return HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED
-}
-
-func (x *HistoryWindowCommand) GetBeforeOffset() int32 {
-	if x != nil {
-		return x.BeforeOffset
-	}
-	return 0
 }
 
 func (x *HistoryWindowCommand) GetLimit() int32 {
@@ -1288,7 +1272,6 @@ type HistoryRow struct {
 	ScreenCols        int32                  `protobuf:"varint,10,opt,name=screen_cols,json=screenCols,proto3" json:"screen_cols,omitempty"`
 	ScreenRows        int32                  `protobuf:"varint,11,opt,name=screen_rows,json=screenRows,proto3" json:"screen_rows,omitempty"`
 	ScreenRowSet      bool                   `protobuf:"varint,12,opt,name=screen_row_set,json=screenRowSet,proto3" json:"screen_row_set,omitempty"`
-	RowIndex          int32                  `protobuf:"varint,13,opt,name=row_index,json=rowIndex,proto3" json:"row_index,omitempty"`
 	LogicalLineId     uint64                 `protobuf:"varint,14,opt,name=logical_line_id,json=logicalLineId,proto3" json:"logical_line_id,omitempty"`
 	RowInLine         int32                  `protobuf:"varint,15,opt,name=row_in_line,json=rowInLine,proto3" json:"row_in_line,omitempty"`
 	unknownFields     protoimpl.UnknownFields
@@ -1409,13 +1392,6 @@ func (x *HistoryRow) GetScreenRowSet() bool {
 	return false
 }
 
-func (x *HistoryRow) GetRowIndex() int32 {
-	if x != nil {
-		return x.RowIndex
-	}
-	return 0
-}
-
 func (x *HistoryRow) GetLogicalLineId() uint64 {
 	if x != nil {
 		return x.LogicalLineId
@@ -1438,7 +1414,6 @@ type HistoryWindowResult struct {
 	Size              *TerminalSize          `protobuf:"bytes,4,opt,name=size,proto3" json:"size,omitempty"`
 	Rows              []*HistoryRow          `protobuf:"bytes,5,rep,name=rows,proto3" json:"rows,omitempty"`
 	Lines             []*HistoryLineSpan     `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
-	BeforeOffset      int32                  `protobuf:"varint,7,opt,name=before_offset,json=beforeOffset,proto3" json:"before_offset,omitempty"`
 	LoadedRows        int32                  `protobuf:"varint,8,opt,name=loaded_rows,json=loadedRows,proto3" json:"loaded_rows,omitempty"`
 	TotalRows         int32                  `protobuf:"varint,9,opt,name=total_rows,json=totalRows,proto3" json:"total_rows,omitempty"`
 	LoadedLines       int32                  `protobuf:"varint,10,opt,name=loaded_lines,json=loadedLines,proto3" json:"loaded_lines,omitempty"`
@@ -1525,13 +1500,6 @@ func (x *HistoryWindowResult) GetLines() []*HistoryLineSpan {
 		return x.Lines
 	}
 	return nil
-}
-
-func (x *HistoryWindowResult) GetBeforeOffset() int32 {
-	if x != nil {
-		return x.BeforeOffset
-	}
-	return 0
 }
 
 func (x *HistoryWindowResult) GetLoadedRows() int32 {
@@ -2149,21 +2117,19 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x0fbracketed_paste\x18\t \x01(\bR\x0ebracketedPaste\x12-\n" +
 	"\x12application_cursor\x18\n" +
 	" \x01(\bR\x11applicationCursor\x12\x1b\n" +
-	"\tauto_wrap\x18\v \x01(\bR\bautoWrap\"\xa4\x01\n" +
+	"\tauto_wrap\x18\v \x01(\bR\bautoWrap\"\x8d\x01\n" +
 	"\rHistoryCursor\x12\x17\n" +
 	"\aline_id\x18\x01 \x01(\x04R\x06lineId\x12\x1e\n" +
-	"\vrow_in_line\x18\x02 \x01(\x05R\trowInLine\x12\x1b\n" +
-	"\trow_index\x18\x03 \x01(\x05R\browIndex\x12=\n" +
-	"\asegment\x18\x04 \x01(\x0e2#.anytty.api.v1.HistoryCursorSegmentR\asegment\"\x88\x01\n" +
+	"\vrow_in_line\x18\x02 \x01(\x05R\trowInLine\x12=\n" +
+	"\asegment\x18\x04 \x01(\x0e2#.anytty.api.v1.HistoryCursorSegmentR\asegmentJ\x04\b\x03\x10\x04\"\x88\x01\n" +
 	"\fHistoryRange\x12\"\n" +
 	"\rstart_line_id\x18\x01 \x01(\x04R\vstartLineId\x12\x1b\n" +
 	"\tstart_col\x18\x02 \x01(\x05R\bstartCol\x12\x1e\n" +
 	"\vend_line_id\x18\x03 \x01(\x04R\tendLineId\x12\x17\n" +
-	"\aend_col\x18\x04 \x01(\x05R\x06endCol\"\xbd\x04\n" +
+	"\aend_col\x18\x04 \x01(\x05R\x06endCol\"\x9e\x04\n" +
 	"\x14HistoryWindowCommand\x126\n" +
 	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x124\n" +
-	"\x04mode\x18\x03 \x01(\x0e2 .anytty.api.v1.HistoryWindowModeR\x04mode\x12#\n" +
-	"\rbefore_offset\x18\x04 \x01(\x05R\fbeforeOffset\x12\x14\n" +
+	"\x04mode\x18\x03 \x01(\x0e2 .anytty.api.v1.HistoryWindowModeR\x04mode\x12\x14\n" +
 	"\x05limit\x18\x05 \x01(\x05R\x05limit\x12\x12\n" +
 	"\x04cols\x18\x06 \x01(\x05R\x04cols\x12\x14\n" +
 	"\x05token\x18\a \x01(\tR\x05token\x12-\n" +
@@ -2173,7 +2139,7 @@ const file_apipb_history_proto_rawDesc = "" +
 	" \x01(\v2\x1c.anytty.api.v1.HistoryCursorR\vafterCursor\x123\n" +
 	"\x16boundary_first_line_id\x18\v \x01(\x04R\x13boundaryFirstLineId\x121\n" +
 	"\x15boundary_last_line_id\x18\f \x01(\x04R\x12boundaryLastLineId\x121\n" +
-	"\x05range\x18\r \x01(\v2\x1b.anytty.api.v1.HistoryRangeR\x05rangeJ\x04\b\x01\x10\x02\"\x8f\x01\n" +
+	"\x05range\x18\r \x01(\v2\x1b.anytty.api.v1.HistoryRangeR\x05rangeJ\x04\b\x01\x10\x02J\x04\b\x04\x10\x05\"\x8f\x01\n" +
 	"\x12HistoryCopyCommand\x126\n" +
 	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12;\n" +
 	"\x06window\x18\x03 \x01(\v2#.anytty.api.v1.HistoryWindowCommandR\x06windowJ\x04\b\x01\x10\x02\"\x9a\x01\n" +
@@ -2199,7 +2165,7 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x17timestamp_end_unix_nano\x18\n" +
 	" \x01(\x03R\x14timestampEndUnixNano\x12%\n" +
 	"\x0eclipped_before\x18\v \x01(\bR\rclippedBefore\x12#\n" +
-	"\rclipped_after\x18\f \x01(\bR\fclippedAfter\"\xbd\x04\n" +
+	"\rclipped_after\x18\f \x01(\bR\fclippedAfter\"\xa6\x04\n" +
 	"\n" +
 	"HistoryRow\x12*\n" +
 	"\x03row\x18\x01 \x01(\v2\x18.anytty.api.v1.ScreenRowR\x03row\x12.\n" +
@@ -2218,18 +2184,16 @@ const file_apipb_history_proto_rawDesc = "" +
 	"screenCols\x12\x1f\n" +
 	"\vscreen_rows\x18\v \x01(\x05R\n" +
 	"screenRows\x12$\n" +
-	"\x0escreen_row_set\x18\f \x01(\bR\fscreenRowSet\x12\x1b\n" +
-	"\trow_index\x18\r \x01(\x05R\browIndex\x12&\n" +
+	"\x0escreen_row_set\x18\f \x01(\bR\fscreenRowSet\x12&\n" +
 	"\x0flogical_line_id\x18\x0e \x01(\x04R\rlogicalLineId\x12\x1e\n" +
-	"\vrow_in_line\x18\x0f \x01(\x05R\trowInLine\"\xa3\x06\n" +
+	"\vrow_in_line\x18\x0f \x01(\x05R\trowInLineJ\x04\b\r\x10\x0e\"\x84\x06\n" +
 	"\x13HistoryWindowResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12C\n" +
 	"\toperation\x18\x03 \x01(\x0e2%.anytty.api.v1.HistoryWindowOperationR\toperation\x12/\n" +
 	"\x04size\x18\x04 \x01(\v2\x1b.anytty.api.v1.TerminalSizeR\x04size\x12-\n" +
 	"\x04rows\x18\x05 \x03(\v2\x19.anytty.api.v1.HistoryRowR\x04rows\x124\n" +
-	"\x05lines\x18\x06 \x03(\v2\x1e.anytty.api.v1.HistoryLineSpanR\x05lines\x12#\n" +
-	"\rbefore_offset\x18\a \x01(\x05R\fbeforeOffset\x12\x1f\n" +
+	"\x05lines\x18\x06 \x03(\v2\x1e.anytty.api.v1.HistoryLineSpanR\x05lines\x12\x1f\n" +
 	"\vloaded_rows\x18\b \x01(\x05R\n" +
 	"loadedRows\x12\x1d\n" +
 	"\n" +
@@ -2246,7 +2210,7 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\flast_line_id\x18\x11 \x01(\x04R\n" +
 	"lastLineId\x124\n" +
 	"\x06cursor\x18\x12 \x01(\v2\x1c.anytty.api.v1.HistoryCursorR\x06cursor\x12.\n" +
-	"\x13timestamp_unix_nano\x18\x13 \x01(\x03R\x11timestampUnixNano\"'\n" +
+	"\x13timestamp_unix_nano\x18\x13 \x01(\x03R\x11timestampUnixNanoJ\x04\b\a\x10\b\"'\n" +
 	"\x11HistoryCopyResult\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"\xde\x04\n" +
 	"\x1aHistoryBacklogStatusResult\x126\n" +

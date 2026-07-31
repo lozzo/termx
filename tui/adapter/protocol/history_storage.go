@@ -162,7 +162,7 @@ func historyCursorToProto(cursor state.HistoryCursor) *apipb.HistoryCursor {
 	if !cursor.Valid {
 		return nil
 	}
-	return &apipb.HistoryCursor{LineId: cursor.BeforeLineID, RowInLine: int32(cursor.BeforeRowInLine), RowIndex: int32(cursor.BeforeRowIndex), Segment: historySegmentToProto(cursor.Segment)}
+	return &apipb.HistoryCursor{LineId: cursor.BeforeLineID, RowInLine: int32(cursor.BeforeRowInLine), Segment: historySegmentToProto(cursor.Segment)}
 }
 
 func historySegmentToProto(segment string) apipb.HistoryCursorSegment {
@@ -209,7 +209,7 @@ func historyWindowFromProto(window *apipb.HistoryWindowResult, requestedCols int
 	return state.HistoryWindow{
 		TerminalID: window.GetTerminal().GetTerminalId(), Token: window.GetToken(), Op: historyOperationFromProto(window.GetOperation()), Cols: cols,
 		SourceLines: sourceLines, Rows: rows, Lines: lines,
-		Cursor:  state.HistoryCursor{Valid: cursor != nil, BeforeLineID: cursor.GetLineId(), BeforeRowInLine: int(cursor.GetRowInLine()), BeforeRowIndex: int(cursor.GetRowIndex()), Segment: historySegmentFromProto(cursor.GetSegment())},
+		Cursor:  state.HistoryCursor{Valid: cursor != nil, BeforeLineID: cursor.GetLineId(), BeforeRowInLine: int(cursor.GetRowInLine()), Segment: historySegmentFromProto(cursor.GetSegment())},
 		HasMore: window.GetHasMore(), Generation: window.GetHistoryGeneration(),
 		Boundary:    state.HistoryBoundary{FirstLineID: window.GetFirstLineId(), LastLineID: window.GetLastLineId()},
 		LoadedLines: int(window.GetLoadedLines()), TotalLines: int(window.GetLogicalTotal()),
@@ -220,7 +220,7 @@ func historySourceLinesFromProto(window *apipb.HistoryWindowResult) []state.Hist
 	lines := make([]state.HistoryLogicalLine, 0, len(window.GetRows()))
 	for _, row := range window.GetRows() {
 		text, cells := historyTextAndCellsFromProto(row.GetRow())
-		next := state.HistoryLogicalLine{Text: text, Cells: cells, LineID: row.GetLogicalLineId(), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), ProjectionRowIndex: int(row.GetRowIndex()), TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE}
+		next := state.HistoryLogicalLine{Text: text, Cells: cells, LineID: row.GetLogicalLineId(), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE}
 		if len(lines) > 0 && sameProtoHistorySource(lines[len(lines)-1], next) {
 			appendProtoHistorySegment(&lines[len(lines)-1], text, cells)
 			continue
@@ -245,17 +245,17 @@ func historyRowsFromProto(window *apipb.HistoryWindowResult, sourceLines []state
 	rows := make([]state.HistoryRow, 0, len(window.GetRows()))
 	for _, row := range window.GetRows() {
 		text, cells := historyTextAndCellsFromProto(row.GetRow())
-		rows = append(rows, state.HistoryRow{Text: text, Cells: cells, TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LineID: row.GetLogicalLineId(), RowInLine: int(row.GetRowInLine()), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), ProjectionRowIndex: int(row.GetRowIndex()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE})
+		rows = append(rows, state.HistoryRow{Text: text, Cells: cells, TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LineID: row.GetLogicalLineId(), RowInLine: int(row.GetRowInLine()), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE})
 	}
 	lines := make([]state.HistoryLineSpan, 0, len(window.GetLines()))
 	for _, span := range window.GetLines() {
 		segment := ""
-		screenRow, projectionRow := 0, 0
+		screenRow := 0
 		screenRowSet := false
 		if index := int(span.GetStartRow()); index >= 0 && index < len(rows) {
-			segment, screenRow, screenRowSet, projectionRow = rows[index].Segment, rows[index].ScreenRow, rows[index].ScreenRowSet, rows[index].ProjectionRowIndex
+			segment, screenRow, screenRowSet = rows[index].Segment, rows[index].ScreenRow, rows[index].ScreenRowSet
 		}
-		lines = append(lines, state.HistoryLineSpan{LineID: span.GetLogicalLineId(), StartRow: int(span.GetStartRow()), EndRow: int(span.GetEndRow()), Kind: span.GetRowKind(), Segment: segment, SessionID: span.GetSessionId(), FrameID: span.GetFrameId(), FixedGrid: span.GetFixedGrid(), ScreenCols: int(span.GetScreenCols()), ScreenRow: screenRow, ScreenRowSet: screenRowSet, ProjectionRowIndex: projectionRow, ClippedBefore: span.GetClippedBefore(), ClippedAfter: span.GetClippedAfter()})
+		lines = append(lines, state.HistoryLineSpan{LineID: span.GetLogicalLineId(), StartRow: int(span.GetStartRow()), EndRow: int(span.GetEndRow()), Kind: span.GetRowKind(), Segment: segment, SessionID: span.GetSessionId(), FrameID: span.GetFrameId(), FixedGrid: span.GetFixedGrid(), ScreenCols: int(span.GetScreenCols()), ScreenRow: screenRow, ScreenRowSet: screenRowSet, ClippedBefore: span.GetClippedBefore(), ClippedAfter: span.GetClippedAfter()})
 	}
 	if len(lines) == 0 {
 		lines = protoLineSpansFromRows(rows, sourceLines)
@@ -338,7 +338,7 @@ func protoLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.History
 			continue
 		}
 		row := rows[start]
-		spans = append(spans, state.HistoryLineSpan{LineID: row.LineID, StartRow: start, EndRow: index - 1, Kind: row.Kind, Segment: row.Segment, SessionID: row.SessionID, FrameID: row.FrameID, FixedGrid: row.FixedGrid, ScreenCols: row.ScreenCols, ScreenRow: row.ScreenRow, ScreenRowSet: row.ScreenRowSet, ProjectionRowIndex: row.ProjectionRowIndex})
+		spans = append(spans, state.HistoryLineSpan{LineID: row.LineID, StartRow: start, EndRow: index - 1, Kind: row.Kind, Segment: row.Segment, SessionID: row.SessionID, FrameID: row.FrameID, FixedGrid: row.FixedGrid, ScreenCols: row.ScreenCols, ScreenRow: row.ScreenRow, ScreenRowSet: row.ScreenRowSet})
 		start = index
 	}
 	return spans

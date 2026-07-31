@@ -123,7 +123,7 @@ func runV3HistoryDump(ctx context.Context, application *clientruntime.Applicatio
 			Cols: int32(cfg.Cols), Limit: int32(cfg.Limit), Token: latest.GetToken(), HistoryGeneration: latest.GetHistoryGeneration(),
 			BoundaryFirstLineId: latest.GetFirstLineId(), BoundaryLastLineId: latest.GetLastLineId(),
 			AfterCursor: &apipb.HistoryCursor{
-				LineId: last.GetLogicalLineId(), RowInLine: last.GetRowInLine(), RowIndex: last.GetRowIndex(), Segment: last.GetSegment(),
+				LineId: last.GetLogicalLineId(), RowInLine: last.GetRowInLine(), Segment: last.GetSegment(),
 			},
 		}
 	}

@@ -38,17 +38,16 @@ const (
 
 // HistoryCursor 是 segment-aware logical-line cursor；client 只能原样传回，
 // 不能猜 older 边界。LineID 是权威分页坐标；RowInLine 只描述当前窗口本地
-// reflow 后的局部行。BeforeRowIndex 是旧 wire 兼容字段，不能作为 truth。
+// reflow 后的局部行。
 type HistoryCursor struct {
-	Segment        HistorySegment
-	SessionID      ScreenSessionID
-	FrameID        ScreenFrameID
-	LineID         LogicalLineID
-	RowInLine      int
-	BeforeRowIndex int
-	Generation     Generation
-	Token          HistoryToken
-	Valid          bool
+	Segment    HistorySegment
+	SessionID  ScreenSessionID
+	FrameID    ScreenFrameID
+	LineID     LogicalLineID
+	RowInLine  int
+	Generation Generation
+	Token      HistoryToken
+	Valid      bool
 }
 
 // HistoryBoundary 记录返回 window 或 frozen snapshot 的可见 logical boundary 和
@@ -59,8 +58,9 @@ type HistoryBoundary struct {
 	Cursor      HistoryCursor
 }
 
-// HistoryWindowRequest 是 latest/older/newer window 的 domain request。Cursor 和
-// boundary 都是 segment-aware，只能原样传回，不能重建。
+// HistoryWindowRequest 是 latest/older/newer window 的 domain request。只有
+// daemon 内部即时 latest 读取可以没有 Token；分页必须沿 frozen Token、Cursor 和
+// segment-aware boundary 原样继续，不能重建。
 type HistoryWindowRequest struct {
 	TerminalID string
 	Mode       HistoryWindowMode
@@ -110,18 +110,15 @@ type HistoryLineSpan struct {
 // HistoryRow 是 history.window 返回的一行 projected row。它的 cells 来自
 // logical-line/frame payload truth，renderer output 不能写回它。
 type HistoryRow struct {
-	Cells     []Cell
-	Kind      LineKind
-	Segment   HistorySegment
-	LineID    LogicalLineID
-	SessionID ScreenSessionID
-	FrameID   ScreenFrameID
-	RowInLine int
-	// ProjectionRowIndex 是旧 wire 兼容字段。copy/history 权威坐标是 LineID；
-	// visual row 只存在于当前窗口或 TUI 本地 reflow。
-	ProjectionRowIndex int
-	FixedGrid          bool
-	ScreenCols         int
+	Cells      []Cell
+	Kind       LineKind
+	Segment    HistorySegment
+	LineID     LogicalLineID
+	SessionID  ScreenSessionID
+	FrameID    ScreenFrameID
+	RowInLine  int
+	FixedGrid  bool
+	ScreenCols int
 	// ScreenRow 表达 fixed-grid screen-frame row 在原 terminal frame 中的物理
 	// 行号。它服务 copy/history display projection 的屏幕锚点；ordinary logical
 	// line 不应使用该字段作为历史顺序。
