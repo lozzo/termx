@@ -52,22 +52,19 @@ func TestOutputGapPersistsAndRejectsCrossEpochHistory(t *testing.T) {
 		}
 	}
 	before, err := store.Copy(history.HistoryCopyRequest{
-		Start: history.HistoryCursor{LineID: 1, Valid: true},
-		End:   history.HistoryCursor{LineID: 1, Valid: true},
+		Range: &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: 1}, End: history.HistoryCopyPosition{LineID: 1, Col: 6}},
 	})
 	if err != nil || before != "before" {
 		t.Fatalf("pre-gap copy failed: text=%q err=%v", before, err)
 	}
 	after, err := store.Copy(history.HistoryCopyRequest{
-		Start: history.HistoryCursor{LineID: 2, Valid: true},
-		End:   history.HistoryCursor{LineID: 2, Valid: true},
+		Range: &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: 2}, End: history.HistoryCopyPosition{LineID: 2, Col: 5}},
 	})
 	if err != nil || after != "after" {
 		t.Fatalf("post-gap copy failed: text=%q err=%v", after, err)
 	}
 	if _, err := store.Copy(history.HistoryCopyRequest{
-		Start: history.HistoryCursor{LineID: 1, Valid: true},
-		End:   history.HistoryCursor{LineID: 2, Valid: true},
+		Range: &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: 1}, End: history.HistoryCopyPosition{LineID: 2, Col: 5}},
 	}); !errors.Is(err, history.ErrHistorySyncLost) {
 		t.Fatalf("cross-gap copy error=%v", err)
 	}

@@ -85,6 +85,62 @@ func TestApplicationExecutorPanicReturnsGeneric500AndKeepsConnectionAlive(t *tes
 	}
 }
 
+func TestOversizedApplicationResultReturnsTyped429AndKeepsConnectionAlive(t *testing.T) {
+	executor := &oversizedOnceExecutor{}
+	sessionReady := make(chan *protocolSession, 1)
+	server := NewServer(
+		WithHistoryDisabled(),
+		WithApplicationExecutorFactory(func(port ApplicationSessionPort) ApplicationExecutor {
+			sessionReady <- port.(*protocolSession)
+			return executor
+		}),
+	)
+	client, daemon := memory.NewPair()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.ServeTransport(context.Background(), daemon) }()
+	session := awaitApplicationTestResult(t, sessionReady, "protocol session was not created")
+	completeServerProtocolHello(t, client)
+	payload, err := protocol.EncodeApplicationCommand(&apipb.CommandEnvelope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sendProtocolRequest(t, client, protocol.Request{ID: 51, Method: "api.execute", Params: payload})
+	_, typ, responsePayload := receiveProtocolFrame(t, client)
+	if typ != wire.TypeError {
+		t.Fatalf("oversized response type = %d, want error", typ)
+	}
+	response, err := protocol.DecodeErrorPayload(responsePayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.ID != 51 || response.Error.Code != protocolErrorExhausted || !strings.Contains(response.Error.Message, protocol.ErrApplicationResultTooLarge.Error()) {
+		t.Fatalf("oversized response = %#v", response)
+	}
+	session.requests.Wait()
+	assertProtocolSessionRequestStateIdle(t, server, session)
+
+	sendProtocolRequest(t, client, protocol.Request{ID: 52, Method: "api.execute", Params: payload})
+	_, typ, responsePayload = receiveProtocolFrame(t, client)
+	if typ != wire.TypeResponse {
+		t.Fatalf("post-oversize response type = %d, want response", typ)
+	}
+	decoded, err := protocol.DecodeResponsePayload(responsePayload)
+	if err != nil || decoded.ID != 52 {
+		t.Fatalf("post-oversize response = %#v, %v", decoded, err)
+	}
+	session.requests.Wait()
+	assertProtocolSessionRequestStateIdle(t, server, session)
+
+	_ = client.Close()
+	if err := awaitApplicationTestResult(t, serveDone, "post-oversize connection did not finish"); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("post-oversize transport error = %v", err)
+	}
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown error = %v", err)
+	}
+}
+
 func assertProtocolSessionRequestStateIdle(t *testing.T, server *Server, session *protocolSession) {
 	t.Helper()
 	if got := len(server.protocolRequestSlots); got != 0 {
@@ -117,6 +173,19 @@ const panicOnceSecret = "panic-secret-must-not-leak"
 
 type panicOnceExecutor struct {
 	calls atomic.Int32
+}
+
+type oversizedOnceExecutor struct {
+	calls atomic.Int32
+}
+
+func (executor *oversizedOnceExecutor) Execute(context.Context, *apipb.CommandEnvelope) *apipb.ResultEnvelope {
+	if executor.calls.Add(1) == 1 {
+		return &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_HistoryCopy{HistoryCopy: &apipb.HistoryCopyResult{
+			Text: strings.Repeat("x", protocol.MaxApplicationResultEnvelopeBytes),
+		}}}
+	}
+	return &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_Acknowledge{Acknowledge: &apipb.AcknowledgeResult{}}}
 }
 
 func (executor *panicOnceExecutor) Execute(context.Context, *apipb.CommandEnvelope) *apipb.ResultEnvelope {

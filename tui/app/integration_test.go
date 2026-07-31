@@ -5513,7 +5513,7 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 	}
 }
 
-func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
+func TestCopyModeInvalidatesTypedStaleHistoryWithoutDiscardingRows(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
 	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
@@ -5558,7 +5558,7 @@ func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
 	}
 	if err := runtime.Post(CopyModeHistoryResultMsg{
 		Result: port.HistoryResult{RequestID: 4},
-		Err:    fmt.Errorf("%w: protocol error 400: stale history window", port.ErrStaleHistoryWindow),
+		Err:    fmt.Errorf("%w: protocol stale resource", port.ErrStaleHistoryWindow),
 	}); err != nil {
 		t.Fatalf("post protocol stale older error: %v", err)
 	}
@@ -5571,8 +5571,123 @@ func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
 	if runtime.State().Surface.Err != "" || runtime.State().Session.LastError != "" {
 		t.Fatalf("protocol stale error must not surface raw protocol error, state=%#v", runtime.State())
 	}
-	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.BoundToken != "tok-1" || len(runtime.State().History.Rows) != 1 {
-		t.Fatalf("protocol stale error should keep current copy history view, state=%#v", runtime.State())
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.BoundToken != "" || runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 1 {
+		t.Fatalf("protocol stale error should clear stale state but keep rendered history, state=%#v", runtime.State())
+	}
+	toasts := runtime.State().Shell.Toasts
+	if len(toasts) != 1 || toasts[0].Title != "History window expired" {
+		t.Fatalf("protocol stale error should provide one visible recovery notice, got %#v", toasts)
+	}
+}
+
+func TestCopyModeShowsWindowTooLargeWithoutDiscardingRows(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
+
+	store := state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: 20, LastLineID: 30},
+		SourceLines: []state.HistoryLogicalLine{{Text: "visible", LineID: 30}},
+		Rows:        []state.HistoryRow{{Text: "visible", LineID: 30}},
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: 30},
+	}
+	pending, err := store.BeginOlder(state.HistoryPendingRequest{
+		ID:         5,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Cols:       78,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 30},
+		Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 30},
+	})
+	if err != nil {
+		t.Fatalf("begin older seed: %v", err)
+	}
+	runtime.state.History = pending
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   8,
+	}
+	if err := runtime.Post(CopyModeHistoryResultMsg{
+		Result: port.HistoryResult{RequestID: 5},
+		Err:    fmt.Errorf("%w: bounded response exceeded", port.ErrHistoryWindowTooLarge),
+	}); err != nil {
+		t.Fatalf("post history window too large: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain history window too large: %v", err)
+	}
+
+	result := runtime.State()
+	if result.History.Pending != nil || result.History.Token != "" || result.CopyMode.BoundToken != "" {
+		t.Fatalf("window-too-large must clear pending token state: %#v", result)
+	}
+	if len(result.History.Rows) != 1 || result.History.Rows[0].Text != "visible" {
+		t.Fatalf("window-too-large discarded rendered history: %#v", result.History.Rows)
+	}
+	if result.Surface.Err != "" || result.Session.LastError != "" {
+		t.Fatalf("window-too-large surfaced raw protocol error: %#v", result)
+	}
+	toasts := result.Shell.Toasts
+	if len(toasts) != 1 || toasts[0].Title != "History line is too large" {
+		t.Fatalf("window-too-large visible notice = %#v", toasts)
+	}
+}
+
+func TestCopyModeCopyTooLargeKeepsSelectionAndShowsWarning(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, nil)
+	selection := &state.CopySelection{
+		Anchor:        state.CopyPosition{Row: 0, Col: 0},
+		Focus:         state.CopyPosition{Row: 0, Col: 7},
+		LogicalAnchor: state.CopyLogicalPosition{Valid: true, LineID: 30, Col: 0},
+		LogicalFocus:  state.CopyLogicalPosition{Valid: true, LineID: 30, Col: 7},
+	}
+	runtime.state.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Rows:       []state.HistoryRow{{Text: "visible", LineID: 30}},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		Selection:  selection,
+	}
+
+	if err := runtime.Post(CopyModeCopyResultMsg{
+		Err:    fmt.Errorf("%w: bounded copy exceeded", port.ErrHistoryCopyTooLarge),
+		Commit: true,
+	}); err != nil {
+		t.Fatalf("post copy-too-large: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy-too-large: %v", err)
+	}
+
+	result := runtime.State()
+	if result.CopyMode.Selection == nil || result.CopyMode.BoundToken != "tok-1" || result.History.Token != "tok-1" {
+		t.Fatalf("copy-too-large discarded retryable selection state: %#v", result)
+	}
+	if len(result.Clipboard.Entries) != 0 {
+		t.Fatalf("copy-too-large wrote partial clipboard data: %#v", result.Clipboard)
+	}
+	toasts := result.Shell.Toasts
+	if len(toasts) != 1 || toasts[0].Title != "Selection is too large" {
+		t.Fatalf("copy-too-large visible warning = %#v", toasts)
 	}
 }
 

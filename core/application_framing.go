@@ -26,6 +26,9 @@ func (session *protocolSession) dispatchApplicationPayload(ctx context.Context, 
 	}
 	payload, err = protocol.EncodeApplicationResult(result)
 	if err != nil {
+		if errors.Is(err, protocol.ErrApplicationResultTooLarge) {
+			return nil, false, protocolErrorExhausted, err
+		}
 		return nil, false, protocolErrorInternal, err
 	}
 	return payload, false, 0, nil

@@ -362,17 +362,32 @@ func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, re
 		return history.HistoryWindow{}, err
 	}
 	if request.Mode == "" || request.Mode == history.HistoryWindowModeLatest {
+		if err := session.reserveHistoryToken(); err != nil {
+			return history.HistoryWindow{}, err
+		}
 		snapshot, err := session.server.TerminalHistoryFreeze(ctx, request.TerminalID, history.FreezeHistoryRequest{
 			TerminalID: request.TerminalID,
 			Cols:       request.Cols,
 			Limit:      request.Limit,
 		})
 		if err != nil {
+			session.rollbackHistoryTokenReservation()
 			return history.HistoryWindow{}, err
 		}
+		session.commitHistoryToken(request.TerminalID, snapshot.Token)
 		request.Token = snapshot.Token
+	} else if request.Token == "" {
+		return history.HistoryWindow{}, history.ErrHistoryInvalidMutation
+	} else if !session.ownsHistoryToken(request.TerminalID, request.Token) {
+		return history.HistoryWindow{}, history.ErrHistoryStaleWindow
 	}
-	return session.server.TerminalHistoryWindow(ctx, request.TerminalID, request)
+	window, err := session.server.TerminalHistoryWindow(ctx, request.TerminalID, request)
+	if err != nil {
+		if request.Mode == "" || request.Mode == history.HistoryWindowModeLatest || historyTokenInvalidated(err) {
+			session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
+		}
+	}
+	return window, err
 }
 
 // ApplicationHistoryCopy 从 core frozen history token 复制文本。
@@ -380,7 +395,17 @@ func (session *protocolSession) ApplicationHistoryCopy(ctx context.Context, requ
 	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
 		return "", err
 	}
-	return session.server.TerminalHistoryCopy(ctx, request.TerminalID, request)
+	if request.Token == "" {
+		return "", history.ErrHistoryInvalidMutation
+	}
+	if !session.ownsHistoryToken(request.TerminalID, request.Token) {
+		return "", history.ErrHistoryStaleWindow
+	}
+	text, err := session.server.TerminalHistoryCopy(ctx, request.TerminalID, request)
+	if historyTokenInvalidated(err) {
+		session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
+	}
+	return text, err
 }
 
 // ApplicationHistoryRelease 释放 core-owned frozen history token。
@@ -388,7 +413,17 @@ func (session *protocolSession) ApplicationHistoryRelease(ctx context.Context, t
 	if _, err := session.server.GetTerminal(terminalID); err != nil {
 		return err
 	}
+	if token == "" {
+		return history.ErrHistoryInvalidMutation
+	}
+	if !session.forgetHistoryToken(terminalID, token) {
+		return history.ErrHistoryStaleWindow
+	}
 	return session.server.TerminalHistoryRelease(ctx, terminalID, token)
+}
+
+func historyTokenInvalidated(err error) bool {
+	return errors.Is(err, history.ErrHistoryStaleWindow)
 }
 
 // ApplicationHistoryBacklogStatus 返回 history output consumer 的诊断投影。

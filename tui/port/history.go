@@ -115,7 +115,10 @@ type CoreClient interface {
 }
 
 var (
-	ErrMissingHistoryResponse = errors.New("missing history response")
-	ErrUnexpectedHistoryCall  = errors.New("unexpected history call")
-	ErrStaleHistoryWindow     = errors.New("stale history window")
+	ErrMissingHistoryResponse   = errors.New("missing history response")
+	ErrUnexpectedHistoryCall    = errors.New("unexpected history call")
+	ErrStaleHistoryWindow       = errors.New("stale history window")
+	ErrHistoryResourceExhausted = errors.New("history resources are exhausted")
+	ErrHistoryWindowTooLarge    = errors.New("history line is too large to display")
+	ErrHistoryCopyTooLarge      = errors.New("history selection is too large to copy")
 )

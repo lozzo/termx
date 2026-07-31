@@ -76,7 +76,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req 
 		Mode:     apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST, Limit: int32(req.Rows), Cols: int32(req.Cols), HistoryGeneration: req.GenerationBoundary,
 	})
 	if err != nil {
-		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
+		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
 	return port.HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -88,7 +88,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req p
 		BeforeCursor: historyCursorToProto(req.Cursor), BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
 	})
 	if err != nil {
-		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
+		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
 	return port.HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -100,7 +100,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryNewer(ctx context.Context, req p
 		AfterCursor: historyCursorToProto(req.Cursor), BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
 	})
 	if err != nil {
-		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
+		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
 	return port.HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -112,7 +112,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req 
 		BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
 	})
 	if err != nil {
-		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
+		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
 	return port.HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -131,7 +131,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, r
 	}
 	result, err := adapter.Application.HistoryCopy(ctx, &apipb.HistoryCopyCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Window: window})
 	if err != nil {
-		return port.HistoryCopyRangeResult{}, normalizeProtocolHistoryError(err)
+		return port.HistoryCopyRangeResult{}, normalizeProtocolHistoryCopyError(err)
 	}
 	return port.HistoryCopyRangeResult{Text: result.GetText()}, nil
 }
@@ -150,7 +150,7 @@ func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, comm
 		finishRPC(0)
 	}
 	if err != nil {
-		return state.HistoryWindow{}, normalizeProtocolHistoryError(err)
+		return state.HistoryWindow{}, normalizeProtocolHistoryWindowError(err)
 	}
 	finishConvert := perftrace.Measure("tui.protocol.history_window." + mode + ".convert")
 	converted := historyWindowFromProto(window, int(command.GetCols()))
@@ -180,17 +180,29 @@ func historySegmentToProto(segment string) apipb.HistoryCursorSegment {
 	}
 }
 
-func normalizeProtocolHistoryError(err error) error {
+func normalizeProtocolHistoryWindowError(err error) error {
+	return normalizeProtocolHistoryError(err, port.ErrHistoryWindowTooLarge)
+}
+
+func normalizeProtocolHistoryCopyError(err error) error {
+	return normalizeProtocolHistoryError(err, port.ErrHistoryCopyTooLarge)
+}
+
+func normalizeProtocolHistoryError(err error, nonRetryableLimitError error) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, port.ErrStaleHistoryWindow) {
 		return err
 	}
-	if strings.Contains(strings.ToLower(err.Error()), port.ErrStaleHistoryWindow.Error()) {
-		// 中文说明：core 用 stale history window 拒绝过期 token/cursor，这是历史会话控制信号；
-		// TUI 需要按 typed sentinel 处理，不能把 protocol 400 直接显示给用户。
+	if clientruntime.CodeOf(err) == clientruntime.ErrorStaleResource {
 		return fmt.Errorf("%w: %v", port.ErrStaleHistoryWindow, err)
+	}
+	if clientruntime.CodeOf(err) == clientruntime.ErrorResourceExhausted {
+		if clientruntime.IsRetryable(err) {
+			return fmt.Errorf("%w: %v", port.ErrHistoryResourceExhausted, err)
+		}
+		return fmt.Errorf("%w: %v", nonRetryableLimitError, err)
 	}
 	return err
 }

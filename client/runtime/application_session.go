@@ -338,10 +338,14 @@ func runtimeErrorFromProto(apiError *apipb.ApiError) error {
 		code = ErrorNotFound
 	case apipb.ApiErrorCode_API_ERROR_CODE_STALE_SESSION:
 		code = ErrorStaleSession
+	case apipb.ApiErrorCode_API_ERROR_CODE_STALE_RESOURCE:
+		code = ErrorStaleResource
+	case apipb.ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED:
+		code = ErrorResourceExhausted
 	case apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED:
 		code = ErrorCanceled
 	case apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED:
 		code = ErrorEntitlement
 	}
-	return &Error{Code: code, Message: apiError.GetMessage(), Attempted: apiError.GetAttempted()}
+	return &Error{Code: code, Message: apiError.GetMessage(), Attempted: apiError.GetAttempted(), Retryable: apiError.GetRetryable()}
 }

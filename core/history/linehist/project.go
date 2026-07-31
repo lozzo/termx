@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/anytty/anytty/core/history"
 	vterm "github.com/anytty/anytty/vterm/vterm"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 // 本文件是 linehist 的查询投影层：把宽度无关的 logical line 展开成
@@ -74,12 +74,29 @@ func cellsFromVTermCells(cells []vterm.Cell) []history.Cell {
 	return out
 }
 
-// normalizedLimit 与旧 history window 合同一致：非法 limit 回退 100。
-func normalizedLimit(limit int) int {
-	if limit <= 0 {
-		return 100
+func normalizedLimit(limit int) (int, error) {
+	if limit < 1 || limit > history.MaxHistoryWindowLines {
+		return 0, history.ErrHistoryWindowLimit
 	}
-	return limit
+	return limit, nil
+}
+
+// historyRowBudgetBytes conservatively tracks the coalesced protobuf shape
+// without importing transport or generated API types into the history store.
+func historyRowBudgetBytes(row history.HistoryRow) int {
+	size := 96
+	for index, cell := range row.Cells {
+		if index > 0 && historyCellsShareBudgetRun(row.Cells[index-1], cell) {
+			size += len(cell.Text)
+			continue
+		}
+		size += 24 + len(cell.Text) + len(cell.Style.FG) + len(cell.Style.BG) + len(cell.LinkURL) + len(cell.LinkParams)
+	}
+	return size
+}
+
+func historyCellsShareBudgetRun(left history.Cell, right history.Cell) bool {
+	return left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
 }
 
 func cloneRows(rows []history.HistoryRow) []history.HistoryRow {

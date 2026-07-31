@@ -808,6 +808,8 @@ function apiErrorCode(code: AnyTTYApiCommon.ApiErrorCode | undefined): string {
     case AnyTTYApiCommon.ApiErrorCode.UNAVAILABLE: return 'unavailable'
     case AnyTTYApiCommon.ApiErrorCode.INTERNAL: return 'internal'
     case AnyTTYApiCommon.ApiErrorCode.ENTITLEMENT_DENIED: return 'entitlement_denied'
+    case AnyTTYApiCommon.ApiErrorCode.RESOURCE_EXHAUSTED: return 'resource_exhausted'
+    case AnyTTYApiCommon.ApiErrorCode.STALE_RESOURCE: return 'stale_resource'
     default: return ''
   }
 }

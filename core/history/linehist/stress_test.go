@@ -42,7 +42,7 @@ func TestStressLargeVolumeProjectionStaysExact(t *testing.T) {
 	if len(oldestTexts) == 0 || oldestTexts[0] != "line00001" {
 		t.Fatalf("oldest window must start at line00001, got %v", oldestTexts)
 	}
-	texts := collectAllTextsForTest(t, harness.store, 12, 2000)
+	texts := collectAllTextsForTest(t, harness.store, 12, history.MaxHistoryWindowLines)
 	want := make([]string, 0, totalLines)
 	for i := 1; i <= totalLines; i++ {
 		want = append(want, fmt.Sprintf("line%05d", i))
@@ -87,7 +87,7 @@ func TestStressColdHistorySurvivesReopenExactly(t *testing.T) {
 	}
 	// seal-on-eviction 口径：滚出的行跨重启不丢不重；重启时仍在屏上的行
 	// 随 vterm 生命周期消失（emulator 是唯一屏幕真值，文件不存屏）。
-	texts := collectAllTextsForTest(t, reopened.store, 12, 1000)
+	texts := collectAllTextsForTest(t, reopened.store, 12, history.MaxHistoryWindowLines)
 	want := make([]string, 0, coldCount)
 	for i := 1; i <= coldCount; i++ {
 		want = append(want, fmt.Sprintf("line%05d", i))

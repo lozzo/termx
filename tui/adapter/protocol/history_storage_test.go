@@ -80,9 +80,30 @@ func TestProtocolCoreClientAdapterUsesGeneratedCopyAndRelease(t *testing.T) {
 }
 
 func TestProtocolCoreClientAdapterNormalizesStaleHistoryError(t *testing.T) {
-	err := normalizeProtocolHistoryError(errors.New("stale history window: generation changed"))
+	err := normalizeProtocolHistoryWindowError(&clientruntime.Error{Code: clientruntime.ErrorStaleResource, Message: "generation changed"})
 	if !errors.Is(err, port.ErrStaleHistoryWindow) {
 		t.Fatalf("stale error = %v", err)
+	}
+	messageOnly := errors.New("stale history window: generation changed")
+	if normalized := normalizeProtocolHistoryWindowError(messageOnly); !errors.Is(normalized, messageOnly) || errors.Is(normalized, port.ErrStaleHistoryWindow) {
+		t.Fatalf("display text must not classify stale history: %v", normalized)
+	}
+}
+
+func TestProtocolCoreClientAdapterClassifiesResourceExhaustionByOperation(t *testing.T) {
+	nonRetryable := &clientruntime.Error{Code: clientruntime.ErrorResourceExhausted, Message: "bounded response exceeded"}
+	if err := normalizeProtocolHistoryWindowError(nonRetryable); !errors.Is(err, port.ErrHistoryWindowTooLarge) || errors.Is(err, port.ErrHistoryCopyTooLarge) {
+		t.Fatalf("window resource exhaustion = %v", err)
+	}
+	if err := normalizeProtocolHistoryCopyError(nonRetryable); !errors.Is(err, port.ErrHistoryCopyTooLarge) || errors.Is(err, port.ErrHistoryWindowTooLarge) {
+		t.Fatalf("copy resource exhaustion = %v", err)
+	}
+
+	retryable := &clientruntime.Error{Code: clientruntime.ErrorResourceExhausted, Message: "session quota", Retryable: true}
+	for _, err := range []error{normalizeProtocolHistoryWindowError(retryable), normalizeProtocolHistoryCopyError(retryable)} {
+		if !errors.Is(err, port.ErrHistoryResourceExhausted) || errors.Is(err, port.ErrHistoryWindowTooLarge) || errors.Is(err, port.ErrHistoryCopyTooLarge) {
+			t.Fatalf("retryable resource exhaustion = %v", err)
+		}
 	}
 }
 

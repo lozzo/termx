@@ -61,6 +61,7 @@ export interface UseTerminalSessionResult {
   releaseResizeOwner(): Promise<TerminalResizeControl>
   loadScrollback(limit?: number, alternate?: boolean, cols?: number): Promise<TerminalScrollbackLoadResult>
   prefetchScrollback(limit?: number, alternate?: boolean, cols?: number): Promise<boolean>
+  resetScrollback(): void
   freezeScrollback(): void
   resumeLiveScrollback(): string
   markSyncLost(reason?: string): void
@@ -911,6 +912,18 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     return liveText
   }, [publishTerminalTextNow])
 
+  const resetScrollback = useCallback(() => {
+    scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal history is being reloaded', 'AbortError'))
+    scrollbackAbortControllerRef.current = null
+    scrollbackPrefetchPendingRef.current?.controller.abort(new DOMException('Terminal history is being reloaded', 'AbortError'))
+    scrollbackPrefetchPendingRef.current = null
+    scrollbackPrefetchRef.current = null
+    clientRef.current?.resetScrollback()
+    loadedScrollbackRowsRef.current = 0
+    hasMoreScrollbackRef.current = true
+    activeScrollbackModeRef.current = 'normal'
+  }, [])
+
   const loadScrollback = useCallback(async (limit = 100, alternate = false, cols?: number): Promise<TerminalScrollbackLoadResult> => {
     scrollbackFrozenRef.current = true
     const mode: 'normal' | 'alternate' = alternate ? 'alternate' : 'normal'
@@ -1107,6 +1120,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     releaseResizeOwner,
     loadScrollback,
     prefetchScrollback,
+    resetScrollback,
     freezeScrollback,
     resumeLiveScrollback,
     markSyncLost,

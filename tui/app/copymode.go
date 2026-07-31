@@ -319,8 +319,14 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 		case CopyModeCopyResultMsg:
 			if msg.Err != nil {
 				if errors.Is(msg.Err, port.ErrStaleHistoryWindow) {
-					root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "History window expired", Body: "retry copy mode", DismissAfterTicks: 3})
+					return invalidateCopyModeHistory(root, deps, "History window expired", "Exit and reopen copy mode to reload history")
+				}
+				if errors.Is(msg.Err, port.ErrHistoryCopyTooLarge) {
+					root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "Selection is too large", Body: "Select a smaller range and copy again", DismissAfterTicks: 5})
 					return root.Advance(), nil
+				}
+				if errors.Is(msg.Err, port.ErrHistoryResourceExhausted) {
+					return invalidateCopyModeHistory(root, deps, "History is temporarily unavailable", "Exit and reopen copy mode to retry")
 				}
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				root.Session = root.Session.SetError(msg.Err.Error())
@@ -1127,7 +1133,19 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		if errors.Is(msg.Err, port.ErrStaleHistoryWindow) {
-			return rejectStaleHistoryWindowError(root, msg), nil
+			return rejectStaleHistoryWindowError(root, msg, deps)
+		}
+		if errors.Is(msg.Err, port.ErrHistoryWindowTooLarge) {
+			if staleCopyModeHistoryResult(root, msg) {
+				return root, nil
+			}
+			return invalidateCopyModeHistory(root, deps, "History line is too large", "This line cannot be shown; loaded rows remain available")
+		}
+		if errors.Is(msg.Err, port.ErrHistoryResourceExhausted) {
+			if staleCopyModeHistoryResult(root, msg) {
+				return root, nil
+			}
+			return invalidateCopyModeHistory(root, deps, "History is temporarily unavailable", "Exit and reopen copy mode to retry")
 		}
 		if staleCopyModeHistoryResult(root, msg) {
 			return root, nil
@@ -1334,18 +1352,19 @@ func rejectMatchingHistoryResponse(root state.Root, msg CopyModeHistoryResultMsg
 	return setCopyModeError(root, err.Error())
 }
 
-func rejectStaleHistoryWindowError(root state.Root, msg CopyModeHistoryResultMsg) state.Root {
+func rejectStaleHistoryWindowError(root state.Root, msg CopyModeHistoryResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
 	if root.History.Pending == nil || state.RequestID(msg.Result.RequestID) != root.History.Pending.ID || !copyModeOwnsPendingHistory(root) {
-		return root
+		return root, nil
 	}
 	pending := *root.History.Pending
 	// 中文说明：protocol stale history window 表达 frozen token/cursor 已过期；
 	// 这是请求生命周期控制信号，不能把 protocol 400 暴露成用户可见错误。
 	root.History.Pending = nil
 	if pending.Kind == state.HistoryRequestLatest && root.CopyMode.Entering {
-		return exitCopyMode(root).Advance()
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "History window expired", Body: "Reopen copy mode to reload history", DismissAfterTicks: 5})
+		return exitCopyMode(root).Advance(), nil
 	}
-	return root.Advance()
+	return invalidateCopyModeHistory(root, deps, "History window expired", "Exit and reopen copy mode to reload history")
 }
 
 func copyModeOwnsPendingHistory(root state.Root) bool {
@@ -1709,10 +1728,14 @@ func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []
 	viewID := copyHistoryWorkingViewID(root)
 	root = exitCopyMode(root)
 	root = root.WithoutCopyHistorySession(viewID)
+	return root, releaseHistoryTokenEffects(deps, endpointID, terminalID, token)
+}
+
+func releaseHistoryTokenEffects(deps CopyModeDeps, endpointID state.EndpointID, terminalID string, token string) []Effect {
 	if deps.Core == nil || token == "" {
-		return root, nil
+		return nil
 	}
-	return root, []Effect{FuncEffect{
+	return []Effect{FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
@@ -1724,6 +1747,25 @@ func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []
 			return NoopMsg{}
 		},
 	}}
+}
+
+func invalidateCopyModeHistory(root state.Root, deps CopyModeDeps, title string, body string) (state.Root, []Effect) {
+	token := root.CopyMode.BoundToken
+	if token == "" {
+		token = root.History.Token
+	}
+	endpointID := root.CopyMode.EndpointID
+	terminalID := root.CopyMode.TerminalID
+	root.History.Pending = nil
+	root.History.Token = ""
+	root.History.HasMore = false
+	root.History.Cursor = state.HistoryCursor{}
+	root.History.Exhausted = state.ExhaustedMarker{}
+	root.CopyMode.BoundToken = ""
+	root.CopyMode.Selection = nil
+	root.CopyMode.Mark = nil
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: title, Body: body, DismissAfterTicks: 5})
+	return root.Advance(), releaseHistoryTokenEffects(deps, endpointID, terminalID, token)
 }
 
 func exitCopyMode(root state.Root) state.Root {

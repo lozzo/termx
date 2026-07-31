@@ -16,6 +16,9 @@ const terminalHarness = vi.hoisted(() => ({
   inputRecoveryFailure: null as string | null,
   unrelatedBanner: false,
   sessionSendInput: vi.fn(),
+  historySnapshot: false,
+  historyLoad: vi.fn(),
+  historyReset: vi.fn(),
 }))
 
 vi.mock('@xterm/addon-fit', () => ({
@@ -111,16 +114,19 @@ vi.mock('./useTerminalSession', () => ({
         }
       : { phase: 'connected', terminalChannels: { [terminalId]: { state: 'open' } } },
     inputRecoveryFailure: terminalHarness.inputRecoveryFailure,
-    terminalSnapshot: null,
-    terminalText: '',
+    terminalSnapshot: terminalHarness.historySnapshot
+      ? { text: 'live terminal content', cols: 80, rows: 24, alternateScreen: false }
+      : null,
+    terminalText: terminalHarness.historySnapshot ? 'live terminal content' : '',
     terminalInfo: null,
     resizeControl: { canResize: false, reason: 'follower' },
     sendInput: terminalHarness.sessionSendInput,
     sendResize: () => false,
     requestResizeOwner: async () => ({ canResize: true, reason: 'owner' }),
     releaseResizeOwner: async () => ({ canResize: false, reason: 'follower' }),
-    loadScrollback: async () => ({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false }),
+    loadScrollback: terminalHarness.historyLoad,
     prefetchScrollback: async () => false,
+    resetScrollback: terminalHarness.historyReset,
     freezeScrollback: () => {},
     resumeLiveScrollback: () => '',
     markSyncLost: () => {},
@@ -137,7 +143,10 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.instances.length = 0
     terminalHarness.inputRecoveryFailure = null
     terminalHarness.unrelatedBanner = false
+    terminalHarness.historySnapshot = false
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
+    terminalHarness.historyLoad.mockReset().mockResolvedValue({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
+    terminalHarness.historyReset.mockReset()
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       disconnect() {}
@@ -384,6 +393,55 @@ describe('Terminal input modifier boundary', () => {
 
     await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows stale history recovery and does not retry until reload is pressed', async () => {
+    terminalHarness.historySnapshot = true
+    terminalHarness.historyLoad
+      .mockRejectedValueOnce(Object.assign(new Error('expired token'), { code: 'stale_resource' }))
+      .mockResolvedValueOnce({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances.length).toBeGreaterThan(0))
+    const outputs = document.querySelectorAll('.xterm-screen')
+    const output = outputs.item(outputs.length - 1)
+    if (!output) throw new Error('missing terminal screen')
+
+    fireEvent.wheel(output, { deltaY: -1 })
+    const alert = await screen.findByTestId('anytty-history-error')
+    expect(alert).toHaveAttribute('role', 'alert')
+    expect(screen.getByRole('button', { name: 'Reload history' })).toHaveClass('min-h-11')
+    expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1)
+
+    fireEvent.wheel(output, { deltaY: -1 })
+    await Promise.resolve()
+    expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reload history' }))
+    await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(2))
+    expect(terminalHarness.historyReset).toHaveBeenCalledOnce()
+  })
+
+  it('dismisses a nonretryable oversized history line without offering reload', async () => {
+    terminalHarness.historySnapshot = true
+    terminalHarness.historyLoad.mockRejectedValueOnce(Object.assign(new Error('bounded response exceeded'), {
+      code: 'resource_exhausted',
+      retryable: false,
+    }))
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances.length).toBeGreaterThan(0))
+    const outputs = document.querySelectorAll('.xterm-screen')
+    const output = outputs.item(outputs.length - 1)
+    if (!output) throw new Error('missing terminal screen')
+
+    fireEvent.wheel(output, { deltaY: -1 })
+    const alert = await screen.findByTestId('anytty-history-error')
+    expect(alert).toHaveTextContent('A terminal history line is too large to display.')
+    expect(screen.queryByRole('button', { name: 'Reload history' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(screen.queryByTestId('anytty-history-error')).toBeNull())
+    expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1)
+    expect(terminalHarness.historyReset).not.toHaveBeenCalled()
   })
 
   it('returns the underlying acceptance result from imperative input and paste handles', async () => {

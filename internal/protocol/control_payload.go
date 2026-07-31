@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/anytty/anytty/proto/apipb"
@@ -8,6 +9,11 @@ import (
 	"github.com/anytty/anytty/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
+
+const applicationResultEnvelopeMarginBytes = 64 << 10
+const MaxApplicationResultEnvelopeBytes = wire.MaxFrameSize - applicationResultEnvelopeMarginBytes
+
+var ErrApplicationResultTooLarge = errors.New("application result envelope exceeds framing budget")
 
 func EncodeHelloPayload(hello Hello) ([]byte, error) {
 	return proto.Marshal(&wirepb.Hello{Version: uint32(hello.Version), Client: hello.Client, Server: hello.Server})
@@ -98,6 +104,9 @@ func DecodeApplicationCommand(payload []byte) (*apipb.CommandEnvelope, error) {
 func EncodeApplicationResult(envelope *apipb.ResultEnvelope) ([]byte, error) {
 	if envelope == nil {
 		return nil, fmt.Errorf("protocol: application result is required")
+	}
+	if size := proto.Size(envelope); size > MaxApplicationResultEnvelopeBytes {
+		return nil, fmt.Errorf("%w: maximum is %d bytes", ErrApplicationResultTooLarge, MaxApplicationResultEnvelopeBytes)
 	}
 	return proto.Marshal(envelope)
 }

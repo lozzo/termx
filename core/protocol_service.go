@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/internal/protocol"
 	"github.com/anytty/anytty/proto/wire"
 	"github.com/anytty/anytty/shared/perftrace"
@@ -113,6 +114,8 @@ type protocolSession struct {
 	attachmentCount               int
 	fileTransferCount             int
 	eventSubscriptionCount        int
+	historyTokenReservations      int
+	historyTokens                 map[protocolHistoryResourceKey]struct{}
 	fileMu                        sync.Mutex
 	fileChannels                  map[uint16]*sessionFileTransfer
 	fileIDs                       map[string]uint16
@@ -127,6 +130,11 @@ const (
 	protocolChannelAttachment protocolChannelKind = iota + 1
 	protocolChannelFileTransfer
 )
+
+type protocolHistoryResourceKey struct {
+	TerminalID string
+	Token      history.HistoryToken
+}
 
 type applicationEventSubscription struct {
 	cancel context.CancelFunc
@@ -245,6 +253,7 @@ func newProtocolSessionObserved(server *Server, conn transport.Transport, scope 
 		requestSlots:       make(chan struct{}, server.cfg.protocolLimits.MaxInFlightRequests),
 		activeRequests:     make(map[uint64]struct{}),
 		channelKinds:       make(map[uint16]protocolChannelKind),
+		historyTokens:      make(map[protocolHistoryResourceKey]struct{}),
 		lifecycleObserver:  observer,
 	}
 	// 中文说明：application executor 与当前连接 session 同寿命；具体 API Layer 装配由 composition root 注入。
@@ -261,6 +270,7 @@ func (session *protocolSession) run(ctx context.Context) error {
 	defer func() {
 		cancel()
 		session.requests.Wait()
+		session.releaseAllHistorySnapshots()
 		session.releaseAllFileTransfers()
 		session.stopEvents()
 		session.releaseProtocolAttachments()
@@ -1247,8 +1257,77 @@ func (session *protocolSession) releaseEventSubscription() {
 	session.resourceMu.Unlock()
 }
 
+func (session *protocolSession) reserveHistoryToken() error {
+	session.resourceMu.Lock()
+	defer session.resourceMu.Unlock()
+	if session.totalResourcesLocked() >= session.protocolLimits().MaxResources {
+		return fmt.Errorf("%w: history token limit reached", ErrProtocolResourceExhausted)
+	}
+	session.historyTokenReservations++
+	return nil
+}
+
+func (session *protocolSession) rollbackHistoryTokenReservation() {
+	session.resourceMu.Lock()
+	if session.historyTokenReservations > 0 {
+		session.historyTokenReservations--
+	}
+	session.resourceMu.Unlock()
+}
+
+func (session *protocolSession) commitHistoryToken(terminalID string, token history.HistoryToken) {
+	session.resourceMu.Lock()
+	if session.historyTokenReservations > 0 {
+		session.historyTokenReservations--
+	}
+	if session.historyTokens == nil {
+		session.historyTokens = make(map[protocolHistoryResourceKey]struct{})
+	}
+	session.historyTokens[protocolHistoryResourceKey{TerminalID: terminalID, Token: token}] = struct{}{}
+	session.resourceMu.Unlock()
+}
+
+func (session *protocolSession) ownsHistoryToken(terminalID string, token history.HistoryToken) bool {
+	session.resourceMu.Lock()
+	_, ok := session.historyTokens[protocolHistoryResourceKey{TerminalID: terminalID, Token: token}]
+	session.resourceMu.Unlock()
+	return ok
+}
+
+func (session *protocolSession) forgetHistoryToken(terminalID string, token history.HistoryToken) bool {
+	key := protocolHistoryResourceKey{TerminalID: terminalID, Token: token}
+	session.resourceMu.Lock()
+	_, ok := session.historyTokens[key]
+	if ok {
+		delete(session.historyTokens, key)
+	}
+	session.resourceMu.Unlock()
+	return ok
+}
+
+func (session *protocolSession) releaseOwnedHistoryToken(terminalID string, token history.HistoryToken) {
+	if !session.forgetHistoryToken(terminalID, token) {
+		return
+	}
+	_ = session.server.TerminalHistoryRelease(context.Background(), terminalID, token)
+}
+
+func (session *protocolSession) releaseAllHistorySnapshots() {
+	session.resourceMu.Lock()
+	keys := make([]protocolHistoryResourceKey, 0, len(session.historyTokens))
+	for key := range session.historyTokens {
+		keys = append(keys, key)
+	}
+	clear(session.historyTokens)
+	session.historyTokenReservations = 0
+	session.resourceMu.Unlock()
+	for _, key := range keys {
+		_ = session.server.TerminalHistoryRelease(context.Background(), key.TerminalID, key.Token)
+	}
+}
+
 func (session *protocolSession) totalResourcesLocked() int {
-	return session.attachmentCount + session.fileTransferCount + session.eventSubscriptionCount
+	return session.attachmentCount + session.fileTransferCount + session.eventSubscriptionCount + session.historyTokenReservations + len(session.historyTokens)
 }
 
 func normalizeAttachMode(mode string) string {

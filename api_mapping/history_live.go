@@ -18,8 +18,11 @@ func ValidateHistoryLiveCommand(command *apipb.CommandEnvelope) error {
 		if err := validateTerminalRefForContext(value.HistoryWindow.GetTerminal(), requestContext); err != nil {
 			return err
 		}
-		if value.HistoryWindow.GetLimit() < 0 || value.HistoryWindow.GetCols() < 0 {
-			return validation("history_window", "limit and cols must not be negative")
+		if value.HistoryWindow.GetLimit() < 1 || value.HistoryWindow.GetLimit() > history.MaxHistoryWindowLines {
+			return validation("history_window.limit", "must be between 1 and 512")
+		}
+		if value.HistoryWindow.GetCols() < 0 {
+			return validation("history_window.cols", "must not be negative")
 		}
 		switch value.HistoryWindow.GetMode() {
 		case apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED,
@@ -44,6 +47,9 @@ func ValidateHistoryLiveCommand(command *apipb.CommandEnvelope) error {
 			return validation("history_copy.window.terminal", "must match history_copy.terminal")
 		}
 		if selection := value.HistoryCopy.GetWindow().GetRange(); selection != nil {
+			if selection.GetStartLineId() == 0 || selection.GetEndLineId() == 0 {
+				return validation("history_copy.window.range", "line ids are required")
+			}
 			if selection.GetStartCol() < 0 || selection.GetEndCol() < 0 {
 				return validation("history_copy.window.range", "columns must not be negative")
 			}
@@ -100,7 +106,8 @@ func HistoryWindowRequestFromProto(command *apipb.HistoryWindowCommand) history.
 	return request
 }
 
-// HistoryCopyRequestFromProto 把 Proto copy range 映射为 frozen history cursor range。
+// HistoryCopyRequestFromProto maps the explicit start-inclusive/end-exclusive
+// display-cell range without reusing pagination cursor coordinates.
 func HistoryCopyRequestFromProto(command *apipb.HistoryCopyCommand) history.HistoryCopyRequest {
 	window := command.GetWindow()
 	request := history.HistoryCopyRequest{
@@ -109,8 +116,10 @@ func HistoryCopyRequestFromProto(command *apipb.HistoryCopyCommand) history.Hist
 		Cols:       int(window.GetCols()),
 	}
 	if value := window.GetRange(); value != nil {
-		request.Start = history.HistoryCursor{LineID: history.LogicalLineID(value.GetStartLineId()), RowInLine: int(value.GetStartCol()), Generation: history.Generation(window.GetHistoryGeneration()), Token: request.Token, Valid: true}
-		request.End = history.HistoryCursor{LineID: history.LogicalLineID(value.GetEndLineId()), RowInLine: int(value.GetEndCol()), Generation: history.Generation(window.GetHistoryGeneration()), Token: request.Token, Valid: true}
+		request.Range = &history.HistoryCopyRange{
+			Start: history.HistoryCopyPosition{LineID: history.LogicalLineID(value.GetStartLineId()), Col: int(value.GetStartCol())},
+			End:   history.HistoryCopyPosition{LineID: history.LogicalLineID(value.GetEndLineId()), Col: int(value.GetEndCol())},
+		}
 	}
 	return request
 }

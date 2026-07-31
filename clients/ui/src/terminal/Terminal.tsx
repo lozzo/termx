@@ -217,6 +217,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     hasMore: false,
     alternate: false,
   }))
+  const resetScrollbackRef = useRef<() => void>(() => {})
+  const retryHistoryLoadRef = useRef<() => void>(() => {})
   const freezeScrollbackRef = useRef<() => void>(() => {})
   const resumeLiveScrollbackRef = useRef<() => string>(() => '')
   const resumeFrozenHistoryAtBottomRef = useRef<(includePrimed?: boolean) => boolean>(() => false)
@@ -256,6 +258,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionResetHandlersRef = useRef(new Set<() => void>())
   const [surfaceReady, setSurfaceReady] = useState(false)
   const [historyLoadingVisible, setHistoryLoadingVisible] = useState(false)
+  const [historyLoadFailure, setHistoryLoadFailure] = useState<'none' | 'reloadable' | 'line-too-large'>('none')
 
   const showHistoryLoading = useCallback(() => {
     if (historyLoadingHideTimerRef.current !== null) {
@@ -513,6 +516,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useEffect(() => {
     loadScrollbackRef.current = terminalSession.loadScrollback
   }, [terminalSession.loadScrollback])
+
+  useEffect(() => {
+    resetScrollbackRef.current = terminalSession.resetScrollback
+  }, [terminalSession.resetScrollback])
 
   useEffect(() => {
     surfaceReadyRef.current = false
@@ -902,6 +909,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const generation = terminalGenerationRef.current + 1
     terminalGenerationRef.current = generation
     terminalDisposedRef.current = false
+    setHistoryLoadFailure('none')
     if (historyApplyTimerRef.current !== null) {
       window.clearTimeout(historyApplyTimerRef.current)
       historyApplyTimerRef.current = null
@@ -1279,6 +1287,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       let keepVisibleForApply = false
       try {
         const result = await loadScrollbackRef.current(requestRows, alternate, term.cols)
+        setHistoryLoadFailure('none')
         historyLoadedRowsRequestedRef.current = result.operation === 'replace'
           ? result.totalRows
           : Math.max(historyLoadedRowsRequestedRef.current, result.totalRows)
@@ -1300,6 +1309,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
         return result
       } catch (error) {
+        const historyError = error as Error & { code?: string, retryable?: boolean }
+        const lineTooLarge = historyError instanceof Error
+          && historyError.code === 'resource_exhausted'
+          && historyError.retryable === false
         pendingHistoryViewportRef.current = null
         pullingHistoryRef.current = false
         logTerminal('history_load_failed', {
@@ -1309,6 +1322,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             loadedRows: historyLoadedRowsRequestedRef.current,
           },
         })
+        historyHasMoreRef.current = false
+        historyLoadArmedByUserRef.current = false
+        setHistoryLoadFailure(lineTooLarge ? 'line-too-large' : 'reloadable')
         return emptyResult()
       } finally {
         historyLoadingRef.current = false
@@ -1318,6 +1334,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           resumeFrozenHistoryAtBottomRef.current(true)
         }
       }
+    }
+
+    retryHistoryLoadRef.current = () => {
+      resetScrollbackRef.current()
+      historyLoadedRowsRequestedRef.current = 0
+      historyLoadedRowsAppliedRef.current = 0
+      historyHasMoreRef.current = true
+      historyLoadArmedByUserRef.current = true
+      setHistoryLoadFailure('none')
+      void loadScrollbackPage(true)
     }
 
     const maybePrefetchScrollback = () => {
@@ -2223,6 +2249,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       historyRequestColsRef.current = 0
       historyLoadedRowsRequestedRef.current = 0
       historyHasMoreRef.current = true
+      retryHistoryLoadRef.current = () => {}
       hideHistoryLoading(true)
       container.querySelectorAll('[data-anytty-terminal-frame-hold]').forEach((element) => element.remove())
       maybePrefetchScrollbackRef.current = () => {}
@@ -2453,6 +2480,24 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--anytty-text)]/60 [animation-delay:150ms]" />
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--anytty-text)]/60 [animation-delay:300ms]" />
           </div>
+        </div>
+      ) : null}
+      {historyLoadFailure !== 'none' && !showConnectingOverlay ? (
+        <div
+          className={`absolute inset-x-2 z-[60] flex min-h-11 items-center justify-between gap-3 border border-amber-500/40 bg-[var(--anytty-surface)] px-3 py-2 text-sm text-[var(--anytty-text)] ${inputFailureVisible ? 'top-14' : 'top-3'}`}
+          data-testid="anytty-history-error"
+          role="alert"
+        >
+          <span>{t(historyLoadFailure === 'line-too-large' ? 'terminal.tools.historyLineTooLarge' : 'terminal.tools.historyUnavailable')}</span>
+          <button
+            type="button"
+            className="min-h-11 shrink-0 border border-[var(--anytty-border)] px-3 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            onClick={historyLoadFailure === 'line-too-large'
+              ? () => setHistoryLoadFailure('none')
+              : () => retryHistoryLoadRef.current()}
+          >
+            {t(historyLoadFailure === 'line-too-large' ? 'terminal.tools.dismissHistoryError' : 'terminal.tools.reloadHistory')}
+          </button>
         </div>
       ) : null}
     </section>

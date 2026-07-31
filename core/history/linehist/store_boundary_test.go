@@ -169,8 +169,7 @@ func TestStoreFrozenTokenAndLiveViewServePreClearContent(t *testing.T) {
 	copied, err := harness.store.Copy(history.HistoryCopyRequest{
 		Token: snapshot.Token,
 		Cols:  12,
-		Start: history.HistoryCursor{LineID: 1, Valid: true},
-		End:   history.HistoryCursor{LineID: 2, Valid: true},
+		Range: &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: 1}, End: history.HistoryCopyPosition{LineID: 2, Col: 6}},
 	})
 	if err != nil {
 		t.Fatalf("copy from frozen token after clear: %v", err)

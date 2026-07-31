@@ -3,12 +3,14 @@ package linehist
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/shared/perftrace"
 	vterm "github.com/anytty/anytty/vterm/vterm"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 // ScreenRow 是查询时刻 emulator 当前屏的一条物理行快照。
@@ -334,21 +336,24 @@ func (store *Store) LatestWindow(req history.HistoryWindowRequest) (history.Hist
 		return history.HistoryWindow{}, err
 	}
 	total := viewLogicalTotal(view)
-	limit := normalizedLimit(req.Limit)
+	limit, err := normalizedLimit(req.Limit)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
 	start := maxInt(0, total-limit)
 	if err := validateGapRange(view, start, total); err != nil {
 		return history.HistoryWindow{}, err
 	}
-	page, err := store.logicalRowsForLineRange(view, start, total)
+	page, actualStart, err := store.windowRowsBackward(view, start, total)
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
 	responseRows = len(page)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
-		boundary.Cursor = cursorBeforeLine(page[0], view.generation, req.Token, start > 0)
+		boundary.Cursor = cursorBeforeLine(page[0], view.generation, req.Token, actualStart > 0)
 	}
-	return buildWindow(req, page, total, history.HistoryWindowReplace, boundary, view.generation, start > 0), nil
+	return buildWindow(req, page, total, history.HistoryWindowReplace, boundary, view.generation, actualStart > 0), nil
 }
 
 // OlderWindow 按 cursor.LineID 向更旧方向 prepend logical-line 分页。
@@ -365,22 +370,25 @@ func (store *Store) OlderWindow(req history.HistoryWindowRequest) (history.Histo
 		boundary := history.HistoryBoundary{Cursor: history.HistoryCursor{Generation: view.generation, Token: req.Token}}
 		return buildWindow(req, nil, total, history.HistoryWindowPrepend, boundary, view.generation, false), nil
 	}
-	limit := normalizedLimit(req.Limit)
+	limit, err := normalizedLimit(req.Limit)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
 	end := clampInt(int(req.Cursor.LineID)-1, 0, total)
 	start := maxInt(0, end-limit)
 	if err := validateGapRange(view, start, end); err != nil {
 		return history.HistoryWindow{}, err
 	}
-	page, err := store.logicalRowsForLineRange(view, start, end)
+	page, actualStart, err := store.windowRowsBackward(view, start, end)
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
 	responseRows = len(page)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
-		boundary.Cursor = cursorBeforeLine(page[0], view.generation, req.Token, start > 0)
+		boundary.Cursor = cursorBeforeLine(page[0], view.generation, req.Token, actualStart > 0)
 	}
-	return buildWindow(req, page, total, history.HistoryWindowPrepend, boundary, view.generation, start > 0), nil
+	return buildWindow(req, page, total, history.HistoryWindowPrepend, boundary, view.generation, actualStart > 0), nil
 }
 
 // OldestWindow 从投影 head 返回 replace window（TUI copy mode `g` 跳转）。
@@ -393,12 +401,15 @@ func (store *Store) OldestWindow(req history.HistoryWindowRequest) (history.Hist
 		return history.HistoryWindow{}, err
 	}
 	total := viewLogicalTotal(view)
-	limit := normalizedLimit(req.Limit)
+	limit, err := normalizedLimit(req.Limit)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
 	end := minInt(total, limit)
 	if err := validateGapRange(view, 0, end); err != nil {
 		return history.HistoryWindow{}, err
 	}
-	page, err := store.logicalRowsForLineRange(view, 0, end)
+	page, actualEnd, err := store.windowRowsForward(view, 0, end)
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
@@ -408,7 +419,7 @@ func (store *Store) OldestWindow(req history.HistoryWindowRequest) (history.Hist
 		boundary.Cursor = cursorBeforeLine(page[0], view.generation, req.Token, false)
 		boundary.LastLineID = history.LogicalLineID(total)
 	}
-	return buildWindow(req, page, total, history.HistoryWindowReplace, boundary, view.generation, end < total), nil
+	return buildWindow(req, page, total, history.HistoryWindowReplace, boundary, view.generation, actualEnd < total), nil
 }
 
 // NewerWindow 按 cursor.LineID 向更新方向 append logical-line 分页。
@@ -425,23 +436,26 @@ func (store *Store) NewerWindow(req history.HistoryWindowRequest) (history.Histo
 		boundary := history.HistoryBoundary{Cursor: history.HistoryCursor{Generation: view.generation, Token: req.Token}}
 		return buildWindow(req, nil, total, history.HistoryWindowAppend, boundary, view.generation, false), nil
 	}
-	limit := normalizedLimit(req.Limit)
+	limit, err := normalizedLimit(req.Limit)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
 	start := clampInt(int(req.Cursor.LineID), 0, total)
 	end := minInt(total, start+limit)
 	if err := validateGapRange(view, start, end); err != nil {
 		return history.HistoryWindow{}, err
 	}
-	page, err := store.logicalRowsForLineRange(view, start, end)
+	page, actualEnd, err := store.windowRowsForward(view, start, end)
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
 	responseRows = len(page)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
-		boundary.Cursor = cursorBeforeLine(page[len(page)-1], view.generation, req.Token, end < total)
+		boundary.Cursor = cursorBeforeLine(page[len(page)-1], view.generation, req.Token, actualEnd < total)
 		boundary.LastLineID = history.LogicalLineID(total)
 	}
-	return buildWindow(req, page, total, history.HistoryWindowAppend, boundary, view.generation, end < total), nil
+	return buildWindow(req, page, total, history.HistoryWindowAppend, boundary, view.generation, actualEnd < total), nil
 }
 
 // Freeze 记录当前投影边界。冷段是不可变文件前缀（记 coldCount 即可），
@@ -496,9 +510,8 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 	}, nil
 }
 
-// Copy 按 cursor LineID 选择行区间并返回 plain text。选择语义与旧 store
-// 一致：start line 未命中回退到 head，end line 未命中回退到 tail，行间
-// 以 "\n" 连接。冷段 LineID 直接映射记录序号，只 materialize 命中区间。
+// Copy incrementally reads one logical line at a time. It never accumulates
+// more than MaxHistoryCopyBytes and never returns partial text on overflow.
 func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
 	finish := perftrace.Measure("core.linehist.copy")
 	copiedRows := 0
@@ -512,40 +525,140 @@ func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
 		return "", err
 	}
 	total := viewLogicalTotal(view)
-	if total == 0 {
-		return "", nil
-	}
 	startLine := 0
 	endLine := total
-	if req.Start.Valid || req.End.Valid {
-		startOffset := lineOffsetForCopyCursor(req.Start.LineID, total, 0)
-		endOffset := lineOffsetForCopyCursor(req.End.LineID, total, total-1)
-		if startOffset > endOffset {
-			startOffset, endOffset = endOffset, startOffset
+	if req.Range != nil {
+		if err := validateCopyRange(*req.Range); err != nil {
+			return "", err
 		}
-		startLine = startOffset
-		endLine = endOffset + 1
+		if total == 0 || req.Range.Start.LineID == 0 || req.Range.End.LineID == 0 ||
+			int(req.Range.Start.LineID) > total || int(req.Range.End.LineID) > total {
+			return "", history.ErrHistoryInvalidMutation
+		}
+		startLine = lineOffsetForCopyPosition(req.Range.Start.LineID, total, 0)
+		endLine = lineOffsetForCopyPosition(req.Range.End.LineID, total, total-1) + 1
+	} else if total == 0 {
+		return "", nil
+	}
+	if endLine-startLine > history.MaxHistoryCopyLines {
+		return "", history.ErrHistoryCopyTooLarge
 	}
 	if err := validateGapRange(view, startLine, endLine); err != nil {
 		return "", err
 	}
-	rows, err := store.logicalRowsForLineRange(view, startLine, endLine)
-	if err != nil {
-		return "", err
+	var text strings.Builder
+	for offset := startLine; offset < endLine; offset++ {
+		rows, err := store.logicalRowsForLineRange(view, offset, offset+1)
+		if err != nil {
+			return "", err
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		startCol, endCol := 0, historyRowDisplayWidth(rows[0])
+		if req.Range != nil && offset == startLine {
+			startCol = req.Range.Start.Col
+		}
+		if req.Range != nil && offset == endLine-1 {
+			endCol = req.Range.End.Col
+		}
+		separatorBytes := 0
+		if offset > startLine {
+			separatorBytes = 1
+		}
+		remaining := history.MaxHistoryCopyBytes - text.Len() - separatorBytes
+		if remaining < 0 {
+			return "", history.ErrHistoryCopyTooLarge
+		}
+		fragment, ok := rowTextRangeBounded(rows[0].Cells, startCol, endCol, remaining)
+		if !ok {
+			return "", history.ErrHistoryCopyTooLarge
+		}
+		if separatorBytes != 0 {
+			text.WriteByte('\n')
+		}
+		text.WriteString(fragment)
+		copiedRows++
 	}
-	copiedRows = len(rows)
-	texts := make([]string, 0, len(rows))
-	for _, row := range rows {
-		texts = append(texts, rowText(row.Cells))
-	}
-	return joinLines(texts), nil
+	return text.String(), nil
 }
 
-func lineOffsetForCopyCursor(id history.LogicalLineID, total int, fallback int) int {
+func lineOffsetForCopyPosition(id history.LogicalLineID, total int, fallback int) int {
 	if id == 0 {
 		return clampInt(fallback, 0, maxInt(0, total-1))
 	}
 	return clampInt(int(id)-1, 0, maxInt(0, total-1))
+}
+
+func validateCopyRange(selection history.HistoryCopyRange) error {
+	if selection.Start.Col < 0 || selection.End.Col < 0 {
+		return history.ErrHistoryInvalidMutation
+	}
+	if selection.Start.LineID > selection.End.LineID ||
+		(selection.Start.LineID == selection.End.LineID && selection.Start.Col > selection.End.Col) {
+		return history.ErrHistoryInvalidMutation
+	}
+	return nil
+}
+
+func historyRowDisplayWidth(row history.HistoryRow) int {
+	width := 0
+	for _, cell := range row.Cells {
+		if cell.Width > 0 {
+			width += cell.Width
+		}
+	}
+	return width
+}
+
+func rowTextRange(cells []history.Cell, startCol int, endCol int) string {
+	text, _ := rowTextRangeBounded(cells, startCol, endCol, int(^uint(0)>>1))
+	return text
+}
+
+// rowTextRangeBounded computes a single logical-line fragment without ever
+// growing the result past maxBytes. The caller only appends a complete
+// fragment, so copy overflow cannot expose partial text.
+func rowTextRangeBounded(cells []history.Cell, startCol int, endCol int, maxBytes int) (string, bool) {
+	if endCol <= startCol {
+		return "", true
+	}
+	var text strings.Builder
+	col := 0
+	for _, cell := range cells {
+		width := maxInt(0, cell.Width)
+		cellEnd := col + width
+		if width == 0 {
+			if col >= startCol && col < endCol {
+				if len(cell.Text) > maxBytes-text.Len() {
+					return "", false
+				}
+				text.WriteString(cell.Text)
+			}
+		} else {
+			naturalWidth := maxInt(0, xansi.StringWidth(cell.Text))
+			textEnd := col + minInt(width, naturalWidth)
+			if textEnd > startCol && col < endCol {
+				if len(cell.Text) > maxBytes-text.Len() {
+					return "", false
+				}
+				text.WriteString(cell.Text)
+			}
+			paddingStart := minInt(cellEnd, col+naturalWidth)
+			paddingColumns := maxInt(0, minInt(cellEnd, endCol)-maxInt(paddingStart, startCol))
+			if paddingColumns > maxBytes-text.Len() {
+				return "", false
+			}
+			if paddingColumns > 0 {
+				text.WriteString(strings.Repeat(" ", paddingColumns))
+			}
+		}
+		col = cellEnd
+		if col >= endCol {
+			break
+		}
+	}
+	return text.String(), true
 }
 
 // Release 释放 frozen token。
@@ -683,7 +796,7 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 		frozen, ok := store.frozen[req.Token]
 		store.mu.Unlock()
 		if !ok {
-			return req, liveView{}, history.ErrHistoryInvalidMutation
+			return req, liveView{}, history.ErrHistoryStaleWindow
 		}
 		if req.Cols <= 0 {
 			req.Cols = frozen.cols
@@ -745,6 +858,66 @@ func (store *Store) logicalRowsForLineRange(view liveView, start int, end int) (
 	return rows, nil
 }
 
+// windowRowsBackward reads nearest-to-cursor lines first, then restores
+// chronological order. A byte-budget truncation therefore never skips the
+// lines immediately adjacent to the requested cursor.
+func (store *Store) windowRowsBackward(view liveView, start int, end int) ([]history.HistoryRow, int, error) {
+	rows := make([]history.HistoryRow, 0, end-start)
+	used := 0
+	actualStart := end
+	for offset := end - 1; offset >= start; offset-- {
+		lineRows, err := store.logicalRowsForLineRange(view, offset, offset+1)
+		if err != nil {
+			return nil, end, err
+		}
+		if len(lineRows) == 0 {
+			continue
+		}
+		cost := historyRowBudgetBytes(lineRows[0])
+		if used+cost > history.MaxHistoryWindowBytes {
+			if len(rows) == 0 {
+				return nil, end, history.ErrHistoryWindowTooLarge
+			}
+			break
+		}
+		used += cost
+		actualStart = offset
+		rows = append(rows, lineRows[0])
+	}
+	for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
+		rows[left], rows[right] = rows[right], rows[left]
+	}
+	return rows, actualStart, nil
+}
+
+// windowRowsForward preserves the lines nearest the forward cursor and stops
+// before the first line that would exceed the response budget.
+func (store *Store) windowRowsForward(view liveView, start int, end int) ([]history.HistoryRow, int, error) {
+	rows := make([]history.HistoryRow, 0, end-start)
+	used := 0
+	actualEnd := start
+	for offset := start; offset < end; offset++ {
+		lineRows, err := store.logicalRowsForLineRange(view, offset, offset+1)
+		if err != nil {
+			return nil, start, err
+		}
+		if len(lineRows) == 0 {
+			continue
+		}
+		cost := historyRowBudgetBytes(lineRows[0])
+		if used+cost > history.MaxHistoryWindowBytes {
+			if len(rows) == 0 {
+				return nil, start, history.ErrHistoryWindowTooLarge
+			}
+			break
+		}
+		used += cost
+		actualEnd = offset + 1
+		rows = append(rows, lineRows[0])
+	}
+	return rows, actualEnd, nil
+}
+
 func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, retention uint64, start int, end int) ([]history.HistoryRow, error) {
 	if end <= start {
 		return nil, nil
@@ -755,7 +928,7 @@ func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, ret
 	lines, err := store.engine.LinesAtRetention(retention, firstLine, coldBase+end)
 	if err != nil {
 		if errors.Is(err, errRetentionChanged) {
-			return nil, history.ErrHistoryInvalidMutation
+			return nil, history.ErrHistoryStaleWindow
 		}
 		return nil, err
 	}

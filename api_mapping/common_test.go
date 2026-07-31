@@ -81,10 +81,17 @@ func TestCoreErrorsMapToStableCodesAndRetryability(t *testing.T) {
 	}
 }
 
-func TestProtocolResourceExhaustionMapsToTypedUnavailable(t *testing.T) {
+func TestProtocolResourceExhaustionMapsToTypedResourceExhausted(t *testing.T) {
 	mapped := ErrorToProto(CoreError(corev2.ErrProtocolResourceExhausted), true)
-	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || !mapped.GetRetryable() || !mapped.GetAttempted() {
+	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED || !mapped.GetRetryable() || !mapped.GetAttempted() {
 		t.Fatalf("resource exhaustion mapped to %#v", mapped)
+	}
+}
+
+func TestInvalidHistoryCopyMapsToNonRetryableInvalidRequest(t *testing.T) {
+	mapped := ErrorToProto(CoreError(corehistory.ErrHistoryInvalidMutation), true)
+	if mapped.GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST || mapped.GetRetryable() || !mapped.GetAttempted() {
+		t.Fatalf("invalid history copy mapped to %#v", mapped)
 	}
 }
 

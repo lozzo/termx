@@ -287,15 +287,17 @@ func ValidateReadyPeerSession(request AttemptRequest, session ReadyPeerSession) 
 type ErrorCode string
 
 const (
-	ErrorInvalidRequest   ErrorCode = "invalid_request"
-	ErrorUnsupportedRoute ErrorCode = "unsupported_route"
-	ErrorIdentity         ErrorCode = "identity"
-	ErrorAuthorization    ErrorCode = "authorization"
-	ErrorNotFound         ErrorCode = "not_found"
-	ErrorUnavailable      ErrorCode = "unavailable"
-	ErrorCanceled         ErrorCode = "canceled"
-	ErrorStaleSession     ErrorCode = "stale_session"
-	ErrorEntitlement      ErrorCode = "entitlement_denied"
+	ErrorInvalidRequest    ErrorCode = "invalid_request"
+	ErrorUnsupportedRoute  ErrorCode = "unsupported_route"
+	ErrorIdentity          ErrorCode = "identity"
+	ErrorAuthorization     ErrorCode = "authorization"
+	ErrorNotFound          ErrorCode = "not_found"
+	ErrorUnavailable       ErrorCode = "unavailable"
+	ErrorCanceled          ErrorCode = "canceled"
+	ErrorStaleSession      ErrorCode = "stale_session"
+	ErrorStaleResource     ErrorCode = "stale_resource"
+	ErrorResourceExhausted ErrorCode = "resource_exhausted"
+	ErrorEntitlement       ErrorCode = "entitlement_denied"
 )
 
 // Error 是 runtime 边界返回的稳定错误；Cause 只用于日志和 errors.Is/As，不作为 UI 文本协议。
@@ -306,6 +308,9 @@ type Error struct {
 	// Attempted 表示请求是否已经越过 runtime generation guard 并调用 concrete adapter。
 	// input/paste 等非幂等操作只有在 false 时才允许 consumer 发起新的显式 recovery，不能自动重放 payload。
 	Attempted bool
+	// Retryable is copied from the typed API error. Consumers must not infer it
+	// from the display message.
+	Retryable bool
 }
 
 func (err *Error) Error() string {
@@ -348,6 +353,11 @@ func WasAttempted(err error) bool {
 		return runtimeErr.Attempted
 	}
 	return true
+}
+
+func IsRetryable(err error) bool {
+	var runtimeErr *Error
+	return errors.As(err, &runtimeErr) && runtimeErr.Retryable
 }
 
 func runtimeError(code ErrorCode, message string, cause error) error {

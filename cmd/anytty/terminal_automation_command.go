@@ -288,7 +288,13 @@ func captureTerminalHistory(ctx context.Context, client terminalProtocolClient, 
 	if len(window.GetRows()) == 0 {
 		return "", nil
 	}
-	result, err := client.HistoryCopy(ctx, &apipb.HistoryCopyCommand{Terminal: terminal, Window: &apipb.HistoryWindowCommand{Token: window.GetToken(), Cols: int32(cols), HistoryGeneration: window.GetHistoryGeneration(), Range: &apipb.HistoryRange{StartLineId: window.GetFirstLineId(), EndLineId: window.GetLastLineId()}}})
+	endCol := int32(0)
+	for _, cell := range window.GetRows()[len(window.GetRows())-1].GetRow().GetCells() {
+		if cell.GetWidth() > 0 {
+			endCol += cell.GetWidth()
+		}
+	}
+	result, err := client.HistoryCopy(ctx, &apipb.HistoryCopyCommand{Terminal: terminal, Window: &apipb.HistoryWindowCommand{Token: window.GetToken(), Cols: int32(cols), HistoryGeneration: window.GetHistoryGeneration(), Range: &apipb.HistoryRange{StartLineId: window.GetFirstLineId(), EndLineId: window.GetLastLineId(), EndCol: endCol}}})
 	if err != nil {
 		return "", err
 	}

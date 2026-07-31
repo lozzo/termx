@@ -26,6 +26,16 @@ const (
 	HistoryWindowModeOldest HistoryWindowMode = "oldest"
 )
 
+const (
+	// MaxHistoryWindowLines is the public and core-side hard ceiling for one
+	// logical-line page. MaxHistoryWindowBytes is a conservative pre-marshal
+	// payload budget for the remote history projection.
+	MaxHistoryWindowLines = 512
+	MaxHistoryWindowBytes = 60 << 10
+	MaxHistoryCopyBytes   = 1 << 20
+	MaxHistoryCopyLines   = 65536
+)
+
 // HistoryWindowOp 告诉 consumer 如何应用返回的 authoritative window。它由 core-v2
 // 根据 token/cursor state 推导，不能由 TUI local row count 推导。
 type HistoryWindowOp string
@@ -79,14 +89,29 @@ type FreezeHistoryRequest struct {
 	Limit      int
 }
 
+// HistoryCopyPosition is a logical line plus a display-cell column. Columns
+// are grapheme display cells, not bytes, runes, or reflow row coordinates.
+type HistoryCopyPosition struct {
+	LineID LogicalLineID
+	Col    int
+}
+
+// HistoryCopyRange is start-inclusive and end-exclusive. A range ending at
+// column zero of a later line includes the intervening newline but no text
+// from the end line.
+type HistoryCopyRange struct {
+	Start HistoryCopyPosition
+	End   HistoryCopyPosition
+}
+
 // HistoryCopyRequest 要求 core-v2 从 authoritative frozen history token 复制文本。
-// 它不能从 TUI rows 或 live surface cache 满足。
+// 它不能从 TUI rows 或 live surface cache 满足。nil Range copies the full
+// frozen window and remains subject to MaxHistoryCopyBytes.
 type HistoryCopyRequest struct {
 	TerminalID string
 	Token      HistoryToken
 	Cols       int
-	Start      HistoryCursor
-	End        HistoryCursor
+	Range      *HistoryCopyRange
 }
 
 // HistoryLineSpan 把 projected rows 映射回 logical line 和 segment truth。它是

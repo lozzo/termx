@@ -1034,6 +1034,10 @@ func apiError(err error) *apipb.ApiError {
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED, "client operation was cancelled"
 		case clientruntime.ErrorStaleSession:
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_STALE_SESSION, "client session is stale"
+		case clientruntime.ErrorStaleResource:
+			code, message = apipb.ApiErrorCode_API_ERROR_CODE_STALE_RESOURCE, "client resource is stale"
+		case clientruntime.ErrorResourceExhausted:
+			code, message = apipb.ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED, "client resource capacity is exhausted"
 		case clientruntime.ErrorEntitlement:
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, "Relay is not included in the current AnyTTY Cloud plan"
 		case clientruntime.ErrorUnavailable, clientruntime.ErrorUnsupportedRoute:
@@ -1042,6 +1046,7 @@ func apiError(err error) *apipb.ApiError {
 		var runtimeErr *clientruntime.Error
 		if errors.As(err, &runtimeErr) {
 			attempted = runtimeErr.Attempted
+			retryable = runtimeErr.Retryable
 		}
 	}
 	return &apipb.ApiError{Code: code, Message: message, Retryable: retryable, Attempted: attempted}

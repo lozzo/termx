@@ -24,6 +24,7 @@ func TestValidateHistoryWindowRequiresFrozenPaginationToken(t *testing.T) {
 				Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
 					Terminal: terminal,
 					Mode:     mode,
+					Limit:    1,
 				}},
 			}
 			if err := ValidateHistoryLiveCommand(command); err == nil {
@@ -40,6 +41,7 @@ func TestValidateHistoryWindowRequiresFrozenPaginationToken(t *testing.T) {
 			Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
 				Terminal: terminal,
 				Mode:     mode,
+				Limit:    1,
 			}},
 		}
 		if err := ValidateHistoryLiveCommand(command); err != nil {
@@ -51,10 +53,36 @@ func TestValidateHistoryWindowRequiresFrozenPaginationToken(t *testing.T) {
 		Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
 			Terminal: terminal,
 			Mode:     apipb.HistoryWindowMode(99),
+			Limit:    1,
 		}},
 	}
 	if err := ValidateHistoryLiveCommand(unknown); err == nil {
 		t.Fatal("unknown history window mode must fail validation")
+	}
+}
+
+func TestValidateHistoryCopyRequiresPositiveRangeLineIDs(t *testing.T) {
+	terminal := &apipb.TerminalRef{EndpointId: "studio", TerminalId: "term-1"}
+	command := func(startLineID, endLineID uint64) *apipb.CommandEnvelope {
+		return &apipb.CommandEnvelope{
+			Context: terminalRequestContext("history-copy-range"),
+			Command: &apipb.CommandEnvelope_HistoryCopy{HistoryCopy: &apipb.HistoryCopyCommand{
+				Terminal: terminal,
+				Window: &apipb.HistoryWindowCommand{
+					Terminal: terminal,
+					Token:    "frozen-token",
+					Range:    &apipb.HistoryRange{StartLineId: startLineID, EndLineId: endLineID},
+				},
+			}},
+		}
+	}
+	for _, ids := range [][2]uint64{{0, 1}, {1, 0}, {0, 0}} {
+		if err := ValidateHistoryLiveCommand(command(ids[0], ids[1])); err == nil {
+			t.Fatalf("copy range line IDs %v must fail validation", ids)
+		}
+	}
+	if err := ValidateHistoryLiveCommand(command(1, 2)); err != nil {
+		t.Fatalf("positive copy range line IDs failed validation: %v", err)
 	}
 }
 

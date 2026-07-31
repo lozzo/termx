@@ -66,6 +66,24 @@ describe('CoreV2ScrollbackPager', () => {
     expect(source.releases).toEqual([{ terminalId: 'terminal-1', token: 'wide-token', generation: '1' }])
   })
 
+  it('drops a stale token and only reloads after an explicit latest request', async () => {
+    const stale = Object.assign(new Error('history expired'), { code: 'stale_resource' })
+    const source = new MockSource([
+      window({ lineId: '10', token: 'token-1', generation: '1', hasMore: true }),
+      stale,
+      window({ lineId: '20', token: 'token-2', generation: '2', hasMore: false }),
+    ])
+    const pager = new CoreV2ScrollbackPager(source)
+
+    const latest = await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 1, cols: 80 })
+    await expect(pager.load({ terminalId: 'terminal-1', offset: latest.totalLoadedRows, limit: 1, cols: 80 })).rejects.toBe(stale)
+    expect(source.releases).toEqual([{ terminalId: 'terminal-1', token: 'token-1', generation: '1' }])
+
+    const reloaded = await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 1, cols: 80 })
+    expect(reloaded.historyGeneration).toBe('2')
+    expect(source.requests.map((request) => request.mode)).toEqual(['latest', 'older', 'latest'])
+  })
+
   it('serializes structured history styles and tail fill into replay ANSI', () => {
     const replay = coreV2HistoryRowsANSI([{
       index: 0,
@@ -84,12 +102,13 @@ class MockSource implements CoreV2HistorySource {
   readonly requests: CoreV2HistoryWindowRequest[] = []
   readonly releases: Array<{ terminalId: string; token: string; generation?: string | number | bigint }> = []
 
-  constructor(private readonly windows: CoreV2HistoryWindow[]) {}
+  constructor(private readonly windows: Array<CoreV2HistoryWindow | Error>) {}
 
   async window(request: CoreV2HistoryWindowRequest): Promise<CoreV2HistoryWindow> {
     this.requests.push({ ...request })
     const result = this.windows.shift()
     if (!result) throw new Error('unexpected history window request')
+    if (result instanceof Error) throw result
     return result
   }
 

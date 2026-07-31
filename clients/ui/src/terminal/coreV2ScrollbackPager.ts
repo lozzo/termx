@@ -49,24 +49,33 @@ export class CoreV2ScrollbackPager {
     }
     const sourceOptions = input.signal ? { signal: input.signal } : undefined
 
-    const window = loadLatest
-      ? await this.source.window({
-          terminalId: input.terminalId,
-          mode: 'latest',
-          limit: input.limit,
-          cols: input.cols,
-        }, sourceOptions)
-      : await this.source.window({
-          terminalId: input.terminalId,
-          mode: 'older',
-          limit: input.limit,
-          cols: input.cols,
-          token: current.token,
-          generation: current.generation,
-          beforeCursor: requireFirstCursor(current),
-          boundaryFirstLineId: current.firstLineId,
-          boundaryLastLineId: current.lastLineId,
-        }, sourceOptions)
+    let window: CoreV2HistoryWindow
+    try {
+      window = loadLatest
+        ? await this.source.window({
+            terminalId: input.terminalId,
+            mode: 'latest',
+            limit: input.limit,
+            cols: input.cols,
+          }, sourceOptions)
+        : await this.source.window({
+            terminalId: input.terminalId,
+            mode: 'older',
+            limit: input.limit,
+            cols: input.cols,
+            token: current.token,
+            generation: current.generation,
+            beforeCursor: requireFirstCursor(current),
+            boundaryFirstLineId: current.firstLineId,
+            boundaryLastLineId: current.lastLineId,
+          }, sourceOptions)
+    } catch (error) {
+      if (current && isTerminalHistoryControlError(error)) {
+        this.stateByTerminal.delete(input.terminalId)
+        this.release(input.terminalId, current)
+      }
+      throw error
+    }
 
     if (!window.token.trim() || !window.generation.trim()) {
       throw new Error('history scrollback requires a frozen token and generation')
@@ -97,6 +106,12 @@ export class CoreV2ScrollbackPager {
       generation: state.generation,
     }).catch(() => undefined)
   }
+}
+
+function isTerminalHistoryControlError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as Error & { code?: string }).code
+  return code === 'stale_resource' || code === 'resource_exhausted'
 }
 
 function stateFromWindow(window: CoreV2HistoryWindow, cols: number, previouslyLoadedRows: number): CoreV2ScrollbackState {

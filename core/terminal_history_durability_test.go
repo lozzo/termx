@@ -290,7 +290,11 @@ func TestHistoryReadsSyncOnlyWhenCreatingFrozenSnapshot(t *testing.T) {
 		t.Fatalf("live history read and rejected copy sync calls = %d, want 0", syncCalls)
 	}
 
-	snapshot, err := server.TerminalHistoryFreeze(context.Background(), terminalID, history.FreezeHistoryRequest{Limit: 10})
+	snapshot, err := session.ApplicationHistoryWindow(context.Background(), history.HistoryWindowRequest{
+		TerminalID: terminalID,
+		Mode:       history.HistoryWindowModeLatest,
+		Limit:      10,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

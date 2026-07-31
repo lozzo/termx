@@ -267,8 +267,7 @@ func TestStoreFreezeIsStableAcrossLaterWritesAndCopyUsesToken(t *testing.T) {
 	copied, err := harness.store.Copy(history.HistoryCopyRequest{
 		Token: snapshot.Token,
 		Cols:  12,
-		Start: history.HistoryCursor{LineID: 2, Valid: true},
-		End:   history.HistoryCursor{LineID: 4, Valid: true},
+		Range: &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: 2}, End: history.HistoryCopyPosition{LineID: 4, Col: 6}},
 	})
 	if err != nil {
 		t.Fatalf("copy: %v", err)

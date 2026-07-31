@@ -629,14 +629,21 @@ func TestStoreInvalidatesFrozenTokenWhenRetentionEvicts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, frozenView, err := store.viewForRequest(history.HistoryWindowRequest{Token: snapshot.Token})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range batch {
 		batch[i] = fmt.Sprintf("after-%05d-%s", i, strings.Repeat("y", 220))
 	}
 	if err := store.AppendLifecycleLines(batch); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.coldLogicalRowsForLineRange(frozenView.coldBase, frozenView.coldCount, frozenView.retention, 0, 1); !errors.Is(err, history.ErrHistoryStaleWindow) {
+		t.Fatalf("retention race error = %v, want stale window", err)
+	}
 	_, err = store.LatestWindow(history.HistoryWindowRequest{TerminalID: "freeze-retention", Token: snapshot.Token, Cols: 80, Limit: 10})
-	if !errors.Is(err, history.ErrHistoryInvalidMutation) {
+	if !errors.Is(err, history.ErrHistoryStaleWindow) {
 		t.Fatalf("evicted frozen token error = %v", err)
 	}
 }

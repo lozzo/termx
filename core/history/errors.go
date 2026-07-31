@@ -14,6 +14,18 @@ var ErrHistoryInvalidMutation = errors.New("invalid history mutation")
 // authoritative store 支持的模式。调用方不能因此退回 TUI 本地 scrollback。
 var ErrHistoryUnsupportedWindowMode = errors.New("unsupported history window mode")
 
+// ErrHistoryWindowLimit 表示 limit 未落在公共与内部统一的 1..512 范围。
+var ErrHistoryWindowLimit = errors.New("history window limit must be between 1 and 512")
+
+// ErrHistoryWindowTooLarge 表示靠近请求 cursor 的单条 logical line 已超过窗口预算。
+var ErrHistoryWindowTooLarge = errors.New("history window line exceeds response budget")
+
+// ErrHistoryCopyTooLarge 是稳定、不可重试的 copy 上限错误；调用方不得返回部分文本。
+var ErrHistoryCopyTooLarge = errors.New("history selection exceeds copy limit")
+
+// ErrHistoryStaleWindow 表示 frozen token 不存在、不再有效或不属于当前 protocol session。
+var ErrHistoryStaleWindow = errors.New("stale history window")
+
 // ErrHistoryRendererNotImplemented 表示 R319 已清掉旧 projector/store，但新的
 // logical renderer 尚未接入。这个错误用于防止旧错误模型继续对外提供历史。
 var ErrHistoryRendererNotImplemented = errors.New("history logical renderer not implemented")

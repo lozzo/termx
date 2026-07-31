@@ -166,8 +166,7 @@ func TestR435LinehistCJKAcrossEvictionWindowAndCopy(t *testing.T) {
 	copied, err := server.TerminalHistoryCopy(context.Background(), "term-r435-cjk", history.HistoryCopyRequest{
 		Token: snapshot.Token,
 		Cols:  40,
-		Start: history.HistoryCursor{LineID: startLineID, Valid: true},
-		End:   history.HistoryCursor{LineID: endLineID, Valid: true},
+		Range: &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: startLineID}, End: history.HistoryCopyPosition{LineID: endLineID, Col: 12}},
 	})
 	if err != nil {
 		t.Fatalf("copy: %v", err)

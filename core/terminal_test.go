@@ -630,8 +630,7 @@ func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	text, err := server.TerminalHistoryCopy(context.Background(), "term-history-r324", history.HistoryCopyRequest{
 		TerminalID: "term-history-r324",
 		Token:      snapshot.Token,
-		Start:      history.HistoryCursor{LineID: startLineID, Valid: true},
-		End:        history.HistoryCursor{LineID: endLineID, Valid: true},
+		Range:      &history.HistoryCopyRange{Start: history.HistoryCopyPosition{LineID: startLineID}, End: history.HistoryCopyPosition{LineID: endLineID, Col: 4}},
 	})
 	if err != nil {
 		t.Fatalf("history.copy should use authoritative frozen token: %v", err)
