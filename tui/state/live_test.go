@@ -62,6 +62,67 @@ func TestTerminalSurfaceSnapshotReturnsDetachedPayload(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceAppliesSparseRowsOnMatchingRevision(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID:  "term-1",
+		Revision:    4,
+		FullReplace: true,
+		Cols:        8,
+		Rows:        3,
+		Title:       "build shell",
+		State:       TerminalLiveAttached,
+		Command:     []string{"zsh", "-l"},
+		Screen: [][]LiveCell{
+			{{Text: "zero", Width: 4}},
+			{{Text: "one", Width: 3}},
+			{{Text: "two", Width: 3}},
+		},
+	})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID:   "term-1",
+		BaseRevision: 4,
+		Revision:     7,
+		Cols:         8,
+		Rows:         3,
+		ChangedRows:  []int{1},
+		Screen:       [][]LiveCell{{{Text: "changed", Width: 7}}},
+		Cursor:       LiveCursor{Visible: true, Row: 1, Col: 7},
+	})
+
+	if store.Revision != 7 || store.Screen[0][0].Text != "zero" || store.Screen[1][0].Text != "changed" || store.Screen[2][0].Text != "two" {
+		t.Fatalf("sparse snapshot did not preserve unchanged rows: %#v", store.Screen)
+	}
+	if !store.Cursor.Visible || store.Cursor.Row != 1 || store.Cursor.Col != 7 {
+		t.Fatalf("sparse snapshot lost cursor metadata: %#v", store.Cursor)
+	}
+	if store.Title != "build shell" || store.State != TerminalLiveAttached || len(store.Command) != 2 || store.Command[0] != "zsh" {
+		t.Fatalf("sparse snapshot must preserve lifecycle metadata: %#v", store)
+	}
+}
+
+func TestTerminalSurfaceRejectsSparseRowsWithStaleBase(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   5,
+		Cols:       8,
+		Rows:       1,
+		Screen:     [][]LiveCell{{{Text: "current", Width: 7}}},
+	})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID:   "term-1",
+		BaseRevision: 4,
+		Revision:     6,
+		Cols:         8,
+		Rows:         1,
+		ChangedRows:  []int{0},
+		Screen:       [][]LiveCell{{{Text: "wrong", Width: 5}}},
+	})
+
+	if store.Revision != 5 || store.Screen[0][0].Text != "current" {
+		t.Fatalf("stale sparse base must not corrupt current screen: %#v", store)
+	}
+}
+
 func TestTerminalSurfaceRejectsStaleLiveRevision(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",

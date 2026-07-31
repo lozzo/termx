@@ -19,6 +19,11 @@ func buildLiveContentVMWithSelection(surface state.TerminalSurfaceStore, session
 		Lines:  lines,
 		Status: liveStatus(surface, session),
 		Cursor: liveContentCursor(surface, session, lines),
+		Meta: ContentMetaVM{
+			LiveEndpointID: string(surface.EndpointID),
+			LiveTerminalID: surface.TerminalID,
+			LiveRevision:   surface.Revision,
+		},
 	}
 	if len(lines) > 0 {
 		content.Extent = liveContentExtent(surface, session)
@@ -513,6 +518,13 @@ func terminalLiveLineFromCells(row []state.LiveCell) Line {
 		})
 	}
 	return Line{Cells: cells}
+}
+
+// TerminalLiveRowANSI 把一行 reducer-owned live cells 投影成固定宽度 ANSI 行。
+// runtime 的 live patch 只在完整帧提供了稳定内容区时调用它。
+func TerminalLiveRowANSI(row []state.LiveCell, width int, theme Theme) string {
+	line := contentViewportFitLine(terminalLiveLineFromCells(row), width)
+	return ensureANSIReset(line.ANSIString(theme.WithFallback()))
 }
 
 func terminalLiveANSIStyle(cell state.LiveCell) ANSICellStyle {

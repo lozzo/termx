@@ -24,9 +24,11 @@ type Terminal struct {
 	live    *live.SurfaceTrack
 	// 中文说明：liveOpMu 串行化 live SurfaceTrack 的 PTY 输出与 resize/restart 操作。
 	// live 是唯一 response owner；resize 期间产生的新输出必须等 live 调整到新尺寸后再写入。
-	liveOpMu     sync.Mutex
-	liveRevision LiveRevision
-	tap          *SemanticTap
+	liveOpMu         sync.Mutex
+	liveRevision     LiveRevision
+	liveFullRevision LiveRevision
+	liveRowRevisions []LiveRevision
+	tap              *SemanticTap
 	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
 	// 它同时是 linehist 的查询 gate：ingest 与查询共享同一把锁，滚出行在
 	// 冷段（文件）与热段（emulator 当前屏）之间不重不漏。
@@ -73,6 +75,7 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
 		OnResponse: terminal.handleLiveSurfaceResponse,
 	})
+	terminal.liveRowRevisions = make([]LiveRevision, int(info.Size.Rows))
 	if historyEnabled {
 		terminal.historyStatus = HistoryBacklogStatus{
 			TerminalID:          info.ID,
@@ -236,6 +239,7 @@ func (terminal *Terminal) Resize(size Size) error {
 
 	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.liveRevision++
+	terminal.markLiveFullReplaceLocked(int(size.Rows))
 	revision := terminal.liveRevision
 	if terminal.historyEnabled && terminal.tap != nil {
 		result, err := terminal.tap.Resize(size)
@@ -347,6 +351,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 		terminal.live.ResetForRestartPreservingScreen()
 	}
 	terminal.liveRevision++
+	terminal.markLiveFullReplaceLocked(int(info.Size.Rows))
 	revision := terminal.liveRevision
 	terminal.liveOpMu.Unlock()
 	if terminal.historyEnabled && historyAvailable {
@@ -410,11 +415,46 @@ func (terminal *Terminal) VisitLiveTrimmedScreenRowsWithRevision(visit func(rowI
 // NativeScreenSnapshot 返回 core 当前 latest native screen。
 // 调用方只能把它用于实时显示 projection；history/window/copy truth 必须继续走 HistoryWindow/Copy。
 func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSnapshot {
+	return terminal.NativeScreenSnapshotSince(terminalID, 0)
+}
+
+// NativeScreenSnapshotSince 返回 observed revision 之后变化的当前屏行。
+// 行内容始终取查询时刻的 latest screen；中间 revision 不形成待消费帧队列。
+func (terminal *Terminal) NativeScreenSnapshotSince(terminalID string, observed LiveRevision) NativeScreenSnapshot {
 	terminal.liveOpMu.Lock()
-	snapshot := terminalNativeScreenSnapshotFromLiveSurface(terminalID, terminal.liveRevision, terminal.live.Snapshot())
-	terminal.liveOpMu.Unlock()
-	snapshot.TerminalID = terminalID
-	return snapshot
+	defer terminal.liveOpMu.Unlock()
+	if terminal.live == nil {
+		return NativeScreenSnapshot{TerminalID: terminalID, BaseRevision: observed, Revision: terminal.liveRevision, FullReplace: true, Timestamp: time.Now().UTC()}
+	}
+	current := terminal.liveRevision
+	size := terminal.live.Size()
+	fullReplace := observed == 0 || observed > current || observed < terminal.liveFullRevision || len(terminal.liveRowRevisions) != size.Rows
+	rows := make([]NativeScreenRow, 0, size.Rows)
+	info := terminal.live.VisitTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+		if !fullReplace && (rowIndex < 0 || rowIndex >= len(terminal.liveRowRevisions) || terminal.liveRowRevisions[rowIndex] <= observed) {
+			return
+		}
+		row := NativeScreenRow{Index: rowIndex}
+		if cellCount > 0 {
+			row.Cells = make([]vterm.Cell, cellCount)
+			for index := 0; index < cellCount; index++ {
+				row.Cells[index] = cellAt(index)
+			}
+		}
+		rows = append(rows, row)
+	})
+	return NativeScreenSnapshot{
+		TerminalID:   terminalID,
+		BaseRevision: observed,
+		Revision:     current,
+		FullReplace:  fullReplace,
+		Size:         NativeScreenSize{Cols: info.Cols, Rows: info.Rows},
+		Rows:         rows,
+		Cursor:       info.Cursor,
+		Modes:        info.Modes,
+		AltScreen:    info.IsAlternateScreen,
+		Timestamp:    time.Now().UTC(),
+	}
 }
 
 // LiveRevision 返回当前 terminal native screen 的 latest-only revision。
@@ -918,9 +958,35 @@ func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
 	if terminal.live == nil {
 		return terminal.liveRevision, nil
 	}
-	terminal.live.Write(output)
+	result := terminal.live.WriteWithResult(output)
 	terminal.liveRevision++
+	if result.FullReplace {
+		terminal.markLiveFullReplaceLocked(terminal.live.Size().Rows)
+	} else {
+		terminal.ensureLiveRowRevisionsLocked(terminal.live.Size().Rows)
+		for _, row := range result.ChangedRows {
+			if row >= 0 && row < len(terminal.liveRowRevisions) {
+				terminal.liveRowRevisions[row] = terminal.liveRevision
+			}
+		}
+	}
 	return terminal.liveRevision, nil
+}
+
+func (terminal *Terminal) ensureLiveRowRevisionsLocked(rows int) {
+	if rows < 0 {
+		rows = 0
+	}
+	if len(terminal.liveRowRevisions) == rows {
+		return
+	}
+	terminal.liveRowRevisions = make([]LiveRevision, rows)
+	terminal.liveFullRevision = terminal.liveRevision
+}
+
+func (terminal *Terminal) markLiveFullReplaceLocked(rows int) {
+	terminal.liveFullRevision = terminal.liveRevision
+	terminal.liveRowRevisions = make([]LiveRevision, rows)
 }
 
 func (terminal *Terminal) ingestHistorySemanticOutput(output string) error {
@@ -1126,26 +1192,6 @@ func terminalExitMarkerLines(info TerminalInfo) []string {
 		lines = append(lines, "command: "+strings.Join(info.Command, " "))
 	}
 	return lines
-}
-
-func terminalNativeScreenSnapshotFromLiveSurface(terminalID string, revision LiveRevision, snapshot live.SurfaceSnapshot) NativeScreenSnapshot {
-	rows := make([]NativeScreenRow, len(snapshot.Screen.Cells))
-	for index, row := range snapshot.Screen.Cells {
-		rows[index] = NativeScreenRow{
-			Index: index,
-			Cells: cloneSemanticTapCells(row),
-		}
-	}
-	return NativeScreenSnapshot{
-		TerminalID: terminalID,
-		Revision:   revision,
-		Size:       NativeScreenSize{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
-		Rows:       rows,
-		Cursor:     snapshot.Cursor,
-		Modes:      snapshot.Modes,
-		AltScreen:  snapshot.Screen.IsAlternateScreen,
-		Timestamp:  time.Now().UTC(),
-	}
 }
 
 func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {

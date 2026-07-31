@@ -1518,6 +1518,29 @@ func TestFrameworkOpaqueOverlayOwnsCursor(t *testing.T) {
 	}
 }
 
+func TestFrameworkDoesNotRearmLiveSurfaceHiddenByOpaqueRoute(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 40, H: 12}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Content: ContentVM{
+				Kind:  ContentTerminalLive,
+				Lines: []Line{NewLine("body")},
+				Meta:  ContentMetaVM{LiveTerminalID: "term-1", LiveRevision: 9},
+			},
+		}}},
+		Overlay: OverlayVM{
+			Kind:    OverlayTerminalPool,
+			Opaque:  true,
+			Content: ContentVM{Kind: ContentTerminalPool, Lines: []Line{NewLine("terminals")}},
+		},
+	}})
+
+	if len(result.LiveTargets) != 0 {
+		t.Fatalf("an opaque route must not rearm hidden live surfaces, got %#v", result.LiveTargets)
+	}
+}
+
 func TestFrameworkRendersOverlayPopupAbovePromptModal(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 34, H: 10}, Panels: []PanelVM{{

@@ -1771,10 +1771,11 @@ func (x *HistoryBacklogStatusResult) GetClosed() bool {
 }
 
 type LiveScreenGetCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Terminal         *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	ObservedRevision uint64                 `protobuf:"varint,3,opt,name=observed_revision,json=observedRevision,proto3" json:"observed_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *LiveScreenGetCommand) Reset() {
@@ -1812,6 +1813,13 @@ func (x *LiveScreenGetCommand) GetTerminal() *TerminalRef {
 		return x.Terminal
 	}
 	return nil
+}
+
+func (x *LiveScreenGetCommand) GetObservedRevision() uint64 {
+	if x != nil {
+		return x.ObservedRevision
+	}
+	return 0
 }
 
 type LiveInvalidationNextCommand struct {
@@ -1876,6 +1884,9 @@ type NativeScreenResult struct {
 	Cursor            *TerminalCursor        `protobuf:"bytes,6,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	Modes             *TerminalModes         `protobuf:"bytes,7,opt,name=modes,proto3" json:"modes,omitempty"`
 	TimestampUnixNano int64                  `protobuf:"varint,8,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
+	BaseRevision      uint64                 `protobuf:"varint,9,opt,name=base_revision,json=baseRevision,proto3" json:"base_revision,omitempty"`
+	RowIndices        []int32                `protobuf:"varint,10,rep,packed,name=row_indices,json=rowIndices,proto3" json:"row_indices,omitempty"`
+	FullReplace       bool                   `protobuf:"varint,11,opt,name=full_replace,json=fullReplace,proto3" json:"full_replace,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1966,10 +1977,32 @@ func (x *NativeScreenResult) GetTimestampUnixNano() int64 {
 	return 0
 }
 
+func (x *NativeScreenResult) GetBaseRevision() uint64 {
+	if x != nil {
+		return x.BaseRevision
+	}
+	return 0
+}
+
+func (x *NativeScreenResult) GetRowIndices() []int32 {
+	if x != nil {
+		return x.RowIndices
+	}
+	return nil
+}
+
+func (x *NativeScreenResult) GetFullReplace() bool {
+	if x != nil {
+		return x.FullReplace
+	}
+	return false
+}
+
 type LiveInvalidationResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Terminal      *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	LiveRevision  uint64                 `protobuf:"varint,2,opt,name=live_revision,json=liveRevision,proto3" json:"live_revision,omitempty"`
+	Screen        *NativeScreenResult    `protobuf:"bytes,3,opt,name=screen,proto3" json:"screen,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2016,6 +2049,13 @@ func (x *LiveInvalidationResult) GetLiveRevision() uint64 {
 		return x.LiveRevision
 	}
 	return 0
+}
+
+func (x *LiveInvalidationResult) GetScreen() *NativeScreenResult {
+	if x != nil {
+		return x.Screen
+	}
+	return nil
 }
 
 type LiveInvalidatedEvent struct {
@@ -2227,12 +2267,13 @@ const file_apipb_history_proto_rawDesc = "" +
 	" \x01(\x03R\x15outputBufferWaitNanos\x12 \n" +
 	"\vunavailable\x18\v \x01(\bR\vunavailable\x12-\n" +
 	"\x12unavailable_reason\x18\f \x01(\tR\x11unavailableReason\x12\x16\n" +
-	"\x06closed\x18\r \x01(\bR\x06closed\"T\n" +
+	"\x06closed\x18\r \x01(\bR\x06closed\"\x81\x01\n" +
 	"\x14LiveScreenGetCommand\x126\n" +
-	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\x88\x01\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12+\n" +
+	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\x88\x01\n" +
 	"\x1bLiveInvalidationNextCommand\x126\n" +
 	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12+\n" +
-	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\x96\x03\n" +
+	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\xff\x03\n" +
 	"\x12NativeScreenResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12#\n" +
 	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\x12/\n" +
@@ -2241,10 +2282,16 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x10alternate_screen\x18\x05 \x01(\bR\x0falternateScreen\x125\n" +
 	"\x06cursor\x18\x06 \x01(\v2\x1d.anytty.api.v1.TerminalCursorR\x06cursor\x122\n" +
 	"\x05modes\x18\a \x01(\v2\x1c.anytty.api.v1.TerminalModesR\x05modes\x12.\n" +
-	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\"u\n" +
+	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\x12#\n" +
+	"\rbase_revision\x18\t \x01(\x04R\fbaseRevision\x12\x1f\n" +
+	"\vrow_indices\x18\n" +
+	" \x03(\x05R\n" +
+	"rowIndices\x12!\n" +
+	"\ffull_replace\x18\v \x01(\bR\vfullReplace\"\xb0\x01\n" +
 	"\x16LiveInvalidationResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12#\n" +
-	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\"s\n" +
+	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\x129\n" +
+	"\x06screen\x18\x03 \x01(\v2!.anytty.api.v1.NativeScreenResultR\x06screen\"s\n" +
 	"\x14LiveInvalidatedEvent\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12#\n" +
 	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision*\xb6\x01\n" +
@@ -2354,12 +2401,13 @@ var file_apipb_history_proto_depIdxs = []int32{
 	8,  // 29: anytty.api.v1.NativeScreenResult.cursor:type_name -> anytty.api.v1.TerminalCursor
 	9,  // 30: anytty.api.v1.NativeScreenResult.modes:type_name -> anytty.api.v1.TerminalModes
 	26, // 31: anytty.api.v1.LiveInvalidationResult.terminal:type_name -> anytty.api.v1.TerminalRef
-	26, // 32: anytty.api.v1.LiveInvalidatedEvent.terminal:type_name -> anytty.api.v1.TerminalRef
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	23, // 32: anytty.api.v1.LiveInvalidationResult.screen:type_name -> anytty.api.v1.NativeScreenResult
+	26, // 33: anytty.api.v1.LiveInvalidatedEvent.terminal:type_name -> anytty.api.v1.TerminalRef
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_apipb_history_proto_init() }

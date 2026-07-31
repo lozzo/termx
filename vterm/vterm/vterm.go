@@ -11,10 +11,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/anytty/anytty/shared/gridtrace"
 	charmvt "github.com/anytty/anytty/vterm/internal/vt"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -509,6 +509,9 @@ type WriteDamage struct {
 	// row index。domain owner 是 vterm damage 解码；core 只能把它当作
 	// current-frame ownership proof，不能用 final screen snapshot 反推历史。
 	DirectDamageTouchedRows []int
+	// IncrementalRowsReliable 表示 DirectDamageTouchedRows 完整覆盖本次当前屏变化。
+	// latest-screen consumer 可据此只投影这些行；尺寸或 alternate screen 边界会回退整屏。
+	IncrementalRowsReliable bool
 	Cursor                  CursorState
 	Modes                   TerminalModes
 	SizeCols                int
@@ -1043,6 +1046,13 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 	rowCacheFinish(0)
 	damage = v.writeDamageHeaderLocked(cachePlan)
 	damage.RequiresFullReplace = true
+	damage.IncrementalRowsReliable = dirtyReliable &&
+		beforeWidth == afterWidth &&
+		beforeHeight == afterHeight &&
+		beforeAltScreen == afterAltScreen
+	if damage.IncrementalRowsReliable {
+		damage.DirectDamageTouchedRows = cloneIntSlice(dirtyRows)
+	}
 	damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 	traceCount("vterm.write_latest.changed_rows", damageChangedRowCount(damage))
 	traceCount("vterm.write_latest.changed_cells", damageChangedCellCount(damage))

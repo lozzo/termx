@@ -815,6 +815,14 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 	if err != nil {
 		return Event{}, err
 	}
+	// Subscribe before checking the revision so output cannot land between the
+	// check and the one-shot subscription.
+	waitCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := server.Events(waitCtx, EventFilter{
+		TerminalID: id,
+		Types:      []EventType{EventTerminalLiveInvalidated},
+	})
 	if revision := terminal.LiveRevision(); revision > observedRevision {
 		// 中文说明：这是 latest native screen 的边沿补偿，不是事件回放队列。
 		// 返回 wake 前只等待调用时已经进入 output buffer 的 PTY payload，
@@ -833,12 +841,6 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 			},
 		}, nil
 	}
-	waitCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	events := server.Events(waitCtx, EventFilter{
-		TerminalID: id,
-		Types:      []EventType{EventTerminalLiveInvalidated},
-	})
 	for {
 		select {
 		case <-ctx.Done():

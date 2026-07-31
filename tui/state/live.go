@@ -128,22 +128,25 @@ type TerminalSessionStore struct {
 
 // LiveSurfaceSnapshot 是 terminal service/event 回投给 reducer 的实时投影。
 type LiveSurfaceSnapshot struct {
-	EndpointID EndpointID
-	TerminalID string
-	Revision   uint64
-	Cols       int
-	Rows       int
-	Lines      []string
-	Screen     [][]LiveCell
-	Title      string
-	Cursor     LiveCursor
-	Modes      LiveTerminalModes
-	State      TerminalLiveState
-	ExitCode   int
-	ExitReason string
-	ExitedAt   time.Time
-	Command    []string
-	Err        string
+	EndpointID   EndpointID
+	TerminalID   string
+	BaseRevision uint64
+	Revision     uint64
+	FullReplace  bool
+	ChangedRows  []int
+	Cols         int
+	Rows         int
+	Lines        []string
+	Screen       [][]LiveCell
+	Title        string
+	Cursor       LiveCursor
+	Modes        LiveTerminalModes
+	State        TerminalLiveState
+	ExitCode     int
+	ExitReason   string
+	ExitedAt     time.Time
+	Command      []string
+	Err          string
 }
 
 // TerminalRef 返回该 live snapshot 的 endpoint-aware terminal 身份。
@@ -189,7 +192,8 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 		// 的回包；必须释放 TUI 本地 in-flight，否则后续 frame-ready 永久认为刷新未完成。
 		return store.FinishRefreshRef(ref)
 	}
-	if current, ok := store.snapshotForTerminalRef(ref); ok {
+	current, hasCurrent := store.snapshotForTerminalRef(ref)
+	if hasCurrent {
 		if shouldRejectLiveSnapshotWithLifecycle(current, snapshot, lifecycleKnown) {
 			// 中文说明：旧 revision / 空白旧帧同样只是不写入 surface truth，
 			// 不能继续占用 refresh 背压状态。
@@ -199,8 +203,17 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 			snapshot.Revision = current.Revision
 		}
 	}
-	snapshot.Lines = cloneStrings(snapshot.Lines)
-	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
+	if snapshot.BaseRevision != 0 && !snapshot.FullReplace {
+		var merged bool
+		snapshot, merged = mergeLiveSurfaceDelta(current, snapshot, hasCurrent)
+		if !merged {
+			return store.FinishRefreshRef(ref)
+		}
+	} else {
+		snapshot.Lines = cloneStrings(snapshot.Lines)
+		snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
+		snapshot.ChangedRows = cloneInts(snapshot.ChangedRows)
+	}
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 	store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
 	store = store.FinishRefreshRef(ref)
@@ -899,6 +912,35 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	return store
 }
 
+func mergeLiveSurfaceDelta(current LiveSurfaceSnapshot, incoming LiveSurfaceSnapshot, hasCurrent bool) (LiveSurfaceSnapshot, bool) {
+	if !hasCurrent || current.Revision != incoming.BaseRevision || current.Cols != incoming.Cols || current.Rows != incoming.Rows || len(incoming.ChangedRows) != len(incoming.Screen) {
+		return LiveSurfaceSnapshot{}, false
+	}
+	merged := current
+	merged.Revision = incoming.Revision
+	merged.BaseRevision = incoming.BaseRevision
+	merged.Cols = incoming.Cols
+	merged.Rows = incoming.Rows
+	merged.Cursor = incoming.Cursor
+	merged.Modes = incoming.Modes
+	merged.FullReplace = false
+	merged.Lines = current.Lines
+	merged.Screen = append([][]LiveCell(nil), current.Screen...)
+	if len(merged.Screen) < incoming.Rows {
+		merged.Screen = append(merged.Screen, make([][]LiveCell, incoming.Rows-len(merged.Screen))...)
+	} else if len(merged.Screen) > incoming.Rows {
+		merged.Screen = merged.Screen[:incoming.Rows]
+	}
+	merged.ChangedRows = cloneInts(incoming.ChangedRows)
+	for index, rowIndex := range incoming.ChangedRows {
+		if rowIndex < 0 || rowIndex >= incoming.Rows {
+			return LiveSurfaceSnapshot{}, false
+		}
+		merged.Screen[rowIndex] = cloneLiveCells(incoming.Screen[index])
+	}
+	return merged, true
+}
+
 func (store TerminalSurfaceStore) resizeBoundaryRejects(snapshot LiveSurfaceSnapshot) bool {
 	if !store.ResizeBoundary.Active || store.TerminalID == "" || !snapshot.TerminalRef().Equal(store.TerminalRef()) || !liveSnapshotIsOrdinary(snapshot) {
 		return false
@@ -975,10 +1017,23 @@ func cloneLiveCellRows(rows [][]LiveCell) [][]LiveCell {
 		if len(row) == 0 {
 			continue
 		}
-		out[i] = make([]LiveCell, len(row))
-		copy(out[i], row)
+		out[i] = cloneLiveCells(row)
 	}
 	return out
+}
+
+func cloneLiveCells(cells []LiveCell) []LiveCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	return append([]LiveCell(nil), cells...)
+}
+
+func cloneInts(values []int) []int {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]int(nil), values...)
 }
 
 func (store TerminalSessionStore) Attach(terminalID string, channel uint16, cols int, rows int) TerminalSessionStore {
@@ -1194,6 +1249,7 @@ func cloneLiveSurfaceRefreshStates(values map[string]LiveSurfaceRefreshState) ma
 func CloneLiveSurfaceSnapshot(value LiveSurfaceSnapshot) LiveSurfaceSnapshot {
 	value.Lines = cloneStrings(value.Lines)
 	value.Screen = cloneLiveCellRows(value.Screen)
+	value.ChangedRows = cloneInts(value.ChangedRows)
 	value.Command = cloneStrings(value.Command)
 	return value
 }

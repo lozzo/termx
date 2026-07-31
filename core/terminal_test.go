@@ -587,6 +587,42 @@ func TestServerNextLiveInvalidationCoalescesMissedRevisionsToLatestWake(t *testi
 	}
 }
 
+func TestNativeScreenSnapshotSinceCoalescesLatestChangedRows(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-delta", Command: []string{"shell"}, Size: Size{Cols: 12, Rows: 3}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-live-delta")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	base, err := terminal.applyLiveOutput("zero")
+	if err != nil {
+		t.Fatalf("write base: %v", err)
+	}
+	if snapshot := terminal.NativeScreenSnapshotSince("term-live-delta", 0); !snapshot.FullReplace || snapshot.Revision != base || len(snapshot.Rows) != 3 {
+		t.Fatalf("bootstrap must return full native screen: %#v", snapshot)
+	}
+	if _, err := terminal.applyLiveOutput("\x1b[2;1Hone"); err != nil {
+		t.Fatalf("write row one: %v", err)
+	}
+	latest, err := terminal.applyLiveOutput("\x1b[3;1Htwo")
+	if err != nil {
+		t.Fatalf("write row two: %v", err)
+	}
+
+	delta := terminal.NativeScreenSnapshotSince("term-live-delta", base)
+	if delta.FullReplace || delta.BaseRevision != base || delta.Revision != latest {
+		t.Fatalf("matching base should return sparse latest snapshot: %#v", delta)
+	}
+	if len(delta.Rows) != 2 || delta.Rows[0].Index != 1 || delta.Rows[1].Index != 2 {
+		t.Fatalf("missed revisions must coalesce changed row indexes, got %#v", delta.Rows)
+	}
+	if got := terminalLiveRowsFromNativeSnapshot(delta); len(got) != 2 || !strings.Contains(got[0], "one") || !strings.Contains(got[1], "two") {
+		t.Fatalf("sparse rows do not contain latest contents: %#v", got)
+	}
+}
+
 func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

@@ -100,10 +100,11 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		Theme:      current.Theme,
 	}
 	runtime.lastHitRegions = copyHistoryPatchHitRegions(runtime.lastHitRegions, patchRoot.History, patchRoot.CopyMode, current.ContentRect)
-	_ = runtime.host.FrameSink().WriteFrame(frame)
+	done := runtime.writeFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.copyHistoryPatch = current
 	runtime.observeRuntimePatchFrame(frame)
+	runtime.trackFrameCompletion(nil, done)
 	return true
 }
 
@@ -121,10 +122,11 @@ func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(root state.Root, curr
 		Metadata:   current.Metadata,
 		Theme:      current.Theme,
 	}
-	_ = runtime.host.FrameSink().WriteFrame(frame)
+	done := runtime.writeFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.copyHistoryPatch = current
 	runtime.observeRuntimePatchFrame(frame)
+	runtime.trackFrameCompletion(nil, done)
 	return true
 }
 

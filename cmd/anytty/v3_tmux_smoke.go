@@ -452,7 +452,7 @@ func runV3TmuxResizeSmoke(ctx context.Context, anyttyBin string) (v3TmuxResizeSm
 		return v3TmuxResizeSmokeResult{}, err
 	}
 	beforeMarker := "anytty-pty-size:size-before:"
-	if err := waitForTmuxCapture(ctx, target, beforeMarker, 5*time.Second); err != nil {
+	if err := waitForTmuxCapture(ctx, target, beforeMarker+"98x26", 5*time.Second); err != nil {
 		return v3TmuxResizeSmokeResult{}, err
 	}
 	beforeCapture, _ := captureTmuxPane(ctx, target, false)
@@ -469,7 +469,7 @@ func runV3TmuxResizeSmoke(ctx context.Context, anyttyBin string) (v3TmuxResizeSm
 		return v3TmuxResizeSmokeResult{}, err
 	}
 	afterMarker := "anytty-pty-size:size-after:"
-	if err := waitForTmuxCapture(ctx, target, afterMarker, 5*time.Second); err != nil {
+	if err := waitForTmuxCapture(ctx, target, afterMarker+"118x36", 5*time.Second); err != nil {
 		return v3TmuxResizeSmokeResult{}, err
 	}
 	afterCapture, _ := captureTmuxPane(ctx, target, false)

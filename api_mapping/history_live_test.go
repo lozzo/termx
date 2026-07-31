@@ -2,6 +2,7 @@ package apimapping
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	corev2 "github.com/anytty/anytty/core"
@@ -137,6 +138,37 @@ func TestNativeScreenToProtoCoalescesAdjacentStyleRuns(t *testing.T) {
 	cells := screen.GetRows()[0].GetCells()
 	if len(cells) != 2 || cells[0].GetContent() != "xy" || cells[0].GetWidth() != 2 || cells[1].GetContent() != "z" {
 		t.Fatalf("coalesced live runs = %#v", cells)
+	}
+}
+
+func TestNativeScreenToProtoPreservesSparseRevisionAndRowIndexes(t *testing.T) {
+	screen := NativeScreenToProto("machine", corev2.NativeScreenSnapshot{
+		TerminalID:   "terminal",
+		BaseRevision: 7,
+		Revision:     10,
+		Size:         corev2.NativeScreenSize{Cols: 80, Rows: 24},
+		Rows: []corev2.NativeScreenRow{
+			{Index: 3, Cells: []vterm.Cell{{Content: "three", Width: 5}}},
+			{Index: 9, Cells: []vterm.Cell{{Content: "nine", Width: 4}}},
+		},
+	})
+	if screen.GetBaseRevision() != 7 || screen.GetLiveRevision() != 10 || screen.GetFullReplace() {
+		t.Fatalf("sparse revision metadata lost: %#v", screen)
+	}
+	if got := screen.GetRowIndices(); !reflect.DeepEqual(got, []int32{3, 9}) {
+		t.Fatalf("sparse row indexes lost: %#v", got)
+	}
+}
+
+func TestLiveInvalidationToProtoReportsDeliveredScreenRevision(t *testing.T) {
+	result := LiveInvalidationToProto("machine", corev2.LiveScreenInvalidated{TerminalID: "terminal", Revision: 8}, corev2.NativeScreenSnapshot{
+		TerminalID:   "terminal",
+		BaseRevision: 7,
+		Revision:     10,
+		Size:         corev2.NativeScreenSize{Cols: 80, Rows: 24},
+	})
+	if result.GetLiveRevision() != 10 || result.GetScreen().GetLiveRevision() != 10 {
+		t.Fatalf("combined response must identify the delivered latest screen: %#v", result)
 	}
 }
 

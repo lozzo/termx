@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	actiondomain "github.com/anytty/anytty/tui/action"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
@@ -365,14 +365,16 @@ type Layer struct {
 }
 
 type RenderResult struct {
-	Content    []Line
-	Cursor     Cursor
-	CursorRect Rect
-	Blink      bool
-	HitRegions []HitRegion
-	Metadata   RenderMetadata
-	Layers     []Layer
-	Theme      Theme
+	Content     []Line
+	Cursor      Cursor
+	CursorRect  Rect
+	Blink       bool
+	HitRegions  []HitRegion
+	LiveTargets []LiveRenderTarget
+	LiveRegions []LiveRenderRegion
+	Metadata    RenderMetadata
+	Layers      []Layer
+	Theme       Theme
 }
 
 func (result RenderResult) Lines() []string {
@@ -804,6 +806,9 @@ type ContentVM struct {
 // ContentMetaVM 保存渲染层不能从文本行反推的布局元数据；这些值由对应 content projector 生成，
 // overlay chrome、hit region 和 snapshot 装饰只能消费这里的 reducer-owned 投影。
 type ContentMetaVM struct {
+	LiveEndpointID           string
+	LiveTerminalID           string
+	LiveRevision             uint64
 	ClipboardNameWidth       int
 	SplitPageLeftWidth       int
 	WorkbenchTreeWidth       int

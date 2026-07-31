@@ -27,14 +27,16 @@ type NativeScreenRow struct {
 // NativeScreenSnapshot 是 core-v2 当前 native screen 的 latest-only 快照。
 // 它由 Terminal 从 live SurfaceTrack 读取；不携带 scrollback、history token 或 TUI view 状态。
 type NativeScreenSnapshot struct {
-	TerminalID string
-	Revision   LiveRevision
-	Size       NativeScreenSize
-	Rows       []NativeScreenRow
-	Cursor     vterm.CursorState
-	Modes      vterm.TerminalModes
-	AltScreen  bool
-	Timestamp  time.Time
+	TerminalID   string
+	BaseRevision LiveRevision
+	Revision     LiveRevision
+	FullReplace  bool
+	Size         NativeScreenSize
+	Rows         []NativeScreenRow
+	Cursor       vterm.CursorState
+	Modes        vterm.TerminalModes
+	AltScreen    bool
+	Timestamp    time.Time
 }
 
 // LiveScreenInvalidated 是 core 发给客户端的 live screen 唤醒信号。

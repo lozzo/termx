@@ -43,7 +43,9 @@ type SurfaceTrackOptions struct {
 // 它不是 history semantic evidence；当前只允许承载 raw live segment 和 alt-exit
 // frame capture，禁止重新加入 transaction/damage/frame rows。
 type SurfaceWriteResult struct {
-	Segments []SurfaceWriteSegment
+	Segments    []SurfaceWriteSegment
+	ChangedRows []int
+	FullReplace bool
 }
 
 // SurfaceWriteSegment 是 live surface 的本地分段结果。
@@ -164,13 +166,13 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	for text != "" {
 		idx := strings.Index(text, "\x1b[?")
 		if idx < 0 {
-			surface.writeRaw(text)
+			mergeSurfaceWriteDamage(&result, surface.writeRaw(text))
 			raw.WriteString(text)
 			appendSurfaceWriteRawSegment(&result, &raw)
 			return result
 		}
 		if idx > 0 {
-			surface.writeRaw(text[:idx])
+			mergeSurfaceWriteDamage(&result, surface.writeRaw(text[:idx]))
 			raw.WriteString(text[:idx])
 			text = text[idx:]
 			continue
@@ -182,14 +184,14 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 			return result
 		}
 		if consumed <= 0 {
-			surface.writeRaw(text[:1])
+			mergeSurfaceWriteDamage(&result, surface.writeRaw(text[:1]))
 			raw.WriteString(text[:1])
 			text = text[1:]
 			continue
 		}
 		if action == privateModeAltExit && surface.vt.IsAltScreen() {
 			altFrame := surface.altScreenFrameCells()
-			surface.writeRaw(text[:consumed])
+			mergeSurfaceWriteDamage(&result, surface.writeRaw(text[:consumed]))
 			raw.WriteString(text[:consumed])
 			if surface.preserveAltScreenFrameOnExit {
 				surface.appendAltScreenFrameCells(altFrame)
@@ -204,7 +206,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 			text = text[consumed:]
 			continue
 		}
-		surface.writeRaw(text[:consumed])
+		mergeSurfaceWriteDamage(&result, surface.writeRaw(text[:consumed]))
 		raw.WriteString(text[:consumed])
 		text = text[consumed:]
 	}
@@ -222,13 +224,30 @@ func appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Build
 	raw.Reset()
 }
 
-func (surface *SurfaceTrack) writeRaw(text string) {
+func (surface *SurfaceTrack) writeRaw(text string) vterm.WriteDamage {
 	if text == "" {
+		return vterm.WriteDamage{}
+	}
+	// 这里只保留 touched-row 索引，不构造 history transaction、cell damage 或帧队列。
+	_, _, damage := surface.vt.WriteForLatestFrame([]byte(text))
+	return damage
+}
+
+func mergeSurfaceWriteDamage(result *SurfaceWriteResult, damage vterm.WriteDamage) {
+	if result == nil || result.FullReplace {
 		return
 	}
-	// 中文说明：live surface 的 domain owner 只是 core native screen；这里不构造
-	// history transaction 或 damage 队列，避免最新屏热路径退化成逐帧证据链。
-	_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
+	if !damage.IncrementalRowsReliable {
+		result.FullReplace = true
+		result.ChangedRows = nil
+		return
+	}
+	for _, row := range damage.DirectDamageTouchedRows {
+		if row < 0 {
+			continue
+		}
+		result.ChangedRows = append(result.ChangedRows, row)
+	}
 }
 
 func (surface *SurfaceTrack) altScreenFrameCells() [][]vterm.Cell {

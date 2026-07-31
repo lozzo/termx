@@ -432,7 +432,7 @@ func (session *protocolSession) ApplicationHistoryBacklogStatus(_ context.Contex
 }
 
 // ApplicationLiveScreen 返回 latest-only native screen，不把 live surface 当作 history truth。
-func (session *protocolSession) ApplicationLiveScreen(_ context.Context, terminalID string) (NativeScreenSnapshot, error) {
+func (session *protocolSession) ApplicationLiveScreen(_ context.Context, terminalID string, observed LiveRevision) (NativeScreenSnapshot, error) {
 	if _, err := session.server.GetTerminal(terminalID); err != nil {
 		return NativeScreenSnapshot{}, err
 	}
@@ -449,7 +449,7 @@ func (session *protocolSession) ApplicationLiveScreen(_ context.Context, termina
 	if liveErr != nil {
 		return NativeScreenSnapshot{}, liveErr
 	}
-	return terminal.NativeScreenSnapshot(terminalID), nil
+	return terminal.NativeScreenSnapshotSince(terminalID, observed), nil
 }
 
 // ApplicationLiveInvalidation 等待 observed revision 之后的单次唤醒边沿。

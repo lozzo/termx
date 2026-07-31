@@ -51,6 +51,41 @@ func TestHostRenderFuncKeepsCompleteFrameByDefault(t *testing.T) {
 	}
 }
 
+func TestHostRenderFuncDescribesStableLiveRegion(t *testing.T) {
+	host := renderPreferenceHost{sink: ansiOnlyPreferenceSink{}}
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 20, Rows: 8},
+		Shell: state.DefaultShell().BindPaneTerminal(
+			state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+	}
+	root.Surface = (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		EndpointID:  state.DefaultEndpointID,
+		TerminalID:  "term-1",
+		Revision:    7,
+		FullReplace: true,
+		Cols:        18,
+		Rows:        4,
+		Screen:      make([][]state.LiveCell, 4),
+		State:       state.TerminalLiveAttached,
+	})
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(
+		state.DefaultEndpointID, state.DefaultPaneID, "term-1", 1, 18, 4,
+		state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	builder := render.NewRenderVMBuilder()
+	frame := hostRenderFunc(host, builder, render.NewRenderer(render.DefaultTheme()))(root)
+
+	if len(frame.LiveRegions) != 1 {
+		t.Fatalf("expected one stable live region, got %#v", frame.LiveRegions)
+	}
+	if len(frame.LiveTargets) != 1 || frame.LiveTargets[0].TerminalID != "term-1" || frame.LiveTargets[0].Revision != 7 {
+		t.Fatalf("expected the rendered live surface to be a completion target, got %#v", frame.LiveTargets)
+	}
+	region := frame.LiveRegions[0]
+	if region.TerminalID != "term-1" || region.Revision != 7 || region.Rect.W != 18 || region.Rect.H != 4 {
+		t.Fatalf("unexpected live region metadata: %#v", region)
+	}
+}
+
 type renderPreferenceHost struct {
 	sink render.FrameSink
 }

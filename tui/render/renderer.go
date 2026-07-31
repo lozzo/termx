@@ -29,11 +29,13 @@ func (renderer Renderer) RenderANSI(vm RenderVM) Frame {
 	frame := renderer.renderFrameworkCanvas(vm)
 	defer releaseCanvas(frame.Canvas)
 	return Frame{
-		ANSILines:  frame.Canvas.ansiLines(frame.Theme),
-		Cursor:     frame.Cursor,
-		CursorRect: frame.CursorRect,
-		HitRegions: cloneHitRegions(frame.HitRegions),
-		Metadata:   RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
-		Theme:      frame.Theme,
+		ANSILines:   frame.Canvas.ansiLines(frame.Theme),
+		Cursor:      frame.Cursor,
+		CursorRect:  frame.CursorRect,
+		HitRegions:  cloneHitRegions(frame.HitRegions),
+		LiveTargets: append([]LiveRenderTarget(nil), frame.LiveTargets...),
+		LiveRegions: append([]LiveRenderRegion(nil), frame.LiveRegions...),
+		Metadata:    RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
+		Theme:       frame.Theme,
 	}
 }

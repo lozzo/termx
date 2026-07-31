@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/anytty/anytty/tui/render"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -256,11 +256,14 @@ func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
 	if patch.CursorOnly {
 		return sink.writeCursorOnlyPatchFrame(frame)
 	}
+	if patch.Rewrite {
+		if patch.Rect.H <= 0 || patch.Rect.W <= 0 || patch.LineWidth <= 0 {
+			return nil
+		}
+		return sink.writeRewritePatchFrame(frame, patch)
+	}
 	if patch.Rect.H <= 1 || patch.Rect.W <= 0 || patch.LineWidth <= 0 {
 		return nil
-	}
-	if patch.Rewrite {
-		return sink.writeRewritePatchFrame(frame, patch)
 	}
 	lines := patch.LinesANSI
 	if len(lines) == 0 && patch.LineANSI != "" {

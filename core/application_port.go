@@ -242,7 +242,7 @@ type ApplicationSessionPort interface {
 	// ApplicationHistoryBacklogStatus 返回 history ingest 的诊断状态。
 	ApplicationHistoryBacklogStatus(context.Context, string) (HistoryBacklogStatus, error)
 	// ApplicationLiveScreen 返回 daemon 当前 native live screen projection。
-	ApplicationLiveScreen(context.Context, string) (NativeScreenSnapshot, error)
+	ApplicationLiveScreen(context.Context, string, LiveRevision) (NativeScreenSnapshot, error)
 	// ApplicationLiveInvalidation 等待 observed revision 之后的一次 live invalidation。
 	ApplicationLiveInvalidation(context.Context, string, LiveRevision) (LiveScreenInvalidated, error)
 	// ApplicationEventSubscribe 建立 session-owned application event subscription。

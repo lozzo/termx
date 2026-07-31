@@ -32,6 +32,13 @@ type noRenderMsg interface {
 	SkipRender() bool
 }
 
+type frameWriteCompletedMsg struct {
+	Written bool
+	Targets []liveFrameReadyTarget
+}
+
+func (frameWriteCompletedMsg) isMsg() {}
+
 // QuitMsg 请求 runtime 退出。
 type QuitMsg struct{}
 
@@ -196,6 +203,9 @@ type AppRuntime struct {
 	firstFrameWritten   bool
 	startupFrameReady   bool
 	maxMessagesPerBatch int
+	frameWriteInFlight  bool
+	renderPending       bool
+	liveSurfacePatch    liveSurfacePatchState
 	copyHistoryPatch    copyHistoryPatchCache
 	diagnostics         *runtimeDiagnostics
 	stopDiagnostics     func()
@@ -310,7 +320,6 @@ func (runtime *AppRuntime) RequestMemstats(reason string) {
 }
 
 func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
-	needsRender := false
 	processed := 0
 	for {
 		runtime.ingestHostInitialSize()
@@ -322,9 +331,8 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			runtime.ingestHostCurrentSize()
 			msg, ok = runtime.dequeue()
 			if !ok {
-				if needsRender {
-					runtime.renderFrame(ctx)
-					needsRender = false
+				if runtime.renderPending && !runtime.frameWriteInFlight {
+					runtime.renderFrame()
 					runtime.ingestHostInput()
 					runtime.enqueueDueToastTick()
 					continue
@@ -351,21 +359,16 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		runtime.observeRuntimeMessage(msg, effects)
 		processed++
 		if !messageSkipsRender(msg) {
-			needsRender = true
+			runtime.noteRenderPending(msg)
 		} else {
 			perftrace.Count("tui.message_skip_render", messageApproxBytes(msg))
 		}
 		if _, ok := msg.(HostResizeMsg); ok {
-			runtime.renderFrame(ctx)
-			needsRender = false
-		}
-		if needsRender && runtime.shouldRenderImmediatelyAfterMessage(msg) {
-			runtime.renderFrameForMessage(ctx, msg)
-			needsRender = false
+			runtime.renderFrame()
 		}
 		if runtime.shouldWriteFirstFrame() {
-			runtime.renderFrame(ctx)
-			needsRender = false
+			runtime.noteRenderPending(nil)
+			runtime.renderFrame()
 		}
 		for _, effect := range effects {
 			runtime.scheduleEffect(ctx, effect)
@@ -375,8 +378,10 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		if runtime.quit {
 			return nil
 		}
-		if needsRender && processed >= runtime.messageBatchLimit() {
-			runtime.renderFrame(ctx)
+		if runtime.renderPending && processed >= runtime.messageBatchLimit() {
+			if !runtime.frameWriteInFlight {
+				runtime.renderFrame()
+			}
 			return nil
 		}
 	}
@@ -417,6 +422,12 @@ func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {
 
 func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	switch msg := msg.(type) {
+	case frameWriteCompletedMsg:
+		runtime.frameWriteInFlight = false
+		if msg.Written && !runtime.renderPending {
+			runtime.enqueueLiveFrameReadyTargets(msg.Targets)
+		}
+		return false
 	case HostResizeMsg:
 		next, changed := runtime.state.Viewport.Resize(msg.Cols, msg.Rows)
 		if !changed {
@@ -428,14 +439,6 @@ func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	default:
 		return true
 	}
-}
-
-func (runtime *AppRuntime) shouldRenderImmediatelyAfterMessage(_ Msg) bool {
-	// 中文说明：ordinary live surface 是 core latest screen 的投影结果，
-	// 不是必须逐帧展示的语义边界。它要等 runtime batch/idle 边界统一写出，
-	// 让队列的 latest-only 合并先发生，避免中间 snapshot 写帧后立刻触发
-	// FrameSink ready 并重新 arm 下一次 live invalidation。
-	return false
 }
 
 func (runtime *AppRuntime) ingestHostInitialSize() {
@@ -679,18 +682,26 @@ func (runtime *AppRuntime) nextToastWakeDelay() time.Duration {
 	return interval - elapsed
 }
 
-func (runtime *AppRuntime) renderFrame(ctx context.Context) bool {
-	return runtime.renderFrameForMessage(ctx, nil)
-}
-
-func (runtime *AppRuntime) renderFrameForMessage(ctx context.Context, msg Msg) bool {
+func (runtime *AppRuntime) renderFrame() bool {
 	if runtime.host == nil {
+		runtime.renderPending = false
+		return false
+	}
+	if runtime.frameWriteInFlight {
 		return false
 	}
 	finishTotal := perftrace.Measure("tui.render_frame_total")
-	if runtime.tryRenderCopyHistoryPatch() {
+	if runtime.tryRenderLiveSurfacePatch() {
+		runtime.renderPending = false
+		runtime.liveSurfacePatch.Pending = liveSurfacePatchPending{}
 		finishTotal(0)
-		return false
+		return true
+	}
+	if runtime.tryRenderCopyHistoryPatch() {
+		runtime.renderPending = false
+		runtime.liveSurfacePatch.Pending = liveSurfacePatchPending{}
+		finishTotal(0)
+		return true
 	}
 	finishRender := perftrace.Measure("tui.render_build_frame")
 	frame := runtime.render(runtime.state)
@@ -703,8 +714,11 @@ func (runtime *AppRuntime) renderFrameForMessage(ctx context.Context, msg Msg) b
 	perftrace.Count("tui.frame", frameBytes)
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
+	runtime.rememberLiveSurfacePatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
-	runtime.rememberLiveFrameCompletion(msg, done)
+	runtime.renderPending = false
+	runtime.liveSurfacePatch.Pending = liveSurfacePatchPending{}
+	runtime.rememberLiveFrameCompletion(frame, done)
 	finishTotal(frameBytes)
 	return true
 }
@@ -730,36 +744,39 @@ func (runtime *AppRuntime) writeFrame(frame render.Frame) <-chan render.FrameWri
 	return done
 }
 
-func (runtime *AppRuntime) rememberLiveFrameCompletion(msg Msg, done <-chan render.FrameWriteCompletion) {
-	targets := liveFrameReadyTargetsFromRoot(runtime.state)
-	if len(targets) == 0 {
-		return
-	}
-	// 中文说明：真实 FrameSink 是 latest-only。LiveSurfaceMsg 对应的帧可能被后续
-	// 普通 UI 帧覆盖，但后续帧仍然携带同一个 live surface；只要最终写出的 frame
-	// 包含 live surface，就必须允许 reducer arm 下一次 one-shot invalidation。
-	if done != nil {
-		select {
-		case completion, ok := <-done:
-			if ok && completion.Written {
-				runtime.enqueueLiveFrameReadyTargets(targets)
-			}
-		default:
-			// 中文说明：TUI 本地完成信号只用于下一次 one-shot enable，
-			// 不上传 core，也不表达 core rendered revision。
-			go runtime.awaitLiveFrameCompletion(targets, done)
+func (runtime *AppRuntime) rememberLiveFrameCompletion(frame render.Frame, done <-chan render.FrameWriteCompletion) {
+	targets := make([]liveFrameReadyTarget, len(frame.LiveTargets))
+	for index, target := range frame.LiveTargets {
+		targets[index] = liveFrameReadyTarget{
+			EndpointID:       state.NormalizeEndpointID(state.EndpointID(target.EndpointID)),
+			TerminalID:       target.TerminalID,
+			ObservedRevision: target.Revision,
 		}
-		return
 	}
-	runtime.enqueueLiveFrameReadyTargets(targets)
+	runtime.trackFrameCompletion(targets, done)
 }
 
-func (runtime *AppRuntime) awaitLiveFrameCompletion(targets []liveFrameReadyTarget, done <-chan render.FrameWriteCompletion) {
-	completion, ok := <-done
-	if !ok || !completion.Written {
+func (runtime *AppRuntime) trackFrameCompletion(targets []liveFrameReadyTarget, done <-chan render.FrameWriteCompletion) {
+	runtime.frameWriteInFlight = true
+	if done == nil {
+		runtime.frameWriteInFlight = false
+		runtime.enqueueLiveFrameReadyTargets(targets)
 		return
 	}
-	runtime.enqueueLiveFrameReadyTargets(targets)
+	select {
+	case completion, ok := <-done:
+		runtime.frameWriteInFlight = false
+		if ok && completion.Written {
+			runtime.enqueueLiveFrameReadyTargets(targets)
+		}
+	default:
+		go runtime.awaitFrameCompletion(targets, done)
+	}
+}
+
+func (runtime *AppRuntime) awaitFrameCompletion(targets []liveFrameReadyTarget, done <-chan render.FrameWriteCompletion) {
+	completion, ok := <-done
+	runtime.enqueue(frameWriteCompletedMsg{Written: ok && completion.Written, Targets: targets})
 }
 
 func (runtime *AppRuntime) enqueueLiveFrameReadyTargets(targets []liveFrameReadyTarget) {
@@ -774,88 +791,6 @@ type liveFrameReadyTarget struct {
 	EndpointID       state.EndpointID
 	TerminalID       string
 	ObservedRevision uint64
-}
-
-func liveFrameReadyTargetsFromRoot(root state.Root) []liveFrameReadyTarget {
-	seen := map[string]struct{}{}
-	var targets []liveFrameReadyTarget
-	addRef := func(ref state.TerminalRef) {
-		ref = ref.Normalize()
-		if ref.Empty() {
-			return
-		}
-		key := ref.Key()
-		if key == "" {
-			return
-		}
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		snapshot := root.Surface.SurfaceForTerminalRef(ref).Snapshot()
-		targets = append(targets, liveFrameReadyTarget{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, ObservedRevision: snapshot.Revision})
-	}
-	addBinding := func(binding state.TerminalViewBinding) {
-		if binding.TerminalID == "" || binding.Unresolved {
-			return
-		}
-		addRef(binding.TerminalRef())
-	}
-
-	// 中文说明：frame-ready 只为当前帧实际可能展示的 terminal view 续订 one-shot wake。
-	// Surfaces 是跨 endpoint 缓存，不代表可见性；后台 tab/远端缓存不能参与前台实时订阅真值。
-	shell := root.Shell.ReadonlyDefaults()
-	if tab, ok := liveFrameReadyActiveTab(shell); ok {
-		if shell.ZoomedPaneID != "" {
-			if pane, ok := liveFrameReadyPaneByID(tab.Panes, shell.ZoomedPaneID); ok && pane.Kind == state.PaneTerminalLive {
-				if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok {
-					addBinding(binding)
-				}
-			}
-		} else {
-			for _, pane := range tab.Panes {
-				if pane.Kind != state.PaneTerminalLive {
-					continue
-				}
-				if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok {
-					addBinding(binding)
-				}
-			}
-		}
-		for _, floating := range tab.Floatings {
-			if floating.Collapsed || floating.Pane.Kind != state.PaneTerminalLive {
-				continue
-			}
-			if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok {
-				addBinding(binding)
-			}
-		}
-	}
-	if len(targets) == 0 && root.Surface.TerminalID != "" {
-		addRef(root.Surface.TerminalRef())
-	}
-	return targets
-}
-
-func liveFrameReadyActiveTab(shell state.ShellStore) (state.TabState, bool) {
-	for _, tab := range shell.Workspace.Tabs {
-		if tab.ID == shell.Workspace.ActiveTabID {
-			return tab, true
-		}
-	}
-	if len(shell.Workspace.Tabs) == 0 {
-		return state.TabState{}, false
-	}
-	return shell.Workspace.Tabs[0], true
-}
-
-func liveFrameReadyPaneByID(panes []state.PaneState, paneID string) (state.PaneState, bool) {
-	for _, pane := range panes {
-		if pane.ID == paneID {
-			return pane, true
-		}
-	}
-	return state.PaneState{}, false
 }
 
 func frameApproxBytes(frame render.Frame) int {

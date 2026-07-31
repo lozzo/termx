@@ -13,6 +13,8 @@ type Frame struct {
 	CursorRect  Rect
 	Blink       bool
 	HitRegions  []HitRegion
+	LiveTargets []LiveRenderTarget
+	LiveRegions []LiveRenderRegion
 	Metadata    RenderMetadata
 	Theme       Theme
 }
@@ -41,6 +43,12 @@ func (frame Frame) Clone() Frame {
 	if len(frame.HitRegions) > 0 {
 		cloned.HitRegions = cloneHitRegions(frame.HitRegions)
 	}
+	if len(frame.LiveTargets) > 0 {
+		cloned.LiveTargets = append([]LiveRenderTarget(nil), frame.LiveTargets...)
+	}
+	if len(frame.LiveRegions) > 0 {
+		cloned.LiveRegions = append([]LiveRenderRegion(nil), frame.LiveRegions...)
+	}
 	if frame.Patch != nil {
 		patch := *frame.Patch
 		if len(frame.Patch.LinesANSI) > 0 {
@@ -60,6 +68,8 @@ func FrameFromRenderResult(result RenderResult) Frame {
 		CursorRect:  result.CursorRect,
 		Blink:       result.Blink,
 		HitRegions:  cloneHitRegions(result.HitRegions),
+		LiveTargets: append([]LiveRenderTarget(nil), result.LiveTargets...),
+		LiveRegions: append([]LiveRenderRegion(nil), result.LiveRegions...),
 		Metadata:    result.Metadata,
 		Theme:       result.Theme.WithFallback(),
 	}
@@ -67,14 +77,33 @@ func FrameFromRenderResult(result RenderResult) Frame {
 
 func ANSIFrameFromRenderResult(result RenderResult) Frame {
 	return Frame{
-		ANSILines:  result.ANSILines(),
-		Cursor:     result.Cursor,
-		CursorRect: result.CursorRect,
-		Blink:      result.Blink,
-		HitRegions: cloneHitRegions(result.HitRegions),
-		Metadata:   result.Metadata,
-		Theme:      result.Theme.WithFallback(),
+		ANSILines:   result.ANSILines(),
+		Cursor:      result.Cursor,
+		CursorRect:  result.CursorRect,
+		Blink:       result.Blink,
+		HitRegions:  cloneHitRegions(result.HitRegions),
+		LiveTargets: append([]LiveRenderTarget(nil), result.LiveTargets...),
+		LiveRegions: append([]LiveRenderRegion(nil), result.LiveRegions...),
+		Metadata:    result.Metadata,
+		Theme:       result.Theme.WithFallback(),
 	}
+}
+
+// LiveRenderTarget records a live surface actually presented by this frame.
+type LiveRenderTarget struct {
+	EndpointID string
+	TerminalID string
+	Revision   uint64
+}
+
+// LiveRenderRegion 是完整帧对可直接按行重写的 live 内容区投影。
+// Revision 表示该完整帧实际包含的 surface revision。
+type LiveRenderRegion struct {
+	EndpointID string
+	TerminalID string
+	Revision   uint64
+	Rect       Rect
+	Active     bool
 }
 
 func cloneStrings(values []string) []string {

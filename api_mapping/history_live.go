@@ -179,16 +179,22 @@ func NativeScreenToProto(endpointID string, snapshot corev2.NativeScreenSnapshot
 		Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: snapshot.TerminalID}, LiveRevision: uint64(snapshot.Revision),
 		Size: &apipb.TerminalSize{Cols: uint32(snapshot.Size.Cols), Rows: uint32(snapshot.Size.Rows)}, AlternateScreen: snapshot.AltScreen,
 		Cursor: cursorToProto(snapshot.Cursor), Modes: modesToProto(snapshot.Modes), TimestampUnixNano: snapshot.Timestamp.UnixNano(),
+		BaseRevision: uint64(snapshot.BaseRevision), FullReplace: snapshot.FullReplace,
 	}
 	for _, row := range snapshot.Rows {
+		result.RowIndices = append(result.RowIndices, int32(row.Index))
 		result.Rows = append(result.Rows, vtermRowToProto(row.Cells))
 	}
 	return result
 }
 
-// LiveInvalidationToProto 把 core latest-screen 唤醒边沿投影为 endpoint-aware result。
-func LiveInvalidationToProto(endpointID string, event corev2.LiveScreenInvalidated) *apipb.LiveInvalidationResult {
-	return &apipb.LiveInvalidationResult{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: event.TerminalID}, LiveRevision: uint64(event.Revision)}
+// LiveInvalidationToProto 把 one-shot wake 与 observed revision 之后的 latest screen 行合成一次响应。
+func LiveInvalidationToProto(endpointID string, event corev2.LiveScreenInvalidated, snapshot corev2.NativeScreenSnapshot) *apipb.LiveInvalidationResult {
+	return &apipb.LiveInvalidationResult{
+		Terminal:     &apipb.TerminalRef{EndpointId: endpointID, TerminalId: event.TerminalID},
+		LiveRevision: uint64(snapshot.Revision),
+		Screen:       NativeScreenToProto(endpointID, snapshot),
+	}
 }
 
 func historyWindowModeFromProto(mode apipb.HistoryWindowMode) history.HistoryWindowMode {

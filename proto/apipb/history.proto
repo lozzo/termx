@@ -215,6 +215,7 @@ message HistoryBacklogStatusResult {
 message LiveScreenGetCommand {
   reserved 1;
   TerminalRef terminal = 2;
+  uint64 observed_revision = 3;
 }
 
 message LiveInvalidationNextCommand {
@@ -232,11 +233,15 @@ message NativeScreenResult {
   TerminalCursor cursor = 6;
   TerminalModes modes = 7;
   int64 timestamp_unix_nano = 8;
+  uint64 base_revision = 9;
+  repeated int32 row_indices = 10;
+  bool full_replace = 11;
 }
 
 message LiveInvalidationResult {
   TerminalRef terminal = 1;
   uint64 live_revision = 2;
+  NativeScreenResult screen = 3;
 }
 
 message LiveInvalidatedEvent {

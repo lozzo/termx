@@ -13,23 +13,27 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 
 	lines := frame.Canvas.lines()
 	return RenderResult{
-		Content:    lines,
-		Cursor:     frame.Cursor,
-		CursorRect: frame.CursorRect,
-		HitRegions: frame.HitRegions,
-		Metadata:   RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
-		Layers:     frame.Layers,
-		Theme:      frame.Theme,
+		Content:     lines,
+		Cursor:      frame.Cursor,
+		CursorRect:  frame.CursorRect,
+		HitRegions:  frame.HitRegions,
+		LiveTargets: frame.LiveTargets,
+		LiveRegions: frame.LiveRegions,
+		Metadata:    RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
+		Layers:      frame.Layers,
+		Theme:       frame.Theme,
 	}
 }
 
 type renderedFrameworkCanvas struct {
-	Canvas     *canvas
-	Cursor     Cursor
-	CursorRect Rect
-	HitRegions []HitRegion
-	Layers     []Layer
-	Theme      Theme
+	Canvas      *canvas
+	Cursor      Cursor
+	CursorRect  Rect
+	HitRegions  []HitRegion
+	LiveTargets []LiveRenderTarget
+	LiveRegions []LiveRenderRegion
+	Layers      []Layer
+	Theme       Theme
 }
 
 func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCanvas {
@@ -45,8 +49,11 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 	}
 
 	layers := make([]Layer, 0)
+	liveTargets := make([]LiveRenderTarget, 0)
+	liveRegions := make([]LiveRenderRegion, 0)
 	if !overlayHidesBackground && len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
 		contentResult := renderContent(c, shell.Layout.BodyContent, plan.Body, "shell:body:content", LayerPanel)
+		liveTargets = appendLiveRenderTarget(liveTargets, shell.Layout.BodyContent)
 		layers = append(layers, Layer{Kind: LayerPanel, Rect: plan.Body, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
 	}
 	overlayOwnsChrome := shell.Overlay.Opaque && shell.Overlay.Kind != OverlayNone
@@ -59,6 +66,12 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 				renderCardPanel(c, layout)
 			}
 			contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect, "panel:"+layout.Panel.ID+":content", LayerPanel)
+			liveTargets = appendLiveRenderTarget(liveTargets, layout.Panel.Content)
+			if len(plan.Floatings) == 0 && shell.Overlay.Kind == OverlayNone {
+				if region, ok := liveRenderRegionForContent(layout.Panel.Content, layout.ContentRect, layout.Panel.Active); ok {
+					liveRegions = append(liveRegions, region)
+				}
+			}
 			if !overlayOwnsChrome {
 				renderPanelContentOverflowMarkers(c, layout, contentResult.Overflow)
 			}
@@ -68,6 +81,9 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 			layer := renderFloating(c, floating)
 			if layer.Rect.W > 0 && layer.Rect.H > 0 {
 				layers = append(layers, layer)
+				if !floating.Floating.Collapsed {
+					liveTargets = appendLiveRenderTarget(liveTargets, floating.Floating.Content)
+				}
 			}
 		}
 		applyChromePatches(c, shell.Layout.ChromePatches, plan)
@@ -95,13 +111,55 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 	}
 
 	return renderedFrameworkCanvas{
-		Canvas:     c,
-		Cursor:     plan.Cursor,
-		CursorRect: plan.CursorRect,
-		HitRegions: plan.HitRegions,
-		Layers:     layers,
-		Theme:      renderer.Theme.WithFallback(),
+		Canvas:      c,
+		Cursor:      plan.Cursor,
+		CursorRect:  plan.CursorRect,
+		HitRegions:  plan.HitRegions,
+		LiveTargets: liveTargets,
+		LiveRegions: liveRegions,
+		Layers:      layers,
+		Theme:       renderer.Theme.WithFallback(),
 	}
+}
+
+func appendLiveRenderTarget(targets []LiveRenderTarget, content ContentVM) []LiveRenderTarget {
+	if content.Kind != ContentTerminalLive || content.Pending || content.Error != "" || content.Meta.LiveTerminalID == "" {
+		return targets
+	}
+	target := LiveRenderTarget{
+		EndpointID: content.Meta.LiveEndpointID,
+		TerminalID: content.Meta.LiveTerminalID,
+		Revision:   content.Meta.LiveRevision,
+	}
+	for index, current := range targets {
+		if current.EndpointID == target.EndpointID && current.TerminalID == target.TerminalID {
+			if target.Revision > current.Revision {
+				targets[index] = target
+			}
+			return targets
+		}
+	}
+	return append(targets, target)
+}
+
+func liveRenderRegionForContent(content ContentVM, rect Rect, active bool) (LiveRenderRegion, bool) {
+	if content.Kind != ContentTerminalLive || content.Pending || content.Empty || content.Error != "" ||
+		content.Meta.LiveTerminalID == "" || !content.Extent.Known ||
+		content.Extent.X != 0 || content.Extent.Y != 0 || content.Extent.Cols != rect.W || content.Extent.Rows != rect.H ||
+		rect.W <= 0 || rect.H <= 0 {
+		return LiveRenderRegion{}, false
+	}
+	layout := content.Layout
+	if layout.Known && (layout.PanX != 0 || layout.PanY != 0 || (layout.Mode != "" && layout.Mode != "auto" && layout.Mode != "fit")) {
+		return LiveRenderRegion{}, false
+	}
+	return LiveRenderRegion{
+		EndpointID: content.Meta.LiveEndpointID,
+		TerminalID: content.Meta.LiveTerminalID,
+		Revision:   content.Meta.LiveRevision,
+		Rect:       rect,
+		Active:     active,
+	}, true
 }
 
 func applyChromePatches(c *canvas, patches []ChromePatchVM, plan LayoutPlan) {

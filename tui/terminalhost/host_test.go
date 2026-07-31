@@ -1079,6 +1079,28 @@ func TestFrameSinkWritesRewritePatchWithoutScrollRegion(t *testing.T) {
 	}
 }
 
+func TestFrameSinkWritesSingleRowRewritePatch(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Patch: &render.FramePatch{
+			Rect:      render.Rect{X: 2, Y: 1, W: 8, H: 1},
+			Rewrite:   true,
+			LineY:     1,
+			LineX:     2,
+			LineWidth: 8,
+			LinesANSI: []string{"only row"},
+		},
+		Metadata: render.RenderMetadata{Width: 20, Height: 4},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write single-row patch: %v", err)
+	}
+	if got := output.String(); !strings.Contains(got, cursorPosition(2, 3)+render.ANSIReset+eraseChars(8)+"only row") {
+		t.Fatalf("single-row rewrite patch was not written: %q", got)
+	}
+}
+
 func TestFrameSinkWritesCursorOnlyChange(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)

@@ -332,7 +332,10 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 		return port.TerminalSurfaceResult{}, port.ErrMissingTerminalClient
 	}
 	finishRPC := perftrace.Measure("tui.protocol.live_surface.rpc")
-	snapshot, err := adapter.Application.LiveScreen(ctx, &apipb.LiveScreenGetCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}})
+	snapshot, err := adapter.Application.LiveScreen(ctx, &apipb.LiveScreenGetCommand{
+		Terminal:         &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
+		ObservedRevision: req.ObservedRevision,
+	})
 	finishRPC(0)
 	if err != nil {
 		return port.TerminalSurfaceResult{}, err
@@ -362,8 +365,12 @@ func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Co
 	if event == nil {
 		return port.TerminalLiveEvent{}, context.Canceled
 	}
-	liveEvent := port.TerminalLiveEvent{EndpointID: req.EndpointID, TerminalID: event.GetTerminal().GetTerminalId(), Refresh: true}
-	liveEvent.Snapshot.Revision = event.GetLiveRevision()
+	liveEvent := port.TerminalLiveEvent{
+		EndpointID: req.EndpointID,
+		TerminalID: event.GetTerminal().GetTerminalId(),
+		Snapshot:   liveSurfaceSnapshotFromProto(req.TerminalID, event.GetScreen()),
+		Ready:      true,
+	}
 	perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
 	return liveEvent, nil
 }
@@ -372,20 +379,30 @@ func liveSurfaceSnapshotFromProto(terminalID string, snapshot *apipb.NativeScree
 	if snapshot == nil {
 		return state.LiveSurfaceSnapshot{TerminalID: terminalID}
 	}
-	result := state.LiveSurfaceSnapshot{TerminalID: terminalID, Revision: snapshot.GetLiveRevision(), Cols: int(snapshot.GetSize().GetCols()), Rows: int(snapshot.GetSize().GetRows())}
+	result := state.LiveSurfaceSnapshot{
+		TerminalID:   terminalID,
+		Revision:     snapshot.GetLiveRevision(),
+		BaseRevision: snapshot.GetBaseRevision(),
+		Cols:         int(snapshot.GetSize().GetCols()),
+		Rows:         int(snapshot.GetSize().GetRows()),
+		FullReplace:  snapshot.GetFullReplace(),
+	}
 	if cursor := snapshot.GetCursor(); cursor != nil {
 		result.Cursor = state.LiveCursor{Visible: cursor.GetVisible(), Row: int(cursor.GetRow()), Col: int(cursor.GetCol()), Shape: strings.ToLower(strings.TrimPrefix(cursor.GetShape().String(), "CURSOR_SHAPE_"))}
 	}
 	if modes := snapshot.GetModes(); modes != nil {
 		result.Modes = state.LiveTerminalModes{MouseTracking: modes.GetMouseTracking(), MouseX10: modes.GetMouseX10(), MouseNormal: modes.GetMouseNormal(), MouseButton: modes.GetMouseButtonEvent(), MouseAny: modes.GetMouseAnyEvent(), MouseSGR: modes.GetMouseSgr(), BracketedPaste: modes.GetBracketedPaste()}
 	}
-	for _, row := range snapshot.GetRows() {
+	for rowIndex, row := range snapshot.GetRows() {
 		cells := make([]state.LiveCell, 0, len(row.GetCells()))
 		for _, cell := range row.GetCells() {
 			style := cell.GetStyle()
 			cells = append(cells, state.LiveCell{Text: cell.GetContent(), Width: int(cell.GetWidth()), FG: style.GetForeground(), BG: style.GetBackground(), Bold: style.GetBold(), Italic: style.GetItalic(), Underline: style.GetUnderline(), Blink: style.GetBlink(), Reverse: style.GetReverse(), Strikethrough: style.GetStrikethrough(), LinkURL: cell.GetLinkUrl(), LinkParams: cell.GetLinkParams()})
 		}
 		result.Screen = append(result.Screen, cells)
+		if rowIndex < len(snapshot.GetRowIndices()) {
+			result.ChangedRows = append(result.ChangedRows, int(snapshot.GetRowIndices()[rowIndex]))
+		}
 	}
 	return result
 }
