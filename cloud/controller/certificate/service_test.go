@@ -95,9 +95,19 @@ func TestFileSecretStoreRejectsAnUnsyncedPublishedDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantErr := errors.New("directory sync failed")
-	store.syncDirectory = func(string) error { return wantErr }
+	syncCalls := 0
+	store.syncDirectory = func(string) error {
+		syncCalls++
+		if syncCalls == 1 {
+			return wantErr
+		}
+		return nil
+	}
 	if _, err := store.Put([]byte("certificate"), []byte("private key")); !errors.Is(err, wantErr) {
 		t.Fatalf("Put error = %v, want %v", err, wantErr)
+	}
+	if syncCalls != 3 {
+		t.Fatalf("root sync calls = %d, want publish + tombstone + deletion sync", syncCalls)
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {

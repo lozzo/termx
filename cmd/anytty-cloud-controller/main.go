@@ -187,9 +187,16 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 			_, found, err := directoryState.Edge(ctx, edgeID)
 			return found, err
 		},
+		Logger: logger,
 	})
 	if err != nil {
 		return err
+	}
+	reconcileContext, cancelReconcile := context.WithTimeout(ctx, config.startupTimeout)
+	err = certificateService.ReconcileSecrets(reconcileContext)
+	cancelReconcile()
+	if err != nil {
+		return fmt.Errorf("reconcile certificate secrets before serving: %w", err)
 	}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Store: database, Edges: edgeService, Directory: directoryState, BindingSigningKey: bindingKey, BindingSigningKeyID: config.bindingSigningKeyID,

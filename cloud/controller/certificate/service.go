@@ -9,8 +9,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
@@ -78,6 +80,7 @@ type SecretStore interface {
 	Put([]byte, []byte) (string, error)
 	Read(string) ([]byte, []byte, error)
 	Delete(string) error
+	Reconcile([]string) error
 }
 
 // Dispatcher 通知指定在线 Edge 重新读取当前持久 desired；通知不携带事务外旧证书包。
@@ -101,11 +104,13 @@ type Config struct {
 	Dispatcher Dispatcher
 	Online     func(context.Context, string) (bool, error)
 	Now        func() time.Time
+	Logger     *slog.Logger
 }
 
 // Service 编排上传、绑定和自动下发，不缓存在线状态或私钥。
 type Service struct {
-	config Config
+	config      Config
+	secretState sync.RWMutex
 }
 
 // New 创建证书服务；缺失任一真值 owner 时 fail closed。
@@ -115,6 +120,9 @@ func New(config Config) (*Service, error) {
 	}
 	if config.Now == nil {
 		config.Now = func() time.Time { return time.Now().UTC() }
+	}
+	if config.Logger == nil {
+		config.Logger = slog.Default()
 	}
 	return &Service{config: config}, nil
 }
@@ -138,58 +146,115 @@ func (service *Service) UploadProfile(ctx context.Context, request *cloudv1.Uplo
 	if request == nil || strings.TrimSpace(request.GetName()) == "" || strings.TrimSpace(actorID) == "" {
 		return nil, errors.New("certificate profile name and operator identity are required")
 	}
+	profileID := strings.TrimSpace(request.GetCertificateProfileId())
+	if profileID == "" && request.GetExpectedRevision() != 0 {
+		return nil, errors.New("new certificate profile expected revision must be zero")
+	}
+	if profileID != "" && request.GetExpectedRevision() == 0 {
+		return nil, errors.New("existing certificate profile expected revision is required")
+	}
 	metadata, err := ValidatePair(request.GetCertificateChainPem(), request.GetPrivateKeyPem(), service.config.Now())
 	if err != nil {
 		return nil, err
 	}
-	secretRef, err := service.config.Secrets.Put(request.GetCertificateChainPem(), request.GetPrivateKeyPem())
-	if err != nil {
-		return nil, err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = service.config.Secrets.Delete(secretRef)
-		}
-	}()
 	now := service.config.Now().UTC()
 	profile := Profile{
-		ID: strings.TrimSpace(request.GetCertificateProfileId()), Name: strings.TrimSpace(request.GetName()), DNSNames: metadata.DNSNames,
-		Fingerprint: metadata.Fingerprint, NotBefore: metadata.NotBefore, NotAfter: metadata.NotAfter, SecretRef: secretRef, UpdatedAt: now,
+		ID: profileID, Name: strings.TrimSpace(request.GetName()), DNSNames: metadata.DNSNames,
+		Fingerprint: metadata.Fingerprint, NotBefore: metadata.NotBefore, NotAfter: metadata.NotAfter, UpdatedAt: now,
 	}
-	var bindings []Binding
-	var oldSecretRef string
-	if profile.ID == "" {
-		if request.GetExpectedRevision() != 0 {
-			return nil, errors.New("new certificate profile expected revision must be zero")
-		}
-		profile.ID, profile.Revision, profile.CreatedAt = uuid.NewString(), 1, now
-		if err := service.config.Store.CreateCertificateProfile(ctx, profile, actorID); err != nil {
-			return nil, err
-		}
-	} else {
-		if request.GetExpectedRevision() == 0 {
-			return nil, errors.New("existing certificate profile expected revision is required")
-		}
-		current, err := service.config.Store.GetCertificateProfile(ctx, profile.ID)
-		if err != nil {
-			return nil, err
-		}
-		profile.Revision, profile.CreatedAt = current.Revision+1, current.CreatedAt
-		oldSecretRef, bindings, err = service.config.Store.ReplaceCertificateProfile(ctx, request.GetExpectedRevision(), profile, actorID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	committed = true
-	if oldSecretRef != "" && oldSecretRef != secretRef {
-		_ = service.config.Secrets.Delete(oldSecretRef)
+
+	service.secretState.Lock()
+	profile, bindings, err := service.uploadProfileLocked(ctx, request, actorID, profile)
+	service.secretState.Unlock()
+	if err != nil {
+		return nil, err
 	}
 	for _, binding := range bindings {
 		service.push(ctx, binding)
 	}
 	profile.Bindings = bindings
 	return &cloudv1.UploadCertificateProfileResponse{Profile: service.projectProfile(ctx, profile)}, nil
+}
+
+func (service *Service) uploadProfileLocked(ctx context.Context, request *cloudv1.UploadCertificateProfileRequest, actorID string, profile Profile) (Profile, []Binding, error) {
+	if profile.ID == "" {
+		profile.ID, profile.Revision, profile.CreatedAt = uuid.NewString(), 1, profile.UpdatedAt
+	} else {
+		current, err := service.config.Store.GetCertificateProfile(ctx, profile.ID)
+		if err != nil {
+			return Profile{}, nil, err
+		}
+		profile.Revision, profile.CreatedAt = current.Revision+1, current.CreatedAt
+	}
+	secretRef, err := service.config.Secrets.Put(request.GetCertificateChainPem(), request.GetPrivateKeyPem())
+	if err != nil {
+		return Profile{}, nil, err
+	}
+	profile.SecretRef = secretRef
+
+	var bindings []Binding
+	if strings.TrimSpace(request.GetCertificateProfileId()) == "" {
+		err = service.config.Store.CreateCertificateProfile(ctx, profile, actorID)
+	} else {
+		_, bindings, err = service.config.Store.ReplaceCertificateProfile(ctx, request.GetExpectedRevision(), profile, actorID)
+	}
+	if err != nil {
+		profiles, truthErr := service.config.Store.ListCertificateProfiles(ctx)
+		if truthErr != nil {
+			return Profile{}, nil, errors.Join(err, fmt.Errorf("read certificate truth after mutation failure: %w", truthErr))
+		}
+		references := make([]string, 0, len(profiles))
+		for _, current := range profiles {
+			references = append(references, current.SecretRef)
+		}
+		reconcileErr := service.config.Secrets.Reconcile(references)
+		if committed, found := profileWithSecretRef(profiles, secretRef); found {
+			if committed.ID != profile.ID {
+				return Profile{}, nil, errors.Join(err, reconcileErr, errors.New("certificate secret reference belongs to an unexpected profile"))
+			}
+			if reconcileErr != nil {
+				service.config.Logger.Error("certificate secret reconciliation deferred after ambiguous committed upload")
+			}
+			return committed, committed.Bindings, nil
+		}
+		return Profile{}, nil, errors.Join(err, reconcileErr)
+	}
+	if _, reconcileErr := service.listProfilesAndReconcileLocked(ctx); reconcileErr != nil {
+		service.config.Logger.Error("certificate secret reconciliation deferred after committed upload")
+	}
+	return profile, bindings, nil
+}
+
+// ReconcileSecrets 把数据库中的当前 secret 引用与受管文件系统收敛到一致状态。
+func (service *Service) ReconcileSecrets(ctx context.Context) error {
+	service.secretState.Lock()
+	defer service.secretState.Unlock()
+	_, err := service.listProfilesAndReconcileLocked(ctx)
+	return err
+}
+
+func (service *Service) listProfilesAndReconcileLocked(ctx context.Context) ([]Profile, error) {
+	profiles, err := service.config.Store.ListCertificateProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	references := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		references = append(references, profile.SecretRef)
+	}
+	if err := service.config.Secrets.Reconcile(references); err != nil {
+		return profiles, err
+	}
+	return profiles, nil
+}
+
+func profileWithSecretRef(profiles []Profile, secretRef string) (Profile, bool) {
+	for _, profile := range profiles {
+		if profile.SecretRef == secretRef {
+			return profile, true
+		}
+	}
+	return Profile{}, false
 }
 
 // BindProfile 使用 binding revision CAS 选择档案；空档案 ID 只解除后续自动更新。
@@ -223,6 +288,9 @@ func (service *Service) BindProfile(ctx context.Context, request *cloudv1.BindCe
 
 // BundleForEdge 返回当前绑定的完整证书包，仅供已认证 EdgeControl 连接调用。
 func (service *Service) BundleForEdge(ctx context.Context, edgeID string) (*cloudv1.EdgeCertificateBundle, error) {
+	service.secretState.RLock()
+	defer service.secretState.RUnlock()
+
 	binding, found, err := service.config.Store.GetCertificateBinding(ctx, strings.TrimSpace(edgeID))
 	if err != nil || !found {
 		return nil, err
