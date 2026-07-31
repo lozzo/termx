@@ -36,27 +36,20 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 	assertEventuallyEvent(t, events, EventTerminalExited, "term-pty")
 }
 
-func TestPTYProcessOutputHandoffHasNoPrebufferAndCloseUnblocksWait(t *testing.T) {
+func TestPTYProcessOutputHandoffIsBoundedAndCloseUnblocksWait(t *testing.T) {
 	command, _ := ptyInteractiveFixture()
 	processValue, err := newPTYProcessFactory().Spawn(context.Background(), ProcessSpec{
-		TerminalID: "term-pty-unbuffered", Command: command, Size: Size{Cols: 40, Rows: 8},
+		TerminalID: "term-pty-bounded", Command: command, Size: Size{Cols: 40, Rows: 8},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	process := processValue.(*ptyProcess)
-	if capacity := cap(process.outputCh); capacity != 0 {
-		t.Fatalf("PTY output handoff retained a %d-chunk queue", capacity)
+	if capacity := cap(process.outputCh); capacity != ptyOutputQueueChunks {
+		t.Fatalf("PTY output handoff capacity=%d, want %d", capacity, ptyOutputQueueChunks)
 	}
 	if ptyReadBufferBytes != int(MinTerminalOutputBufferCapacityBytes) {
 		t.Fatalf("one in-flight PTY read=%d, want minimum buffer capacity %d", ptyReadBufferBytes, MinTerminalOutputBufferCapacityBytes)
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for process.outputPending.Load() != 1 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if pending := process.outputPending.Load(); pending != 1 {
-		t.Fatalf("expected exactly one transient read blocked on handoff, got %d", pending)
 	}
 	if err := process.Close(); err != nil {
 		t.Fatal(err)
@@ -65,9 +58,6 @@ func TestPTYProcessOutputHandoffHasNoPrebufferAndCloseUnblocksWait(t *testing.T)
 	case <-process.Wait():
 	case <-time.After(3 * time.Second):
 		t.Fatal("PTY waitLoop remained blocked after output cancellation")
-	}
-	if pending := process.outputPending.Load(); pending != 0 {
-		t.Fatalf("PTY transient read did not release: %d", pending)
 	}
 }
 

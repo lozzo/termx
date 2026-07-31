@@ -158,6 +158,11 @@ func (surface *SurfaceTrack) ResetForRestartPreservingScreen() {
 // 它是实时显示热路径，只维护 latest screen；需要 history 的调用方必须走 core
 // Terminal 的 history semantic worker，而不是从这里取 transaction。
 func (surface *SurfaceTrack) Write(text string) {
+	if text != "" && surface.pending == "" && !strings.Contains(text, "\x1b[?") {
+		surface.ensureVTerm()
+		_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
+		return
+	}
 	_ = surface.WriteWithResult(text)
 }
 

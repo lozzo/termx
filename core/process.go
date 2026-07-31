@@ -104,7 +104,7 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 		terminal:     terminal,
 		cmd:          cmd,
 		platform:     platform,
-		outputCh:     make(chan []byte),
+		outputCh:     make(chan []byte, ptyOutputQueueChunks),
 		outputCancel: make(chan struct{}),
 		waitCh:       make(chan ProcessExit, 1),
 		readDone:     make(chan struct{}),
@@ -127,10 +127,13 @@ type ptyProcess struct {
 	outputOnce    sync.Once
 	waitOnce      sync.Once
 	killRequested atomic.Bool
-	outputPending atomic.Int32
 }
 
-const ptyReadBufferBytes = 64 * 1024
+const (
+	ptyReadBufferBytes = 64 * 1024
+	// Keep PTY reads moving while the terminal owner processes the previous chunk.
+	ptyOutputQueueChunks = 16
+)
 
 func (process *ptyProcess) Input(data []byte) error {
 	process.mu.Lock()
@@ -222,14 +225,11 @@ func (process *ptyProcess) readLoop() {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			process.outputPending.Add(1)
 			select {
 			case process.outputCh <- chunk:
 			case <-process.outputCancel:
-				process.outputPending.Add(-1)
 				return
 			}
-			process.outputPending.Add(-1)
 		}
 		if err != nil {
 			return
