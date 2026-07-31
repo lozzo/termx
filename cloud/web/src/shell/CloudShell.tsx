@@ -53,6 +53,7 @@ export function CloudShell() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const [drawer, setDrawer] = useState(false)
+  const [logoutRecoveryOpen, setLogoutRecoveryOpen] = useState(false)
   const mainRef = useRef<HTMLElement>(null)
   const focusedPathname = useRef<string | undefined>(undefined)
   const current = useProtoQuery(['account', 'current'], '/api/account/current', GetCurrentAccountResponseSchema, 60_000)
@@ -77,8 +78,14 @@ export function CloudShell() {
 
   const logout = useMutation({
     mutationFn: () => protoSend('/api/account/logout', LogoutAccountSessionRequestSchema, create(LogoutAccountSessionRequestSchema), LogoutAccountSessionResponseSchema),
-    onSuccess: () => { queryClient.clear(); navigate('/login', { replace: true }) },
+    onError: () => setLogoutRecoveryOpen(true),
+    onSuccess: () => { setLogoutRecoveryOpen(false); queryClient.clear(); navigate('/login', { replace: true }) },
   })
+  function closeLogoutRecovery() {
+    if (logout.isPending) return
+    setLogoutRecoveryOpen(false)
+    logout.reset()
+  }
   const title = useMemo(() => [...userNavigation, ...adminNavigation].find((item) => location.pathname.startsWith(item.to))?.label ?? 'AnyTTY Cloud', [location.pathname])
 
   useEffect(() => {
@@ -138,7 +145,7 @@ export function CloudShell() {
       </header>
 		<main className={`content ${location.pathname.startsWith('/app/admin') ? 'content-admin' : 'content-user'}`} id="main-content" ref={mainRef} tabIndex={-1}><Outlet context={{ current: current.data, isOperator, isAdmin } satisfies ShellContext} /></main>
       <nav className="mobile-bottom-nav" aria-label="手机主导航">{userNavigation.filter((item) => item.to !== '/app/orders').map(({ to, label, icon: Icon }) => <NavLink key={to} to={to}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
-      <Dialog title="退出登录失败" open={Boolean(logout.error)} onClose={() => logout.reset()} footer={<><Button tone="quiet" onClick={() => logout.reset()}>取消</Button><Button tone="primary" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? '正在重试' : '重试退出'}</Button></>}>
+      <Dialog title="退出登录失败" open={logoutRecoveryOpen} onClose={closeLogoutRecovery} closable={!logout.isPending} footer={<><Button tone="quiet" onClick={closeLogoutRecovery} disabled={logout.isPending}>取消</Button><Button tone="primary" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? '正在重试' : '重试退出'}</Button></>}>
         <Notice tone="error">无法退出登录，请检查网络后重试。</Notice>
       </Dialog>
     </div>

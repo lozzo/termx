@@ -79,7 +79,7 @@ export function SetupCredentialResult({ value }: { value: ProvisionAccountRespon
 		setCopyFailed(false)
 		try { await navigator.clipboard.writeText(setupLink); setCopied(true) } catch { setCopyFailed(true) }
 	}
-	return <div className="credential-result"><Notice tone="warning"><strong>仅展示一次</strong><span>关闭窗口后无法再次查看；请将此设置链接通过可信方式交给账号本人。</span></Notice><div className="credential-value"><code>{setupLink}</code><Button type="button" onClick={() => void copyCredential()}>{copied ? <Check size={16} /> : <Clipboard size={16} />}{copied ? '已复制设置链接' : '复制设置链接'}</Button></div><p>有效期至 {dateTime(value.expiresAt)}</p>{copyFailed && <p className="form-error" role="alert">无法访问剪贴板，请手动选择设置链接。</p>}</div>
+	return <div className="credential-result"><Notice tone="warning"><strong>仅展示一次</strong><span>关闭窗口后无法再次查看；请将此设置链接通过可信方式交给账号本人。</span></Notice><div className="credential-value"><code>{setupLink}</code><Button type="button" autoFocus onClick={() => void copyCredential()}>{copied ? <Check size={16} /> : <Clipboard size={16} />}{copied ? '已复制设置链接' : '复制设置链接'}</Button></div><p>有效期至 {dateTime(value.expiresAt)}</p>{copyFailed && <p className="form-error" role="alert">无法访问剪贴板，请手动选择设置链接。</p>}</div>
 }
 
 export function MutationError({ action, error }: { action: string; error: unknown }) {

@@ -46,6 +46,29 @@ describe('账号 session 轮换', () => {
     })
   })
 
+  it('preserves status and the response request ID for a non-JSON 503', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html><title>private proxy failure</title>', {
+      status: 503,
+      headers: { 'Content-Type': 'text/html', 'X-Request-ID': 'proxy-request-503' },
+    })))
+
+    await expect(protoGet('/api/account/current', GetCurrentAccountResponseSchema)).rejects.toMatchObject({
+      status: 503,
+      correlationID: 'proxy-request-503',
+      code: 'http_error',
+      message: '请求失败，请稍后重试。',
+    })
+  })
+
+  it('keeps successful Proto JSON responses strict', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html><title>not proto JSON</title>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    })))
+
+    await expect(protoGet('/api/account/current', GetCurrentAccountResponseSchema)).rejects.toBeInstanceOf(SyntaxError)
+  })
+
   it('does not refresh or replay a forbidden request', async () => {
     vi.stubGlobal('document', { cookie: 'anytty_cloud_csrf=csrf-proof' })
     const fetchMock = vi.fn(async (_input: string | URL | Request) => new Response(JSON.stringify({ code: 'forbidden', message: '没有权限。', request_id: 'req-forbidden' }), {

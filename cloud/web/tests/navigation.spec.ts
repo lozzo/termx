@@ -78,7 +78,7 @@ async function holdJSONMutation(page: Page, path: string, body: unknown) {
   return release
 }
 
-async function finishLockedDialog(page: Page, title: string, submitName: string, resultTitle: string, release: () => void) {
+async function submitLockedDialog(page: Page, title: string, submitName: string) {
   const dialog = page.getByRole('dialog', { name: title })
   const submit = dialog.locator('footer button').last()
   await expect(submit).toHaveText(submitName)
@@ -91,12 +91,18 @@ async function finishLockedDialog(page: Page, title: string, submitName: string,
   await expect(dialog).toBeVisible()
   await page.locator('.dialog-backdrop').dispatchEvent('mousedown')
   await expect(dialog).toBeVisible()
+  return dialog
+}
 
+async function finishLockedDialog(page: Page, title: string, submitName: string, resultTitle: string, focusedAction: string, release: () => void) {
+  await submitLockedDialog(page, title, submitName)
   release()
   const result = page.getByRole('dialog', { name: resultTitle })
   await expect(result).toBeVisible()
+  await expect(result.getByRole('button', { name: focusedAction, exact: true })).toBeFocused()
+  expect(await result.evaluate((element) => element.contains(document.activeElement))).toBe(true)
   await expect(result.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
-  await result.getByRole('button', { name: '完成', exact: true }).click()
+  await page.keyboard.press('Escape')
   await expect(result).toHaveCount(0)
 }
 
@@ -266,9 +272,12 @@ test('logout 失败显示脱敏固定反馈并允许重试', async ({ page }, te
   test.skip(testInfo.project.name !== 'desktop-chromium')
   await mockAPI(page)
   let attempts = 0
+  let finishRetry: () => void = () => undefined
+  const retryPending = new Promise<void>((resolve) => { finishRetry = () => resolve() })
   await page.route('**/api/account/logout', async (route) => {
     attempts++
-    if (attempts === 1) return json(route, { code: 'service_unavailable', message: 'private logout failure', request_id: 'logout-failure-id' }, 500)
+    if (attempts <= 2) return json(route, { code: 'service_unavailable', message: 'private logout failure', request_id: 'logout-failure-id' }, 500)
+    await retryPending
     return json(route, {})
   })
 
@@ -279,9 +288,24 @@ test('logout 失败显示脱敏固定反馈并允许重试', async ({ page }, te
   await expect(dialog).not.toContainText('private logout failure')
   await expect(dialog).not.toContainText('logout-failure-id')
 
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '重试退出', exact: true })).toBeVisible()
+
   await dialog.getByRole('button', { name: '重试退出', exact: true }).click()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '正在重试', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  await page.locator('.dialog-backdrop').dispatchEvent('mousedown')
+  await expect(dialog).toBeVisible()
+
+  finishRetry()
   await expect(page).toHaveURL(/\/login$/)
-  expect(attempts).toBe(2)
+  expect(attempts).toBe(3)
 })
 
 test('用户创建订单并完成 Development 支付', async ({ page }) => {
@@ -388,7 +412,7 @@ test('一次性结果 mutations pending 时不能关闭，成功后仍可完成�
   await page.getByLabel('邮箱').fill('pending@example.com')
   await page.getByLabel('显示名称').fill('Pending User')
   await page.getByLabel('创建原因').fill('approved')
-  await finishLockedDialog(page, '创建账号', '创建账号', '一次性凭据', finishProvision)
+  await finishLockedDialog(page, '创建账号', '创建账号', '一次性凭据', '复制设置链接', finishProvision)
 
   const finishReset = await holdJSONMutation(page, `/api/operator/accounts/${account.account_id}/reset`, {
     account: { ...account, state: 'ACCOUNT_STATE_PENDING', revision: '2' },
@@ -398,7 +422,7 @@ test('一次性结果 mutations pending 时不能关闭，成功后仍可完成�
   await page.getByRole('link', { name: '详情', exact: true }).click()
   await page.getByRole('button', { name: '重置凭据', exact: true }).click()
   await page.getByLabel('操作原因').fill('lost password')
-  await finishLockedDialog(page, '重置账号凭据', '重置凭据', '一次性凭据', finishReset)
+  await finishLockedDialog(page, '重置账号凭据', '重置凭据', '一次性凭据', '复制设置链接', finishReset)
 
   const finishUserEnrollment = await holdJSONMutation(page, '/api/daemons/enroll', {
     enrollment_code: 'mxe_user_pending',
@@ -408,7 +432,7 @@ test('一次性结果 mutations pending 时不能关闭，成功后仍可完成�
   await page.goto('/app/devices')
   await page.getByRole('button', { name: '注册 daemon', exact: true }).click()
   await page.getByLabel('daemon 名称').fill('Pending user daemon')
-  await finishLockedDialog(page, '注册 daemon', '生成命令', '注册命令已生成', finishUserEnrollment)
+  await finishLockedDialog(page, '注册 daemon', '生成命令', '注册命令已生成', '复制命令', finishUserEnrollment)
 
   const finishAdminEnrollment = await holdJSONMutation(page, '/api/operator/daemons', {
     account_id: account.account_id,
@@ -420,7 +444,7 @@ test('一次性结果 mutations pending 时不能关闭，成功后仍可完成�
   await page.getByRole('button', { name: '注册 daemon', exact: true }).click()
   await page.getByLabel('账号 ID').fill(account.account_id)
   await page.getByLabel('daemon 名称').fill('Pending admin daemon')
-  await finishLockedDialog(page, '注册 daemon', '生成命令', '注册命令', finishAdminEnrollment)
+  await finishLockedDialog(page, '注册 daemon', '生成命令', '注册命令', '复制', finishAdminEnrollment)
 
   const finishEdge = await holdJSONMutation(page, '/api/operator/edges', {
     install_command: 'anytty edge install --claim edge-pending',
@@ -430,7 +454,40 @@ test('一次性结果 mutations pending 时不能关闭，成功后仍可完成�
   await page.getByLabel('名称').fill('Pending Edge')
   await page.getByLabel('区域').fill('test-region')
   await page.getByLabel('域名或域名:端口').fill('edge.example.com:443')
-  await finishLockedDialog(page, '添加 Edge', '生成安装命令', '安装命令', finishEdge)
+  await finishLockedDialog(page, '添加 Edge', '生成安装命令', '安装命令', '复制', finishEdge)
+})
+
+test('套餐与订单 create 慢请求 pending 时不能关闭或写入重开的 dialog', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page, true)
+
+  const finishPlan = await holdJSONMutation(page, '/api/operator/plans', {
+    plan: { ...plans[0], plan_id: 'slow-plan', name: 'Slow Plan', state: 'PLAN_STATE_DRAFT' },
+  })
+  await page.goto('/app/admin/plans')
+  await page.getByRole('button', { name: '创建套餐版本', exact: true }).click()
+  await page.getByLabel('套餐 ID').fill('slow-plan')
+  await page.getByLabel('显示名称').fill('Slow Plan')
+  const planDialog = await submitLockedDialog(page, '创建套餐版本', '创建草稿')
+  finishPlan()
+  await expect(planDialog).toHaveCount(0)
+
+  const finishOrder = await holdJSONMutation(page, '/api/commerce/order', {
+    order: { order_id: 'slow-order', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'manual', idempotency_key: 'slow-order-create', requested_transition: 'SUBSCRIPTION_TRANSITION_ACTIVATE', revision: '1', created_at: now },
+    payment_attempt: { payment_attempt_id: 'slow-attempt', order_id: 'slow-order', account_id: account.account_id, provider: 'manual', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now },
+  })
+  await page.goto('/app/admin/orders')
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
+  await page.getByLabel('账号 ID').fill(account.account_id)
+  await page.getByLabel('套餐 ID').fill('professional')
+  await page.getByLabel('幂等键').fill('slow-order-create')
+  await submitLockedDialog(page, '创建订单', '创建')
+  finishOrder()
+  const created = page.getByRole('dialog', { name: '订单已创建' })
+  await expect(created).toContainText('slow-order')
+  await expect(created.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(created).toHaveCount(0)
 })
 
 test('pathname navigation updates title and main focus without query focus theft', async ({ page }, testInfo) => {

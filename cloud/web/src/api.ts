@@ -37,12 +37,19 @@ async function fetchWithSession(path: string, init?: RequestInit): Promise<Respo
 
 async function decode<Schema extends DescMessage>(response: Response, schema: Schema): Promise<MessageShape<Schema>> {
   const body = await response.text()
-  const json = body ? JSON.parse(body) as JsonValue : {}
   if (!response.ok) {
-    const error = json as { code?: string; message?: string; request_id?: string }
-    const correlationID = error.request_id ?? response.headers.get('X-Request-ID') ?? ''
-    throw new APIError(response.status, error.message ?? `请求失败（${response.status}）`, correlationID, error.code ?? '')
+    let error: Record<string, unknown> = {}
+    try {
+      const parsed = body ? JSON.parse(body) : {}
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) error = parsed as Record<string, unknown>
+    } catch {}
+    const requestID = typeof error.request_id === 'string' ? error.request_id : ''
+    const correlationID = requestID || response.headers.get('X-Request-ID') || ''
+    const message = typeof error.message === 'string' && error.message ? error.message : '请求失败，请稍后重试。'
+    const code = typeof error.code === 'string' && error.code ? error.code : 'http_error'
+    throw new APIError(response.status, message, correlationID, code)
   }
+  const json = body ? JSON.parse(body) as JsonValue : {}
   return fromJson(schema, json)
 }
 
