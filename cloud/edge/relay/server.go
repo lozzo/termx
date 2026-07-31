@@ -422,18 +422,6 @@ func (server *Server) settleClaimedAllocation(ctx context.Context, claimed claim
 	return nil
 }
 
-func (server *Server) claimAllocation(allocationID string) (claimedAllocation, bool) {
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	allocation, exists := server.active[allocationID]
-	if !exists || allocation.settling {
-		return claimedAllocation{}, false
-	}
-	allocation.settling = true
-	server.active[allocationID] = allocation
-	return claimedAllocation{allocation: allocation}, true
-}
-
 func (server *Server) claimDeletedAllocation(key string) (claimedAllocation, bool) {
 	server.mu.Lock()
 	defer server.mu.Unlock()

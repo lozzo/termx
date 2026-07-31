@@ -3522,7 +3522,7 @@ func (v *VTerm) writeDamageHeaderLocked(plan rowCacheReconcilePlan) WriteDamage 
 		ScreenScroll:        plan.screenScrollShift,
 		RequiresFullReplace: false,
 	}
-	if v != nil && v.emu != nil {
+	if v.emu != nil {
 		damage.SizeCols = v.emu.Width()
 	}
 	return damage
