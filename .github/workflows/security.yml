@@ -52,7 +52,7 @@ jobs:
         run: |
           make doctor
           scripts/test-repository-layout-guard.sh
-          node --test scripts/eslint-config.test.mjs scripts/package-scripts.test.mjs
+          node --test scripts/client-workspace-guard.test.mjs scripts/eslint-config.test.mjs scripts/package-scripts.test.mjs
 
       - name: Go correctness and vulnerability gates
         run: |

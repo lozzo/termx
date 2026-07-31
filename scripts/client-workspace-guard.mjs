@@ -85,6 +85,16 @@ if (
   fail('root lock Vite and esbuild versions must match the explicit dependencies')
 }
 
+for (const packageName of ['react', 'react-dom', 'vite', 'esbuild']) {
+  const rootPath = `node_modules/${packageName}`
+  const installedPaths = Object.keys(lock.packages)
+    .filter((packagePath) => packagePath === rootPath || packagePath.endsWith(`/${rootPath}`))
+    .sort()
+  if (installedPaths.length !== 1 || installedPaths[0] !== rootPath) {
+    fail(`${packageName} must be installed only at ${rootPath}; found ${JSON.stringify(installedPaths)}`)
+  }
+}
+
 for (const nestedLock of [
   'clients/ui/package-lock.json',
   'clients/mobile/package-lock.json',
