@@ -72,13 +72,15 @@ type Config struct {
 
 // Server 拥有原生 HTTPS listener 生命周期，不拥有 Edge 配置或实时目录。
 type Server struct {
-	listener     net.Listener
-	httpServer   *http.Server
-	errors       chan error
-	shutdownMu   sync.Mutex
-	shutdownGate chan struct{}
-	shutdownDone bool
-	shutdownErr  error
+	listener            net.Listener
+	httpServer          *http.Server
+	errors              chan error
+	eventSourceShutdown chan struct{}
+	shutdownMu          sync.Mutex
+	shutdownGate        chan struct{}
+	shutdownStarted     bool
+	shutdownDone        bool
+	shutdownErr         error
 }
 
 // Start 验证 TLS/认证配置、绑定 listener 并启动 HTTPS。
@@ -95,12 +97,13 @@ func Start(config Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen Controller HTTPS: %w", err)
 	}
-	handler, err := NewHandler(config)
+	eventSourceShutdown := make(chan struct{})
+	handler, err := newHandler(config, eventSourceShutdown)
 	if err != nil {
 		_ = listener.Close()
 		return nil, err
 	}
-	server := &Server{listener: listener, errors: make(chan error, 1)}
+	server := &Server{listener: listener, errors: make(chan error, 1), eventSourceShutdown: eventSourceShutdown}
 	server.httpServer = &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, TLSConfig: tlsConfig}
 	go func() {
 		if err := server.httpServer.ServeTLS(listener, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -137,6 +140,12 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	if server.shutdownDone {
 		return server.shutdownErr
 	}
+	if !server.shutdownStarted {
+		if server.eventSourceShutdown != nil {
+			close(server.eventSourceShutdown)
+		}
+		server.shutdownStarted = true
+	}
 	shutdownErr := server.httpServer.Shutdown(ctx)
 	if errors.Is(shutdownErr, context.Canceled) || errors.Is(shutdownErr, context.DeadlineExceeded) {
 		return shutdownErr
@@ -157,6 +166,10 @@ func (server *Server) shutdownGateChannel() chan struct{} {
 
 // NewHandler 构造可测试的 HTTP adapter；调用方仍必须在生产使用 TLS listener。
 func NewHandler(config Config) (http.Handler, error) {
+	return newHandler(config, nil)
+}
+
+func newHandler(config Config, eventSourceShutdown <-chan struct{}) (http.Handler, error) {
 	config.PublicOrigin = strings.TrimRight(strings.TrimSpace(config.PublicOrigin), "/")
 	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Operator == nil || config.Certificates == nil {
 		return nil, errors.New("HTTP handler and R7 application services are required")
@@ -181,7 +194,7 @@ func NewHandler(config Config) (http.Handler, error) {
 		cloudv1.RegisterCommerceServiceServer(grpcServer, config.Commerce)
 		cloudv1.RegisterOperatorServiceServer(grpcServer, config.Operator)
 	}
-	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), setupLimiter: newDefaultSetupLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles, immutableAssetPaths: immutableAssetPaths}
+	handler := &handler{config: config, grpcServer: grpcServer, loginLimiter: newDefaultLoginLimiter(), setupLimiter: newDefaultSetupLimiter(), trustedProxyCIDRs: append([]netip.Prefix(nil), config.TrustedProxyCIDRs...), logger: config.Logger, staticFiles: webFiles, immutableAssetPaths: immutableAssetPaths, eventSourceShutdown: eventSourceShutdown}
 	return handler, nil
 }
 
@@ -194,6 +207,7 @@ type handler struct {
 	logger              *slog.Logger
 	staticFiles         fs.FS
 	immutableAssetPaths map[string]struct{}
+	eventSourceShutdown <-chan struct{}
 
 	// Package-private hooks keep production deadlines fixed while allowing fast, deterministic tests.
 	bodyReadTimeout        time.Duration

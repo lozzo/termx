@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -70,6 +71,37 @@ type options struct {
 	startupTimeout       time.Duration
 	shutdownTimeout      time.Duration
 	trustedProxyCIDRs    []netip.Prefix
+}
+
+type controllerShutdowner interface {
+	Shutdown(context.Context) error
+}
+
+func shutdownController(ctx context.Context, httpsServer, runtime controllerShutdowner) error {
+	if ctx == nil {
+		return errors.New("Controller shutdown requires context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	errs := make([]error, 2)
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		if err := httpsServer.Shutdown(ctx); err != nil {
+			errs[0] = fmt.Errorf("shutdown Controller HTTPS: %w", err)
+		}
+	}()
+	go func() {
+		defer wait.Done()
+		if err := runtime.Shutdown(ctx); err != nil {
+			errs[1] = fmt.Errorf("shutdown Controller runtime: %w", err)
+		}
+	}()
+	wait.Wait()
+	return errors.Join(errs...)
 }
 
 func main() {
@@ -271,11 +303,8 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	}
 	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 	defer cancelShutdown()
-	if err := httpServer.Shutdown(shutdownContext); err != nil {
-		return fmt.Errorf("shutdown Controller HTTPS: %w", err)
-	}
-	if err := runtime.Shutdown(shutdownContext); err != nil {
-		return fmt.Errorf("shutdown Controller: %w", err)
+	if err := shutdownController(shutdownContext, httpServer, runtime); err != nil {
+		return err
 	}
 	if runtimeErr != nil {
 		return runtimeErr

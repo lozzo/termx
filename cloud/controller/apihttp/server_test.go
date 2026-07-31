@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/directory"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
@@ -109,6 +110,41 @@ func TestServerShutdownCachesPersistentError(t *testing.T) {
 	}
 	if err := <-serveDone; !errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("Serve error = %v", err)
+	}
+}
+
+func TestServerShutdownCancelsActiveEventSource(t *testing.T) {
+	directoryState, err := directory.New(directory.Config{MailboxSize: 8, GracePeriod: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(directoryState.Close)
+	eventSourceShutdown := make(chan struct{})
+	eventHandler := &handler{config: Config{Directory: directoryState}, eventSourceShutdown: eventSourceShutdown}
+	httpHarness := httptest.NewServer(http.HandlerFunc(eventHandler.operatorEvents))
+	t.Cleanup(httpHarness.Close)
+	server := &Server{httpServer: httpHarness.Config, eventSourceShutdown: eventSourceShutdown}
+
+	response, err := httpHarness.Client().Get(httpHarness.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	reader := bufio.NewReader(response.Body)
+	for line := ""; line != "\n"; {
+		line, err = reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read SSE ready event: %v", err)
+		}
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), time.Second)
+	defer cancelShutdown()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown with active SSE = %v", err)
+	}
+	if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) {
+		t.Fatalf("SSE stream remained active after Shutdown: %v", err)
 	}
 }
 

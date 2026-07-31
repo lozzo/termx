@@ -478,6 +478,8 @@ func (handler *handler) operatorEvents(writer http.ResponseWriter, request *http
 		select {
 		case <-request.Context().Done():
 			return
+		case <-handler.eventSourceShutdown:
+			return
 		case <-keepalive.C:
 			_, _ = fmt.Fprint(writer, ": keepalive\n\n")
 			flusher.Flush()
