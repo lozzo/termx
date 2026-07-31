@@ -208,6 +208,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const mobileKeybarRef = useRef<HTMLDivElement | null>(null)
   const activeTerminalSlotRef = useRef<TerminalSlot>(0)
   const terminalToolbarOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const terminalToolsButtonRef = useRef<HTMLButtonElement | null>(null)
   const [keyboardFocusLocked, setKeyboardFocusLocked] = useState(false)
   const machineSessionRef = useRef<{
     connector: MachineWorkspaceConnector
@@ -1834,6 +1835,27 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [setTerminalToolbarVisibility])
 
   useEffect(() => {
+    if (page === 'terminal') return
+    terminalToolbarOpenerRef.current = null
+    if (terminalToolbarOpen) setTerminalToolbarVisibility(false)
+  }, [page, setTerminalToolbarVisibility, terminalToolbarOpen])
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const directToolsQuery = window.matchMedia('(min-width: 360px)')
+    const closeForNarrowViewport = (matches: boolean) => {
+      const opener = terminalToolbarOpenerRef.current
+      if (!opener || matches || opener !== terminalToolsButtonRef.current) return
+      terminalToolbarOpenerRef.current = null
+      setTerminalToolbarVisibility(false)
+    }
+    const handleViewportChange = (event: MediaQueryListEvent) => closeForNarrowViewport(event.matches)
+    closeForNarrowViewport(directToolsQuery.matches)
+    directToolsQuery.addEventListener('change', handleViewportChange)
+    return () => directToolsQuery.removeEventListener('change', handleViewportChange)
+  }, [setTerminalToolbarVisibility])
+
+  useEffect(() => {
     if (!terminalToolbarOpen || terminalToolbarMode !== 'selection') return
     const timer = window.setInterval(() => {
       setHasTerminalSelection(activeTerminalHandle()?.hasSelection() ?? false)
@@ -2611,6 +2633,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <Scaling className="h-5 w-5" />
             </button>
             <button
+              ref={terminalToolsButtonRef}
               type="button"
               aria-label={t('workspace.terminalTools')}
               title={t('workspace.terminalTools')}
@@ -2645,6 +2668,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <TerminalActionToolbar
               mode={terminalToolbarMode}
               hasSelection={hasTerminalSelection}
+              escapeEnabled={!mobileSheet && !filesOpen && !pasteConfirmText && !connectionInfoOpen && !transferCenterOpen}
               renderer={effectiveTerminalSettings.renderer}
               fontSize={effectiveTerminalSettings.fontSize}
               resizeControl={terminalResizeControl}

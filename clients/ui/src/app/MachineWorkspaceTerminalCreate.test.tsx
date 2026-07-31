@@ -24,6 +24,29 @@ const terminalFocus = vi.hoisted(() => vi.fn())
 const terminalBlur = vi.hoisted(() => vi.fn())
 const terminalHarness = vi.hoisted(() => ({ exposeHandle: true, selection: '' }))
 const originalInnerWidth = window.innerWidth
+const originalMatchMediaDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+
+function installMinWidthMediaQuery(initialMatches: boolean) {
+  let matches = initialMatches
+  const listeners = new Set<(event: MediaQueryListEvent) => void>()
+  const mediaQueryList = {
+    media: '(min-width: 360px)',
+    get matches() { return matches },
+    addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener)),
+    removeEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener)),
+  } as unknown as MediaQueryList
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn(() => mediaQueryList),
+  })
+  return {
+    setMatches(nextMatches: boolean) {
+      matches = nextMatches
+      const event = { matches, media: mediaQueryList.media } as MediaQueryListEvent
+      listeners.forEach((listener) => listener(event))
+    },
+  }
+}
 
 vi.mock('../terminal/Terminal', () => ({
   Terminal: forwardRef(function MockTerminal(props: unknown, ref) {
@@ -68,6 +91,8 @@ describe('MachineWorkspace terminal creation', () => {
     cleanup()
     vi.restoreAllMocks()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+    if (originalMatchMediaDescriptor) Object.defineProperty(window, 'matchMedia', originalMatchMediaDescriptor)
+    else Reflect.deleteProperty(window, 'matchMedia')
   })
 
   it('prefills daemon defaults and submits a complete generated Proto create command', async () => {
@@ -146,7 +171,7 @@ describe('MachineWorkspace terminal creation', () => {
     expect(within(header).getByRole('button', { name: 'Open terminal menu' })).toBeTruthy()
   })
 
-  it('restores the 320px menu trigger after Escape from the selection toolbar while split', async () => {
+  it('closes only the 320px topmost menu before the selection toolbar while split', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
     const terminals = [
@@ -214,7 +239,15 @@ describe('MachineWorkspace terminal creation', () => {
       button.classList.contains('h-11') || button.classList.contains('min-h-11')
     ))).toBe(true)
 
+    await userEvent.click(menuButton)
+    expect(await screen.findByTestId('anytty-terminal-menu-sheet')).toBeTruthy()
+    expect(screen.getByTestId('anytty-terminal-action-toolbar')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByTestId('anytty-terminal-menu-sheet')).toBeNull()
+    expect(screen.getByTestId('anytty-terminal-action-toolbar')).toBeTruthy()
+    expect(screen.getByTestId('anytty-split-terminal-panel')).toBeTruthy()
     expect(document.activeElement).toBe(menuButton)
+
     await userEvent.tab()
     expect(selectionToolbar.contains(document.activeElement)).toBe(true)
     await userEvent.keyboard('{Escape}')
@@ -258,6 +291,82 @@ describe('MachineWorkspace terminal creation', () => {
 
     expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
     expect(document.activeElement).toBe(toolsButton)
+  })
+
+  it('closes a direct toolbar when its opener becomes hidden at 320px', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    const viewport = installMinWidthMediaQuery(true)
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+      terminalSettings={DEFAULT_TERMINAL_SETTINGS}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    const toolsButton = screen.getByTestId('anytty-terminal-tools-button')
+    await userEvent.click(toolsButton)
+    const toolbar = screen.getByTestId('anytty-terminal-action-toolbar')
+    await userEvent.tab()
+    await userEvent.tab()
+    expect(toolbar.contains(document.activeElement)).toBe(true)
+
+    act(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+      viewport.setMatches(false)
+    })
+
+    expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
+    expect(document.activeElement).not.toBe(toolsButton)
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.getByTestId('anytty-terminal-list-page')).toBeTruthy()
+  })
+
+  it('clears toolbar state and its opener across a terminal-list round trip', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    installMinWidthMediaQuery(true)
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+      terminalSettings={DEFAULT_TERMINAL_SETTINGS}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await userEvent.click(screen.getByTestId('anytty-terminal-tools-button'))
+    await userEvent.click(within(screen.getByTestId('anytty-terminal-action-toolbar')).getByRole('button', { name: 'Select' }))
+    expect(screen.getByRole('button', { name: 'Cancel selection' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back to terminal list' }))
+    expect(screen.getByTestId('anytty-terminal-list-page')).toBeTruthy()
+    expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
+    expect(dispatchNativeBack()).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Shell' }))
+    expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Cancel selection' })).toBeNull()
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.getByTestId('anytty-terminal-list-page')).toBeTruthy()
   })
 
   it('never mounts terminal resources with a stale generation while reconnecting', async () => {

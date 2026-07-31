@@ -27,6 +27,7 @@ export interface TerminalActionToolbarProps {
   onReleaseResizeOwner?: (() => void) | undefined
   onClose?: () => void
   onEscape?: () => void
+  escapeEnabled?: boolean
 }
 
 const RENDERER_LABELS: Record<TerminalRenderer, string> = {
@@ -56,12 +57,13 @@ export function TerminalActionToolbar({
   onReleaseResizeOwner,
   onClose,
   onEscape,
+  escapeEnabled = true,
 }: TerminalActionToolbarProps) {
   const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const escapeHandler = onEscape ?? onClose
+    const escapeHandler = escapeEnabled ? (onEscape ?? onClose) : undefined
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !escapeHandler) return
       event.preventDefault()
@@ -82,7 +84,7 @@ export function TerminalActionToolbar({
       if (escapeHandler) document.removeEventListener('keydown', handleKeyDown, true)
       if (mode !== 'selection' && onClose) document.removeEventListener('pointerdown', handlePointerDown, true)
     }
-  }, [mode, onClose, onEscape])
+  }, [escapeEnabled, mode, onClose, onEscape])
 
   if (mode === 'selection') {
     return (
