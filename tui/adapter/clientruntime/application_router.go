@@ -431,12 +431,12 @@ func (router *EndpointApplicationRouter) LiveSurface(ctx context.Context, req po
 	return adapter.LiveSurface(ctx, req)
 }
 
-func (router *EndpointApplicationRouter) ArmLiveInvalidation(ctx context.Context, req port.TerminalLiveEventRequest) (port.TerminalLiveEvent, error) {
+func (router *EndpointApplicationRouter) LiveScreenNext(ctx context.Context, req port.TerminalSurfaceRequest) (port.TerminalSurfaceResult, error) {
 	adapter, err := router.terminal(ctx, req.EndpointID)
 	if err != nil {
-		return port.TerminalLiveEvent{}, err
+		return port.TerminalSurfaceResult{}, err
 	}
-	return adapter.ArmLiveInvalidation(ctx, req)
+	return adapter.LiveScreenNext(ctx, req)
 }
 
 func (router *EndpointApplicationRouter) ListDirectories(ctx context.Context, req port.PathListDirectoriesRequest) (port.PathListDirectoriesResult, error) {
@@ -539,7 +539,7 @@ func (router *EndpointApplicationRouter) Close() error {
 
 var _ port.TerminalService = (*EndpointApplicationRouter)(nil)
 var _ port.NativeScreenSource = (*EndpointApplicationRouter)(nil)
-var _ port.LiveInvalidationSource = (*EndpointApplicationRouter)(nil)
+var _ port.LiveScreenSource = (*EndpointApplicationRouter)(nil)
 var _ port.PathService = (*EndpointApplicationRouter)(nil)
 var _ port.CoreClient = (*EndpointApplicationRouter)(nil)
 var _ EndpointConnectionSnapshotSource = (*EndpointApplicationRouter)(nil)

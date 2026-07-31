@@ -90,7 +90,7 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 	}
 }
 
-func TestLiveInvalidationEOFHarnessShowsDisconnectedPane(t *testing.T) {
+func TestLiveScreenNextEOFHarnessShowsDisconnectedPane(t *testing.T) {
 	ref := state.NewTerminalRef("cn-fast", "11")
 	root := endpointDisconnectHarnessRoot(ref)
 	host := NewFakeTerminalHost(64)

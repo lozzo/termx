@@ -199,7 +199,7 @@ const (
 func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 	switch msg := msg.(type) {
 	case LiveEventMsg:
-		// 中文说明：runtime 队列只合并 live invalidation wake-up；
+		// 中文说明：runtime 队列只合并 daemon 事件总线的普通 refresh hint；
 		if ordinaryLiveRefreshEvent(msg.Event) {
 			if msg.Event.TerminalID == "" {
 				return queuedLiveUpdate{}, false

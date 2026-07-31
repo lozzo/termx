@@ -36,7 +36,7 @@ type LiveDeps struct {
 	Logger              *slog.Logger
 }
 
-const liveInvalidationTokenPrefix = "terminal.live.invalidation:"
+const liveScreenNextTokenPrefix = "terminal.live.screen.next:"
 
 func runtimeSurfaceID(root state.Root) string {
 	if root.RuntimeSurfaceID != "" {
@@ -205,33 +205,29 @@ type LiveSurfaceMsg struct {
 
 func (LiveSurfaceMsg) isMsg() {}
 
-// LiveFrameReadyMsg 是 TUI 本地 FrameSink 写出完成后的 ready 信号。
-// 它只控制下一次 live invalidation one-shot arm，不上传 core，也不是 rendered revision。
-type LiveFrameReadyMsg struct {
-	EndpointID       state.EndpointID
-	TerminalID       string
-	ObservedRevision uint64
-}
-
-func (LiveFrameReadyMsg) isMsg() {}
-
-func (LiveFrameReadyMsg) SkipRender() bool {
-	return true
-}
-
-// LiveInvalidationArmCanceledMsg 表示 one-shot live wake effect 被取消。
-// Armed 状态归 TUI reducer 所有；effect 因 context 取消退出时必须回到 reducer
-// 释放该 pending 标记，否则后续 FrameSink ready 无法重新挂下一次 wake。
-type LiveInvalidationArmCanceledMsg struct {
+// LiveScreenNextResultMsg 是某个 TerminalRef 唯一在途 latest-screen 请求的结果。
+// Generation 把 late response 与当前 view demand 隔离；结果先进入 canonical cache，
+// 下一次请求要等该 revision 被 renderer 选中提交后才会启动。
+type LiveScreenNextResultMsg struct {
 	EndpointID state.EndpointID
 	TerminalID string
+	Generation uint64
+	Snapshot   state.LiveSurfaceSnapshot
+	Err        error
 }
 
-func (LiveInvalidationArmCanceledMsg) isMsg() {}
+func (LiveScreenNextResultMsg) isMsg() {}
 
-func (LiveInvalidationArmCanceledMsg) SkipRender() bool {
-	return true
+// LiveScreenFrameSelectedMsg 表示一帧已进入 FrameSink submission，不代表物理写出完成。
+// Full=true 时 Targets 同时是当前完整画面的 live demand 集合。
+type LiveScreenFrameSelectedMsg struct {
+	Full    bool
+	Targets []render.LiveRenderTarget
 }
+
+func (LiveScreenFrameSelectedMsg) isMsg() {}
+
+func (LiveScreenFrameSelectedMsg) SkipRender() bool { return true }
 
 type LiveLifecycleQueryTarget struct {
 	EndpointID state.EndpointID
@@ -390,12 +386,10 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			next, effects := maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
 			next, dirtyEffects := maybeScheduleDirtyLiveSurfaceRefreshRef(next, snapshotRef, msg.RequestedCols, msg.RequestedRows, deps)
 			return next, append(effects, dirtyEffects...)
-		case LiveFrameReadyMsg:
-			return reduceLiveFrameReady(root, msg, deps)
-		case LiveInvalidationArmCanceledMsg:
-			ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
-			root.Surface = root.Surface.FinishLiveInvalidationArmRef(ref)
-			return root, nil
+		case LiveScreenFrameSelectedMsg:
+			return reduceLiveScreenFrameSelected(root, msg, deps)
+		case LiveScreenNextResultMsg:
+			return reduceLiveScreenNextResult(root, msg, deps)
 		case LiveEventMsg:
 			finishReduce := perftrace.Measure("tui.reducer.live_event")
 			defer finishReduce(liveEventApproxBytes(msg.Event))
@@ -1099,87 +1093,53 @@ func liveSurfaceEffectForRef(endpointID state.EndpointID, terminalID string, col
 	}}
 }
 
-func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRevision uint64, deps LiveDeps) []Effect {
-	return liveInvalidationArmEffectForRef(state.DefaultEndpointID, terminalID, cols, rows, observedRevision, deps)
-}
-
-func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID string, cols int, rows int, observedRevision uint64, deps LiveDeps) []Effect {
-	source, ok := deps.Terminal.(port.LiveInvalidationSource)
-	if !ok || terminalID == "" {
+func liveScreenNextEffectForRef(request state.LiveScreenRequestState, deps LiveDeps) []Effect {
+	source, ok := deps.Terminal.(port.LiveScreenSource)
+	if !ok || request.TerminalID == "" {
 		return nil
 	}
-	endpointID = state.NormalizeEndpointID(endpointID)
-	token := liveInvalidationTokenForRef(endpointID, terminalID)
+	ref := request.TerminalRef()
+	token := liveScreenNextTokenForRef(ref)
 	return []Effect{FuncEffect{
 		Token: token,
 		Async: true,
 		Run: func(ctx context.Context) Msg {
-			if ctx.Err() != nil {
-				logLiveInvalidationTrace(deps.Logger, "arm.canceled.before_request",
-					"endpoint_id", string(endpointID),
-					"terminal_id", terminalID,
-					"observed_revision", observedRevision,
-				)
-				return LiveInvalidationArmCanceledMsg{EndpointID: endpointID, TerminalID: terminalID}
-			}
-			logLiveInvalidationTrace(deps.Logger, "arm.request",
-				"endpoint_id", string(endpointID),
-				"terminal_id", terminalID,
-				"cols", cols,
-				"rows", rows,
-				"observed_revision", observedRevision,
+			logLiveScreenTrace(deps.Logger, "next.request",
+				"endpoint_id", string(ref.EndpointID),
+				"terminal_id", ref.TerminalID,
+				"generation", request.Generation,
+				"cols", request.Cols,
+				"rows", request.Rows,
+				"observed_revision", request.SubmittedRevision,
 			)
-			event, err := source.ArmLiveInvalidation(ctx, port.TerminalLiveEventRequest{
-				EndpointID:       endpointID,
-				TerminalID:       terminalID,
-				Cols:             cols,
-				Rows:             rows,
-				ObservedRevision: observedRevision,
+			result, err := source.LiveScreenNext(ctx, port.TerminalSurfaceRequest{
+				EndpointID:       ref.EndpointID,
+				TerminalID:       ref.TerminalID,
+				Cols:             request.Cols,
+				Rows:             request.Rows,
+				ObservedRevision: request.SubmittedRevision,
 			})
 			if err != nil {
-				if isContextLifecycleError(err) {
-					logLiveInvalidationTrace(deps.Logger, "arm.canceled",
-						"endpoint_id", string(endpointID),
-						"terminal_id", terminalID,
-						"observed_revision", observedRevision,
-					)
-					return LiveInvalidationArmCanceledMsg{EndpointID: endpointID, TerminalID: terminalID}
-				}
-				logEffectError(deps.Logger, "live.invalidation", err,
-					"endpoint_id", string(endpointID),
-					"terminal_id", terminalID,
-				)
-				return LiveEventMsg{Event: port.TerminalLiveEvent{
-					EndpointID: endpointID,
-					TerminalID: terminalID,
-					Err:        err,
-				}}
+				return LiveScreenNextResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Generation: request.Generation, Err: err}
 			}
-			event.EndpointID = endpointID
-			if event.TerminalID == "" {
-				event.TerminalID = terminalID
+			result.Snapshot.EndpointID = ref.EndpointID
+			if result.Snapshot.TerminalID == "" {
+				result.Snapshot.TerminalID = ref.TerminalID
 			}
-			logLiveInvalidationTrace(deps.Logger, "arm.wake",
-				"endpoint_id", string(event.EndpointID),
-				"terminal_id", event.TerminalID,
-				"refresh", event.Refresh,
-				"ready", event.Ready,
-				"metadata", event.Metadata,
-				"exited", event.Exited,
-				"revision", event.Snapshot.Revision,
+			logLiveScreenTrace(deps.Logger, "next.result",
+				"endpoint_id", string(ref.EndpointID),
+				"terminal_id", ref.TerminalID,
+				"generation", request.Generation,
+				"revision", result.Snapshot.Revision,
 			)
-			perftrace.Count("tui.live_event", liveEventApproxBytes(event))
-			return LiveEventMsg{Event: event}
+			perftrace.Count("tui.live_screen_next", liveSnapshotApproxBytes(result.Snapshot))
+			return LiveScreenNextResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Generation: request.Generation, Snapshot: result.Snapshot}
 		},
 	}}
 }
 
-func liveInvalidationTokenForTerminal(terminalID string) CancelToken {
-	return liveInvalidationTokenForRef(state.DefaultEndpointID, terminalID)
-}
-
-func liveInvalidationTokenForRef(endpointID state.EndpointID, terminalID string) CancelToken {
-	return CancelToken(liveInvalidationTokenPrefix + state.NewTerminalRef(endpointID, terminalID).Key())
+func liveScreenNextTokenForRef(ref state.TerminalRef) CancelToken {
+	return CancelToken(liveScreenNextTokenPrefix + ref.Normalize().Key())
 }
 
 func liveSurfaceRefreshKey(ref state.TerminalRef) string {
@@ -1261,20 +1221,10 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 	}
 	event.EndpointID = state.NormalizeEndpointID(event.EndpointID)
 	eventRef := state.NewTerminalRef(event.EndpointID, event.TerminalID)
-	root.Surface = root.Surface.FinishLiveInvalidationArmRef(eventRef)
 	if ordinaryLiveRefreshEvent(event) {
-		if event.TerminalID == "" {
-			return root, nil
-		}
-		cols, rows := liveSurfaceRefreshSizeRef(root, eventRef)
-		var shouldFetch bool
-		root.Surface, shouldFetch = root.Surface.RequestRefreshRef(eventRef, cols, rows)
-		if !shouldFetch {
-			perftrace.Count("tui.live_refresh_dirty", 0)
-			return root, nil
-		}
-		perftrace.Count("tui.live_refresh_start", 0)
-		return root, liveSurfaceEffectForRef(event.EndpointID, event.TerminalID, cols, rows, false, deps)
+		// daemon 事件总线中的 terminal.changed 只是失效提示；实时屏幕唯一来源是
+		// renderer submission 驱动的 LiveScreenNext，不允许再从被动事件启动第二条拉取链路。
+		return root, nil
 	}
 	if event.Err != nil {
 		if isContextLifecycleError(event.Err) {
@@ -1393,90 +1343,84 @@ func maybeScheduleDirtyLiveSurfaceRefreshRef(root state.Root, ref state.Terminal
 	return root, liveSurfaceEffectForRef(ref.EndpointID, ref.TerminalID, cols, rows, false, deps)
 }
 
-func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps) (state.Root, []Effect) {
-	terminalID := strings.TrimSpace(msg.TerminalID)
-	if terminalID == "" {
+func reduceLiveScreenFrameSelected(root state.Root, msg LiveScreenFrameSelectedMsg, deps LiveDeps) (state.Root, []Effect) {
+	if _, ok := deps.Terminal.(port.LiveScreenSource); !ok {
 		return root, nil
 	}
-	ref := state.NewTerminalRef(msg.EndpointID, terminalID)
-	surface := root.Surface.SurfaceForTerminalRef(ref)
-	if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
-		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip",
-			"reason", "terminal-state",
-			"endpoint_id", string(ref.EndpointID),
-			"terminal_id", ref.TerminalID,
-			"observed_revision", msg.ObservedRevision,
-			"surface_revision", surface.Revision,
-			"surface_state", string(surface.State),
-		)
-		return root, nil
-	}
-	if msg.ObservedRevision != 0 && surface.Revision != msg.ObservedRevision {
-		// 这次 ready 属于已被更新覆盖的本地帧，下一次 enable 由最新帧完成时触发。
-		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip",
-			"reason", "stale-revision",
-			"endpoint_id", string(ref.EndpointID),
-			"terminal_id", ref.TerminalID,
-			"observed_revision", msg.ObservedRevision,
-			"surface_revision", surface.Revision,
-			"surface_state", string(surface.State),
-		)
-		return root, nil
-	}
-	if _, ok := deps.Terminal.(port.LiveInvalidationSource); !ok {
-		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip",
-			"reason", "source-missing",
-			"endpoint_id", string(ref.EndpointID),
-			"terminal_id", ref.TerminalID,
-			"observed_revision", msg.ObservedRevision,
-			"surface_revision", surface.Revision,
-		)
-		return root, nil
-	}
-	cols, rows := liveSurfaceRefreshSizeRef(root, ref)
-	var shouldArm bool
-	root.Surface, shouldArm = root.Surface.ArmLiveInvalidationRef(ref, cols, rows)
-	if !shouldArm {
-		// 中文说明：同一个 TUI+terminalID 只能有一个 pending one-shot callback。
-		// 重复 ready、正在拉取或 dirty follow-up 都在 reducer 状态里合并。
-		attrs := []any{
-			"reason", "refresh-pending",
-			"endpoint_id", string(ref.EndpointID),
-			"terminal_id", ref.TerminalID,
-			"observed_revision", msg.ObservedRevision,
-			"surface_revision", surface.Revision,
-			"cols", cols,
-			"rows", rows,
+	refs := make([]state.TerminalRef, 0, len(msg.Targets))
+	for _, target := range msg.Targets {
+		ref := state.NewTerminalRef(state.EndpointID(target.EndpointID), target.TerminalID)
+		if !ref.Empty() {
+			refs = append(refs, ref)
 		}
-		if refresh, ok := root.Surface.RefreshStateRef(ref); ok {
-			attrs = append(attrs,
-				"refresh_armed", refresh.Armed,
-				"refresh_in_flight", refresh.InFlight,
-				"refresh_dirty", refresh.Dirty,
-				"refresh_cols", refresh.Cols,
-				"refresh_rows", refresh.Rows,
-			)
-		}
-		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip", attrs...)
-		return root, nil
 	}
-	logLiveInvalidationTrace(deps.Logger, "frame.ready.arm",
-		"endpoint_id", string(ref.EndpointID),
-		"terminal_id", ref.TerminalID,
-		"observed_revision", msg.ObservedRevision,
-		"surface_revision", surface.Revision,
-		"cols", cols,
-		"rows", rows,
-	)
-	return root, liveInvalidationArmEffectForRef(ref.EndpointID, ref.TerminalID, cols, rows, surface.Revision, deps)
+	var effects []Effect
+	if msg.Full {
+		var canceled []state.TerminalRef
+		root.Surface, canceled = root.Surface.ReconcileLiveScreenDemand(refs)
+		for _, ref := range canceled {
+			effects = append(effects, CancelEffect{Token: liveScreenNextTokenForRef(ref)})
+		}
+	}
+	for _, target := range msg.Targets {
+		ref := state.NewTerminalRef(state.EndpointID(target.EndpointID), target.TerminalID)
+		if ref.Empty() {
+			continue
+		}
+		surface := root.Surface.SurfaceForTerminalRef(ref)
+		if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
+			continue
+		}
+		cols, rows := liveSurfaceRefreshSizeRef(root, ref)
+		root.Surface = root.Surface.SubmitLiveScreenRef(ref, target.Revision, cols, rows)
+		var request state.LiveScreenRequestState
+		var start bool
+		root.Surface, request, start = root.Surface.BeginLiveScreenRequestRef(ref)
+		if start {
+			effects = append(effects, liveScreenNextEffectForRef(request, deps)...)
+		}
+	}
+	return root, effects
 }
 
-func logLiveInvalidationTrace(logger *slog.Logger, event string, attrs ...any) {
+func reduceLiveScreenNextResult(root state.Root, msg LiveScreenNextResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	if !root.Surface.LiveScreenRequestMatches(ref, msg.Generation) {
+		return root, nil
+	}
+	if msg.Err != nil {
+		root.Surface, _ = root.Surface.FinishLiveScreenRequestRef(ref, msg.Generation, 0)
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
+		if next, ok := markTerminalExitedFromErrorRef(root, ref, msg.Err); ok {
+			return next.Advance(), nil
+		}
+		root = applyLiveErrorRef(root, ref, msg.Err.Error())
+		return root.Advance(), nil
+	}
+	msg.Snapshot.EndpointID = ref.EndpointID
+	if msg.Snapshot.TerminalID == "" {
+		msg.Snapshot.TerminalID = ref.TerminalID
+	}
+	root.Surface = root.Surface.ApplySnapshot(msg.Snapshot)
+	received := root.Surface.SurfaceForTerminalRef(ref).Revision
+	root.Surface, _ = root.Surface.FinishLiveScreenRequestRef(ref, msg.Generation, received)
+	logLiveScreenTrace(deps.Logger, "next.cached",
+		"endpoint_id", string(ref.EndpointID),
+		"terminal_id", ref.TerminalID,
+		"generation", msg.Generation,
+		"received_revision", received,
+	)
+	return root.Advance(), nil
+}
+
+func logLiveScreenTrace(logger *slog.Logger, event string, attrs ...any) {
 	if logger == nil || !diagnosticsEnabledFromEnv(tuiDiagnosticsEnv) {
 		return
 	}
 	args := append([]any{"event", event}, attrs...)
-	logger.Info("tui-v3 live invalidation", args...)
+	logger.Info("tui-v3 live screen", args...)
 }
 
 func liveSurfaceRefreshSizeRef(root state.Root, ref state.TerminalRef) (int, int) {
@@ -2020,7 +1964,7 @@ func markEndpointOfflineFromLiveError(root state.Root, ref state.TerminalRef, me
 	if kind == state.EndpointErrorUnknown || kind == state.EndpointErrorUnavailable {
 		return root
 	}
-	// 中文说明：live invalidation/surface/input 的 transport/protocol 错误已经证明
+	// 中文说明：live screen next/surface/input 的 transport/protocol 错误已经证明
 	// owning endpoint 的连接不可用；这里回投到 EndpointStore，保证 picker/manager/workbench
 	// 与 pane 使用同一份 endpoint-scoped 错误投影。
 	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusOffline, kind, endpointTerminalCount(root, ref.EndpointID), message)

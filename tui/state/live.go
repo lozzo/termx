@@ -33,6 +33,26 @@ type TerminalSurfaceStore struct {
 	ResizeBoundary LiveResizeBoundary
 	Surfaces       map[string]LiveSurfaceSnapshot
 	Refreshes      map[string]LiveSurfaceRefreshState
+	LiveScreens    map[string]LiveScreenRequestState
+}
+
+// LiveScreenRequestState 是一个可见 terminal 的 one-shot latest-screen 拉取状态。
+// ReceivedRevision > SubmittedRevision 表示唯一一份待选入渲染的最新屏；
+// RequestInFlight 保证同一个 TerminalRef 同时最多只有一个网络请求。
+type LiveScreenRequestState struct {
+	EndpointID        EndpointID
+	TerminalID        string
+	Demand            bool
+	RequestInFlight   bool
+	Generation        uint64
+	ReceivedRevision  uint64
+	SubmittedRevision uint64
+	Cols              int
+	Rows              int
+}
+
+func (request LiveScreenRequestState) TerminalRef() TerminalRef {
+	return NewTerminalRef(request.EndpointID, request.TerminalID)
 }
 
 // LiveResizeBoundary 是一次 content rect resize 后等待匹配 surface 的基线。
@@ -44,14 +64,9 @@ type LiveResizeBoundary struct {
 	Rows         int
 }
 
-// LiveSurfaceRefreshState 是 TUI 对单个 terminal live 刷新链路的背压状态。
-// 领域归属在 TUI reducer：core 只提供 latest native screen 和 one-shot wake，
-// 这里记录本 TUI 是否已经 enable callback、是否正在拉 snapshot，以及是否需要
-// 在当前拉取完成后再补一次 latest fetch。它不是历史 truth，也不是 rendered ack。
+// LiveSurfaceRefreshState 只服务显式 preview/lifecycle snapshot 刷新，
+// 连续 live screen 拉取由 LiveScreenRequestState 独立拥有。
 type LiveSurfaceRefreshState struct {
-	// Armed 表示本 TUI 已为该 terminal enable 了一次 core one-shot callback，
-	// callback 返回前不能因重复 frame-ready 再挂第二个同 terminal callback。
-	Armed bool
 	// InFlight 表示 live.screen.get 已发出但还未回到 reducer。
 	InFlight bool
 	// Dirty 表示 InFlight 期间又收到 invalidation，当前 fetch 完成后还要再取一次 latest。
@@ -196,7 +211,7 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	}
 	if store.resizeBoundaryRejects(snapshot) {
 		// 中文说明：旧尺寸帧不允许回滚当前展示，但它已经是本次 live.screen.get
-		// 的回包；必须释放 TUI 本地 in-flight，否则后续 frame-ready 永久认为刷新未完成。
+		// 的回包；必须释放 TUI 本地 in-flight，否则后续显式刷新会永久认为请求未完成。
 		return store.FinishRefreshRef(ref)
 	}
 	current, hasCurrent := store.snapshotForTerminalRef(ref)
@@ -590,6 +605,10 @@ func (store TerminalSurfaceStore) RemoveTerminalRef(ref TerminalRef) TerminalSur
 		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 		delete(store.Refreshes, key)
 	}
+	if len(store.LiveScreens) > 0 {
+		store.LiveScreens = cloneLiveScreenRequestStates(store.LiveScreens)
+		delete(store.LiveScreens, key)
+	}
 	if !store.TerminalRef().Equal(ref) {
 		return store
 	}
@@ -614,6 +633,125 @@ func (store TerminalSurfaceStore) RemoveTerminalRef(ref TerminalRef) TerminalSur
 	return store
 }
 
+// ReconcileLiveScreenDemand 以当前完整帧实际包含的 live terminal 为准更新拉取所有权。
+// 返回值只包含从可见变为不可见且需要取消在途请求的 TerminalRef。
+func (store TerminalSurfaceStore) ReconcileLiveScreenDemand(refs []TerminalRef) (TerminalSurfaceStore, []TerminalRef) {
+	desired := make(map[string]TerminalRef, len(refs))
+	for _, ref := range refs {
+		ref = ref.Normalize()
+		if !ref.Empty() {
+			desired[liveSurfaceRefKey(ref)] = ref
+		}
+	}
+	requests := cloneLiveScreenRequestStates(store.LiveScreens)
+	var canceled []TerminalRef
+	for key, request := range requests {
+		if _, ok := desired[key]; ok || !request.Demand {
+			continue
+		}
+		if request.RequestInFlight {
+			canceled = append(canceled, request.TerminalRef())
+		}
+		request.Demand = false
+		request.RequestInFlight = false
+		request.Generation++
+		requests[key] = request
+	}
+	for key, ref := range desired {
+		request := requests[key]
+		if request.Demand {
+			continue
+		}
+		request.EndpointID = ref.EndpointID
+		request.TerminalID = ref.TerminalID
+		request.Demand = true
+		request.RequestInFlight = false
+		request.Generation++
+		requests[key] = request
+	}
+	store.LiveScreens = requests
+	return store, canceled
+}
+
+// SubmitLiveScreenRef 标记 canonical latest screen 已被选入 renderer submission。
+// 该动作发生在物理写出开始前，因此下一次网络等待可以和当前写出重叠。
+func (store TerminalSurfaceStore) SubmitLiveScreenRef(ref TerminalRef, revision uint64, cols int, rows int) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store
+	}
+	key := liveSurfaceRefKey(ref)
+	request, ok := store.LiveScreens[key]
+	if !ok || !request.Demand {
+		return store
+	}
+	if revision > request.ReceivedRevision {
+		request.ReceivedRevision = revision
+	}
+	if revision > request.SubmittedRevision {
+		request.SubmittedRevision = revision
+	}
+	if cols > 0 {
+		request.Cols = cols
+	}
+	if rows > 0 {
+		request.Rows = rows
+	}
+	store.LiveScreens = cloneLiveScreenRequestStates(store.LiveScreens)
+	store.LiveScreens[key] = request
+	return store
+}
+
+// BeginLiveScreenRequestRef 占用该 TerminalRef 唯一的 one-shot request 槽位。
+func (store TerminalSurfaceStore) BeginLiveScreenRequestRef(ref TerminalRef) (TerminalSurfaceStore, LiveScreenRequestState, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store, LiveScreenRequestState{}, false
+	}
+	key := liveSurfaceRefKey(ref)
+	request, ok := store.LiveScreens[key]
+	if !ok || !request.Demand || request.RequestInFlight || request.ReceivedRevision > request.SubmittedRevision {
+		return store, request, false
+	}
+	request.RequestInFlight = true
+	store.LiveScreens = cloneLiveScreenRequestStates(store.LiveScreens)
+	store.LiveScreens[key] = request
+	return store, request, true
+}
+
+func (store TerminalSurfaceStore) LiveScreenRequestMatches(ref TerminalRef, generation uint64) bool {
+	ref = ref.Normalize()
+	request, ok := store.LiveScreens[liveSurfaceRefKey(ref)]
+	return ok && request.Demand && request.RequestInFlight && request.Generation == generation
+}
+
+// FinishLiveScreenRequestRef 释放 one-shot request，并记录 canonical cache 实际接收的 revision。
+// generation 不匹配表示该 view 已隐藏、detach 或重新获得所有权，晚到结果直接丢弃。
+func (store TerminalSurfaceStore) FinishLiveScreenRequestRef(ref TerminalRef, generation uint64, receivedRevision uint64) (TerminalSurfaceStore, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store, false
+	}
+	key := liveSurfaceRefKey(ref)
+	request, ok := store.LiveScreens[key]
+	if !ok || !request.Demand || !request.RequestInFlight || request.Generation != generation {
+		return store, false
+	}
+	request.RequestInFlight = false
+	if receivedRevision > request.ReceivedRevision {
+		request.ReceivedRevision = receivedRevision
+	}
+	store.LiveScreens = cloneLiveScreenRequestStates(store.LiveScreens)
+	store.LiveScreens[key] = request
+	return store, true
+}
+
+func (store TerminalSurfaceStore) LiveScreenRequestRef(ref TerminalRef) (LiveScreenRequestState, bool) {
+	ref = ref.Normalize()
+	request, ok := store.LiveScreens[liveSurfaceRefKey(ref)]
+	return request, ok
+}
+
 func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
 	return store.RequestRefreshRef(LocalTerminalRef(terminalID), cols, rows)
 }
@@ -633,11 +771,10 @@ func (store TerminalSurfaceStore) RequestRefreshRef(ref TerminalRef, cols int, r
 	}
 	key := liveSurfaceRefKey(ref)
 	refresh := store.Refreshes[key]
-	refresh.Armed = false
 	refresh.Cols = cols
 	refresh.Rows = rows
 	if refresh.InFlight {
-		// 中文说明：普通 live invalidation 只是“当前屏已失效”的合并信号。
+		// 中文说明：普通 live screen next 只是“当前屏已失效”的合并信号。
 		// fetch 飞行期间不能排 N 个 revision，只记录 dirty，下一次仍取 core latest screen。
 		refresh.Dirty = true
 		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
@@ -649,67 +786,6 @@ func (store TerminalSurfaceStore) RequestRefreshRef(ref TerminalRef, cols int, r
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	store.Refreshes[key] = refresh
 	return store, true
-}
-
-// ArmLiveInvalidation 记录本 TUI 已经为 terminalID enable 了一次 core one-shot wake。
-// 同一个 TUI+terminalID 在 Armed/InFlight/Dirty 任一状态存在时都不能重复挂 callback；
-// wake 返回后必须通过 RequestRefresh 或 FinishLiveInvalidationArm 释放 Armed。
-func (store TerminalSurfaceStore) ArmLiveInvalidation(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
-	return store.ArmLiveInvalidationRef(LocalTerminalRef(terminalID), cols, rows)
-}
-
-// ArmLiveInvalidationRef 记录指定 TerminalRef 已经挂起一次 core one-shot wake。
-// 该状态不上传 core，也不是 rendered ack，只用于同 endpoint terminal 的本地 callback 去重。
-func (store TerminalSurfaceStore) ArmLiveInvalidationRef(ref TerminalRef, cols int, rows int) (TerminalSurfaceStore, bool) {
-	ref = ref.Normalize()
-	if ref.Empty() {
-		return store, false
-	}
-	if cols <= 0 {
-		cols = 80
-	}
-	if rows <= 0 {
-		rows = 24
-	}
-	key := liveSurfaceRefKey(ref)
-	refresh := store.Refreshes[key]
-	if refresh.Armed || refresh.InFlight || refresh.Dirty {
-		return store, false
-	}
-	refresh.Armed = true
-	refresh.Cols = cols
-	refresh.Rows = rows
-	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	store.Refreshes[key] = refresh
-	return store, true
-}
-
-// FinishLiveInvalidationArm 释放一个已经返回或失败的 one-shot callback pending 状态。
-// 如果该 terminal 同时存在 fetch/dirty 状态，只清掉 Armed；否则移除 refresh 记录。
-func (store TerminalSurfaceStore) FinishLiveInvalidationArm(terminalID string) TerminalSurfaceStore {
-	return store.FinishLiveInvalidationArmRef(LocalTerminalRef(terminalID))
-}
-
-// FinishLiveInvalidationArmRef 释放指定 TerminalRef 的 one-shot callback pending 状态。
-// 如果同 ref 同时存在 fetch/dirty 状态，只清掉 Armed，保证刷新链路仍按 endpoint 隔离继续。
-func (store TerminalSurfaceStore) FinishLiveInvalidationArmRef(ref TerminalRef) TerminalSurfaceStore {
-	ref = ref.Normalize()
-	if ref.Empty() {
-		return store
-	}
-	key := liveSurfaceRefKey(ref)
-	refresh, ok := store.Refreshes[key]
-	if !ok || !refresh.Armed {
-		return store
-	}
-	refresh.Armed = false
-	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	if refresh.InFlight || refresh.Dirty {
-		store.Refreshes[key] = refresh
-		return store
-	}
-	delete(store.Refreshes, key)
-	return store
 }
 
 func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfaceStore {
@@ -733,13 +809,8 @@ func (store TerminalSurfaceStore) FinishRefreshRef(ref TerminalRef) TerminalSurf
 		// 中文说明：fetch 返回期间又有 invalidation，当前返回值已不是
 		// core latest。调用方可选择跳过这张中间屏；此处只释放 in-flight，
 		// 让后续 maybeScheduleDirtyLiveSurfaceRefresh 立即再拉一次当前最新屏。
-		refresh.Armed = false
 		refresh.InFlight = false
 		refresh.Dirty = false
-		store.Refreshes[key] = refresh
-		return store
-	}
-	if refresh.Armed && !refresh.InFlight {
 		store.Refreshes[key] = refresh
 		return store
 	}
@@ -769,7 +840,7 @@ func (store TerminalSurfaceStore) clearRefreshRef(ref TerminalRef) TerminalSurfa
 		return store
 	}
 	// 中文说明：exit/error/attach/restart 是 terminal lifecycle 边界，旧 refresh debt
-	// 不能穿过边界继续阻塞新的 frame-ready arm；普通 dirty follow-up 仍由 FinishRefreshRef 管。
+	// 不能穿过边界继续阻塞新的显式刷新；普通 dirty follow-up 仍由 FinishRefreshRef 管。
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	delete(store.Refreshes, key)
 	return store
@@ -788,10 +859,9 @@ func (store TerminalSurfaceStore) ConsumeDirtyRefreshRef(ref TerminalRef) (Termi
 	}
 	key := liveSurfaceRefKey(ref)
 	refresh, ok := store.Refreshes[key]
-	if !ok || refresh.Armed || refresh.InFlight || refresh.Dirty {
+	if !ok || refresh.InFlight || refresh.Dirty {
 		return store, 0, 0, false
 	}
-	refresh.Armed = false
 	refresh.InFlight = true
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	store.Refreshes[key] = refresh
@@ -1035,6 +1105,17 @@ func cloneLiveCellRows(rows [][]LiveCell) [][]LiveCell {
 			continue
 		}
 		out[i] = cloneLiveCells(row)
+	}
+	return out
+}
+
+func cloneLiveScreenRequestStates(values map[string]LiveScreenRequestState) map[string]LiveScreenRequestState {
+	if len(values) == 0 {
+		return make(map[string]LiveScreenRequestState)
+	}
+	out := make(map[string]LiveScreenRequestState, len(values))
+	for key, value := range values {
+		out[key] = value
 	}
 	return out
 }

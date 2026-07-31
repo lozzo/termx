@@ -45,6 +45,27 @@ func TestFrameSinkSameSizeFrameUsesGlobalRowPresenterWithoutClearingRows(t *test
 	}
 }
 
+func TestFrameSinkConsecutiveCompleteLiveFramesDoNotClearScreen(t *testing.T) {
+	var out bytes.Buffer
+	sink := NewFrameSink(&out)
+	first := testFrameSinkFrame([]string{"header", "live revision 1", "footer"}, 20, 3)
+	if err := sink.WriteFrame(first); err != nil {
+		t.Fatalf("write first live frame: %v", err)
+	}
+	out.Reset()
+
+	next := testFrameSinkFrame([]string{"header", "live revision 2", "footer"}, 20, 3)
+	if next.Patch != nil {
+		t.Fatalf("test requires a complete logical frame, got patch %#v", next.Patch)
+	}
+	if err := sink.WriteFrame(next); err != nil {
+		t.Fatalf("write next live frame: %v", err)
+	}
+	if payload := out.String(); strings.Contains(payload, clearScreen) {
+		t.Fatalf("same-size complete live frame must use row diff, got %q", payload)
+	}
+}
+
 func TestFrameSinkShrinkingRowPadsStaleTailWithoutClearLine(t *testing.T) {
 	var out bytes.Buffer
 	sink := NewFrameSink(&out)

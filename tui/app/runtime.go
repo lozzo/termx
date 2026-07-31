@@ -34,7 +34,7 @@ type noRenderMsg interface {
 
 type frameWriteCompletedMsg struct {
 	Written bool
-	Targets []liveFrameReadyTarget
+	Err     error
 }
 
 func (frameWriteCompletedMsg) isMsg() {}
@@ -183,32 +183,35 @@ var (
 
 // AppRuntime 是 TUI-v3 自有单线程消息循环。
 type AppRuntime struct {
-	mu                  sync.Mutex
-	wake                chan struct{}
-	state               state.Root
-	reduce              Reducer
-	render              RenderFunc
-	host                TerminalHost
-	runner              EffectRunner
-	queue               []Msg
-	lastHitRegions      []render.HitRegion
-	mouseDrag           mouseDragState
-	lastMouseAction     mouseActionClickState
-	hostSizeInitialized bool
-	now                 func() time.Time
-	toastTickInterval   time.Duration
-	lastToastTick       time.Time
-	running             bool
-	quit                bool
-	firstFrameWritten   bool
-	startupFrameReady   bool
-	maxMessagesPerBatch int
-	frameWriteInFlight  bool
-	renderPending       bool
-	liveSurfacePatch    liveSurfacePatchState
-	copyHistoryPatch    copyHistoryPatchCache
-	diagnostics         *runtimeDiagnostics
-	stopDiagnostics     func()
+	mu                   sync.Mutex
+	wake                 chan struct{}
+	state                state.Root
+	reduce               Reducer
+	render               RenderFunc
+	host                 TerminalHost
+	runner               EffectRunner
+	queue                []Msg
+	lastHitRegions       []render.HitRegion
+	mouseDrag            mouseDragState
+	lastMouseAction      mouseActionClickState
+	hostSizeInitialized  bool
+	now                  func() time.Time
+	toastTickInterval    time.Duration
+	lastToastTick        time.Time
+	running              bool
+	quit                 bool
+	firstFrameWritten    bool
+	startupFrameReady    bool
+	maxMessagesPerBatch  int
+	frameWriteInFlight   bool
+	frameWriteCommit     func()
+	frameWriteNeedsRetry bool
+	frameWriteErr        error
+	renderPending        bool
+	forceFullFrame       bool
+	copyHistoryPatch     copyHistoryPatchCache
+	diagnostics          *runtimeDiagnostics
+	stopDiagnostics      func()
 }
 
 func NewAppRuntime(
@@ -322,6 +325,9 @@ func (runtime *AppRuntime) RequestMemstats(reason string) {
 func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 	processed := 0
 	for {
+		if err := runtime.takeFrameWriteError(); err != nil {
+			return err
+		}
 		runtime.ingestHostInitialSize()
 		runtime.ingestHostInput()
 		runtime.enqueueDueToastTick()
@@ -399,6 +405,13 @@ func messageSkipsRender(msg Msg) bool {
 	return ok && noRender.SkipRender()
 }
 
+func (runtime *AppRuntime) noteRenderPending(msg Msg) {
+	if _, ok := msg.(LiveScreenNextResultMsg); ok {
+		runtime.forceFullFrame = true
+	}
+	runtime.renderPending = true
+}
+
 func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {
 	switch effect := effect.(type) {
 	case nil:
@@ -423,10 +436,7 @@ func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {
 func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	switch msg := msg.(type) {
 	case frameWriteCompletedMsg:
-		runtime.frameWriteInFlight = false
-		if msg.Written && !runtime.renderPending {
-			runtime.enqueueLiveFrameReadyTargets(msg.Targets)
-		}
+		runtime.finishFrameWrite(msg.Written, msg.Err)
 		return false
 	case HostResizeMsg:
 		next, changed := runtime.state.Viewport.Resize(msg.Cols, msg.Rows)
@@ -691,15 +701,8 @@ func (runtime *AppRuntime) renderFrame() bool {
 		return false
 	}
 	finishTotal := perftrace.Measure("tui.render_frame_total")
-	if runtime.tryRenderLiveSurfacePatch() {
-		runtime.renderPending = false
-		runtime.liveSurfacePatch.Pending = liveSurfacePatchPending{}
-		finishTotal(0)
-		return true
-	}
-	if runtime.tryRenderCopyHistoryPatch() {
-		runtime.renderPending = false
-		runtime.liveSurfacePatch.Pending = liveSurfacePatchPending{}
+	if !runtime.forceFullFrame && runtime.tryRenderCopyHistoryPatch() {
+		runtime.renderPending = runtime.frameWriteNeedsRetry
 		finishTotal(0)
 		return true
 	}
@@ -707,18 +710,17 @@ func (runtime *AppRuntime) renderFrame() bool {
 	frame := runtime.render(runtime.state)
 	frameBytes := frameApproxBytes(frame)
 	finishRender(frameBytes)
-	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	finishSinkEnqueue := perftrace.Measure("tui.frame_sink_enqueue")
 	done := runtime.writeFrame(frame)
+	runtime.enqueueLiveScreenFrameSelected(frame, true)
 	finishSinkEnqueue(frameBytes)
 	perftrace.Count("tui.frame", frameBytes)
 	runtime.firstFrameWritten = true
-	runtime.rememberCopyHistoryPatchFrame(frame)
-	runtime.rememberLiveSurfacePatchFrame(frame)
+	commit := runtime.fullFrameCommit(frame, runtime.state)
 	runtime.observeRuntimeFrame(frame)
 	runtime.renderPending = false
-	runtime.liveSurfacePatch.Pending = liveSurfacePatchPending{}
-	runtime.rememberLiveFrameCompletion(frame, done)
+	runtime.forceFullFrame = false
+	runtime.trackFrameCompletion(done, commit)
 	finishTotal(frameBytes)
 	return true
 }
@@ -733,64 +735,96 @@ func (runtime *AppRuntime) writeFrame(frame render.Frame) <-chan render.FrameWri
 	sink := runtime.host.FrameSink()
 	if completion, ok := sink.(render.FrameSinkCompletion); ok {
 		done, err := completion.WriteFrameWithCompletion(frame)
-		if err == nil && done != nil {
+		if err != nil {
+			completed := make(chan render.FrameWriteCompletion, 1)
+			completed <- render.FrameWriteCompletion{Err: err}
+			close(completed)
+			return completed
+		}
+		if done != nil {
 			return done
 		}
 	}
-	_ = sink.WriteFrame(frame)
+	err := sink.WriteFrame(frame)
 	done := make(chan render.FrameWriteCompletion, 1)
-	done <- render.FrameWriteCompletion{Written: true}
+	done <- render.FrameWriteCompletion{Written: err == nil, Err: err}
 	close(done)
 	return done
 }
 
-func (runtime *AppRuntime) rememberLiveFrameCompletion(frame render.Frame, done <-chan render.FrameWriteCompletion) {
-	targets := make([]liveFrameReadyTarget, len(frame.LiveTargets))
-	for index, target := range frame.LiveTargets {
-		targets[index] = liveFrameReadyTarget{
-			EndpointID:       state.NormalizeEndpointID(state.EndpointID(target.EndpointID)),
-			TerminalID:       target.TerminalID,
-			ObservedRevision: target.Revision,
-		}
-	}
-	runtime.trackFrameCompletion(targets, done)
-}
-
-func (runtime *AppRuntime) trackFrameCompletion(targets []liveFrameReadyTarget, done <-chan render.FrameWriteCompletion) {
+func (runtime *AppRuntime) trackFrameCompletion(done <-chan render.FrameWriteCompletion, commit func()) {
+	runtime.frameWriteNeedsRetry = false
 	runtime.frameWriteInFlight = true
+	runtime.frameWriteCommit = commit
 	if done == nil {
-		runtime.frameWriteInFlight = false
-		runtime.enqueueLiveFrameReadyTargets(targets)
+		runtime.finishFrameWrite(false, nil)
 		return
 	}
 	select {
 	case completion, ok := <-done:
-		runtime.frameWriteInFlight = false
-		if ok && completion.Written {
-			runtime.enqueueLiveFrameReadyTargets(targets)
+		if !ok {
+			runtime.finishFrameWrite(false, nil)
+		} else {
+			runtime.finishFrameWrite(completion.Written, completion.Err)
 		}
 	default:
-		go runtime.awaitFrameCompletion(targets, done)
+		go runtime.awaitFrameCompletion(done)
 	}
 }
 
-func (runtime *AppRuntime) awaitFrameCompletion(targets []liveFrameReadyTarget, done <-chan render.FrameWriteCompletion) {
+func (runtime *AppRuntime) finishFrameWrite(written bool, err error) {
+	commit := runtime.frameWriteCommit
+	runtime.frameWriteCommit = nil
+	runtime.frameWriteInFlight = false
+	runtime.frameWriteNeedsRetry = !written && err == nil
+	if err != nil {
+		runtime.frameWriteErr = err
+		return
+	}
+	if written {
+		if commit != nil {
+			commit()
+		}
+		return
+	}
+	// 失败或被 sink 丢弃时，旧视觉基线仍然有效；下一次必须从 canonical state 完整重绘。
+	runtime.renderPending = true
+	runtime.forceFullFrame = true
+	runtime.copyHistoryPatch = copyHistoryPatchCache{}
+}
+
+func (runtime *AppRuntime) takeFrameWriteError() error {
+	err := runtime.frameWriteErr
+	runtime.frameWriteErr = nil
+	return err
+}
+
+func (runtime *AppRuntime) fullFrameCommit(frame render.Frame, root state.Root) func() {
+	hitRegions := cloneRenderHitRegions(frame.HitRegions)
+	copyCache, copyOK := copyHistoryPatchCacheForFrame(runtime, root, frame)
+	return func() {
+		runtime.lastHitRegions = hitRegions
+		if copyOK {
+			runtime.copyHistoryPatch = copyCache
+		} else {
+			runtime.copyHistoryPatch = copyHistoryPatchCache{}
+		}
+	}
+}
+
+func (runtime *AppRuntime) awaitFrameCompletion(done <-chan render.FrameWriteCompletion) {
 	completion, ok := <-done
-	runtime.enqueue(frameWriteCompletedMsg{Written: ok && completion.Written, Targets: targets})
+	runtime.enqueue(frameWriteCompletedMsg{Written: ok && completion.Written, Err: completion.Err})
 }
 
-func (runtime *AppRuntime) enqueueLiveFrameReadyTargets(targets []liveFrameReadyTarget) {
-	for _, target := range targets {
-		// 中文说明：FrameSink completion 只表示本地已写出这一帧；
-		// 下一次 one-shot live wake 必须回到该 surface 的 owning endpoint。
-		runtime.enqueue(LiveFrameReadyMsg{EndpointID: target.EndpointID, TerminalID: target.TerminalID, ObservedRevision: target.ObservedRevision})
+func (runtime *AppRuntime) enqueueLiveScreenFrameSelected(frame render.Frame, full bool) {
+	if len(frame.LiveTargets) == 0 && len(runtime.state.Surface.LiveScreens) == 0 {
+		return
 	}
-}
-
-type liveFrameReadyTarget struct {
-	EndpointID       state.EndpointID
-	TerminalID       string
-	ObservedRevision uint64
+	runtime.enqueue(LiveScreenFrameSelectedMsg{
+		Full:    full,
+		Targets: append([]render.LiveRenderTarget(nil), frame.LiveTargets...),
+	})
 }
 
 func frameApproxBytes(frame render.Frame) int {

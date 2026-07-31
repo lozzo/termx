@@ -34,7 +34,6 @@ func (renderer Renderer) RenderANSI(vm RenderVM) Frame {
 		CursorRect:  frame.CursorRect,
 		HitRegions:  cloneHitRegions(frame.HitRegions),
 		LiveTargets: append([]LiveRenderTarget(nil), frame.LiveTargets...),
-		LiveRegions: append([]LiveRenderRegion(nil), frame.LiveRegions...),
 		Metadata:    RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
 		Theme:       frame.Theme,
 	}

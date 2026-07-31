@@ -1427,61 +1427,63 @@ func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 	}
 }
 
-func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 2)}
-	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
+func TestLiveScreenNextEffectIsOneShot(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 2)}
+	request := state.LiveScreenRequestState{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Demand: true, RequestInFlight: true, Generation: 3, SubmittedRevision: 7, Cols: 80, Rows: 24}
+	effects := liveScreenNextEffectForRef(request, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
-		t.Fatalf("expected one arm effect, got %#v", effects)
+		t.Fatalf("expected one next-screen effect, got %#v", effects)
 	}
-	arm, ok := effects[0].(FuncEffect)
-	if !ok || !arm.Async || arm.ForceSyncInTests || arm.Token != liveInvalidationTokenForTerminal("term-1") {
-		t.Fatalf("expected async terminal-scoped one-shot arm, got %#v", effects[0])
+	next, ok := effects[0].(FuncEffect)
+	if !ok || !next.Async || next.ForceSyncInTests || next.Token != liveScreenNextTokenForRef(state.LocalTerminalRef("term-1")) {
+		t.Fatalf("expected async terminal-scoped one-shot request, got %#v", effects[0])
 	}
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
 
-	msg := arm.Run(context.Background())
-	live, ok := msg.(LiveEventMsg)
-	if !ok || live.Event.Snapshot.Revision != 8 {
-		t.Fatalf("expected one live invalidation message, got %#v", msg)
+	msg := next.Run(context.Background())
+	result, ok := msg.(LiveScreenNextResultMsg)
+	if !ok || result.Snapshot.Revision != 8 || result.Generation != 3 {
+		t.Fatalf("expected one next-screen result, got %#v", msg)
 	}
-	requests := terminal.LiveInvalidationRequestsSnapshot()
+	requests := terminal.LiveScreenNextRequestsSnapshot()
 	if len(requests) != 1 || requests[0].TerminalID != "term-1" || requests[0].ObservedRevision != 7 {
-		t.Fatalf("expected one-shot arm with observed revision, got %#v", requests)
+		t.Fatalf("expected one-shot request with submitted revision, got %#v", requests)
 	}
 }
 
-func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
-	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
+func TestLiveScreenNextEffectDoesNotUseFixedDelay(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
+	request := state.LiveScreenRequestState{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Demand: true, RequestInFlight: true, Generation: 1, SubmittedRevision: 7, Cols: 80, Rows: 24}
+	effects := liveScreenNextEffectForRef(request, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
-		t.Fatalf("expected one arm effect, got %#v", effects)
+		t.Fatalf("expected one next-screen effect, got %#v", effects)
 	}
-	arm := effects[0].(FuncEffect)
+	next := effects[0].(FuncEffect)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if msg := arm.Run(ctx); msg == nil {
-		t.Fatal("canceled arm must release reducer-owned pending state")
-	} else if _, ok := msg.(LiveInvalidationArmCanceledMsg); !ok {
-		t.Fatalf("canceled arm should return release message, got %#v", msg)
+	if msg := next.Run(ctx); msg == nil {
+		t.Fatal("canceled request must return its generation-scoped result")
+	} else if result, ok := msg.(LiveScreenNextResultMsg); !ok || !errors.Is(result.Err, context.Canceled) {
+		t.Fatalf("canceled request should return context error, got %#v", msg)
 	}
-	if requests := terminal.LiveInvalidationRequestsSnapshot(); len(requests) != 0 {
-		t.Fatalf("canceled arm must not call service, got %#v", requests)
+	if requests := terminal.LiveScreenNextRequestsSnapshot(); len(requests) != 1 {
+		t.Fatalf("request cancellation is owned by context, got %#v", requests)
 	}
 
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
-	msg := arm.Run(context.Background())
-	live, ok := msg.(LiveEventMsg)
-	if !ok || live.Event.Snapshot.Revision != 8 {
-		t.Fatalf("expected live event without artificial arm delay, got %#v", msg)
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
+	msg := next.Run(context.Background())
+	result, ok := msg.(LiveScreenNextResultMsg)
+	if !ok || result.Snapshot.Revision != 8 {
+		t.Fatalf("expected next-screen result without artificial delay, got %#v", msg)
 	}
-	if requests := terminal.LiveInvalidationRequestsSnapshot(); len(requests) != 1 {
-		t.Fatalf("expected one immediate arm request, got %#v", requests)
+	if requests := terminal.LiveScreenNextRequestsSnapshot(); len(requests) != 2 {
+		t.Fatalf("expected immediate request, got %#v", requests)
 	}
 }
 
-func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
+func TestLiveFrameSubmissionStartsNextScreenRequest(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
 	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -1493,23 +1495,23 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 		Surface: surface,
 	}
 
-	_, effects := reducer(root, LiveFrameReadyMsg{TerminalID: "term-1", ObservedRevision: 8})
+	_, effects := reducer(root, LiveScreenFrameSelectedMsg{Full: true, Targets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 8}}})
 	if len(effects) != 1 {
-		t.Fatalf("expected one follow-up arm effect, got %#v", effects)
+		t.Fatalf("expected one follow-up next-screen effect, got %#v", effects)
 	}
-	arm := effects[0].(FuncEffect)
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
-	if msg := arm.Run(context.Background()); msg == nil {
-		t.Fatal("expected one-shot arm to return wake message")
+	next := effects[0].(FuncEffect)
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	if msg := next.Run(context.Background()); msg == nil {
+		t.Fatal("expected one-shot request to return latest screen")
 	}
-	requests := terminal.LiveInvalidationRequestsSnapshot()
+	requests := terminal.LiveScreenNextRequestsSnapshot()
 	if len(requests) != 1 || requests[0].ObservedRevision != 8 || requests[0].Cols != 96 || requests[0].Rows != 30 {
-		t.Fatalf("frame completion should arm next wake at rendered surface size, got %#v", requests)
+		t.Fatalf("frame submission should request at rendered surface size, got %#v", requests)
 	}
 }
 
-func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
+func TestLiveFrameSubmissionUsesOwningEndpoint(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
 	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		EndpointID: "west",
@@ -1520,23 +1522,23 @@ func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
 	})
 	root := state.Root{Surface: surface}
 
-	_, effects := reducer(root, LiveFrameReadyMsg{EndpointID: "west", TerminalID: "term-1", ObservedRevision: 8})
+	_, effects := reducer(root, LiveScreenFrameSelectedMsg{Full: true, Targets: []render.LiveRenderTarget{{EndpointID: "west", TerminalID: "term-1", Revision: 8}}})
 	if len(effects) != 1 {
-		t.Fatalf("expected one endpoint-scoped follow-up arm effect, got %#v", effects)
+		t.Fatalf("expected one endpoint-scoped next-screen effect, got %#v", effects)
 	}
-	arm := effects[0].(FuncEffect)
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
-	if msg := arm.Run(context.Background()); msg == nil {
-		t.Fatal("expected one-shot arm to return wake message")
+	next := effects[0].(FuncEffect)
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	if msg := next.Run(context.Background()); msg == nil {
+		t.Fatal("expected one-shot request to return latest screen")
 	}
-	requests := terminal.LiveInvalidationRequestsSnapshot()
+	requests := terminal.LiveScreenNextRequestsSnapshot()
 	if len(requests) != 1 || requests[0].EndpointID != "west" || requests[0].TerminalID != "term-1" || requests[0].ObservedRevision != 8 {
-		t.Fatalf("frame completion should arm owning endpoint wake, got %#v", requests)
+		t.Fatalf("frame submission should request from owning endpoint, got %#v", requests)
 	}
 }
 
-func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
+func TestLiveFrameSubmissionDedupesSharedTerminalViews(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
 	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
@@ -1553,61 +1555,60 @@ func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-shared", 7, 96, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindPane(state.NewPaneTerminalView("pane-2", "term-shared", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
 
-	root, effects := reducer(root, LiveFrameReadyMsg{TerminalID: "term-shared", ObservedRevision: 8})
+	selected := LiveScreenFrameSelectedMsg{Full: true, Targets: []render.LiveRenderTarget{{TerminalID: "term-shared", Revision: 8}}}
+	root, effects := reducer(root, selected)
 	if len(effects) != 1 {
-		t.Fatalf("first ready should arm exactly one callback, got %#v", effects)
+		t.Fatalf("first submission should start exactly one request, got %#v", effects)
 	}
-	firstArm, ok := effects[0].(FuncEffect)
-	if !ok || firstArm.Token != liveInvalidationTokenForTerminal("term-shared") {
-		t.Fatalf("first ready should use terminal-scoped arm effect, got %#v", effects[0])
+	firstRequest, ok := effects[0].(FuncEffect)
+	if !ok || firstRequest.Token != liveScreenNextTokenForRef(state.LocalTerminalRef("term-shared")) {
+		t.Fatalf("first submission should use terminal-scoped request, got %#v", effects[0])
 	}
-	if request := root.Surface.Refreshes["term-shared"]; !request.Armed || request.InFlight || request.Dirty || request.Cols != 96 || request.Rows != 30 {
-		t.Fatalf("shared terminal should keep one pending callback at owner size, got %#v", request)
+	if request, _ := root.Surface.LiveScreenRequestRef(state.LocalTerminalRef("term-shared")); !request.Demand || !request.RequestInFlight || request.Cols != 96 || request.Rows != 30 {
+		t.Fatalf("shared terminal should keep one request at owner size, got %#v", request)
 	}
 
-	root, effects = reducer(root, LiveFrameReadyMsg{TerminalID: "term-shared", ObservedRevision: 8})
+	root, effects = reducer(root, selected)
 	if len(effects) != 0 {
-		t.Fatalf("duplicate ready while callback is pending must not re-arm, got %#v", effects)
+		t.Fatalf("duplicate submission while request is pending must not start another, got %#v", effects)
 	}
-	if request := root.Surface.Refreshes["term-shared"]; !request.Armed || request.InFlight || request.Dirty {
-		t.Fatalf("duplicate ready should leave pending callback unchanged, got %#v", request)
+	if request, _ := root.Surface.LiveScreenRequestRef(state.LocalTerminalRef("term-shared")); !request.RequestInFlight {
+		t.Fatalf("duplicate submission should leave request unchanged, got %#v", request)
 	}
 
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-shared", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
-	wake, ok := firstArm.Run(context.Background()).(LiveEventMsg)
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9, Cols: 96, Rows: 30, FullReplace: true}}
+	result, ok := firstRequest.Run(context.Background()).(LiveScreenNextResultMsg)
 	if !ok {
-		t.Fatalf("pending arm should return live wake msg")
+		t.Fatalf("pending request should return next-screen result")
 	}
-	root, effects = reducer(root, wake)
+	root, effects = reducer(root, result)
+	if len(effects) != 0 {
+		t.Fatalf("received screen must wait for renderer submission, got %#v", effects)
+	}
+	if request, _ := root.Surface.LiveScreenRequestRef(state.LocalTerminalRef("term-shared")); request.RequestInFlight || request.ReceivedRevision != 9 || request.SubmittedRevision != 8 {
+		t.Fatalf("received screen should be the sole pending revision, got %#v", request)
+	}
+	root, effects = reducer(root, LiveScreenFrameSelectedMsg{Targets: []render.LiveRenderTarget{{TerminalID: "term-shared", Revision: 9}}})
 	if len(effects) != 1 {
-		t.Fatalf("callback wake should start exactly one latest fetch, got %#v", effects)
-	}
-	if request := root.Surface.Refreshes["term-shared"]; request.Armed || !request.InFlight || request.Dirty {
-		t.Fatalf("callback wake should clear armed and start fetch, got %#v", request)
+		t.Fatalf("submitting revision 9 should immediately request the next screen, got %#v", effects)
 	}
 }
 
-func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
-	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
-	arm := effects[0].(FuncEffect)
-	if msg := arm.Run(context.Background()); msg == nil {
-		t.Fatal("context canceled live invalidation arm should release pending state")
-	} else if _, ok := msg.(LiveInvalidationArmCanceledMsg); !ok {
-		t.Fatalf("context canceled live invalidation arm should return release message, got %#v", msg)
-	}
-
+func TestLiveScreenNextContextCanceledDoesNotPostPanelError(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextErr: context.Canceled}
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell()}
-	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1"}
-	root.Session = state.TerminalSessionStore{TerminalID: "term-1"}
-	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}}, LiveDeps{})
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 7, Cols: 80, Rows: 24})
+	root, effects := reducer(root, LiveScreenFrameSelectedMsg{Full: true, Targets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 7}}})
+	result := effects[0].(FuncEffect).Run(context.Background())
+	next, effects := reducer(root, result)
 	if len(effects) != 0 || next.Surface.Err != "" || next.Session.LastError != "" {
-		t.Fatalf("context canceled live event must stay silent, root=%#v effects=%#v", next, effects)
+		t.Fatalf("context canceled next-screen request must stay silent, root=%#v effects=%#v", next, effects)
 	}
 }
 
-func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
+func TestLiveScreenDemandCancellationDropsLateResult(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{}
 	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
@@ -1618,29 +1619,53 @@ func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
 		Lines:      []string{"ready"},
 	})
 
-	root, effects := reducer(root, LiveFrameReadyMsg{TerminalID: "term-1", ObservedRevision: 8})
+	root, effects := reducer(root, LiveScreenFrameSelectedMsg{Full: true, Targets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 8}}})
 	if len(effects) != 1 {
-		t.Fatalf("frame ready should arm live invalidation once, got %#v", effects)
+		t.Fatalf("frame submission should start one request, got %#v", effects)
 	}
-	if refresh := root.Surface.Refreshes["term-1"]; !refresh.Armed {
-		t.Fatalf("frame ready should mark arm pending, got %#v", root.Surface.Refreshes)
+	request, _ := root.Surface.LiveScreenRequestRef(state.LocalTerminalRef("term-1"))
+	root, effects = reducer(root, LiveScreenFrameSelectedMsg{Full: true})
+	if len(effects) != 1 {
+		t.Fatalf("hiding the last live view should cancel its request, got %#v", effects)
 	}
-	release, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInvalidationArmCanceledMsg)
-	if !ok {
-		t.Fatalf("canceled arm should return release message, got %#v", release)
+	if _, ok := effects[0].(CancelEffect); !ok {
+		t.Fatalf("expected request cancellation, got %#v", effects[0])
 	}
+	root, effects = reducer(root, LiveScreenNextResultMsg{TerminalID: "term-1", Generation: request.Generation, Snapshot: state.LiveSurfaceSnapshot{Revision: 9, FullReplace: true}})
+	if len(effects) != 0 || root.Surface.Revision != 8 {
+		t.Fatalf("late hidden-view result must be ignored, surface=%#v effects=%#v", root.Surface, effects)
+	}
+}
 
-	root, effects = reducer(root, release)
+func TestLiveScreenRequestsProgressIndependentlyAcrossPanes(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{}
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
+	refA := state.LocalTerminalRef("term-a")
+	refB := state.LocalTerminalRef("term-b")
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-a", Revision: 10, Cols: 80, Rows: 24, FullReplace: true})
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-b", Revision: 20, Cols: 80, Rows: 24, FullReplace: true})
+	root, effects := reducer(root, LiveScreenFrameSelectedMsg{Full: true, Targets: []render.LiveRenderTarget{
+		{TerminalID: "term-a", Revision: 10},
+		{TerminalID: "term-b", Revision: 20},
+	}})
+	if len(effects) != 2 {
+		t.Fatalf("two visible refs should own independent requests, got %#v", effects)
+	}
+	requestA, _ := root.Surface.LiveScreenRequestRef(refA)
+	root, effects = reducer(root, LiveScreenNextResultMsg{TerminalID: "term-a", Generation: requestA.Generation, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-a", Revision: 11, Cols: 80, Rows: 24, FullReplace: true}})
 	if len(effects) != 0 {
-		t.Fatalf("release message should not schedule effects, got %#v", effects)
+		t.Fatalf("received A must wait for renderer submission, got %#v", effects)
 	}
-	if _, ok := root.Surface.Refreshes["term-1"]; ok {
-		t.Fatalf("canceled arm must clear pending refresh state, got %#v", root.Surface.Refreshes)
+	requestB, _ := root.Surface.LiveScreenRequestRef(refB)
+	if !requestB.RequestInFlight {
+		t.Fatal("A result must not release or replace B request")
 	}
-
-	root, effects = reducer(root, LiveFrameReadyMsg{TerminalID: "term-1", ObservedRevision: 8})
-	if len(effects) != 1 {
-		t.Fatalf("after cancellation the next frame ready must re-arm, got %#v", effects)
+	root, effects = reducer(root, LiveScreenFrameSelectedMsg{Targets: []render.LiveRenderTarget{{TerminalID: "term-a", Revision: 11}}})
+	requestA, _ = root.Surface.LiveScreenRequestRef(refA)
+	requestB, _ = root.Surface.LiveScreenRequestRef(refB)
+	if len(effects) != 1 || !requestA.RequestInFlight || !requestB.RequestInFlight {
+		t.Fatalf("submitting A should overlap A next wait with B original wait, A=%#v B=%#v effects=%#v", requestA, requestB, effects)
 	}
 }
 
@@ -1693,7 +1718,7 @@ func TestLiveEventBoundaryClearsPendingRefreshDebt(t *testing.T) {
 	}
 }
 
-func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testing.T) {
+func TestLiveEventRefreshDoesNotStartAlternateScreenFetch(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{
 		SurfaceResult: port.TerminalSurfaceResult{
 			Ready: true,
@@ -1726,22 +1751,8 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 	if next.Generation != root.Generation || next.Surface.Lines[0] != "stale" {
 		t.Fatalf("refresh invalidation should not mutate live state before surface returns, next=%#v", next.Surface)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("expected one live surface refresh effect, got %#v", effects)
-	}
-	effect, ok := effects[0].(FuncEffect)
-	if !ok || !effect.Async || !effect.ForceSyncInTests {
-		t.Fatalf("refresh surface fetch must stay async in real runtime and sync-capable in tests, got %#v", effects[0])
-	}
-	msg, ok := effect.Run(context.Background()).(LiveSurfaceMsg)
-	if !ok || msg.Snapshot.TerminalID != "term-1" || msg.Snapshot.Lines[0] != "latest" {
-		t.Fatalf("expected latest live surface message, got %#v ok=%v", msg, ok)
-	}
-	if msg.LifecycleKnown {
-		t.Fatalf("ordinary refresh surface must not become lifecycle boundary, got %#v", msg)
-	}
-	if len(terminal.Surfaces) != 1 || terminal.Surfaces[0].Cols != 96 || terminal.Surfaces[0].Rows != 30 {
-		t.Fatalf("refresh should use resize owner surface size, got %#v", terminal.Surfaces)
+	if len(effects) != 0 || len(terminal.Surfaces) != 0 {
+		t.Fatalf("passive refresh hint must not start a second screen source, effects=%#v requests=%#v", effects, terminal.Surfaces)
 	}
 	refreshMsg := LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
 	if !refreshMsg.SkipRender() {
@@ -1776,7 +1787,7 @@ func rootWithDirtyRefreshForLiveTest(t *testing.T, ref state.TerminalRef) state.
 	return root
 }
 
-func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn(t *testing.T) {
+func TestRepeatedLiveEventRefreshHintsRemainNoops(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{SurfaceResult: port.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"latest"}},
@@ -1785,35 +1796,19 @@ func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn
 	root := state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24}}
 
 	root, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
-	if len(effects) != 1 {
-		t.Fatalf("first refresh should schedule one surface fetch, got %#v", effects)
+	if len(effects) != 0 {
+		t.Fatalf("first passive refresh hint should be ignored, got %#v", effects)
 	}
 	root, effects = reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 	if len(effects) != 0 {
 		t.Fatalf("second refresh while in-flight should only mark dirty, got %#v", effects)
 	}
-	if request := root.Surface.Refreshes["term-1"]; !request.InFlight || !request.Dirty {
-		t.Fatalf("expected in-flight dirty refresh state, got %#v", request)
-	}
-
-	root, effects = reducer(root, LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"first"}}, RequestedCols: 80, RequestedRows: 24})
-	if len(effects) != 1 {
-		t.Fatalf("dirty surface return should skip stale render and schedule one follow-up latest fetch, got %#v", effects)
-	}
-	if snapshot := root.Surface.SurfaceForTerminal("term-1").Snapshot(); len(snapshot.Lines) > 0 && snapshot.Lines[0] == "first" {
-		t.Fatalf("dirty in-flight surface must not apply stale intermediate snapshot, got %#v", snapshot)
-	}
-	if request := root.Surface.Refreshes["term-1"]; !request.InFlight || request.Dirty {
-		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", request)
-	}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	surface, ok := msg.(LiveSurfaceMsg)
-	if !ok || surface.Snapshot.TerminalID != "term-1" || surface.Snapshot.Lines[0] != "latest" {
-		t.Fatalf("expected follow-up live surface msg, got %#v ok=%v", msg, ok)
+	if _, ok := root.Surface.RefreshStateRef(state.LocalTerminalRef("term-1")); ok {
+		t.Fatalf("passive hints must not allocate explicit refresh state, got %#v", root.Surface.Refreshes)
 	}
 }
 
-func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T) {
+func TestLiveEventRefreshPayloadCannotReplaceCanonicalScreen(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{SurfaceResult: port.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 11, Lines: []string{"latest"}},
@@ -1830,13 +1825,8 @@ func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T)
 		Refresh:    true,
 		Snapshot:   state.LiveSurfaceSnapshot{Revision: 5},
 	}})
-	if len(effects) != 1 {
-		t.Fatalf("ordinary refresh should start one latest screen fetch, got %#v", effects)
-	}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	surface, ok := msg.(LiveSurfaceMsg)
-	if !ok || surface.Snapshot.Revision != 11 || surface.Snapshot.Lines[0] != "latest" {
-		t.Fatalf("refresh must use core latest screen, got %#v ok=%v", msg, ok)
+	if len(effects) != 0 || len(terminal.Surfaces) != 0 {
+		t.Fatalf("ordinary refresh must not fetch or apply event payload, effects=%#v requests=%#v", effects, terminal.Surfaces)
 	}
 	if root.Surface.SurfaceForTerminal("term-1").Revision != 10 {
 		t.Fatalf("refresh event alone must not mutate current surface, got %#v", root.Surface.SurfaceForTerminal("term-1"))
@@ -3168,10 +3158,10 @@ func TestLiveAppAttachClearsPendingForEmptySurfaceSnapshot(t *testing.T) {
 }
 
 func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
-	liveEvents := make(chan port.TerminalLiveEvent, 2)
+	liveEvents := make(chan port.TerminalSurfaceResult, 2)
 	terminal := &testkit.FakeTerminalService{
-		AttachResult:        port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
-		LiveInvalidationsCh: liveEvents,
+		AttachResult:     port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
+		LiveScreenNextCh: liveEvents,
 		SurfaceResult: port.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
@@ -3197,13 +3187,14 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain attach: %v", err)
 	}
-	if err := waitForLiveInvalidationRequest(context.Background(), runtime, terminal, "term-1"); err != nil {
+	if err := waitForLiveScreenNextRequest(context.Background(), runtime, terminal, "term-1"); err != nil {
 		t.Fatal(err)
 	}
-	liveEvents <- port.TerminalLiveEvent{
-		TerminalID: "term-1",
-		Refresh:    true,
-		Snapshot:   state.LiveSurfaceSnapshot{Revision: 7},
+	liveEvents <- port.TerminalSurfaceResult{
+		Ready: true,
+		Snapshot: state.LiveSurfaceSnapshot{
+			TerminalID: "term-1", Revision: 7, Cols: 78, Rows: 20, Lines: []string{"backend live update"}, FullReplace: true,
+		},
 	}
 	if err := drainUntilFrameContains(context.Background(), runtime, host, "backend live update"); err != nil {
 		t.Fatal(err)
@@ -4507,7 +4498,7 @@ func drainUntilFrameContains(ctx context.Context, runtime *AppRuntime, host *Fak
 	}
 }
 
-func waitForLiveInvalidationRequest(ctx context.Context, runtime *AppRuntime, terminal *testkit.FakeTerminalService, terminalID string) error {
+func waitForLiveScreenNextRequest(ctx context.Context, runtime *AppRuntime, terminal *testkit.FakeTerminalService, terminalID string) error {
 	deadlineCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -4516,7 +4507,7 @@ func waitForLiveInvalidationRequest(ctx context.Context, runtime *AppRuntime, te
 		if err := runtime.Drain(deadlineCtx); err != nil {
 			return err
 		}
-		for _, request := range terminal.LiveInvalidationRequestsSnapshot() {
+		for _, request := range terminal.LiveScreenNextRequestsSnapshot() {
 			if request.TerminalID == terminalID {
 				return nil
 			}

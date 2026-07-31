@@ -119,21 +119,28 @@ func (sink *LatestFrameSink) loop() {
 		if !ok {
 			return
 		}
+		var err error
 		if sink.sink != nil {
 			finishWrite := perftrace.Measure("tui.frame_sink_write")
-			_ = sink.sink.WriteFrame(item.frame)
+			err = sink.sink.WriteFrame(item.frame)
 			finishWrite(latestFrameApproxBytes(item.frame))
 		}
-		perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(item.frame))
-		completeLatestFrameSinkItem(item.done, true)
+		if err == nil {
+			perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(item.frame))
+		}
+		completeLatestFrameSinkItemWithError(item.done, err == nil, err)
 	}
 }
 
 func completeLatestFrameSinkItem(done chan render.FrameWriteCompletion, written bool) {
+	completeLatestFrameSinkItemWithError(done, written, nil)
+}
+
+func completeLatestFrameSinkItemWithError(done chan render.FrameWriteCompletion, written bool, err error) {
 	if done == nil {
 		return
 	}
-	done <- render.FrameWriteCompletion{Written: written}
+	done <- render.FrameWriteCompletion{Written: written, Err: err}
 	close(done)
 }
 

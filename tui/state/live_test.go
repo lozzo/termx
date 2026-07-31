@@ -718,34 +718,36 @@ func TestTerminalSurfaceLifecycleBoundaryClearsOnlyMatchingEndpointRefresh(t *te
 	}
 }
 
-func TestTerminalSurfaceRefreshArmsOneCallbackPerTerminal(t *testing.T) {
+func TestTerminalSurfaceLiveScreenAllowsOneRequestAndOnePendingRevision(t *testing.T) {
 	var store TerminalSurfaceStore
-	var arm bool
-	store, arm = store.ArmLiveInvalidation("term-1", 80, 24)
-	if !arm || !store.Refreshes["term-1"].Armed {
-		t.Fatalf("first ready should arm one callback, store=%#v arm=%v", store.Refreshes, arm)
+	ref := LocalTerminalRef("term-1")
+	store, canceled := store.ReconcileLiveScreenDemand([]TerminalRef{ref})
+	if len(canceled) != 0 {
+		t.Fatalf("new demand should not cancel requests, got %#v", canceled)
 	}
-
-	store, arm = store.ArmLiveInvalidation("term-1", 96, 30)
-	if arm {
-		t.Fatalf("duplicate ready must not re-arm the same terminal, store=%#v", store.Refreshes)
+	store = store.SubmitLiveScreenRef(ref, 8, 80, 24)
+	var request LiveScreenRequestState
+	var start bool
+	store, request, start = store.BeginLiveScreenRequestRef(ref)
+	if !start || !request.RequestInFlight || request.SubmittedRevision != 8 {
+		t.Fatalf("first submission should start one request, got %#v start=%v", request, start)
 	}
-	if request := store.Refreshes["term-1"]; !request.Armed || request.InFlight || request.Dirty || request.Cols != 80 || request.Rows != 24 {
-		t.Fatalf("duplicate ready should keep original pending callback, got %#v", request)
+	store, _, start = store.BeginLiveScreenRequestRef(ref)
+	if start {
+		t.Fatal("request in flight must reject a parallel request")
 	}
-
-	var fetch bool
-	store, fetch = store.RequestRefresh("term-1", 96, 30)
-	if !fetch {
-		t.Fatalf("callback wake should clear armed and start latest fetch, store=%#v", store.Refreshes)
+	store, ok := store.FinishLiveScreenRequestRef(ref, request.Generation, 9)
+	if !ok {
+		t.Fatal("matching result should release request")
 	}
-	if request := store.Refreshes["term-1"]; request.Armed || !request.InFlight || request.Dirty || request.Cols != 96 || request.Rows != 30 {
-		t.Fatalf("wake should become a single in-flight fetch, got %#v", request)
+	store, _, start = store.BeginLiveScreenRequestRef(ref)
+	if start {
+		t.Fatal("received revision must stay pending until renderer submission")
 	}
-
-	store = store.ApplySnapshot(LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 8, Cols: 96, Rows: 30, Lines: []string{"rev8"}})
-	if _, ok := store.Refreshes["term-1"]; ok {
-		t.Fatalf("fresh snapshot should clear callback/fetch state, store=%#v", store.Refreshes)
+	store = store.SubmitLiveScreenRef(ref, 9, 80, 24)
+	store, request, start = store.BeginLiveScreenRequestRef(ref)
+	if !start || request.SubmittedRevision != 9 {
+		t.Fatalf("submitting pending revision should start next request, got %#v start=%v", request, start)
 	}
 }
 

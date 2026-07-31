@@ -14,7 +14,6 @@ type Frame struct {
 	Blink       bool
 	HitRegions  []HitRegion
 	LiveTargets []LiveRenderTarget
-	LiveRegions []LiveRenderRegion
 	Metadata    RenderMetadata
 	Theme       Theme
 }
@@ -46,9 +45,6 @@ func (frame Frame) Clone() Frame {
 	if len(frame.LiveTargets) > 0 {
 		cloned.LiveTargets = append([]LiveRenderTarget(nil), frame.LiveTargets...)
 	}
-	if len(frame.LiveRegions) > 0 {
-		cloned.LiveRegions = append([]LiveRenderRegion(nil), frame.LiveRegions...)
-	}
 	if frame.Patch != nil {
 		patch := *frame.Patch
 		if len(frame.Patch.LinesANSI) > 0 {
@@ -69,7 +65,6 @@ func FrameFromRenderResult(result RenderResult) Frame {
 		Blink:       result.Blink,
 		HitRegions:  cloneHitRegions(result.HitRegions),
 		LiveTargets: append([]LiveRenderTarget(nil), result.LiveTargets...),
-		LiveRegions: append([]LiveRenderRegion(nil), result.LiveRegions...),
 		Metadata:    result.Metadata,
 		Theme:       result.Theme.WithFallback(),
 	}
@@ -83,7 +78,6 @@ func ANSIFrameFromRenderResult(result RenderResult) Frame {
 		Blink:       result.Blink,
 		HitRegions:  cloneHitRegions(result.HitRegions),
 		LiveTargets: append([]LiveRenderTarget(nil), result.LiveTargets...),
-		LiveRegions: append([]LiveRenderRegion(nil), result.LiveRegions...),
 		Metadata:    result.Metadata,
 		Theme:       result.Theme.WithFallback(),
 	}
@@ -94,16 +88,6 @@ type LiveRenderTarget struct {
 	EndpointID string
 	TerminalID string
 	Revision   uint64
-}
-
-// LiveRenderRegion 是完整帧对可直接按行重写的 live 内容区投影。
-// Revision 表示该完整帧实际包含的 surface revision。
-type LiveRenderRegion struct {
-	EndpointID string
-	TerminalID string
-	Revision   uint64
-	Rect       Rect
-	Active     bool
 }
 
 func cloneStrings(values []string) []string {
@@ -121,9 +105,10 @@ type FrameSink interface {
 }
 
 // FrameWriteCompletion 是 host 对单次写帧的本地完成结果。
-// Written=false 表示 latest-only sink 丢弃了这帧，不能据此重新 enable live wake。
+// Written=false 且 Err=nil 表示 latest-only sink 丢弃了这帧；Err 表示真实写失败。
 type FrameWriteCompletion struct {
 	Written bool
+	Err     error
 }
 
 // FrameSinkCompletion 允许真实 host 为单次写帧返回完成信号。

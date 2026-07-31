@@ -1518,7 +1518,7 @@ func TestFrameworkOpaqueOverlayOwnsCursor(t *testing.T) {
 	}
 }
 
-func TestFrameworkDoesNotRearmLiveSurfaceHiddenByOpaqueRoute(t *testing.T) {
+func TestFrameworkDoesNotDemandLiveSurfaceHiddenByOpaqueRoute(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 40, H: 12}, Panels: []PanelVM{{
 			ID:           "pane-1",
@@ -1537,7 +1537,17 @@ func TestFrameworkDoesNotRearmLiveSurfaceHiddenByOpaqueRoute(t *testing.T) {
 	}})
 
 	if len(result.LiveTargets) != 0 {
-		t.Fatalf("an opaque route must not rearm hidden live surfaces, got %#v", result.LiveTargets)
+		t.Fatalf("an opaque route must not demand hidden live surfaces, got %#v", result.LiveTargets)
+	}
+}
+
+func TestAppendLiveRenderTargetDeduplicatesSharedVisibleViews(t *testing.T) {
+	content := ContentVM{Kind: ContentTerminalLive, Meta: ContentMetaVM{LiveEndpointID: "west", LiveTerminalID: "term-1", LiveRevision: 7}}
+	targets := appendLiveRenderTarget(nil, content)
+	content.Meta.LiveRevision = 8
+	targets = appendLiveRenderTarget(targets, content)
+	if len(targets) != 1 || targets[0].Revision != 8 {
+		t.Fatalf("shared visible views should keep one target at the latest revision, got %#v", targets)
 	}
 }
 
