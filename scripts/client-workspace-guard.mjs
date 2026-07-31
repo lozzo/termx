@@ -52,17 +52,6 @@ for (const [packageName, workspace] of [
   }
 }
 
-// Web Controller 使用独立的 React 版本，并由 Vite alias 固定解析到自己的 workspace，避免与共享客户端 UI 混装。
-const cloudReactVersion = cloudWebPackage.dependencies?.react
-if (
-  !cloudReactVersion ||
-  cloudWebPackage.dependencies?.['react-dom'] !== cloudReactVersion ||
-  lock.packages['cloud/web/node_modules/react']?.version !== cloudReactVersion ||
-  lock.packages['cloud/web/node_modules/react-dom']?.version !== cloudReactVersion
-) {
-  fail('Cloud Web React dependencies must be explicit, equal, and workspace-local')
-}
-
 const reactVersion = rootPackage.devDependencies?.react
 if (
   !reactVersion ||
@@ -70,9 +59,13 @@ if (
   uiPackage.peerDependencies?.react !== reactVersion ||
   uiPackage.peerDependencies?.['react-dom'] !== reactVersion ||
   mobilePackage.dependencies?.react !== reactVersion ||
-  mobilePackage.dependencies?.['react-dom'] !== reactVersion
+  mobilePackage.dependencies?.['react-dom'] !== reactVersion ||
+  cloudWebPackage.dependencies?.react !== reactVersion ||
+  cloudWebPackage.dependencies?.['react-dom'] !== reactVersion ||
+  lock.packages['node_modules/react']?.version !== reactVersion ||
+  lock.packages['node_modules/react-dom']?.version !== reactVersion
 ) {
-  fail('root, UI peer, and mobile React versions must be identical')
+  fail('root, UI peer, mobile, Cloud Web, and root lock React versions must be identical')
 }
 
 // workspace 合并后各产品 Vite 必须解析到锁定版本，不能依赖 npm 偶然 hoist。
