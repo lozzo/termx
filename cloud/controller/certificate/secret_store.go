@@ -596,7 +596,7 @@ func createPrivateChild(parent *os.Root, name string) (*os.Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := securefs.SecureDirectoryHandle(handle); err == nil {
+	if err = securefs.SecureDirectoryHandle(handle); err == nil {
 		err = securefs.ValidatePrivateDirectoryHandle(handle)
 	}
 	err = errors.Join(err, handle.Close())
