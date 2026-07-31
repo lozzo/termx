@@ -1452,6 +1452,56 @@ func TestLiveScreenNextEffectIsOneShot(t *testing.T) {
 	}
 }
 
+func TestLiveScreenNextEffectRequestsFullBootstrapAfterMergeFailure(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
+	request := state.LiveScreenRequestState{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Demand: true,
+		RequestInFlight: true, NeedsBootstrap: true, Generation: 3,
+		SubmittedRevision: 7, Cols: 80, Rows: 24,
+	}
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9, FullReplace: true}}
+	effect := liveScreenNextEffectForRef(request, LiveDeps{Terminal: terminal})[0].(FuncEffect)
+	if msg := effect.Run(context.Background()); msg == nil {
+		t.Fatal("bootstrap request should return its result")
+	}
+	requests := terminal.LiveScreenNextRequestsSnapshot()
+	if len(requests) != 1 || requests[0].ObservedRevision != 0 {
+		t.Fatalf("bootstrap request must use observed revision zero, got %#v", requests)
+	}
+}
+
+func TestLiveScreenDeltaMergeFailureRequiresBootstrap(t *testing.T) {
+	terminal := &testkit.FakeTerminalService{}
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
+	ref := state.LocalTerminalRef("term-1")
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-1", Revision: 7, FullReplace: true, Cols: 80, Rows: 24,
+		Screen: make([][]state.LiveCell, 24),
+	})
+	surface, _ = surface.ReconcileLiveScreenDemand([]state.TerminalRef{ref})
+	surface = surface.SubmitLiveScreenRef(ref, 7, 80, 24)
+	var request state.LiveScreenRequestState
+	var start bool
+	surface, request, start = surface.BeginLiveScreenRequestRef(ref)
+	if !start {
+		t.Fatal("test setup should start live request")
+	}
+	root, effects := reducer(state.Root{Surface: surface}, LiveScreenNextResultMsg{
+		TerminalID: "term-1", Generation: request.Generation,
+		Snapshot: state.LiveSurfaceSnapshot{
+			TerminalID: "term-1", BaseRevision: 6, Revision: 8, Cols: 80, Rows: 24,
+			ChangedRows: []int{0}, Screen: [][]state.LiveCell{{{Text: "stale", Width: 5}}},
+		},
+	})
+	if len(effects) != 0 || root.Surface.Revision != 7 {
+		t.Fatalf("unmergeable delta must keep the last valid screen, effects=%#v surface=%#v", effects, root.Surface)
+	}
+	request, _ = root.Surface.LiveScreenRequestRef(ref)
+	if request.RequestInFlight || !request.NeedsBootstrap {
+		t.Fatalf("unmergeable delta must release request and require bootstrap, got %#v", request)
+	}
+}
+
 func TestLiveScreenNextEffectDoesNotUseFixedDelay(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
 	request := state.LiveScreenRequestState{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Demand: true, RequestInFlight: true, Generation: 1, SubmittedRevision: 7, Cols: 80, Rows: 24}

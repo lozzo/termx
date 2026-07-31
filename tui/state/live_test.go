@@ -751,6 +751,36 @@ func TestTerminalSurfaceLiveScreenAllowsOneRequestAndOnePendingRevision(t *testi
 	}
 }
 
+func TestTerminalSurfaceLiveScreenBootstrapBypassesPendingRevision(t *testing.T) {
+	var store TerminalSurfaceStore
+	ref := LocalTerminalRef("term-1")
+	store, _ = store.ReconcileLiveScreenDemand([]TerminalRef{ref})
+	store = store.SubmitLiveScreenRef(ref, 7, 80, 24)
+	var request LiveScreenRequestState
+	var start bool
+	store, request, start = store.BeginLiveScreenRequestRef(ref)
+	if !start {
+		t.Fatal("initial request should start")
+	}
+	store, ok := store.RequireLiveScreenBootstrap(ref, request.Generation)
+	if !ok {
+		t.Fatal("matching request should enter bootstrap state")
+	}
+	store = store.SubmitLiveScreenRef(ref, 7, 80, 24)
+	store, request, start = store.BeginLiveScreenRequestRef(ref)
+	if !start || !request.NeedsBootstrap || !request.RequestInFlight {
+		t.Fatalf("bootstrap must start even while the old revision remains visible, got %#v start=%v", request, start)
+	}
+	store, ok = store.FinishLiveScreenRequestRef(ref, request.Generation, 9)
+	if !ok {
+		t.Fatal("full bootstrap result should finish the request")
+	}
+	request, _ = store.LiveScreenRequestRef(ref)
+	if request.NeedsBootstrap || request.ReceivedRevision != 9 {
+		t.Fatalf("successful bootstrap should restore steady delivery, got %#v", request)
+	}
+}
+
 func terminalSurfaceStoreWithDirtyRefresh(t *testing.T, ref TerminalRef) TerminalSurfaceStore {
 	t.Helper()
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{

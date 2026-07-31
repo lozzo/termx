@@ -1100,6 +1100,10 @@ func liveScreenNextEffectForRef(request state.LiveScreenRequestState, deps LiveD
 	}
 	ref := request.TerminalRef()
 	token := liveScreenNextTokenForRef(ref)
+	observedRevision := request.SubmittedRevision
+	if request.NeedsBootstrap {
+		observedRevision = 0
+	}
 	return []Effect{FuncEffect{
 		Token: token,
 		Async: true,
@@ -1110,14 +1114,14 @@ func liveScreenNextEffectForRef(request state.LiveScreenRequestState, deps LiveD
 				"generation", request.Generation,
 				"cols", request.Cols,
 				"rows", request.Rows,
-				"observed_revision", request.SubmittedRevision,
+				"observed_revision", observedRevision,
 			)
 			result, err := source.LiveScreenNext(ctx, port.TerminalSurfaceRequest{
 				EndpointID:       ref.EndpointID,
 				TerminalID:       ref.TerminalID,
 				Cols:             request.Cols,
 				Rows:             request.Rows,
-				ObservedRevision: request.SubmittedRevision,
+				ObservedRevision: observedRevision,
 			})
 			if err != nil {
 				return LiveScreenNextResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Generation: request.Generation, Err: err}
@@ -1405,6 +1409,17 @@ func reduceLiveScreenNextResult(root state.Root, msg LiveScreenNextResultMsg, de
 	}
 	root.Surface = root.Surface.ApplySnapshot(msg.Snapshot)
 	received := root.Surface.SurfaceForTerminalRef(ref).Revision
+	if msg.Snapshot.BaseRevision != 0 && !msg.Snapshot.FullReplace && received != msg.Snapshot.Revision {
+		root.Surface, _ = root.Surface.RequireLiveScreenBootstrap(ref, msg.Generation)
+		logLiveScreenTrace(deps.Logger, "next.bootstrap_required",
+			"endpoint_id", string(ref.EndpointID),
+			"terminal_id", ref.TerminalID,
+			"generation", msg.Generation,
+			"base_revision", msg.Snapshot.BaseRevision,
+			"received_revision", received,
+		)
+		return root.Advance(), nil
+	}
 	root.Surface, _ = root.Surface.FinishLiveScreenRequestRef(ref, msg.Generation, received)
 	logLiveScreenTrace(deps.Logger, "next.cached",
 		"endpoint_id", string(ref.EndpointID),

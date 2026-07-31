@@ -44,6 +44,7 @@ type LiveScreenRequestState struct {
 	TerminalID        string
 	Demand            bool
 	RequestInFlight   bool
+	NeedsBootstrap    bool
 	Generation        uint64
 	ReceivedRevision  uint64
 	SubmittedRevision uint64
@@ -710,13 +711,32 @@ func (store TerminalSurfaceStore) BeginLiveScreenRequestRef(ref TerminalRef) (Te
 	}
 	key := liveSurfaceRefKey(ref)
 	request, ok := store.LiveScreens[key]
-	if !ok || !request.Demand || request.RequestInFlight || request.ReceivedRevision > request.SubmittedRevision {
+	if !ok || !request.Demand || request.RequestInFlight || (!request.NeedsBootstrap && request.ReceivedRevision > request.SubmittedRevision) {
 		return store, request, false
 	}
 	request.RequestInFlight = true
 	store.LiveScreens = cloneLiveScreenRequestStates(store.LiveScreens)
 	store.LiveScreens[key] = request
 	return store, request, true
+}
+
+// RequireLiveScreenBootstrap releases the matching request and forces its next
+// observed revision to zero while keeping the last valid screen visible.
+func (store TerminalSurfaceStore) RequireLiveScreenBootstrap(ref TerminalRef, generation uint64) (TerminalSurfaceStore, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store, false
+	}
+	key := liveSurfaceRefKey(ref)
+	request, ok := store.LiveScreens[key]
+	if !ok || !request.Demand || !request.RequestInFlight || request.Generation != generation {
+		return store, false
+	}
+	request.RequestInFlight = false
+	request.NeedsBootstrap = true
+	store.LiveScreens = cloneLiveScreenRequestStates(store.LiveScreens)
+	store.LiveScreens[key] = request
+	return store, true
 }
 
 func (store TerminalSurfaceStore) LiveScreenRequestMatches(ref TerminalRef, generation uint64) bool {
@@ -738,6 +758,7 @@ func (store TerminalSurfaceStore) FinishLiveScreenRequestRef(ref TerminalRef, ge
 		return store, false
 	}
 	request.RequestInFlight = false
+	request.NeedsBootstrap = false
 	if receivedRevision > request.ReceivedRevision {
 		request.ReceivedRevision = receivedRevision
 	}
