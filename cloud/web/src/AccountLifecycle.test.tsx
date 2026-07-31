@@ -52,7 +52,9 @@ function clickButton(container: HTMLElement, text: string, last = false) {
 }
 
 async function waitForText(container: HTMLElement, text: string) {
-	await vi.waitFor(() => expect(container.textContent).toContain(text))
+	await act(async () => {
+		await vi.waitFor(() => expect(container.textContent).toContain(text))
+	})
 }
 
 describe('account lifecycle UI', () => {
@@ -85,8 +87,22 @@ describe('account lifecycle UI', () => {
 	})
 
 	it('provisions without a password and shows the returned credential once', async () => {
+		let listRequests = 0
 		const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => {
-			if (!_init?.method) return reply({ accounts: [] }) as unknown as Response
+			if (!_init?.method) {
+				listRequests++
+				return reply(listRequests === 1 ? { accounts: [] } : {
+					accounts: [{
+						account: {
+							account_id: 'new-account',
+							email: 'user@example.com',
+							display_name: 'New User',
+							state: 'ACCOUNT_STATE_PENDING',
+							revision: '1',
+						},
+					}],
+				}) as unknown as Response
+			}
 			return reply({ account: { account_id: 'new-account', email: 'user@example.com', display_name: 'New User', state: 'ACCOUNT_STATE_PENDING', revision: '1' }, setup_credential: 'provision-once', expires_at: '2027-01-15T00:00:00Z' }, 200) as unknown as Response
 		})
 		vi.stubGlobal('fetch', fetchMock)
@@ -101,15 +117,32 @@ describe('account lifecycle UI', () => {
 		})
 		await act(async () => clickButton(rendered.container, '创建账号', true))
 		await waitForText(rendered.container, 'provision-once')
+		await waitForText(rendered.container, 'user@example.com')
 		const request = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST')?.[1]
 		expect(request?.body).toContain('"reason":"approved"')
 		expect(request?.body).not.toContain('password')
 	})
 
 	it('resets an account and replaces the destructive confirmation with the credential result', async () => {
+		let accountRequests = 0
 		const fetchMock = vi.fn(async (path: RequestInfo | URL, init?: RequestInit) => {
 			const value = String(path)
-			if (!init?.method && value.includes('/api/operator/accounts/')) return reply({ account: { account: { account_id: 'target', email: 'target@example.com', display_name: 'Target', state: 'ACCOUNT_STATE_ACTIVE', revision: '3' }, roles: ['ACCOUNT_ROLE_USER'], daemon_count: '0' } }) as unknown as Response
+			if (!init?.method && value.includes('/api/operator/accounts/')) {
+				accountRequests++
+				return reply({
+					account: {
+						account: {
+							account_id: 'target',
+							email: 'target@example.com',
+							display_name: 'Target',
+							state: accountRequests === 1 ? 'ACCOUNT_STATE_ACTIVE' : 'ACCOUNT_STATE_PENDING',
+							revision: accountRequests === 1 ? '3' : '4',
+						},
+						roles: ['ACCOUNT_ROLE_USER'],
+						daemon_count: '0',
+					},
+				}) as unknown as Response
+			}
 			if (!init?.method) return reply({ orders: [] }) as unknown as Response
 			return reply({ account: { account_id: 'target', email: 'target@example.com', display_name: 'Target', state: 'ACCOUNT_STATE_PENDING', revision: '4' }, setup_credential: 'reset-once', expires_at: '2027-01-15T00:00:00Z' }) as unknown as Response
 		})
@@ -122,6 +155,7 @@ describe('account lifecycle UI', () => {
 		act(() => setInput(input(rendered.container, '操作原因'), 'lost credential'))
 		await act(async () => clickButton(rendered.container, '重置凭据', true))
 		await waitForText(rendered.container, 'reset-once')
+		await waitForText(rendered.container, '修订号4')
 	})
 
 	it('keeps setup input recoverable after failure and allows a successful retry', async () => {
