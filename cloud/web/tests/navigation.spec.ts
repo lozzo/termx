@@ -59,7 +59,7 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path === `/api/commerce/account/${account.account_id}`) return json(route, commerce)
     if (path === '/api/operator/plans') return json(route, { plans })
     if (path === '/api/operator/subscriptions') return json(route, { subscriptions: [commerce.subscription] })
-    if (path === '/api/operator/orders') return json(route, { orders: [] })
+    if (path === '/api/operator/orders') return json(route, { orders: [pendingOrder] })
     if (path === '/api/operator/usage') return json(route, { accounts: [commerce.usage] })
     if (path === '/api/operator/audit') return json(route, { events: [] })
     return json(route, {})
@@ -411,7 +411,7 @@ test('query 重试保留账号列表已有的筛选与分页状态', async ({ pa
   expect(requests.get('/api/account/current')).toBe(1)
 })
 
-test('@axe 公开页、登录、普通用户 Shell、管理员表格与打开的 dialog 满足 WCAG A/AA', async ({ page }, testInfo) => {
+test('@axe 公开页、Cloud Shell、订单搜索、表格控件与打开的 dialog 满足 WCAG A/AA', async ({ page }, testInfo) => {
   const colorScheme = testInfo.project.name === 'mobile-320-chromium' ? 'dark' : 'light'
   await page.emulateMedia({ colorScheme })
   await mockAPI(page)
@@ -433,11 +433,35 @@ test('@axe 公开页、登录、普通用户 Shell、管理员表格与打开的
   await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
   await assertNoAxeViolations(page, '普通用户 Shell')
 
+  await page.goto('/app/subscription')
+  await expect(page.getByRole('group', { name: '计费周期' })).toBeVisible()
+  await assertMinimumHitArea(page, '.segmented button')
+  await assertNoHorizontalOverflow(page)
+  await assertNoAxeViolations(page, '订阅计费周期')
+
   const adminPage = await page.context().newPage()
   await adminPage.emulateMedia({ colorScheme })
   await mockAPI(adminPage, true)
+
+  await adminPage.goto('/app/admin/orders')
+  const orderSearch = adminPage.getByLabel('搜索订单')
+  await expect(orderSearch).toHaveAttribute('id', 'order-search')
+  const searchResponse = adminPage.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/operator/orders' && url.searchParams.get('query') === 'development'
+  })
+  await orderSearch.fill('development')
+  await adminPage.getByRole('button', { name: '查询', exact: true }).click()
+  expect((await searchResponse).ok()).toBe(true)
+  await expect(adminPage.getByRole('region', { name: '数据表格' })).toBeVisible()
+  await assertMinimumHitArea(adminPage, '.table-link')
+  await assertNoHorizontalOverflow(adminPage)
+  await assertNoAxeViolations(adminPage, '管理员订单搜索与表格链接')
+
   await adminPage.goto('/app/admin/certificates')
   await expect(adminPage.getByRole('region', { name: '数据表格' }).first()).toBeVisible()
+  await assertMinimumHitArea(adminPage, '.table-button, .table-select')
+  await assertNoHorizontalOverflow(adminPage)
   await assertNoAxeViolations(adminPage, '管理员表格')
 
   await adminPage.getByRole('button', { name: '上传证书', exact: true }).click()
