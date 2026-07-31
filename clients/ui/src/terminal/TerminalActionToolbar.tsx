@@ -74,7 +74,7 @@ export function TerminalActionToolbar({
 
   if (mode === 'selection') {
     return (
-      <div className="absolute inset-x-0 bottom-2 z-40 border-y border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-2 py-1.5 text-[var(--anytty-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.22)] md:hidden">
+      <div className="absolute inset-x-0 bottom-2 z-40 border-y border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-2 py-1.5 text-[var(--anytty-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.22)] md:hidden" data-testid="anytty-terminal-action-toolbar">
         <div className="flex items-center justify-between gap-1.5 overflow-x-auto">
           <div className="flex items-center gap-1.5">
             <ToolbarButton label={t('terminal.tools.selectAll')} onClick={onSelectAll} />
@@ -100,7 +100,7 @@ export function TerminalActionToolbar({
   const ownsResize = resizeControl?.canResize === true
 
   return (
-    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-3 py-3 text-[var(--anytty-text)] md:hidden animate-in slide-in-from-top-2">
+    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] px-3 py-3 text-[var(--anytty-text)] md:hidden animate-in slide-in-from-top-2" data-testid="anytty-terminal-action-toolbar">
       <div className="flex flex-col gap-3">
         {/* Settings Row: Font Size */}
         <div className="flex items-center justify-between">

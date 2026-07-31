@@ -162,7 +162,7 @@ function MachineRow({
   return (
     <button
       aria-label={t('machines.connectTo', { name: machine.name })}
-      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--anytty-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--anytty-app-accent)]"
+      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--anytty-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--anytty-app-accent)]"
       type="button"
       onClick={() => {
         if (longPressTriggeredRef.current) {

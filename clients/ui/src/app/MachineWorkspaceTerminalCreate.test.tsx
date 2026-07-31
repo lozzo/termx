@@ -14,6 +14,7 @@ import {
 import { anyttyI18n } from '../i18n'
 import { dispatchNativeBack } from '../platform/nativeBack'
 import { MockProtoSession, protoResult } from '../test/mockProtoSession'
+import { DEFAULT_TERMINAL_SETTINGS } from '../terminal/terminalSettings'
 import { MachineWorkspace } from './MachineWorkspace'
 
 const terminalRender = vi.hoisted(() => vi.fn())
@@ -21,7 +22,8 @@ const terminalSendInput = vi.hoisted(() => vi.fn())
 const terminalPasteText = vi.hoisted(() => vi.fn())
 const terminalFocus = vi.hoisted(() => vi.fn())
 const terminalBlur = vi.hoisted(() => vi.fn())
-const terminalHarness = vi.hoisted(() => ({ exposeHandle: true }))
+const terminalHarness = vi.hoisted(() => ({ exposeHandle: true, selection: '' }))
+const originalInnerWidth = window.innerWidth
 
 vi.mock('../terminal/Terminal', () => ({
   Terminal: forwardRef(function MockTerminal(props: unknown, ref) {
@@ -36,11 +38,11 @@ vi.mock('../terminal/Terminal', () => ({
       blur: () => terminalBlur(terminalId),
       fit: () => {},
       reattach: () => {},
-      selectAll: () => {},
-      selectVisible: () => {},
-      getSelection: () => '',
-      hasSelection: () => false,
-      clearSelection: () => {},
+      selectAll: () => { terminalHarness.selection = 'selected terminal text' },
+      selectVisible: () => { terminalHarness.selection = 'selected terminal text' },
+      getSelection: () => terminalHarness.selection,
+      hasSelection: () => terminalHarness.selection !== '',
+      clearSelection: () => { terminalHarness.selection = '' },
       pasteText: (text: string) => terminalPasteText(terminalId, text),
       getCursorInfo: () => null,
       adjustInputPosition: () => {},
@@ -59,11 +61,13 @@ describe('MachineWorkspace terminal creation', () => {
     terminalFocus.mockReset()
     terminalBlur.mockReset()
     terminalHarness.exposeHandle = true
+    terminalHarness.selection = ''
     await anyttyI18n.changeLanguage('en')
   })
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
   })
 
   it('prefills daemon defaults and submits a complete generated Proto create command', async () => {
@@ -140,6 +144,80 @@ describe('MachineWorkspace terminal creation', () => {
     expect(within(header).getByRole('button', { name: 'Control resize' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Terminal tools' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Open terminal menu' })).toBeTruthy()
+  })
+
+  it('reaches the existing terminal toolbar from the 320px menu while split', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminals = [
+      {
+        terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+        command: '/bin/zsh', cols: 80, rows: 24,
+      },
+      {
+        terminalId: 'term-logs', machineId: 'studio', title: 'Logs', state: 'running' as const,
+        command: 'tail -f app.log', cols: 80, rows: 24,
+      },
+    ]
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => terminals),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+      terminalSettings={DEFAULT_TERMINAL_SETTINGS}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    const header = await screen.findByTestId('anytty-terminal-header')
+    const topToolbarButton = within(header).getByTestId('anytty-terminal-tools-button')
+    expect(window.innerWidth).toBe(320)
+    expect(topToolbarButton.classList.contains('hidden')).toBe(true)
+    expect(topToolbarButton.classList.contains('min-[360px]:flex')).toBe(true)
+
+    const menuButton = within(header).getByRole('button', { name: 'Open terminal menu' })
+    await userEvent.click(menuButton)
+    await userEvent.click(within(await screen.findByTestId('anytty-terminal-menu-sheet')).getByRole('button', { name: 'Split terminal' }))
+    await userEvent.click(within(await screen.findByTestId('anytty-split-terminal-sheet')).getByRole('button', { name: 'Open Logs' }))
+    expect(await screen.findByTestId('anytty-split-terminal-panel')).toBeTruthy()
+
+    await userEvent.click(menuButton)
+    const menuSheet = await screen.findByTestId('anytty-terminal-menu-sheet')
+    const toolbarEntry = within(menuSheet).getByRole('button', { name: 'Terminal tools' })
+    expect(toolbarEntry.classList.contains('min-h-14')).toBe(true)
+    await userEvent.click(toolbarEntry)
+
+    expect(screen.queryByTestId('anytty-terminal-menu-sheet')).toBeNull()
+    const toolbar = screen.getByTestId('anytty-terminal-action-toolbar')
+    expect(screen.getAllByTestId('anytty-terminal-action-toolbar')).toHaveLength(1)
+    expect(within(toolbar).getByRole('button', { name: 'Decrease terminal font size' }).classList.contains('h-11')).toBe(true)
+    expect(within(toolbar).getByRole('button', { name: 'Increase terminal font size' }).classList.contains('h-11')).toBe(true)
+    expect(within(toolbar).getByRole('button', { name: 'Renderer: Auto' }).classList.contains('h-11')).toBe(true)
+    expect(within(toolbar).getByRole('button', { name: 'Paste' }).classList.contains('min-h-11')).toBe(true)
+    expect(within(toolbar).getByRole('button', { name: 'Clipboard' }).classList.contains('min-h-11')).toBe(true)
+    expect(within(toolbar).getByRole('button', { name: 'Snippets' }).classList.contains('min-h-11')).toBe(true)
+    expect(Array.from(toolbar.querySelectorAll('button')).every((button) => (
+      button.classList.contains('h-11') || button.classList.contains('min-h-11')
+    ))).toBe(true)
+
+    await userEvent.click(within(toolbar).getByRole('button', { name: 'Select' }))
+    const selectionToolbar = screen.getByTestId('anytty-terminal-action-toolbar')
+    const copyButton = within(selectionToolbar).getByRole('button', { name: 'Copy' })
+    expect(copyButton.classList.contains('min-h-11')).toBe(true)
+    expect((copyButton as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.click(within(selectionToolbar).getByRole('button', { name: 'Select all' }))
+    expect((copyButton as HTMLButtonElement).disabled).toBe(false)
+    expect(Array.from(selectionToolbar.querySelectorAll('button')).every((button) => (
+      button.classList.contains('h-11') || button.classList.contains('min-h-11')
+    ))).toBe(true)
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
+    expect(screen.getByTestId('anytty-split-terminal-panel')).toBeTruthy()
+    expect(document.activeElement).toBe(menuButton)
   })
 
   it('never mounts terminal resources with a stale generation while reconnecting', async () => {

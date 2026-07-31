@@ -1816,6 +1816,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
   }, [activeTerminalHandle])
 
+  const setTerminalToolbarVisibility = useCallback((open: boolean) => {
+    setTerminalToolbarOpen(open)
+    if (open) {
+      setTerminalFnOpen(false)
+      return
+    }
+    setTerminalToolbarModeAndReset('default')
+  }, [setTerminalToolbarModeAndReset])
+
   useEffect(() => {
     if (!terminalToolbarOpen || terminalToolbarMode !== 'selection') return
     const timer = window.setInterval(() => {
@@ -2204,8 +2213,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (!filesOpen && terminalToolbarOpen) {
-      setTerminalToolbarOpen(false)
-      setTerminalToolbarModeAndReset('default')
+      setTerminalToolbarVisibility(false)
       return
     }
     if (!filesOpen && splitTerminalId) {
@@ -2600,7 +2608,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               title={t('workspace.terminalTools')}
               data-testid="anytty-terminal-tools-button"
               className={`hidden h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--anytty-surface-raised)] min-[360px]:flex ${terminalToolbarOpen ? 'text-[var(--anytty-accent)]' : 'text-[var(--anytty-muted)]'}`}
-              onClick={() => { hapticSelection(); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}
+              onClick={() => { hapticSelection(); setTerminalToolbarVisibility(!terminalToolbarOpen) }}
             >
               <SlidersHorizontal className="h-5 w-5" />
             </button>
@@ -2629,7 +2637,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               fontSize={effectiveTerminalSettings.fontSize}
               resizeControl={terminalResizeControl}
               onModeChange={setTerminalToolbarModeAndReset}
-              onClose={() => setTerminalToolbarOpen(false)}
+              onClose={() => setTerminalToolbarVisibility(false)}
               onSelectAll={() => {
                 activeTerminalHandle()?.selectAll()
                 setHasTerminalSelection(true)
@@ -2816,6 +2824,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         {mobileSheet === 'terminal-menu' ? (
           <MobileSheetPanel title={t('workspace.terminalTools')} testId="anytty-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
             <div className="grid grid-cols-2 border-l border-t border-[var(--anytty-app-line)]">
+              <button type="button" className="anytty-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setMobileSheet(null); setTerminalToolbarModeAndReset('default'); setTerminalToolbarVisibility(true) }}>
+                <SlidersHorizontal className="h-4 w-4 text-[var(--anytty-app-accent)]" />
+                {t('workspace.terminalTools')}
+              </button>
               <button type="button" className="anytty-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
                 <Rows2 className="h-4 w-4 text-[var(--anytty-app-accent)]" />
                 {splitTerminalId ? t('workspace.changeSplit') : t('workspace.splitTerminal')}

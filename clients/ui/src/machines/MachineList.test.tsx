@@ -111,6 +111,22 @@ describe('MachineList', () => {
     expect(onSelectMachine).not.toHaveBeenCalled()
   })
 
+  it('keeps the device icon, shrinkable content, and trailing arrow in three explicit grid columns', () => {
+    render(
+      <MachineList
+        machines={[machine({ machineId: 'machine-narrow', name: 'Narrow Device' })]}
+        onScanMachine={vi.fn()}
+        onSelectMachine={vi.fn()}
+      />,
+    )
+
+    const row = screen.getByRole('button', { name: /connect to narrow device/i })
+    expect(row.classList.contains('grid-cols-[auto_minmax(0,1fr)_auto]')).toBe(true)
+    expect(row.children).toHaveLength(3)
+    expect(row.children[1]?.classList.contains('min-w-0')).toBe(true)
+    expect(row.children[2]?.classList.contains('self-center')).toBe(true)
+  })
+
   it('keeps title and detail associations unique across two device sheets', () => {
     render(
       <>
