@@ -60,6 +60,26 @@ describe('账号 session 轮换', () => {
     })
   })
 
+  it.each([
+    ['message only', { message: 'private upstream detail' }],
+    ['missing request ID', { code: 'service_unavailable', message: 'private upstream detail' }],
+    ['wrong code type', { code: 503, message: 'private upstream detail', request_id: 'untrusted-body-id' }],
+    ['wrong message type', { code: 'service_unavailable', message: { detail: 'private upstream detail' }, request_id: 'untrusted-body-id' }],
+    ['wrong request ID type', { code: 'service_unavailable', message: 'private upstream detail', request_id: 503 }],
+  ])('uses the redacted fallback for a malformed error envelope: %s', async (_name, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'trusted-header-id' },
+    })))
+
+    await expect(protoGet('/api/account/current', GetCurrentAccountResponseSchema)).rejects.toMatchObject({
+      status: 503,
+      correlationID: 'trusted-header-id',
+      code: 'http_error',
+      message: '请求失败，请稍后重试。',
+    })
+  })
+
   it('keeps successful Proto JSON responses strict', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html><title>not proto JSON</title>', {
       status: 200,

@@ -272,12 +272,18 @@ test('logout 失败显示脱敏固定反馈并允许重试', async ({ page }, te
   test.skip(testInfo.project.name !== 'desktop-chromium')
   await mockAPI(page)
   let attempts = 0
-  let finishRetry: () => void = () => undefined
-  const retryPending = new Promise<void>((resolve) => { finishRetry = () => resolve() })
+  let finishFailedRetry: () => void = () => undefined
+  let finishSuccessfulRetry: () => void = () => undefined
+  const failedRetryPending = new Promise<void>((resolve) => { finishFailedRetry = () => resolve() })
+  const successfulRetryPending = new Promise<void>((resolve) => { finishSuccessfulRetry = () => resolve() })
   await page.route('**/api/account/logout', async (route) => {
     attempts++
     if (attempts <= 2) return json(route, { code: 'service_unavailable', message: 'private logout failure', request_id: 'logout-failure-id' }, 500)
-    await retryPending
+    if (attempts === 3) {
+      await failedRetryPending
+      return json(route, { code: 'service_unavailable', message: 'private retry failure', request_id: 'logout-retry-failure-id' }, 500)
+    }
+    await successfulRetryPending
     return json(route, {})
   })
 
@@ -287,25 +293,39 @@ test('logout 失败显示脱敏固定反馈并允许重试', async ({ page }, te
   await expect(dialog).toContainText('无法退出登录，请检查网络后重试。')
   await expect(dialog).not.toContainText('private logout failure')
   await expect(dialog).not.toContainText('logout-failure-id')
+  const retry = dialog.getByRole('button', { name: '重试退出', exact: true })
+  await expect(retry).toBeFocused()
 
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await page.getByRole('button', { name: '退出登录', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: '重试退出', exact: true })).toBeVisible()
+  await expect(retry).toBeFocused()
 
-  await dialog.getByRole('button', { name: '重试退出', exact: true }).click()
+  await retry.click()
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
   await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
   await expect(dialog.getByRole('button', { name: '正在重试', exact: true })).toBeDisabled()
+  const pendingStatus = dialog.getByRole('status')
+  await expect(pendingStatus).toHaveText('正在重试退出登录。')
+  await expect(pendingStatus).toBeFocused()
+  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
   await page.locator('.dialog-backdrop').dispatchEvent('mousedown')
   await expect(dialog).toBeVisible()
 
-  finishRetry()
+  finishFailedRetry()
+  await expect(retry).toBeEnabled()
+  await expect(retry).toBeFocused()
+  await expect(dialog).not.toContainText('private retry failure')
+
+  await retry.click()
+  await expect(pendingStatus).toBeFocused()
+  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
+  finishSuccessfulRetry()
   await expect(page).toHaveURL(/\/login$/)
-  expect(attempts).toBe(3)
+  expect(attempts).toBe(4)
 })
 
 test('用户创建订单并完成 Development 支付', async ({ page }) => {
@@ -457,37 +477,83 @@ test('一次性结果 mutations pending 时不能关闭，成功后仍可完成�
   await finishLockedDialog(page, '添加 Edge', '生成安装命令', '安装命令', '复制', finishEdge)
 })
 
-test('套餐与订单 create 慢请求 pending 时不能关闭或写入重开的 dialog', async ({ page }, testInfo) => {
+test('套餐与订单 create deferred 失败后关闭复开会清理旧状态', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium')
   await mockAPI(page, true)
 
-  const finishPlan = await holdJSONMutation(page, '/api/operator/plans', {
-    plan: { ...plans[0], plan_id: 'slow-plan', name: 'Slow Plan', state: 'PLAN_STATE_DRAFT' },
+  let finishPlanFailure: () => void = () => undefined
+  const planFailurePending = new Promise<void>((resolve) => { finishPlanFailure = () => resolve() })
+  let planAttempts = 0
+  await page.route('**/api/operator/plans', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    planAttempts++
+    await planFailurePending
+    return json(route, { code: 'service_unavailable', message: 'private plan failure', request_id: 'plan-failure-id' }, 503)
   })
   await page.goto('/app/admin/plans')
   await page.getByRole('button', { name: '创建套餐版本', exact: true }).click()
   await page.getByLabel('套餐 ID').fill('slow-plan')
   await page.getByLabel('显示名称').fill('Slow Plan')
   const planDialog = await submitLockedDialog(page, '创建套餐版本', '创建草稿')
-  finishPlan()
+  finishPlanFailure()
+  await expect(planDialog.getByRole('alert')).toContainText('plan-failure-id')
+  await expect(planDialog).not.toContainText('private plan failure')
+  await planDialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(planDialog).toHaveCount(0)
+  await page.getByRole('button', { name: '创建套餐版本', exact: true }).click()
+  const reopenedPlan = page.getByRole('dialog', { name: '创建套餐版本' })
+  await expect(reopenedPlan.getByRole('alert')).toHaveCount(0)
+  await reopenedPlan.getByRole('button', { name: '取消', exact: true }).click()
+  expect(planAttempts).toBe(1)
 
-  const finishOrder = await holdJSONMutation(page, '/api/commerce/order', {
-    order: { order_id: 'slow-order', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'manual', idempotency_key: 'slow-order-create', requested_transition: 'SUBSCRIPTION_TRANSITION_ACTIVATE', revision: '1', created_at: now },
-    payment_attempt: { payment_attempt_id: 'slow-attempt', order_id: 'slow-order', account_id: account.account_id, provider: 'manual', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now },
+  let finishOrderFailure: () => void = () => undefined
+  const orderFailurePending = new Promise<void>((resolve) => { finishOrderFailure = () => resolve() })
+  let orderAttempts = 0
+  await page.route('**/api/commerce/order', async (route) => {
+    orderAttempts++
+    if (orderAttempts === 1) {
+      await orderFailurePending
+      return json(route, { code: 'service_unavailable', message: 'private order failure', request_id: 'order-failure-id' }, 503)
+    }
+    const suffix = orderAttempts === 2 ? 'closed' : 'transferred'
+    return json(route, {
+      order: { order_id: `${suffix}-order`, account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'manual', idempotency_key: 'slow-order-create', requested_transition: 'SUBSCRIPTION_TRANSITION_ACTIVATE', revision: '1', created_at: now },
+      payment_attempt: { payment_attempt_id: `${suffix}-attempt`, order_id: `${suffix}-order`, account_id: account.account_id, provider: 'manual', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now },
+    })
   })
   await page.goto('/app/admin/orders')
   await page.getByRole('button', { name: '创建订单', exact: true }).click()
   await page.getByLabel('账号 ID').fill(account.account_id)
   await page.getByLabel('套餐 ID').fill('professional')
   await page.getByLabel('幂等键').fill('slow-order-create')
-  await submitLockedDialog(page, '创建订单', '创建')
-  finishOrder()
+  const orderDialog = await submitLockedDialog(page, '创建订单', '创建')
+  finishOrderFailure()
+  await expect(orderDialog.getByRole('alert')).toContainText('order-failure-id')
+  await expect(orderDialog).not.toContainText('private order failure')
+  await orderDialog.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
+  const reopenedOrder = page.getByRole('dialog', { name: '创建订单' })
+  await expect(reopenedOrder.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: '订单已创建' })).toHaveCount(0)
+
+  await reopenedOrder.getByRole('button', { name: '创建', exact: true }).click()
   const created = page.getByRole('dialog', { name: '订单已创建' })
-  await expect(created).toContainText('slow-order')
-  await expect(created.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
+  await expect(created).toContainText('closed-order')
   await page.keyboard.press('Escape')
   await expect(created).toHaveCount(0)
+
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
+  const cleanOrder = page.getByRole('dialog', { name: '创建订单' })
+  await expect(cleanOrder).not.toContainText('closed-order')
+  await cleanOrder.getByRole('button', { name: '创建', exact: true }).click()
+  const transferred = page.getByRole('dialog', { name: '订单已创建' })
+  await expect(transferred).toContainText('transferred-order')
+  await transferred.getByRole('button', { name: '录入支付结果', exact: true }).click()
+  const paymentDialog = page.getByRole('dialog', { name: '录入支付事件' })
+  await expect(paymentDialog.getByLabel('订单 ID')).toHaveValue('transferred-order')
+  await expect(paymentDialog.getByLabel('支付尝试 ID')).toHaveValue('transferred-attempt')
+  await expect(transferred).toHaveCount(0)
+  expect(orderAttempts).toBe(3)
 })
 
 test('pathname navigation updates title and main focus without query focus theft', async ({ page }, testInfo) => {

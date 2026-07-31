@@ -13,6 +13,16 @@ function cookie(name: string): string {
 
 let refreshInFlight: Promise<boolean> | undefined
 
+type ErrorEnvelope = { code: string; message: string; request_id: string }
+
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.code === 'string' && candidate.code.trim().length > 0
+    && typeof candidate.message === 'string' && candidate.message.trim().length > 0
+    && typeof candidate.request_id === 'string' && candidate.request_id.trim().length > 0
+}
+
 async function refreshSession(): Promise<boolean> {
   const csrf = cookie('anytty_cloud_csrf')
   if (!csrf) return false
@@ -38,15 +48,14 @@ async function fetchWithSession(path: string, init?: RequestInit): Promise<Respo
 async function decode<Schema extends DescMessage>(response: Response, schema: Schema): Promise<MessageShape<Schema>> {
   const body = await response.text()
   if (!response.ok) {
-    let error: Record<string, unknown> = {}
+    let error: ErrorEnvelope | undefined
     try {
-      const parsed = body ? JSON.parse(body) : {}
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) error = parsed as Record<string, unknown>
+      const parsed: unknown = body ? JSON.parse(body) : undefined
+      if (isErrorEnvelope(parsed)) error = parsed
     } catch {}
-    const requestID = typeof error.request_id === 'string' ? error.request_id : ''
-    const correlationID = requestID || response.headers.get('X-Request-ID') || ''
-    const message = typeof error.message === 'string' && error.message ? error.message : '请求失败，请稍后重试。'
-    const code = typeof error.code === 'string' && error.code ? error.code : 'http_error'
+    const correlationID = error?.request_id ?? response.headers.get('X-Request-ID') ?? ''
+    const message = error?.message ?? '请求失败，请稍后重试。'
+    const code = error?.code ?? 'http_error'
     throw new APIError(response.status, message, correlationID, code)
   }
   const json = body ? JSON.parse(body) as JsonValue : {}
