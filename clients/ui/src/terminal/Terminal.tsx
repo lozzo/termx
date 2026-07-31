@@ -201,6 +201,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const historyLoadingShowTimerRef = useRef<number | null>(null)
   const historyLoadingHideTimerRef = useRef<number | null>(null)
   const lastSnapshotTextRef = useRef('')
+  const lastLiveScreenSubmittedRevisionRef = useRef<bigint | undefined>(undefined)
+  const latestLiveScreenRevisionRef = useRef<bigint | undefined>(undefined)
+  const markLiveScreenSubmittedRef = useRef<(revision: bigint) => void>(() => {})
+  const markLiveScreenCompletedRef = useRef<(revision: bigint) => void>(() => {})
   const recoveryRevisionAppliedRef = useRef(0)
   const pendingHistoryViewportRef = useRef<number | null>(null)
   const pendingHistoryApplyRef = useRef<PendingHistoryApply | null>(null)
@@ -507,6 +511,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   markLiveOutputSyncLostRef.current = terminalSession.markSyncLost
   freezeScrollbackRef.current = terminalSession.freezeScrollback
   resumeLiveScrollbackRef.current = terminalSession.resumeLiveScrollback
+  latestLiveScreenRevisionRef.current = terminalSession.terminalSnapshot?.liveRevision
+  markLiveScreenSubmittedRef.current = terminalSession.markLiveScreenSubmitted
+  markLiveScreenCompletedRef.current = terminalSession.markLiveScreenCompleted
 
   latestTerminalTextRef.current = terminalSession.terminalText
   settingsRef.current = settings
@@ -523,6 +530,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   useEffect(() => {
     surfaceReadyRef.current = false
+    lastLiveScreenSubmittedRevisionRef.current = undefined
     setSurfaceReady(false)
   }, [machineId, session, terminalId])
 
@@ -686,7 +694,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const heldFrame = containerRef.current && screen ? holdTerminalFrame(containerRef.current, screen) : null
     try {
       term.reset()
+      const liveRevision = latestLiveScreenRevisionRef.current
+      if (liveRevision !== undefined) {
+        lastLiveScreenSubmittedRevisionRef.current = liveRevision
+        markLiveScreenSubmittedRef.current(liveRevision)
+      }
       writeToXterm(term, liveText, 'history_resume_live', () => {
+        if (liveRevision !== undefined) markLiveScreenCompletedRef.current(liveRevision)
         markSurfaceReady()
         keepBottomAnchored()
         heldFrame?.releaseAfterPaint()
@@ -2338,7 +2352,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const snapshot = terminalSession.terminalSnapshot
     const history = snapshot?.history
-    const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
+    const snapshotText = snapshot ? (snapshot.screenReplay ?? snapshot.replay ?? snapshot.text) : ''
     const authoritativeSnapshotChanged = Boolean(
       snapshot && !history && snapshotText !== lastSnapshotTextRef.current,
     )
@@ -2351,12 +2365,19 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     }
     const recoveryRevision = snapshot?.recovery?.revision ?? 0
-    const replacesLiveOutput = snapshot?.refreshReason === 'live_invalidated'
-    const snapshotReplayCandidate = Boolean(
+    const liveRevision = snapshot?.liveRevision
+    const liveSnapshotCandidate = Boolean(
       snapshot &&
+      liveRevision !== undefined &&
+      snapshot.liveReplay !== undefined &&
+      liveRevision !== lastLiveScreenSubmittedRevisionRef.current,
+    )
+    const snapshotReplayCandidate = liveSnapshotCandidate || Boolean(
+      snapshot &&
+      liveRevision === undefined &&
       snapshotText &&
       (snapshotText !== lastSnapshotTextRef.current || recoveryRevision > recoveryRevisionAppliedRef.current) &&
-      (lastWrittenTextRef.current === '' || recoveryRevision > recoveryRevisionAppliedRef.current || replacesLiveOutput),
+      (lastWrittenTextRef.current === '' || recoveryRevision > recoveryRevisionAppliedRef.current),
     )
     const liveUpdateAlreadyDeferred = historyViewportControllerRef.current.hasDeferredLiveUpdate
     const shouldReplaySnapshot = snapshotReplayCandidate && historyViewportControllerRef.current.shouldRenderLiveUpdate()
@@ -2377,8 +2398,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         pendingLiveOutputRef.current = ''
         liveOutputDroppedCharsRef.current = 0
         liveOutputSyncLostRef.current = false
-        term.reset()
-        writeToXterm(term, terminalSession.terminalText, recoveryRevision > recoveryRevisionAppliedRef.current ? 'snapshot_recovery' : 'snapshot_full_text', () => {
+        const liveReplay = liveSnapshotCandidate ? snapshot!.liveReplay! : terminalSession.terminalText
+        if (!liveSnapshotCandidate || snapshot!.liveFullReplace) term.reset()
+        if (liveRevision !== undefined) {
+          lastLiveScreenSubmittedRevisionRef.current = liveRevision
+          terminalSession.markLiveScreenSubmitted(liveRevision)
+        }
+        writeToXterm(term, liveReplay, liveSnapshotCandidate
+          ? (snapshot!.liveFullReplace ? 'live_screen_full' : 'live_screen_delta')
+          : recoveryRevision > recoveryRevisionAppliedRef.current ? 'snapshot_recovery' : 'snapshot_full_text', () => {
+          if (liveRevision !== undefined) terminalSession.markLiveScreenCompleted(liveRevision)
           markSurfaceReady()
           keepBottomAnchored()
           heldFrame?.releaseAfterPaint()
@@ -2388,6 +2417,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           recoveryRevisionAppliedRef.current = recoveryRevision
         }
       } catch (error) {
+        if (liveRevision !== undefined) terminalSession.markLiveScreenCompleted(liveRevision)
         heldFrame?.remove()
         if (!terminalDisposedRef.current) throw error
       }
@@ -2434,7 +2464,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
       return
     }
-  }, [clearLiveOutputWatchdog, keepBottomAnchored, logTerminal, markSurfaceReady, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
+  }, [clearLiveOutputWatchdog, keepBottomAnchored, logTerminal, markSurfaceReady, terminalSession.markLiveScreenCompleted, terminalSession.markLiveScreenSubmitted, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
 
   return (
     <section

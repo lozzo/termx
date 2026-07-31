@@ -1,16 +1,16 @@
 import { create } from '@bufbuild/protobuf'
 import { describe, expect, it, vi } from 'vitest'
-import { EventEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
+import { ApplicationEventType } from '../generated/apipb/events_pb'
 import {
   CellStyleSchema,
   HistoryCursorSchema,
   HistoryRowSchema,
   HistoryWindowOperation,
   HistoryWindowResultSchema,
-  LiveInvalidatedEventSchema,
   NativeScreenResultSchema,
   ScreenCellSchema,
+  ScreenRowReplaceSchema,
   ScreenRowSchema,
 } from '../generated/apipb/history_pb'
 import {
@@ -42,8 +42,8 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session, 'terminal-scoped') }),
           }))
-        case 'liveScreenGet':
-          return protoResult('liveScreen', create(NativeScreenResultSchema))
+        case 'liveScreenNext':
+          return protoResult('liveScreen', screenResult(session, 'terminal-scoped'))
         default:
           return protoResult('acknowledge', {})
       }
@@ -55,7 +55,10 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
     const subscription = session.commands.find((entry) => entry.command.case === 'eventSubscribe')
     expect(subscription?.command).toMatchObject({
       case: 'eventSubscribe',
-      value: { terminal: { endpointId: 'machine-scoped-events', terminalId: 'terminal-scoped' } },
+      value: {
+        terminal: { endpointId: 'machine-scoped-events', terminalId: 'terminal-scoped' },
+        types: [ApplicationEventType.TERMINAL_LIFECYCLE],
+      },
     })
   })
 
@@ -79,8 +82,8 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
               name: 'zsh',
             }),
           }))
-        case 'liveScreenGet':
-          return protoResult('liveScreen', create(NativeScreenResultSchema))
+        case 'liveScreenNext':
+          return protoResult('liveScreen', screenResult(session, 'terminal-1'))
         default:
           return protoResult('acknowledge', {})
       }
@@ -117,19 +120,25 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session, 'terminal-color') }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', create(NativeScreenResultSchema, {
+            terminal: terminalRef(session, 'terminal-color'),
+            liveRevision: 1n,
             size: create(TerminalSizeSchema, { cols: 5, rows: 1 }),
-            rows: [create(ScreenRowSchema, {
-              cells: [create(ScreenCellSchema, {
-                content: 'COLOR',
-                width: 5,
-                style: create(CellStyleSchema, {
-                  foreground: 'ansi:2',
-                  background: 'idx:24',
-                  bold: true,
-                }),
-              })],
+            fullReplace: true,
+            rowReplacements: [create(ScreenRowReplaceSchema, {
+              rowIndex: 0,
+              row: create(ScreenRowSchema, {
+                cells: [create(ScreenCellSchema, {
+                  content: 'COLOR',
+                  width: 5,
+                  style: create(CellStyleSchema, {
+                    foreground: 'ansi:2',
+                    background: 'idx:24',
+                    bold: true,
+                  }),
+                })],
+              }),
             })],
           }))
         default:
@@ -221,9 +230,12 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
               size: create(TerminalSizeSchema, { cols: 211, rows: 57 }),
             }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', create(NativeScreenResultSchema, {
+            terminal: terminalRef(session, 'terminal-1'),
+            liveRevision: 1n,
             size: create(TerminalSizeSchema, { cols: 211, rows: 57 }),
+            fullReplace: true,
           }))
         case 'historyWindow':
           return protoResult('historyWindow', create(HistoryWindowResultSchema, {
@@ -274,10 +286,10 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
               ref: create(TerminalRefSchema, { endpointId: session.stamp.endpointId, terminalId: 'terminal-1' }),
             }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           liveScreenCalls += 1
           if (liveScreenCalls > 1) throw new Error('Go binding bridge disconnected')
-          return protoResult('liveScreen', create(NativeScreenResultSchema))
+          return protoResult('liveScreen', screenResult(session, 'terminal-1'))
         default:
           return protoResult('acknowledge', {})
       }
@@ -294,9 +306,10 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
     await vi.waitFor(() => expect(events).toEqual(['Go binding bridge disconnected']))
   })
 
-  it('coalesces a burst of live invalidations while a screen refresh is in flight', async () => {
+  it('keeps one request in flight and one latest frame pending behind the renderer', async () => {
     let liveScreenCalls = 0
-    let completeInFlight: ((revision: bigint) => void) | undefined
+    let completeSecond: (() => void) | undefined
+    let thirdRequestStarted: (() => void) | undefined
     let session: MockProtoSession
     session = new MockProtoSession('machine-live-coalescing', (command) => {
       switch (command.command.case) {
@@ -313,42 +326,101 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session, 'terminal-1') }),
           }))
-        case 'liveScreenGet': {
+        case 'liveScreenNext': {
           liveScreenCalls += 1
+          if (liveScreenCalls === 1) {
+            return protoResult('liveScreen', screenResult(session, 'terminal-1', 'one', 1n))
+          }
           if (liveScreenCalls === 2) {
             return new Promise((resolve) => {
-              completeInFlight = (revision) => resolve(protoResult('liveScreen', create(NativeScreenResultSchema, { liveRevision: revision })))
+              completeSecond = () => resolve(protoResult('liveScreen', screenResult(session, 'terminal-1', 'two', 2n)))
             })
           }
-          return protoResult('liveScreen', create(NativeScreenResultSchema, {
-            liveRevision: liveScreenCalls === 1 ? 1n : 101n,
-          }))
+          thirdRequestStarted?.()
+          return new Promise(() => {})
         }
         default:
           return protoResult('acknowledge', {})
       }
     })
     const protocol = createProtoTerminalProtocolSession(session)
+    const revisions: bigint[] = []
+    protocol.subscribeTerminal('terminal-1', (event) => {
+      if (event.type === 'snapshot' && event.snapshot.liveRevision !== undefined) {
+        revisions.push(event.snapshot.liveRevision)
+      }
+    })
     await protocol.openTerminal('terminal-1')
 
-    for (let revision = 2n; revision <= 101n; revision += 1n) {
-      session.emit(create(EventEnvelopeSchema, {
-        subscription: resource(ResourceKind.SUBSCRIPTION, 1, session),
-        event: {
-          case: 'liveInvalidated',
-          value: create(LiveInvalidatedEventSchema, {
-            terminal: terminalRef(session, 'terminal-1'),
-            liveRevision: revision,
-          }),
-        },
-      }))
-    }
-
+    expect(revisions).toEqual([1n])
+    protocol.markLiveScreenSubmitted?.('terminal-1', 1n)
     expect(liveScreenCalls).toBe(2)
-    completeInFlight?.(2n)
-    await vi.waitFor(() => expect(liveScreenCalls).toBe(3))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    completeSecond?.()
+    await vi.waitFor(() => expect(revisions).toEqual([1n]))
+    protocol.markLiveScreenCompleted?.('terminal-1', 1n)
+    await vi.waitFor(() => expect(revisions).toEqual([1n, 2n]))
+    expect(liveScreenCalls).toBe(2)
+
+    const thirdStarted = new Promise<void>((resolve) => { thirdRequestStarted = resolve })
+    protocol.markLiveScreenSubmitted?.('terminal-1', 2n)
+    await thirdStarted
     expect(liveScreenCalls).toBe(3)
+    const observed = session.commands
+      .filter((entry) => entry.command.case === 'liveScreenNext')
+      .map((entry) => entry.command.case === 'liveScreenNext' ? entry.command.value.observedRevision : -1n)
+    expect(observed).toEqual([0n, 1n, 2n])
+  })
+
+  it('cancels the long poll while hidden and resumes from the canonical revision', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    let liveScreenCalls = 0
+    let session: MockProtoSession
+    session = new MockProtoSession('machine-visibility', (command) => {
+      switch (command.command.case) {
+        case 'eventSubscribe':
+          return protoResult('eventSubscription', { subscription: resource(ResourceKind.SUBSCRIPTION, 1, session) })
+        case 'terminalAttach':
+          return protoResult('terminalAttach', create(TerminalAttachResultSchema, {
+            attachment: create(AttachmentHandleSchema, {
+              resource: resource(ResourceKind.ATTACHMENT, 2, session),
+              terminal: terminalRef(session, 'terminal-1'),
+            }),
+          }))
+        case 'terminalGet':
+          return protoResult('terminalGet', create(TerminalGetResultSchema, {
+            terminal: create(TerminalInfoSchema, { ref: terminalRef(session, 'terminal-1') }),
+          }))
+        case 'liveScreenNext':
+          liveScreenCalls += 1
+          if (liveScreenCalls === 1) {
+            return protoResult('liveScreen', screenResult(session, 'terminal-1', 'one', 1n))
+          }
+          return new Promise(() => {})
+        default:
+          return protoResult('acknowledge', {})
+      }
+    })
+    const protocol = createProtoTerminalProtocolSession(session)
+    const channel = await protocol.openTerminal('terminal-1')
+    protocol.markLiveScreenSubmitted?.('terminal-1', 1n)
+    await vi.waitFor(() => expect(liveScreenCalls).toBe(2))
+    const secondIndex = session.commands.findLastIndex((entry) => entry.command.case === 'liveScreenNext')
+
+    visibility.mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(session.executeSignals[secondIndex]?.aborted).toBe(true)
+
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.waitFor(() => expect(liveScreenCalls).toBe(3))
+    const liveCommands = session.commands.filter((entry) => entry.command.case === 'liveScreenNext')
+    expect(liveCommands.at(-1)?.command).toMatchObject({
+      case: 'liveScreenNext',
+      value: { observedRevision: 1n },
+    })
+
+    channel.close()
+    visibility.mockRestore()
   })
 
   it('waits for each terminal input acknowledgement before sending the next input', async () => {
@@ -372,8 +444,8 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
               ref: create(TerminalRefSchema, { endpointId: session.stamp.endpointId, terminalId: 'terminal-1' }),
             }),
           }))
-        case 'liveScreenGet':
-          return protoResult('liveScreen', create(NativeScreenResultSchema))
+        case 'liveScreenNext':
+          return protoResult('liveScreen', screenResult(session, 'terminal-1'))
         case 'terminalInput':
           sent.push(new TextDecoder().decode(command.command.value.data))
           return new Promise((resolve) => acknowledge.push(() => resolve(protoResult('acknowledge', {}))))
@@ -408,4 +480,27 @@ function resource(kind: ResourceKind, token: number, session: MockProtoSession) 
 
 function terminalRef(session: MockProtoSession, terminalId: string) {
   return create(TerminalRefSchema, { endpointId: session.stamp.endpointId, terminalId })
+}
+
+function screenResult(
+  session: MockProtoSession,
+  terminalId: string,
+  text = '',
+  liveRevision = 1n,
+) {
+  const cols = Math.max(1, text.length)
+  return create(NativeScreenResultSchema, {
+    terminal: terminalRef(session, terminalId),
+    liveRevision,
+    size: create(TerminalSizeSchema, { cols, rows: 1 }),
+    fullReplace: true,
+    rowReplacements: text
+      ? [create(ScreenRowReplaceSchema, {
+          rowIndex: 0,
+          row: create(ScreenRowSchema, {
+            cells: [create(ScreenCellSchema, { content: text, width: text.length })],
+          }),
+        })]
+      : [],
+  })
 }

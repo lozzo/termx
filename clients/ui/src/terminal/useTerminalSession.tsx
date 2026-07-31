@@ -65,6 +65,8 @@ export interface UseTerminalSessionResult {
   freezeScrollback(): void
   resumeLiveScrollback(): string
   markSyncLost(reason?: string): void
+  markLiveScreenSubmitted(revision: bigint): void
+  markLiveScreenCompleted(revision: bigint): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
   reattach(session: TerminalSession, options?: { forceTerminalChannel?: boolean }): void
   client: TerminalClient | null
@@ -496,8 +498,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         !nextSnapshot.alternateScreen &&
         activeScrollbackModeRef.current === 'normal' &&
         scrollbackPrefixTextRef.current !== ''
-      const nextText = nextSnapshot.replay ?? nextSnapshot.text
-      const screenText = nextSnapshot.replay ?? nextSnapshot.screenReplay ?? nextSnapshot.screenText
+      const nextText = nextSnapshot.screenReplay ?? nextSnapshot.replay ?? nextSnapshot.text
+      const screenText = nextSnapshot.screenReplay ?? nextSnapshot.text
       setTerminalSnapshot((current) => canPreserveHistory && current?.history
         ? { ...nextSnapshot, history: current.history }
         : nextSnapshot)
@@ -760,6 +762,14 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clientRef.current?.markSyncLost(reason)
   }, [])
 
+  const markLiveScreenSubmitted = useCallback((revision: bigint) => {
+    clientRef.current?.markLiveScreenSubmitted(revision)
+  }, [])
+
+  const markLiveScreenCompleted = useCallback((revision: bigint) => {
+    clientRef.current?.markLiveScreenCompleted(revision)
+  }, [])
+
   const prefetchScrollback = useCallback(async (limit = 100, alternate = false, cols?: number): Promise<boolean> => {
     const normalizedLimit = Math.max(0, Math.trunc(limit))
     const normalizedCols = Math.max(0, Math.trunc(cols ?? 0))
@@ -887,10 +897,12 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
   const freezeScrollback = useCallback(() => {
     scrollbackFrozenRef.current = true
+    clientRef.current?.setLiveScreenDemand(false)
   }, [])
 
   const resumeLiveScrollback = useCallback(() => {
     scrollbackFrozenRef.current = false
+    clientRef.current?.setLiveScreenDemand(true)
     scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal history view resumed live output', 'AbortError'))
     scrollbackAbortControllerRef.current = null
     scrollbackPrefetchPendingRef.current?.controller.abort(new DOMException('Terminal history view resumed live output', 'AbortError'))
@@ -926,6 +938,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
   const loadScrollback = useCallback(async (limit = 100, alternate = false, cols?: number): Promise<TerminalScrollbackLoadResult> => {
     scrollbackFrozenRef.current = true
+    clientRef.current?.setLiveScreenDemand(false)
     const mode: 'normal' | 'alternate' = alternate ? 'alternate' : 'normal'
     if (activeScrollbackModeRef.current !== mode) {
       activeScrollbackModeRef.current = mode
@@ -1124,6 +1137,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     freezeScrollback,
     resumeLiveScrollback,
     markSyncLost,
+    markLiveScreenSubmitted,
+    markLiveScreenCompleted,
     handleAppResume,
     reattach,
     client: clientRef.current,

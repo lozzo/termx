@@ -22,6 +22,21 @@ const terminalHarness = vi.hoisted(() => ({
   channelState: 'open' as 'open' | 'connecting',
   historyLoad: vi.fn(),
   historyReset: vi.fn(),
+  liveSnapshot: null as null | {
+    text: string
+    screenReplay: string
+    liveReplay: string
+    liveRevision: bigint
+    liveFullReplace: boolean
+    cols: number
+    rows: number
+    alternateScreen: boolean
+  },
+  liveSubmitted: vi.fn(),
+  liveCompleted: vi.fn(),
+  xtermWrites: [] as string[],
+  pendingWriteCallbacks: [] as Array<() => void>,
+  autoCompleteWrites: true,
 }))
 
 vi.mock('@xterm/addon-fit', () => ({
@@ -90,7 +105,12 @@ vi.mock('@xterm/xterm', () => ({
     emitData(data: string) { this.dataHandler?.(data) }
     emitKey(event: KeyboardEvent) { return this.keyHandler?.(event) ?? true }
     resize(cols: number, rows: number) { this.cols = cols; this.rows = rows }
-    write(_text: string, callback?: () => void) { callback?.() }
+    write(text: string, callback?: () => void) {
+      terminalHarness.xtermWrites.push(text)
+      if (!callback) return
+      if (terminalHarness.autoCompleteWrites) callback()
+      else terminalHarness.pendingWriteCallbacks.push(callback)
+    }
     reset() {}
     refresh() {}
     scrollToBottom() { this.bufferLine.viewportY = 0 }
@@ -117,10 +137,10 @@ vi.mock('./useTerminalSession', () => ({
         }
       : { phase: 'connected', terminalChannels: { [terminalId]: { state: terminalHarness.channelState } } },
     inputRecoveryFailure: terminalHarness.inputRecoveryFailure,
-    terminalSnapshot: terminalHarness.historySnapshot
+    terminalSnapshot: terminalHarness.liveSnapshot ?? (terminalHarness.historySnapshot
       ? { text: 'live terminal content', cols: 80, rows: 24, alternateScreen: false }
-      : null,
-    terminalText: terminalHarness.historySnapshot ? 'live terminal content' : '',
+      : null),
+    terminalText: terminalHarness.liveSnapshot?.screenReplay ?? (terminalHarness.historySnapshot ? 'live terminal content' : ''),
     terminalInfo: null,
     resizeControl: { canResize: false, reason: 'follower' },
     sendInput: terminalHarness.sessionSendInput,
@@ -133,6 +153,8 @@ vi.mock('./useTerminalSession', () => ({
     freezeScrollback: () => {},
     resumeLiveScrollback: () => '',
     markSyncLost: () => {},
+    markLiveScreenSubmitted: terminalHarness.liveSubmitted,
+    markLiveScreenCompleted: terminalHarness.liveCompleted,
     handleAppResume: () => {},
     reattach: () => {},
     client: null,
@@ -147,7 +169,13 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.inputRecoveryFailure = null
     terminalHarness.unrelatedBanner = false
     terminalHarness.historySnapshot = false
+    terminalHarness.liveSnapshot = null
     terminalHarness.channelState = 'open'
+    terminalHarness.xtermWrites.length = 0
+    terminalHarness.pendingWriteCallbacks.length = 0
+    terminalHarness.autoCompleteWrites = true
+    terminalHarness.liveSubmitted.mockReset()
+    terminalHarness.liveCompleted.mockReset()
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
     terminalHarness.sessionSendResize.mockReset().mockReturnValue(false)
     terminalHarness.historyLoad.mockReset().mockResolvedValue({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
@@ -471,6 +499,31 @@ describe('Terminal input modifier boundary', () => {
 
     expect(ref.current?.sendInput('key')).toBe(false)
     expect(ref.current?.pasteText('paste')).toBe(false)
+  })
+
+  it('opens the next live-screen request before xterm finishes and completes it from the write callback', async () => {
+    terminalHarness.autoCompleteWrites = false
+    const view = render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+
+    terminalHarness.liveSnapshot = {
+      text: 'canonical frame',
+      screenReplay: 'canonical frame',
+      liveReplay: 'incremental frame',
+      liveRevision: 7n,
+      liveFullReplace: false,
+      cols: 80,
+      rows: 24,
+      alternateScreen: false,
+    }
+    view.rerender(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+
+    await waitFor(() => expect(terminalHarness.liveSubmitted).toHaveBeenCalledWith(7n))
+    expect(terminalHarness.xtermWrites.at(-1)).toBe('incremental frame')
+    expect(terminalHarness.liveCompleted).not.toHaveBeenCalled()
+
+    act(() => terminalHarness.pendingWriteCallbacks.shift()?.())
+    expect(terminalHarness.liveCompleted).toHaveBeenCalledWith(7n)
   })
 
   it('leaves unsupported key events to xterm instead of consuming a Ctrl once state', async () => {
