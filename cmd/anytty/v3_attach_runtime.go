@@ -26,7 +26,7 @@ type v3EndpointApplicationServices interface {
 	tuiport.PathService
 	tuiport.CoreClient
 	tuiport.NativeScreenSource
-	tuiport.LiveInvalidationSource
+	tuiport.LiveScreenSource
 	Close() error
 }
 

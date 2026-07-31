@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	// Version 是 control protobuf method 合同的代际边界。
-	// PTYRAW001 增加 attachment raw PTY output stream 后，新客户端不能继续连
-	// 缺少 ready/显式 sync-lost 语义的旧 daemon。
+	// Version 是 control protobuf method 合同的代际边界。Version 7 直接切换到
+	// latest-screen revision delta，并增加按 request ID 取消长请求的 control frame。
 	Version             = 7
 	MaxFrameSize        = 4 << 20
 	MaxEncodedFrameSize = MaxFrameSize + 7
