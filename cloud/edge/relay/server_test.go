@@ -241,6 +241,163 @@ func TestConcurrentCloseWaitsForDrainWithContext(t *testing.T) {
 	}
 }
 
+func TestStateCloseSafeRequiresGlobalCloseToClearCallbackFIFO(t *testing.T) {
+	stopped := make(chan struct{})
+	close(stopped)
+	server := &Server{
+		runtime: &recordingRuntime{}, now: time.Now, closed: make(chan struct{}),
+		stopDone: stopped,
+		pending:  make(map[string]pendingReservation), active: make(map[string]activeAllocation),
+		callbackFIFO: map[string][]string{"key": {"allocation"}},
+	}
+	if server.StateCloseSafe() {
+		t.Fatal("FIFO-only Relay reported close-safe before global Close")
+	}
+	if err := server.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	server.mu.Lock()
+	fifoEntries := len(server.callbackFIFO)
+	server.mu.Unlock()
+	if fifoEntries != 0 || !server.StateCloseSafe() {
+		t.Fatalf("FIFO entries = %d, close safe = %v", fifoEntries, server.StateCloseSafe())
+	}
+}
+
+func TestCloseSessionAllocationsRetainsCallbackTombstone(t *testing.T) {
+	runtime := &recordingRuntime{}
+	source := testAddress("source")
+	destination := testAddress("destination")
+	key := allocationKey(source, destination, "udp")
+	server := &Server{
+		runtime: runtime, now: time.Now, closed: make(chan struct{}), pending: make(map[string]pendingReservation),
+		active: map[string]activeAllocation{
+			"allocation-old":  {id: "allocation-old", key: key, sessionID: "session-old", conn: &trackedPacketConn{PacketConn: &recordingPacketConn{}}},
+			"allocation-next": {id: "allocation-next", key: key, sessionID: "session-next", conn: &trackedPacketConn{PacketConn: &recordingPacketConn{}}},
+		},
+		callbackFIFO: map[string][]string{key: {"allocation-old", "allocation-next"}},
+	}
+	if err := server.CloseSessionAllocations(context.Background(), "session-old"); err != nil {
+		t.Fatal(err)
+	}
+	server.mu.Lock()
+	queueAfterCleanup := append([]string(nil), server.callbackFIFO[key]...)
+	server.mu.Unlock()
+	if !slices.Equal(queueAfterCleanup, []string{"allocation-old", "allocation-next"}) {
+		t.Fatalf("callback FIFO after session cleanup = %v", queueAfterCleanup)
+	}
+
+	server.allocationDeleted(source, destination, "udp", "", "")
+	server.mu.Lock()
+	queueAfterLateCallback := append([]string(nil), server.callbackFIFO[key]...)
+	next, nextExists := server.active["allocation-next"]
+	server.mu.Unlock()
+	if !slices.Equal(queueAfterLateCallback, []string{"allocation-next"}) || !nextExists || next.settling {
+		t.Fatalf("late callback consumed next allocation: queue=%v exists=%v settling=%v", queueAfterLateCallback, nextExists, next.settling)
+	}
+}
+
+func TestTrackedPacketConnRetriesUnderlyingCloseBeforeSettlement(t *testing.T) {
+	runtime := &recordingRuntime{}
+	underlying := &flakyPacketConn{failures: 1}
+	onCloseCalls := 0
+	connection := &trackedPacketConn{PacketConn: underlying, ingress: 7, egress: 9, onClose: func() { onCloseCalls++ }}
+	server := &Server{
+		runtime: runtime, now: time.Now, closed: make(chan struct{}), pending: make(map[string]pendingReservation), callbackFIFO: make(map[string][]string),
+		active: map[string]activeAllocation{
+			"allocation": {id: "allocation", sessionID: "session", conn: connection},
+		},
+	}
+	if err := server.CloseSessionAllocations(context.Background(), "session"); err == nil {
+		t.Fatal("first socket Close failure was ignored")
+	}
+	server.mu.Lock()
+	allocation := server.active["allocation"]
+	server.mu.Unlock()
+	if allocation.settling || runtime.closed != 0 {
+		t.Fatalf("failed Close left settling=%v, settlements=%d", allocation.settling, runtime.closed)
+	}
+	if err := server.CloseSessionAllocations(context.Background(), "session"); err != nil {
+		t.Fatalf("retry session cleanup: %v", err)
+	}
+	if underlying.closeCalls != 2 || onCloseCalls != 1 || runtime.closed != 1 {
+		t.Fatalf("underlying Close=%d, onClose=%d, settlements=%d", underlying.closeCalls, onCloseCalls, runtime.closed)
+	}
+}
+
+func TestCloseSessionAllocationsWaitsForSettlingClaim(t *testing.T) {
+	runtime := &recordingRuntime{}
+	server := &Server{
+		runtime: runtime, now: time.Now, closed: make(chan struct{}), pending: make(map[string]pendingReservation), callbackFIFO: make(map[string][]string),
+		active: map[string]activeAllocation{
+			"allocation": {id: "allocation", sessionID: "session", conn: &trackedPacketConn{PacketConn: &recordingPacketConn{}}},
+		},
+	}
+	owner, exists := server.claimAllocation("allocation")
+	if !exists {
+		t.Fatal("failed to create in-flight allocation owner")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	if err := server.CloseSessionAllocations(ctx, "session"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("session cleanup error = %v", err)
+	}
+	server.mu.Lock()
+	allocation := server.active["allocation"]
+	server.mu.Unlock()
+	if !allocation.settling || runtime.closed != 0 {
+		t.Fatalf("aggregate advanced while owner was in flight: settling=%v settlements=%d", allocation.settling, runtime.closed)
+	}
+
+	server.releaseAllocationClaim(owner)
+	server.mu.Lock()
+	_, stillActive := server.active["allocation"]
+	server.mu.Unlock()
+	if !stillActive || runtime.closed != 0 {
+		t.Fatal("releasing the owner prematurely settled the aggregate")
+	}
+	if err := server.CloseSessionAllocations(context.Background(), "session"); err != nil {
+		t.Fatalf("retry session cleanup: %v", err)
+	}
+	if runtime.closed != 1 {
+		t.Fatalf("settlements = %d", runtime.closed)
+	}
+}
+
+func TestPendingRemovalUsesTokenAcrossSameKeyABA(t *testing.T) {
+	fixedNow := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
+	cancelStarted := make(chan struct{})
+	releaseCancel := make(chan struct{})
+	runtime := &recordingRuntime{cancelReservation: func(context.Context, string) error {
+		close(cancelStarted)
+		<-releaseCancel
+		return nil
+	}}
+	server := &Server{
+		runtime: runtime, now: func() time.Time { return fixedNow }, closed: make(chan struct{}),
+		pending: make(map[string]pendingReservation), active: make(map[string]activeAllocation), callbackFIFO: make(map[string][]string),
+	}
+	server.mu.Lock()
+	old := server.storePendingReservationLocked("same-key", pendingReservation{id: "same-id", admission: policy.RelayAdmission{SessionID: "old-session"}})
+	server.mu.Unlock()
+	cleanupDone := make(chan error, 1)
+	go func() { cleanupDone <- server.CloseSessionAllocations(context.Background(), "old-session") }()
+	<-cancelStarted
+	server.mu.Lock()
+	newReservation := server.storePendingReservationLocked("same-key", pendingReservation{id: old.id, admission: policy.RelayAdmission{SessionID: "new-session"}})
+	server.mu.Unlock()
+	close(releaseCancel)
+	if err := <-cleanupDone; err != nil {
+		t.Fatal(err)
+	}
+	server.mu.Lock()
+	current, exists := server.pending["same-key"]
+	server.mu.Unlock()
+	if !exists || current.token != newReservation.token || current.token == old.token {
+		t.Fatalf("new reservation was removed: exists=%v current=%d old=%d new=%d", exists, current.token, old.token, newReservation.token)
+	}
+}
+
 func TestTrackedPacketConnsShareReservationBudget(t *testing.T) {
 	now := time.Date(2026, 7, 31, 1, 2, 3, 0, time.UTC)
 	limiter, err := policy.NewGroupLimiter(now.Add(time.Minute), 100, 1000, now)
@@ -331,6 +488,30 @@ func (*recordingPacketConn) LocalAddr() net.Addr              { return testAddre
 func (*recordingPacketConn) SetDeadline(time.Time) error      { return nil }
 func (*recordingPacketConn) SetReadDeadline(time.Time) error  { return nil }
 func (*recordingPacketConn) SetWriteDeadline(time.Time) error { return nil }
+
+type flakyPacketConn struct {
+	closeCalls int
+	failures   int
+}
+
+func (*flakyPacketConn) ReadFrom([]byte) (int, net.Addr, error) {
+	return 0, nil, errors.New("unused")
+}
+func (*flakyPacketConn) WriteTo(payload []byte, _ net.Addr) (int, error) {
+	return len(payload), nil
+}
+func (connection *flakyPacketConn) Close() error {
+	connection.closeCalls++
+	if connection.failures > 0 {
+		connection.failures--
+		return errors.New("injected socket Close failure")
+	}
+	return nil
+}
+func (*flakyPacketConn) LocalAddr() net.Addr              { return testAddress("local") }
+func (*flakyPacketConn) SetDeadline(time.Time) error      { return nil }
+func (*flakyPacketConn) SetReadDeadline(time.Time) error  { return nil }
+func (*flakyPacketConn) SetWriteDeadline(time.Time) error { return nil }
 
 type testAddress string
 

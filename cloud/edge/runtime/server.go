@@ -108,6 +108,11 @@ type Runtime struct {
 	cancel              context.CancelFunc
 	waitGroup           sync.WaitGroup
 	shutdownMu          sync.Mutex
+	teardownStarted     bool
+	stateDone           chan struct{}
+	grpcStopped         bool
+	httpDone            bool
+	workersDone         chan struct{}
 	shutdownComplete    bool
 	shutdownErr         error
 	state               *State
@@ -385,64 +390,163 @@ func (runtime *Runtime) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 // Shutdown 先停止新 Relay authority，把现存 allocation 冻结为 durable aggregate，
 // 再取消 ControllerLink、关闭公网 listener 并等待有界 goroutine 退出。
 func (runtime *Runtime) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("Runtime shutdown requires context")
+	}
 	runtime.shutdownMu.Lock()
 	defer runtime.shutdownMu.Unlock()
 	if runtime.shutdownComplete {
 		return runtime.shutdownErr
 	}
 
-	runtime.shuttingDown.Store(true)
-	runtime.setControllerConnected(false)
-	runtime.replayGate.Lock()
-	runtime.replayClosing = true
-	runtime.replayGate.Unlock()
-	if err := runtime.waitRelayReplay(ctx); err != nil {
-		return err
-	}
-	closingRecords, err := runtime.prepareRelayShutdown(ctx)
-	if err != nil {
-		return err
-	}
-	var shutdownErr error
-	if runtime.relayServer != nil {
-		shutdownErr = runtime.relayServer.Close(ctx)
-		closeSafe := runtime.relayServer.StateCloseSafe()
-		if errors.Is(shutdownErr, context.Canceled) || errors.Is(shutdownErr, context.DeadlineExceeded) || !closeSafe {
-			if !closeSafe {
-				shutdownErr = errors.Join(shutdownErr, errors.New("Relay shutdown did not reach a close-safe state"))
+	if !runtime.teardownStarted {
+		runtime.shuttingDown.Store(true)
+		runtime.setControllerConnected(false)
+		runtime.replayGate.Lock()
+		runtime.replayClosing = true
+		runtime.replayGate.Unlock()
+		if err := runtime.waitRelayReplay(ctx); err != nil {
+			return runtime.recordShutdownFailure(ctx, err)
+		}
+		closingRecords, err := runtime.prepareRelayShutdown(ctx)
+		if err != nil {
+			return runtime.recordShutdownFailure(ctx, err)
+		}
+		if runtime.relayServer != nil {
+			relayErr := runtime.relayServer.Close(ctx)
+			runtime.rememberShutdownError(relayErr)
+			closeSafe := runtime.relayServer.StateCloseSafe()
+			contextErr := shutdownContextError(ctx, relayErr)
+			if contextErr != nil || !closeSafe {
+				var currentErr error
+				if !closeSafe {
+					currentErr = errors.New("Relay shutdown did not reach a close-safe state")
+				}
+				return errors.Join(runtime.shutdownErr, contextErr, currentErr)
 			}
-			return shutdownErr
+		}
+		if err := runtime.finishRelayShutdown(ctx, closingRecords); err != nil {
+			return runtime.recordShutdownFailure(ctx, err)
+		}
+
+		runtime.teardownStarted = true
+		runtime.cancel()
+		runtime.stateDone = make(chan struct{})
+		go func() {
+			if runtime.state != nil {
+				runtime.state.Close()
+			}
+			close(runtime.stateDone)
+		}()
+		runtime.workersDone = make(chan struct{})
+		go func() {
+			runtime.waitGroup.Wait()
+			close(runtime.workersDone)
+		}()
+	}
+
+	if err := ctx.Err(); err != nil {
+		return errors.Join(runtime.shutdownErr, err)
+	}
+	select {
+	case <-runtime.stateDone:
+	case <-ctx.Done():
+		return errors.Join(runtime.shutdownErr, ctx.Err())
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(runtime.shutdownErr, err)
+	}
+
+	if !runtime.grpcStopped {
+		err := stopGRPC(ctx, runtime.grpcServer)
+		runtime.grpcStopped = true
+		if err != nil {
+			return runtime.recordShutdownFailure(ctx, err)
 		}
 	}
-	if err := runtime.finishRelayShutdown(ctx, closingRecords); err != nil {
-		return errors.Join(shutdownErr, err)
+	if err := ctx.Err(); err != nil {
+		return errors.Join(runtime.shutdownErr, err)
 	}
-	runtime.cancel()
-	runtime.state.Close()
-	shutdownErr = errors.Join(shutdownErr, stopGRPC(ctx, runtime.grpcServer))
-	if err := runtime.httpServer.Shutdown(ctx); err != nil {
-		shutdownErr = errors.Join(shutdownErr, err)
+
+	if !runtime.httpDone {
+		if runtime.httpServer != nil {
+			if err := runtime.httpServer.Shutdown(ctx); err != nil {
+				return runtime.recordShutdownFailure(ctx, err)
+			}
+		}
+		runtime.httpDone = true
 	}
-	waitDone := make(chan struct{})
-	go func() {
-		runtime.waitGroup.Wait()
-		close(waitDone)
-	}()
+	if err := ctx.Err(); err != nil {
+		return errors.Join(runtime.shutdownErr, err)
+	}
 	select {
-	case <-waitDone:
+	case <-runtime.workersDone:
 	case <-ctx.Done():
-		shutdownErr = errors.Join(shutdownErr, ctx.Err())
+		return errors.Join(runtime.shutdownErr, ctx.Err())
 	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(runtime.shutdownErr, err)
+	}
+
 	runtime.replayMu.Lock()
 	if runtime.relayJournal != nil {
-		shutdownErr = errors.Join(shutdownErr, runtime.relayJournal.Close())
+		runtime.rememberShutdownError(runtime.relayJournal.Close())
 		runtime.relayJournal = nil
 	}
 	runtime.replayMu.Unlock()
 	runtime.health.SetAlive(false)
 	runtime.shutdownComplete = true
-	runtime.shutdownErr = shutdownErr
-	return shutdownErr
+	return runtime.shutdownErr
+}
+
+func (runtime *Runtime) recordShutdownFailure(ctx context.Context, err error) error {
+	runtime.rememberShutdownError(err)
+	return errors.Join(runtime.shutdownErr, shutdownContextError(ctx, err))
+}
+
+func (runtime *Runtime) rememberShutdownError(err error) {
+	if persistent := nonContextShutdownError(err); persistent != nil {
+		runtime.shutdownErr = errors.Join(runtime.shutdownErr, persistent)
+	}
+}
+
+func shutdownContextError(ctx context.Context, err error) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	return nil
+}
+
+func nonContextShutdownError(err error) error {
+	if err == nil || err == context.Canceled || err == context.DeadlineExceeded {
+		return nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		parts := make([]error, 0, len(joined.Unwrap()))
+		for _, part := range joined.Unwrap() {
+			if persistent := nonContextShutdownError(part); persistent != nil {
+				parts = append(parts, persistent)
+			}
+		}
+		return errors.Join(parts...)
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		child := wrapped.Unwrap()
+		if errors.Is(child, context.Canceled) || errors.Is(child, context.DeadlineExceeded) {
+			return nonContextShutdownError(child)
+		}
+		return err
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	return err
 }
 
 func (runtime *Runtime) waitRelayReplay(ctx context.Context) error {

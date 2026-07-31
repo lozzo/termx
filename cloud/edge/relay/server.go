@@ -60,6 +60,7 @@ type Server struct {
 	drainOnce         sync.Once
 	drainGate         chan struct{}
 	settlementTimeout time.Duration
+	nextPendingToken  uint64
 	pending           map[string]pendingReservation
 	active            map[string]activeAllocation
 	callbackFIFO      map[string][]string
@@ -68,7 +69,7 @@ type Server struct {
 type pendingReservation struct {
 	id        string
 	admission policy.RelayAdmission
-	created   time.Time
+	token     uint64
 }
 
 type pendingReservationEntry struct {
@@ -77,11 +78,12 @@ type pendingReservationEntry struct {
 }
 
 type activeAllocation struct {
-	id        string
-	key       string
-	sessionID string
-	conn      *trackedPacketConn
-	settling  bool
+	id         string
+	key        string
+	sessionID  string
+	conn       *trackedPacketConn
+	settling   bool
+	settleDone chan struct{}
 }
 
 type claimedAllocation struct {
@@ -276,17 +278,18 @@ func (server *Server) drain(ctx context.Context) error {
 			server.fail(settlementErr)
 		}
 	}
+	server.clearCallbackFIFOIfDrained()
 	return errors.Join(drainErrors...)
 }
 
-// StateCloseSafe reports whether the data plane stopped and no pending or active allocation remains.
+// StateCloseSafe reports whether the data plane stopped and no allocation or callback tombstone remains.
 func (server *Server) StateCloseSafe() bool {
 	if server == nil {
 		return true
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	if server.stopDone == nil || len(server.pending) != 0 || len(server.active) != 0 {
+	if server.stopDone == nil || len(server.pending) != 0 || len(server.active) != 0 || len(server.callbackFIFO) != 0 {
 		return false
 	}
 	select {
@@ -337,19 +340,32 @@ func (server *Server) CloseSessionAllocations(ctx context.Context, sessionID str
 		server.removePendingReservation(pending)
 	}
 	for _, allocationID := range allocationIDs {
-		if err := ctx.Err(); err != nil {
-			cleanupErrors = append(cleanupErrors, err)
-			return errors.Join(cleanupErrors...)
-		}
-		claimed, exists := server.claimAllocation(allocationID)
-		if !exists {
-			continue
-		}
-		if err := server.settleClaimedAllocation(ctx, claimed); err != nil {
-			recordFailure(err)
-			if ctx.Err() != nil {
+	claimLoop:
+		for {
+			if err := ctx.Err(); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
 				return errors.Join(cleanupErrors...)
 			}
+			claimed, wait, exists := server.claimAllocationOrWait(allocationID)
+			if !exists {
+				break claimLoop
+			}
+			if wait != nil {
+				select {
+				case <-wait:
+					continue
+				case <-ctx.Done():
+					cleanupErrors = append(cleanupErrors, ctx.Err())
+					return errors.Join(cleanupErrors...)
+				}
+			}
+			if err := server.settleClaimedAllocation(ctx, claimed); err != nil {
+				recordFailure(err)
+				if ctx.Err() != nil {
+					return errors.Join(cleanupErrors...)
+				}
+			}
+			break claimLoop
 		}
 	}
 	return errors.Join(cleanupErrors...)
@@ -372,19 +388,18 @@ func (server *Server) reserve(username string, source net.Addr) bool {
 		server.mu.Unlock()
 		if err := server.runtime.CancelRelayAllocationReservation(context.Background(), reservationID); err != nil {
 			server.mu.Lock()
-			server.pending[reservationID] = pendingReservation{id: reservationID, admission: admission, created: server.now().UTC()}
+			server.storePendingReservationLocked(reservationID, pendingReservation{id: reservationID, admission: admission})
 			server.mu.Unlock()
 		}
 		return false
 	}
-	created := server.now().UTC()
-	server.pending[reservationID] = pendingReservation{id: reservationID, admission: admission, created: created}
+	reservation := server.storePendingReservationLocked(reservationID, pendingReservation{id: reservationID, admission: admission})
 	server.mu.Unlock()
-	go server.expireReservation(reservationID, created, 10*time.Second)
+	go server.expireReservation(reservationID, reservation.token, 10*time.Second)
 	return true
 }
 
-func (server *Server) expireReservation(reservationID string, created time.Time, after time.Duration) {
+func (server *Server) expireReservation(reservationID string, token uint64, after time.Duration) {
 	timer := time.NewTimer(after)
 	defer timer.Stop()
 	select {
@@ -398,7 +413,7 @@ func (server *Server) expireReservation(reservationID string, created time.Time,
 	defer server.work.Done()
 	server.mu.Lock()
 	reservation, exists := server.pending[reservationID]
-	if !exists || !reservation.created.Equal(created) {
+	if !exists || reservation.token != token {
 		exists = false
 	}
 	server.mu.Unlock()
@@ -505,13 +520,35 @@ func (server *Server) settleClaimedAllocation(ctx context.Context, claimed claim
 	}
 	server.mu.Lock()
 	current, exists := server.active[allocation.id]
-	if !exists || !current.settling {
+	if !exists || !current.settling || current.settleDone != allocation.settleDone {
 		server.mu.Unlock()
 		return fmt.Errorf("Relay allocation %s lost its active ownership", allocation.id)
 	}
 	delete(server.active, allocation.id)
+	close(current.settleDone)
 	server.mu.Unlock()
 	return nil
+}
+
+func (server *Server) claimAllocation(allocationID string) (claimedAllocation, bool) {
+	claimed, wait, exists := server.claimAllocationOrWait(allocationID)
+	return claimed, exists && wait == nil
+}
+
+func (server *Server) claimAllocationOrWait(allocationID string) (claimedAllocation, <-chan struct{}, bool) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	allocation, exists := server.active[allocationID]
+	if !exists {
+		return claimedAllocation{}, nil, false
+	}
+	if allocation.settling {
+		return claimedAllocation{}, allocation.settleDone, true
+	}
+	allocation.settling = true
+	allocation.settleDone = make(chan struct{})
+	server.active[allocationID] = allocation
+	return claimedAllocation{allocation: allocation}, nil, true
 }
 
 func (server *Server) claimDeletedAllocation(key string) (claimedAllocation, bool) {
@@ -532,6 +569,7 @@ func (server *Server) claimDeletedAllocation(key string) (claimedAllocation, boo
 		return claimedAllocation{}, false
 	}
 	allocation.settling = true
+	allocation.settleDone = make(chan struct{})
 	server.active[allocationID] = allocation
 	return claimedAllocation{allocation: allocation}, true
 }
@@ -557,9 +595,16 @@ func (server *Server) removePendingReservation(pending pendingReservationEntry) 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	reservation, exists := server.pending[pending.key]
-	if exists && reservation.id == pending.reservation.id && reservation.created.Equal(pending.reservation.created) {
+	if exists && reservation.token == pending.reservation.token {
 		delete(server.pending, pending.key)
 	}
+}
+
+func (server *Server) storePendingReservationLocked(key string, reservation pendingReservation) pendingReservation {
+	server.nextPendingToken++
+	reservation.token = server.nextPendingToken
+	server.pending[key] = reservation
+	return reservation
 }
 
 func (server *Server) allocationIDs(match func(activeAllocation) bool) []string {
@@ -567,7 +612,7 @@ func (server *Server) allocationIDs(match func(activeAllocation) bool) []string 
 	defer server.mu.Unlock()
 	allocationIDs := make([]string, 0, len(server.active))
 	for allocationID, allocation := range server.active {
-		if !allocation.settling && match(allocation) {
+		if match(allocation) {
 			allocationIDs = append(allocationIDs, allocationID)
 		}
 	}
@@ -579,9 +624,25 @@ func (server *Server) releaseAllocationClaim(claimed claimedAllocation) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	allocation, exists := server.active[claimed.allocation.id]
-	if exists && allocation.id == claimed.allocation.id && allocation.settling {
+	if exists && allocation.id == claimed.allocation.id && allocation.settling && allocation.settleDone == claimed.allocation.settleDone {
+		done := allocation.settleDone
 		allocation.settling = false
+		allocation.settleDone = nil
 		server.active[claimed.allocation.id] = allocation
+		close(done)
+	}
+}
+
+func (server *Server) clearCallbackFIFOIfDrained() {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	if server.stopDone == nil || len(server.pending) != 0 || len(server.active) != 0 {
+		return
+	}
+	select {
+	case <-server.stopDone:
+		clear(server.callbackFIFO)
+	default:
 	}
 }
 
@@ -731,24 +792,32 @@ func (generator *trackedGenerator) take(address net.Addr) *trackedPacketConn {
 
 type trackedPacketConn struct {
 	net.PacketConn
-	mu       sync.Mutex
-	limiter  *policy.GroupLimiter
-	ingress  uint64
-	egress   uint64
-	onClose  func()
-	close    sync.Once
-	closeErr error
+	mu          sync.Mutex
+	limiter     *policy.GroupLimiter
+	ingress     uint64
+	egress      uint64
+	onClose     func()
+	onCloseOnce sync.Once
+	closed      bool
 }
 
-// Close 同时从 generator correlation 中移除 socket，避免 allocation 失败留下内存引用。
+// Close 只移除一次 generator correlation，并在底层 socket 尚未成功关闭时允许重试。
 func (connection *trackedPacketConn) Close() error {
-	connection.close.Do(func() {
+	connection.onCloseOnce.Do(func() {
 		if connection.onClose != nil {
 			connection.onClose()
 		}
-		connection.closeErr = connection.PacketConn.Close()
 	})
-	return connection.closeErr
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	if connection.closed {
+		return nil
+	}
+	if err := connection.PacketConn.Close(); err != nil {
+		return err
+	}
+	connection.closed = true
+	return nil
 }
 
 func (connection *trackedPacketConn) bind(admission policy.RelayAdmission) {

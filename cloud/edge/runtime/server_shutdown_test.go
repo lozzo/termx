@@ -13,6 +13,8 @@ import (
 	grpc_health "google.golang.org/grpc/health"
 )
 
+var errInjectedRelayFreeze = errors.New("injected Relay freeze failure")
+
 func TestRuntimeShutdownRetainsStateUntilRelayUsageIsFrozen(t *testing.T) {
 	state, err := NewState(StateConfig{MailboxSize: 8, DeltaBuffer: 8})
 	if err != nil {
@@ -43,8 +45,8 @@ func TestRuntimeShutdownRetainsStateUntilRelayUsageIsFrozen(t *testing.T) {
 	default:
 	}
 	close(relay.release)
-	if err := <-first; err == nil {
-		t.Fatal("Shutdown succeeded with unfrozen Relay usage")
+	if err := <-first; !errors.Is(err, errInjectedRelayFreeze) {
+		t.Fatalf("Shutdown error = %v", err)
 	}
 	if _, err := state.Snapshot(context.Background()); err != nil {
 		t.Fatalf("State closed after failed Relay freeze: %v", err)
@@ -53,13 +55,98 @@ func TestRuntimeShutdownRetainsStateUntilRelayUsageIsFrozen(t *testing.T) {
 		t.Fatal("Runtime was marked dead while State retained unfrozen usage")
 	}
 
-	if err := runtime.Shutdown(context.Background()); err != nil {
-		t.Fatalf("retry Shutdown after successful Relay freeze: %v", err)
+	if err := runtime.Shutdown(context.Background()); !errors.Is(err, errInjectedRelayFreeze) {
+		t.Fatalf("retry Shutdown error = %v", err)
 	}
 	if _, err := state.Snapshot(context.Background()); !errors.Is(err, ErrStateClosed) {
 		t.Fatalf("State remained open after Relay usage froze: %v", err)
 	}
 	if calls := relay.calls(); calls != 2 {
+		t.Fatalf("Relay Close calls = %d", calls)
+	}
+}
+
+func TestRuntimeShutdownStateOwnerDeadlineResumesWithoutRepeatingRelay(t *testing.T) {
+	runtime := newShutdownRuntime(t)
+	relay := &countingShutdownRelay{safe: true}
+	runtime.relayServer = relay
+	ownerStarted := make(chan struct{})
+	releaseOwner := make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		ownerDone <- runtime.state.call(context.Background(), func(*stateData) error {
+			close(ownerStarted)
+			<-releaseOwner
+			return nil
+		})
+	}()
+	<-ownerStarted
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	if err := runtime.Shutdown(shutdownCtx); !errors.Is(err, context.DeadlineExceeded) {
+		close(releaseOwner)
+		t.Fatalf("Shutdown error = %v", err)
+	}
+	if !runtime.teardownStarted || runtime.shutdownComplete || !runtime.health.Alive() {
+		close(releaseOwner)
+		t.Fatalf("deadline state: teardown=%v complete=%v alive=%v", runtime.teardownStarted, runtime.shutdownComplete, runtime.health.Alive())
+	}
+	close(releaseOwner)
+	if err := <-ownerDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Shutdown(context.Background()); err != nil {
+		t.Fatalf("retry Shutdown: %v", err)
+	}
+	if calls := relay.calls(); calls != 1 {
+		t.Fatalf("Relay Close calls = %d", calls)
+	}
+}
+
+func TestRuntimeShutdownWorkersDeadlineDoesNotFinalizeOrCacheContextError(t *testing.T) {
+	runtime := newReservationRuntime(t, time.Date(2026, 7, 31, 2, 3, 4, 0, time.UTC))
+	health := &processhealth.State{}
+	health.SetAlive(true)
+	persistentErr := errors.New("injected persistent Relay close error")
+	relay := &countingShutdownRelay{safe: true, closeErr: persistentErr}
+	runtime.health = health
+	runtime.grpcHealth = grpc_health.NewServer()
+	runtime.grpcServer = grpc.NewServer()
+	runtime.httpServer = &http.Server{}
+	runtime.relayServer = relay
+	releaseWorker := make(chan struct{})
+	runtime.waitGroup.Add(1)
+	go func() {
+		defer runtime.waitGroup.Done()
+		<-releaseWorker
+	}()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	firstErr := runtime.Shutdown(shutdownCtx)
+	if !errors.Is(firstErr, context.DeadlineExceeded) || !errors.Is(firstErr, persistentErr) {
+		close(releaseWorker)
+		t.Fatalf("Shutdown error = %v", firstErr)
+	}
+	if runtime.shutdownComplete || !health.Alive() || runtime.relayJournal == nil {
+		close(releaseWorker)
+		t.Fatalf("deadline finalized Runtime: complete=%v alive=%v journal=%v", runtime.shutdownComplete, health.Alive(), runtime.relayJournal)
+	}
+	if depth, err := runtime.RelayJournalDepth(); err != nil || depth != 0 {
+		close(releaseWorker)
+		t.Fatalf("live journal depth=%d err=%v", depth, err)
+	}
+
+	close(releaseWorker)
+	finalErr := runtime.Shutdown(context.Background())
+	if !errors.Is(finalErr, persistentErr) || errors.Is(finalErr, context.DeadlineExceeded) || errors.Is(finalErr, context.Canceled) {
+		t.Fatalf("retry Shutdown error = %v", finalErr)
+	}
+	if !runtime.shutdownComplete || health.Alive() || runtime.relayJournal != nil {
+		t.Fatalf("retry did not finalize: complete=%v alive=%v journal=%v", runtime.shutdownComplete, health.Alive(), runtime.relayJournal)
+	}
+	if calls := relay.calls(); calls != 1 {
 		t.Fatalf("Relay Close calls = %d", calls)
 	}
 }
@@ -138,7 +225,7 @@ func (relay *shutdownRelay) Close(context.Context) error {
 	if call == 1 {
 		close(relay.entered)
 		<-relay.release
-		return errors.New("injected Relay freeze failure")
+		return errInjectedRelayFreeze
 	}
 	relay.mu.Lock()
 	relay.unfrozen = false
@@ -196,4 +283,57 @@ func (relay *deadlineShutdownRelay) calls() int {
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
 	return relay.closeN
+}
+
+type countingShutdownRelay struct {
+	mu       sync.Mutex
+	closeN   int
+	closeErr error
+	safe     bool
+}
+
+func (*countingShutdownRelay) Address() string { return "" }
+
+func (*countingShutdownRelay) Degraded() bool { return false }
+
+func (*countingShutdownRelay) CloseSessionAllocations(context.Context, string) error { return nil }
+
+func (relay *countingShutdownRelay) Close(context.Context) error {
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	relay.closeN++
+	return relay.closeErr
+}
+
+func (relay *countingShutdownRelay) StateCloseSafe() bool {
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	return relay.safe
+}
+
+func (relay *countingShutdownRelay) calls() int {
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	return relay.closeN
+}
+
+func newShutdownRuntime(t *testing.T) *Runtime {
+	t.Helper()
+	state, err := NewState(StateConfig{MailboxSize: 8, DeltaBuffer: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	health := &processhealth.State{}
+	health.SetAlive(true)
+	runtime := &Runtime{
+		ctx: runCtx, cancel: cancelRun, readyChanges: make(chan struct{}, 1), state: state, health: health,
+		grpcHealth: grpc_health.NewServer(), grpcServer: grpc.NewServer(), httpServer: &http.Server{},
+	}
+	t.Cleanup(func() {
+		cancelRun()
+		runtime.grpcServer.Stop()
+		state.Close()
+	})
+	return runtime
 }

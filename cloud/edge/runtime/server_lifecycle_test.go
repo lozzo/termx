@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -51,10 +52,105 @@ func TestRuntimeShutdownStopsGRPCStreamAtDeadline(t *testing.T) {
 	if !stream.canceled.Load() {
 		t.Fatal("deadline fallback did not cancel the active stream")
 	}
-	if repeated := runtimeUnderTest.Shutdown(context.Background()); !errors.Is(repeated, context.DeadlineExceeded) {
+	if runtimeUnderTest.shutdownComplete || !runtimeUnderTest.health.Alive() {
+		t.Fatalf("gRPC deadline finalized Runtime: complete=%v alive=%v", runtimeUnderTest.shutdownComplete, runtimeUnderTest.health.Alive())
+	}
+	if repeated := runtimeUnderTest.Shutdown(context.Background()); repeated != nil {
 		t.Fatalf("repeated Shutdown error = %v", repeated)
 	}
+	if !runtimeUnderTest.shutdownComplete || runtimeUnderTest.health.Alive() {
+		t.Fatalf("retry did not finalize Runtime: complete=%v alive=%v", runtimeUnderTest.shutdownComplete, runtimeUnderTest.health.Alive())
+	}
 }
+
+func TestRuntimeShutdownHTTPDeadlineRetriesWithoutFinalizing(t *testing.T) {
+	runtimeUnderTest := newShutdownRuntime(t)
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	var releaseOnce sync.Once
+	httpServer := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		close(handlerStarted)
+		<-releaseHandler
+		writer.WriteHeader(http.StatusNoContent)
+	})}
+	serverConn, clientConn := net.Pipe()
+	listener := newPipeHTTPListener(serverConn)
+	runtimeUnderTest.httpServer = httpServer
+	runtimeUnderTest.waitGroup.Add(1)
+	go func() {
+		defer runtimeUnderTest.waitGroup.Done()
+		_ = httpServer.Serve(listener)
+	}()
+	requestDone := make(chan error, 1)
+	go func() {
+		_, requestErr := io.WriteString(clientConn, "GET / HTTP/1.1\r\nHost: pipe\r\nConnection: close\r\n\r\n")
+		if requestErr == nil {
+			_, requestErr = io.ReadAll(clientConn)
+		}
+		requestDone <- requestErr
+	}()
+	<-handlerStarted
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseHandler) })
+		_ = httpServer.Close()
+		_ = clientConn.Close()
+		_ = listener.Close()
+	})
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	if err := runtimeUnderTest.Shutdown(shutdownCtx); !errors.Is(err, context.DeadlineExceeded) {
+		releaseOnce.Do(func() { close(releaseHandler) })
+		t.Fatalf("Shutdown error = %v", err)
+	}
+	if runtimeUnderTest.shutdownComplete || !runtimeUnderTest.health.Alive() || runtimeUnderTest.httpDone {
+		releaseOnce.Do(func() { close(releaseHandler) })
+		t.Fatalf("HTTP deadline finalized Runtime: complete=%v alive=%v httpDone=%v", runtimeUnderTest.shutdownComplete, runtimeUnderTest.health.Alive(), runtimeUnderTest.httpDone)
+	}
+	releaseOnce.Do(func() { close(releaseHandler) })
+	if err := <-requestDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeUnderTest.Shutdown(context.Background()); err != nil {
+		t.Fatalf("retry Shutdown: %v", err)
+	}
+	if !runtimeUnderTest.shutdownComplete || runtimeUnderTest.health.Alive() || !runtimeUnderTest.httpDone {
+		t.Fatalf("retry did not finalize Runtime: complete=%v alive=%v httpDone=%v", runtimeUnderTest.shutdownComplete, runtimeUnderTest.health.Alive(), runtimeUnderTest.httpDone)
+	}
+}
+
+type pipeHTTPListener struct {
+	connections chan net.Conn
+	closed      chan struct{}
+	closeOnce   sync.Once
+}
+
+func newPipeHTTPListener(connection net.Conn) *pipeHTTPListener {
+	connections := make(chan net.Conn, 1)
+	connections <- connection
+	return &pipeHTTPListener{connections: connections, closed: make(chan struct{})}
+}
+
+func (listener *pipeHTTPListener) Accept() (net.Conn, error) {
+	select {
+	case connection := <-listener.connections:
+		return connection, nil
+	case <-listener.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (listener *pipeHTTPListener) Close() error {
+	listener.closeOnce.Do(func() { close(listener.closed) })
+	return nil
+}
+
+func (*pipeHTTPListener) Addr() net.Addr { return pipeHTTPAddress("pipe") }
+
+type pipeHTTPAddress string
+
+func (pipeHTTPAddress) Network() string        { return "pipe" }
+func (address pipeHTTPAddress) String() string { return string(address) }
 
 type lifecycleStreamServer interface {
 	Hold(grpc.ServerStream) error
