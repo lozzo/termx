@@ -611,11 +611,6 @@ func historyRowDisplayWidth(row history.HistoryRow) int {
 	return width
 }
 
-func rowTextRange(cells []history.Cell, startCol int, endCol int) string {
-	text, _ := rowTextRangeBounded(cells, startCol, endCol, int(^uint(0)>>1))
-	return text
-}
-
 // rowTextRangeBounded computes a single logical-line fragment without ever
 // growing the result past maxBytes. The caller only appends a complete
 // fragment, so copy overflow cannot expose partial text.
@@ -981,15 +976,4 @@ func hotLineIDs(rows []history.HistoryRow) []history.LogicalLineID {
 		ids = append(ids, row.LineID)
 	}
 	return ids
-}
-
-func joinLines(texts []string) string {
-	out := ""
-	for i, text := range texts {
-		if i > 0 {
-			out += "\n"
-		}
-		out += text
-	}
-	return out
 }
