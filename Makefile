@@ -47,9 +47,9 @@ test-clients:
 test-android:
 	npm run cap:build
 	mkdir -p "$(ANDROID_ARTIFACT_DIR)"
-	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleDebug
-	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-debug.apk"
-	scripts/verify-android-apk-boundary.sh "$(ANDROID_ARTIFACT_DIR)/app-debug.apk"
+	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleRelease
+	cp "$(ANDROID_DIR)/app/build/outputs/apk/release/app-release-unsigned.apk" "$(ANDROID_ARTIFACT_DIR)/app-release-unsigned.apk"
+	scripts/verify-android-apk-boundary.sh "$(ANDROID_ARTIFACT_DIR)/app-release-unsigned.apk"
 
 test-all:
 	$(MAKE) test
