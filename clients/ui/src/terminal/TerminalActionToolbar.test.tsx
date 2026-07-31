@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TerminalActionToolbar } from './TerminalActionToolbar'
 
@@ -37,5 +38,46 @@ describe('TerminalActionToolbar', () => {
     expect(onAcquireResizeOwner).toHaveBeenCalledTimes(1)
     expect(onOuterPointerDown).not.toHaveBeenCalled()
     expect(onOuterClick).not.toHaveBeenCalled()
+  })
+
+  it('executes settings actions through keyboard activation', async () => {
+    const user = userEvent.setup()
+    const onFontSizeChange = vi.fn()
+    const onRendererChange = vi.fn()
+    const onAcquireResizeOwner = vi.fn()
+
+    render(
+      <TerminalActionToolbar
+        mode="default"
+        hasSelection={false}
+        fontSize={14}
+        renderer="auto"
+        resizeControl={{ canResize: false, reason: 'follower' }}
+        onModeChange={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectVisible={vi.fn()}
+        onCopy={vi.fn()}
+        onPaste={vi.fn()}
+        onOpenClipboardHistory={vi.fn()}
+        onOpenSnippets={vi.fn()}
+        onFontSizeChange={onFontSizeChange}
+        onRendererChange={onRendererChange}
+        onAcquireResizeOwner={onAcquireResizeOwner}
+      />,
+    )
+
+    screen.getByRole('button', { name: /decrease terminal font size/i }).focus()
+    await user.keyboard('{Enter}')
+    screen.getByRole('button', { name: /increase terminal font size/i }).focus()
+    await user.keyboard('{Enter}')
+    screen.getByRole('button', { name: /renderer: auto/i }).focus()
+    await user.keyboard('{Enter}')
+    screen.getByRole('button', { name: /acquire resize control/i }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(onFontSizeChange).toHaveBeenNthCalledWith(1, 13)
+    expect(onFontSizeChange).toHaveBeenNthCalledWith(2, 15)
+    expect(onRendererChange).toHaveBeenCalledWith('webgl')
+    expect(onAcquireResizeOwner).toHaveBeenCalledTimes(1)
   })
 })

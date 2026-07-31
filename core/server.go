@@ -882,11 +882,10 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 		return history.HistoryWindow{}, err
 	}
 	if flush {
-		// 中文说明：普通 window/copy 调用必须先等 history worker 追平；
-		// protocol latest 已先通过 Freeze 建立 token fence，读取同一 token window 时
-		// 不再重复 flush，避免压力输出后 copy 入口多等一轮 history queue。
+		// Live windows only need the consumer fence for a consistent view. Freeze
+		// owns the durability fence; token pagination must not repeat file.Sync.
 		finishFlush := perftrace.Measure("core.server.history_window." + mode + ".flush")
-		if err := terminal.FlushHistory(ctx); err != nil {
+		if err := terminal.waitForHistory(ctx); err != nil {
 			finishFlush(0)
 			return history.HistoryWindow{}, err
 		}
@@ -918,8 +917,10 @@ func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req hi
 	if err != nil {
 		return "", err
 	}
-	if err := terminal.FlushHistory(ctx); err != nil {
-		return "", err
+	if req.Token == "" {
+		if err := terminal.FlushHistory(ctx); err != nil {
+			return "", err
+		}
 	}
 	if req.TerminalID == "" {
 		req.TerminalID = id

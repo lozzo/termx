@@ -124,7 +124,8 @@ export function TerminalActionToolbar({
               type="button"
               aria-label={t('settings.decreaseFont')}
               title={t('settings.decreaseFont')}
-              onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => { hapticSelection(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
               className="flex h-11 w-11 items-center justify-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)] active:opacity-75"
             >
               <Minus className="h-3.5 w-3.5" />
@@ -134,7 +135,8 @@ export function TerminalActionToolbar({
               type="button"
               aria-label={t('settings.increaseFont')}
               title={t('settings.increaseFont')}
-              onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => { hapticSelection(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
               className="flex h-11 w-11 items-center justify-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] text-[var(--anytty-text)] active:opacity-75"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -149,7 +151,8 @@ export function TerminalActionToolbar({
             type="button"
             aria-label={`${t('settings.renderer')}: ${RENDERER_LABELS[renderer]}`}
             title={t('settings.renderer')}
-            onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onRendererChange?.(nextRenderer) }}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => { hapticSelection(); onRendererChange?.(nextRenderer) }}
             className="flex h-11 items-center justify-center gap-1.5 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-3 text-xs font-semibold text-[var(--anytty-text)] active:opacity-75"
           >
             <Cpu className="h-3.5 w-3.5" />
@@ -167,12 +170,12 @@ export function TerminalActionToolbar({
             onPointerDown={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              hapticSelection()
-              ownsResize ? onReleaseResizeOwner?.() : onAcquireResizeOwner?.()
             }}
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
+              hapticSelection()
+              ownsResize ? onReleaseResizeOwner?.() : onAcquireResizeOwner?.()
             }}
             className="flex h-11 items-center justify-center gap-1.5 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface-raised)] px-3 text-xs font-semibold text-[var(--anytty-text)] active:opacity-75"
           >

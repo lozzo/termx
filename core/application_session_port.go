@@ -361,7 +361,7 @@ func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, re
 	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
 		return history.HistoryWindow{}, err
 	}
-	flush := true
+	flush := request.Token == ""
 	if request.Mode == history.HistoryWindowModeLatest {
 		snapshot, err := session.server.TerminalHistoryFreeze(ctx, request.TerminalID, history.FreezeHistoryRequest{
 			TerminalID: request.TerminalID,

@@ -259,6 +259,60 @@ func TestTerminalFlushHistoryMakesSmallPendingBlockRecoverable(t *testing.T) {
 	}
 }
 
+func TestHistoryReadsSyncOnlyWhenCreatingFrozenSnapshot(t *testing.T) {
+	storage := &durabilityTerminalLineStorage{}
+	server, _ := newDurabilityHistoryServer(storage)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	const terminalID = "term-history-read-fence"
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: terminalID, Command: []string{"shell"}}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := server.Terminal(terminalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := terminal.lineHistory.AppendLifecycleLines([]string{"durable snapshot"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := server.TerminalHistoryWindow(context.Background(), terminalID, history.HistoryWindowRequest{Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	_, syncCalls, _ := storage.counts()
+	if syncCalls != 0 {
+		t.Fatalf("live history read sync calls = %d, want 0", syncCalls)
+	}
+
+	snapshot, err := server.TerminalHistoryFreeze(context.Background(), terminalID, history.FreezeHistoryRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, syncCalls, _ = storage.counts()
+	if syncCalls != 1 {
+		t.Fatalf("history freeze sync calls = %d, want 1", syncCalls)
+	}
+
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	if _, err := session.ApplicationHistoryWindow(context.Background(), history.HistoryWindowRequest{
+		TerminalID: terminalID,
+		Mode:       history.HistoryWindowModeOldest,
+		Token:      snapshot.Token,
+		Limit:      10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ApplicationHistoryCopy(context.Background(), history.HistoryCopyRequest{
+		TerminalID: terminalID,
+		Token:      snapshot.Token,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, syncCalls, _ = storage.counts()
+	if syncCalls != 1 {
+		t.Fatalf("frozen history reads sync calls = %d, want 1", syncCalls)
+	}
+}
+
 func TestTerminalCloseDrainsPayloadAlreadyInSharedBufferAndSyncsOnce(t *testing.T) {
 	storage := &durabilityTerminalLineStorage{}
 	server, factory := newDurabilityHistoryServer(storage)

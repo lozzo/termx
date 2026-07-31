@@ -464,9 +464,15 @@ func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
 	return status
 }
 
-// FlushHistory 等待调用时已经进入共享 output buffer 的 history payload，然后
-// 建立一次显式 durability fence。它不等待 future output、不封存当前 hot screen；
-// normal Close 使用同一 consumer fence，并由最终 store Close 执行唯一一次 sync。
+func (terminal *Terminal) waitForHistory(ctx context.Context) error {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	return terminal.flushHistoryOutput(ctx)
+}
+
+// FlushHistory waits for history payload already in the shared output buffer,
+// then establishes an explicit durability fence. Read-only pagination uses
+// waitForHistory so it does not turn every history request into an fsync.
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
