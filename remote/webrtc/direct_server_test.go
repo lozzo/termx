@@ -176,6 +176,104 @@ func TestDirectServerAnswerFailuresReleasePeerExactlyOnce(t *testing.T) {
 	waitDirectServerState(t, harness.server, 0, 0)
 }
 
+func TestDirectServerWriteFailureClosesUnhandedPeer(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	peerClosed := make(chan struct{})
+	harness.server.answerForTest = func(ctx context.Context, answerer Answerer, _ *SignalingOffer) (*SignalingAnswer, error) {
+		_, cancel := context.WithCancel(ctx)
+		releasePeer := answerer.OnPeerClosed
+		lifecycle := newPeerLifecycle(ctx, nil, cancel, func() {
+			releasePeer()
+			close(peerClosed)
+		}, func(*pion.PeerConnection) error { return nil })
+		return &SignalingAnswer{SessionID: "write-failure", SDP: "unwritten-answer", lifecycle: lifecycle}, nil
+	}
+	harness.start(t)
+
+	_, client := harness.acceptPipe(t, directTestAddress("192.0.2.62:6100"))
+	if err := client.SetDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := directsignal.WriteMessage(client, harness.request("write-failure")); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close()
+	select {
+	case <-peerClosed:
+	case <-time.After(time.Second):
+		t.Fatal("failed response write retained an unhanded peer")
+	}
+	if got := len(harness.server.peerSlots); got != 0 {
+		t.Fatalf("peer slots after response write failure = %d", got)
+	}
+}
+
+func TestDirectServerServeWaitsForPeerHandlerJoin(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	handlerStarted := make(chan struct{})
+	handlerCanceled := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	peerClosed := make(chan struct{})
+	harness.server.answerForTest = func(ctx context.Context, answerer Answerer, _ *SignalingOffer) (*SignalingAnswer, error) {
+		sessionCtx, cancel := context.WithCancel(ctx)
+		releasePeer := answerer.OnPeerClosed
+		lifecycle := newPeerLifecycle(ctx, nil, cancel, func() {
+			releasePeer()
+			close(peerClosed)
+		}, func(*pion.PeerConnection) error { return nil })
+		if !lifecycle.claimHandler() {
+			return nil, errors.New("test peer handler was not admitted")
+		}
+		go func() {
+			close(handlerStarted)
+			<-sessionCtx.Done()
+			close(handlerCanceled)
+			<-releaseHandler
+			lifecycle.finishHandler()
+		}()
+		return &SignalingAnswer{SessionID: "joined-peer", SDP: "joined-answer", lifecycle: lifecycle}, nil
+	}
+	harness.start(t)
+	response := harness.exchange(t, directTestAddress("192.0.2.62:6101"), harness.request("joined-peer"))
+	if response.GetAnswer() == nil {
+		t.Fatalf("direct response = %#v, want answer", response)
+	}
+	<-handlerStarted
+
+	harness.stopOnce.Do(func() {
+		harness.cancel()
+		if err := harness.server.Close(); err != nil {
+			t.Fatalf("close direct server: %v", err)
+		}
+		select {
+		case <-handlerCanceled:
+		case <-time.After(time.Second):
+			t.Fatal("server close did not cancel peer handler")
+		}
+		select {
+		case <-peerClosed:
+			t.Fatal("peer closed before its handler joined")
+		case err := <-harness.done:
+			t.Fatalf("Serve returned before peer handler joined: %v", err)
+		case <-time.After(25 * time.Millisecond):
+		}
+		close(releaseHandler)
+		select {
+		case <-peerClosed:
+		case <-time.After(time.Second):
+			t.Fatal("peer did not close after handler joined")
+		}
+		select {
+		case err := <-harness.done:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("serve direct server: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Serve did not return after peer handler joined")
+		}
+	})
+}
+
 func TestDirectServerPreAuthPanicGuardsReleaseAndContinue(t *testing.T) {
 	for _, testCase := range []struct {
 		name    string

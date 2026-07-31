@@ -50,6 +50,108 @@ type SignalingAnswer struct {
 	SessionID  string
 	SDP        string
 	Candidates []ICECandidate
+	lifecycle  *peerLifecycle
+}
+
+// peerLifecycle owns one Pion peer and its single authorized protocol handler.
+// Finalization always runs outside Pion callbacks and the handler goroutine.
+type peerLifecycle struct {
+	peer             *pion.PeerConnection
+	cancel           context.CancelFunc
+	onPeerClosed     func()
+	closePeerForTest func(*pion.PeerConnection) error
+
+	mu              sync.Mutex
+	handlerClaimed  bool
+	handlerSealed   bool
+	handlerFinished bool
+	handlerDone     chan struct{}
+	closing         chan struct{}
+	watcherDone     chan struct{}
+	done            chan struct{}
+	closeOnce       sync.Once
+}
+
+func newPeerLifecycle(ctx context.Context, peer *pion.PeerConnection, cancel context.CancelFunc, onPeerClosed func(), closePeerForTest func(*pion.PeerConnection) error) *peerLifecycle {
+	lifecycle := &peerLifecycle{
+		peer: peer, cancel: cancel, onPeerClosed: onPeerClosed, closePeerForTest: closePeerForTest,
+		handlerDone: make(chan struct{}), closing: make(chan struct{}), watcherDone: make(chan struct{}), done: make(chan struct{}),
+	}
+	go func() {
+		defer close(lifecycle.watcherDone)
+		select {
+		case <-ctx.Done():
+			lifecycle.requestClose()
+		case <-lifecycle.closing:
+		}
+	}()
+	return lifecycle
+}
+
+func (lifecycle *peerLifecycle) claimHandler() bool {
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	if lifecycle.handlerSealed || lifecycle.handlerClaimed {
+		return false
+	}
+	lifecycle.handlerClaimed = true
+	return true
+}
+
+func (lifecycle *peerLifecycle) finishHandler() {
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	if !lifecycle.handlerClaimed || lifecycle.handlerFinished {
+		return
+	}
+	lifecycle.handlerFinished = true
+	close(lifecycle.handlerDone)
+}
+
+func (lifecycle *peerLifecycle) requestClose() {
+	if lifecycle == nil {
+		return
+	}
+	lifecycle.closeOnce.Do(func() {
+		lifecycle.mu.Lock()
+		lifecycle.handlerSealed = true
+		if !lifecycle.handlerClaimed {
+			lifecycle.handlerFinished = true
+			close(lifecycle.handlerDone)
+		}
+		lifecycle.mu.Unlock()
+		close(lifecycle.closing)
+		lifecycle.cancel()
+		go lifecycle.finalize()
+	})
+}
+
+func (lifecycle *peerLifecycle) closeAndWait() {
+	if lifecycle == nil {
+		return
+	}
+	lifecycle.requestClose()
+	<-lifecycle.done
+}
+
+func (lifecycle *peerLifecycle) finalize() {
+	func() {
+		defer func() { _ = recover() }()
+		if lifecycle.closePeerForTest != nil {
+			_ = lifecycle.closePeerForTest(lifecycle.peer)
+		} else if lifecycle.peer != nil {
+			_ = lifecycle.peer.GracefulClose()
+		}
+	}()
+	<-lifecycle.handlerDone
+	<-lifecycle.watcherDone
+	func() {
+		defer func() { _ = recover() }()
+		if lifecycle.onPeerClosed != nil {
+			lifecycle.onPeerClosed()
+		}
+	}()
+	close(lifecycle.done)
 }
 
 // DataChannelSessionHandler 是 daemon 侧 DTLS DataChannel 的端到端授权 owner。
@@ -107,36 +209,8 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	if err != nil {
 		return nil, fmt.Errorf("create remote daemon peer connection: %w", err)
 	}
-	var closePeerOnce sync.Once
-	var notifyPeerClosedOnce sync.Once
-	notifyPeerClosed := func() {
-		notifyPeerClosedOnce.Do(func() {
-			func() {
-				defer func() { _ = recover() }()
-				if answerer.OnPeerClosed != nil {
-					answerer.OnPeerClosed()
-				}
-			}()
-		})
-	}
-	closePeer := func() {
-		closePeerOnce.Do(func() {
-			func() {
-				defer func() { _ = recover() }()
-				if answerer.closePeerForTest != nil {
-					_ = answerer.closePeerForTest(peer)
-					return
-				}
-				_ = peer.Close()
-			}()
-			notifyPeerClosed()
-		})
-	}
 	sessionCtx, cancel := context.WithCancel(ctx)
-	var cancelSessionOnce sync.Once
-	cancelSession := func() {
-		cancelSessionOnce.Do(cancel)
-	}
+	lifecycle := newPeerLifecycle(ctx, peer, cancel, answerer.OnPeerClosed, answerer.closePeerForTest)
 	var candidateMu sync.Mutex
 	candidates := make([]ICECandidate, 0, 4)
 	gathering := NewICEGatheringWaiter(false, len(iceServers) == 0, ICEGatheringCloudGrace)
@@ -162,15 +236,11 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	})
 	peer.OnConnectionStateChange(func(state pion.PeerConnectionState) {
 		if state == pion.PeerConnectionStateClosed {
-			cancelSession()
-			notifyPeerClosed()
+			lifecycle.requestClose()
 			return
 		}
 		if state == pion.PeerConnectionStateFailed || answerer.CloseOnDisconnected && state == pion.PeerConnectionStateDisconnected {
-			go func() {
-				cancelSession()
-				closePeer()
-			}()
+			lifecycle.requestClose()
 		}
 	})
 	peer.OnDataChannel(func(channel *pion.DataChannel) {
@@ -180,11 +250,15 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		}
 		protocolTransport := datachannel.New(NewChannel(channel))
 		channel.OnOpen(func() {
+			if !lifecycle.claimHandler() {
+				_ = protocolTransport.Close()
+				return
+			}
 			go func() {
+				defer lifecycle.requestClose()
+				defer lifecycle.finishHandler()
 				defer func() {
 					_ = recover()
-					cancelSession()
-					closePeer()
 				}()
 				if answerer.OnSessionStart != nil {
 					answerer.OnSessionStart()
@@ -202,27 +276,23 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		})
 	})
 	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeOffer, SDP: offer.SDP}); err != nil {
-		cancelSession()
-		closePeer()
+		lifecycle.closeAndWait()
 		return nil, fmt.Errorf("set remote daemon offer: %w", err)
 	}
 	for _, candidate := range offer.Candidates {
 		if err := peer.AddICECandidate(toPionCandidate(candidate)); err != nil {
-			cancelSession()
-			closePeer()
+			lifecycle.closeAndWait()
 			return nil, fmt.Errorf("add remote daemon ICE candidate: %w", err)
 		}
 	}
 	localAnswer, err := peer.CreateAnswer(nil)
 	if err != nil {
-		cancelSession()
-		closePeer()
+		lifecycle.closeAndWait()
 		return nil, fmt.Errorf("create remote daemon answer: %w", err)
 	}
 	gatherComplete := pion.GatheringCompletePromise(peer)
 	if err := peer.SetLocalDescription(localAnswer); err != nil {
-		cancelSession()
-		closePeer()
+		lifecycle.closeAndWait()
 		return nil, fmt.Errorf("set remote daemon answer: %w", err)
 	}
 	timeout := directGatherTimeout
@@ -230,20 +300,18 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		timeout = cloudGatherTimeout
 	}
 	if err := gathering.Wait(ctx, gatherComplete, timeout); err != nil {
-		cancelSession()
-		closePeer()
+		lifecycle.closeAndWait()
 		return nil, err
 	}
 	description := peer.LocalDescription()
 	if description == nil || strings.TrimSpace(description.SDP) == "" {
-		cancelSession()
-		closePeer()
+		lifecycle.closeAndWait()
 		return nil, fmt.Errorf("remote daemon answer has no local description")
 	}
 	candidateMu.Lock()
 	wireCandidates := append([]ICECandidate(nil), candidates...)
 	candidateMu.Unlock()
-	return &SignalingAnswer{SessionID: offer.SessionID, SDP: description.SDP, Candidates: wireCandidates}, nil
+	return &SignalingAnswer{SessionID: offer.SessionID, SDP: description.SDP, Candidates: wireCandidates, lifecycle: lifecycle}, nil
 }
 
 func toPionCandidate(candidate ICECandidate) pion.ICECandidateInit {

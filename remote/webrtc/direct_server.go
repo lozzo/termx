@@ -125,6 +125,7 @@ type DirectServer struct {
 	preAuthByIP    map[string]int
 	peerSlots      chan struct{}
 	closed         bool
+	serveCancel    context.CancelFunc
 	closeOnce      sync.Once
 	closeErr       error
 	wg             sync.WaitGroup
@@ -180,21 +181,48 @@ func (server *DirectServer) Serve(ctx context.Context) error {
 	if server == nil || server.signalingListener == nil || server.iceMux == nil {
 		return fmt.Errorf("direct server is not initialized")
 	}
+	if ctx == nil {
+		return fmt.Errorf("direct server context is required")
+	}
+	serveCtx, cancel := context.WithCancel(ctx)
+	server.mu.Lock()
+	if server.closed {
+		server.mu.Unlock()
+		cancel()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return net.ErrClosed
+	}
+	if server.serveCancel != nil {
+		server.mu.Unlock()
+		cancel()
+		return net.ErrClosed
+	}
+	server.serveCancel = cancel
+	server.mu.Unlock()
 	stop := make(chan struct{})
+	watcherDone := make(chan struct{})
 	go func() {
+		defer close(watcherDone)
 		select {
-		case <-ctx.Done():
+		case <-serveCtx.Done():
 			_ = server.Close()
 		case <-stop:
 		}
 	}()
-	defer close(stop)
+	defer func() {
+		cancel()
+		_ = server.Close()
+		close(stop)
+		<-watcherDone
+		server.wg.Wait()
+	}()
 	for {
 		rawConnection, err := server.signalingListener.Accept()
 		if err != nil {
-			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
-				server.wg.Wait()
-				return ctx.Err()
+			if serveCtx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return serveCtx.Err()
 			}
 			return fmt.Errorf("accept direct signaling connection: %w", err)
 		}
@@ -205,7 +233,7 @@ func (server *DirectServer) Serve(ctx context.Context) error {
 			_ = connection.Close()
 			continue
 		}
-		server.startConnectionWorker(ctx, connection, releasePreAuth)
+		server.startConnectionWorker(serveCtx, connection, releasePreAuth)
 	}
 }
 
@@ -218,11 +246,15 @@ func (server *DirectServer) Close() error {
 	server.closeOnce.Do(func() {
 		server.mu.Lock()
 		server.closed = true
+		cancel := server.serveCancel
 		connections := make([]*directConnection, 0, len(server.conns))
 		for connection := range server.conns {
 			connections = append(connections, connection)
 		}
 		server.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
 		if server.signalingListener != nil {
 			server.closeErr = server.signalingListener.Close()
 		}
@@ -325,8 +357,12 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		return
 	}
 	peerHandedOff := false
+	var answer *SignalingAnswer
 	defer func() {
 		if !peerHandedOff {
+			if answer != nil {
+				answer.lifecycle.closeAndWait()
+			}
 			releasePeer()
 		}
 	}()
@@ -341,7 +377,6 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 	offer := &SignalingOffer{
 		SessionID: request.GetRequestId(), SDP: request.GetOfferSdp(),
 	}
-	var answer *SignalingAnswer
 	var err error
 	if server.answerForTest != nil {
 		answer, err = server.answerForTest(ctx, answerer, offer)
@@ -353,7 +388,11 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "create direct signaling answer failed")
 		return
 	}
-	peerHandedOff = true
+	if answer == nil || answer.lifecycle == nil {
+		releasePeer()
+		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "create direct signaling answer failed")
+		return
+	}
 	now := server.currentTime()
 	wireAnswer := &remoteauthpb.DirectSignalingAnswerV2{
 		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: request.GetRequestId(),
@@ -368,12 +407,17 @@ func (server *DirectServer) serveConnection(ctx context.Context, connection net.
 		})
 	}
 	if err := remoteauth.SignDirectSignalingAnswer(server.identity, wireAnswer); err != nil {
+		answer.lifecycle.closeAndWait()
+		releasePeer()
 		server.writeError(ctx, connection, remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_INTERNAL, "sign direct signaling answer failed")
 		return
 	}
-	_ = directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV2{
+	if err := directsignal.WriteMessage(connection, &remoteauthpb.DirectSignalingResponseV2{
 		Payload: &remoteauthpb.DirectSignalingResponseV2_Answer{Answer: wireAnswer},
-	})
+	}); err != nil {
+		return
+	}
+	peerHandedOff = true
 }
 
 func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV2) remoteauthpb.DirectSignalingErrorCode {
@@ -505,11 +549,20 @@ func normalizedDirectSourceIP(remoteAddress net.Addr) string {
 }
 
 func (server *DirectServer) tryAcquirePeer() (func(), bool) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	if server.closed {
+		return nil, false
+	}
 	select {
 	case server.peerSlots <- struct{}{}:
+		server.wg.Add(1)
 		var once sync.Once
 		return func() {
-			once.Do(func() { <-server.peerSlots })
+			once.Do(func() {
+				<-server.peerSlots
+				server.wg.Done()
+			})
 		}, true
 	default:
 		return nil, false

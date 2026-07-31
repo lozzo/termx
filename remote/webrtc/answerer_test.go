@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -98,6 +99,88 @@ func uint16Pointer(value uint16) *uint16 { return &value }
 func TestAnswererFailsClosedWithoutAuthorizedHandler(t *testing.T) {
 	if _, err := (Answerer{}).Answer(context.Background(), &SignalingOffer{SDP: "not-used"}, nil); err == nil {
 		t.Fatal("missing authorized handler must fail before WebRTC session creation")
+	}
+}
+
+func TestAnswererParentCancelClosesPeerWithoutDataChannel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	handler := &recordingAuthorizedHandler{called: make(chan struct{})}
+	closed := make(chan struct{})
+	var closeCalls atomic.Int32
+	answerer := Answerer{
+		Handler: handler,
+		OnPeerClosed: func() {
+			close(closed)
+		},
+		closePeerForTest: func(peer *pion.PeerConnection) error {
+			closeCalls.Add(1)
+			return peer.GracefulClose()
+		},
+	}
+	clientPeer, err := pion.NewPeerConnection(pion.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientPeer.Close()
+	if _, err := clientPeer.CreateDataChannel("not-protocol", nil); err != nil {
+		t.Fatal(err)
+	}
+	offer := createGatheredOffer(t, clientPeer)
+	answer, err := answerer.Answer(ctx, &SignalingOffer{SessionID: "cancel-before-open", SDP: offer.SDP}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("parent cancellation did not close peer without a DataChannel")
+	}
+	answer.lifecycle.closeAndWait()
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("peer close calls = %d, want 1", got)
+	}
+	select {
+	case <-handler.called:
+		t.Fatal("handler ran without a protocol DataChannel")
+	default:
+	}
+}
+
+func TestPeerLifecycleWaitsForClaimedHandlerAndClosesExactlyOnce(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	peerClosed := make(chan struct{})
+	var closeCalls atomic.Int32
+	var callbackCalls atomic.Int32
+	lifecycle := newPeerLifecycle(ctx, nil, cancel, func() {
+		callbackCalls.Add(1)
+		close(peerClosed)
+	}, func(*pion.PeerConnection) error {
+		closeCalls.Add(1)
+		return nil
+	})
+	if !lifecycle.claimHandler() || lifecycle.claimHandler() {
+		t.Fatal("peer lifecycle did not admit exactly one protocol handler")
+	}
+
+	var requests sync.WaitGroup
+	for range 16 {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			lifecycle.requestClose()
+		}()
+	}
+	requests.Wait()
+	select {
+	case <-peerClosed:
+		t.Fatal("peer close callback ran before the claimed handler finished")
+	case <-time.After(25 * time.Millisecond):
+	}
+	lifecycle.finishHandler()
+	lifecycle.closeAndWait()
+	if closeCalls.Load() != 1 || callbackCalls.Load() != 1 {
+		t.Fatalf("close calls=%d callbacks=%d, want 1/1", closeCalls.Load(), callbackCalls.Load())
 	}
 }
 
