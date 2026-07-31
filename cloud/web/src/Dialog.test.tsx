@@ -76,4 +76,19 @@ describe('Cloud Dialog close contract', () => {
     act(() => { dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
     expect(onClose).toHaveBeenCalledTimes(3)
   })
+
+  it('reestablishes dialog focus when a keyed form switches to its result', () => {
+    const onClose = vi.fn()
+    const rendered = render(<Dialog key="form" title="创建订单" open onClose={onClose} footer={<button>创建</button>}>表单</Dialog>)
+    roots.push(rendered.root)
+    const create = Array.from(rendered.container.querySelectorAll('button')).find((button) => button.textContent === '创建')
+    act(() => create?.focus())
+
+    act(() => rendered.root.render(<Dialog key="result" title="订单已创建" open onClose={onClose} footer={<button>录入支付结果</button>}>结果</Dialog>))
+    const dialog = rendered.container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.contains(document.activeElement)).toBe(true)
+
+    act(() => { dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
 })

@@ -629,6 +629,7 @@ test('套餐与订单 create deferred 失败后关闭复开会清理旧状态', 
   await expect(created).toContainText('closed-order')
   await expect(created.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
   await expect(created.getByRole('button', { name: '录入支付结果', exact: true })).toBeEnabled()
+  expect(await created.evaluate((element) => element.contains(document.activeElement))).toBe(true)
   await page.keyboard.press('Escape')
   await expect(created).toHaveCount(0)
 
