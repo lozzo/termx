@@ -553,6 +553,53 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 	}
 }
 
+func TestServerNextLiveScreenReturnsPayloadFromOneLongPoll(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-screen-next", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 3}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	bootstrap, err := server.NextLiveScreen(context.Background(), "term-live-screen-next", 0)
+	if err != nil || !bootstrap.FullReplace {
+		t.Fatalf("bootstrap screen = %#v err=%v", bootstrap, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan NativeScreenSnapshot, 1)
+	errs := make(chan error, 1)
+	go func() {
+		snapshot, nextErr := server.NextLiveScreen(ctx, "term-live-screen-next", bootstrap.Revision)
+		if nextErr != nil {
+			errs <- nextErr
+			return
+		}
+		done <- snapshot
+	}()
+	select {
+	case snapshot := <-done:
+		t.Fatalf("long poll returned before output: %#v", snapshot)
+	case nextErr := <-errs:
+		t.Fatalf("long poll failed before output: %v", nextErr)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := server.IngestOutput(context.Background(), "term-live-screen-next", "latest"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	select {
+	case nextErr := <-errs:
+		t.Fatalf("long poll failed: %v", nextErr)
+	case snapshot := <-done:
+		if snapshot.FullReplace || snapshot.BaseRevision != bootstrap.Revision || snapshot.Revision <= bootstrap.Revision {
+			t.Fatalf("unexpected next screen metadata: %#v", snapshot)
+		}
+		if got := strings.Join(terminalLiveRowsFromNativeSnapshot(snapshot), "\n"); !strings.Contains(got, "latest") {
+			t.Fatalf("next response did not carry latest rows: %q", got)
+		}
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for next screen: %v", ctx.Err())
+	}
+}
+
 func TestServerNextLiveInvalidationCoalescesMissedRevisionsToLatestWake(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-coalesce", Command: []string{"shell"}}); err != nil {
