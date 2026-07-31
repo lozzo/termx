@@ -1,6 +1,6 @@
 import { ArrowLeftRight, X } from 'lucide-react'
 import { ModalSurface } from '@anytty/ui/modal'
-import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode, type RefObject } from 'react'
 
 export function Button({ tone = 'default', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'default' | 'primary' | 'danger' | 'quiet' }) {
   return <button className={`button button-${tone} ${className}`} {...props} />
@@ -48,11 +48,11 @@ export function Skeleton({ rows = 6 }: { rows?: number }) {
   </div>
 }
 
-export function Dialog({ title, open, onClose, children, footer, closable = true }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode; closable?: boolean }) {
+export function Dialog({ title, open, onClose, children, footer, closable = true, initialFocusRef }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode; closable?: boolean; initialFocusRef?: RefObject<HTMLElement | null> }) {
   if (!open) return null
   const requestClose = () => { if (closable) onClose() }
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}>
-    <ModalSurface className="dialog" aria-label={title} onRequestClose={requestClose}>
+    <ModalSurface className="dialog" aria-label={title} initialFocusRef={initialFocusRef} onRequestClose={requestClose}>
       <header><h2>{title}</h2><IconButton label="关闭" onClick={requestClose} disabled={!closable}><X size={18} /></IconButton></header>
       <div className="dialog-body">{children}</div>
       {footer && <footer>{footer}</footer>}

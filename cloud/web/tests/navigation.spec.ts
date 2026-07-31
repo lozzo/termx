@@ -382,6 +382,7 @@ test('logout 失败显示脱敏固定反馈并允许重试', async ({ page }, te
   await expect(dialog).not.toContainText('logout-failure-id')
   const retry = dialog.getByRole('button', { name: '重试退出', exact: true })
   await expect(retry).toBeFocused()
+  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
 
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(dialog).toHaveCount(0)
@@ -626,6 +627,8 @@ test('套餐与订单 create deferred 失败后关闭复开会清理旧状态', 
   await reopenedOrder.getByRole('button', { name: '创建', exact: true }).click()
   const created = page.getByRole('dialog', { name: '订单已创建' })
   await expect(created).toContainText('closed-order')
+  await expect(created.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
+  await expect(created.getByRole('button', { name: '录入支付结果', exact: true })).toBeEnabled()
   await page.keyboard.press('Escape')
   await expect(created).toHaveCount(0)
 

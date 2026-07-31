@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, type ReactNode } from 'react'
+import { act, createRef, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Dialog } from './ui'
@@ -51,5 +51,29 @@ describe('Cloud Dialog close contract', () => {
     act(() => { backdrop?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
     act(() => { dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('uses the provided initial focus target', () => {
+    const initialFocusRef = createRef<HTMLButtonElement>()
+    const rendered = render(<Dialog title="恢复操作" open onClose={() => undefined} initialFocusRef={initialFocusRef}><button ref={initialFocusRef}>重试</button></Dialog>)
+    roots.push(rendered.root)
+
+    expect(document.activeElement).toBe(initialFocusRef.current)
+  })
+
+  it('honors every close path immediately after a locked dialog becomes closable', () => {
+    const onClose = vi.fn()
+    const rendered = render(<Dialog title="结果" open onClose={onClose} closable={false}>处理中</Dialog>)
+    roots.push(rendered.root)
+    act(() => rendered.root.render(<Dialog title="结果" open onClose={onClose}>已完成</Dialog>))
+    const close = rendered.container.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')
+    const backdrop = rendered.container.querySelector<HTMLElement>('.dialog-backdrop')
+    const dialog = rendered.container.querySelector<HTMLElement>('[role="dialog"]')
+
+    expect(close?.disabled).toBe(false)
+    act(() => close?.click())
+    act(() => { backdrop?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
+    act(() => { dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    expect(onClose).toHaveBeenCalledTimes(3)
   })
 })

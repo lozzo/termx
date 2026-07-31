@@ -152,7 +152,7 @@ export function CloudShell() {
       </header>
 		<main className={`content ${location.pathname.startsWith('/app/admin') ? 'content-admin' : 'content-user'}`} id="main-content" ref={mainRef} tabIndex={-1}><Outlet context={{ current: current.data, isOperator, isAdmin } satisfies ShellContext} /></main>
       <nav className="mobile-bottom-nav" aria-label="手机主导航">{userNavigation.filter((item) => item.to !== '/app/orders').map(({ to, label, icon: Icon }) => <NavLink key={to} to={to}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
-      <Dialog title="退出登录失败" open={logoutRecoveryOpen} onClose={closeLogoutRecovery} closable={!logout.isPending} footer={<><Button tone="quiet" onClick={closeLogoutRecovery} disabled={logout.isPending}>取消</Button><button ref={logoutRetryRef} className="button button-primary" type="button" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? '正在重试' : '重试退出'}</button></>}>
+      <Dialog title="退出登录失败" open={logoutRecoveryOpen} onClose={closeLogoutRecovery} closable={!logout.isPending} initialFocusRef={logoutRetryRef} footer={<><Button tone="quiet" onClick={closeLogoutRecovery} disabled={logout.isPending}>取消</Button><button ref={logoutRetryRef} className="button button-primary" type="button" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? '正在重试' : '重试退出'}</button></>}>
         <Notice tone="error">无法退出登录，请检查网络后重试。</Notice>
         {logout.isPending && <p ref={logoutPendingRef} role="status" aria-busy="true" tabIndex={-1}>正在重试退出登录。</p>}
       </Dialog>
