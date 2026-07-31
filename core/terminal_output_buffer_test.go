@@ -60,6 +60,37 @@ func TestTerminalOutputBufferChunksOversizedWriteInOrder(t *testing.T) {
 	}
 }
 
+func TestTerminalOutputBufferBatchesOnlyAlreadyQueuedSmallWrites(t *testing.T) {
+	budget := newTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes)
+	buffer := newTerminalOutputBuffer(testOutputConfig(TerminalOutputOverflowBlock), budget, false)
+	for _, payload := range [][]byte{[]byte("ab"), []byte("cd"), []byte("ef")} {
+		if !buffer.Write(payload) {
+			t.Fatal("queued write rejected")
+		}
+	}
+
+	seen := make(chan string, 2)
+	go buffer.Run(terminalOutputConsumerLive, func(payload []byte) error {
+		seen <- string(payload)
+		return nil
+	}, nil)
+	if err := buffer.Flush(context.Background(), terminalOutputConsumerLive); err != nil {
+		t.Fatal(err)
+	}
+	buffer.Seal()
+	buffer.Wait()
+	buffer.Close()
+
+	if got := receiveOutputTest(t, seen, "batched payload"); got != "abcdef" {
+		t.Fatalf("queued payload batch = %q, want %q", got, "abcdef")
+	}
+	select {
+	case extra := <-seen:
+		t.Fatalf("queued small writes should use one ingest call, extra=%q", extra)
+	default:
+	}
+}
+
 func TestTerminalOutputBufferBlockResumesAfterBothConsumersAdvance(t *testing.T) {
 	budget := newTerminalOutputResidentBudget(MinTerminalOutputBufferCapacityBytes)
 	buffer := newTerminalOutputBuffer(testOutputConfig(TerminalOutputOverflowBlock), budget, true)

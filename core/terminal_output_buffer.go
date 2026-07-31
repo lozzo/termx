@@ -46,6 +46,7 @@ type terminalOutputConsumerState struct {
 	doneOnce        sync.Once
 	next            *terminalOutputNode
 	inFlight        *terminalOutputNode
+	inFlightLast    *terminalOutputNode
 	gapInFlight     *terminalOutputGap
 	completedSeq    uint64
 	pendingGapBytes uint64
@@ -55,6 +56,12 @@ type terminalOutputConsumerState struct {
 	gapCount        uint64
 	unavailable     error
 	failurePending  bool
+}
+
+type terminalOutputBatch struct {
+	first   *terminalOutputNode
+	last    *terminalOutputNode
+	payload []byte
 }
 
 type terminalOutputBufferStatus struct {
@@ -402,7 +409,7 @@ func (buffer *terminalOutputBuffer) run(consumer terminalOutputConsumer, ingest 
 	defer buffer.finishConsumer(consumer)
 
 	for {
-		payload, gapEvent, node, ok := buffer.next(consumer)
+		batch, gapEvent, ok := buffer.next(consumer)
 		if !ok {
 			return
 		}
@@ -414,9 +421,9 @@ func (buffer *terminalOutputBuffer) run(consumer terminalOutputConsumer, ingest 
 			buffer.completeGap(consumer, gapEvent, err, failed != nil)
 		} else {
 			if ingest != nil {
-				err = ingest(payload)
+				err = ingest(batch.payload)
 			}
-			buffer.completeNode(consumer, node, err, failed != nil)
+			buffer.completeBatch(consumer, batch, err, failed != nil)
 		}
 		if err != nil {
 			if failed != nil {
@@ -428,7 +435,7 @@ func (buffer *terminalOutputBuffer) run(consumer terminalOutputConsumer, ingest 
 	}
 }
 
-func (buffer *terminalOutputBuffer) next(consumer terminalOutputConsumer) ([]byte, *terminalOutputGap, *terminalOutputNode, bool) {
+func (buffer *terminalOutputBuffer) next(consumer terminalOutputConsumer) (*terminalOutputBatch, *terminalOutputGap, bool) {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
 	state := &buffer.consumers[consumer]
@@ -436,7 +443,7 @@ func (buffer *terminalOutputBuffer) next(consumer terminalOutputConsumer) ([]byt
 		buffer.cond.Wait()
 	}
 	if !state.active || buffer.closed {
-		return nil, nil, nil, false
+		return nil, nil, false
 	}
 	if state.pendingGapBytes > 0 {
 		gap := &terminalOutputGap{
@@ -446,33 +453,55 @@ func (buffer *terminalOutputBuffer) next(consumer terminalOutputConsumer) ([]byt
 		state.pendingGapBytes = 0
 		state.pendingGapSeq = 0
 		state.gapInFlight = gap
-		return nil, gap, nil, true
+		return nil, gap, true
 	}
 	if state.next == nil {
-		return nil, nil, nil, false
+		return nil, nil, false
 	}
-	state.inFlight = state.next
-	return state.next.payload, nil, state.next, true
+	batch := &terminalOutputBatch{first: state.next, last: state.next, payload: state.next.payload}
+	total := len(batch.payload)
+	for node := buffer.nextPendingNodeLocked(consumer, state.next.next); node != nil && total+len(node.payload) <= terminalOutputChunkBytes; node = buffer.nextPendingNodeLocked(consumer, node.next) {
+		batch.last = node
+		total += len(node.payload)
+	}
+	if batch.last != batch.first {
+		batch.payload = make([]byte, 0, total)
+		for node := batch.first; node != nil; node = buffer.nextPendingNodeLocked(consumer, node.next) {
+			batch.payload = append(batch.payload, node.payload...)
+			if node == batch.last {
+				break
+			}
+		}
+	}
+	state.inFlight = batch.first
+	state.inFlightLast = batch.last
+	return batch, nil, true
 }
 
-func (buffer *terminalOutputBuffer) completeNode(consumer terminalOutputConsumer, node *terminalOutputNode, ingestErr error, failurePending bool) {
+func (buffer *terminalOutputBuffer) completeBatch(consumer terminalOutputConsumer, batch *terminalOutputBatch, ingestErr error, failurePending bool) {
 	buffer.mu.Lock()
 	state := &buffer.consumers[consumer]
-	if state.inFlight != node {
+	if batch == nil || state.inFlight != batch.first || state.inFlightLast != batch.last {
 		buffer.mu.Unlock()
 		return
 	}
 	state.inFlight = nil
-	if node.pending&consumer.bit() != 0 {
-		node.pending &^= consumer.bit()
-		if node.seq > state.completedSeq {
-			state.completedSeq = node.seq
+	state.inFlightLast = nil
+	for node := batch.first; node != nil; node = buffer.nextPendingNodeLocked(consumer, node.next) {
+		if node.pending&consumer.bit() != 0 {
+			node.pending &^= consumer.bit()
+			if node.seq > state.completedSeq {
+				state.completedSeq = node.seq
+			}
+		}
+		if node == batch.last {
+			break
 		}
 	}
-	state.next = buffer.nextPendingNodeLocked(consumer, node.next)
+	state.next = buffer.nextPendingNodeLocked(consumer, batch.last.next)
 	if ingestErr != nil {
-		dropped := uint64(len(node.payload))
-		state.droppedBytes += uint64(len(node.payload))
+		dropped := uint64(len(batch.payload))
+		state.droppedBytes += uint64(len(batch.payload))
 		if state.pendingGapBytes == 0 {
 			state.gapCount++
 		}
@@ -561,7 +590,7 @@ func (buffer *terminalOutputBuffer) dropOldestLocked(required int64) int64 {
 	for node := buffer.head; node != nil && potential < required; node = node.next {
 		for consumer := terminalOutputConsumer(0); consumer < terminalOutputConsumerCount; consumer++ {
 			state := &buffer.consumers[consumer]
-			if node.pending&consumer.bit() == 0 || state.inFlight == node {
+			if node.pending&consumer.bit() == 0 || outputNodeInFlightLocked(state, node) {
 				continue
 			}
 			node.pending &^= consumer.bit()
@@ -590,7 +619,7 @@ func (buffer *terminalOutputBuffer) dropIncomingLocked(bytes uint64) int64 {
 			continue
 		}
 		for node := buffer.head; node != nil; node = node.next {
-			if node == state.inFlight || node.pending&consumer.bit() == 0 {
+			if outputNodeInFlightLocked(state, node) || node.pending&consumer.bit() == 0 {
 				continue
 			}
 			node.pending &^= consumer.bit()
@@ -638,7 +667,7 @@ func (buffer *terminalOutputBuffer) releaseConsumerLocked(consumer terminalOutpu
 
 func (buffer *terminalOutputBuffer) dropQueuedForConsumerLocked(consumer terminalOutputConsumer, state *terminalOutputConsumerState) {
 	for node := buffer.head; node != nil; node = node.next {
-		if node == state.inFlight || node.pending&consumer.bit() == 0 {
+		if outputNodeInFlightLocked(state, node) || node.pending&consumer.bit() == 0 {
 			continue
 		}
 		node.pending &^= consumer.bit()
@@ -647,6 +676,21 @@ func (buffer *terminalOutputBuffer) dropQueuedForConsumerLocked(consumer termina
 	if state.inFlight == nil {
 		state.next = nil
 	}
+}
+
+func outputNodeInFlightLocked(state *terminalOutputConsumerState, target *terminalOutputNode) bool {
+	if state == nil || target == nil || state.inFlight == nil {
+		return false
+	}
+	for node := state.inFlight; node != nil; node = node.next {
+		if node == target {
+			return true
+		}
+		if node == state.inFlightLast {
+			return false
+		}
+	}
+	return false
 }
 
 func (buffer *terminalOutputBuffer) reclaimLocked() int64 {
@@ -731,7 +775,7 @@ func (buffer *terminalOutputBuffer) Close() {
 		state := &buffer.consumers[consumer]
 		if state.active {
 			for node := buffer.head; node != nil; node = node.next {
-				if node == state.inFlight || node.pending&consumer.bit() == 0 {
+				if outputNodeInFlightLocked(state, node) || node.pending&consumer.bit() == 0 {
 					continue
 				}
 				node.pending &^= consumer.bit()
