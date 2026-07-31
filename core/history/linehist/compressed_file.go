@@ -310,16 +310,61 @@ func (f *CompressedLineFile) PruneRetention() error {
 }
 
 func (f *CompressedLineFile) Lines(start int, end int) ([]Line, error) {
+	var result []Line
+	err := f.VisitLines(start, end, false, func(_ int, line Line) bool {
+		result = append(result, cloneLine(line))
+		return true
+	})
+	return result, err
+}
+
+func (f *CompressedLineFile) VisitLines(start int, end int, reverse bool, visit func(index int, line Line) bool) error {
 	if f == nil || f.file == nil {
-		return nil, nil
+		return nil
 	}
 	total := f.LineCount()
 	start = clampLineIndex(start, 0, total)
 	end = clampLineIndex(end, start, total)
-	if start == end {
-		return nil, nil
+	if start == end || visit == nil {
+		return nil
 	}
-	result := make([]Line, 0, end-start)
+	if reverse {
+		if end > f.persistedLines {
+			from := maxInt(start, f.persistedLines) - f.persistedLines
+			to := end - f.persistedLines
+			for index := to - 1; index >= from; index-- {
+				if !visit(f.persistedLines+index, f.pending[index]) {
+					return nil
+				}
+			}
+		}
+		persistedEnd := minInt(end, f.persistedLines)
+		if start >= persistedEnd {
+			return nil
+		}
+		blockIndex := sort.Search(len(f.blocks), func(index int) bool {
+			return f.blocks[index].firstLine >= persistedEnd
+		}) - 1
+		for blockIndex >= 0 {
+			block := f.blocks[blockIndex]
+			if block.firstLine+block.lineCount <= start {
+				break
+			}
+			lines, err := f.readBlock(block)
+			if err != nil {
+				return err
+			}
+			from := maxInt(start, block.firstLine) - block.firstLine
+			to := minInt(persistedEnd, block.firstLine+block.lineCount) - block.firstLine
+			for index := to - 1; index >= from; index-- {
+				if !visit(block.firstLine+index, lines[index]) {
+					return nil
+				}
+			}
+			blockIndex--
+		}
+		return nil
+	}
 	persistedEnd := minInt(end, f.persistedLines)
 	if start < persistedEnd {
 		blockIndex := sort.Search(len(f.blocks), func(i int) bool {
@@ -332,12 +377,14 @@ func (f *CompressedLineFile) Lines(start int, end int) ([]Line, error) {
 			}
 			lines, err := f.readBlock(block)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			from := maxInt(start, block.firstLine) - block.firstLine
 			to := minInt(persistedEnd, block.firstLine+block.lineCount) - block.firstLine
-			for _, line := range lines[from:to] {
-				result = append(result, cloneLine(line))
+			for index := from; index < to; index++ {
+				if !visit(block.firstLine+index, lines[index]) {
+					return nil
+				}
 			}
 			blockIndex++
 		}
@@ -345,11 +392,13 @@ func (f *CompressedLineFile) Lines(start int, end int) ([]Line, error) {
 	if end > f.persistedLines {
 		from := maxInt(start, f.persistedLines) - f.persistedLines
 		to := end - f.persistedLines
-		for _, line := range f.pending[from:to] {
-			result = append(result, cloneLine(line))
+		for index := from; index < to; index++ {
+			if !visit(f.persistedLines+index, f.pending[index]) {
+				return nil
+			}
 		}
 	}
-	return result, nil
+	return nil
 }
 
 func (f *CompressedLineFile) Sync() error {

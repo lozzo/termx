@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, TerminalHistoryViewportController } from './terminalHistoryViewport'
+import { historyReplayWithViewportTail, historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, TerminalHistoryViewportController } from './terminalHistoryViewport'
 
 describe('TerminalHistoryViewportController', () => {
   it('stages the first page before a later gesture enters history', () => {
@@ -65,6 +65,29 @@ describe('historyViewportAfterApply', () => {
       bufferLength: 817,
       viewportRows: 40,
     })).toBe(285)
+  })
+
+  it('uses the daemon viewport anchor for the first frozen page', () => {
+    expect(historyViewportAfterApply({
+      operation: 'replace',
+      previouslyAppliedRows: 0,
+      restoreViewportY: 0,
+      actualPrependedRows: 0,
+      fallbackPrependedRows: 0,
+      bufferLength: 80,
+      viewportRows: 24,
+      initialViewportTop: 37,
+    })).toBe(37)
+  })
+})
+
+describe('historyReplayWithViewportTail', () => {
+  it('keeps live content in the middle by materializing only missing viewport rows', () => {
+    expect(historyReplayWithViewportTail('line-1\r\nline-2', 2, 0, 4)).toBe('line-1\r\nline-2\r\n\r\n')
+  })
+
+  it('does not pad when the frozen page already fills the viewport below the anchor', () => {
+    expect(historyReplayWithViewportTail('rows', 30, 6, 24)).toBe('rows')
   })
 })
 

@@ -18,7 +18,8 @@ func TestProtocolCoreClientAdapterUsesGeneratedHistoryWindow(t *testing.T) {
 			Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-1"}, Token: "token-1",
 			Operation: apipb.HistoryWindowOperation_HISTORY_WINDOW_OPERATION_REPLACE,
 			Size:      &apipb.TerminalSize{Cols: 80, Rows: 24}, HistoryGeneration: 7, FirstLineId: 41, LastLineId: 41,
-			Rows: []*apipb.HistoryRow{{LogicalLineId: 41, Row: &apipb.ScreenRow{Cells: []*apipb.ScreenCell{{Content: "hello", Width: 5}}}}},
+			ViewportAnchor: &apipb.HistoryViewportAnchor{TopLineId: 41, TopCellOffset: 9, ScreenCols: 80, ScreenRows: 24},
+			Rows:           []*apipb.HistoryRow{{LogicalLineId: 41, Row: &apipb.ScreenRow{Cells: []*apipb.ScreenCell{{Content: "hello", Width: 5}}}}},
 		}}})
 	}
 	adapter := ProtocolCoreClientAdapter{Application: newProtoTestApplication(t, executor)}
@@ -30,8 +31,39 @@ func TestProtocolCoreClientAdapterUsesGeneratedHistoryWindow(t *testing.T) {
 	if result.RequestID != 9 || result.Window.Token != "token-1" || len(result.Window.Rows) != 1 || result.Window.Rows[0].Text != "hello" {
 		t.Fatalf("unexpected history result %#v", result)
 	}
+	if anchor := result.Window.ViewportAnchor; !anchor.Valid || anchor.TopLineID != 41 || anchor.TopCellOffset != 9 || anchor.ScreenRows != 24 {
+		t.Fatalf("unexpected viewport anchor %#v", anchor)
+	}
 	if got := executor.commands[0].GetHistoryWindow(); got.GetTerminal().GetTerminalId() != "term-1" || got.GetLimit() != 20 {
 		t.Fatalf("unexpected history command %#v", got)
+	}
+}
+
+func TestProtocolCoreClientAdapterReleasesLateCancelledLatestToken(t *testing.T) {
+	executor := &recordingProtoExecutor{}
+	executor.handle = func(command *apipb.CommandEnvelope) *apipb.ResultEnvelope {
+		if command.GetHistoryRelease() != nil {
+			return protoTestResult(command, &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_Acknowledge{Acknowledge: &apipb.AcknowledgeResult{}}})
+		}
+		return protoTestResult(command, &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowResult{
+			Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-1"}, Token: "late-token",
+			Operation: apipb.HistoryWindowOperation_HISTORY_WINDOW_OPERATION_REPLACE,
+		}}})
+	}
+	adapter := ProtocolCoreClientAdapter{Application: newProtoTestApplication(t, executor)}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := adapter.HistoryLatest(ctx, port.HistoryLatestRequest{RequestID: 9, EndpointID: "local", TerminalID: "term-1", Rows: 20, Cols: 80})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled latest error = %v, want context canceled", err)
+	}
+	if len(executor.commands) != 2 || executor.commands[0].GetHistoryWindow() == nil {
+		t.Fatalf("late latest commands = %#v", executor.commands)
+	}
+	release := executor.commands[1].GetHistoryRelease()
+	if release.GetToken() != "late-token" || release.GetTerminal().GetTerminalId() != "term-1" {
+		t.Fatalf("late latest token was not released: %#v", release)
 	}
 }
 
@@ -115,6 +147,10 @@ type recordingProtoExecutor struct {
 func (executor *recordingProtoExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
 	executor.commands = append(executor.commands, command)
 	return executor.handle(command), nil
+}
+
+func (executor *recordingProtoExecutor) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return executor.ExecuteApplication(ctx, command)
 }
 
 func newProtoTestApplication(t *testing.T, executor *recordingProtoExecutor) *clientruntime.ApplicationSession {

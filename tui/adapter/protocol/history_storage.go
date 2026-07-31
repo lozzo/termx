@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	clientruntime "github.com/anytty/anytty/client/runtime"
 	"github.com/anytty/anytty/proto/apipb"
@@ -74,7 +75,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req 
 	window, err := adapter.historyWindow(ctx, &apipb.HistoryWindowCommand{
 		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
 		Mode:     apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST, Limit: int32(req.Rows), Cols: int32(req.Cols), HistoryGeneration: req.GenerationBoundary,
-	})
+	}, true)
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
@@ -86,7 +87,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req p
 		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDER,
 		Limit: int32(req.Rows), Cols: int32(req.Cols), Token: req.Token, HistoryGeneration: req.Generation,
 		BeforeCursor: historyCursorToProto(req.Cursor), BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
-	})
+	}, false)
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
@@ -98,7 +99,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryNewer(ctx context.Context, req p
 		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_NEWER,
 		Limit: int32(req.Rows), Cols: int32(req.Cols), Token: req.Token, HistoryGeneration: req.Generation,
 		AfterCursor: historyCursorToProto(req.Cursor), BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
-	})
+	}, false)
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
@@ -110,7 +111,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req 
 		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDEST,
 		Limit: int32(req.Rows), Cols: int32(req.Cols), Token: req.Token, HistoryGeneration: req.Generation,
 		BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
-	})
+	}, false)
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, err
 	}
@@ -136,13 +137,26 @@ func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, r
 	return port.HistoryCopyRangeResult{Text: result.GetText()}, nil
 }
 
-func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, command *apipb.HistoryWindowCommand) (state.HistoryWindow, error) {
+func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, command *apipb.HistoryWindowCommand, terminalResponse bool) (state.HistoryWindow, error) {
 	if adapter.Application == nil {
 		return state.HistoryWindow{}, fmt.Errorf("missing history application session")
 	}
 	mode := strings.ToLower(strings.TrimPrefix(command.GetMode().String(), "HISTORY_WINDOW_MODE_"))
 	finishRPC := perftrace.Measure("tui.protocol.history_window." + mode + ".rpc")
-	window, err := adapter.Application.HistoryWindow(ctx, command)
+	var window *apipb.HistoryWindowResult
+	var err error
+	if terminalResponse {
+		var result *apipb.ResultEnvelope
+		result, err = adapter.Application.ExecuteTerminal(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: command}})
+		if result != nil {
+			window = result.GetHistoryWindow()
+		}
+		if err == nil && window == nil {
+			err = fmt.Errorf("history_window returned no result")
+		}
+	} else {
+		window, err = adapter.Application.HistoryWindow(ctx, command)
+	}
 	if window != nil {
 		finishRPC(len(window.GetRows()))
 		perftrace.Count("tui.protocol.history_window."+mode+".rows", len(window.GetRows()))
@@ -151,6 +165,14 @@ func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, comm
 	}
 	if err != nil {
 		return state.HistoryWindow{}, normalizeProtocolHistoryWindowError(err)
+	}
+	if terminalResponse && ctx.Err() != nil {
+		if window.GetToken() != "" {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			_ = adapter.Application.HistoryRelease(cleanupCtx, &apipb.HistoryReleaseCommand{Terminal: command.GetTerminal(), Token: window.GetToken(), HistoryGeneration: window.GetHistoryGeneration()})
+			cancel()
+		}
+		return state.HistoryWindow{}, ctx.Err()
 	}
 	finishConvert := perftrace.Measure("tui.protocol.history_window." + mode + ".convert")
 	converted := historyWindowFromProto(window, int(command.GetCols()))
@@ -218,12 +240,17 @@ func historyWindowFromProto(window *apipb.HistoryWindowResult, requestedCols int
 	sourceLines := historySourceLinesFromProto(window)
 	rows, lines := historyRowsFromProto(window, sourceLines, cols)
 	cursor := window.GetCursor()
+	anchor := window.GetViewportAnchor()
 	return state.HistoryWindow{
 		TerminalID: window.GetTerminal().GetTerminalId(), Token: window.GetToken(), Op: historyOperationFromProto(window.GetOperation()), Cols: cols,
 		SourceLines: sourceLines, Rows: rows, Lines: lines,
 		Cursor:  state.HistoryCursor{Valid: cursor != nil, BeforeLineID: cursor.GetLineId(), BeforeRowInLine: int(cursor.GetRowInLine()), Segment: historySegmentFromProto(cursor.GetSegment())},
 		HasMore: window.GetHasMore(), Generation: window.GetHistoryGeneration(),
-		Boundary:    state.HistoryBoundary{FirstLineID: window.GetFirstLineId(), LastLineID: window.GetLastLineId()},
+		Boundary: state.HistoryBoundary{FirstLineID: window.GetFirstLineId(), LastLineID: window.GetLastLineId()},
+		ViewportAnchor: state.HistoryViewportAnchor{
+			TopLineID: anchor.GetTopLineId(), TopCellOffset: int(anchor.GetTopCellOffset()), AtEnd: anchor.GetAtEnd(),
+			ScreenCols: int(anchor.GetScreenCols()), ScreenRows: int(anchor.GetScreenRows()), Valid: anchor != nil,
+		},
 		LoadedLines: int(window.GetLoadedLines()), TotalLines: int(window.GetLogicalTotal()),
 	}
 }

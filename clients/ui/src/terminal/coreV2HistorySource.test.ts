@@ -5,6 +5,7 @@ import {
   HistoryCursorSchema,
   HistoryLineSpanSchema,
   HistoryRowSchema,
+  HistoryViewportAnchorSchema,
   HistoryWindowOperation,
   HistoryWindowResultSchema,
   RowOwnership,
@@ -21,12 +22,18 @@ describe('CoreV2HistorySource generated Proto API', () => {
       token: 'hist-token', operation: HistoryWindowOperation.REPLACE, size: create(TerminalSizeSchema, { cols: 80, rows: 24 }),
       loadedRows: 0, totalRows: 3, loadedLines: 0, logicalTotal: 3, hasMore: true, historyGeneration: 7n,
       firstLineId: 42n, lastLineId: 43n, cursor: create(HistoryCursorSchema, { lineId: 42n }),
+      viewportAnchor: create(HistoryViewportAnchorSchema, {
+        topLineId: 42n, topCellOffset: 17, screenCols: 80, screenRows: 24,
+      }),
     })))
     const source = createCoreV2HistorySource(session, 'machine-local')
 
     const result = await source.window({ terminalId: 'terminal-1', mode: 'latest', limit: 20, cols: 80 })
 
-    expect(result).toMatchObject({ token: 'hist-token', generation: '7', totalRows: 3, logicalTotal: 3, hasMore: true })
+    expect(result).toMatchObject({
+      token: 'hist-token', generation: '7', totalRows: 3, logicalTotal: 3, hasMore: true,
+      viewportAnchor: { topLineId: '42', topCellOffset: 17, screenCols: 80, screenRows: 24 },
+    })
     expect(session.commands[0]?.command).toMatchObject({
       case: 'historyWindow',
       value: { terminal: { endpointId: 'machine-local', terminalId: 'terminal-1' }, limit: 20, cols: 80 },

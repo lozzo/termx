@@ -140,6 +140,12 @@ func HistoryWindowToProto(endpointID string, window history.HistoryWindow) *apip
 		Cursor:            historyCursorToProto(window.Boundary.Cursor),
 		TimestampUnixNano: window.Timestamp.UnixNano(),
 	}
+	if window.ViewportAnchor.Valid {
+		result.ViewportAnchor = &apipb.HistoryViewportAnchor{
+			TopLineId: uint64(window.ViewportAnchor.TopLineID), TopCellOffset: int32(window.ViewportAnchor.TopCellOffset),
+			AtEnd: window.ViewportAnchor.AtEnd, ScreenCols: uint32(window.ViewportAnchor.ScreenCols), ScreenRows: uint32(window.ViewportAnchor.ScreenRows),
+		}
+	}
 	for _, row := range window.Rows {
 		result.Rows = append(result.Rows, historyRowToProto(row))
 	}
@@ -298,7 +304,9 @@ func historyCellsToProto(cells []history.Cell) *apipb.ScreenRow {
 }
 
 func historyCellsShareRun(left, right history.Cell) bool {
-	return left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
+	// Web history reflows each run by grapheme count, so a run may only contain
+	// graphemes with the same authoritative terminal width.
+	return left.Width == right.Width && left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
 }
 
 func historyStyleToProto(style history.CellStyle) *apipb.CellStyle {

@@ -1,10 +1,12 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommandEnvelopeSchema, ResultEnvelopeSchema } from '../generated/apipb/application_pb'
+import { AcknowledgeResultSchema, CommandEnvelopeSchema, ResultEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
+import { EventSubscribeCommandSchema, EventSubscriptionResultSchema } from '../generated/apipb/events_pb'
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
-import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
-import { ConnectionPolicyApplyResultSchema, ConnectionPolicyAvailabilityReason, ConnectionPolicyGetResultSchema, ConnectionPolicyRouteAvailabilitySchema, ConnectionPolicySchema, ConnectionPolicyStateSchema, ConnectionRouteKind, ConnectionSnapshotGetResultSchema, ConnectionSnapshotSchema, EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
+import { HistoryWindowCommandSchema, HistoryWindowMode, HistoryWindowResultSchema } from '../generated/apipb/history_pb'
+import { TerminalListCommandSchema, TerminalRefSchema } from '../generated/apipb/terminal_pb'
+import { ConnectionPolicyApplyResultSchema, ConnectionPolicyAvailabilityReason, ConnectionPolicyGetResultSchema, ConnectionPolicyRouteAvailabilitySchema, ConnectionPolicySchema, ConnectionPolicyStateSchema, ConnectionRouteKind, ConnectionSnapshotGetResultSchema, ConnectionSnapshotSchema, EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, type EventEnvelope, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
 import { EndpointConfigV1Schema, EndpointRegistryV1Schema, EndpointRouteConfigV1Schema, EndpointRoutePreference, ManagedWebRTCRelayMode, ManagedWebRTCRelayTransport, ManagedWebRTCRouteConfigSchema } from '../generated/remoteauthpb/remote_auth_pb'
 import { BindingOperation, ProtoBindingClient, ProtoBindingConnector, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
@@ -542,6 +544,44 @@ describe('ProtoBindingClient late execute cleanup', () => {
   await client.close()
   })
 
+  it.each([
+    ['history', 'historyRelease'],
+    ['event', 'releaseResource'],
+  ] as const)('destroys a late %s resource', async (kind, cleanupCase) => {
+    const backend = new LateSessionResourceBackend(kind)
+    const client = new ProtoBindingClient(backend)
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    const controller = new AbortController()
+    const command = kind === 'history'
+      ? create(CommandEnvelopeSchema, { command: { case: 'historyWindow', value: create(HistoryWindowCommandSchema) } })
+      : create(CommandEnvelopeSchema, { command: { case: 'eventSubscribe', value: create(EventSubscribeCommandSchema) } })
+    const pending = session.execute(command, { signal: controller.signal })
+    controller.abort(new DOMException(`cancel ${kind}`, 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    backend.emitLateResult()
+    await backend.cleanupObserved
+    expect(backend.cleanupCase).toBe(cleanupCase)
+    await client.close()
+  })
+
+  it('keeps an existing frozen token when a cancelled older page arrives late', async () => {
+    const backend = new LateSessionResourceBackend('history')
+    const client = new ProtoBindingClient(backend)
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    const controller = new AbortController()
+    const command = create(CommandEnvelopeSchema, { command: { case: 'historyWindow', value: create(HistoryWindowCommandSchema, {
+      mode: HistoryWindowMode.OLDER,
+      token: 'history-token',
+    }) } })
+    const pending = session.execute(command, { signal: controller.signal })
+    controller.abort(new DOMException('cancel older history page', 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    backend.emitLateResult()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(backend.cleanupCase).toBe('')
+    await client.close()
+  })
+
   it('cleans a FileUploadOpen result emitted before the operation handle returns', async () => {
     const backend = new LateFileOpenBackend('success', true)
     const client = new ProtoBindingClient(backend)
@@ -640,6 +680,69 @@ class LateFileOpenBackend implements ProtoBindingBackend {
   }
 
   async close(): Promise<void> { this.closed = true }
+}
+
+class LateSessionResourceBackend implements ProtoBindingBackend {
+  cleanupCase = ''
+  private onEvent: ((payload: Uint8Array) => void) | null = null
+  private next = 0n
+  private lateOperation = 0n
+  private cleanupResolve!: () => void
+  readonly cleanupObserved = new Promise<void>((resolve) => { this.cleanupResolve = resolve })
+
+  constructor(private readonly kind: 'history' | 'event') {}
+
+  start(onEvent: (payload: Uint8Array) => void): void { this.onEvent = onEvent }
+
+  async request(operation: BindingOperationCode, payload: Uint8Array, handle?: bigint): Promise<bigint> {
+    if (operation === BindingOperation.OPEN_SESSION) {
+      const operationHandle = ++this.next
+      queueMicrotask(() => this.emit(create(EventEnvelopeSchema, { event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+        operationHandle, sessionHandle: 30n, session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+      }) } })))
+      return operationHandle
+    }
+    if (operation === BindingOperation.EXECUTE) {
+      const operationHandle = ++this.next
+      const command = fromBinary(CommandEnvelopeSchema, payload)
+      if (command.command.case === 'historyWindow' || command.command.case === 'eventSubscribe') {
+        this.lateOperation = operationHandle
+        return operationHandle
+      }
+      this.cleanupCase = command.command.case
+      this.cleanupResolve()
+      queueMicrotask(() => this.emit(create(EventEnvelopeSchema, { event: { case: 'execute', value: create(ExecuteResultSchema, {
+        operationHandle,
+        sessionHandle: handle ?? 0n,
+        result: create(ResultEnvelopeSchema, { result: { case: 'acknowledge', value: create(AcknowledgeResultSchema) } }),
+      }) } })))
+      return operationHandle
+    }
+    return 0n
+  }
+
+  emitLateResult(): void {
+    const result = this.kind === 'history'
+      ? create(ResultEnvelopeSchema, { result: { case: 'historyWindow', value: create(HistoryWindowResultSchema, {
+          terminal: create(TerminalRefSchema, { endpointId: 'studio', terminalId: 'term-1' }),
+          token: 'history-token',
+          historyGeneration: 7n,
+        }) } })
+      : create(ResultEnvelopeSchema, { result: { case: 'eventSubscription', value: create(EventSubscriptionResultSchema, {
+          subscription: create(ResourceHandleSchema, { kind: ResourceKind.SUBSCRIPTION, opaqueToken: Uint8Array.of(9) }),
+        }) } })
+    this.emit(create(EventEnvelopeSchema, { event: { case: 'execute', value: create(ExecuteResultSchema, {
+      operationHandle: this.lateOperation,
+      sessionHandle: 30n,
+      result,
+    }) } }))
+  }
+
+  async close(): Promise<void> {}
+
+  private emit(event: EventEnvelope): void {
+    this.onEvent?.(toBinary(EventEnvelopeSchema, event))
+  }
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

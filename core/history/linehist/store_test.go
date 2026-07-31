@@ -142,6 +142,28 @@ func TestStoreOlderPagingRoundTripCoversFullProjection(t *testing.T) {
 	}
 }
 
+func TestStoreReadsEachColdWindowInOneStorageCall(t *testing.T) {
+	storage := &durabilityLineStorage{lines: make([]Line, 100)}
+	store := NewStore("bulk-window", NewEngine(storage))
+	t.Cleanup(func() { _ = store.Close() })
+
+	latest, err := store.LatestWindow(history.HistoryWindowRequest{Cols: 80, Limit: 100})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(latest.Rows) != 100 || storage.linesCalls.Load() != 1 {
+		t.Fatalf("latest rows=%d storage reads=%d, want 100 rows in one read", len(latest.Rows), storage.linesCalls.Load())
+	}
+	storage.linesCalls.Store(0)
+	oldest, err := store.OldestWindow(history.HistoryWindowRequest{Cols: 80, Limit: 100})
+	if err != nil {
+		t.Fatalf("oldest window: %v", err)
+	}
+	if len(oldest.Rows) != 100 || storage.linesCalls.Load() != 1 {
+		t.Fatalf("oldest rows=%d storage reads=%d, want 100 rows in one read", len(oldest.Rows), storage.linesCalls.Load())
+	}
+}
+
 func TestStoreReturnsLogicalColdLinesIndependentOfRequestCols(t *testing.T) {
 	harness := newStoreHarness(t, 6, 2)
 	// 12 字符命令在 6 列屏软换行；滚出后落盘为一条 logical line。
@@ -186,6 +208,31 @@ func TestStoreJoinsOpenTailWithOnScreenContinuation(t *testing.T) {
 	if row.Committed || row.Segment != history.HistorySegmentCurrentPrimaryFrame {
 		t.Fatalf("joined open-tail line is still mutable hot content, got %#v", row)
 	}
+	wantAnchor := history.HistoryViewportAnchor{
+		TopLineID: 1, TopCellOffset: 6, ScreenCols: 6, ScreenRows: 2, Valid: true,
+	}
+	if window.ViewportAnchor != wantAnchor {
+		t.Fatalf("viewport anchor = %#v, want %#v", window.ViewportAnchor, wantAnchor)
+	}
+}
+
+func TestStoreViewportAnchorPreservesLeadingBlankScreenRows(t *testing.T) {
+	harness := newStoreHarness(t, 12, 5)
+	harness.write("\x1b[3;1Hmiddle")
+
+	window, err := harness.store.LatestWindow(history.HistoryWindowRequest{Cols: 12, Limit: 100})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := windowTextsForTest(window); strings.Join(got, "|") != "||middle" {
+		t.Fatalf("leading screen rows = %#v, want two blanks then middle", got)
+	}
+	wantAnchor := history.HistoryViewportAnchor{
+		TopLineID: 1, ScreenCols: 12, ScreenRows: 5, Valid: true,
+	}
+	if window.ViewportAnchor != wantAnchor {
+		t.Fatalf("viewport anchor = %#v, want %#v", window.ViewportAnchor, wantAnchor)
+	}
 }
 
 func TestStoreAltScreenProjectsFixedGridWithColdIntact(t *testing.T) {
@@ -224,6 +271,9 @@ func TestStoreAltScreenProjectsFixedGridWithColdIntact(t *testing.T) {
 	if !strings.Contains(joined, "ALT-FRAME") {
 		t.Fatalf("alt frame content missing, got %v", texts)
 	}
+	if anchor := window.ViewportAnchor; !anchor.Valid || anchor.AtEnd || anchor.TopLineID != altRow.LineID || anchor.ScreenRows != 2 {
+		t.Fatalf("alt viewport anchor must point at the first alt row, got %#v", anchor)
+	}
 }
 
 func TestStoreFreezeIsStableAcrossLaterWritesAndCopyUsesToken(t *testing.T) {
@@ -253,6 +303,9 @@ func TestStoreFreezeIsStableAcrossLaterWritesAndCopyUsesToken(t *testing.T) {
 	afterTexts := strings.Join(windowTextsForTest(frozenAfter), "|")
 	if beforeTexts != afterTexts {
 		t.Fatalf("frozen view changed after later writes: before=%q after=%q", beforeTexts, afterTexts)
+	}
+	if frozenBefore.ViewportAnchor != frozenAfter.ViewportAnchor || snapshot.ViewportAnchor != frozenBefore.ViewportAnchor {
+		t.Fatalf("frozen viewport anchor changed: snapshot=%#v before=%#v after=%#v", snapshot.ViewportAnchor, frozenBefore.ViewportAnchor, frozenAfter.ViewportAnchor)
 	}
 	if strings.Contains(afterTexts, "line07") {
 		t.Fatalf("frozen view must not include post-freeze writes, got %q", afterTexts)
@@ -291,6 +344,9 @@ func TestStoreEmptyAndInvalidCursorWindows(t *testing.T) {
 	}
 	if len(latest.Rows) != 0 || latest.LogicalTotal != 0 {
 		t.Fatalf("empty store latest = %#v, want empty", latest)
+	}
+	if anchor := latest.ViewportAnchor; !anchor.Valid || !anchor.AtEnd || anchor.ScreenCols != 12 || anchor.ScreenRows != 3 {
+		t.Fatalf("empty screen must anchor at the end without creating rows, got %#v", anchor)
 	}
 	older, err := harness.store.OlderWindow(history.HistoryWindowRequest{Cols: 12, Limit: 100})
 	if err != nil {

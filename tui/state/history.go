@@ -59,6 +59,15 @@ type HistoryBoundary struct {
 	LastLineID  uint64
 }
 
+type HistoryViewportAnchor struct {
+	TopLineID     uint64
+	TopCellOffset int
+	AtEnd         bool
+	ScreenCols    int
+	ScreenRows    int
+	Valid         bool
+}
+
 // HistoryPendingRequest 保存 reducer 接纳 response 所需的本地 pending 状态。
 type HistoryPendingRequest struct {
 	ID              RequestID
@@ -159,42 +168,44 @@ type HistoryLineSpan struct {
 
 // HistoryWindow 是 state 层使用的 core-v2 authoritative window DTO。
 type HistoryWindow struct {
-	ViewID       string
-	PaneID       string
-	EndpointID   EndpointID
-	TerminalID   string
-	Token        string
-	Op           HistoryWindowOp
-	Cols         int
-	SourceLines  []HistoryLogicalLine
-	Rows         []HistoryRow
-	Lines        []HistoryLineSpan
-	Cursor       HistoryCursor
-	HasMore      bool
-	Generation   uint64
-	Boundary     HistoryBoundary
-	LoadedLines  int
-	TotalLines   int
-	ResponseKind HistoryRequestKind
+	ViewID         string
+	PaneID         string
+	EndpointID     EndpointID
+	TerminalID     string
+	Token          string
+	Op             HistoryWindowOp
+	Cols           int
+	SourceLines    []HistoryLogicalLine
+	Rows           []HistoryRow
+	Lines          []HistoryLineSpan
+	Cursor         HistoryCursor
+	HasMore        bool
+	Generation     uint64
+	Boundary       HistoryBoundary
+	ViewportAnchor HistoryViewportAnchor
+	LoadedLines    int
+	TotalLines     int
+	ResponseKind   HistoryRequestKind
 }
 
 // HistoryStore 只保存 authoritative window、请求状态和 exhausted marker。
 type HistoryStore struct {
-	ViewID      string
-	PaneID      string
-	EndpointID  EndpointID
-	TerminalID  string
-	Token       string
-	Cols        int
-	SourceLines []HistoryLogicalLine
-	Rows        []HistoryRow
-	Lines       []HistoryLineSpan
-	Cursor      HistoryCursor
-	Generation  uint64
-	Boundary    HistoryBoundary
-	HasMore     bool
-	Exhausted   ExhaustedMarker
-	Pending     *HistoryPendingRequest
+	ViewID         string
+	PaneID         string
+	EndpointID     EndpointID
+	TerminalID     string
+	Token          string
+	Cols           int
+	SourceLines    []HistoryLogicalLine
+	Rows           []HistoryRow
+	Lines          []HistoryLineSpan
+	Cursor         HistoryCursor
+	Generation     uint64
+	Boundary       HistoryBoundary
+	ViewportAnchor HistoryViewportAnchor
+	HasMore        bool
+	Exhausted      ExhaustedMarker
+	Pending        *HistoryPendingRequest
 }
 
 // ExhaustedMarker 表示某次 older response 证明对应 cursor 已 exhausted。
@@ -250,6 +261,7 @@ type CopyModeStore struct {
 	// latest 飞行期间只累计净滚动行数；不能保存输入事件队列或历史文本副本。
 	EnteringScrollDelta int
 	ViewportTop         int
+	ViewportTailRows    int
 	ViewRows            int
 	Cursor              CopyPosition
 	Mark                *CopyPosition
@@ -515,6 +527,7 @@ func (store CopyModeStore) BindLatestRef(paneID string, viewID string, ref Termi
 	store.EndpointID = ref.EndpointID
 	store.TerminalID = ref.TerminalID
 	store.EnteringScrollDelta = 0
+	store.ViewportTailRows = 0
 	store.RequestID = requestID
 	store.BoundCols = cols
 	store.ViewRows = rows
@@ -587,13 +600,19 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 		totalRows = len(window.Rows)
 	}
 	if totalRows > 0 {
-		// 中文说明：copy/history 的 viewport 只由 core authoritative rows 决定；
-		// live surface 即使存在或出错，也不能参与 history 入口、搜索或复制结论。
 		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
 		viewportTop := maxCopyInt(0, totalRows-visibleRows)
-		if anchoredTop, ok := currentPrimaryFrameViewportTop(window.Rows); ok && anchoredTop > viewportTop {
-			viewportTop = clampCopyInt(anchoredTop, 0, totalRows-1)
+		store.ViewportTailRows = 0
+		if anchoredTop, ok := historyViewportAnchorTop(window.Rows, window.ViewportAnchor); ok {
+			viewportTop = clampCopyInt(anchoredTop, 0, totalRows)
+			visibleHistoryRows := totalRows - viewportTop
+			if visibleHistoryRows < visibleRows {
+				store.ViewportTailRows = visibleRows - visibleHistoryRows
+			}
+			if cursorRow >= viewportTop+visibleRows {
+				cursorRow = viewportTop + visibleRows - 1
+			}
 		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
@@ -602,6 +621,7 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 		}
 	} else {
 		store.ViewportTop = 0
+		store.ViewportTailRows = 0
 		store.Cursor = CopyPosition{}
 	}
 	store.Matches = nil
@@ -610,35 +630,33 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	return store
 }
 
-func currentPrimaryFrameViewportTop(rows []HistoryRow) (int, bool) {
-	if len(rows) == 0 {
+func historyViewportAnchorTop(rows []HistoryRow, anchor HistoryViewportAnchor) (int, bool) {
+	if !anchor.Valid {
 		return 0, false
 	}
-	last := rows[len(rows)-1]
-	if last.Segment != HistoryCursorSegmentCurrentPrimaryFrame || !last.ScreenRowSet {
-		return 0, false
+	if anchor.AtEnd {
+		return len(rows), true
 	}
-	start := len(rows)
-	minScreenRow := last.ScreenRow
-	for start > 0 {
-		row := rows[start-1]
-		if row.Segment != HistoryCursorSegmentCurrentPrimaryFrame ||
-			row.SessionID != last.SessionID ||
-			row.FrameID != last.FrameID {
-			break
+	remaining := maxCopyInt(0, anchor.TopCellOffset)
+	found := false
+	for index, row := range rows {
+		if row.LineID != anchor.TopLineID {
+			if found {
+				break
+			}
+			continue
 		}
-		start--
-		if row.ScreenRowSet && row.ScreenRow < minScreenRow {
-			minScreenRow = row.ScreenRow
+		found = true
+		if remaining == 0 {
+			return index, true
 		}
+		width := HistoryRowDisplayWidth(row)
+		if remaining < width {
+			return index, true
+		}
+		remaining -= width
 	}
-	if minScreenRow < 0 {
-		minScreenRow = 0
-	}
-	// 中文说明：current primary frame 的 PTY screen row 是 core-v2 传来的
-	// fixed-grid 语义坐标。入口 viewport 只用它丢弃过量的 frame 前 rows，
-	// 不创建 renderer padding，也不从 live surface 匹配当前屏。
-	return maxCopyInt(0, start-minScreenRow), true
+	return 0, false
 }
 
 func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
@@ -669,6 +687,7 @@ func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRow
 	// 中文说明：oldest 是用户显式跳到最老页，必须从第 0 行开始显示；
 	// 不能复用 latest 的尾部定位，否则 `g` 会跳过真正最老的第一屏。
 	store.ViewportTop = 0
+	store.ViewportTailRows = 0
 	store.Cursor = CopyPosition{}
 	store.Matches = nil
 	store.ActiveMatch = 0
@@ -696,6 +715,26 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, af
 	}
 	store.BoundCols = cols
 	store.Empty = false
+	return store
+}
+
+// RestoreViewportTail restores the frozen live viewport's virtual blank rows
+// once newer pagination reaches the original viewport anchor again.
+func (store CopyModeStore) RestoreViewportTail(history HistoryStore) CopyModeStore {
+	if len(history.Rows) > 0 {
+		last := history.Rows[len(history.Rows)-1]
+		if last.LineID != history.Boundary.LastLineID || last.ClippedEnd {
+			return store
+		}
+	} else if !history.ViewportAnchor.AtEnd {
+		return store
+	}
+	anchoredTop, ok := historyViewportAnchorTop(history.Rows, history.ViewportAnchor)
+	if !ok {
+		return store
+	}
+	visibleHistoryRows := len(history.Rows) - anchoredTop
+	store.ViewportTailRows = maxCopyInt(0, copyVisibleRowsForStore(store)-visibleHistoryRows)
 	return store
 }
 
@@ -783,6 +822,9 @@ func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows in
 	if shift > 0 {
 		store.ViewportTop -= shift
 	}
+	if trim.DroppedRowsAfter > 0 {
+		store.ViewportTailRows = 0
+	}
 	store.Cursor = shiftCopyPositionAfterTrim(store.Cursor, shift, totalRows)
 	if store.Mark != nil {
 		mark := shiftCopyPositionAfterTrim(*store.Mark, shift, totalRows)
@@ -798,7 +840,7 @@ func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows in
 	if store.ActiveMatch >= len(store.Matches) {
 		store.ActiveMatch = maxCopyInt(0, len(store.Matches)-1)
 	}
-	store.ViewportTop = clampCopyInt(store.ViewportTop, 0, maxCopyInt(0, totalRows-copyVisibleRowsForStore(store)))
+	store.ViewportTop = clampCopyInt(store.ViewportTop, 0, copyModeViewportMaxTop(store, totalRows))
 	return store.FollowCursor(totalRows)
 }
 
@@ -903,6 +945,24 @@ func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore 
 	return store.FollowCursor(totalRows)
 }
 
+// ScrollNewer moves through real history rows first, then scrolls the viewport
+// across the frozen live screen's virtual blank tail.
+func (store CopyModeStore) ScrollNewer(delta int, totalRows int) (CopyModeStore, int) {
+	if delta <= 0 {
+		return store, 0
+	}
+	beforeCursor := store.Cursor.Row
+	store = store.ScrollCursor(delta, totalRows)
+	consumed := store.Cursor.Row - beforeCursor
+	remaining := delta - consumed
+	if remaining <= 0 {
+		return store, consumed
+	}
+	beforeTop := store.ViewportTop
+	store = store.ScrollViewport(remaining, totalRows)
+	return store, consumed + store.ViewportTop - beforeTop
+}
+
 // ScrollViewport 只表达显式 viewport 重定位或内部锚点修正。
 // 普通用户浏览输入必须优先走 ScrollCursor，避免页面先跳而 cursor 失去 tmux 式位置感。
 func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStore {
@@ -915,7 +975,7 @@ func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStor
 	if height <= 0 {
 		height = 1
 	}
-	maxTop := maxCopyInt(0, totalRows-height)
+	maxTop := copyModeViewportMaxTop(store, totalRows)
 	offset := store.Cursor.Row - store.ViewportTop
 	if offset < 0 {
 		offset = 0
@@ -1309,9 +1369,13 @@ func (store CopyModeStore) MoveMatch(delta int) CopyModeStore {
 }
 
 func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
-	maxTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
+	maxTop := copyModeViewportMaxTop(store, totalRows)
 	store.ViewportTop = clampCopyInt(store.ViewportTop+delta, 0, maxTop)
 	return store
+}
+
+func copyModeViewportMaxTop(store CopyModeStore, totalRows int) int {
+	return maxCopyInt(0, totalRows+maxCopyInt(0, store.ViewportTailRows)-copyVisibleRowsForStore(store))
 }
 
 func cloneHistoryLogicalLines(lines []HistoryLogicalLine) []HistoryLogicalLine {

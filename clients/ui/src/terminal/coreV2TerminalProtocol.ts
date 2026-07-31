@@ -64,6 +64,10 @@ export interface CoreV2HistoryRow {
   wrapped?: boolean | undefined
   ownership?: string | undefined
   timestampUnixMs?: number | undefined
+  fixedGrid?: boolean | undefined
+  screenCols?: number | undefined
+  screenRow?: number | undefined
+  screenRowSet?: boolean | undefined
   logicalLineId?: string | undefined
   rowInLine?: number | undefined
 }
@@ -90,6 +94,13 @@ export interface CoreV2HistoryWindow {
   logicalTotal: number
   hasMore: boolean
   generation: string
+  viewportAnchor?: {
+    topLineId: string
+    topCellOffset: number
+    atEnd: boolean
+    screenCols: number
+    screenRows: number
+  } | undefined
   firstRowId?: string | undefined
   lastRowId?: string | undefined
   firstLineId?: string | undefined
@@ -123,6 +134,13 @@ export function coreV2HistoryWindowFromAPI(value: HistoryWindowResult): CoreV2Hi
     logicalTotal: value.logicalTotal,
     hasMore: value.hasMore,
     generation: value.historyGeneration.toString(),
+    viewportAnchor: value.viewportAnchor ? {
+      topLineId: value.viewportAnchor.topLineId.toString(),
+      topCellOffset: value.viewportAnchor.topCellOffset,
+      atEnd: value.viewportAnchor.atEnd,
+      screenCols: value.viewportAnchor.screenCols,
+      screenRows: value.viewportAnchor.screenRows,
+    } : undefined,
     firstRowId: optionalID(value.firstRowId),
     lastRowId: optionalID(value.lastRowId),
     firstLineId: optionalID(value.firstLineId),
@@ -139,6 +157,10 @@ function historyRowFromAPI(row: HistoryRow, index: number): CoreV2HistoryRow {
     wrapped: row.wrapped,
     ownership: historyOwnership(row.ownership),
     timestampUnixMs: unixNanoToMs(row.timestampUnixNano),
+    fixedGrid: row.fixedGrid,
+    screenCols: row.screenCols,
+    screenRow: row.screenRows,
+    screenRowSet: row.screenRowSet,
     logicalLineId: optionalID(row.logicalLineId),
     rowInLine: row.rowInLine,
   }

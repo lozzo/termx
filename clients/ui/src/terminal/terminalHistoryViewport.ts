@@ -65,14 +65,30 @@ export function historyViewportAfterApply(input: {
   fallbackPrependedRows: number
   bufferLength: number
   viewportRows: number
+  initialViewportTop?: number | undefined
 }): number {
   const rowDelta = input.actualPrependedRows > 0
     ? input.actualPrependedRows
     : input.fallbackPrependedRows
   if (input.operation === 'replace' && input.previouslyAppliedRows === 0) {
+    if (input.initialViewportTop !== undefined) {
+      return Math.max(0, Math.min(input.initialViewportTop, input.bufferLength - input.viewportRows))
+    }
     return Math.max(0, input.bufferLength - input.viewportRows)
   }
   return Math.max(0, input.restoreViewportY + rowDelta)
+}
+
+export function historyReplayWithViewportTail(
+  text: string,
+  loadedRows: number,
+  viewportTop: number | undefined,
+  viewportRows: number,
+): string {
+  if (viewportTop === undefined || viewportRows <= 0) return text
+  const rowsBelowTop = Math.max(0, loadedRows - viewportTop)
+  const tailRows = Math.max(0, viewportRows - rowsBelowTop)
+  return tailRows > 0 ? `${text}${'\r\n'.repeat(tailRows)}` : text
 }
 
 export function terminalScrollLineDelta(desiredViewportY: number, currentViewportY: number): number {

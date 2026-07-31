@@ -12,6 +12,8 @@ type durabilityLineStorage struct {
 	appendErr  error
 	syncErr    error
 	closeErr   error
+	linesCalls atomic.Int32
+	linesSeen  atomic.Int32
 	syncCalls  atomic.Int32
 	closeCalls atomic.Int32
 }
@@ -28,7 +30,27 @@ func (storage *durabilityLineStorage) AppendBoundary() error { return nil }
 func (storage *durabilityLineStorage) LineCount() int        { return len(storage.lines) }
 func (storage *durabilityLineStorage) Base() int             { return 0 }
 func (storage *durabilityLineStorage) Lines(start int, end int) ([]Line, error) {
+	storage.linesCalls.Add(1)
 	return append([]Line(nil), storage.lines[start:end]...), nil
+}
+func (storage *durabilityLineStorage) VisitLines(start int, end int, reverse bool, visit func(index int, line Line) bool) error {
+	storage.linesCalls.Add(1)
+	if reverse {
+		for index := end - 1; index >= start; index-- {
+			storage.linesSeen.Add(1)
+			if !visit(index, storage.lines[index]) {
+				break
+			}
+		}
+		return nil
+	}
+	for index := start; index < end; index++ {
+		storage.linesSeen.Add(1)
+		if !visit(index, storage.lines[index]) {
+			break
+		}
+	}
+	return nil
 }
 func (storage *durabilityLineStorage) Sync() error {
 	storage.syncCalls.Add(1)

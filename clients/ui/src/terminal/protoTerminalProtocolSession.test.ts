@@ -210,6 +210,38 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
     })
   })
 
+  it('loads frozen alternate-screen history through the same pager', async () => {
+    let session: MockProtoSession
+    session = new MockProtoSession('machine-alt-history', (command) => {
+      if (command.command.case === 'historyWindow') {
+        return protoResult('historyWindow', create(HistoryWindowResultSchema, {
+          terminal: terminalRef(session, 'terminal-alt'),
+          token: 'alt-token',
+          operation: HistoryWindowOperation.REPLACE,
+          rows: [create(HistoryRowSchema, {
+            row: create(ScreenRowSchema, { cells: [create(ScreenCellSchema, { content: 'abcdefghijkl', width: 12 })] }),
+            logicalLineId: 1n,
+            fixedGrid: true,
+            screenCols: 12,
+            screenRowSet: true,
+          })],
+          historyGeneration: 1n,
+        }))
+      }
+      return protoResult('acknowledge', {})
+    })
+    const protocol = createProtoTerminalProtocolSession(session)
+
+    const page = await protocol.loadScrollback('terminal-alt', 0, 20, true, { cols: 6 })
+
+    expect(page.alternate).toBe(true)
+    expect(page.cols).toBe(6)
+    expect(page.rows).toBe(1)
+    expect(page.replay).toContain('abcdef')
+    expect(page.replay).not.toContain('ghijkl')
+    expect(session.commands.some((entry) => entry.command.case === 'historyWindow')).toBe(true)
+  })
+
   it('uses the local xterm columns for history instead of the remote PTY size', async () => {
     let session: MockProtoSession
     session = new MockProtoSession('machine-local-cols', (command) => {

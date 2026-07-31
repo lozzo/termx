@@ -1406,6 +1406,82 @@ func (x *HistoryRow) GetRowInLine() int32 {
 	return 0
 }
 
+type HistoryViewportAnchor struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TopLineId     uint64                 `protobuf:"varint,1,opt,name=top_line_id,json=topLineId,proto3" json:"top_line_id,omitempty"`
+	TopCellOffset int32                  `protobuf:"varint,2,opt,name=top_cell_offset,json=topCellOffset,proto3" json:"top_cell_offset,omitempty"`
+	AtEnd         bool                   `protobuf:"varint,3,opt,name=at_end,json=atEnd,proto3" json:"at_end,omitempty"`
+	ScreenCols    uint32                 `protobuf:"varint,4,opt,name=screen_cols,json=screenCols,proto3" json:"screen_cols,omitempty"`
+	ScreenRows    uint32                 `protobuf:"varint,5,opt,name=screen_rows,json=screenRows,proto3" json:"screen_rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoryViewportAnchor) Reset() {
+	*x = HistoryViewportAnchor{}
+	mi := &file_apipb_history_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoryViewportAnchor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoryViewportAnchor) ProtoMessage() {}
+
+func (x *HistoryViewportAnchor) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_history_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoryViewportAnchor.ProtoReflect.Descriptor instead.
+func (*HistoryViewportAnchor) Descriptor() ([]byte, []int) {
+	return file_apipb_history_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *HistoryViewportAnchor) GetTopLineId() uint64 {
+	if x != nil {
+		return x.TopLineId
+	}
+	return 0
+}
+
+func (x *HistoryViewportAnchor) GetTopCellOffset() int32 {
+	if x != nil {
+		return x.TopCellOffset
+	}
+	return 0
+}
+
+func (x *HistoryViewportAnchor) GetAtEnd() bool {
+	if x != nil {
+		return x.AtEnd
+	}
+	return false
+}
+
+func (x *HistoryViewportAnchor) GetScreenCols() uint32 {
+	if x != nil {
+		return x.ScreenCols
+	}
+	return 0
+}
+
+func (x *HistoryViewportAnchor) GetScreenRows() uint32 {
+	if x != nil {
+		return x.ScreenRows
+	}
+	return 0
+}
+
 type HistoryWindowResult struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Terminal          *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
@@ -1426,13 +1502,14 @@ type HistoryWindowResult struct {
 	LastLineId        uint64                 `protobuf:"varint,17,opt,name=last_line_id,json=lastLineId,proto3" json:"last_line_id,omitempty"`
 	Cursor            *HistoryCursor         `protobuf:"bytes,18,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	TimestampUnixNano int64                  `protobuf:"varint,19,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
+	ViewportAnchor    *HistoryViewportAnchor `protobuf:"bytes,20,opt,name=viewport_anchor,json=viewportAnchor,proto3" json:"viewport_anchor,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *HistoryWindowResult) Reset() {
 	*x = HistoryWindowResult{}
-	mi := &file_apipb_history_proto_msgTypes[13]
+	mi := &file_apipb_history_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1444,7 +1521,7 @@ func (x *HistoryWindowResult) String() string {
 func (*HistoryWindowResult) ProtoMessage() {}
 
 func (x *HistoryWindowResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[13]
+	mi := &file_apipb_history_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1457,7 +1534,7 @@ func (x *HistoryWindowResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryWindowResult.ProtoReflect.Descriptor instead.
 func (*HistoryWindowResult) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{13}
+	return file_apipb_history_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *HistoryWindowResult) GetTerminal() *TerminalRef {
@@ -1586,6 +1663,13 @@ func (x *HistoryWindowResult) GetTimestampUnixNano() int64 {
 	return 0
 }
 
+func (x *HistoryWindowResult) GetViewportAnchor() *HistoryViewportAnchor {
+	if x != nil {
+		return x.ViewportAnchor
+	}
+	return nil
+}
+
 type HistoryCopyResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
@@ -1595,7 +1679,7 @@ type HistoryCopyResult struct {
 
 func (x *HistoryCopyResult) Reset() {
 	*x = HistoryCopyResult{}
-	mi := &file_apipb_history_proto_msgTypes[14]
+	mi := &file_apipb_history_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1607,7 +1691,7 @@ func (x *HistoryCopyResult) String() string {
 func (*HistoryCopyResult) ProtoMessage() {}
 
 func (x *HistoryCopyResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[14]
+	mi := &file_apipb_history_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1620,7 +1704,7 @@ func (x *HistoryCopyResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryCopyResult.ProtoReflect.Descriptor instead.
 func (*HistoryCopyResult) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{14}
+	return file_apipb_history_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *HistoryCopyResult) GetText() string {
@@ -1651,7 +1735,7 @@ type HistoryBacklogStatusResult struct {
 
 func (x *HistoryBacklogStatusResult) Reset() {
 	*x = HistoryBacklogStatusResult{}
-	mi := &file_apipb_history_proto_msgTypes[15]
+	mi := &file_apipb_history_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1663,7 +1747,7 @@ func (x *HistoryBacklogStatusResult) String() string {
 func (*HistoryBacklogStatusResult) ProtoMessage() {}
 
 func (x *HistoryBacklogStatusResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[15]
+	mi := &file_apipb_history_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1676,7 +1760,7 @@ func (x *HistoryBacklogStatusResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryBacklogStatusResult.ProtoReflect.Descriptor instead.
 func (*HistoryBacklogStatusResult) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{15}
+	return file_apipb_history_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *HistoryBacklogStatusResult) GetTerminal() *TerminalRef {
@@ -1780,7 +1864,7 @@ type LiveScreenNextCommand struct {
 
 func (x *LiveScreenNextCommand) Reset() {
 	*x = LiveScreenNextCommand{}
-	mi := &file_apipb_history_proto_msgTypes[16]
+	mi := &file_apipb_history_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1792,7 +1876,7 @@ func (x *LiveScreenNextCommand) String() string {
 func (*LiveScreenNextCommand) ProtoMessage() {}
 
 func (x *LiveScreenNextCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[16]
+	mi := &file_apipb_history_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1805,7 +1889,7 @@ func (x *LiveScreenNextCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveScreenNextCommand.ProtoReflect.Descriptor instead.
 func (*LiveScreenNextCommand) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{16}
+	return file_apipb_history_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *LiveScreenNextCommand) GetTerminal() *TerminalRef {
@@ -1833,7 +1917,7 @@ type ScreenRowCopy struct {
 
 func (x *ScreenRowCopy) Reset() {
 	*x = ScreenRowCopy{}
-	mi := &file_apipb_history_proto_msgTypes[17]
+	mi := &file_apipb_history_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1845,7 +1929,7 @@ func (x *ScreenRowCopy) String() string {
 func (*ScreenRowCopy) ProtoMessage() {}
 
 func (x *ScreenRowCopy) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[17]
+	mi := &file_apipb_history_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1858,7 +1942,7 @@ func (x *ScreenRowCopy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScreenRowCopy.ProtoReflect.Descriptor instead.
 func (*ScreenRowCopy) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{17}
+	return file_apipb_history_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ScreenRowCopy) GetSourceRow() int32 {
@@ -1892,7 +1976,7 @@ type ScreenRowReplace struct {
 
 func (x *ScreenRowReplace) Reset() {
 	*x = ScreenRowReplace{}
-	mi := &file_apipb_history_proto_msgTypes[18]
+	mi := &file_apipb_history_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1904,7 +1988,7 @@ func (x *ScreenRowReplace) String() string {
 func (*ScreenRowReplace) ProtoMessage() {}
 
 func (x *ScreenRowReplace) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[18]
+	mi := &file_apipb_history_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1917,7 +2001,7 @@ func (x *ScreenRowReplace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScreenRowReplace.ProtoReflect.Descriptor instead.
 func (*ScreenRowReplace) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{18}
+	return file_apipb_history_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ScreenRowReplace) GetRowIndex() int32 {
@@ -1953,7 +2037,7 @@ type NativeScreenResult struct {
 
 func (x *NativeScreenResult) Reset() {
 	*x = NativeScreenResult{}
-	mi := &file_apipb_history_proto_msgTypes[19]
+	mi := &file_apipb_history_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1965,7 +2049,7 @@ func (x *NativeScreenResult) String() string {
 func (*NativeScreenResult) ProtoMessage() {}
 
 func (x *NativeScreenResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[19]
+	mi := &file_apipb_history_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1978,7 +2062,7 @@ func (x *NativeScreenResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeScreenResult.ProtoReflect.Descriptor instead.
 func (*NativeScreenResult) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{19}
+	return file_apipb_history_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *NativeScreenResult) GetTerminal() *TerminalRef {
@@ -2174,7 +2258,15 @@ const file_apipb_history_proto_rawDesc = "" +
 	"screenRows\x12$\n" +
 	"\x0escreen_row_set\x18\f \x01(\bR\fscreenRowSet\x12&\n" +
 	"\x0flogical_line_id\x18\x0e \x01(\x04R\rlogicalLineId\x12\x1e\n" +
-	"\vrow_in_line\x18\x0f \x01(\x05R\trowInLineJ\x04\b\r\x10\x0e\"\x84\x06\n" +
+	"\vrow_in_line\x18\x0f \x01(\x05R\trowInLineJ\x04\b\r\x10\x0e\"\xb8\x01\n" +
+	"\x15HistoryViewportAnchor\x12\x1e\n" +
+	"\vtop_line_id\x18\x01 \x01(\x04R\ttopLineId\x12&\n" +
+	"\x0ftop_cell_offset\x18\x02 \x01(\x05R\rtopCellOffset\x12\x15\n" +
+	"\x06at_end\x18\x03 \x01(\bR\x05atEnd\x12\x1f\n" +
+	"\vscreen_cols\x18\x04 \x01(\rR\n" +
+	"screenCols\x12\x1f\n" +
+	"\vscreen_rows\x18\x05 \x01(\rR\n" +
+	"screenRows\"\xd3\x06\n" +
 	"\x13HistoryWindowResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12C\n" +
@@ -2198,7 +2290,8 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\flast_line_id\x18\x11 \x01(\x04R\n" +
 	"lastLineId\x124\n" +
 	"\x06cursor\x18\x12 \x01(\v2\x1c.anytty.api.v1.HistoryCursorR\x06cursor\x12.\n" +
-	"\x13timestamp_unix_nano\x18\x13 \x01(\x03R\x11timestampUnixNanoJ\x04\b\a\x10\b\"'\n" +
+	"\x13timestamp_unix_nano\x18\x13 \x01(\x03R\x11timestampUnixNano\x12M\n" +
+	"\x0fviewport_anchor\x18\x14 \x01(\v2$.anytty.api.v1.HistoryViewportAnchorR\x0eviewportAnchorJ\x04\b\a\x10\b\"'\n" +
 	"\x11HistoryCopyResult\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"\xde\x04\n" +
 	"\x1aHistoryBacklogStatusResult\x126\n" +
@@ -2283,7 +2376,7 @@ func file_apipb_history_proto_rawDescGZIP() []byte {
 }
 
 var file_apipb_history_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_apipb_history_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_apipb_history_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_apipb_history_proto_goTypes = []any{
 	(HistoryWindowMode)(0),              // 0: anytty.api.v1.HistoryWindowMode
 	(HistoryWindowOperation)(0),         // 1: anytty.api.v1.HistoryWindowOperation
@@ -2303,15 +2396,16 @@ var file_apipb_history_proto_goTypes = []any{
 	(*HistoryBacklogStatusCommand)(nil), // 15: anytty.api.v1.HistoryBacklogStatusCommand
 	(*HistoryLineSpan)(nil),             // 16: anytty.api.v1.HistoryLineSpan
 	(*HistoryRow)(nil),                  // 17: anytty.api.v1.HistoryRow
-	(*HistoryWindowResult)(nil),         // 18: anytty.api.v1.HistoryWindowResult
-	(*HistoryCopyResult)(nil),           // 19: anytty.api.v1.HistoryCopyResult
-	(*HistoryBacklogStatusResult)(nil),  // 20: anytty.api.v1.HistoryBacklogStatusResult
-	(*LiveScreenNextCommand)(nil),       // 21: anytty.api.v1.LiveScreenNextCommand
-	(*ScreenRowCopy)(nil),               // 22: anytty.api.v1.ScreenRowCopy
-	(*ScreenRowReplace)(nil),            // 23: anytty.api.v1.ScreenRowReplace
-	(*NativeScreenResult)(nil),          // 24: anytty.api.v1.NativeScreenResult
-	(*TerminalRef)(nil),                 // 25: anytty.api.v1.TerminalRef
-	(*TerminalSize)(nil),                // 26: anytty.api.v1.TerminalSize
+	(*HistoryViewportAnchor)(nil),       // 18: anytty.api.v1.HistoryViewportAnchor
+	(*HistoryWindowResult)(nil),         // 19: anytty.api.v1.HistoryWindowResult
+	(*HistoryCopyResult)(nil),           // 20: anytty.api.v1.HistoryCopyResult
+	(*HistoryBacklogStatusResult)(nil),  // 21: anytty.api.v1.HistoryBacklogStatusResult
+	(*LiveScreenNextCommand)(nil),       // 22: anytty.api.v1.LiveScreenNextCommand
+	(*ScreenRowCopy)(nil),               // 23: anytty.api.v1.ScreenRowCopy
+	(*ScreenRowReplace)(nil),            // 24: anytty.api.v1.ScreenRowReplace
+	(*NativeScreenResult)(nil),          // 25: anytty.api.v1.NativeScreenResult
+	(*TerminalRef)(nil),                 // 26: anytty.api.v1.TerminalRef
+	(*TerminalSize)(nil),                // 27: anytty.api.v1.TerminalSize
 }
 var file_apipb_history_proto_depIdxs = []int32{
 	5,  // 0: anytty.api.v1.ScreenCell.style:type_name -> anytty.api.v1.CellStyle
@@ -2319,38 +2413,39 @@ var file_apipb_history_proto_depIdxs = []int32{
 	5,  // 2: anytty.api.v1.ScreenRow.tail_fill:type_name -> anytty.api.v1.CellStyle
 	4,  // 3: anytty.api.v1.TerminalCursor.shape:type_name -> anytty.api.v1.CursorShape
 	2,  // 4: anytty.api.v1.HistoryCursor.segment:type_name -> anytty.api.v1.HistoryCursorSegment
-	25, // 5: anytty.api.v1.HistoryWindowCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 5: anytty.api.v1.HistoryWindowCommand.terminal:type_name -> anytty.api.v1.TerminalRef
 	0,  // 6: anytty.api.v1.HistoryWindowCommand.mode:type_name -> anytty.api.v1.HistoryWindowMode
 	10, // 7: anytty.api.v1.HistoryWindowCommand.before_cursor:type_name -> anytty.api.v1.HistoryCursor
 	10, // 8: anytty.api.v1.HistoryWindowCommand.after_cursor:type_name -> anytty.api.v1.HistoryCursor
 	11, // 9: anytty.api.v1.HistoryWindowCommand.range:type_name -> anytty.api.v1.HistoryRange
-	25, // 10: anytty.api.v1.HistoryCopyCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 10: anytty.api.v1.HistoryCopyCommand.terminal:type_name -> anytty.api.v1.TerminalRef
 	12, // 11: anytty.api.v1.HistoryCopyCommand.window:type_name -> anytty.api.v1.HistoryWindowCommand
-	25, // 12: anytty.api.v1.HistoryReleaseCommand.terminal:type_name -> anytty.api.v1.TerminalRef
-	25, // 13: anytty.api.v1.HistoryBacklogStatusCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 12: anytty.api.v1.HistoryReleaseCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 13: anytty.api.v1.HistoryBacklogStatusCommand.terminal:type_name -> anytty.api.v1.TerminalRef
 	7,  // 14: anytty.api.v1.HistoryRow.row:type_name -> anytty.api.v1.ScreenRow
 	3,  // 15: anytty.api.v1.HistoryRow.ownership:type_name -> anytty.api.v1.RowOwnership
 	2,  // 16: anytty.api.v1.HistoryRow.segment:type_name -> anytty.api.v1.HistoryCursorSegment
-	25, // 17: anytty.api.v1.HistoryWindowResult.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 17: anytty.api.v1.HistoryWindowResult.terminal:type_name -> anytty.api.v1.TerminalRef
 	1,  // 18: anytty.api.v1.HistoryWindowResult.operation:type_name -> anytty.api.v1.HistoryWindowOperation
-	26, // 19: anytty.api.v1.HistoryWindowResult.size:type_name -> anytty.api.v1.TerminalSize
+	27, // 19: anytty.api.v1.HistoryWindowResult.size:type_name -> anytty.api.v1.TerminalSize
 	17, // 20: anytty.api.v1.HistoryWindowResult.rows:type_name -> anytty.api.v1.HistoryRow
 	16, // 21: anytty.api.v1.HistoryWindowResult.lines:type_name -> anytty.api.v1.HistoryLineSpan
 	10, // 22: anytty.api.v1.HistoryWindowResult.cursor:type_name -> anytty.api.v1.HistoryCursor
-	25, // 23: anytty.api.v1.HistoryBacklogStatusResult.terminal:type_name -> anytty.api.v1.TerminalRef
-	25, // 24: anytty.api.v1.LiveScreenNextCommand.terminal:type_name -> anytty.api.v1.TerminalRef
-	7,  // 25: anytty.api.v1.ScreenRowReplace.row:type_name -> anytty.api.v1.ScreenRow
-	25, // 26: anytty.api.v1.NativeScreenResult.terminal:type_name -> anytty.api.v1.TerminalRef
-	26, // 27: anytty.api.v1.NativeScreenResult.size:type_name -> anytty.api.v1.TerminalSize
-	23, // 28: anytty.api.v1.NativeScreenResult.row_replacements:type_name -> anytty.api.v1.ScreenRowReplace
-	8,  // 29: anytty.api.v1.NativeScreenResult.cursor:type_name -> anytty.api.v1.TerminalCursor
-	9,  // 30: anytty.api.v1.NativeScreenResult.modes:type_name -> anytty.api.v1.TerminalModes
-	22, // 31: anytty.api.v1.NativeScreenResult.row_copies:type_name -> anytty.api.v1.ScreenRowCopy
-	32, // [32:32] is the sub-list for method output_type
-	32, // [32:32] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	18, // 23: anytty.api.v1.HistoryWindowResult.viewport_anchor:type_name -> anytty.api.v1.HistoryViewportAnchor
+	26, // 24: anytty.api.v1.HistoryBacklogStatusResult.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 25: anytty.api.v1.LiveScreenNextCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	7,  // 26: anytty.api.v1.ScreenRowReplace.row:type_name -> anytty.api.v1.ScreenRow
+	26, // 27: anytty.api.v1.NativeScreenResult.terminal:type_name -> anytty.api.v1.TerminalRef
+	27, // 28: anytty.api.v1.NativeScreenResult.size:type_name -> anytty.api.v1.TerminalSize
+	24, // 29: anytty.api.v1.NativeScreenResult.row_replacements:type_name -> anytty.api.v1.ScreenRowReplace
+	8,  // 30: anytty.api.v1.NativeScreenResult.cursor:type_name -> anytty.api.v1.TerminalCursor
+	9,  // 31: anytty.api.v1.NativeScreenResult.modes:type_name -> anytty.api.v1.TerminalModes
+	23, // 32: anytty.api.v1.NativeScreenResult.row_copies:type_name -> anytty.api.v1.ScreenRowCopy
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_apipb_history_proto_init() }
@@ -2365,7 +2460,7 @@ func file_apipb_history_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apipb_history_proto_rawDesc), len(file_apipb_history_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

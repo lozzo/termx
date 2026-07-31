@@ -49,6 +49,16 @@ func TestCompressedLineFileRoundTripReopenAndCompress(t *testing.T) {
 	if got := LineText(page[0]); !strings.Contains(got, "03997") {
 		t.Fatalf("unexpected middle page %q", got)
 	}
+	var reverseIndexes []int
+	if err := file.VisitLines(3997, 4003, true, func(index int, _ Line) bool {
+		reverseIndexes = append(reverseIndexes, index)
+		return len(reverseIndexes) < 3
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reverseIndexes, []int{4002, 4001, 4000}) {
+		t.Fatalf("reverse visit indexes=%v", reverseIndexes)
+	}
 	path := file.Path()
 	if err := file.Close(); err != nil {
 		t.Fatal(err)

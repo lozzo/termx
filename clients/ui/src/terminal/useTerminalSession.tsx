@@ -1011,6 +1011,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
             ...current,
             history: {
               revision,
+              cols: page.cols,
               prependedRows: 0,
               loadedRows: 0,
               operation,
@@ -1034,6 +1035,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         return {
           loadedRows: 0,
           totalRows: loadedScrollbackRowsRef.current,
+          cols: page.cols,
           operation,
           ...historyMetadata,
           hasMore: false,
@@ -1055,6 +1057,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         ...current,
         history: {
           revision,
+          cols: page.cols,
           prependedRows: loadedRows,
           loadedRows: loadedScrollbackRowsRef.current,
           operation,
@@ -1081,6 +1084,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       return {
         loadedRows,
         totalRows: loadedScrollbackRowsRef.current,
+        cols: page.cols,
         operation,
         ...historyMetadata,
         hasMore: page.hasMore,
@@ -1172,13 +1176,14 @@ function joinTerminalTextWithSeparator(prefix: string, current: string, separato
   return `${prefix}${separator}${current}`
 }
 
-function scrollbackResultMetadata(page: Pick<TerminalScrollbackLoadResult, 'committedTotalRows' | 'logicalTotalRows' | 'historyGeneration' | 'firstRowId' | 'lastRowId'>): Partial<TerminalScrollbackLoadResult> {
+function scrollbackResultMetadata(page: Pick<TerminalScrollbackLoadResult, 'committedTotalRows' | 'logicalTotalRows' | 'historyGeneration' | 'firstRowId' | 'lastRowId' | 'viewportTop'>): Partial<TerminalScrollbackLoadResult> {
   return {
     ...(page.committedTotalRows !== undefined ? { committedTotalRows: page.committedTotalRows } : {}),
     ...(page.logicalTotalRows !== undefined ? { logicalTotalRows: page.logicalTotalRows } : {}),
     ...(page.historyGeneration !== undefined ? { historyGeneration: page.historyGeneration } : {}),
     ...(page.firstRowId !== undefined ? { firstRowId: page.firstRowId } : {}),
     ...(page.lastRowId !== undefined ? { lastRowId: page.lastRowId } : {}),
+    ...(page.viewportTop !== undefined ? { viewportTop: page.viewportTop } : {}),
   }
 }
 

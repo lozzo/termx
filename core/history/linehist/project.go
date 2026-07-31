@@ -95,8 +95,35 @@ func historyRowBudgetBytes(row history.HistoryRow) int {
 	return size
 }
 
+func historyLineBudgetBytes(line Line) int {
+	size := 96
+	var previous history.Cell
+	havePrevious := false
+	for _, run := range line.Runs {
+		text := run.Text
+		for text != "" {
+			cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+			if cluster == "" {
+				break
+			}
+			cell := history.Cell{Width: width, Style: run.Style, LinkURL: run.LinkURL, LinkParams: run.LinkParams}
+			if !havePrevious || !historyCellsShareBudgetRun(previous, cell) {
+				size += 24 + len(run.Style.FG) + len(run.Style.BG) + len(run.LinkURL) + len(run.LinkParams)
+			}
+			size += len(cluster)
+			previous = cell
+			havePrevious = true
+			if size > history.MaxHistoryWindowBytes {
+				return size
+			}
+			text = text[len(cluster):]
+		}
+	}
+	return size
+}
+
 func historyCellsShareBudgetRun(left history.Cell, right history.Cell) bool {
-	return left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
+	return left.Width == right.Width && left.Style == right.Style && left.LinkURL == right.LinkURL && left.LinkParams == right.LinkParams
 }
 
 func cloneRows(rows []history.HistoryRow) []history.HistoryRow {
@@ -105,14 +132,15 @@ func cloneRows(rows []history.HistoryRow) []history.HistoryRow {
 	}
 	out := make([]history.HistoryRow, len(rows))
 	for i, row := range rows {
-		out[i] = row
-		if len(row.Cells) > 0 {
-			cells := make([]history.Cell, len(row.Cells))
-			copy(cells, row.Cells)
-			out[i].Cells = cells
-		}
+		out[i] = cloneRow(row)
 	}
 	return out
+}
+
+func cloneRow(row history.HistoryRow) history.HistoryRow {
+	result := row
+	result.Cells = append([]history.Cell(nil), row.Cells...)
+	return result
 }
 
 func boundaryForRows(rows []history.HistoryRow, generation history.Generation, token history.HistoryToken) history.HistoryBoundary {

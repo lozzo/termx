@@ -63,7 +63,7 @@ type ApplicationSessionInvalidator interface {
 }
 
 // TerminalResponseApplicationExecutor 在调用 context 取消后仍等待一个有界 terminal response。
-// 只有会创建远端资源、且必须取得迟到结果完成销毁的 binding owner 可以选择该能力；transport 不得自行解释业务 command。
+// 只有会创建远端资源、且必须取得迟到结果完成销毁的 resource owner 可以选择该能力；transport 不得自行解释业务 command。
 type TerminalResponseApplicationExecutor interface {
 	ExecuteApplicationTerminal(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
 }
@@ -204,6 +204,39 @@ func (session *ApplicationSession) execute(ctx context.Context, command *apipb.C
 	return result, nil
 }
 
+// HistoryWindow owns newly created frozen snapshots across cancellation. Page
+// requests reuse a caller-owned token and therefore stay on the normal path.
+func (session *ApplicationSession) HistoryWindow(ctx context.Context, command *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error) {
+	mode := command.GetMode()
+	if mode != apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED && mode != apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST {
+		return session.executeHistoryWindow(ctx, command)
+	}
+	resultEnvelope, err := session.ExecuteTerminal(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: command}})
+	if err != nil {
+		return nil, err
+	}
+	result := resultEnvelope.GetHistoryWindow()
+	if result == nil {
+		return nil, missingApplicationResult("history_window")
+	}
+	if ctx.Err() == nil {
+		return result, nil
+	}
+	if result.GetTerminal() != nil && result.GetToken() != "" {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		cleanupErr := session.HistoryRelease(cleanupCtx, &apipb.HistoryReleaseCommand{
+			Terminal:          proto.Clone(result.GetTerminal()).(*apipb.TerminalRef),
+			Token:             result.GetToken(),
+			HistoryGeneration: result.GetHistoryGeneration(),
+		})
+		cancel()
+		if cleanupErr != nil {
+			return nil, fmt.Errorf("cancelled history window cleanup: %w", cleanupErr)
+		}
+	}
+	return nil, ctx.Err()
+}
+
 // EventSubscribe 建立 daemon session-owned subscription，并返回对应的 Proto event stream。
 func (session *ApplicationSession) EventSubscribe(ctx context.Context, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, <-chan *apipb.EventEnvelope, error) {
 	source, ok := session.executor.(protoApplicationEventSource)
@@ -216,16 +249,38 @@ func (session *ApplicationSession) EventSubscribe(ctx context.Context, command *
 		cancel()
 		return nil, nil, err
 	}
-	result, err := session.executeEventSubscribe(ctx, command)
+	resultEnvelope, err := session.ExecuteTerminal(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_EventSubscribe{EventSubscribe: command}})
 	if err != nil {
 		cancel()
 		return nil, nil, err
 	}
+	result := resultEnvelope.GetEventSubscription()
+	if result == nil {
+		cancel()
+		return nil, nil, missingApplicationResult("event_subscription")
+	}
 	subscription := result.GetSubscription()
+	if ctx.Err() != nil {
+		cancel()
+		if subscription != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			_ = session.ReleaseResource(cleanupCtx, &apipb.ReleaseResourceCommand{Resource: proto.Clone(subscription).(*apipb.ResourceHandle)})
+			cleanupCancel()
+		}
+		return nil, nil, ctx.Err()
+	}
 	filtered := make(chan *apipb.EventEnvelope, 64)
 	go func() {
 		defer cancel()
 		defer close(filtered)
+		defer func() {
+			if subscription == nil {
+				return
+			}
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			_ = session.ReleaseResource(cleanupCtx, &apipb.ReleaseResourceCommand{Resource: proto.Clone(subscription).(*apipb.ResourceHandle)})
+			cleanupCancel()
+		}()
 		for {
 			select {
 			case <-eventCtx.Done():

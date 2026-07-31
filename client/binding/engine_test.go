@@ -275,6 +275,71 @@ func TestEngineCancellationDestroysLateFileOpenResource(t *testing.T) {
 	}
 }
 
+func TestCancelledApplicationCleanupCoversHistoryAndEventResources(t *testing.T) {
+	tests := []struct {
+		name     string
+		original *apipb.CommandEnvelope
+		result   *apipb.ResultEnvelope
+		check    func(*testing.T, *apipb.CommandEnvelope)
+	}{
+		{
+			name: "history",
+			original: &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
+				Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST,
+			}}},
+			result: &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowResult{
+				Terminal: &apipb.TerminalRef{EndpointId: "studio", TerminalId: "term-1"}, Token: "history-token", HistoryGeneration: 7,
+			}}},
+			check: func(t *testing.T, command *apipb.CommandEnvelope) {
+				release := command.GetHistoryRelease()
+				if release.GetTerminal().GetTerminalId() != "term-1" || release.GetToken() != "history-token" || release.GetHistoryGeneration() != 7 {
+					t.Fatalf("history cleanup command = %#v", command)
+				}
+			},
+		},
+		{
+			name:     "event",
+			original: &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_EventSubscribe{EventSubscribe: &apipb.EventSubscribeCommand{}}},
+			result: &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_EventSubscription{EventSubscription: &apipb.EventSubscriptionResult{Subscription: &apipb.ResourceHandle{
+				Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, OpaqueToken: []byte("event-token"),
+			}}}},
+			check: func(t *testing.T, command *apipb.CommandEnvelope) {
+				resource := command.GetReleaseResource().GetResource()
+				if resource.GetKind() != apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION || string(resource.GetOpaqueToken()) != "event-token" {
+					t.Fatalf("event cleanup command = %#v", command)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command, confirmUpload := cancelledApplicationCleanupCommand(test.original, test.result)
+			if command == nil || confirmUpload {
+				t.Fatalf("cleanup command=%#v confirmUpload=%v", command, confirmUpload)
+			}
+			test.check(t, command)
+		})
+	}
+	older := &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{
+		Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDER,
+	}}}
+	historyResult := tests[0].result
+	if command, _ := cancelledApplicationCleanupCommand(older, historyResult); command != nil {
+		t.Fatalf("older history page reused an existing token but produced cleanup %#v", command)
+	}
+	if requiresTerminalResponse(older) {
+		t.Fatal("older history page must not require a terminal response")
+	}
+	for _, command := range []*apipb.CommandEnvelope{
+		{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowCommand{Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST}}},
+		{Command: &apipb.CommandEnvelope_EventSubscribe{EventSubscribe: &apipb.EventSubscribeCommand{}}},
+	} {
+		if !requiresTerminalResponse(command) {
+			t.Fatalf("resource-producing command does not require terminal response: %#v", command)
+		}
+	}
+}
+
 func TestEngineCancellationReportsLateFileOpenCleanupFailure(t *testing.T) {
 	for _, test := range []struct {
 		name    string

@@ -47,6 +47,20 @@ func TestHistoryWindowLimitAndByteBudgetCannotBeBypassed(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowStopsBeforeProjectingAnOversizedStoredLine(t *testing.T) {
+	storage := &durabilityLineStorage{lines: make([]Line, history.MaxHistoryWindowLines)}
+	storage.lines[len(storage.lines)-1] = Line{Runs: []Run{{Text: strings.Repeat("x", DefaultMaxOpenLineBytes)}}, HardEnd: true}
+	store := NewStore("oversized-window", NewEngine(storage))
+
+	_, err := store.LatestWindow(history.HistoryWindowRequest{Limit: history.MaxHistoryWindowLines})
+	if !errors.Is(err, history.ErrHistoryWindowTooLarge) {
+		t.Fatalf("latest error=%v, want oversized window", err)
+	}
+	if got := storage.linesSeen.Load(); got != 1 {
+		t.Fatalf("visited lines=%d, want to stop at the first oversized line", got)
+	}
+}
+
 func TestHistoryCopyByteBudgetIsAtomic(t *testing.T) {
 	for _, test := range []struct {
 		name      string

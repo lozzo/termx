@@ -1,10 +1,74 @@
 import type {
+  CoreV2HistoryCell,
   CoreV2HistoryCellStyle,
   CoreV2HistoryRow,
 } from './coreV2TerminalProtocol'
 
+const historyGraphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+export function coreV2ReflowHistoryRows(rows: CoreV2HistoryRow[], cols: number): CoreV2HistoryRow[] {
+  const width = cols > 0 ? Math.trunc(cols) : 80
+  const visualRows = rows.flatMap((row) => reflowHistoryRow(row, width))
+  return visualRows.map((row, index) => ({ ...row, index }))
+}
+
+function reflowHistoryRow(row: CoreV2HistoryRow, cols: number): CoreV2HistoryRow[] {
+  if (row.fixedGrid) {
+    const cells: CoreV2HistoryCell[] = []
+    let width = 0
+    for (const cell of row.cells.flatMap(splitHistoryCell)) {
+      const cellWidth = Math.max(1, cell.width)
+      if (width + cellWidth > cols) break
+      cells.push(cell)
+      width += cellWidth
+    }
+    return [{ ...row, cells, wrapped: false }]
+  }
+  const cells = row.cells.flatMap(splitHistoryCell)
+  if (cells.length === 0) return [{ ...row, rowInLine: 0, cells: [] }]
+
+  const visualRows: CoreV2HistoryRow[] = []
+  let current: CoreV2HistoryCell[] = []
+  let currentWidth = 0
+  const flush = () => {
+    visualRows.push({
+      ...row,
+      cells: current,
+      tailFillStyle: undefined,
+      rowInLine: visualRows.length,
+      wrapped: true,
+    })
+    current = []
+    currentWidth = 0
+  }
+  for (const cell of cells) {
+    const cellWidth = Math.max(1, cell.width)
+    if (currentWidth > 0 && currentWidth + cellWidth > cols) flush()
+    current.push(cell)
+    currentWidth += cellWidth
+    if (currentWidth >= cols) flush()
+  }
+  if (current.length > 0 || visualRows.length === 0) flush()
+  const last = visualRows.at(-1)!
+  last.tailFillStyle = row.tailFillStyle
+  last.wrapped = row.wrapped
+  return visualRows
+}
+
+function splitHistoryCell(cell: CoreV2HistoryCell): CoreV2HistoryCell[] {
+  const width = Math.max(1, cell.width)
+  if (!cell.text) {
+    return Array.from({ length: width }, () => ({ ...cell, text: ' ', width: 1, linkUrl: undefined, linkParams: undefined }))
+  }
+  const graphemes = Array.from(historyGraphemeSegmenter.segment(cell.text), (part) => part.segment)
+  if (graphemes.length <= 1) return [{ ...cell, width }]
+  // The API only coalesces adjacent history graphemes with equal terminal width.
+  const graphemeWidth = width / graphemes.length
+  return graphemes.map((text) => ({ ...cell, text, width: graphemeWidth }))
+}
+
 export function coreV2HistoryRowsANSI(rows: CoreV2HistoryRow[], cols: number): string {
-  return rows.map((row) => {
+  return rows.map((row, index) => {
     let currentStyle = ''
     let width = 0
     let output = ''
@@ -21,8 +85,9 @@ export function coreV2HistoryRowsANSI(rows: CoreV2HistoryRow[], cols: number): s
     if (cols > width) {
       output += `\u001b[0m${styleANSI(row.tailFillStyle)}${' '.repeat(cols - width)}`
     }
-    return `${output}\u001b[0m`
-  }).join('\r\n')
+    const separator = index === rows.length - 1 || row.wrapped ? '' : '\r\n'
+    return `${output}\u001b[0m${separator}`
+  }).join('')
 }
 
 function styleANSI(style: CoreV2HistoryCellStyle | undefined): string {

@@ -415,6 +415,10 @@ func copyHistoryCursor(history state.HistoryStore, copyMode state.CopyModeStore)
 	row := clampCopyColumn(copyMode.Cursor.Row, 0, len(history.Rows)-1)
 	visibleTop := copyHistoryViewportTop(history, copyMode)
 	visibleRows := copyVisibleRows(history, copyMode)
+	if len(visibleRows) == 0 {
+		return Cursor{}
+	}
+	row = clampCopyColumn(row, visibleTop, visibleTop+len(visibleRows)-1)
 	visibleRow := row - visibleTop
 	if visibleRow < 0 {
 		visibleRow = 0
@@ -482,6 +486,9 @@ func copyVisibleRows(history state.HistoryStore, copyMode state.CopyModeStore) [
 		return nil
 	}
 	top := copyHistoryViewportTop(history, copyMode)
+	if top >= len(history.Rows) {
+		return nil
+	}
 	height := copyHistoryVisibleHeight(copyMode)
 	if height <= 0 || top+height > len(history.Rows) {
 		height = len(history.Rows) - top
@@ -501,7 +508,7 @@ func copyHistoryVisibleHeight(copyMode state.CopyModeStore) int {
 }
 
 func copyHistoryViewportTop(history state.HistoryStore, copyMode state.CopyModeStore) int {
-	return clampCopyColumn(copyMode.ViewportTop, 0, maxInt(0, len(history.Rows)-1))
+	return clampCopyColumn(copyMode.ViewportTop, 0, len(history.Rows))
 }
 
 func activeSearchRange(copyMode state.CopyModeStore, row int) copySearchRange {

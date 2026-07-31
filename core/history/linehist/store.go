@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anytty/anytty/core/history"
@@ -26,10 +27,11 @@ type ScreenRow struct {
 // alt 期间 PrimaryRows 携带被 alt 覆盖但仍未滚出的主屏保存行——它们
 // 属于 primary 时间线热段（alt 退出后程序仍可改写），必须继续投影。
 type ScreenSnapshot struct {
-	Cols        int
-	Rows        []ScreenRow
-	InAlt       bool
-	PrimaryRows []ScreenRow
+	Cols         int
+	ViewportRows int
+	Rows         []ScreenRow
+	InAlt        bool
+	PrimaryRows  []ScreenRow
 }
 
 // ScreenSnapshotFromVTerm 从 tap vterm 采集当前屏快照。
@@ -63,7 +65,7 @@ func ScreenSnapshotFromVTerm(vt *vterm.VTerm) ScreenSnapshot {
 			last = i
 		}
 	}
-	snap := ScreenSnapshot{Cols: info.Cols, Rows: rows[:last+1], InAlt: info.IsAlternateScreen}
+	snap := ScreenSnapshot{Cols: info.Cols, ViewportRows: info.Rows, Rows: rows[:last+1], InAlt: info.IsAlternateScreen}
 	if info.IsAlternateScreen {
 		primaryCells, primaryWrapped := vt.PrimarySavedScreenRows()
 		primary := make([]ScreenRow, len(primaryCells))
@@ -95,6 +97,7 @@ type frozenView struct {
 	generation history.Generation
 	retention  uint64
 	gaps       []int
+	anchor     history.HistoryViewportAnchor
 }
 
 // liveView 是一次查询的一致性视图：coldBase/coldCount/热段行在 ingest gate
@@ -108,6 +111,7 @@ type liveView struct {
 	generation history.Generation
 	retention  uint64
 	gaps       []int
+	anchor     history.HistoryViewportAnchor
 }
 
 // Store 实现 history.HistoryStore：冷段 = logical-line 文件，热段 =
@@ -121,10 +125,13 @@ type Store struct {
 	screen     func() ScreenSnapshot
 	gate       sync.Locker
 	generation history.Generation
+	storeID    uint64
 	nextToken  uint64
 	frozen     map[history.HistoryToken]*frozenView
 	retention  uint64
 }
+
+var nextStoreID atomic.Uint64
 
 // NewStore 创建 linehist store。screen/gate 由 Terminal 通过 Bind 注入。
 func NewStore(terminalID string, engine *Engine) *Store {
@@ -135,6 +142,7 @@ func NewStore(terminalID string, engine *Engine) *Store {
 	return &Store{
 		terminalID: terminalID,
 		engine:     engine,
+		storeID:    nextStoreID.Add(1),
 		frozen:     make(map[history.HistoryToken]*frozenView),
 		retention:  retention,
 	}
@@ -330,7 +338,9 @@ func (store *Store) LatestWindow(req history.HistoryWindowRequest) (history.Hist
 	if len(page) > 0 {
 		boundary.Cursor = cursorBeforeLine(page[0], view.generation, req.Token, actualStart > 0)
 	}
-	return buildWindow(req, page, total, history.HistoryWindowReplace, boundary, view.generation, actualStart > 0), nil
+	window := buildWindow(req, page, total, history.HistoryWindowReplace, boundary, view.generation, actualStart > 0)
+	window.ViewportAnchor = view.anchor
+	return window, nil
 }
 
 // OlderWindow 按 cursor.LineID 向更旧方向 prepend logical-line 分页。
@@ -451,7 +461,7 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 	frozenRows = viewLogicalTotal(view)
 	store.mu.Lock()
 	store.nextToken++
-	token := history.HistoryToken(fmt.Sprintf("linehist-%d", store.nextToken))
+	token := history.HistoryToken(fmt.Sprintf("linehist-%d-%d", store.storeID, store.nextToken))
 	store.frozen[token] = &frozenView{
 		coldBase:   view.coldBase,
 		coldCount:  view.coldCount,
@@ -460,6 +470,7 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 		generation: view.generation,
 		retention:  view.retention,
 		gaps:       append([]int(nil), view.gaps...),
+		anchor:     view.anchor,
 	}
 	store.mu.Unlock()
 	windowReq := history.HistoryWindowRequest{
@@ -482,6 +493,7 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 		CommittedUpperBound:   history.LogicalLineID(view.coldCount),
 		FrozenFrontierLineIDs: hotLineIDs(view.hot),
 		Boundary:              latest.Boundary,
+		ViewportAnchor:        view.anchor,
 		Generation:            view.generation,
 		CreatedAt:             time.Now().UTC(),
 	}, nil
@@ -685,7 +697,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 	if cols <= 0 {
 		cols = 80
 	}
-	hot := hotRowsFromScreen(coldCount, openTail, snap)
+	hot, anchor := hotRowsFromScreen(coldCount, openTail, snap)
 	projectedRows = coldCount + len(hot)
 	perftrace.Count("core.linehist.capture_live.cold_lines", coldCount)
 	perftrace.Count("core.linehist.capture_live.hot_rows", len(hot))
@@ -697,6 +709,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 		generation: generation,
 		retention:  retention,
 		gaps:       store.engine.GapOffsets(),
+		anchor:     anchor,
 	}
 }
 
@@ -706,15 +719,21 @@ func (store *Store) captureLive(reqCols int) liveView {
 // openTail 与被 alt 覆盖但仍未滚出的主屏保存行（snap.PrimaryRows）拼成
 // mutable logical line（alt 退出后程序仍可改写它们，不能 seal）——
 // 再把 alt 屏幕行按 fixed grid 原样投影。
-func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) []history.HistoryRow {
+func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) ([]history.HistoryRow, history.HistoryViewportAnchor) {
 	var rows []history.HistoryRow
 	nextID := history.LogicalLineID(coldCount + 1)
+	anchor := history.HistoryViewportAnchor{
+		ScreenCols: snap.Cols,
+		ScreenRows: snap.ViewportRows,
+		Valid:      snap.ViewportRows > 0,
+	}
 	primaryRows := snap.Rows
 	if snap.InAlt {
 		primaryRows = snap.PrimaryRows
 	}
 	var lines [][]history.Cell
 	current := cellsFromRuns(openTail)
+	primaryTopOffset := historyCellsDisplayWidth(current)
 	haveCurrent := len(current) > 0
 	for _, screenRow := range primaryRows {
 		current = append(current, cellsFromVTermCells(screenRow.Cells)...)
@@ -733,6 +752,11 @@ func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) []his
 		nextID++
 	}
 	if snap.InAlt {
+		if len(snap.Rows) > 0 {
+			anchor.TopLineID = nextID
+		} else {
+			anchor.AtEnd = true
+		}
 		for r, screenRow := range snap.Rows {
 			rows = append(rows, history.HistoryRow{
 				Cells:        cellsFromVTermCells(screenRow.Cells),
@@ -746,8 +770,23 @@ func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) []his
 			})
 			nextID++
 		}
+	} else if len(primaryRows) > 0 {
+		anchor.TopLineID = history.LogicalLineID(coldCount + 1)
+		anchor.TopCellOffset = primaryTopOffset
+	} else {
+		anchor.AtEnd = true
 	}
-	return rows
+	return rows, anchor
+}
+
+func historyCellsDisplayWidth(cells []history.Cell) int {
+	width := 0
+	for _, cell := range cells {
+		if cell.Width > 0 {
+			width += cell.Width
+		}
+	}
+	return width
 }
 
 func appendLogicalLineRow(rows []history.HistoryRow, cells []history.Cell, id history.LogicalLineID, segment history.HistorySegment, committed bool) []history.HistoryRow {
@@ -783,6 +822,7 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 			generation: frozen.generation,
 			retention:  frozen.retention,
 			gaps:       append([]int(nil), frozen.gaps...),
+			anchor:     frozen.anchor,
 		}, nil
 	}
 	view := store.captureLive(req.Cols)
@@ -834,27 +874,53 @@ func (store *Store) logicalRowsForLineRange(view liveView, start int, end int) (
 // chronological order. A byte-budget truncation therefore never skips the
 // lines immediately adjacent to the requested cursor.
 func (store *Store) windowRowsBackward(view liveView, start int, end int) ([]history.HistoryRow, int, error) {
+	total := viewLogicalTotal(view)
+	start = clampInt(start, 0, total)
+	end = clampInt(end, start, total)
 	rows := make([]history.HistoryRow, 0, end-start)
 	used := 0
 	actualStart := end
-	for offset := end - 1; offset >= start; offset-- {
-		lineRows, err := store.logicalRowsForLineRange(view, offset, offset+1)
-		if err != nil {
-			return nil, end, err
-		}
-		if len(lineRows) == 0 {
-			continue
-		}
-		cost := historyRowBudgetBytes(lineRows[0])
+	stopped := false
+	reserve := func(cost int) bool {
 		if used+cost > history.MaxHistoryWindowBytes {
-			if len(rows) == 0 {
-				return nil, end, history.ErrHistoryWindowTooLarge
-			}
-			break
+			stopped = true
+			return false
 		}
 		used += cost
-		actualStart = offset
-		rows = append(rows, lineRows[0])
+		return true
+	}
+	appendRow := func(row history.HistoryRow, index int) {
+		actualStart = index
+		rows = append(rows, row)
+	}
+	hotStart := maxInt(start, view.coldCount)
+	hotEnd := minInt(end, view.coldCount+len(view.hot))
+	for index := hotEnd - 1; index >= hotStart; index-- {
+		row := cloneRow(view.hot[index-view.coldCount])
+		if !reserve(historyRowBudgetBytes(row)) {
+			break
+		}
+		appendRow(row, index)
+	}
+	if !stopped && start < view.coldCount {
+		coldEnd := minInt(end, view.coldCount)
+		err := store.engine.VisitLinesAtRetention(view.retention, view.coldBase+start, view.coldBase+coldEnd, true, func(index int, line Line) bool {
+			logicalIndex := index - view.coldBase
+			if !reserve(historyLineBudgetBytes(line)) {
+				return false
+			}
+			appendRow(historyRowFromColdLine(line, logicalIndex), logicalIndex)
+			return true
+		})
+		if err != nil {
+			if errors.Is(err, errRetentionChanged) {
+				return nil, end, history.ErrHistoryStaleWindow
+			}
+			return nil, end, err
+		}
+	}
+	if stopped && len(rows) == 0 {
+		return nil, end, history.ErrHistoryWindowTooLarge
 	}
 	for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
 		rows[left], rows[right] = rows[right], rows[left]
@@ -865,27 +931,55 @@ func (store *Store) windowRowsBackward(view liveView, start int, end int) ([]his
 // windowRowsForward preserves the lines nearest the forward cursor and stops
 // before the first line that would exceed the response budget.
 func (store *Store) windowRowsForward(view liveView, start int, end int) ([]history.HistoryRow, int, error) {
+	total := viewLogicalTotal(view)
+	start = clampInt(start, 0, total)
+	end = clampInt(end, start, total)
 	rows := make([]history.HistoryRow, 0, end-start)
 	used := 0
 	actualEnd := start
-	for offset := start; offset < end; offset++ {
-		lineRows, err := store.logicalRowsForLineRange(view, offset, offset+1)
-		if err != nil {
-			return nil, start, err
-		}
-		if len(lineRows) == 0 {
-			continue
-		}
-		cost := historyRowBudgetBytes(lineRows[0])
+	stopped := false
+	reserve := func(cost int) bool {
 		if used+cost > history.MaxHistoryWindowBytes {
-			if len(rows) == 0 {
-				return nil, start, history.ErrHistoryWindowTooLarge
-			}
-			break
+			stopped = true
+			return false
 		}
 		used += cost
-		actualEnd = offset + 1
-		rows = append(rows, lineRows[0])
+		return true
+	}
+	appendRow := func(row history.HistoryRow, index int) {
+		actualEnd = index + 1
+		rows = append(rows, row)
+	}
+	if start < view.coldCount {
+		coldEnd := minInt(end, view.coldCount)
+		err := store.engine.VisitLinesAtRetention(view.retention, view.coldBase+start, view.coldBase+coldEnd, false, func(index int, line Line) bool {
+			logicalIndex := index - view.coldBase
+			if !reserve(historyLineBudgetBytes(line)) {
+				return false
+			}
+			appendRow(historyRowFromColdLine(line, logicalIndex), logicalIndex)
+			return true
+		})
+		if err != nil {
+			if errors.Is(err, errRetentionChanged) {
+				return nil, start, history.ErrHistoryStaleWindow
+			}
+			return nil, start, err
+		}
+	}
+	if !stopped {
+		hotStart := maxInt(start, view.coldCount)
+		hotEnd := minInt(end, view.coldCount+len(view.hot))
+		for index := hotStart; index < hotEnd; index++ {
+			row := cloneRow(view.hot[index-view.coldCount])
+			if !reserve(historyRowBudgetBytes(row)) {
+				break
+			}
+			appendRow(row, index)
+		}
+	}
+	if stopped && len(rows) == 0 {
+		return nil, start, history.ErrHistoryWindowTooLarge
 	}
 	return rows, actualEnd, nil
 }
@@ -906,17 +1000,20 @@ func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, ret
 	}
 	rows := make([]history.HistoryRow, 0, len(lines))
 	for lineOffset, line := range lines {
-		id := history.LogicalLineID(start + lineOffset + 1)
-		rows = append(rows, history.HistoryRow{
-			Cells:     cellsFromRuns(line.Runs),
-			Kind:      history.LineKindOrdinary,
-			Segment:   history.HistorySegmentCommitted,
-			LineID:    id,
-			Committed: true,
-			Wrapped:   !line.HardEnd,
-		})
+		rows = append(rows, historyRowFromColdLine(line, start+lineOffset))
 	}
 	return rows, nil
+}
+
+func historyRowFromColdLine(line Line, logicalIndex int) history.HistoryRow {
+	return history.HistoryRow{
+		Cells:     cellsFromRuns(line.Runs),
+		Kind:      history.LineKindOrdinary,
+		Segment:   history.HistorySegmentCommitted,
+		LineID:    history.LogicalLineID(logicalIndex + 1),
+		Committed: true,
+		Wrapped:   !line.HardEnd,
+	}
 }
 
 func (store *Store) noteHistoryMutation() {

@@ -395,8 +395,8 @@ func generateClientBinding(specs []commandSpec) []byte {
 	writeGeneratedHeader(&out, "binding")
 	out.WriteString("\nimport \"github.com/anytty/anytty/proto/apipb\"\n\n")
 	out.WriteString("// requiresTerminalResponse marks binding operations that own late-response resource cleanup.\n")
-	out.WriteString("func requiresTerminalResponse(command *apipb.CommandEnvelope) bool {\n\tswitch command.GetCommand().(type) {\n")
-	writeGroupedCases(&out, specs, func(spec commandSpec) bool { return spec.TerminalResponse })
+	out.WriteString("func requiresTerminalResponse(command *apipb.CommandEnvelope) bool {\n\tif history := command.GetHistoryWindow(); history != nil {\n\t\treturn history.GetMode() == apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED || history.GetMode() == apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST\n\t}\n\tswitch command.GetCommand().(type) {\n")
+	writeGroupedCases(&out, specs, func(spec commandSpec) bool { return spec.TerminalResponse && spec.CommandName != "history_window" })
 	out.WriteString("\t\treturn true\n\tdefault:\n\t\treturn false\n\t}\n}\n")
 	return out.Bytes()
 }
@@ -405,6 +405,8 @@ func writeClientWrapper(out *bytes.Buffer, spec commandSpec) {
 	method := spec.ControllerMethod
 	if method == "EventSubscribe" {
 		method = "executeEventSubscribe"
+	} else if method == "HistoryWindow" {
+		method = "executeHistoryWindow"
 	}
 	commandGoName := goName(spec.CommandName)
 	commandType := spec.CommandField.Message().Name()

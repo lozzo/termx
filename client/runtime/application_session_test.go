@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/anytty/anytty/client/endpoint"
 	"github.com/anytty/anytty/proto/apipb"
@@ -17,6 +19,76 @@ type recordingProtoExecutor struct {
 
 type executeOnlyFileOpenExecutor struct {
 	commands []*apipb.CommandEnvelope
+}
+
+type eventSubscriptionExecutor struct {
+	mu               sync.Mutex
+	commands         []*apipb.CommandEnvelope
+	events           chan *apipb.EventEnvelope
+	released         chan struct{}
+	subscribeStarted chan struct{}
+	subscribeRelease chan struct{}
+	once             sync.Once
+	startedOnce      sync.Once
+}
+
+type historyWindowCancellationExecutor struct {
+	started  chan struct{}
+	complete chan struct{}
+	released chan *apipb.HistoryReleaseCommand
+}
+
+func (executor *historyWindowCancellationExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	result := &apipb.ResultEnvelope{RequestId: command.GetContext().GetRequestId(), OriginSession: proto.Clone(command.GetContext().GetSession()).(*apipb.EndpointSessionStamp)}
+	if release := command.GetHistoryRelease(); release != nil {
+		executor.released <- proto.Clone(release).(*apipb.HistoryReleaseCommand)
+		result.Result = &apipb.ResultEnvelope_Acknowledge{Acknowledge: &apipb.AcknowledgeResult{}}
+	}
+	return result, nil
+}
+
+func (executor *historyWindowCancellationExecutor) ExecuteApplicationTerminal(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	close(executor.started)
+	<-executor.complete
+	return &apipb.ResultEnvelope{
+		RequestId:     command.GetContext().GetRequestId(),
+		OriginSession: proto.Clone(command.GetContext().GetSession()).(*apipb.EndpointSessionStamp),
+		Result: &apipb.ResultEnvelope_HistoryWindow{HistoryWindow: &apipb.HistoryWindowResult{
+			Terminal: &apipb.TerminalRef{EndpointId: "studio", TerminalId: "term-1"}, Token: "late-token", HistoryGeneration: 7,
+		}},
+	}, nil
+}
+
+func (executor *eventSubscriptionExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	executor.mu.Lock()
+	executor.commands = append(executor.commands, proto.Clone(command).(*apipb.CommandEnvelope))
+	executor.mu.Unlock()
+	result := &apipb.ResultEnvelope{RequestId: command.GetContext().GetRequestId(), OriginSession: proto.Clone(command.GetContext().GetSession()).(*apipb.EndpointSessionStamp)}
+	if command.GetEventSubscribe() != nil {
+		if executor.subscribeStarted != nil {
+			executor.startedOnce.Do(func() { close(executor.subscribeStarted) })
+		}
+		if executor.subscribeRelease != nil {
+			<-executor.subscribeRelease
+		}
+		result.Result = &apipb.ResultEnvelope_EventSubscription{EventSubscription: &apipb.EventSubscriptionResult{Subscription: &apipb.ResourceHandle{
+			Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, OpaqueToken: []byte("event-token"),
+		}}}
+	} else {
+		result.Result = &apipb.ResultEnvelope_Acknowledge{Acknowledge: &apipb.AcknowledgeResult{}}
+		if command.GetReleaseResource() != nil {
+			executor.once.Do(func() { close(executor.released) })
+		}
+	}
+	return result, nil
+}
+
+func (executor *eventSubscriptionExecutor) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return executor.ExecuteApplication(ctx, command)
+}
+
+func (executor *eventSubscriptionExecutor) ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error) {
+	return executor.events, nil
 }
 
 func (executor *executeOnlyFileOpenExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
@@ -107,6 +179,99 @@ func TestApplicationSessionTerminalExecutionOwnsContextAndOperationStamp(t *test
 	}
 	if command.GetContext() != nil || command.GetFileUploadOpen().GetOperation() != nil {
 		t.Fatal("terminal execution mutated caller command")
+	}
+}
+
+func TestApplicationSessionEventSubscribeReleasesResourceWhenContextEnds(t *testing.T) {
+	executor := &eventSubscriptionExecutor{events: make(chan *apipb.EventEnvelope), released: make(chan struct{})}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "ssh", Generation: 7}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	_, events, err := session.EventSubscribe(ctx, &apipb.EventSubscribeCommand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case <-events:
+	case <-time.After(time.Second):
+		t.Fatal("filtered event stream did not close after cancellation")
+	}
+	select {
+	case <-executor.released:
+	case <-time.After(time.Second):
+		t.Fatal("event subscription resource was not released")
+	}
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
+	if len(executor.commands) != 2 {
+		t.Fatalf("event subscription commands = %d, want subscribe and release", len(executor.commands))
+	}
+	resource := executor.commands[1].GetReleaseResource().GetResource()
+	if resource.GetKind() != apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION || string(resource.GetOpaqueToken()) != "event-token" {
+		t.Fatalf("released event resource = %#v", resource)
+	}
+}
+
+func TestApplicationSessionEventSubscribeReleasesLateCreationAfterCancellation(t *testing.T) {
+	executor := &eventSubscriptionExecutor{
+		events:           make(chan *apipb.EventEnvelope),
+		released:         make(chan struct{}),
+		subscribeStarted: make(chan struct{}),
+		subscribeRelease: make(chan struct{}),
+	}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "ssh", Generation: 7}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := session.EventSubscribe(ctx, &apipb.EventSubscribeCommand{})
+		result <- err
+	}()
+	<-executor.subscribeStarted
+	cancel()
+	close(executor.subscribeRelease)
+	if err := <-result; err != context.Canceled {
+		t.Fatalf("event subscribe error=%v, want context canceled", err)
+	}
+	select {
+	case <-executor.released:
+	case <-time.After(time.Second):
+		t.Fatal("late event subscription resource was not released")
+	}
+}
+
+func TestApplicationSessionHistoryWindowReleasesLateSnapshotAfterCancellation(t *testing.T) {
+	executor := &historyWindowCancellationExecutor{
+		started: make(chan struct{}), complete: make(chan struct{}), released: make(chan *apipb.HistoryReleaseCommand, 1),
+	}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "cloud", Generation: 7}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := session.HistoryWindow(ctx, &apipb.HistoryWindowCommand{Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST})
+		result <- err
+	}()
+	<-executor.started
+	cancel()
+	close(executor.complete)
+	if err := <-result; err != context.Canceled {
+		t.Fatalf("history window error=%v, want context canceled", err)
+	}
+	select {
+	case release := <-executor.released:
+		if release.GetToken() != "late-token" || release.GetHistoryGeneration() != 7 || release.GetTerminal().GetTerminalId() != "term-1" {
+			t.Fatalf("history release=%#v", release)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("late history snapshot was not released")
 	}
 }
 

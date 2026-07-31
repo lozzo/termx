@@ -117,21 +117,39 @@ func TestProtocolHistoryFreezeFailureRollsBackReservation(t *testing.T) {
 	}
 }
 
+func TestProtocolCancelledLatestReleasesFrozenToken(t *testing.T) {
+	server := newHistoryOwnerTestServer(t, ProtocolSessionLimits{MaxResources: 1}, "term-1")
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := session.ApplicationHistoryWindow(ctx, history.HistoryWindowRequest{
+		TerminalID: "term-1", Mode: history.HistoryWindowModeLatest, Limit: 1,
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled latest error = %v, want context canceled", err)
+	}
+	assertHistoryResources(t, session, 0, 0)
+	window := applicationLatestHistory(t, session, "term-1")
+	if err := session.ApplicationHistoryRelease(context.Background(), "term-1", window.Token); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProtocolHistoryCompositeKeyAndSharedResourceQuota(t *testing.T) {
-	t.Run("same token text on two terminals", func(t *testing.T) {
+	t.Run("tokens are unique across terminal stores", func(t *testing.T) {
 		server := newHistoryOwnerTestServer(t, ProtocolSessionLimits{MaxResources: 2}, "term-a", "term-b")
 		session := newProtocolSession(server, nil, fullDaemonTransportScope())
 		first := applicationLatestHistory(t, session, "term-a")
 		second := applicationLatestHistory(t, session, "term-b")
-		if first.Token != second.Token {
-			t.Fatalf("test requires equal store-local tokens, got %q and %q", first.Token, second.Token)
+		if first.Token == second.Token {
+			t.Fatalf("history tokens must identify their store instance, got %q for both terminals", first.Token)
 		}
 		assertHistoryResources(t, session, 2, 0)
 		if err := session.ApplicationHistoryRelease(context.Background(), "term-a", first.Token); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := session.ApplicationHistoryCopy(context.Background(), history.HistoryCopyRequest{TerminalID: "term-b", Token: second.Token}); err != nil {
-			t.Fatalf("releasing terminal A removed terminal B's same token: %v", err)
+			t.Fatalf("releasing terminal A removed terminal B's token: %v", err)
 		}
 		assertHistoryResources(t, session, 1, 0)
 	})
@@ -160,6 +178,60 @@ func TestProtocolHistoryCompositeKeyAndSharedResourceQuota(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestProtocolHistoryTokensCannotCrossTerminalRecreation(t *testing.T) {
+	server := newHistoryOwnerTestServer(t, ProtocolSessionLimits{MaxResources: 4}, "term-recreated")
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	oldRelease := applicationLatestHistory(t, session, "term-recreated")
+	oldPage := applicationLatestHistory(t, session, "term-recreated")
+
+	if err := server.RemoveTerminal("term-recreated"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-recreated", Command: []string{"shell"}, Size: Size{Cols: 80, Rows: 24}}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := server.Terminal("term-recreated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := terminal.lineHistory.AppendLifecycleLines([]string{"new-store-line"}); err != nil {
+		t.Fatal(err)
+	}
+	current := applicationLatestHistory(t, session, "term-recreated")
+	if current.Token == oldRelease.Token || current.Token == oldPage.Token {
+		t.Fatalf("recreated terminal reused a frozen token: old=%q/%q current=%q", oldRelease.Token, oldPage.Token, current.Token)
+	}
+
+	if err := session.ApplicationHistoryRelease(context.Background(), "term-recreated", oldRelease.Token); err != nil {
+		t.Fatalf("release old snapshot: %v", err)
+	}
+	if _, err := session.ApplicationHistoryCopy(context.Background(), history.HistoryCopyRequest{TerminalID: "term-recreated", Token: current.Token}); err != nil {
+		t.Fatalf("old release damaged recreated terminal snapshot: %v", err)
+	}
+	if _, err := session.ApplicationHistoryWindow(context.Background(), history.HistoryWindowRequest{
+		TerminalID: "term-recreated", Mode: history.HistoryWindowModeOldest, Token: oldPage.Token, Limit: 1,
+	}); !errors.Is(err, history.ErrHistoryStaleWindow) {
+		t.Fatalf("old snapshot pagination error = %v, want stale window", err)
+	}
+	if _, err := session.ApplicationHistoryCopy(context.Background(), history.HistoryCopyRequest{TerminalID: "term-recreated", Token: current.Token}); err != nil {
+		t.Fatalf("old pagination damaged recreated terminal snapshot: %v", err)
+	}
+	assertHistoryResources(t, session, 1, 0)
+}
+
+func TestProtocolHistoryReleaseAfterTerminalRemovalFreesQuota(t *testing.T) {
+	server := newHistoryOwnerTestServer(t, ProtocolSessionLimits{MaxResources: 1}, "term-removed")
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	window := applicationLatestHistory(t, session, "term-removed")
+	if err := server.RemoveTerminal("term-removed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ApplicationHistoryRelease(context.Background(), "term-removed", window.Token); err != nil {
+		t.Fatalf("release after terminal removal: %v", err)
+	}
+	assertHistoryResources(t, session, 0, 0)
 }
 
 func TestProtocolHistoryDisconnectWaitsThenReleasesSnapshots(t *testing.T) {

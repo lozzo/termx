@@ -831,56 +831,43 @@ func TestR413CopyModeAcceptLatestUsesAuthoritativeTailWithoutLiveSurface(t *test
 	}
 }
 
-func TestR414CopyModeAcceptLatestAnchorsCurrentFrameByScreenRow(t *testing.T) {
+func TestCopyModeAcceptLatestMapsLogicalCellAnchorAfterReflow(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "old shell prompt", LineID: 1, Segment: HistoryCursorSegmentCommitted},
 		{Text: "old shell marker", LineID: 2, Segment: HistoryCursorSegmentCommitted},
-		{Text: "visible shell prompt", LineID: 3, Segment: HistoryCursorSegmentCommitted},
-		{Text: "visible shell marker", LineID: 4, Segment: HistoryCursorSegmentCommitted},
-		{
-			Text:         "OpenAI Codex",
-			LineID:       20,
-			Kind:         HistoryRowKindScreenFrame,
-			Segment:      HistoryCursorSegmentCurrentPrimaryFrame,
-			SessionID:    1,
-			FrameID:      10,
-			FixedGrid:    true,
-			ScreenCols:   80,
-			ScreenRow:    2,
-			ScreenRowSet: true,
-		},
-		{
-			Text:         "> Use /skills",
-			LineID:       21,
-			Kind:         HistoryRowKindScreenFrame,
-			Segment:      HistoryCursorSegmentCurrentPrimaryFrame,
-			SessionID:    1,
-			FrameID:      10,
-			FixedGrid:    true,
-			ScreenCols:   80,
-			ScreenRow:    3,
-			ScreenRowSet: true,
-		},
+		{Text: "abcdef", LineID: 20, RowInLine: 0, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		{Text: "ghijkl", LineID: 20, RowInLine: 1, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		{Text: "mnopqr", LineID: 20, RowInLine: 2, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
 	}
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
-	copyMode := CopyModeStore{ViewRows: 8}.AcceptLatest(latest, latest.Cols, len(rows))
+	latest.ViewportAnchor = HistoryViewportAnchor{TopLineID: 20, TopCellOffset: 6, ScreenCols: 6, ScreenRows: 2, Valid: true}
+	copyMode := CopyModeStore{ViewRows: 2}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 2 || copyMode.Cursor != (CopyPosition{Row: 5}) {
-		t.Fatalf("latest should use authoritative current-frame screen row anchor, got %#v", copyMode)
+	if copyMode.ViewportTop != 3 || copyMode.Cursor != (CopyPosition{Row: 4}) {
+		t.Fatalf("exact row-boundary offset must anchor the next reflow row, got %#v", copyMode)
 	}
-	visible := rows[copyMode.ViewportTop:]
-	if historyRowsContainText(visible, "old shell prompt") || !historyRowsContainText(visible, "visible shell prompt") {
-		t.Fatalf("entry viewport should drop only rows above the PTY screen-row anchor, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	if rows[copyMode.ViewportTop].Text != "ghijkl" {
+		t.Fatalf("anchored top = %#v, want second visual row of logical line", rows[copyMode.ViewportTop])
 	}
 }
 
-func historyRowsContainText(rows []HistoryRow, text string) bool {
-	for _, row := range rows {
-		if row.Text == text {
-			return true
-		}
+func TestCopyModeAcceptLatestKeepsBlankRowsBelowMiddleContent(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "older", LineID: 1},
+		{Text: "", LineID: 20, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		{Text: "", LineID: 21, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		{Text: "middle", LineID: 22, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
 	}
-	return false
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 12, 7, rows)
+	latest.ViewportAnchor = HistoryViewportAnchor{TopLineID: 20, ScreenCols: 12, ScreenRows: 5, Valid: true}
+
+	copyMode := CopyModeStore{ViewRows: 5}.AcceptLatest(latest, latest.Cols, len(rows))
+	if copyMode.ViewportTop != 1 || copyMode.ViewportTailRows != 2 {
+		t.Fatalf("middle-screen anchor must preserve two trailing blank rows, got %#v", copyMode)
+	}
+	if rows[copyMode.ViewportTop+2].Text != "middle" {
+		t.Fatalf("middle content moved inside the viewport: %#v", rows[copyMode.ViewportTop:])
+	}
 }
 
 func TestCopyModeAcceptOldestStartsAtOldestHead(t *testing.T) {
@@ -1321,6 +1308,32 @@ func TestCopyModeApplyHistoryTrimRebasesCursorSelectionAndMatches(t *testing.T) 
 	}
 	if len(copyMode.Matches) != 2 || copyMode.Matches[0].StartRow != 0 || copyMode.Matches[1].StartRow != 3 {
 		t.Fatalf("trim should rebase matches inside retained window, got %#v", copyMode.Matches)
+	}
+}
+
+func TestCopyModeRestoresFrozenViewportTailAfterNewerPagination(t *testing.T) {
+	history := HistoryStore{
+		Rows: []HistoryRow{
+			{Text: "older", LineID: 40},
+			{Text: "top", LineID: 42},
+			{Text: "middle", LineID: 43},
+			{Text: "last", LineID: 44},
+		},
+		Boundary:       HistoryBoundary{FirstLineID: 40, LastLineID: 44},
+		ViewportAnchor: HistoryViewportAnchor{Valid: true, TopLineID: 42},
+	}
+	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTailRows: 0}
+
+	copyMode = copyMode.RestoreViewportTail(history)
+
+	if copyMode.ViewportTailRows != 2 {
+		t.Fatalf("restored viewport tail rows=%d, want 2", copyMode.ViewportTailRows)
+	}
+	copyMode.Cursor = CopyPosition{Row: 3}
+	copyMode.ViewportTop = 0
+	copyMode, consumed := copyMode.ScrollNewer(5, len(history.Rows))
+	if consumed != 1 || copyMode.Cursor.Row != 3 || copyMode.ViewportTop != 1 {
+		t.Fatalf("newer scroll should consume the virtual tail, consumed=%d store=%#v", consumed, copyMode)
 	}
 }
 

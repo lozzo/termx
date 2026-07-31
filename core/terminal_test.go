@@ -553,6 +553,43 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 	}
 }
 
+func TestServerNextLiveInvalidationStopsWhenTerminalIsRecreated(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	const terminalID = "term-live-recreated"
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: terminalID, Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	oldTerminal, err := server.Terminal(terminalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, waitErr := server.NextLiveInvalidation(context.Background(), terminalID, oldTerminal.LiveRevision())
+		done <- waitErr
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	if err := server.RemoveTerminal(terminalID); err != nil {
+		t.Fatalf("remove terminal: %v", err)
+	}
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: terminalID, Command: []string{"shell"}}); err != nil {
+		t.Fatalf("recreate terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), terminalID, "new terminal"); err != nil {
+		t.Fatalf("ingest recreated terminal: %v", err)
+	}
+
+	select {
+	case waitErr := <-done:
+		if !errors.Is(waitErr, ErrTerminalNotFound) {
+			t.Fatalf("old long poll error = %v, want terminal not found", waitErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old terminal long poll did not stop after removal")
+	}
+}
+
 func TestProtocolSessionNextLiveScreenReturnsDeltaFromConfirmedBaseline(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-screen-next", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 3}}); err != nil {

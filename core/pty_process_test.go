@@ -36,17 +36,17 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 	assertEventuallyEvent(t, events, EventTerminalExited, "term-pty")
 }
 
-func TestPTYProcessOutputHandoffIsBoundedAndCloseUnblocksWait(t *testing.T) {
+func TestPTYProcessOutputHandoffHasNoHiddenQueueAndCloseUnblocksWait(t *testing.T) {
 	command, _ := ptyInteractiveFixture()
 	processValue, err := newPTYProcessFactory().Spawn(context.Background(), ProcessSpec{
-		TerminalID: "term-pty-bounded", Command: command, Size: Size{Cols: 40, Rows: 8},
+		TerminalID: "term-pty-unbuffered", Command: command, Size: Size{Cols: 40, Rows: 8},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	process := processValue.(*ptyProcess)
-	if capacity := cap(process.outputCh); capacity != ptyOutputQueueChunks {
-		t.Fatalf("PTY output handoff capacity=%d, want %d", capacity, ptyOutputQueueChunks)
+	if capacity := cap(process.outputCh); capacity != 0 {
+		t.Fatalf("PTY output handoff retained a %d-chunk queue outside the shared output budget", capacity)
 	}
 	if ptyReadBufferBytes != int(MinTerminalOutputBufferCapacityBytes) {
 		t.Fatalf("one in-flight PTY read=%d, want minimum buffer capacity %d", ptyReadBufferBytes, MinTerminalOutputBufferCapacityBytes)

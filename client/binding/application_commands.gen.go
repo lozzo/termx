@@ -6,8 +6,12 @@ import "github.com/anytty/anytty/proto/apipb"
 
 // requiresTerminalResponse marks binding operations that own late-response resource cleanup.
 func requiresTerminalResponse(command *apipb.CommandEnvelope) bool {
+	if history := command.GetHistoryWindow(); history != nil {
+		return history.GetMode() == apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_UNSPECIFIED || history.GetMode() == apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST
+	}
 	switch command.GetCommand().(type) {
-	case *apipb.CommandEnvelope_FileDownloadOpen,
+	case *apipb.CommandEnvelope_EventSubscribe,
+		*apipb.CommandEnvelope_FileDownloadOpen,
 		*apipb.CommandEnvelope_FileUploadOpen:
 		return true
 	default:

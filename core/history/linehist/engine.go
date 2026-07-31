@@ -29,6 +29,10 @@ type LineStorage interface {
 	Close() error
 }
 
+type lineVisitor interface {
+	VisitLines(start int, end int, reverse bool, visit func(index int, line Line) bool) error
+}
+
 type retentionPruner interface {
 	PruneRetention() error
 }
@@ -183,6 +187,45 @@ func (e *Engine) LinesAtRetention(epoch uint64, start int, end int) ([]Line, err
 		return nil, errRetentionChanged
 	}
 	return e.file.Lines(start, end)
+}
+
+// VisitLinesAtRetention streams a retained range without materializing the
+// complete page. The storage keeps block I/O batched while the caller can stop
+// before projecting rows that exceed its response budget.
+func (e *Engine) VisitLinesAtRetention(epoch uint64, start int, end int, reverse bool, visit func(index int, line Line) bool) error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if storageRetentionEpoch(e.file) != epoch {
+		return errRetentionChanged
+	}
+	if storage, ok := e.file.(lineVisitor); ok {
+		return storage.VisitLines(start, end, reverse, visit)
+	}
+	if reverse {
+		for index := end - 1; index >= start; index-- {
+			lines, err := e.file.Lines(index, index+1)
+			if err != nil {
+				return err
+			}
+			if len(lines) > 0 && !visit(index, lines[0]) {
+				break
+			}
+		}
+		return nil
+	}
+	for index := start; index < end; index++ {
+		lines, err := e.file.Lines(index, index+1)
+		if err != nil {
+			return err
+		}
+		if len(lines) > 0 && !visit(index, lines[0]) {
+			break
+		}
+	}
+	return nil
 }
 
 func storageRetentionEpoch(file LineStorage) uint64 {

@@ -81,6 +81,18 @@ type HistoryWindowRequest struct {
 	Boundary   HistoryBoundary
 }
 
+// HistoryViewportAnchor identifies the top row of the terminal viewport at
+// freeze time inside the logical history timeline. TopCellOffset is measured
+// in display cells from the start of TopLineID.
+type HistoryViewportAnchor struct {
+	TopLineID     LogicalLineID
+	TopCellOffset int
+	AtEnd         bool
+	ScreenCols    int
+	ScreenRows    int
+	Valid         bool
+}
+
 // FreezeHistoryRequest 启动 copy/history snapshot。返回的 token 固定可见 logical
 // boundary，使后续 repaint 不能改变已选择文本。
 type FreezeHistoryRequest struct {
@@ -157,17 +169,18 @@ type HistoryRow struct {
 
 // HistoryWindow 是 core-v2 权威 projection，不携带 TUI pane/workspace truth。
 type HistoryWindow struct {
-	TerminalID   string
-	Token        HistoryToken
-	Op           HistoryWindowOp
-	Cols         int
-	Rows         []HistoryRow
-	Lines        []HistoryLineSpan
-	Generation   Generation
-	Boundary     HistoryBoundary
-	HasMore      bool
-	LogicalTotal int
-	Timestamp    time.Time
+	TerminalID     string
+	Token          HistoryToken
+	Op             HistoryWindowOp
+	Cols           int
+	Rows           []HistoryRow
+	Lines          []HistoryLineSpan
+	Generation     Generation
+	Boundary       HistoryBoundary
+	HasMore        bool
+	LogicalTotal   int
+	ViewportAnchor HistoryViewportAnchor
+	Timestamp      time.Time
 }
 
 // FrozenHistorySnapshot 记录 copy mode 启动时可见的 logical boundaries。它是
@@ -185,6 +198,7 @@ type FrozenHistorySnapshot struct {
 	FrozenPrimaryFrames   []ScreenFrame
 	FrozenAltFrame        *ScreenFrame
 	Boundary              HistoryBoundary
+	ViewportAnchor        HistoryViewportAnchor
 	Generation            Generation
 	CreatedAt             time.Time
 }

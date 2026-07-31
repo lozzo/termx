@@ -358,10 +358,14 @@ func (session *protocolSession) ApplicationPathListDirectories(_ context.Context
 // ApplicationHistoryWindow 查询 authoritative history；latest 会先建立 frozen token，
 // 后续分页只能沿 core 返回的 token/cursor 继续，不能从客户端 rows 重建边界。
 func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, request history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	latest := request.Mode == "" || request.Mode == history.HistoryWindowModeLatest
 	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
+		if !latest && request.Token != "" {
+			session.forgetHistoryToken(request.TerminalID, request.Token)
+		}
 		return history.HistoryWindow{}, err
 	}
-	if request.Mode == "" || request.Mode == history.HistoryWindowModeLatest {
+	if latest {
 		if err := session.reserveHistoryToken(); err != nil {
 			return history.HistoryWindow{}, err
 		}
@@ -376,6 +380,10 @@ func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, re
 		}
 		session.commitHistoryToken(request.TerminalID, snapshot.Token)
 		request.Token = snapshot.Token
+		if err := ctx.Err(); err != nil {
+			session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
+			return history.HistoryWindow{}, err
+		}
 	} else if request.Token == "" {
 		return history.HistoryWindow{}, history.ErrHistoryInvalidMutation
 	} else if !session.ownsHistoryToken(request.TerminalID, request.Token) {
@@ -383,16 +391,24 @@ func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, re
 	}
 	window, err := session.server.TerminalHistoryWindow(ctx, request.TerminalID, request)
 	if err != nil {
-		if request.Mode == "" || request.Mode == history.HistoryWindowModeLatest || historyTokenInvalidated(err) {
+		if latest || historyTokenInvalidated(err) {
 			session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
 		}
+		return history.HistoryWindow{}, err
 	}
-	return window, err
+	if latest && ctx.Err() != nil {
+		session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
+		return history.HistoryWindow{}, ctx.Err()
+	}
+	return window, nil
 }
 
 // ApplicationHistoryCopy 从 core frozen history token 复制文本。
 func (session *protocolSession) ApplicationHistoryCopy(ctx context.Context, request history.HistoryCopyRequest) (string, error) {
 	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
+		if request.Token != "" {
+			session.forgetHistoryToken(request.TerminalID, request.Token)
+		}
 		return "", err
 	}
 	if request.Token == "" {
@@ -410,14 +426,14 @@ func (session *protocolSession) ApplicationHistoryCopy(ctx context.Context, requ
 
 // ApplicationHistoryRelease 释放 core-owned frozen history token。
 func (session *protocolSession) ApplicationHistoryRelease(ctx context.Context, terminalID string, token history.HistoryToken) error {
-	if _, err := session.server.GetTerminal(terminalID); err != nil {
-		return err
-	}
 	if token == "" {
 		return history.ErrHistoryInvalidMutation
 	}
 	if !session.forgetHistoryToken(terminalID, token) {
 		return history.ErrHistoryStaleWindow
+	}
+	if _, err := session.server.GetTerminal(terminalID); err != nil {
+		return nil
 	}
 	return session.server.TerminalHistoryRelease(ctx, terminalID, token)
 }

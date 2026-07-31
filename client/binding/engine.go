@@ -675,8 +675,8 @@ func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Conte
 		result, err = session.ExecuteApplication(ctx, command)
 	}
 	if ctx.Err() != nil {
-		if cleanupErr := engine.cleanupCancelledFileOpen(session, result); cleanupErr != nil {
-			cleanupErr = fmt.Errorf("cancelled file open cleanup: %w", cleanupErr)
+		if cleanupErr := engine.cleanupCancelledApplicationResult(session, command, result); cleanupErr != nil {
+			cleanupErr = fmt.Errorf("cancelled application resource cleanup: %w", cleanupErr)
 			if invalidateErr := invalidateSessionAfterCleanupFailure(session, cleanupErr); invalidateErr != nil {
 				err = fmt.Errorf("%v; invalidate session: %w", cleanupErr, invalidateErr)
 			} else {
@@ -709,32 +709,44 @@ func invalidateSessionAfterCleanupFailure(session clientruntime.ApplicationReady
 	return session.Close()
 }
 
-// cleanupCancelledFileOpen 销毁已在 daemon 创建、但因跨语言 operation 取消而不能交付给 consumer 的 file resource。
-// upload 使用 principal-bound resume 凭据，download 使用 current-session resource release；清理失败会作为 operation failure 暴露，禁止静默泄漏。
-func (engine *Engine) cleanupCancelledFileOpen(session clientruntime.ApplicationReadyPeerSession, result *apipb.ResultEnvelope) error {
-	transfer := result.GetFileTransferOpen().GetTransfer()
-	if transfer == nil || transfer.GetResource() == nil {
+// cleanupCancelledApplicationResult destroys a resource that reached the binding
+// after its cross-language consumer had already cancelled the operation.
+func (engine *Engine) cleanupCancelledApplicationResult(session clientruntime.ApplicationReadyPeerSession, original *apipb.CommandEnvelope, result *apipb.ResultEnvelope) error {
+	cleanupCommand, confirmUpload := cancelledApplicationCleanupCommand(original, result)
+	if cleanupCommand == nil {
 		return nil
 	}
 	cleanupCtx, cancel := context.WithTimeout(engine.ctx, engine.cleanupTTL)
 	defer cancel()
-	var command *apipb.CommandEnvelope
-	if transfer.GetResume() != nil {
-		command = &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelCommand{UploadResume: proto.Clone(transfer.GetResume()).(*apipb.FileUploadResumeHandle)}}}
-	} else {
-		command = &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{ReleaseResource: &apipb.ReleaseResourceCommand{Resource: proto.Clone(transfer.GetResource()).(*apipb.ResourceHandle)}}}
-	}
-	cleanup, err := session.ExecuteApplication(cleanupCtx, command)
+	cleanup, err := session.ExecuteApplication(cleanupCtx, cleanupCommand)
 	if err != nil {
 		if cleanupCtx.Err() != nil {
-			return fmt.Errorf("cancelled file resource cleanup timed out")
+			return fmt.Errorf("cancelled application resource cleanup timed out")
 		}
 		return err
 	}
-	if transfer.GetResume() != nil && (cleanup.GetFileTransferCancel() == nil || !cleanup.GetFileTransferCancel().GetCancelled()) {
+	if confirmUpload && (cleanup.GetFileTransferCancel() == nil || !cleanup.GetFileTransferCancel().GetCancelled()) {
 		return fmt.Errorf("upload cancellation was not confirmed")
 	}
 	return nil
+}
+
+func cancelledApplicationCleanupCommand(original *apipb.CommandEnvelope, result *apipb.ResultEnvelope) (*apipb.CommandEnvelope, bool) {
+	if transfer := result.GetFileTransferOpen().GetTransfer(); transfer != nil && transfer.GetResource() != nil {
+		if transfer.GetResume() != nil {
+			return &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelCommand{UploadResume: proto.Clone(transfer.GetResume()).(*apipb.FileUploadResumeHandle)}}}, true
+		}
+		return &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{ReleaseResource: &apipb.ReleaseResourceCommand{Resource: proto.Clone(transfer.GetResource()).(*apipb.ResourceHandle)}}}, false
+	}
+	if window := result.GetHistoryWindow(); requiresTerminalResponse(original) && window != nil && window.GetTerminal() != nil && window.GetToken() != "" {
+		return &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryRelease{HistoryRelease: &apipb.HistoryReleaseCommand{
+			Terminal: proto.Clone(window.GetTerminal()).(*apipb.TerminalRef), Token: window.GetToken(), HistoryGeneration: window.GetHistoryGeneration(),
+		}}}, false
+	}
+	if subscription := result.GetEventSubscription().GetSubscription(); subscription != nil {
+		return &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{ReleaseResource: &apipb.ReleaseResourceCommand{Resource: proto.Clone(subscription).(*apipb.ResourceHandle)}}}, false
+	}
+	return nil, false
 }
 
 func (engine *Engine) forwardSession(handle uint64, session clientruntime.ApplicationReadyPeerSession) {

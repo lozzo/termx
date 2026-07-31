@@ -828,6 +828,13 @@ func (server *Server) nextLiveScreenWithBaseline(ctx context.Context, id string,
 			return NativeScreenSnapshot{}, nil, err
 		}
 	}
+	registered, err := server.Terminal(id)
+	if err != nil {
+		return NativeScreenSnapshot{}, nil, err
+	}
+	if registered != terminal {
+		return NativeScreenSnapshot{}, nil, ErrTerminalNotFound
+	}
 	snapshot, currentBase := terminal.nativeScreenSnapshotSinceBaseline(id, observedRevision, base)
 	return snapshot, currentBase, nil
 }
@@ -849,7 +856,7 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 	defer cancel()
 	events := server.Events(waitCtx, EventFilter{
 		TerminalID: id,
-		Types:      []EventType{EventTerminalLiveInvalidated},
+		Types:      []EventType{EventTerminalLiveInvalidated, EventTerminalRemoved},
 	})
 	if revision := terminal.LiveRevision(); revision > observedRevision {
 		// 中文说明：这是 latest native screen 的边沿补偿，不是事件回放队列。
@@ -858,6 +865,13 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 		// history backlog、TUI render，也不携带 screen payload。
 		if err := terminal.flushLiveOutput(ctx); err != nil {
 			return Event{}, err
+		}
+		registered, err := server.Terminal(id)
+		if err != nil {
+			return Event{}, err
+		}
+		if registered != terminal {
+			return Event{}, ErrTerminalNotFound
 		}
 		revision = terminal.LiveRevision()
 		return Event{
@@ -877,6 +891,9 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 			if !ok {
 				return Event{}, context.Canceled
 			}
+			if event.Type == EventTerminalRemoved {
+				return Event{}, ErrTerminalNotFound
+			}
 			if event.Live == nil {
 				continue
 			}
@@ -888,6 +905,13 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 			// live.screen.get；screen rows 仍由客户端随后 pull latest。
 			if err := terminal.flushLiveOutput(ctx); err != nil {
 				return Event{}, err
+			}
+			registered, err := server.Terminal(id)
+			if err != nil {
+				return Event{}, err
+			}
+			if registered != terminal {
+				return Event{}, ErrTerminalNotFound
 			}
 			event.Live.Revision = terminal.LiveRevision()
 			return event, nil

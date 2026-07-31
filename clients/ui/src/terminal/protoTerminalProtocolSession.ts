@@ -185,7 +185,6 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     alternate = false,
     options?: { signal?: AbortSignal; cols?: number },
   ): Promise<TerminalScrollbackPage> {
-    if (alternate) return { beforeOffset: offset, limit, rows: 0, replay: '', operation: 'replace', hasMore: false, alternate: true }
     const requestedCols = Math.trunc(options?.cols ?? 0)
     const cols = requestedCols > 0 ? requestedCols : this.terminalSizes.get(terminalId)?.cols ?? 80
     const page = await this.scrollbackPager.load({
@@ -199,6 +198,7 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
       beforeOffset: offset,
       limit,
       rows: page.loadedRows,
+      cols,
       replay: coreV2HistoryRowsANSI(page.rows, cols),
       operation: page.operation,
       committedTotalRows: page.committedTotalRows,
@@ -206,8 +206,9 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
       historyGeneration: Number(page.historyGeneration),
       ...(page.firstRowId ? { firstRowId: Number(page.firstRowId) } : {}),
       ...(page.lastRowId ? { lastRowId: Number(page.lastRowId) } : {}),
+      ...(page.viewportTop !== undefined ? { viewportTop: page.viewportTop } : {}),
       hasMore: page.hasMore,
-      alternate: false,
+      alternate,
     }
   }
 

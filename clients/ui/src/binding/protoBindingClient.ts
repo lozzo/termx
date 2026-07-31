@@ -2,6 +2,7 @@ import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import * as AnyTTYApiApplication from '../generated/apipb/application_pb'
 import * as AnyTTYApiCommon from '../generated/apipb/common_pb'
 import * as AnyTTYApiFile from '../generated/apipb/file_pb'
+import * as AnyTTYApiHistory from '../generated/apipb/history_pb'
 import * as AnyTTYClientBinding from '../generated/bindingpb/client_binding_pb'
 import * as AnyTTYRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
@@ -55,7 +56,7 @@ export class ProtoBindingClient {
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, AnyTTYClientBinding.EventEnvelope>()
-  private readonly cancelledOperations = new Set<bigint>()
+  private readonly cancelledOperations = new Map<bigint, boolean>()
   private readonly earlyStreamEvents = new Map<bigint, AnyTTYClientBinding.EventEnvelope[]>()
   private readonly abandonedStreamHandles = new Set<bigint>()
   private readonly retiredSessionHandles = new Set<bigint>()
@@ -158,7 +159,9 @@ export class ProtoBindingClient {
 
   async execute(session: bigint, command: AnyTTYApiApplication.CommandEnvelope, signal?: AbortSignal): Promise<AnyTTYApiApplication.ResultEnvelope> {
     const operation = await this.backend.request(BindingOperation.EXECUTE, toBinary(AnyTTYApiApplication.CommandEnvelopeSchema, command), session, signal)
-    return await this.waitOperation(this.executeOperations, operation, signal)
+    const historyMode = command.command.case === 'historyWindow' ? command.command.value.mode : undefined
+    const ownsHistorySnapshot = historyMode === AnyTTYApiHistory.HistoryWindowMode.UNSPECIFIED || historyMode === AnyTTYApiHistory.HistoryWindowMode.LATEST
+    return await this.waitOperation(this.executeOperations, operation, signal, ownsHistorySnapshot)
   }
 
   async openResourceStream(session: bigint, resource: NonNullable<AnyTTYClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoBindingResourceStream> {
@@ -201,15 +204,15 @@ export class ProtoBindingClient {
     void this.release(handle).catch((error) => this.onClosed(new Error(`completed operation release failed: ${errorMessage(error)}`)))
   }
 
-  private async waitOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint, signal?: AbortSignal): Promise<T> {
+  private async waitOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint, signal?: AbortSignal, ownsHistorySnapshot = false): Promise<T> {
     if (signal?.aborted) {
-      this.abandonOperation(registry, operation)
+      this.abandonOperation(registry, operation, ownsHistorySnapshot)
       throw abortError(signal)
     }
     return await new Promise<T>((resolve, reject) => {
       registry.set(operation, { resolve, reject })
       const abort = () => {
-        this.abandonOperation(registry, operation)
+        this.abandonOperation(registry, operation, ownsHistorySnapshot)
         reject(signal ? abortError(signal) : new DOMException('Aborted', 'AbortError'))
       }
       signal?.addEventListener('abort', abort, { once: true })
@@ -236,23 +239,25 @@ export class ProtoBindingClient {
     await this.backend.request(BindingOperation.CANCEL, new Uint8Array(), operation).catch(() => undefined)
   }
 
-  private abandonOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint): void {
+  private abandonOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint, ownsHistorySnapshot = false): void {
     registry.delete(operation)
     const completed = this.earlyOperationEvents.get(operation)
     if (completed) {
       this.earlyOperationEvents.delete(operation)
-      this.retireCancelledOperation(operation, completed)
+      this.retireCancelledOperation(operation, completed, ownsHistorySnapshot)
       return
     }
-    this.cancelledOperations.add(operation)
+    this.cancelledOperations.set(operation, ownsHistorySnapshot)
     void this.cancel(operation)
   }
 
   private onEvent(envelope: AnyTTYClientBinding.EventEnvelope): void {
     const event = envelope.event
     const operationHandle = bindingOperationHandle(envelope)
-    if (operationHandle !== undefined && this.cancelledOperations.delete(operationHandle)) {
-      this.retireCancelledOperation(operationHandle, envelope)
+    const ownsHistorySnapshot = operationHandle === undefined ? undefined : this.cancelledOperations.get(operationHandle)
+    if (operationHandle !== undefined && ownsHistorySnapshot !== undefined) {
+      this.cancelledOperations.delete(operationHandle)
+      this.retireCancelledOperation(operationHandle, envelope, ownsHistorySnapshot)
       return
     }
     if (operationHandle !== undefined && !this.hasPendingOperation(event.case, operationHandle)) {
@@ -506,21 +511,34 @@ export class ProtoBindingClient {
       .catch((error) => this.onClosed(new Error(`abandoned resource stream cleanup failed: ${errorMessage(error)}`)))
   }
 
-  private async cleanupCancelledExecute(result: AnyTTYClientBinding.ExecuteResult): Promise<void> {
+  private async cleanupCancelledExecute(result: AnyTTYClientBinding.ExecuteResult, ownsHistorySnapshot: boolean): Promise<void> {
     if (result.error && result.error.code !== AnyTTYApiCommon.ApiErrorCode.CANCELLED) {
       throw apiError(result.error, 'cancelled operation cleanup failed')
     }
     const session = this.sessions.get(result.sessionHandle)
-    const transfer = result.result?.result.case === 'fileTransferOpen' ? result.result.result.value.transfer : undefined
-    if (!session || !transfer?.resource) return
-    const cleanup = transfer.resume
-      ? create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(AnyTTYApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
-      : create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(AnyTTYApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
+    if (!session) return
+    const value = result.result?.result
+    const transfer = value?.case === 'fileTransferOpen' ? value.value.transfer : undefined
+    const history = value?.case === 'historyWindow' ? value.value : undefined
+    const subscription = value?.case === 'eventSubscription' ? value.value.subscription : undefined
+    let cleanup: AnyTTYApiApplication.CommandEnvelope | undefined
+    if (transfer?.resource) {
+      cleanup = transfer.resume
+        ? create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(AnyTTYApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
+        : create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(AnyTTYApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
+    } else if (ownsHistorySnapshot && history?.terminal && history.token) {
+      cleanup = create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'historyRelease', value: create(AnyTTYApiHistory.HistoryReleaseCommandSchema, {
+        terminal: history.terminal, token: history.token, historyGeneration: history.historyGeneration,
+      }) } })
+    } else if (subscription) {
+      cleanup = create(AnyTTYApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(AnyTTYApiApplication.ReleaseResourceCommandSchema, { resource: subscription }) } })
+    }
+    if (!cleanup) return
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(new DOMException('cancelled operation cleanup timed out', 'TimeoutError')), CANCELLED_CLEANUP_TIMEOUT_MS)
     try {
       const cleanupResult = await session.execute(cleanup, { signal: controller.signal })
-      if (transfer.resume && (cleanupResult.result.case !== 'fileTransferCancel' || !cleanupResult.result.value.cancelled)) {
+      if (transfer?.resume && (cleanupResult.result.case !== 'fileTransferCancel' || !cleanupResult.result.value.cancelled)) {
         throw new Error('cancelled upload cleanup was not confirmed')
       }
     } finally {
@@ -528,10 +546,10 @@ export class ProtoBindingClient {
     }
   }
 
-  private retireCancelledOperation(operationHandle: bigint, envelope: AnyTTYClientBinding.EventEnvelope): void {
+  private retireCancelledOperation(operationHandle: bigint, envelope: AnyTTYClientBinding.EventEnvelope, ownsHistorySnapshot = false): void {
     const event = envelope.event
     if (event.case === 'execute') {
-      void this.cleanupCancelledExecute(event.value).catch((error) => this.onClosed(new Error(`cancelled operation cleanup failed: ${errorMessage(error)}`)))
+      void this.cleanupCancelledExecute(event.value, ownsHistorySnapshot).catch((error) => this.onClosed(new Error(`cancelled operation cleanup failed: ${errorMessage(error)}`)))
     } else if (event.case === 'openSession' && event.value.sessionHandle !== 0n) {
     if (this.retiredSessionHandles.size >= MAX_ABANDONED_STREAM_HANDLES) {
     this.onClosed(new Error('Proto binding retired session handle capacity is exhausted'))

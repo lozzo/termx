@@ -21,6 +21,18 @@ func (store HistoryStore) BeginLatest(req HistoryPendingRequest) (HistoryStore, 
 	return store, nil
 }
 
+// RebindPendingLatest updates the local reflow width while the frozen logical
+// source is in flight. The server response does not need to be requested again.
+func (store HistoryStore) RebindPendingLatest(cols int) HistoryStore {
+	if store.Pending == nil || store.Pending.Kind != HistoryRequestLatest {
+		return store
+	}
+	pending := *store.Pending
+	pending.Cols = cols
+	store.Pending = &pending
+	return store
+}
+
 func (store HistoryStore) BeginOlder(req HistoryPendingRequest) (HistoryStore, error) {
 	if store.Pending != nil {
 		return store, ErrHistoryRequestPending
@@ -233,6 +245,7 @@ func (store HistoryStore) replace(window HistoryWindow, cols int) HistoryStore {
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
 	store.Boundary = window.Boundary
+	store.ViewportAnchor = window.ViewportAnchor
 	store.HasMore = window.HasMore
 	store.Exhausted = ExhaustedMarker{}
 	return store

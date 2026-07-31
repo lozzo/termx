@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { coreV2HistoryRowsANSI } from './coreV2HistoryANSI'
+import { Terminal } from '@xterm/xterm'
+import { coreV2HistoryRowsANSI, coreV2ReflowHistoryRows } from './coreV2HistoryANSI'
 import type { CoreV2HistorySource } from './coreV2HistorySource'
 import { CoreV2ScrollbackPager } from './coreV2ScrollbackPager'
 import type {
@@ -96,6 +97,86 @@ describe('CoreV2ScrollbackPager', () => {
     expect(replay).toContain('\u001b[1;38;5;1mERR')
     expect(replay).toContain('\u001b[48;2;16;32;48m  ')
   })
+
+  it('preserves soft-wrap identity when replaying a reflowed logical line', async () => {
+    const rows = coreV2ReflowHistoryRows([{
+      index: 0,
+      logicalLineId: '1',
+      rowInLine: 0,
+      cells: [{ text: 'abcdefghijkl', width: 12 }],
+    }], 6)
+    const terminal = new Terminal({ cols: 6, rows: 2, scrollback: 20 })
+
+    await new Promise<void>((resolve) => terminal.write(coreV2HistoryRowsANSI(rows, 6), resolve))
+
+    const first = terminal.buffer.active.getLine(0)!
+    const second = terminal.buffer.active.getLine(1)!
+    expect(second.isWrapped).toBe(true)
+    expect(`${first.translateToString(true)}${second.isWrapped ? '' : '\n'}${second.translateToString(true)}`).toBe('abcdefghijkl')
+    terminal.dispose()
+  })
+
+  it('crops a fixed grid row to one local xterm row', async () => {
+    const rows = coreV2ReflowHistoryRows([{
+      index: 0,
+      fixedGrid: true,
+      cells: [{ text: 'abcdefghijkl', width: 12 }],
+    }], 6)
+    const terminal = new Terminal({ cols: 6, rows: 2, scrollback: 20 })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.cells.map((cell) => cell.text).join('')).toBe('abcdef')
+    await new Promise<void>((resolve) => terminal.write(coreV2HistoryRowsANSI(rows, 6), resolve))
+    expect(terminal.buffer.active.length).toBe(2)
+    expect(terminal.buffer.active.getLine(1)?.isWrapped).toBe(false)
+    terminal.dispose()
+  })
+
+  it('maps the frozen live viewport anchor and shifts it across older prepends', async () => {
+    const latestWindow = window({ lineId: '42', token: 'token-1', generation: '7', hasMore: true })
+    latestWindow.renderRows = [
+      historyRow('41', 0, 'older', 5),
+      historyRow('42', 0, 'abcdefghij', 10),
+    ]
+    latestWindow.viewportAnchor = {
+      topLineId: '42',
+      topCellOffset: 5,
+      atEnd: false,
+      screenCols: 5,
+      screenRows: 3,
+    }
+    const olderWindow = window({ lineId: '40', token: 'token-1', generation: '7', op: 'prepend', hasMore: false })
+    const pager = new CoreV2ScrollbackPager(new MockSource([latestWindow, olderWindow]))
+
+    const latest = await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 3, cols: 5 })
+    const older = await pager.load({ terminalId: 'terminal-1', offset: latest.totalLoadedRows, limit: 1, cols: 5 })
+
+    expect(latest.viewportTop).toBe(2)
+    expect(older.viewportTop).toBe(4)
+  })
+
+  it('counts production logical rows after local reflow', async () => {
+    const latestWindow = window({ lineId: '42', token: 'token-1', generation: '7', hasMore: false })
+    latestWindow.renderRows = [historyRow('42', 0, 'abcdefghijklmnopqr', 18)]
+    latestWindow.viewportAnchor = {
+      topLineId: '42',
+      topCellOffset: 6,
+      atEnd: false,
+      screenCols: 6,
+      screenRows: 2,
+    }
+    const pager = new CoreV2ScrollbackPager(new MockSource([latestWindow]))
+
+    const latest = await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 100, cols: 6 })
+
+    expect(latest.rows.map((row) => row.cells.map((cell) => cell.text).join(''))).toEqual([
+      'abcdef',
+      'ghijkl',
+      'mnopqr',
+    ])
+    expect(latest.loadedRows).toBe(3)
+    expect(latest.viewportTop).toBe(1)
+  })
 })
 
 class MockSource implements CoreV2HistorySource {
@@ -118,6 +199,15 @@ class MockSource implements CoreV2HistorySource {
 
   async release(request: { terminalId: string; token: string; generation?: string | number | bigint }): Promise<void> {
     this.releases.push({ ...request })
+  }
+}
+
+function historyRow(lineId: string, rowInLine: number, text: string, width: number) {
+  return {
+    index: rowInLine,
+    cells: [{ text, width }],
+    logicalLineId: lineId,
+    rowInLine,
   }
 }
 

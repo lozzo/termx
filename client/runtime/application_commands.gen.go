@@ -212,8 +212,8 @@ func (session *ApplicationSession) PathListDirectories(ctx context.Context, comm
 	return result.GetPathListDirectories(), nil
 }
 
-// HistoryWindow executes the history_window application command.
-func (session *ApplicationSession) HistoryWindow(ctx context.Context, command *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error) {
+// executeHistoryWindow executes the history_window application command.
+func (session *ApplicationSession) executeHistoryWindow(ctx context.Context, command *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error) {
 	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: command}})
 	if err != nil {
 		return nil, err

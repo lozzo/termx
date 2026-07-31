@@ -616,8 +616,8 @@ func reduceCopyModeScrollNewer(root state.Root, deps CopyModeDeps, rows int) (st
 		return root, nil
 	}
 	previousCopyMode := root.CopyMode
-	root.CopyMode = root.CopyMode.ScrollCursor(rows, len(root.History.Rows))
-	consumedRows := root.CopyMode.Cursor.Row - previousCopyMode.Cursor.Row
+	var consumedRows int
+	root.CopyMode, consumedRows = root.CopyMode.ScrollNewer(rows, len(root.History.Rows))
 	unconsumedRows := rows - consumedRows
 	if unconsumedRows < 0 {
 		unconsumedRows = 0
@@ -1192,8 +1192,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	} else if pending != nil && pending.Kind == state.HistoryRequestNewer {
 		root.CopyMode.BoundToken = window.Token
 		root.CopyMode.BoundCols = nextHistory.Cols
+		root.CopyMode = root.CopyMode.RestoreViewportTail(nextHistory)
 		root.CopyMode = root.CopyMode.FollowCursor(len(nextHistory.Rows))
-		root.CopyMode = root.CopyMode.ScrollCursor(pending.ScrollDeltaAfterPrepend, len(nextHistory.Rows))
+		root.CopyMode, _ = root.CopyMode.ScrollNewer(pending.ScrollDeltaAfterPrepend, len(nextHistory.Rows))
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, window, nextHistory.Cols)
 		deferredRows := 0
@@ -1211,6 +1212,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	root = refreshCopyModeLogicalSelectionFocus(root)
 	if pending != nil && (pending.Kind == state.HistoryRequestOlder || pending.Kind == state.HistoryRequestNewer) {
 		root = trimCopyModeHistoryWindow(root, deps)
+	}
+	if pending != nil && pending.Kind == state.HistoryRequestNewer {
+		root.CopyMode = root.CopyMode.RestoreViewportTail(root.History)
 	}
 	if remainingEnteringOlderRows > 0 && root.History.OlderRequestState() == state.OlderRequestReady {
 		return beginCopyModeOlder(root, deps, remainingEnteringOlderRows)

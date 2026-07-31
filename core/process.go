@@ -104,7 +104,7 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 		terminal:     terminal,
 		cmd:          cmd,
 		platform:     platform,
-		outputCh:     make(chan []byte, ptyOutputQueueChunks),
+		outputCh:     make(chan []byte),
 		outputCancel: make(chan struct{}),
 		waitCh:       make(chan ProcessExit, 1),
 		readDone:     make(chan struct{}),
@@ -129,11 +129,7 @@ type ptyProcess struct {
 	killRequested atomic.Bool
 }
 
-const (
-	ptyReadBufferBytes = 64 * 1024
-	// Keep PTY reads moving while the terminal owner processes the previous chunk.
-	ptyOutputQueueChunks = 16
-)
+const ptyReadBufferBytes = 64 * 1024
 
 func (process *ptyProcess) Input(data []byte) error {
 	process.mu.Lock()

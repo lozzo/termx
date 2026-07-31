@@ -210,54 +210,21 @@ func TestR411CopyHistoryUsesContinuousRowsWithoutScreenRowPadding(t *testing.T) 
 	}
 }
 
-func TestR414CopyHistoryEntryUsesCurrentFrameScreenRowViewportAnchor(t *testing.T) {
+func TestCopyHistoryAllowsViewportAnchoredAfterLastHistoryRow(t *testing.T) {
 	history := state.HistoryStore{
 		Cols: 12,
 		Rows: []state.HistoryRow{
-			{Text: "old shell prompt", LineID: 1, Segment: state.HistoryCursorSegmentCommitted},
-			{Text: "old shell marker", LineID: 2, Segment: state.HistoryCursorSegmentCommitted},
-			{Text: "visible shell prompt", LineID: 3, Segment: state.HistoryCursorSegmentCommitted},
-			{Text: "visible shell marker", LineID: 4, Segment: state.HistoryCursorSegmentCommitted},
-			{
-				Text:         "OpenAI Codex",
-				LineID:       20,
-				Kind:         state.HistoryRowKindScreenFrame,
-				Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
-				SessionID:    1,
-				FrameID:      10,
-				FixedGrid:    true,
-				ScreenCols:   12,
-				ScreenRow:    2,
-				ScreenRowSet: true,
-			},
-			{
-				Text:         "> Use /skills",
-				LineID:       21,
-				Kind:         state.HistoryRowKindScreenFrame,
-				Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
-				SessionID:    1,
-				FrameID:      10,
-				FixedGrid:    true,
-				ScreenCols:   12,
-				ScreenRow:    3,
-				ScreenRowSet: true,
-			},
+			{Text: "old shell prompt", LineID: 1},
+			{Text: "old shell marker", LineID: 2},
 		},
 	}
-	copyMode := state.CopyModeStore{ViewRows: 8}.AcceptLatest(state.HistoryWindow{
-		Rows:  history.Rows,
-		Cols:  history.Cols,
-		Token: "tok-1",
-	}, history.Cols, len(history.Rows))
+	copyMode := state.CopyModeStore{Active: true, ViewRows: 8, ViewportTop: len(history.Rows), Cursor: state.CopyPosition{Row: 1}}
 
 	lines := copyHistoryLines(history, copyMode)
-	if copyMode.ViewportTop != 2 || len(lines) != len(history.Rows)-2 {
-		t.Fatalf("expected current-frame screen-row anchored viewport, copy=%#v lines=%#v", copyMode, lines)
+	if len(lines) != 0 {
+		t.Fatalf("viewport after the final history row should render only terminal background, got %#v", lines)
 	}
-	if got := lines[0].String(); got != "visible shell prompt" {
-		t.Fatalf("entry viewport should drop only rows above screen-row anchor, got first line %q lines=%#v", got, lines)
-	}
-	if got := lines[2].String(); got != "OpenAI Codex" {
-		t.Fatalf("current frame should keep authoritative row order, got %q lines=%#v", got, lines)
+	if cursor := copyHistoryCursor(history, copyMode); cursor.Visible {
+		t.Fatalf("history cursor must be hidden outside the anchored viewport, got %#v", cursor)
 	}
 }

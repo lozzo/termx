@@ -37,12 +37,14 @@ const terminalHarness = vi.hoisted(() => ({
   xtermWrites: [] as string[],
   pendingWriteCallbacks: [] as Array<() => void>,
   autoCompleteWrites: true,
+  fitDimensions: { cols: 80, rows: 24 },
+  resizeObserverCallback: null as ResizeObserverCallback | null,
 }))
 
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit() {}
-    proposeDimensions() { return { cols: 80, rows: 24 } }
+    proposeDimensions() { return terminalHarness.fitDimensions }
   },
 }))
 
@@ -174,6 +176,8 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.xtermWrites.length = 0
     terminalHarness.pendingWriteCallbacks.length = 0
     terminalHarness.autoCompleteWrites = true
+    terminalHarness.fitDimensions = { cols: 80, rows: 24 }
+    terminalHarness.resizeObserverCallback = null
     terminalHarness.liveSubmitted.mockReset()
     terminalHarness.liveCompleted.mockReset()
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
@@ -181,6 +185,7 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.historyLoad.mockReset().mockResolvedValue({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
     terminalHarness.historyReset.mockReset()
     vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { terminalHarness.resizeObserverCallback = callback }
       observe() {}
       disconnect() {}
     })
@@ -489,6 +494,24 @@ describe('Terminal input modifier boundary', () => {
     await Promise.resolve()
     expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1)
     expect(terminalHarness.historyReset).not.toHaveBeenCalled()
+  })
+
+  it('reloads frozen history with the new local columns after resize', async () => {
+    terminalHarness.historySnapshot = true
+    terminalHarness.historyLoad.mockResolvedValue({ loadedRows: 1, totalRows: 1, cols: 80, hasMore: true, alternate: false })
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const output = (terminalHarness.instances[0] as FakeXTermInstance).element?.querySelector('.xterm-screen')
+    if (!output) throw new Error('missing terminal screen')
+
+    fireEvent.wheel(output, { deltaY: -1 })
+    await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(1))
+    terminalHarness.fitDimensions = { cols: 40, rows: 24 }
+    act(() => terminalHarness.resizeObserverCallback?.([], {} as ResizeObserver))
+
+    await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(2))
+    expect(terminalHarness.historyReset).toHaveBeenCalledOnce()
+    expect(terminalHarness.historyLoad).toHaveBeenLastCalledWith(expect.any(Number), false, 40)
   })
 
   it('returns the underlying acceptance result from imperative input and paste handles', async () => {

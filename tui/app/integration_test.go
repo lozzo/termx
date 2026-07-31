@@ -4518,6 +4518,45 @@ func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing
 	}
 }
 
+func TestCopyModeResizeRebindUpdatesPendingLatestLocalWidth(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	requestID := state.RequestID(9)
+	pending := state.HistoryPendingRequest{
+		ID: requestID, PaneID: state.DefaultPaneID, ViewID: viewID,
+		EndpointID: state.EndpointID("local"), TerminalID: "term-1", Cols: 78,
+		Kind: state.HistoryRequestLatest,
+	}
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Shell:   state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", viewID, true,
+		)),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 40},
+		History:  state.HistoryStore{Pending: &pending},
+		CopyMode: state.CopyModeStore{
+			Entering: true, Phase: state.CopyModeEnteringPending,
+			PaneID: state.DefaultPaneID, ViewID: viewID, EndpointID: state.EndpointID("local"),
+			TerminalID: "term-1", RequestID: requestID, BoundCols: 78, ViewRows: 20,
+		},
+	}
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20})
+
+	next, effects := reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
+	if len(effects) != 0 {
+		t.Fatalf("pending latest resize should only change local reflow dimensions, got %#v", effects)
+	}
+	if next.History.Pending == nil || next.History.Pending.Cols != 98 {
+		t.Fatalf("pending latest width = %#v, want current content width 98", next.History.Pending)
+	}
+	if next.CopyMode.BoundCols != 98 || next.CopyMode.ViewRows != 36 || !next.CopyMode.Entering {
+		t.Fatalf("entering copy mode dimensions not rebound: %#v", next.CopyMode)
+	}
+	if root.History.Pending.Cols != 78 {
+		t.Fatalf("reducer mutated the previous root pending request: %#v", root.History.Pending)
+	}
+}
+
 func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *testing.T) {
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
@@ -6299,38 +6338,17 @@ func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 	}
 }
 
-func TestR414CopyModeLatestKeepsCurrentFrameScreenRowAnchor(t *testing.T) {
+func TestCopyModeLatestKeepsFrozenViewportLogicalAnchor(t *testing.T) {
 	rows := []state.HistoryRow{
 		{Text: "old shell prompt", LineID: 1, Segment: state.HistoryCursorSegmentCommitted},
 		{Text: "old shell marker", LineID: 2, Segment: state.HistoryCursorSegmentCommitted},
 		{Text: "visible shell prompt", LineID: 3, Segment: state.HistoryCursorSegmentCommitted},
 		{Text: "visible shell marker", LineID: 4, Segment: state.HistoryCursorSegmentCommitted},
-		{
-			Text:         "OpenAI Codex",
-			LineID:       20,
-			Kind:         state.HistoryRowKindScreenFrame,
-			Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
-			SessionID:    1,
-			FrameID:      10,
-			FixedGrid:    true,
-			ScreenCols:   80,
-			ScreenRow:    2,
-			ScreenRowSet: true,
-		},
-		{
-			Text:         "> Explain this codebase",
-			LineID:       21,
-			Kind:         state.HistoryRowKindScreenFrame,
-			Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
-			SessionID:    1,
-			FrameID:      10,
-			FixedGrid:    true,
-			ScreenCols:   80,
-			ScreenRow:    3,
-			ScreenRowSet: true,
-		},
+		{Text: "OpenAI Codex", LineID: 20, Segment: state.HistoryCursorSegmentCurrentPrimaryFrame},
+		{Text: "> Explain this codebase", LineID: 21, Segment: state.HistoryCursorSegmentCurrentPrimaryFrame},
 	}
 	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	latest.ViewportAnchor = state.HistoryViewportAnchor{TopLineID: 3, ScreenCols: 80, ScreenRows: 16, Valid: true}
 	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: latest}}}
 	host := NewFakeTerminalHost(32)
 	host.SetSize(80, 16)
@@ -6344,11 +6362,11 @@ func TestR414CopyModeLatestKeepsCurrentFrameScreenRowAnchor(t *testing.T) {
 	}
 
 	if runtime.State().CopyMode.ViewportTop != 2 || runtime.State().CopyMode.Cursor.Row != 5 {
-		t.Fatalf("copy latest should keep current-frame screen-row anchor, got %#v", runtime.State().CopyMode)
+		t.Fatalf("copy latest should keep the frozen logical viewport anchor, got %#v", runtime.State().CopyMode)
 	}
 	lines := activeCopyContentLines(runtime)
 	if copyHistoryLinesContain(lines, "old shell prompt") || !copyHistoryLinesContain(lines, "visible shell prompt") || !copyHistoryLinesContain(lines, "OpenAI Codex") {
-		t.Fatalf("copy history should drop only rows above the screen-row anchor, got %#v", lines)
+		t.Fatalf("copy history should start at the frozen viewport top, got %#v", lines)
 	}
 }
 
@@ -6826,17 +6844,17 @@ func TestCopyModeContinuousOlderKeepsBoundedLocalHistoryWindow(t *testing.T) {
 func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(100, 12)
-	loadedRows := make([]state.HistoryRow, 0, 128)
-	for i := 1000; i < 1128; i++ {
+	loadedRows := make([]state.HistoryRow, 0, 32)
+	for i := 1000; i < 1032; i++ {
 		loadedRows = append(loadedRows, state.HistoryRow{Text: fmt.Sprintf("old-%04d", i), LineID: uint64(i)})
 	}
 	loadedRows[len(loadedRows)-1].Segment = state.HistoryCursorSegmentArchivedPrimaryFrame
-	newerRows := make([]state.HistoryRow, 0, 64)
-	for i := 1128; i < 1192; i++ {
+	newerRows := make([]state.HistoryRow, 0, 8)
+	for i := 1032; i < 1040; i++ {
 		newerRows = append(newerRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", i), LineID: uint64(i)})
 	}
 	newer := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
-	newer.Boundary = state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1199}
+	newer.Boundary = state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1039}
 	core := &testkit.FakeCoreClient{
 		NewerResponses: []port.HistoryResult{{Window: newer}},
 	}
@@ -6852,8 +6870,11 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 		Lines:       []state.HistoryLineSpan{{LineID: loadedRows[0].LineID, StartRow: 0, EndRow: len(loadedRows) - 1}},
 		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: loadedRows[0].LineID},
 		Generation:  7,
-		Boundary:    state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1199},
-		HasMore:     true,
+		Boundary:    state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1039},
+		ViewportAnchor: state.HistoryViewportAnchor{
+			Valid: true, TopLineID: 1036,
+		},
+		HasMore: true,
 	}
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:      true,
@@ -6877,7 +6898,7 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 		t.Fatalf("expected one newer request, got %#v", core.NewerRequests)
 	}
 	req := core.NewerRequests[0]
-	if req.Token != "tok-1" || req.Generation != 7 || req.Boundary.LastLineID != 1199 {
+	if req.Token != "tok-1" || req.Generation != 7 || req.Boundary.LastLineID != 1039 {
 		t.Fatalf("newer request must keep frozen token/generation/tail boundary, got %#v", req)
 	}
 	if req.Cursor.BeforeLineID != loadedRows[len(loadedRows)-1].LineID || req.Cursor.BeforeRowInLine != loadedRows[len(loadedRows)-1].RowInLine {
@@ -6892,8 +6913,11 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	if cursorLine := runtime.State().History.Rows[runtime.State().CopyMode.Cursor.Row].LineID; cursorLine <= loadedRows[len(loadedRows)-1].LineID {
 		t.Fatalf("page down should continue into appended newer rows, cursor row=%d line=%d", runtime.State().CopyMode.Cursor.Row, cursorLine)
 	}
-	if runtime.State().History.Boundary.LastLineID != 1199 {
+	if runtime.State().History.Boundary.LastLineID != 1039 {
 		t.Fatalf("append must keep frozen tail boundary, got %#v", runtime.State().History.Boundary)
+	}
+	if runtime.State().CopyMode.ViewportTailRows != 4 {
+		t.Fatalf("newer append should restore four frozen viewport tail rows, got %#v", runtime.State().CopyMode)
 	}
 }
 

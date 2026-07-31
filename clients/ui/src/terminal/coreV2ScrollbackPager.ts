@@ -1,4 +1,5 @@
 import type { CoreV2HistorySource } from './coreV2HistorySource'
+import { coreV2ReflowHistoryRows } from './coreV2HistoryANSI'
 import type {
   CoreV2HistoryCursor,
   CoreV2HistoryRow,
@@ -15,6 +16,7 @@ export interface CoreV2ScrollbackPage {
   historyGeneration: string
   firstRowId?: string | undefined
   lastRowId?: string | undefined
+  viewportTop?: number | undefined
   hasMore: boolean
 }
 
@@ -26,6 +28,7 @@ interface CoreV2ScrollbackState {
   firstLineId?: string | undefined
   lastLineId?: string | undefined
   totalLoadedRows: number
+  viewportTop?: number | undefined
   hasMore: boolean
 }
 
@@ -85,12 +88,13 @@ export class CoreV2ScrollbackPager {
       throw new Error('history scrollback window changed token or generation')
     }
 
-    const next = stateFromWindow(window, input.cols, loadLatest ? 0 : current.totalLoadedRows)
+    const visualRows = coreV2ReflowHistoryRows(window.renderRows, input.cols)
+    const next = stateFromWindow(window, visualRows, input.cols, loadLatest ? undefined : current)
     this.stateByTerminal.set(input.terminalId, next)
     if (loadLatest && current && current.token !== next.token) {
       this.release(input.terminalId, current)
     }
-    return pageFromWindow(window, next.totalLoadedRows)
+    return pageFromWindow(window, visualRows, next)
   }
 
   forget(terminalId: string): void {
@@ -114,7 +118,8 @@ function isTerminalHistoryControlError(error: unknown): boolean {
   return code === 'stale_resource' || code === 'resource_exhausted'
 }
 
-function stateFromWindow(window: CoreV2HistoryWindow, cols: number, previouslyLoadedRows: number): CoreV2ScrollbackState {
+function stateFromWindow(window: CoreV2HistoryWindow, visualRows: CoreV2HistoryRow[], cols: number, previous: CoreV2ScrollbackState | undefined): CoreV2ScrollbackState {
+  const loadedRows = visualRows.length
   return {
     cols,
     token: window.token,
@@ -122,22 +127,26 @@ function stateFromWindow(window: CoreV2HistoryWindow, cols: number, previouslyLo
     firstCursor: cursorFromRow(window.renderRows[0]),
     firstLineId: window.firstLineId ?? window.renderRows[0]?.logicalLineId,
     lastLineId: window.lastLineId ?? window.renderRows.at(-1)?.logicalLineId,
-    totalLoadedRows: previouslyLoadedRows + window.renderRows.length,
+    totalLoadedRows: (previous?.totalLoadedRows ?? 0) + loadedRows,
+    viewportTop: previous?.viewportTop === undefined
+      ? historyViewportTop(window, visualRows)
+      : previous.viewportTop + loadedRows,
     hasMore: window.hasMore,
   }
 }
 
-function pageFromWindow(window: CoreV2HistoryWindow, totalLoadedRows: number): CoreV2ScrollbackPage {
+function pageFromWindow(window: CoreV2HistoryWindow, visualRows: CoreV2HistoryRow[], state: CoreV2ScrollbackState): CoreV2ScrollbackPage {
   return {
-    rows: window.renderRows,
+    rows: visualRows,
     operation: window.op === 'prepend' ? 'prepend' : 'replace',
-    loadedRows: window.renderRows.length,
-    totalLoadedRows,
+    loadedRows: visualRows.length,
+    totalLoadedRows: state.totalLoadedRows,
     committedTotalRows: window.totalRows,
     logicalTotalRows: window.logicalTotal,
     historyGeneration: window.generation,
     firstRowId: window.firstRowId,
     lastRowId: window.lastRowId,
+    viewportTop: state.viewportTop,
     hasMore: window.hasMore,
   }
 }
@@ -151,8 +160,31 @@ function emptyPage(state: CoreV2ScrollbackState): CoreV2ScrollbackPage {
     committedTotalRows: state.totalLoadedRows,
     logicalTotalRows: state.totalLoadedRows,
     historyGeneration: state.generation,
+    viewportTop: state.viewportTop,
     hasMore: false,
   }
+}
+
+function historyViewportTop(window: CoreV2HistoryWindow, visualRows: CoreV2HistoryRow[]): number | undefined {
+  const anchor = window.viewportAnchor
+  if (!anchor) return undefined
+  if (anchor.atEnd) return visualRows.length
+
+  let remaining = Math.max(0, Math.trunc(anchor.topCellOffset))
+  let found = false
+  for (let index = 0; index < visualRows.length; index += 1) {
+    const row = visualRows[index]!
+    if (row.logicalLineId !== anchor.topLineId) {
+      if (found) break
+      continue
+    }
+    found = true
+    if (remaining === 0) return index
+    const width = row.cells.reduce((total, cell) => total + Math.max(1, cell.width), 0)
+    if (remaining < width) return index
+    remaining -= width
+  }
+  return undefined
 }
 
 function requireFirstCursor(state: CoreV2ScrollbackState): CoreV2HistoryCursor {

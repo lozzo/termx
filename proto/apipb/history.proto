@@ -170,6 +170,14 @@ message HistoryRow {
   int32 row_in_line = 15;
 }
 
+message HistoryViewportAnchor {
+  uint64 top_line_id = 1;
+  int32 top_cell_offset = 2;
+  bool at_end = 3;
+  uint32 screen_cols = 4;
+  uint32 screen_rows = 5;
+}
+
 message HistoryWindowResult {
   reserved 7;
   TerminalRef terminal = 1;
@@ -190,6 +198,7 @@ message HistoryWindowResult {
   uint64 last_line_id = 17;
   HistoryCursor cursor = 18;
   int64 timestamp_unix_nano = 19;
+  HistoryViewportAnchor viewport_anchor = 20;
 }
 
 message HistoryCopyResult {

@@ -107,6 +107,9 @@ func TestHistoryWindowToProtoCoalescesAdjacentStyleRuns(t *testing.T) {
 	red := history.CellStyle{FG: "ansi:1", Bold: true}
 	window := HistoryWindowToProto("machine", history.HistoryWindow{
 		TerminalID: "terminal",
+		ViewportAnchor: history.HistoryViewportAnchor{
+			TopLineID: 42, TopCellOffset: 17, ScreenCols: 80, ScreenRows: 24, Valid: true,
+		},
 		Rows: []history.HistoryRow{{Cells: []history.Cell{
 			{Text: "a", Width: 1, Style: red},
 			{Text: "好", Width: 2, Style: red},
@@ -117,11 +120,14 @@ func TestHistoryWindowToProtoCoalescesAdjacentStyleRuns(t *testing.T) {
 		}}},
 	})
 	cells := window.GetRows()[0].GetRow().GetCells()
-	if len(cells) != 3 {
+	if len(cells) != 5 {
 		t.Fatalf("coalesced history cells = %#v", cells)
 	}
-	if cells[0].GetContent() != "a好" || cells[0].GetWidth() != 3 || cells[1].GetContent() != "bc" || cells[1].GetWidth() != 2 || cells[2].GetContent() != "" || cells[2].GetWidth() != 3 {
+	if cells[0].GetContent() != "a" || cells[0].GetWidth() != 1 || cells[1].GetContent() != "好" || cells[1].GetWidth() != 2 || cells[2].GetContent() != "bc" || cells[2].GetWidth() != 2 || cells[3].GetContent() != "" || cells[3].GetWidth() != 1 || cells[4].GetContent() != "" || cells[4].GetWidth() != 2 {
 		t.Fatalf("coalesced history runs lost content or width: %#v", cells)
+	}
+	if anchor := window.GetViewportAnchor(); anchor.GetTopLineId() != 42 || anchor.GetTopCellOffset() != 17 || anchor.GetScreenCols() != 80 || anchor.GetScreenRows() != 24 {
+		t.Fatalf("viewport anchor lost in protocol mapping: %#v", anchor)
 	}
 }
 

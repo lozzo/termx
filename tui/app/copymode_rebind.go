@@ -13,6 +13,19 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			return root, nil
 		}
 		root, activeViewID := rootWithActiveCopyHistorySession(root)
+		if root.CopyMode.Entering {
+			rect, ok := copyModeContentRect(root)
+			if !ok || rect.W <= 0 {
+				return root, nil
+			}
+			if rect.W == root.CopyMode.BoundCols && rect.H == root.CopyMode.ViewRows {
+				return root, nil
+			}
+			root.History = root.History.RebindPendingLatest(rect.W)
+			root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
+		}
 		if !root.CopyMode.Active {
 			return root, nil
 		}

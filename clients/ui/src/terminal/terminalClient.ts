@@ -30,6 +30,7 @@ export interface TerminalSnapshotPayload {
   }
   history?: {
     revision: number
+    cols: number
     prependedRows: number
     loadedRows: number
     operation?: 'replace' | 'prepend'
@@ -38,6 +39,7 @@ export interface TerminalSnapshotPayload {
     historyGeneration?: number
     firstRowId?: number
     lastRowId?: number
+    viewportTop?: number
     hasMore: boolean
     alternate?: boolean
     prefetched?: boolean
@@ -48,6 +50,7 @@ export interface TerminalScrollbackPage {
   beforeOffset: number
   limit: number
   rows: number
+  cols: number
   replay: string
   operation?: 'replace' | 'prepend'
   committedTotalRows?: number
@@ -55,6 +58,7 @@ export interface TerminalScrollbackPage {
   historyGeneration?: number
   firstRowId?: number
   lastRowId?: number
+  viewportTop?: number
   hasMore: boolean
   alternate: boolean
 }
@@ -62,12 +66,14 @@ export interface TerminalScrollbackPage {
 export interface TerminalScrollbackLoadResult {
   loadedRows: number
   totalRows: number
+  cols?: number
   operation?: 'replace' | 'prepend'
   committedTotalRows?: number
   logicalTotalRows?: number
   historyGeneration?: number
   firstRowId?: number
   lastRowId?: number
+  viewportTop?: number
   hasMore: boolean
   alternate: boolean
   prefetched?: boolean
