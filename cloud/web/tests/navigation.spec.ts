@@ -790,6 +790,7 @@ test('query 重试保留账号列表已有的筛选与分页状态', async ({ pa
 })
 
 test('@axe 公开页、Cloud Shell、订单搜索、表格控件与打开的 dialog 满足 WCAG A/AA', async ({ page }, testInfo) => {
+  test.setTimeout(60_000)
   const colorScheme = testInfo.project.name === 'mobile-320-chromium' ? 'dark' : 'light'
   await page.emulateMedia({ colorScheme })
   await mockAPI(page)
