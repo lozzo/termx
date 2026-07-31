@@ -207,6 +207,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const terminalWrapperRef = useRef<HTMLDivElement | null>(null)
   const mobileKeybarRef = useRef<HTMLDivElement | null>(null)
   const activeTerminalSlotRef = useRef<TerminalSlot>(0)
+  const terminalToolbarOpenerRef = useRef<HTMLButtonElement | null>(null)
   const [keyboardFocusLocked, setKeyboardFocusLocked] = useState(false)
   const machineSessionRef = useRef<{
     connector: MachineWorkspaceConnector
@@ -1825,6 +1826,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setTerminalToolbarModeAndReset('default')
   }, [setTerminalToolbarModeAndReset])
 
+  const closeTerminalToolbarFromKeyboard = useCallback(() => {
+    const opener = terminalToolbarOpenerRef.current
+    terminalToolbarOpenerRef.current = null
+    setTerminalToolbarVisibility(false)
+    if (opener?.isConnected) opener.focus()
+  }, [setTerminalToolbarVisibility])
+
   useEffect(() => {
     if (!terminalToolbarOpen || terminalToolbarMode !== 'selection') return
     const timer = window.setInterval(() => {
@@ -2608,7 +2616,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               title={t('workspace.terminalTools')}
               data-testid="anytty-terminal-tools-button"
               className={`hidden h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--anytty-surface-raised)] min-[360px]:flex ${terminalToolbarOpen ? 'text-[var(--anytty-accent)]' : 'text-[var(--anytty-muted)]'}`}
-              onClick={() => { hapticSelection(); setTerminalToolbarVisibility(!terminalToolbarOpen) }}
+              onClick={(event) => {
+                hapticSelection()
+                if (!terminalToolbarOpen) terminalToolbarOpenerRef.current = event.currentTarget
+                setTerminalToolbarVisibility(!terminalToolbarOpen)
+              }}
             >
               <SlidersHorizontal className="h-5 w-5" />
             </button>
@@ -2617,7 +2629,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               aria-label={t('workspace.openTerminalMenu')}
               title={t('workspace.openTerminalMenu')}
               className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--anytty-muted)] transition-colors active:bg-[var(--anytty-surface-raised)]"
-              onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
+              onClick={(event) => { hapticSelection(); terminalToolbarOpenerRef.current = event.currentTarget; setMobileSheet('terminal-menu') }}
             >
               <MoreHorizontal className="h-5 w-5" />
             </button>
@@ -2638,6 +2650,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               resizeControl={terminalResizeControl}
               onModeChange={setTerminalToolbarModeAndReset}
               onClose={() => setTerminalToolbarVisibility(false)}
+              onEscape={closeTerminalToolbarFromKeyboard}
               onSelectAll={() => {
                 activeTerminalHandle()?.selectAll()
                 setHasTerminalSelection(true)

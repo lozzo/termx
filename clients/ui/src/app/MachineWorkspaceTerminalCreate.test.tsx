@@ -146,7 +146,7 @@ describe('MachineWorkspace terminal creation', () => {
     expect(within(header).getByRole('button', { name: 'Open terminal menu' })).toBeTruthy()
   })
 
-  it('reaches the existing terminal toolbar from the 320px menu while split', async () => {
+  it('restores the 320px menu trigger after Escape from the selection toolbar while split', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
     const terminals = [
@@ -214,10 +214,50 @@ describe('MachineWorkspace terminal creation', () => {
       button.classList.contains('h-11') || button.classList.contains('min-h-11')
     ))).toBe(true)
 
-    act(() => { expect(dispatchNativeBack()).toBe(true) })
+    expect(document.activeElement).toBe(menuButton)
+    await userEvent.tab()
+    expect(selectionToolbar.contains(document.activeElement)).toBe(true)
+    await userEvent.keyboard('{Escape}')
     expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
     expect(screen.getByTestId('anytty-split-terminal-panel')).toBeTruthy()
     expect(document.activeElement).toBe(menuButton)
+  })
+
+  it('restores the direct tools trigger after Escape from the default toolbar', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+      terminalSettings={DEFAULT_TERMINAL_SETTINGS}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    const header = await screen.findByTestId('anytty-terminal-header')
+    const toolsButton = within(header).getByTestId('anytty-terminal-tools-button')
+    expect(window.innerWidth).toBe(390)
+    expect(toolsButton.classList.contains('min-[360px]:flex')).toBe(true)
+
+    await userEvent.click(toolsButton)
+    const toolbar = screen.getByTestId('anytty-terminal-action-toolbar')
+    expect(document.activeElement).toBe(toolsButton)
+    await userEvent.tab()
+    await userEvent.tab()
+    expect(toolbar.contains(document.activeElement)).toBe(true)
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryByTestId('anytty-terminal-action-toolbar')).toBeNull()
+    expect(document.activeElement).toBe(toolsButton)
   })
 
   it('never mounts terminal resources with a stale generation while reconnecting', async () => {

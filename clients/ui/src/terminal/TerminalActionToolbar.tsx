@@ -26,6 +26,7 @@ export interface TerminalActionToolbarProps {
   onAcquireResizeOwner?: (() => void) | undefined
   onReleaseResizeOwner?: (() => void) | undefined
   onClose?: () => void
+  onEscape?: () => void
 }
 
 const RENDERER_LABELS: Record<TerminalRenderer, string> = {
@@ -54,23 +55,34 @@ export function TerminalActionToolbar({
   onAcquireResizeOwner,
   onReleaseResizeOwner,
   onClose,
+  onEscape,
 }: TerminalActionToolbarProps) {
   const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (mode === 'selection' || !onClose) return
-    const handler = (e: PointerEvent) => {
+    const escapeHandler = onEscape ?? onClose
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !escapeHandler) return
+      event.preventDefault()
+      event.stopPropagation()
+      escapeHandler()
+    }
+    const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement
       // Allow clicking buttons that open this menu (they usually stop propagation or we can check closest)
       if (target.closest('[data-testid="anytty-terminal-tools-button"]')) return
       if (panelRef.current && !panelRef.current.contains(target)) {
-        onClose()
+        onClose?.()
       }
     }
-    document.addEventListener('pointerdown', handler, true)
-    return () => document.removeEventListener('pointerdown', handler, true)
-  }, [mode, onClose])
+    if (escapeHandler) document.addEventListener('keydown', handleKeyDown, true)
+    if (mode !== 'selection' && onClose) document.addEventListener('pointerdown', handlePointerDown, true)
+    return () => {
+      if (escapeHandler) document.removeEventListener('keydown', handleKeyDown, true)
+      if (mode !== 'selection' && onClose) document.removeEventListener('pointerdown', handlePointerDown, true)
+    }
+  }, [mode, onClose, onEscape])
 
   if (mode === 'selection') {
     return (
