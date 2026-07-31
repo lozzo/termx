@@ -1,5 +1,6 @@
 import { ArrowRight, Check, Download, GitFork, LockKeyhole, MonitorSmartphone, QrCode, ShieldCheck, Smartphone, TerminalSquare } from 'lucide-react'
-import { Link } from 'react-router'
+import { useLayoutEffect, useRef } from 'react'
+import { Link, useLocation } from 'react-router'
 import logo from '../../../../clients/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png'
 import { money } from '../format'
 import { ListPlansResponseSchema } from '../generated/cloud/v1/commerce_pb'
@@ -7,10 +8,16 @@ import { useProtoQuery } from '../query'
 import { Empty, Notice, Skeleton } from '../ui'
 
 export function LandingPage() {
+  const location = useLocation()
+  const mainRef = useRef<HTMLElement>(null)
   const plans = useProtoQuery(['public', 'plans'], '/api/commerce/plans', ListPlansResponseSchema, 5 * 60_000)
+  useLayoutEffect(() => {
+    document.title = 'AnyTTY Cloud'
+    mainRef.current?.focus({ preventScroll: true })
+  }, [location.pathname])
   return <div className="landing-page">
     <header className="landing-header"><Link className="landing-brand" to="/"><img src={logo} alt="AnyTTY" /><strong>AnyTTY Cloud</strong></Link><nav aria-label="公开导航"><a href="#connect">如何连接</a><a href="#plans">套餐</a><a href="#security">安全</a><a href="https://github.com/anytty/anytty" aria-label="在 GitHub 查看 AnyTTY"><GitFork size={19} /></a><Link className="button button-primary" to="/login">登录 Cloud</Link></nav></header>
-    <main>
+    <main id="landing-main-content" ref={mainRef} tabIndex={-1} aria-label="AnyTTY Cloud 公开首页">
       <section className="landing-hero">
         <div className="hero-copy"><span className="eyebrow">ANYTTY CLOUD</span><h1>AnyTTY Cloud</h1><strong className="hero-statement">随时回到你的电脑。</strong><p>Cloud 账号用于 daemon 注册、连接路由、Relay、订阅与管理。AnyTTY App 不需要账号；扫描目标服务生成的配对二维码后，端点只保存在当前设备。</p><div className="hero-actions"><Link className="button button-primary" to="/login">登录 Cloud 控制台<ArrowRight size={18} /></Link></div><dl><div><dt>App 配对</dt><dd>目标服务二维码</dd></div><div><dt>连接方式</dt><dd>P2P / Relay</dd></div><div><dt>本地保存</dt><dd>无账号同步</dd></div></dl></div>
         <div className="hero-product" aria-label="扫码配对后的 AnyTTY Cloud 连接路径">

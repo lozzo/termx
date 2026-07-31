@@ -48,11 +48,12 @@ export function Skeleton({ rows = 6 }: { rows?: number }) {
   </div>
 }
 
-export function Dialog({ title, open, onClose, children, footer }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function Dialog({ title, open, onClose, children, footer, closable = true }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode; closable?: boolean }) {
   if (!open) return null
-  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <ModalSurface className="dialog" aria-label={title} onRequestClose={onClose}>
-      <header><h2>{title}</h2><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
+  const requestClose = () => { if (closable) onClose() }
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}>
+    <ModalSurface className="dialog" aria-label={title} onRequestClose={requestClose}>
+      <header><h2>{title}</h2><IconButton label="关闭" onClick={requestClose} disabled={!closable}><X size={18} /></IconButton></header>
       <div className="dialog-body">{children}</div>
       {footer && <footer>{footer}</footer>}
     </ModalSurface>

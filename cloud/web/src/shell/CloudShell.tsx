@@ -8,7 +8,7 @@ import logo from '../../../../clients/mobile/android/app/src/main/res/mipmap-xxx
 import { APIError, protoSend } from '../api'
 import { AccountRole, GetCurrentAccountResponseSchema, LogoutAccountSessionRequestSchema, LogoutAccountSessionResponseSchema, type GetCurrentAccountResponse } from '../generated/cloud/v1/account_pb'
 import { useProtoQuery } from '../query'
-import { IconButton, Skeleton } from '../ui'
+import { Button, Dialog, ErrorState, IconButton, Notice, Skeleton } from '../ui'
 
 type NavigationItem = { to: string; label: string; icon: LucideIcon }
 
@@ -60,10 +60,6 @@ export function CloudShell() {
 	const isAdmin = Boolean(current.data?.roles.some((value) => value === AccountRole.ADMIN))
 
   useEffect(() => {
-    if (current.error instanceof APIError && current.error.status === 401) navigate('/login', { replace: true, state: { from: location.pathname } })
-  }, [current.error, location.pathname, navigate])
-
-  useEffect(() => {
     if (!isOperator) return
     const source = new EventSource('/api/operator/events')
     source.addEventListener('runtime', (event) => {
@@ -105,7 +101,8 @@ export function CloudShell() {
   }, [])
 
   if (current.isPending) return <div className="boot-shell" aria-busy="true"><img src={logo} alt="" /><Skeleton rows={6} /></div>
-  if (!current.data?.account) return <Navigate to="/login" replace />
+  if (current.error instanceof APIError && current.error.status === 401) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (current.error || !current.data?.account) return <main className="boot-shell"><ErrorState error={current.error} onRetry={() => void current.refetch()} /></main>
 
   const navigation = (items: readonly NavigationItem[], label: string) => <nav aria-label={label}>
     {items.map(({ to, label: itemLabel, icon: Icon }) => <NavLink key={to} to={to} onClick={() => setDrawer(false)} title={collapsed ? itemLabel : undefined}><Icon size={18} /><span>{itemLabel}</span></NavLink>)}
@@ -141,6 +138,9 @@ export function CloudShell() {
       </header>
 		<main className={`content ${location.pathname.startsWith('/app/admin') ? 'content-admin' : 'content-user'}`} id="main-content" ref={mainRef} tabIndex={-1}><Outlet context={{ current: current.data, isOperator, isAdmin } satisfies ShellContext} /></main>
       <nav className="mobile-bottom-nav" aria-label="手机主导航">{userNavigation.filter((item) => item.to !== '/app/orders').map(({ to, label, icon: Icon }) => <NavLink key={to} to={to}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
+      <Dialog title="退出登录失败" open={Boolean(logout.error)} onClose={() => logout.reset()} footer={<><Button tone="quiet" onClick={() => logout.reset()}>取消</Button><Button tone="primary" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? '正在重试' : '重试退出'}</Button></>}>
+        <Notice tone="error">无法退出登录，请检查网络后重试。</Notice>
+      </Dialog>
     </div>
   </div>
 }

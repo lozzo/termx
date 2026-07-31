@@ -67,6 +67,39 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
   return requests
 }
 
+async function holdJSONMutation(page: Page, path: string, body: unknown) {
+  let release: () => void = () => undefined
+  const pending = new Promise<void>((resolve) => { release = () => resolve() })
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    await pending
+    return json(route, body)
+  })
+  return release
+}
+
+async function finishLockedDialog(page: Page, title: string, submitName: string, resultTitle: string, release: () => void) {
+  const dialog = page.getByRole('dialog', { name: title })
+  const submit = dialog.locator('footer button').last()
+  await expect(submit).toHaveText(submitName)
+  await submit.click()
+  await expect(submit).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  await page.locator('.dialog-backdrop').dispatchEvent('mousedown')
+  await expect(dialog).toBeVisible()
+
+  release()
+  const result = page.getByRole('dialog', { name: resultTitle })
+  await expect(result).toBeVisible()
+  await expect(result.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
+  await result.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(result).toHaveCount(0)
+}
+
 test('公开落地页展示真实连接路径和套餐', async ({ page }, testInfo) => {
   await mockAPI(page)
   await page.goto('/')
@@ -102,6 +135,31 @@ test('公开落地页展示真实连接路径和套餐', async ({ page }, testIn
   await session.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2 })
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('landing.png'), fullPage: true })
+})
+
+test('从登录或 setup 返回公开首页时恢复 title 与 main focus，query-only 更新不窃取焦点', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page)
+
+  for (const [path, title] of [['/login', '登录 · AnyTTY Cloud'], ['/setup', '设置账号密码 · AnyTTY Cloud']] as const) {
+    await page.goto(path)
+    await expect(page).toHaveTitle(title)
+    await page.getByRole('link', { name: '返回首页', exact: true }).click()
+
+    const main = page.getByRole('main', { name: 'AnyTTY Cloud 公开首页' })
+    await expect(page).toHaveTitle('AnyTTY Cloud')
+    await expect(main).toBeFocused()
+
+    const loginLink = page.getByRole('link', { name: '登录 Cloud', exact: true })
+    await loginLink.focus()
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/?source=query-only')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await expect(page).toHaveURL(/\?source=query-only$/)
+    await expect(loginLink).toBeFocused()
+    await expect(main).not.toBeFocused()
+  }
 })
 
 test('普通用户共享 Shell、复用页面缓存且不能进入运营页面', async ({ page }, testInfo) => {
@@ -177,6 +235,53 @@ test('路由资源首次加载失败后通过页面重载恢复', async ({ page 
   await expect(alert).toHaveCount(0)
   await expect(page).toHaveURL(/\/app\/devices$/)
   await expect(page).toHaveTitle('Daemon 管理 · AnyTTY Cloud')
+})
+
+test('current 500 保留 CloudShell 错误与关联 ID，并可原位重试', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page)
+  let available = false
+  let attempts = 0
+  await page.route('**/api/account/current', async (route) => {
+    attempts++
+    if (available) return route.fallback()
+    return json(route, { code: 'service_unavailable', message: 'private current failure', request_id: 'current-retry-id' }, 500)
+  })
+
+  await page.goto('/app/overview')
+  const alert = page.getByRole('alert')
+  await expect(alert).toContainText('服务暂时不可用，请稍后重试。', { timeout: 10_000 })
+  await expect(alert).toContainText('current-retry-id')
+  await expect(alert).not.toContainText('private current failure')
+  await expect(page).toHaveURL(/\/app\/overview$/)
+
+  available = true
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
+  await expect(alert).toHaveCount(0)
+  expect(attempts).toBeGreaterThanOrEqual(2)
+})
+
+test('logout 失败显示脱敏固定反馈并允许重试', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page)
+  let attempts = 0
+  await page.route('**/api/account/logout', async (route) => {
+    attempts++
+    if (attempts === 1) return json(route, { code: 'service_unavailable', message: 'private logout failure', request_id: 'logout-failure-id' }, 500)
+    return json(route, {})
+  })
+
+  await page.goto('/app/overview')
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '退出登录失败' })
+  await expect(dialog).toContainText('无法退出登录，请检查网络后重试。')
+  await expect(dialog).not.toContainText('private logout failure')
+  await expect(dialog).not.toContainText('logout-failure-id')
+
+  await dialog.getByRole('button', { name: '重试退出', exact: true }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  expect(attempts).toBe(2)
 })
 
 test('用户创建订单并完成 Development 支付', async ({ page }) => {
@@ -267,6 +372,65 @@ test('管理员创建账号、复制一次性凭据并重置账号', async ({ pa
   await expect(dialog).toContainText('仅展示一次')
   await assertNoHorizontalOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('account-lifecycle.png'), fullPage: true })
+})
+
+test('一次性结果 mutations pending 时不能关闭，成功后仍可完成关闭', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page, true)
+
+  const finishProvision = await holdJSONMutation(page, '/api/operator/accounts', {
+    account: { account_id: 'new-account', email: 'pending@example.com', display_name: 'Pending User', state: 'ACCOUNT_STATE_PENDING', revision: '1' },
+    setup_credential: provisionSetupCredential,
+    expires_at: periodEnd,
+  })
+  await page.goto('/app/admin/accounts')
+  await page.getByRole('button', { name: '创建账号', exact: true }).click()
+  await page.getByLabel('邮箱').fill('pending@example.com')
+  await page.getByLabel('显示名称').fill('Pending User')
+  await page.getByLabel('创建原因').fill('approved')
+  await finishLockedDialog(page, '创建账号', '创建账号', '一次性凭据', finishProvision)
+
+  const finishReset = await holdJSONMutation(page, `/api/operator/accounts/${account.account_id}/reset`, {
+    account: { ...account, state: 'ACCOUNT_STATE_PENDING', revision: '2' },
+    setup_credential: resetSetupCredential,
+    expires_at: periodEnd,
+  })
+  await page.getByRole('link', { name: '详情', exact: true }).click()
+  await page.getByRole('button', { name: '重置凭据', exact: true }).click()
+  await page.getByLabel('操作原因').fill('lost password')
+  await finishLockedDialog(page, '重置账号凭据', '重置凭据', '一次性凭据', finishReset)
+
+  const finishUserEnrollment = await holdJSONMutation(page, '/api/daemons/enroll', {
+    enrollment_code: 'mxe_user_pending',
+    enroll_command: 'anytty cloud enroll mxe_user_pending',
+    expires_at: periodEnd,
+  })
+  await page.goto('/app/devices')
+  await page.getByRole('button', { name: '注册 daemon', exact: true }).click()
+  await page.getByLabel('daemon 名称').fill('Pending user daemon')
+  await finishLockedDialog(page, '注册 daemon', '生成命令', '注册命令已生成', finishUserEnrollment)
+
+  const finishAdminEnrollment = await holdJSONMutation(page, '/api/operator/daemons', {
+    account_id: account.account_id,
+    enrollment_code: 'mxe_admin_pending',
+    enroll_command: 'anytty cloud enroll mxe_admin_pending',
+    expires_at: periodEnd,
+  })
+  await page.goto('/app/admin/daemons')
+  await page.getByRole('button', { name: '注册 daemon', exact: true }).click()
+  await page.getByLabel('账号 ID').fill(account.account_id)
+  await page.getByLabel('daemon 名称').fill('Pending admin daemon')
+  await finishLockedDialog(page, '注册 daemon', '生成命令', '注册命令', finishAdminEnrollment)
+
+  const finishEdge = await holdJSONMutation(page, '/api/operator/edges', {
+    install_command: 'anytty edge install --claim edge-pending',
+  })
+  await page.goto('/app/admin/edges')
+  await page.getByRole('button', { name: '添加 Edge', exact: true }).click()
+  await page.getByLabel('名称').fill('Pending Edge')
+  await page.getByLabel('区域').fill('test-region')
+  await page.getByLabel('域名或域名:端口').fill('edge.example.com:443')
+  await finishLockedDialog(page, '添加 Edge', '生成安装命令', '安装命令', finishEdge)
 })
 
 test('pathname navigation updates title and main focus without query focus theft', async ({ page }, testInfo) => {
