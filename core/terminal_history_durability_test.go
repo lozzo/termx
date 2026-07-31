@@ -432,7 +432,8 @@ func TestProcessExitSealFailureMarksHistoryUnavailableWithoutClosingProcess(t *t
 }
 
 func TestTerminalRestartLogsOldProcessCloseErrorAfterCommittingNewGeneration(t *testing.T) {
-	closeErr := errors.New("close old process generation")
+	const sensitiveCloseError = "process close failed: path=/private/session/token command=deploy secret=TOP-SECRET-DO-NOT-LOG"
+	closeErr := errors.New(sensitiveCloseError)
 	storage := &durabilityTerminalLineStorage{}
 	factory := newRecordingProcessFactory()
 	var logs bytes.Buffer
@@ -500,10 +501,13 @@ func TestTerminalRestartLogsOldProcessCloseErrorAfterCommittingNewGeneration(t *
 		"close previous terminal process after restart failed",
 		"terminal_id=" + terminalID,
 		"state_before=running",
-		closeErr.Error(),
+		"error_kind=process_close_failed",
 	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("restart cleanup log missing %q: %s", want, logText)
 		}
+	}
+	if strings.Contains(logText, sensitiveCloseError) {
+		t.Fatal("restart cleanup log exposed the old process Close error")
 	}
 }

@@ -367,7 +367,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 		terminal.logger.Warn("close previous terminal process after restart failed",
 			"terminal_id", info.ID,
 			"state_before", string(oldInfo.State),
-			"error", err,
+			"error_kind", "process_close_failed",
 		)
 	}
 	return nil
