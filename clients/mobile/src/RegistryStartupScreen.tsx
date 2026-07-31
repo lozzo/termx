@@ -95,7 +95,7 @@ export function RegistryStartupScreen({
   const failureCode = classifyRegistryStartupFailure(error)
 
   return (
-    <main className="anytty-app-page flex h-[100dvh] w-full overflow-y-auto bg-[var(--anytty-app-bg)] px-4 py-4 sm:py-8">
+    <main className="anytty-app-page flex h-[100dvh] w-full overflow-y-auto bg-[var(--anytty-app-bg)] pb-[calc(env(safe-area-inset-bottom)+1rem)] pl-[calc(env(safe-area-inset-left)+1rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pt-[calc(env(safe-area-inset-top)+1rem)] sm:pb-[calc(env(safe-area-inset-bottom)+2rem)] sm:pt-[calc(env(safe-area-inset-top)+2rem)]">
       <section aria-labelledby="registry-startup-title" className="anytty-app-panel my-auto min-w-0 w-full max-w-md p-5" data-testid="registry-startup-error">
         <h1 className="text-lg font-semibold text-zinc-950" id="registry-startup-title">{anyttyI18n.t('startup.registryTitle')}</h1>
         <p className="mt-2 text-sm leading-5 text-zinc-600" role="alert">{anyttyI18n.t('startup.registryCopy')}</p>

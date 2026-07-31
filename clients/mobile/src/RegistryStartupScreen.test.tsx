@@ -7,16 +7,12 @@ import { RegistryStartupScreen, UnsupportedWebPreview } from './RegistryStartupS
 
 describe('mobile registry startup recovery', () => {
   const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-  const originalInnerWidth = window.innerWidth
-  const originalInnerHeight = window.innerHeight
 
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
     if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard)
     else Reflect.deleteProperty(navigator, 'clipboard')
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight })
   })
 
   it('offers native retry, diagnostics, and a confirmed local-only reset', async () => {
@@ -103,12 +99,7 @@ describe('mobile registry startup recovery', () => {
     expect(screen.queryByText(/redacted diagnostics copied/i)).toBeNull()
   })
 
-  it.each([
-    { height: 568, label: '320px phone', width: 320 },
-    { height: 320, label: 'short landscape', width: 640 },
-  ])('keeps the recovery UI scrollable without horizontal overflow on a $label', ({ height, width }) => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+  it('keeps the recovery page structural scrolling, width, safe-area, and touch-target contracts', () => {
     render(
       <RegistryStartupScreen
         error="native registry checksum failed"
@@ -123,6 +114,10 @@ describe('mobile registry startup recovery', () => {
     expect(page?.className).toContain('overflow-y-auto')
     expect(page?.className).toContain('w-full')
     expect(page?.className).not.toContain('w-screen')
+    expect(page?.className).toContain('pt-[calc(env(safe-area-inset-top)+1rem)]')
+    expect(page?.className).toContain('pr-[calc(env(safe-area-inset-right)+1rem)]')
+    expect(page?.className).toContain('pb-[calc(env(safe-area-inset-bottom)+1rem)]')
+    expect(page?.className).toContain('pl-[calc(env(safe-area-inset-left)+1rem)]')
     expect(panel.className).toContain('min-w-0')
     expect(panel.querySelector('details')?.className).toContain('min-w-0')
     const controls = Array.from(panel.querySelectorAll('button, summary'))
