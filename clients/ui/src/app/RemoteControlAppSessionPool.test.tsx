@@ -96,6 +96,40 @@ describe('RemoteControlApp native session pool', () => {
     expect(screen.queryByRole('button', { name: 'Disconnect from Build host' })).toBeNull()
   })
 
+  it('closes device details with one native Back event and preserves the device list', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveMachine({
+      machineId: 'device-1',
+      name: 'Build host',
+      hostname: 'build.local',
+      state: 'online',
+      terminalCount: 2,
+      source: 'manual',
+      accessClass: 'local',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: '2026-07-28T00:00:00.000Z',
+      updatedAt: '2026-07-28T00:00:00.000Z',
+    })
+
+    render(
+      <RemoteControlApp
+        externalPairingAdapter={authorizedAdapter()}
+        networkRuntime={networkRuntime(storage)}
+      />,
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions for Build host' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Device details' }))
+    const dialog = screen.getByRole('dialog', { name: 'Build host' })
+    expect(dialog.querySelector('dl')?.className).toContain('pb-[calc(env(safe-area-inset-bottom)+1rem)]')
+
+    act(() => { expect(dispatchNativeBack()).toBe(true) })
+
+    expect(screen.queryByRole('dialog', { name: 'Build host' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Open Build host' })).toBeTruthy()
+  })
+
   it('refreshes the device registry after a deliberate pull gesture', async () => {
     const storage = new MemoryStorage()
     createMachineStore({ storage }).saveMachine({

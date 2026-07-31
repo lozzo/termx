@@ -3098,7 +3098,7 @@ function MachineConnectionBanner({
         <p className={`mt-0.5 text-[11px] leading-4 ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>{message}</p>
       </div>
       {!showingRecovered && phoneOnline && activeFailure?.retryable ? (
-        <button className={`min-h-9 shrink-0 border px-3 text-xs font-semibold ${dark ? 'border-white/25 bg-white/10' : 'border-amber-300 bg-white'}`} type="button" onClick={onRetry}>
+        <button className={`min-h-11 shrink-0 border px-3 text-xs font-semibold ${dark ? 'border-white/25 bg-white/10' : 'border-amber-300 bg-white'}`} type="button" onClick={onRetry}>
           {t('workspace.connection.retry')}
         </button>
       ) : null}

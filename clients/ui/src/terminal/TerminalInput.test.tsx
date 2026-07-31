@@ -19,6 +19,7 @@ const terminalHarness = vi.hoisted(() => ({
   sessionSendInput: vi.fn(),
   sessionSendResize: vi.fn(),
   historySnapshot: false,
+  channelState: 'open' as 'open' | 'connecting',
   historyLoad: vi.fn(),
   historyReset: vi.fn(),
 }))
@@ -114,7 +115,7 @@ vi.mock('./useTerminalSession', () => ({
           terminalChannels: { [terminalId]: { state: 'open' } },
           visibleError: { message: 'unrelated connection failure', recoverable: true, surface: 'banner' },
         }
-      : { phase: 'connected', terminalChannels: { [terminalId]: { state: 'open' } } },
+      : { phase: 'connected', terminalChannels: { [terminalId]: { state: terminalHarness.channelState } } },
     inputRecoveryFailure: terminalHarness.inputRecoveryFailure,
     terminalSnapshot: terminalHarness.historySnapshot
       ? { text: 'live terminal content', cols: 80, rows: 24, alternateScreen: false }
@@ -146,6 +147,7 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.inputRecoveryFailure = null
     terminalHarness.unrelatedBanner = false
     terminalHarness.historySnapshot = false
+    terminalHarness.channelState = 'open'
     terminalHarness.sessionSendInput.mockReset().mockReturnValue(true)
     terminalHarness.sessionSendResize.mockReset().mockReturnValue(false)
     terminalHarness.historyLoad.mockReset().mockResolvedValue({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
@@ -396,6 +398,20 @@ describe('Terminal input modifier boundary', () => {
 
     await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('isolates the terminal application from focus and assistive technology while connecting', async () => {
+    terminalHarness.channelState = 'connecting'
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+
+    const status = await screen.findByRole('status')
+    const application = screen.getByRole('application', { hidden: true })
+
+    expect(status.getAttribute('aria-live')).toBe('polite')
+    expect(status.textContent).toContain('Connecting terminal...')
+    expect(application.getAttribute('aria-hidden')).toBe('true')
+    expect(application.hasAttribute('inert')).toBe(true)
+    expect(application.getAttribute('tabindex')).toBe('-1')
   })
 
   it('shows stale history recovery and does not retry until reload is pressed', async () => {

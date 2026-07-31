@@ -2448,20 +2448,22 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       <div
         ref={containerRef}
         aria-label={t('terminal.tools.output')}
+        aria-hidden={showConnectingOverlay ? true : undefined}
         className="absolute inset-0 min-h-0 overflow-hidden xterm-wrapper outline-none"
+        inert={showConnectingOverlay ? true : undefined}
         style={{
           opacity: showConnectingOverlay ? 0 : 1,
           overscrollBehavior: 'contain',
           touchAction: 'none',
         }}
         role="application"
-        tabIndex={0}
+        tabIndex={showConnectingOverlay ? -1 : 0}
       />
       {showConnectingOverlay ? (
-        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-[var(--anytty-bg)]/80 backdrop-blur-sm text-sm font-medium text-[var(--anytty-muted)]">
+        <div aria-live="polite" className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-[var(--anytty-bg)]/80 backdrop-blur-sm text-sm font-medium text-[var(--anytty-muted)]" role="status">
           <div className="flex items-center gap-2">
             <span className="anytty-square-spinner text-[var(--anytty-text)]" aria-hidden="true" />
-            Connecting terminal...
+            {t('workspace.connectingTerminal')}
           </div>
         </div>
       ) : null}

@@ -445,7 +445,9 @@ describe('MachineWorkspace terminal creation', () => {
       onRetryConnectionRecovery={retryConnectionRecovery}
     />)
     expect(await screen.findByText('Connection service unavailable')).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    const retry = screen.getByRole('button', { name: 'Retry' })
+    expect(retry.className).toContain('min-h-11')
+    await userEvent.click(retry)
     expect(retryConnectionRecovery).toHaveBeenCalledOnce()
     expect(connector.connect).toHaveBeenCalledTimes(1)
 

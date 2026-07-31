@@ -1068,7 +1068,7 @@ function HomeView({
           <Link2Off className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1">{t('machines.networkRecoveryFailed')}</span>
           {onRetryConnectionRecovery ? (
-            <button className="min-h-8 shrink-0 border border-amber-300 bg-white px-3 text-xs font-semibold" type="button" onClick={() => { hapticSelection(); void onRetryConnectionRecovery() }}>
+            <button className="min-h-11 shrink-0 border border-amber-300 bg-white px-3 text-xs font-semibold" type="button" onClick={() => { hapticSelection(); void onRetryConnectionRecovery() }}>
               {t('workspace.connection.retry')}
             </button>
           ) : null}
@@ -1621,14 +1621,16 @@ function Switch({
     <button
       aria-label={ariaLabel}
       aria-pressed={checked}
-      className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-[var(--anytty-accent)]' : 'bg-[var(--anytty-border)]'}`}
+      className="flex h-11 w-12 items-center"
       type="button"
       onClick={() => {
         hapticSelection()
         onChange(!checked)
       }}
     >
-      <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+      <span className={`relative block h-8 w-12 rounded-full transition-colors ${checked ? 'bg-[var(--anytty-accent)]' : 'bg-[var(--anytty-border)]'}`}>
+        <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+      </span>
     </button>
   )
 }
@@ -1925,6 +1927,7 @@ function MachineRow({
 
 function DisplayMachineDetailSheet({ machine, onClose }: { machine: DisplayMachine; onClose: () => void }) {
   const { t } = useTranslation()
+  useNativeBackHandler(onClose, NATIVE_BACK_PRIORITY.NESTED_OVERLAY)
   const source = machine.accessClass === 'cloud'
     ? t('machines.source.hub')
     : machine.accessClass === 'local_cloud'
@@ -1948,7 +1951,7 @@ function DisplayMachineDetailSheet({ machine, onClose }: { machine: DisplayMachi
           </div>
           <button aria-label={t('machines.closeDetails')} className="anytty-app-icon-button border-transparent bg-transparent" type="button" onClick={onClose}><X className="h-5 w-5" /></button>
         </header>
-        <dl className="max-h-[calc(85dvh-4rem)] overflow-y-auto p-4">
+        <dl className="max-h-[calc(85dvh-4rem)] overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           {fields.map(([label, value]) => (
             <div className="border-b border-[var(--anytty-app-line)] py-3 last:border-b-0" key={label}>
               <dt className="text-xs font-semibold text-zinc-500">{label}</dt>

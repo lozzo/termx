@@ -35,6 +35,33 @@ describe('RemoteControlApp accountless product shell', () => {
     expect(screen.queryByRole('heading', { name: 'Account' })).toBeNull()
   })
 
+  it('keeps the settings switch visual size while exposing a 44 pixel touch target', async () => {
+    renderApp()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open settings' }))
+    const toggle = screen.getByRole('button', { name: 'Cursor blink' })
+    const track = toggle.firstElementChild
+
+    expect(toggle.className).toContain('h-11')
+    expect(toggle.className).toContain('w-12')
+    expect(track?.className).toContain('h-8')
+    expect(track?.className).toContain('w-12')
+  })
+
+  it('keeps the connection recovery retry target at least 44 pixels tall', async () => {
+    const onRetryConnectionRecovery = vi.fn(async () => undefined)
+    renderApp({
+      connectionReady: false,
+      connectionRecoveryFailed: true,
+      onRetryConnectionRecovery,
+    })
+
+    const retry = await screen.findByRole('button', { name: 'Retry' })
+    expect(retry.className).toContain('min-h-11')
+    await userEvent.click(retry)
+    expect(onRetryConnectionRecovery).toHaveBeenCalledOnce()
+  })
+
   it.each([
     ['camera_permission_denied', 'Camera access was denied. Allow camera access in system settings, then try again.'],
     ['camera_not_found', 'No camera was found on this device.'],
@@ -219,13 +246,19 @@ describe('RemoteControlApp accountless product shell', () => {
 })
 
 function renderApp({
+  connectionReady,
+  connectionRecoveryFailed,
   pairingImport,
   scanPairingCode,
   onRefreshMachines,
+  onRetryConnectionRecovery,
 }: {
+  connectionReady?: boolean | undefined
+  connectionRecoveryFailed?: boolean | undefined
   pairingImport?: ExternalPairingAdapter['import'] | undefined
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
   onRefreshMachines?: (() => Promise<void>) | undefined
+  onRetryConnectionRecovery?: (() => Promise<void>) | undefined
 } = {}) {
   const storage = new MemoryStorage()
   const networkRuntime: RemoteNetworkRuntime = {
@@ -240,9 +273,12 @@ function renderApp({
   }
   render(
     <RemoteControlApp
+      connectionReady={connectionReady}
+      connectionRecoveryFailed={connectionRecoveryFailed}
       externalPairingAdapter={externalPairingAdapter}
       networkRuntime={networkRuntime}
       onRefreshMachines={onRefreshMachines}
+      onRetryConnectionRecovery={onRetryConnectionRecovery}
       scanPairingCode={scanPairingCode}
     />,
   )
