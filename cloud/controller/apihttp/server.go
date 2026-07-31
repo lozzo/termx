@@ -176,8 +176,10 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	}
 	lifecycleRequest := request
 	body, err := handler.limitRequestBodyRead(writer, lifecycleRequest)
+	if errors.Is(err, errRequestBodyConnectionAborted) {
+		return
+	}
 	if err != nil {
-		lifecycleRequest.Close = true
 		panic(http.ErrAbortHandler)
 	}
 	if body != nil {
@@ -185,9 +187,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 			if body.deadlineActive() {
 				lifecycleRequest.Close = true
 			}
-			if err := body.Close(); errors.Is(err, errRequestBodyDeadlineUnavailable) {
-				panic(http.ErrAbortHandler)
-			}
+			_ = body.Close()
 		}()
 	}
 	requestID := uuid.NewString()
@@ -547,9 +547,19 @@ func (handler *handler) limitRequestBodyRead(writer http.ResponseWriter, request
 	}
 	setReadDeadline := handler.setReadDeadlineForTest
 	if setReadDeadline == nil {
-		setReadDeadline = http.NewResponseController(writer).SetReadDeadline
-	}
-	if err := setReadDeadline(time.Now().Add(timeout)); err != nil {
+		controller := http.NewResponseController(writer)
+		setReadDeadline = controller.SetReadDeadline
+		if err := setReadDeadline(time.Now().Add(timeout)); err != nil {
+			// net/http drains small unread bodies after either a return or an abort;
+			// a closed hijacked connection bypasses both drain paths.
+			connection, _, hijackErr := controller.Hijack()
+			if hijackErr != nil {
+				return nil, errRequestBodyDeadlineUnavailable
+			}
+			_ = connection.Close()
+			return nil, errRequestBodyConnectionAborted
+		}
+	} else if err := setReadDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, errRequestBodyDeadlineUnavailable
 	}
 	body := &lazyReadDeadlineBody{ReadCloser: request.Body, timeout: timeout, setReadDeadline: setReadDeadline, deadlineSet: true}
@@ -591,7 +601,7 @@ func (body *lazyReadDeadlineBody) Read(buffer []byte) (int, error) {
 	}
 	if errors.Is(err, io.EOF) {
 		if clearErr := body.clearDeadline(); clearErr != nil {
-			return read, clearErr
+			panic(http.ErrAbortHandler)
 		}
 	}
 	return read, err
@@ -602,7 +612,7 @@ func (body *lazyReadDeadlineBody) Close() error {
 		body.closeErr = body.ReadCloser.Close()
 	})
 	if err := body.clearDeadline(); err != nil {
-		return err
+		panic(http.ErrAbortHandler)
 	}
 	if bodyReadTimedOut(body.closeErr) {
 		return errRequestBodyTimeout
@@ -694,6 +704,7 @@ var (
 	errRequestBodyTooLarge            = errors.New("request body exceeds limit")
 	errRequestBodyTimeout             = errors.New("request body read timed out")
 	errRequestBodyDeadlineUnavailable = errors.New("request body read deadline is unavailable")
+	errRequestBodyConnectionAborted   = errors.New("request body connection was aborted")
 )
 
 type apiResponseWriter struct {

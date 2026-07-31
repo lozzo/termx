@@ -423,32 +423,67 @@ func TestGRPCAndGetRequestsAreNotDeadlineWrapped(t *testing.T) {
 	}
 }
 
-func TestUnsupportedResponseWriterAbortsBeforeReadingBody(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/api/account/login", nil)
-	body := &countingReadCloser{reader: strings.NewReader(`{"login":"must-not-be-read"}`)}
-	request.Body = body
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	writer := &opaqueResponseWriter{target: recorder}
-
-	var recovered any
-	func() {
-		defer func() { recovered = recover() }()
-		(&handler{}).ServeHTTP(writer, request)
-	}()
-	if recovered != http.ErrAbortHandler {
-		t.Fatalf("recovered panic = %v, want http.ErrAbortHandler", recovered)
+func TestUnsupportedResponseWriterClosesSlowBodyConnectionWithoutDrain(t *testing.T) {
+	store := &loginContractStore{}
+	accounts, err := account.New(account.Config{
+		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
+		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !request.Close || body.reads.Load() != 0 || body.closes.Load() != 0 {
-		t.Fatalf("failed deadline request close=%v body reads=%d closes=%d", request.Close, body.reads.Load(), body.closes.Load())
+	handler := &handler{
+		config:       Config{Accounts: accounts, PublicOrigin: "https://cloud.example"},
+		loginLimiter: testLoginLimiter(t, loginLimiterConfig{globalLimit: 10, clientLimit: 10, accountLimit: 10, window: time.Minute, bucketTTL: time.Minute, maxClientBuckets: 10, maxAccountBuckets: 10}),
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		handler.ServeHTTP(&opaqueResponseWriter{target: writer}, request)
+	}))
+	defer server.Close()
+
+	connection, err := net.Dial("tcp", server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err = io.WriteString(connection, "POST /api/account/login HTTP/1.1\r\nHost: "+server.Listener.Addr().String()+"\r\nContent-Type: application/json\r\nContent-Length: 1024\r\n\r\n{\"login\":\"slow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: http.MethodPost})
+	if response != nil {
+		response.Body.Close()
+		t.Fatalf("unsupported deadline writer returned business response: status=%d", response.StatusCode)
+	}
+	if err == nil {
+		t.Fatal("unsupported deadline writer unexpectedly returned a response")
+	}
+	if elapsed := time.Since(started); elapsed > 750*time.Millisecond {
+		t.Fatalf("unsupported deadline writer took %s to close a partial body connection", elapsed)
+	}
+	if got := store.calls.Load(); got != 0 {
+		t.Fatalf("unsupported deadline writer called account service store %d times", got)
 	}
 }
 
-func TestReadDeadlineClearFailureAbortsBeforeService(t *testing.T) {
+func TestReadDeadlineClearFailureAbortsBeforeServiceResponse(t *testing.T) {
+	store := &loginContractStore{}
+	accounts, err := account.New(account.Config{
+		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
+		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var setCalls atomic.Int32
 	var clearCalls atomic.Int32
 	handler := &handler{
-		config: Config{PublicOrigin: "https://cloud.example"},
+		config:       Config{Accounts: accounts, PublicOrigin: "https://cloud.example"},
+		loginLimiter: testLoginLimiter(t, loginLimiterConfig{globalLimit: 10, clientLimit: 10, accountLimit: 10, window: time.Minute, bucketTTL: time.Minute, maxClientBuckets: 10, maxAccountBuckets: 10}),
 		setReadDeadlineForTest: func(deadline time.Time) error {
 			if deadline.IsZero() {
 				clearCalls.Add(1)
@@ -458,19 +493,30 @@ func TestReadDeadlineClearFailureAbortsBeforeService(t *testing.T) {
 			return nil
 		},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader(`{"login":"must-not-reach-service"}`))
-	request.Header.Set("Content-Type", "application/json")
-
-	var recovered any
-	func() {
-		defer func() { recovered = recover() }()
-		handler.ServeHTTP(httptest.NewRecorder(), request)
-	}()
-	if recovered != http.ErrAbortHandler {
-		t.Fatalf("recovered panic = %v, want http.ErrAbortHandler", recovered)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/account/login", strings.NewReader(`{"login":"must-not-reach-service","password":"secret-password"}`))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !request.Close || setCalls.Load() != 1 || clearCalls.Load() == 0 {
-		t.Fatalf("clear failure request close=%v set calls=%d clear calls=%d", request.Close, setCalls.Load(), clearCalls.Load())
+	request.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	response, err := server.Client().Do(request)
+	if response != nil {
+		response.Body.Close()
+		t.Fatalf("deadline clear failure returned business response: status=%d", response.StatusCode)
+	}
+	if err == nil {
+		t.Fatal("deadline clear failure unexpectedly returned a response")
+	}
+	if elapsed := time.Since(started); elapsed > 750*time.Millisecond {
+		t.Fatalf("deadline clear failure took %s to abort", elapsed)
+	}
+	if setCalls.Load() != 1 || clearCalls.Load() == 0 {
+		t.Fatalf("deadline calls: set=%d clear=%d", setCalls.Load(), clearCalls.Load())
+	}
+	if got := store.calls.Load(); got != 0 {
+		t.Fatalf("deadline clear failure called account service store %d times", got)
 	}
 }
 
@@ -687,20 +733,12 @@ func (writer *opaqueResponseWriter) WriteHeader(status int) {
 	writer.target.WriteHeader(status)
 }
 
-type countingReadCloser struct {
-	reader io.Reader
-	reads  atomic.Int32
-	closes atomic.Int32
-}
-
-func (body *countingReadCloser) Read(buffer []byte) (int, error) {
-	body.reads.Add(1)
-	return body.reader.Read(buffer)
-}
-
-func (body *countingReadCloser) Close() error {
-	body.closes.Add(1)
-	return nil
+func (writer *opaqueResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := writer.target.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
 }
 
 func (store *changePasswordContractStore) AccountByID(context.Context, string) (account.Record, error) {
