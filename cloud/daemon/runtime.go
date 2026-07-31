@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -184,7 +185,15 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 		return err
 	}
 	defer connection.Close()
-	stream, err := cloudv1.NewAgentGatewayClient(connection).Connect(ctx)
+	attemptCtx, cancelAttempt := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	var peers sync.WaitGroup
+	defer func() {
+		cancelAttempt()
+		workers.Wait()
+		peers.Wait()
+	}()
+	stream, err := cloudv1.NewAgentGatewayClient(connection).Connect(attemptCtx)
 	if err != nil {
 		return err
 	}
@@ -218,13 +227,18 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 	if interval <= 0 {
 		return errors.New("AgentReady heartbeat is invalid")
 	}
-	connectionCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	outbound := make(chan *cloudv1.AgentEvent, 32)
 	writerErrors := make(chan error, 1)
-	go runtime.runAgentWriter(connectionCtx, stream, runtime.bootID, connectionID, 1, outbound, writerErrors)
 	receive := make(chan error, 1)
-	go runtime.runEdgeCommands(connectionCtx, stream, command.GetReady().GetGeneration(), outbound, receive)
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		runtime.runAgentWriter(attemptCtx, stream, runtime.bootID, connectionID, 1, outbound, writerErrors)
+	}()
+	go func() {
+		defer workers.Done()
+		runtime.runEdgeCommands(attemptCtx, stream, command.GetReady().GetGeneration(), outbound, receive, &peers)
+	}()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -290,7 +304,7 @@ func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.Agent
 	}
 }
 
-func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, generation uint64, outbound chan<- *cloudv1.AgentEvent, failures chan<- error) {
+func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, generation uint64, outbound chan<- *cloudv1.AgentEvent, failures chan<- error, peers *sync.WaitGroup) {
 	for {
 		command, err := stream.Recv()
 		if err != nil {
@@ -317,7 +331,7 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 				failures <- errors.New("Edge signaling command is invalid")
 				return
 			}
-			response = runtime.answerOffer(ctx, offer)
+			response = runtime.answerOffer(ctx, offer, peers)
 		default:
 			failures <- errors.New("Edge command payload is unsupported")
 			return
@@ -333,7 +347,7 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 	}
 }
 
-func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOffer) *cloudv1.AgentEvent {
+func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOffer, peers *sync.WaitGroup) *cloudv1.AgentEvent {
 	reject := func(code, message string) *cloudv1.AgentEvent {
 		return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Rejected{Rejected: &cloudv1.AgentSignalRejected{CorrelationId: offer.GetCorrelationId(), SessionId: offer.GetSessionId(), Code: code, Message: message}}}
 	}
@@ -354,8 +368,21 @@ func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOff
 		}
 		iceServers = append(iceServers, webrtc.ICEServer{URLs: append([]string(nil), relay.GetUrls()...), Username: relay.GetUsername(), Credential: relay.GetCredential()})
 	}
-	answer, err := runtime.config.Answerer.Answer(ctx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, iceServers)
+	answerer := runtime.config.Answerer
+	onPeerClosed := answerer.OnPeerClosed
+	var peerClosed sync.Once
+	peers.Add(1)
+	answerer.OnPeerClosed = func() {
+		peerClosed.Do(func() {
+			defer peers.Done()
+			if onPeerClosed != nil {
+				onPeerClosed()
+			}
+		})
+	}
+	answer, err := answerer.Answer(ctx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, iceServers)
 	if err != nil {
+		peerClosed.Do(peers.Done)
 		return reject("ANSWER_FAILED", "daemon could not establish P2P signaling")
 	}
 	wireCandidates := make([]*cloudv1.CloudICECandidate, 0, len(answer.Candidates))
