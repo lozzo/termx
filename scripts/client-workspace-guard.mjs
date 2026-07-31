@@ -68,22 +68,21 @@ if (
   fail('root, UI peer, mobile, Cloud Web, and root lock React versions must be identical')
 }
 
-// workspace 合并后各产品 Vite 必须解析到锁定版本，不能依赖 npm 偶然 hoist。
-const uiViteVersion = uiPackage.devDependencies?.vite
-const mobileViteVersion = mobilePackage.devDependencies?.vite
-const cloudWebViteVersion = cloudWebPackage.devDependencies?.vite
+const viteVersion = uiPackage.devDependencies?.vite
 const rootEsbuildVersion = rootPackage.devDependencies?.esbuild
-if (!uiViteVersion || !mobileViteVersion || !cloudWebViteVersion || !rootEsbuildVersion) {
-  fail('UI Vite, mobile Vite, Cloud Web Vite, and root esbuild must be explicit dependencies')
+if (
+  !viteVersion ||
+  mobilePackage.devDependencies?.vite !== viteVersion ||
+  cloudWebPackage.devDependencies?.vite !== viteVersion ||
+  !rootEsbuildVersion
+) {
+  fail('UI, mobile, and Cloud Web Vite versions must be identical, and root esbuild must be explicit')
 }
 if (
-  lock.packages['clients/ui/node_modules/vite']?.version !== uiViteVersion ||
-  lock.packages['node_modules/vite']?.version !== mobileViteVersion ||
-  lock.packages['cloud/web/node_modules/vite']?.version !== cloudWebViteVersion ||
-  lock.packages['node_modules/esbuild']?.version !== rootEsbuildVersion ||
-  !lock.packages['node_modules/vite/node_modules/esbuild']
+  lock.packages['node_modules/vite']?.version !== viteVersion ||
+  lock.packages['node_modules/esbuild']?.version !== rootEsbuildVersion
 ) {
-  fail('Vite and esbuild lock placement must keep UI, mobile, and Cloud Web toolchains isolated')
+  fail('root lock Vite and esbuild versions must match the explicit dependencies')
 }
 
 for (const nestedLock of [
