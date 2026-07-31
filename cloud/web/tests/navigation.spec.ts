@@ -168,6 +168,33 @@ test('从登录或 setup 返回公开首页时恢复 title 与 main focus，quer
   }
 })
 
+test('公开落地页在确认视口保留完整首屏产品信号', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  await mockAPI(page)
+  const viewports = [
+    { width: 1710, height: 982 },
+    { width: 390, height: 844 },
+    { width: 320, height: 568 },
+    { width: 844, height: 390 },
+  ]
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.hero-copy > p')).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.hero-actions .button')).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.terminal-window')).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.product-band .eyebrow')).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.hero-copy > p')).toContainText('AnyTTY App 不需要账号')
+    await expect(page.locator('.hero-copy > p')).toContainText('扫描目标服务生成的配对二维码')
+    await assertMinimumHitArea(page, '.landing-header a, .hero-actions a')
+    await assertNoHorizontalOverflow(page)
+    await assertNoTextClipping(page, '.hero-copy h1, .hero-statement, .hero-copy > p, .hero-actions .button, .route-stage, .terminal-window header, .terminal-window pre, .terminal-window footer, .product-band .eyebrow')
+    await page.screenshot({ path: testInfo.outputPath(`landing-first-viewport-${viewport.width}x${viewport.height}.png`) })
+  }
+})
+
 test('普通用户共享 Shell、复用页面缓存且不能进入运营页面', async ({ page }, testInfo) => {
   const requests = await mockAPI(page)
   await page.goto('/app/overview')
@@ -907,6 +934,16 @@ async function assertMinimumHitArea(page: Page, selector: string) {
     expect(box.width, `${box.label} hit-area width`).toBeGreaterThanOrEqual(44)
     expect(box.height, `${box.label} hit-area height`).toBeGreaterThanOrEqual(44)
   }
+}
+
+async function assertNoTextClipping(page: Page, selector: string) {
+  const clipped = await page.locator(selector).evaluateAll((elements) => elements.flatMap((element) => {
+    const style = getComputedStyle(element)
+    const horizontal = ['hidden', 'clip'].includes(style.overflowX) && element.scrollWidth > element.clientWidth + 1
+    const vertical = ['hidden', 'clip'].includes(style.overflowY) && element.scrollHeight > element.clientHeight + 1
+    return horizontal || vertical ? [element.className || element.tagName] : []
+  }))
+  expect(clipped, '首屏文本被容器裁切').toEqual([])
 }
 
 async function assertNoAxeViolations(page: Page, surface: string) {
