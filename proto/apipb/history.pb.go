@@ -1770,7 +1770,7 @@ func (x *HistoryBacklogStatusResult) GetClosed() bool {
 	return false
 }
 
-type LiveScreenGetCommand struct {
+type LiveScreenNextCommand struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Terminal         *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	ObservedRevision uint64                 `protobuf:"varint,3,opt,name=observed_revision,json=observedRevision,proto3" json:"observed_revision,omitempty"`
@@ -1778,20 +1778,20 @@ type LiveScreenGetCommand struct {
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *LiveScreenGetCommand) Reset() {
-	*x = LiveScreenGetCommand{}
+func (x *LiveScreenNextCommand) Reset() {
+	*x = LiveScreenNextCommand{}
 	mi := &file_apipb_history_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LiveScreenGetCommand) String() string {
+func (x *LiveScreenNextCommand) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LiveScreenGetCommand) ProtoMessage() {}
+func (*LiveScreenNextCommand) ProtoMessage() {}
 
-func (x *LiveScreenGetCommand) ProtoReflect() protoreflect.Message {
+func (x *LiveScreenNextCommand) ProtoReflect() protoreflect.Message {
 	mi := &file_apipb_history_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1803,47 +1803,48 @@ func (x *LiveScreenGetCommand) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LiveScreenGetCommand.ProtoReflect.Descriptor instead.
-func (*LiveScreenGetCommand) Descriptor() ([]byte, []int) {
+// Deprecated: Use LiveScreenNextCommand.ProtoReflect.Descriptor instead.
+func (*LiveScreenNextCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_history_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *LiveScreenGetCommand) GetTerminal() *TerminalRef {
+func (x *LiveScreenNextCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
 	}
 	return nil
 }
 
-func (x *LiveScreenGetCommand) GetObservedRevision() uint64 {
+func (x *LiveScreenNextCommand) GetObservedRevision() uint64 {
 	if x != nil {
 		return x.ObservedRevision
 	}
 	return 0
 }
 
-type LiveInvalidationNextCommand struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Terminal         *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	ObservedRevision uint64                 `protobuf:"varint,3,opt,name=observed_revision,json=observedRevision,proto3" json:"observed_revision,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+type ScreenRowCopy struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SourceRow      int32                  `protobuf:"varint,1,opt,name=source_row,json=sourceRow,proto3" json:"source_row,omitempty"`
+	DestinationRow int32                  `protobuf:"varint,2,opt,name=destination_row,json=destinationRow,proto3" json:"destination_row,omitempty"`
+	Count          int32                  `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
-func (x *LiveInvalidationNextCommand) Reset() {
-	*x = LiveInvalidationNextCommand{}
+func (x *ScreenRowCopy) Reset() {
+	*x = ScreenRowCopy{}
 	mi := &file_apipb_history_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LiveInvalidationNextCommand) String() string {
+func (x *ScreenRowCopy) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LiveInvalidationNextCommand) ProtoMessage() {}
+func (*ScreenRowCopy) ProtoMessage() {}
 
-func (x *LiveInvalidationNextCommand) ProtoReflect() protoreflect.Message {
+func (x *ScreenRowCopy) ProtoReflect() protoreflect.Message {
 	mi := &file_apipb_history_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1855,23 +1856,82 @@ func (x *LiveInvalidationNextCommand) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LiveInvalidationNextCommand.ProtoReflect.Descriptor instead.
-func (*LiveInvalidationNextCommand) Descriptor() ([]byte, []int) {
+// Deprecated: Use ScreenRowCopy.ProtoReflect.Descriptor instead.
+func (*ScreenRowCopy) Descriptor() ([]byte, []int) {
 	return file_apipb_history_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *LiveInvalidationNextCommand) GetTerminal() *TerminalRef {
+func (x *ScreenRowCopy) GetSourceRow() int32 {
 	if x != nil {
-		return x.Terminal
-	}
-	return nil
-}
-
-func (x *LiveInvalidationNextCommand) GetObservedRevision() uint64 {
-	if x != nil {
-		return x.ObservedRevision
+		return x.SourceRow
 	}
 	return 0
+}
+
+func (x *ScreenRowCopy) GetDestinationRow() int32 {
+	if x != nil {
+		return x.DestinationRow
+	}
+	return 0
+}
+
+func (x *ScreenRowCopy) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type ScreenRowReplace struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RowIndex      int32                  `protobuf:"varint,1,opt,name=row_index,json=rowIndex,proto3" json:"row_index,omitempty"`
+	Row           *ScreenRow             `protobuf:"bytes,2,opt,name=row,proto3" json:"row,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScreenRowReplace) Reset() {
+	*x = ScreenRowReplace{}
+	mi := &file_apipb_history_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScreenRowReplace) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScreenRowReplace) ProtoMessage() {}
+
+func (x *ScreenRowReplace) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_history_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScreenRowReplace.ProtoReflect.Descriptor instead.
+func (*ScreenRowReplace) Descriptor() ([]byte, []int) {
+	return file_apipb_history_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ScreenRowReplace) GetRowIndex() int32 {
+	if x != nil {
+		return x.RowIndex
+	}
+	return 0
+}
+
+func (x *ScreenRowReplace) GetRow() *ScreenRow {
+	if x != nil {
+		return x.Row
+	}
+	return nil
 }
 
 type NativeScreenResult struct {
@@ -1879,13 +1939,13 @@ type NativeScreenResult struct {
 	Terminal          *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	LiveRevision      uint64                 `protobuf:"varint,2,opt,name=live_revision,json=liveRevision,proto3" json:"live_revision,omitempty"`
 	Size              *TerminalSize          `protobuf:"bytes,3,opt,name=size,proto3" json:"size,omitempty"`
-	Rows              []*ScreenRow           `protobuf:"bytes,4,rep,name=rows,proto3" json:"rows,omitempty"`
+	RowReplacements   []*ScreenRowReplace    `protobuf:"bytes,4,rep,name=row_replacements,json=rowReplacements,proto3" json:"row_replacements,omitempty"`
 	AlternateScreen   bool                   `protobuf:"varint,5,opt,name=alternate_screen,json=alternateScreen,proto3" json:"alternate_screen,omitempty"`
 	Cursor            *TerminalCursor        `protobuf:"bytes,6,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	Modes             *TerminalModes         `protobuf:"bytes,7,opt,name=modes,proto3" json:"modes,omitempty"`
 	TimestampUnixNano int64                  `protobuf:"varint,8,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
 	BaseRevision      uint64                 `protobuf:"varint,9,opt,name=base_revision,json=baseRevision,proto3" json:"base_revision,omitempty"`
-	RowIndices        []int32                `protobuf:"varint,10,rep,packed,name=row_indices,json=rowIndices,proto3" json:"row_indices,omitempty"`
+	RowCopies         []*ScreenRowCopy       `protobuf:"bytes,10,rep,name=row_copies,json=rowCopies,proto3" json:"row_copies,omitempty"`
 	FullReplace       bool                   `protobuf:"varint,11,opt,name=full_replace,json=fullReplace,proto3" json:"full_replace,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -1893,7 +1953,7 @@ type NativeScreenResult struct {
 
 func (x *NativeScreenResult) Reset() {
 	*x = NativeScreenResult{}
-	mi := &file_apipb_history_proto_msgTypes[18]
+	mi := &file_apipb_history_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1905,7 +1965,7 @@ func (x *NativeScreenResult) String() string {
 func (*NativeScreenResult) ProtoMessage() {}
 
 func (x *NativeScreenResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[18]
+	mi := &file_apipb_history_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1918,7 +1978,7 @@ func (x *NativeScreenResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeScreenResult.ProtoReflect.Descriptor instead.
 func (*NativeScreenResult) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{18}
+	return file_apipb_history_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *NativeScreenResult) GetTerminal() *TerminalRef {
@@ -1942,9 +2002,9 @@ func (x *NativeScreenResult) GetSize() *TerminalSize {
 	return nil
 }
 
-func (x *NativeScreenResult) GetRows() []*ScreenRow {
+func (x *NativeScreenResult) GetRowReplacements() []*ScreenRowReplace {
 	if x != nil {
-		return x.Rows
+		return x.RowReplacements
 	}
 	return nil
 }
@@ -1984,9 +2044,9 @@ func (x *NativeScreenResult) GetBaseRevision() uint64 {
 	return 0
 }
 
-func (x *NativeScreenResult) GetRowIndices() []int32 {
+func (x *NativeScreenResult) GetRowCopies() []*ScreenRowCopy {
 	if x != nil {
-		return x.RowIndices
+		return x.RowCopies
 	}
 	return nil
 }
@@ -1996,118 +2056,6 @@ func (x *NativeScreenResult) GetFullReplace() bool {
 		return x.FullReplace
 	}
 	return false
-}
-
-type LiveInvalidationResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Terminal      *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	LiveRevision  uint64                 `protobuf:"varint,2,opt,name=live_revision,json=liveRevision,proto3" json:"live_revision,omitempty"`
-	Screen        *NativeScreenResult    `protobuf:"bytes,3,opt,name=screen,proto3" json:"screen,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LiveInvalidationResult) Reset() {
-	*x = LiveInvalidationResult{}
-	mi := &file_apipb_history_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LiveInvalidationResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LiveInvalidationResult) ProtoMessage() {}
-
-func (x *LiveInvalidationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LiveInvalidationResult.ProtoReflect.Descriptor instead.
-func (*LiveInvalidationResult) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *LiveInvalidationResult) GetTerminal() *TerminalRef {
-	if x != nil {
-		return x.Terminal
-	}
-	return nil
-}
-
-func (x *LiveInvalidationResult) GetLiveRevision() uint64 {
-	if x != nil {
-		return x.LiveRevision
-	}
-	return 0
-}
-
-func (x *LiveInvalidationResult) GetScreen() *NativeScreenResult {
-	if x != nil {
-		return x.Screen
-	}
-	return nil
-}
-
-type LiveInvalidatedEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Terminal      *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	LiveRevision  uint64                 `protobuf:"varint,2,opt,name=live_revision,json=liveRevision,proto3" json:"live_revision,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LiveInvalidatedEvent) Reset() {
-	*x = LiveInvalidatedEvent{}
-	mi := &file_apipb_history_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LiveInvalidatedEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LiveInvalidatedEvent) ProtoMessage() {}
-
-func (x *LiveInvalidatedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_history_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LiveInvalidatedEvent.ProtoReflect.Descriptor instead.
-func (*LiveInvalidatedEvent) Descriptor() ([]byte, []int) {
-	return file_apipb_history_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *LiveInvalidatedEvent) GetTerminal() *TerminalRef {
-	if x != nil {
-		return x.Terminal
-	}
-	return nil
-}
-
-func (x *LiveInvalidatedEvent) GetLiveRevision() uint64 {
-	if x != nil {
-		return x.LiveRevision
-	}
-	return 0
 }
 
 var File_apipb_history_proto protoreflect.FileDescriptor
@@ -2267,34 +2215,32 @@ const file_apipb_history_proto_rawDesc = "" +
 	" \x01(\x03R\x15outputBufferWaitNanos\x12 \n" +
 	"\vunavailable\x18\v \x01(\bR\vunavailable\x12-\n" +
 	"\x12unavailable_reason\x18\f \x01(\tR\x11unavailableReason\x12\x16\n" +
-	"\x06closed\x18\r \x01(\bR\x06closed\"\x81\x01\n" +
-	"\x14LiveScreenGetCommand\x126\n" +
+	"\x06closed\x18\r \x01(\bR\x06closed\"\x82\x01\n" +
+	"\x15LiveScreenNextCommand\x126\n" +
 	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12+\n" +
-	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\x88\x01\n" +
-	"\x1bLiveInvalidationNextCommand\x126\n" +
-	"\bterminal\x18\x02 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12+\n" +
-	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\xff\x03\n" +
+	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"m\n" +
+	"\rScreenRowCopy\x12\x1d\n" +
+	"\n" +
+	"source_row\x18\x01 \x01(\x05R\tsourceRow\x12'\n" +
+	"\x0fdestination_row\x18\x02 \x01(\x05R\x0edestinationRow\x12\x14\n" +
+	"\x05count\x18\x03 \x01(\x05R\x05count\"[\n" +
+	"\x10ScreenRowReplace\x12\x1b\n" +
+	"\trow_index\x18\x01 \x01(\x05R\browIndex\x12*\n" +
+	"\x03row\x18\x02 \x01(\v2\x18.anytty.api.v1.ScreenRowR\x03row\"\xb9\x04\n" +
 	"\x12NativeScreenResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12#\n" +
 	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\x12/\n" +
-	"\x04size\x18\x03 \x01(\v2\x1b.anytty.api.v1.TerminalSizeR\x04size\x12,\n" +
-	"\x04rows\x18\x04 \x03(\v2\x18.anytty.api.v1.ScreenRowR\x04rows\x12)\n" +
+	"\x04size\x18\x03 \x01(\v2\x1b.anytty.api.v1.TerminalSizeR\x04size\x12J\n" +
+	"\x10row_replacements\x18\x04 \x03(\v2\x1f.anytty.api.v1.ScreenRowReplaceR\x0frowReplacements\x12)\n" +
 	"\x10alternate_screen\x18\x05 \x01(\bR\x0falternateScreen\x125\n" +
 	"\x06cursor\x18\x06 \x01(\v2\x1d.anytty.api.v1.TerminalCursorR\x06cursor\x122\n" +
 	"\x05modes\x18\a \x01(\v2\x1c.anytty.api.v1.TerminalModesR\x05modes\x12.\n" +
 	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\x12#\n" +
-	"\rbase_revision\x18\t \x01(\x04R\fbaseRevision\x12\x1f\n" +
-	"\vrow_indices\x18\n" +
-	" \x03(\x05R\n" +
-	"rowIndices\x12!\n" +
-	"\ffull_replace\x18\v \x01(\bR\vfullReplace\"\xb0\x01\n" +
-	"\x16LiveInvalidationResult\x126\n" +
-	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12#\n" +
-	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\x129\n" +
-	"\x06screen\x18\x03 \x01(\v2!.anytty.api.v1.NativeScreenResultR\x06screen\"s\n" +
-	"\x14LiveInvalidatedEvent\x126\n" +
-	"\bterminal\x18\x01 \x01(\v2\x1a.anytty.api.v1.TerminalRefR\bterminal\x12#\n" +
-	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision*\xb6\x01\n" +
+	"\rbase_revision\x18\t \x01(\x04R\fbaseRevision\x12;\n" +
+	"\n" +
+	"row_copies\x18\n" +
+	" \x03(\v2\x1c.anytty.api.v1.ScreenRowCopyR\trowCopies\x12!\n" +
+	"\ffull_replace\x18\v \x01(\bR\vfullReplace*\xb6\x01\n" +
 	"\x11HistoryWindowMode\x12#\n" +
 	"\x1fHISTORY_WINDOW_MODE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aHISTORY_WINDOW_MODE_LATEST\x10\x01\x12\x1d\n" +
@@ -2337,7 +2283,7 @@ func file_apipb_history_proto_rawDescGZIP() []byte {
 }
 
 var file_apipb_history_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_apipb_history_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_apipb_history_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_apipb_history_proto_goTypes = []any{
 	(HistoryWindowMode)(0),              // 0: anytty.api.v1.HistoryWindowMode
 	(HistoryWindowOperation)(0),         // 1: anytty.api.v1.HistoryWindowOperation
@@ -2360,13 +2306,12 @@ var file_apipb_history_proto_goTypes = []any{
 	(*HistoryWindowResult)(nil),         // 18: anytty.api.v1.HistoryWindowResult
 	(*HistoryCopyResult)(nil),           // 19: anytty.api.v1.HistoryCopyResult
 	(*HistoryBacklogStatusResult)(nil),  // 20: anytty.api.v1.HistoryBacklogStatusResult
-	(*LiveScreenGetCommand)(nil),        // 21: anytty.api.v1.LiveScreenGetCommand
-	(*LiveInvalidationNextCommand)(nil), // 22: anytty.api.v1.LiveInvalidationNextCommand
-	(*NativeScreenResult)(nil),          // 23: anytty.api.v1.NativeScreenResult
-	(*LiveInvalidationResult)(nil),      // 24: anytty.api.v1.LiveInvalidationResult
-	(*LiveInvalidatedEvent)(nil),        // 25: anytty.api.v1.LiveInvalidatedEvent
-	(*TerminalRef)(nil),                 // 26: anytty.api.v1.TerminalRef
-	(*TerminalSize)(nil),                // 27: anytty.api.v1.TerminalSize
+	(*LiveScreenNextCommand)(nil),       // 21: anytty.api.v1.LiveScreenNextCommand
+	(*ScreenRowCopy)(nil),               // 22: anytty.api.v1.ScreenRowCopy
+	(*ScreenRowReplace)(nil),            // 23: anytty.api.v1.ScreenRowReplace
+	(*NativeScreenResult)(nil),          // 24: anytty.api.v1.NativeScreenResult
+	(*TerminalRef)(nil),                 // 25: anytty.api.v1.TerminalRef
+	(*TerminalSize)(nil),                // 26: anytty.api.v1.TerminalSize
 }
 var file_apipb_history_proto_depIdxs = []int32{
 	5,  // 0: anytty.api.v1.ScreenCell.style:type_name -> anytty.api.v1.CellStyle
@@ -2374,40 +2319,38 @@ var file_apipb_history_proto_depIdxs = []int32{
 	5,  // 2: anytty.api.v1.ScreenRow.tail_fill:type_name -> anytty.api.v1.CellStyle
 	4,  // 3: anytty.api.v1.TerminalCursor.shape:type_name -> anytty.api.v1.CursorShape
 	2,  // 4: anytty.api.v1.HistoryCursor.segment:type_name -> anytty.api.v1.HistoryCursorSegment
-	26, // 5: anytty.api.v1.HistoryWindowCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	25, // 5: anytty.api.v1.HistoryWindowCommand.terminal:type_name -> anytty.api.v1.TerminalRef
 	0,  // 6: anytty.api.v1.HistoryWindowCommand.mode:type_name -> anytty.api.v1.HistoryWindowMode
 	10, // 7: anytty.api.v1.HistoryWindowCommand.before_cursor:type_name -> anytty.api.v1.HistoryCursor
 	10, // 8: anytty.api.v1.HistoryWindowCommand.after_cursor:type_name -> anytty.api.v1.HistoryCursor
 	11, // 9: anytty.api.v1.HistoryWindowCommand.range:type_name -> anytty.api.v1.HistoryRange
-	26, // 10: anytty.api.v1.HistoryCopyCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	25, // 10: anytty.api.v1.HistoryCopyCommand.terminal:type_name -> anytty.api.v1.TerminalRef
 	12, // 11: anytty.api.v1.HistoryCopyCommand.window:type_name -> anytty.api.v1.HistoryWindowCommand
-	26, // 12: anytty.api.v1.HistoryReleaseCommand.terminal:type_name -> anytty.api.v1.TerminalRef
-	26, // 13: anytty.api.v1.HistoryBacklogStatusCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	25, // 12: anytty.api.v1.HistoryReleaseCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	25, // 13: anytty.api.v1.HistoryBacklogStatusCommand.terminal:type_name -> anytty.api.v1.TerminalRef
 	7,  // 14: anytty.api.v1.HistoryRow.row:type_name -> anytty.api.v1.ScreenRow
 	3,  // 15: anytty.api.v1.HistoryRow.ownership:type_name -> anytty.api.v1.RowOwnership
 	2,  // 16: anytty.api.v1.HistoryRow.segment:type_name -> anytty.api.v1.HistoryCursorSegment
-	26, // 17: anytty.api.v1.HistoryWindowResult.terminal:type_name -> anytty.api.v1.TerminalRef
+	25, // 17: anytty.api.v1.HistoryWindowResult.terminal:type_name -> anytty.api.v1.TerminalRef
 	1,  // 18: anytty.api.v1.HistoryWindowResult.operation:type_name -> anytty.api.v1.HistoryWindowOperation
-	27, // 19: anytty.api.v1.HistoryWindowResult.size:type_name -> anytty.api.v1.TerminalSize
+	26, // 19: anytty.api.v1.HistoryWindowResult.size:type_name -> anytty.api.v1.TerminalSize
 	17, // 20: anytty.api.v1.HistoryWindowResult.rows:type_name -> anytty.api.v1.HistoryRow
 	16, // 21: anytty.api.v1.HistoryWindowResult.lines:type_name -> anytty.api.v1.HistoryLineSpan
 	10, // 22: anytty.api.v1.HistoryWindowResult.cursor:type_name -> anytty.api.v1.HistoryCursor
-	26, // 23: anytty.api.v1.HistoryBacklogStatusResult.terminal:type_name -> anytty.api.v1.TerminalRef
-	26, // 24: anytty.api.v1.LiveScreenGetCommand.terminal:type_name -> anytty.api.v1.TerminalRef
-	26, // 25: anytty.api.v1.LiveInvalidationNextCommand.terminal:type_name -> anytty.api.v1.TerminalRef
-	26, // 26: anytty.api.v1.NativeScreenResult.terminal:type_name -> anytty.api.v1.TerminalRef
-	27, // 27: anytty.api.v1.NativeScreenResult.size:type_name -> anytty.api.v1.TerminalSize
-	7,  // 28: anytty.api.v1.NativeScreenResult.rows:type_name -> anytty.api.v1.ScreenRow
+	25, // 23: anytty.api.v1.HistoryBacklogStatusResult.terminal:type_name -> anytty.api.v1.TerminalRef
+	25, // 24: anytty.api.v1.LiveScreenNextCommand.terminal:type_name -> anytty.api.v1.TerminalRef
+	7,  // 25: anytty.api.v1.ScreenRowReplace.row:type_name -> anytty.api.v1.ScreenRow
+	25, // 26: anytty.api.v1.NativeScreenResult.terminal:type_name -> anytty.api.v1.TerminalRef
+	26, // 27: anytty.api.v1.NativeScreenResult.size:type_name -> anytty.api.v1.TerminalSize
+	23, // 28: anytty.api.v1.NativeScreenResult.row_replacements:type_name -> anytty.api.v1.ScreenRowReplace
 	8,  // 29: anytty.api.v1.NativeScreenResult.cursor:type_name -> anytty.api.v1.TerminalCursor
 	9,  // 30: anytty.api.v1.NativeScreenResult.modes:type_name -> anytty.api.v1.TerminalModes
-	26, // 31: anytty.api.v1.LiveInvalidationResult.terminal:type_name -> anytty.api.v1.TerminalRef
-	23, // 32: anytty.api.v1.LiveInvalidationResult.screen:type_name -> anytty.api.v1.NativeScreenResult
-	26, // 33: anytty.api.v1.LiveInvalidatedEvent.terminal:type_name -> anytty.api.v1.TerminalRef
-	34, // [34:34] is the sub-list for method output_type
-	34, // [34:34] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	22, // 31: anytty.api.v1.NativeScreenResult.row_copies:type_name -> anytty.api.v1.ScreenRowCopy
+	32, // [32:32] is the sub-list for method output_type
+	32, // [32:32] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_apipb_history_proto_init() }
@@ -2422,7 +2365,7 @@ func file_apipb_history_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apipb_history_proto_rawDesc), len(file_apipb_history_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   21,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

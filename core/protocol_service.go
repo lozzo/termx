@@ -96,6 +96,7 @@ type protocolSession struct {
 	scope                         TransportScope
 	application                   ApplicationExecutor
 	sessionID                     uint64
+	sessionCtx                    context.Context
 	sendMu                        sync.Mutex
 	attachmentMu                  sync.Mutex
 	mu                            sync.RWMutex
@@ -107,7 +108,7 @@ type protocolSession struct {
 	requests                      sync.WaitGroup
 	requestSlots                  chan struct{}
 	requestMu                     sync.Mutex
-	activeRequests                map[uint64]struct{}
+	activeRequests                map[uint64]context.CancelFunc
 	resourceMu                    sync.Mutex
 	nextChannel                   uint32
 	channelKinds                  map[uint16]protocolChannelKind
@@ -251,7 +252,7 @@ func newProtocolSessionObserved(server *Server, conn transport.Transport, scope 
 		eventSubscriptions: make(map[uint64]applicationEventSubscription),
 		rawPTYStreams:      make(map[uint16]*protocolRawPTYStream),
 		requestSlots:       make(chan struct{}, server.cfg.protocolLimits.MaxInFlightRequests),
-		activeRequests:     make(map[uint64]struct{}),
+		activeRequests:     make(map[uint64]context.CancelFunc),
 		channelKinds:       make(map[uint16]protocolChannelKind),
 		historyTokens:      make(map[protocolHistoryResourceKey]struct{}),
 		lifecycleObserver:  observer,
@@ -267,6 +268,9 @@ func newProtocolSessionObserved(server *Server, conn transport.Transport, scope 
 func (session *protocolSession) run(ctx context.Context) error {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	session.mu.Lock()
+	session.sessionCtx = sessionCtx
+	session.mu.Unlock()
 	defer func() {
 		cancel()
 		session.requests.Wait()
@@ -340,7 +344,9 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 		if req.ID == 0 || req.Method == "" {
 			return session.sendError(req.ID, protocolErrorBadRequest, "protocol request ID and method are required")
 		}
-		if !session.claimActiveRequest(req.ID) {
+		requestCtx, requestCancel := context.WithCancel(ctx)
+		if !session.claimActiveRequest(req.ID, requestCancel) {
+			requestCancel()
 			_ = session.conn.Close()
 			return fmt.Errorf("duplicate in-flight protocol request ID %d", req.ID)
 		}
@@ -358,13 +364,23 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 			defer session.releaseActiveRequest(req.ID)
 			defer func() { <-session.requestSlots }()
 			defer session.server.releaseProtocolRequest()
-			_ = session.handleRequest(ctx, req)
+			_ = session.handleRequest(requestCtx, req)
 		}) {
 			session.requests.Done()
 			<-session.requestSlots
 			session.releaseActiveRequest(req.ID)
 			return session.sendError(req.ID, protocolErrorExhausted, protocolRequestCapacityExhaustedMessage)
 		}
+		return nil
+	case wire.TypeRequestCancel:
+		if !session.helloAccepted {
+			return session.sendError(0, protocolErrorBadRequest, "protocol Hello is required before request cancellation")
+		}
+		id, err := protocol.DecodeRequestCancelPayload(payload)
+		if err != nil {
+			return session.sendError(0, protocolErrorBadRequest, err.Error())
+		}
+		session.cancelActiveRequest(id)
 		return nil
 	case wire.TypeSessionClose:
 		if err := protocol.DecodeSessionClosePayload(payload); err != nil {
@@ -394,20 +410,33 @@ func (server *Server) releaseProtocolRequest() {
 	<-server.protocolRequestSlots
 }
 
-func (session *protocolSession) claimActiveRequest(id uint64) bool {
+func (session *protocolSession) claimActiveRequest(id uint64, cancel context.CancelFunc) bool {
 	session.requestMu.Lock()
 	defer session.requestMu.Unlock()
 	if _, exists := session.activeRequests[id]; exists {
 		return false
 	}
-	session.activeRequests[id] = struct{}{}
+	session.activeRequests[id] = cancel
 	return true
 }
 
 func (session *protocolSession) releaseActiveRequest(id uint64) {
 	session.requestMu.Lock()
+	cancel := session.activeRequests[id]
 	delete(session.activeRequests, id)
 	session.requestMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (session *protocolSession) cancelActiveRequest(id uint64) {
+	session.requestMu.Lock()
+	cancel := session.activeRequests[id]
+	session.requestMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (session *protocolSession) handleRequest(ctx context.Context, req protocol.Request) error {

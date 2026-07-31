@@ -104,9 +104,9 @@ func (client *ApplicationClient) HistoryRelease(ctx context.Context, command *ap
 	return client.ApplicationSession.HistoryRelease(ctx, command)
 }
 
-// LiveScreen 读取 Proto native screen projection。
-func (client *ApplicationClient) LiveScreen(ctx context.Context, command *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error) {
-	return client.ApplicationSession.LiveScreen(ctx, command)
+// LiveScreenNext 等待并读取 Proto native screen projection。
+func (client *ApplicationClient) LiveScreenNext(ctx context.Context, command *apipb.LiveScreenNextCommand) (*apipb.NativeScreenResult, error) {
+	return client.ApplicationSession.LiveScreenNext(ctx, command)
 }
 
 // NewApplicationClient 把已完成 Hello/auth 的 framing client 绑定到 runtime winner stamp。

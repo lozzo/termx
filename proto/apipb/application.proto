@@ -46,8 +46,7 @@ message CommandEnvelope {
     HistoryCopyCommand history_copy = 41;
     HistoryReleaseCommand history_release = 42;
     HistoryBacklogStatusCommand history_backlog_status = 43;
-    LiveScreenGetCommand live_screen_get = 44;
-    LiveInvalidationNextCommand live_invalidation_next = 45;
+    LiveScreenNextCommand live_screen_next = 44;
     EventSubscribeCommand event_subscribe = 46;
     FileListCommand file_list = 60;
     FileStatCommand file_stat = 61;
@@ -95,7 +94,6 @@ message ResultEnvelope {
     HistoryCopyResult history_copy = 41;
     HistoryBacklogStatusResult history_backlog_status = 42;
     NativeScreenResult live_screen = 43;
-    LiveInvalidationResult live_invalidation = 44;
     EventSubscriptionResult event_subscription = 45;
     FileListResult file_list = 60;
     FileStatResult file_stat = 61;
@@ -127,7 +125,7 @@ message ResourceReleasedEvent {
 }
 
 message EventEnvelope {
-  reserved 21, 23;
+  reserved 21, 22, 23;
   string event_id = 1;
   int64 timestamp_unix_nano = 2;
   ApiVersion api_version = 3;
@@ -137,7 +135,6 @@ message EventEnvelope {
     OperationCancelledEvent operation_cancelled = 10;
     ResourceReleasedEvent resource_released = 11;
     TerminalLifecycleEvent terminal_lifecycle = 20;
-    LiveInvalidatedEvent live_invalidated = 22;
     StorageChangedEvent storage_changed = 30;
     FileTransferCompletedEvent file_transfer_completed = 40;
   }

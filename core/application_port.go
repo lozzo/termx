@@ -241,10 +241,9 @@ type ApplicationSessionPort interface {
 	ApplicationHistoryRelease(context.Context, string, history.HistoryToken) error
 	// ApplicationHistoryBacklogStatus 返回 history ingest 的诊断状态。
 	ApplicationHistoryBacklogStatus(context.Context, string) (HistoryBacklogStatus, error)
-	// ApplicationLiveScreen 返回 daemon 当前 native live screen projection。
-	ApplicationLiveScreen(context.Context, string, LiveRevision) (NativeScreenSnapshot, error)
-	// ApplicationLiveInvalidation 等待 observed revision 之后的一次 live invalidation。
-	ApplicationLiveInvalidation(context.Context, string, LiveRevision) (LiveScreenInvalidated, error)
+	// ApplicationLiveScreenNext 返回 observed revision 之后的 daemon latest screen；
+	// observed 等于当前 revision 时等待下一次变化。
+	ApplicationLiveScreenNext(context.Context, string, LiveRevision) (NativeScreenSnapshot, error)
 	// ApplicationEventSubscribe 建立 session-owned application event subscription。
 	ApplicationEventSubscribe(context.Context, EventFilter, ApplicationEventEncoder) ([]byte, error)
 	// ApplicationFileList 返回 daemon-owned directory window。

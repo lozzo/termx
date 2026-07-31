@@ -135,7 +135,7 @@ func TestNativeScreenToProtoCoalescesAdjacentStyleRuns(t *testing.T) {
 			{Content: "z", Width: 1},
 		}}},
 	})
-	cells := screen.GetRows()[0].GetCells()
+	cells := screen.GetRowReplacements()[0].GetRow().GetCells()
 	if len(cells) != 2 || cells[0].GetContent() != "xy" || cells[0].GetWidth() != 2 || cells[1].GetContent() != "z" {
 		t.Fatalf("coalesced live runs = %#v", cells)
 	}
@@ -147,6 +147,7 @@ func TestNativeScreenToProtoPreservesSparseRevisionAndRowIndexes(t *testing.T) {
 		BaseRevision: 7,
 		Revision:     10,
 		Size:         corev2.NativeScreenSize{Cols: 80, Rows: 24},
+		RowCopies:    []corev2.NativeScreenRowCopy{{SourceRow: 4, DestinationRow: 3, Count: 2}},
 		Rows: []corev2.NativeScreenRow{
 			{Index: 3, Cells: []vterm.Cell{{Content: "three", Width: 5}}},
 			{Index: 9, Cells: []vterm.Cell{{Content: "nine", Width: 4}}},
@@ -155,20 +156,12 @@ func TestNativeScreenToProtoPreservesSparseRevisionAndRowIndexes(t *testing.T) {
 	if screen.GetBaseRevision() != 7 || screen.GetLiveRevision() != 10 || screen.GetFullReplace() {
 		t.Fatalf("sparse revision metadata lost: %#v", screen)
 	}
-	if got := screen.GetRowIndices(); !reflect.DeepEqual(got, []int32{3, 9}) {
+	got := []int32{screen.GetRowReplacements()[0].GetRowIndex(), screen.GetRowReplacements()[1].GetRowIndex()}
+	if !reflect.DeepEqual(got, []int32{3, 9}) {
 		t.Fatalf("sparse row indexes lost: %#v", got)
 	}
-}
-
-func TestLiveInvalidationToProtoReportsDeliveredScreenRevision(t *testing.T) {
-	result := LiveInvalidationToProto("machine", corev2.LiveScreenInvalidated{TerminalID: "terminal", Revision: 8}, corev2.NativeScreenSnapshot{
-		TerminalID:   "terminal",
-		BaseRevision: 7,
-		Revision:     10,
-		Size:         corev2.NativeScreenSize{Cols: 80, Rows: 24},
-	})
-	if result.GetLiveRevision() != 10 || result.GetScreen().GetLiveRevision() != 10 {
-		t.Fatalf("combined response must identify the delivered latest screen: %#v", result)
+	if copies := screen.GetRowCopies(); len(copies) != 1 || copies[0].GetSourceRow() != 4 || copies[0].GetDestinationRow() != 3 || copies[0].GetCount() != 2 {
+		t.Fatalf("row copy lost: %#v", copies)
 	}
 }
 

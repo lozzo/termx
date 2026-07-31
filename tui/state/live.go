@@ -133,6 +133,7 @@ type LiveSurfaceSnapshot struct {
 	BaseRevision uint64
 	Revision     uint64
 	FullReplace  bool
+	RowCopies    []LiveRowCopy
 	ChangedRows  []int
 	Cols         int
 	Rows         int
@@ -147,6 +148,12 @@ type LiveSurfaceSnapshot struct {
 	ExitedAt     time.Time
 	Command      []string
 	Err          string
+}
+
+type LiveRowCopy struct {
+	SourceRow      int
+	DestinationRow int
+	Count          int
 }
 
 // TerminalRef 返回该 live snapshot 的 endpoint-aware terminal 身份。
@@ -212,6 +219,7 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	} else {
 		snapshot.Lines = cloneStrings(snapshot.Lines)
 		snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
+		snapshot.RowCopies = cloneLiveRowCopies(snapshot.RowCopies)
 		snapshot.ChangedRows = cloneInts(snapshot.ChangedRows)
 	}
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
@@ -913,7 +921,7 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 }
 
 func mergeLiveSurfaceDelta(current LiveSurfaceSnapshot, incoming LiveSurfaceSnapshot, hasCurrent bool) (LiveSurfaceSnapshot, bool) {
-	if !hasCurrent || current.Revision != incoming.BaseRevision || current.Cols != incoming.Cols || current.Rows != incoming.Rows || len(incoming.ChangedRows) != len(incoming.Screen) {
+	if !hasCurrent || current.Revision != incoming.BaseRevision || current.Cols != incoming.Cols || current.Rows != incoming.Rows || len(current.Screen) < incoming.Rows || len(incoming.ChangedRows) != len(incoming.Screen) {
 		return LiveSurfaceSnapshot{}, false
 	}
 	merged := current
@@ -930,6 +938,15 @@ func mergeLiveSurfaceDelta(current LiveSurfaceSnapshot, incoming LiveSurfaceSnap
 		merged.Screen = append(merged.Screen, make([][]LiveCell, incoming.Rows-len(merged.Screen))...)
 	} else if len(merged.Screen) > incoming.Rows {
 		merged.Screen = merged.Screen[:incoming.Rows]
+	}
+	merged.RowCopies = cloneLiveRowCopies(incoming.RowCopies)
+	for _, rowCopy := range incoming.RowCopies {
+		if rowCopy.Count <= 0 || rowCopy.SourceRow < 0 || rowCopy.DestinationRow < 0 || rowCopy.SourceRow+rowCopy.Count > incoming.Rows || rowCopy.DestinationRow+rowCopy.Count > incoming.Rows {
+			return LiveSurfaceSnapshot{}, false
+		}
+		for offset := 0; offset < rowCopy.Count; offset++ {
+			merged.Screen[rowCopy.DestinationRow+offset] = current.Screen[rowCopy.SourceRow+offset]
+		}
 	}
 	merged.ChangedRows = cloneInts(incoming.ChangedRows)
 	for index, rowIndex := range incoming.ChangedRows {
@@ -1249,9 +1266,14 @@ func cloneLiveSurfaceRefreshStates(values map[string]LiveSurfaceRefreshState) ma
 func CloneLiveSurfaceSnapshot(value LiveSurfaceSnapshot) LiveSurfaceSnapshot {
 	value.Lines = cloneStrings(value.Lines)
 	value.Screen = cloneLiveCellRows(value.Screen)
+	value.RowCopies = cloneLiveRowCopies(value.RowCopies)
 	value.ChangedRows = cloneInts(value.ChangedRows)
 	value.Command = cloneStrings(value.Command)
 	return value
+}
+
+func cloneLiveRowCopies(values []LiveRowCopy) []LiveRowCopy {
+	return append([]LiveRowCopy(nil), values...)
 }
 
 func liveSurfaceRefKey(ref TerminalRef) string {

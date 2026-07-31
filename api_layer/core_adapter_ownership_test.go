@@ -52,7 +52,7 @@ func TestCoreApplicationAdapterEventEncoderOwnsOriginAfterSubscribe(t *testing.T
 	adapter := &coreApplicationAdapter{port: port}
 	origin := &apipb.EndpointSessionStamp{EndpointId: "endpoint-before", RouteId: "route-before", Generation: 7}
 	result, err := adapter.EventSubscribe(context.Background(), origin, &apipb.EventSubscribeCommand{
-		Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED},
+		Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED},
 	})
 	if err != nil || result.GetSubscription().GetSession().GetGeneration() != 7 || port.eventEncoder == nil {
 		t.Fatalf("subscribe result=%#v encoder=%v err=%v", result, port.eventEncoder != nil, err)
@@ -69,10 +69,11 @@ func TestCoreApplicationAdapterEventEncoderOwnsOriginAfterSubscribe(t *testing.T
 	encoded := make(chan encodeResult, 1)
 	go func() {
 		payload, encodeErr := port.eventEncoder(corev2.Event{
-			Type:       corev2.EventTerminalLiveInvalidated,
-			TerminalID: "term-1",
-			Live:       &corev2.LiveScreenInvalidated{TerminalID: "term-1", Revision: 11},
-			Timestamp:  time.Unix(123, 456),
+			Type: corev2.EventStorageChanged,
+			Storage: &corev2.StorageChanged{
+				AppID: "app", Scope: corev2.StorageScopePublic, Key: "key", Version: 11, Op: "put",
+			},
+			Timestamp: time.Unix(123, 456),
 		}, []byte("async-token"))
 		encoded <- encodeResult{payload: payload, err: encodeErr}
 	}()
@@ -93,7 +94,7 @@ func TestCoreApplicationAdapterEventEncoderOwnsOriginAfterSubscribe(t *testing.T
 	if event.GetOriginSession().GetEndpointId() != "endpoint-before" ||
 		event.GetOriginSession().GetRouteId() != "route-before" || event.GetOriginSession().GetGeneration() != 7 ||
 		event.GetSubscription().GetSession().GetEndpointId() != "endpoint-before" ||
-		event.GetLiveInvalidated().GetTerminal().GetEndpointId() != "endpoint-before" {
+		event.GetStorageChanged().GetKey().GetAppId() != "app" {
 		t.Fatalf("async event aliases borrowed origin: %#v", event)
 	}
 }

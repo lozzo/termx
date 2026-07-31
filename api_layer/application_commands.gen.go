@@ -36,8 +36,7 @@ type PlatformController interface {
 	HistoryCopy(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error)
 	HistoryRelease(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryReleaseCommand) (*apipb.AcknowledgeResult, error)
 	HistoryBacklogStatus(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryBacklogStatusCommand) (*apipb.HistoryBacklogStatusResult, error)
-	LiveScreen(context.Context, *apipb.EndpointSessionStamp, *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error)
-	LiveInvalidation(context.Context, *apipb.EndpointSessionStamp, *apipb.LiveInvalidationNextCommand) (*apipb.LiveInvalidationResult, error)
+	LiveScreenNext(context.Context, *apipb.EndpointSessionStamp, *apipb.LiveScreenNextCommand) (*apipb.NativeScreenResult, error)
 	EventSubscribe(context.Context, *apipb.EndpointSessionStamp, *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error)
 	FileList(context.Context, *apipb.EndpointSessionStamp, *apipb.FileListCommand) (*apipb.FileListResult, error)
 	FileStat(context.Context, *apipb.EndpointSessionStamp, *apipb.FileStatCommand) (*apipb.FileStatResult, error)
@@ -110,8 +109,7 @@ func validateApplicationCommand(command *apipb.CommandEnvelope) error {
 		*apipb.CommandEnvelope_HistoryCopy,
 		*apipb.CommandEnvelope_HistoryRelease,
 		*apipb.CommandEnvelope_HistoryBacklogStatus,
-		*apipb.CommandEnvelope_LiveScreenGet,
-		*apipb.CommandEnvelope_LiveInvalidationNext:
+		*apipb.CommandEnvelope_LiveScreenNext:
 		return apimapping.ValidateHistoryLiveCommand(command)
 	case *apipb.CommandEnvelope_EventSubscribe:
 		return apimapping.ValidateEventSubscribeCommand(command)
@@ -266,18 +264,12 @@ func (service *Service) dispatchPlatformCommand(ctx context.Context, requestID s
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_HistoryBacklogStatus{HistoryBacklogStatus: result}}
-	case *apipb.CommandEnvelope_LiveScreenGet:
-		result, err := service.platform.LiveScreen(ctx, session, value.LiveScreenGet)
+	case *apipb.CommandEnvelope_LiveScreenNext:
+		result, err := service.platform.LiveScreenNext(ctx, session, value.LiveScreenNext)
 		if err != nil || result == nil {
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_LiveScreen{LiveScreen: result}}
-	case *apipb.CommandEnvelope_LiveInvalidationNext:
-		result, err := service.platform.LiveInvalidation(ctx, session, value.LiveInvalidationNext)
-		if err != nil || result == nil {
-			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
-		}
-		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_LiveInvalidation{LiveInvalidation: result}}
 	case *apipb.CommandEnvelope_EventSubscribe:
 		result, err := service.platform.EventSubscribe(ctx, session, value.EventSubscribe)
 		if err != nil || result == nil {

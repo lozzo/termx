@@ -804,6 +804,32 @@ func (server *Server) TerminalHistoryBacklogStatus(id string) (HistoryBacklogSta
 	return terminal.HistoryBacklogStatus(), nil
 }
 
+// NextLiveScreen returns one canonical latest-screen response. Revision zero is
+// a full bootstrap; an observed current revision waits for the next internal
+// invalidation edge before constructing the response.
+func (server *Server) NextLiveScreen(ctx context.Context, id string, observedRevision LiveRevision) (NativeScreenSnapshot, error) {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return NativeScreenSnapshot{}, err
+	}
+	current := terminal.LiveRevision()
+	switch {
+	case observedRevision == 0:
+		if err := terminal.flushLiveOutput(ctx); err != nil {
+			return NativeScreenSnapshot{}, err
+		}
+	case observedRevision <= current:
+		if _, err := server.NextLiveInvalidation(ctx, id, observedRevision); err != nil {
+			return NativeScreenSnapshot{}, err
+		}
+	default:
+		if err := terminal.flushLiveOutput(ctx); err != nil {
+			return NativeScreenSnapshot{}, err
+		}
+	}
+	return terminal.NativeScreenSnapshotSince(id, observedRevision), nil
+}
+
 // NextLiveInvalidation 等待指定 terminal 的下一次 live invalidation。
 // observedRevision 是客户端已从 core 看到的 native screen revision，不是 TUI 已渲染
 // revision；core 只用它补 one-shot arm 间隙丢失的 wake，仍不维护客户端渲染进度。

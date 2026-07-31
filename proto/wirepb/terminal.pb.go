@@ -129,6 +129,52 @@ func (x *SessionClose) GetVersion() uint32 {
 	return 0
 }
 
+// RequestCancel cancels one in-flight control request without closing the
+// protocol session. Unknown or already completed IDs are an idempotent no-op.
+type RequestCancel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestCancel) Reset() {
+	*x = RequestCancel{}
+	mi := &file_wirepb_terminal_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestCancel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestCancel) ProtoMessage() {}
+
+func (x *RequestCancel) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestCancel.ProtoReflect.Descriptor instead.
+func (*RequestCancel) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RequestCancel) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
 type RequestEnvelope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -140,7 +186,7 @@ type RequestEnvelope struct {
 
 func (x *RequestEnvelope) Reset() {
 	*x = RequestEnvelope{}
-	mi := &file_wirepb_terminal_proto_msgTypes[2]
+	mi := &file_wirepb_terminal_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +198,7 @@ func (x *RequestEnvelope) String() string {
 func (*RequestEnvelope) ProtoMessage() {}
 
 func (x *RequestEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[2]
+	mi := &file_wirepb_terminal_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +211,7 @@ func (x *RequestEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestEnvelope.ProtoReflect.Descriptor instead.
 func (*RequestEnvelope) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{2}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RequestEnvelope) GetId() uint64 {
@@ -199,7 +245,7 @@ type ResponseEnvelope struct {
 
 func (x *ResponseEnvelope) Reset() {
 	*x = ResponseEnvelope{}
-	mi := &file_wirepb_terminal_proto_msgTypes[3]
+	mi := &file_wirepb_terminal_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -211,7 +257,7 @@ func (x *ResponseEnvelope) String() string {
 func (*ResponseEnvelope) ProtoMessage() {}
 
 func (x *ResponseEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[3]
+	mi := &file_wirepb_terminal_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -224,7 +270,7 @@ func (x *ResponseEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseEnvelope.ProtoReflect.Descriptor instead.
 func (*ResponseEnvelope) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{3}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResponseEnvelope) GetId() uint64 {
@@ -251,7 +297,7 @@ type ProtocolError struct {
 
 func (x *ProtocolError) Reset() {
 	*x = ProtocolError{}
-	mi := &file_wirepb_terminal_proto_msgTypes[4]
+	mi := &file_wirepb_terminal_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -263,7 +309,7 @@ func (x *ProtocolError) String() string {
 func (*ProtocolError) ProtoMessage() {}
 
 func (x *ProtocolError) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[4]
+	mi := &file_wirepb_terminal_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -276,7 +322,7 @@ func (x *ProtocolError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolError.ProtoReflect.Descriptor instead.
 func (*ProtocolError) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{4}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ProtocolError) GetCode() int32 {
@@ -303,7 +349,7 @@ type ErrorEnvelope struct {
 
 func (x *ErrorEnvelope) Reset() {
 	*x = ErrorEnvelope{}
-	mi := &file_wirepb_terminal_proto_msgTypes[5]
+	mi := &file_wirepb_terminal_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +361,7 @@ func (x *ErrorEnvelope) String() string {
 func (*ErrorEnvelope) ProtoMessage() {}
 
 func (x *ErrorEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[5]
+	mi := &file_wirepb_terminal_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +374,7 @@ func (x *ErrorEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorEnvelope.ProtoReflect.Descriptor instead.
 func (*ErrorEnvelope) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{5}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ErrorEnvelope) GetId() uint64 {
@@ -355,7 +401,7 @@ type FileTransferData struct {
 
 func (x *FileTransferData) Reset() {
 	*x = FileTransferData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[6]
+	mi := &file_wirepb_terminal_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -367,7 +413,7 @@ func (x *FileTransferData) String() string {
 func (*FileTransferData) ProtoMessage() {}
 
 func (x *FileTransferData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[6]
+	mi := &file_wirepb_terminal_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +426,7 @@ func (x *FileTransferData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferData.ProtoReflect.Descriptor instead.
 func (*FileTransferData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{6}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FileTransferData) GetOffset() int64 {
@@ -407,7 +453,7 @@ type FileTransferAck struct {
 
 func (x *FileTransferAck) Reset() {
 	*x = FileTransferAck{}
-	mi := &file_wirepb_terminal_proto_msgTypes[7]
+	mi := &file_wirepb_terminal_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -419,7 +465,7 @@ func (x *FileTransferAck) String() string {
 func (*FileTransferAck) ProtoMessage() {}
 
 func (x *FileTransferAck) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[7]
+	mi := &file_wirepb_terminal_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -432,7 +478,7 @@ func (x *FileTransferAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferAck.ProtoReflect.Descriptor instead.
 func (*FileTransferAck) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{7}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FileTransferAck) GetOffset() int64 {
@@ -459,7 +505,7 @@ type FileTransferFinish struct {
 
 func (x *FileTransferFinish) Reset() {
 	*x = FileTransferFinish{}
-	mi := &file_wirepb_terminal_proto_msgTypes[8]
+	mi := &file_wirepb_terminal_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -471,7 +517,7 @@ func (x *FileTransferFinish) String() string {
 func (*FileTransferFinish) ProtoMessage() {}
 
 func (x *FileTransferFinish) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[8]
+	mi := &file_wirepb_terminal_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -484,7 +530,7 @@ func (x *FileTransferFinish) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferFinish.ProtoReflect.Descriptor instead.
 func (*FileTransferFinish) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{8}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *FileTransferFinish) GetSize() int64 {
@@ -512,7 +558,7 @@ type FileTransferResult struct {
 
 func (x *FileTransferResult) Reset() {
 	*x = FileTransferResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[9]
+	mi := &file_wirepb_terminal_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +570,7 @@ func (x *FileTransferResult) String() string {
 func (*FileTransferResult) ProtoMessage() {}
 
 func (x *FileTransferResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[9]
+	mi := &file_wirepb_terminal_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +583,7 @@ func (x *FileTransferResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferResult.ProtoReflect.Descriptor instead.
 func (*FileTransferResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{9}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FileTransferResult) GetPath() string {
@@ -571,7 +617,9 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\x06client\x18\x02 \x01(\tR\x06client\x12\x16\n" +
 	"\x06server\x18\x03 \x01(\tR\x06server\"(\n" +
 	"\fSessionClose\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\rR\aversion\"Q\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\"\x1f\n" +
+	"\rRequestCancel\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\"Q\n" +
 	"\x0fRequestEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x16\n" +
@@ -611,21 +659,22 @@ func file_wirepb_terminal_proto_rawDescGZIP() []byte {
 	return file_wirepb_terminal_proto_rawDescData
 }
 
-var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_wirepb_terminal_proto_goTypes = []any{
 	(*Hello)(nil),              // 0: anytty.protocol.wirepb.Hello
 	(*SessionClose)(nil),       // 1: anytty.protocol.wirepb.SessionClose
-	(*RequestEnvelope)(nil),    // 2: anytty.protocol.wirepb.RequestEnvelope
-	(*ResponseEnvelope)(nil),   // 3: anytty.protocol.wirepb.ResponseEnvelope
-	(*ProtocolError)(nil),      // 4: anytty.protocol.wirepb.ProtocolError
-	(*ErrorEnvelope)(nil),      // 5: anytty.protocol.wirepb.ErrorEnvelope
-	(*FileTransferData)(nil),   // 6: anytty.protocol.wirepb.FileTransferData
-	(*FileTransferAck)(nil),    // 7: anytty.protocol.wirepb.FileTransferAck
-	(*FileTransferFinish)(nil), // 8: anytty.protocol.wirepb.FileTransferFinish
-	(*FileTransferResult)(nil), // 9: anytty.protocol.wirepb.FileTransferResult
+	(*RequestCancel)(nil),      // 2: anytty.protocol.wirepb.RequestCancel
+	(*RequestEnvelope)(nil),    // 3: anytty.protocol.wirepb.RequestEnvelope
+	(*ResponseEnvelope)(nil),   // 4: anytty.protocol.wirepb.ResponseEnvelope
+	(*ProtocolError)(nil),      // 5: anytty.protocol.wirepb.ProtocolError
+	(*ErrorEnvelope)(nil),      // 6: anytty.protocol.wirepb.ErrorEnvelope
+	(*FileTransferData)(nil),   // 7: anytty.protocol.wirepb.FileTransferData
+	(*FileTransferAck)(nil),    // 8: anytty.protocol.wirepb.FileTransferAck
+	(*FileTransferFinish)(nil), // 9: anytty.protocol.wirepb.FileTransferFinish
+	(*FileTransferResult)(nil), // 10: anytty.protocol.wirepb.FileTransferResult
 }
 var file_wirepb_terminal_proto_depIdxs = []int32{
-	4, // 0: anytty.protocol.wirepb.ErrorEnvelope.error:type_name -> anytty.protocol.wirepb.ProtocolError
+	5, // 0: anytty.protocol.wirepb.ErrorEnvelope.error:type_name -> anytty.protocol.wirepb.ProtocolError
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -644,7 +693,7 @@ func file_wirepb_terminal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wirepb_terminal_proto_rawDesc), len(file_wirepb_terminal_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

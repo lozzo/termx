@@ -240,6 +240,15 @@ type DamageRect struct {
 	Height int
 }
 
+// RowCopy describes final screen rows whose cell contents are exactly equal to
+// rows from the screen before the write. All copies from one WriteDamage read
+// from that same pre-write screen.
+type RowCopy struct {
+	SourceRow      int
+	DestinationRow int
+	Count          int
+}
+
 type ScreenOpCode uint8
 
 const (
@@ -512,11 +521,14 @@ type WriteDamage struct {
 	// IncrementalRowsReliable 表示 DirectDamageTouchedRows 完整覆盖本次当前屏变化。
 	// latest-screen consumer 可据此只投影这些行；尺寸或 alternate screen 边界会回退整屏。
 	IncrementalRowsReliable bool
-	Cursor                  CursorState
-	Modes                   TerminalModes
-	SizeCols                int
-	SizeRows                int
-	DiffCPUNanos            int64
+	// RowCopies 只包含经过 before/after 行指纹校验的整行来源。它描述 cell matrix
+	// 的 canonical 变化，不代表 renderer 必须执行滚屏动画。
+	RowCopies    []RowCopy
+	Cursor       CursorState
+	Modes        TerminalModes
+	SizeCols     int
+	SizeRows     int
+	DiffCPUNanos int64
 }
 
 type TraceHooks struct {
@@ -1052,6 +1064,7 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 		beforeAltScreen == afterAltScreen
 	if damage.IncrementalRowsReliable {
 		damage.DirectDamageTouchedRows = cloneIntSlice(dirtyRows)
+		damage.RowCopies = rowCopiesFromReconcilePlan(beforeScreen, cachePlan)
 	}
 	damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 	traceCount("vterm.write_latest.changed_rows", damageChangedRowCount(damage))
@@ -3298,6 +3311,34 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 		nextScrollbackCache[retainedFromOldScrollback+i] = oldScreenCache[i]
 	}
 	v.scrollbackRowCache = nextScrollbackCache
+}
+
+func rowCopiesFromReconcilePlan(beforeScreen []rowFingerprint, plan rowCacheReconcilePlan) []RowCopy {
+	if len(beforeScreen) != len(plan.afterScreen) {
+		return nil
+	}
+	var copies []RowCopy
+	for destinationRow := range plan.afterScreen {
+		sourceRow := destinationRow + plan.preservedFromBefore
+		if plan.screenScrollShift > 0 {
+			sourceRow = destinationRow + plan.screenScrollShift
+		}
+		if sourceRow == destinationRow || sourceRow < 0 || sourceRow >= len(beforeScreen) {
+			continue
+		}
+		if !rowFingerprintsEqual(beforeScreen[sourceRow], plan.afterScreen[destinationRow]) {
+			continue
+		}
+		if len(copies) > 0 {
+			last := &copies[len(copies)-1]
+			if last.SourceRow+last.Count == sourceRow && last.DestinationRow+last.Count == destinationRow {
+				last.Count++
+				continue
+			}
+		}
+		copies = append(copies, RowCopy{SourceRow: sourceRow, DestinationRow: destinationRow, Count: 1})
+	}
+	return copies
 }
 
 func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Damage, timestamps []time.Time, rowKinds []string) []DamageOp {

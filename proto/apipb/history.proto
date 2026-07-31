@@ -212,39 +212,33 @@ message HistoryBacklogStatusResult {
   bool closed = 13;
 }
 
-message LiveScreenGetCommand {
+message LiveScreenNextCommand {
   reserved 1;
   TerminalRef terminal = 2;
   uint64 observed_revision = 3;
 }
 
-message LiveInvalidationNextCommand {
-  reserved 1;
-  TerminalRef terminal = 2;
-  uint64 observed_revision = 3;
+message ScreenRowCopy {
+  int32 source_row = 1;
+  int32 destination_row = 2;
+  int32 count = 3;
+}
+
+message ScreenRowReplace {
+  int32 row_index = 1;
+  ScreenRow row = 2;
 }
 
 message NativeScreenResult {
   TerminalRef terminal = 1;
   uint64 live_revision = 2;
   TerminalSize size = 3;
-  repeated ScreenRow rows = 4;
+  repeated ScreenRowReplace row_replacements = 4;
   bool alternate_screen = 5;
   TerminalCursor cursor = 6;
   TerminalModes modes = 7;
   int64 timestamp_unix_nano = 8;
   uint64 base_revision = 9;
-  repeated int32 row_indices = 10;
+  repeated ScreenRowCopy row_copies = 10;
   bool full_replace = 11;
-}
-
-message LiveInvalidationResult {
-  TerminalRef terminal = 1;
-  uint64 live_revision = 2;
-  NativeScreenResult screen = 3;
-}
-
-message LiveInvalidatedEvent {
-  TerminalRef terminal = 1;
-  uint64 live_revision = 2;
 }

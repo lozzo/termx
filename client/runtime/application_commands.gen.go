@@ -260,9 +260,9 @@ func (session *ApplicationSession) HistoryBacklogStatus(ctx context.Context, com
 	return result.GetHistoryBacklogStatus(), nil
 }
 
-// LiveScreen executes the live_screen_get application command.
-func (session *ApplicationSession) LiveScreen(ctx context.Context, command *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error) {
-	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_LiveScreenGet{LiveScreenGet: command}})
+// LiveScreenNext executes the live_screen_next application command.
+func (session *ApplicationSession) LiveScreenNext(ctx context.Context, command *apipb.LiveScreenNextCommand) (*apipb.NativeScreenResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_LiveScreenNext{LiveScreenNext: command}})
 	if err != nil {
 		return nil, err
 	}
@@ -270,18 +270,6 @@ func (session *ApplicationSession) LiveScreen(ctx context.Context, command *apip
 		return nil, missingApplicationResult("live_screen")
 	}
 	return result.GetLiveScreen(), nil
-}
-
-// LiveInvalidation executes the live_invalidation_next application command.
-func (session *ApplicationSession) LiveInvalidation(ctx context.Context, command *apipb.LiveInvalidationNextCommand) (*apipb.LiveInvalidationResult, error) {
-	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_LiveInvalidationNext{LiveInvalidationNext: command}})
-	if err != nil {
-		return nil, err
-	}
-	if result.GetLiveInvalidation() == nil {
-		return nil, missingApplicationResult("live_invalidation")
-	}
-	return result.GetLiveInvalidation(), nil
 }
 
 // executeEventSubscribe executes the event_subscribe application command.

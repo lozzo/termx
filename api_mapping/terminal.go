@@ -301,10 +301,8 @@ func ApplicationAdmissionFromCommand(command *apipb.CommandEnvelope, capability 
 		admission.TerminalID = value.HistoryRelease.GetTerminal().GetTerminalId()
 	case *apipb.CommandEnvelope_HistoryBacklogStatus:
 		admission.TerminalID = value.HistoryBacklogStatus.GetTerminal().GetTerminalId()
-	case *apipb.CommandEnvelope_LiveScreenGet:
-		admission.TerminalID = value.LiveScreenGet.GetTerminal().GetTerminalId()
-	case *apipb.CommandEnvelope_LiveInvalidationNext:
-		admission.TerminalID = value.LiveInvalidationNext.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_LiveScreenNext:
+		admission.TerminalID = value.LiveScreenNext.GetTerminal().GetTerminalId()
 	case *apipb.CommandEnvelope_EventSubscribe:
 		admission.TerminalID = value.EventSubscribe.GetTerminal().GetTerminalId()
 		admission.MachineLifecycleEventsOnly = machineLifecycleEventsOnly(value.EventSubscribe)

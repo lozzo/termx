@@ -44,8 +44,18 @@ type SurfaceTrackOptions struct {
 // frame capture，禁止重新加入 transaction/damage/frame rows。
 type SurfaceWriteResult struct {
 	Segments    []SurfaceWriteSegment
+	RowCopies   []SurfaceRowCopy
 	ChangedRows []int
 	FullReplace bool
+	rowSources  []int
+}
+
+// SurfaceRowCopy maps exact final rows back to the screen before WriteWithResult.
+// Consumers must read all sources before applying any destination writes.
+type SurfaceRowCopy struct {
+	SourceRow      int
+	DestinationRow int
+	Count          int
 }
 
 // SurfaceWriteSegment 是 live surface 的本地分段结果。
@@ -239,14 +249,65 @@ func mergeSurfaceWriteDamage(result *SurfaceWriteResult, damage vterm.WriteDamag
 	}
 	if !damage.IncrementalRowsReliable {
 		result.FullReplace = true
+		result.RowCopies = nil
 		result.ChangedRows = nil
+		result.rowSources = nil
 		return
 	}
+	if len(result.rowSources) == 0 {
+		result.rowSources = make([]int, damage.SizeRows)
+		for row := range result.rowSources {
+			result.rowSources[row] = row
+		}
+	}
+	if len(result.rowSources) != damage.SizeRows {
+		result.FullReplace = true
+		result.RowCopies = nil
+		result.ChangedRows = nil
+		result.rowSources = nil
+		return
+	}
+	previousSources := append([]int(nil), result.rowSources...)
+	copyDestinations := make([]bool, len(previousSources))
+	for _, rowCopy := range damage.RowCopies {
+		for offset := 0; offset < rowCopy.Count; offset++ {
+			sourceRow := rowCopy.SourceRow + offset
+			destinationRow := rowCopy.DestinationRow + offset
+			if sourceRow < 0 || sourceRow >= len(previousSources) || destinationRow < 0 || destinationRow >= len(previousSources) {
+				result.FullReplace = true
+				result.RowCopies = nil
+				result.ChangedRows = nil
+				result.rowSources = nil
+				return
+			}
+			result.rowSources[destinationRow] = previousSources[sourceRow]
+			copyDestinations[destinationRow] = true
+		}
+	}
 	for _, row := range damage.DirectDamageTouchedRows {
-		if row < 0 {
+		if row < 0 || row >= len(result.rowSources) || copyDestinations[row] {
 			continue
 		}
-		result.ChangedRows = append(result.ChangedRows, row)
+		result.rowSources[row] = -1
+	}
+	result.RowCopies = result.RowCopies[:0]
+	result.ChangedRows = result.ChangedRows[:0]
+	for destinationRow, sourceRow := range result.rowSources {
+		if sourceRow < 0 {
+			result.ChangedRows = append(result.ChangedRows, destinationRow)
+			continue
+		}
+		if sourceRow == destinationRow {
+			continue
+		}
+		if len(result.RowCopies) > 0 {
+			last := &result.RowCopies[len(result.RowCopies)-1]
+			if last.SourceRow+last.Count == sourceRow && last.DestinationRow+last.Count == destinationRow {
+				last.Count++
+				continue
+			}
+		}
+		result.RowCopies = append(result.RowCopies, SurfaceRowCopy{SourceRow: sourceRow, DestinationRow: destinationRow, Count: 1})
 	}
 }
 

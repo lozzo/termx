@@ -192,26 +192,12 @@ func (adapter *coreApplicationAdapter) HistoryBacklogStatus(ctx context.Context,
 	return apimapping.HistoryBacklogToProto(origin.GetEndpointId(), result), nil
 }
 
-func (adapter *coreApplicationAdapter) LiveScreen(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error) {
-	result, err := adapter.port.ApplicationLiveScreen(ctx, command.GetTerminal().GetTerminalId(), corev2.LiveRevision(command.GetObservedRevision()))
+func (adapter *coreApplicationAdapter) LiveScreenNext(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.LiveScreenNextCommand) (*apipb.NativeScreenResult, error) {
+	snapshot, err := adapter.port.ApplicationLiveScreenNext(ctx, command.GetTerminal().GetTerminalId(), corev2.LiveRevision(command.GetObservedRevision()))
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return apimapping.NativeScreenToProto(origin.GetEndpointId(), result), nil
-}
-
-func (adapter *coreApplicationAdapter) LiveInvalidation(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.LiveInvalidationNextCommand) (*apipb.LiveInvalidationResult, error) {
-	terminalID := command.GetTerminal().GetTerminalId()
-	observed := corev2.LiveRevision(command.GetObservedRevision())
-	result, err := adapter.port.ApplicationLiveInvalidation(ctx, terminalID, observed)
-	if err != nil {
-		return nil, apimapping.CoreError(err)
-	}
-	snapshot, err := adapter.port.ApplicationLiveScreen(ctx, terminalID, observed)
-	if err != nil {
-		return nil, apimapping.CoreError(err)
-	}
-	return apimapping.LiveInvalidationToProto(origin.GetEndpointId(), result, snapshot), nil
+	return apimapping.NativeScreenToProto(origin.GetEndpointId(), snapshot), nil
 }
 
 func (adapter *coreApplicationAdapter) EventSubscribe(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error) {

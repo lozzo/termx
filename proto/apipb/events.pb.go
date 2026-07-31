@@ -24,10 +24,9 @@ const (
 type ApplicationEventType int32
 
 const (
-	ApplicationEventType_APPLICATION_EVENT_TYPE_UNSPECIFIED               ApplicationEventType = 0
-	ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE        ApplicationEventType = 1
-	ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED ApplicationEventType = 3
-	ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED           ApplicationEventType = 5
+	ApplicationEventType_APPLICATION_EVENT_TYPE_UNSPECIFIED        ApplicationEventType = 0
+	ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE ApplicationEventType = 1
+	ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED    ApplicationEventType = 5
 )
 
 // Enum value maps for ApplicationEventType.
@@ -35,14 +34,12 @@ var (
 	ApplicationEventType_name = map[int32]string{
 		0: "APPLICATION_EVENT_TYPE_UNSPECIFIED",
 		1: "APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE",
-		3: "APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED",
 		5: "APPLICATION_EVENT_TYPE_STORAGE_CHANGED",
 	}
 	ApplicationEventType_value = map[string]int32{
-		"APPLICATION_EVENT_TYPE_UNSPECIFIED":               0,
-		"APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE":        1,
-		"APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED": 3,
-		"APPLICATION_EVENT_TYPE_STORAGE_CHANGED":           5,
+		"APPLICATION_EVENT_TYPE_UNSPECIFIED":        0,
+		"APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE": 1,
+		"APPLICATION_EVENT_TYPE_STORAGE_CHANGED":    5,
 	}
 )
 
@@ -214,12 +211,11 @@ const file_apipb_events_proto_rawDesc = "" +
 	"\x10storage_owner_id\x18\x06 \x01(\tR\x0estorageOwnerId\x12,\n" +
 	"\x12storage_key_prefix\x18\a \x01(\tR\x10storageKeyPrefixJ\x04\b\x01\x10\x02\"\\\n" +
 	"\x17EventSubscriptionResult\x12A\n" +
-	"\fsubscription\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\fsubscription*\xdb\x01\n" +
+	"\fsubscription\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\fsubscription*\xab\x01\n" +
 	"\x14ApplicationEventType\x12&\n" +
 	"\"APPLICATION_EVENT_TYPE_UNSPECIFIED\x10\x00\x12-\n" +
-	")APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE\x10\x01\x124\n" +
-	"0APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED\x10\x03\x12*\n" +
-	"&APPLICATION_EVENT_TYPE_STORAGE_CHANGED\x10\x05\"\x04\b\x02\x10\x02\"\x04\b\x04\x10\x04B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
+	")APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE\x10\x01\x12*\n" +
+	"&APPLICATION_EVENT_TYPE_STORAGE_CHANGED\x10\x05\"\x04\b\x02\x10\x02\"\x04\b\x03\x10\x03\"\x04\b\x04\x10\x04B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_events_proto_rawDescOnce sync.Once

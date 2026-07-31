@@ -28,7 +28,6 @@ func ValidateEventSubscribeCommand(command *apipb.CommandEnvelope) error {
 		}
 		switch eventType {
 		case apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE,
-			apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED,
 			apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED:
 		default:
 			return validation("event_subscribe.types", "event type is not supported")
@@ -47,8 +46,6 @@ func EventFilterFromProto(command *apipb.EventSubscribeCommand) corev2.EventFilt
 		switch eventType {
 		case apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE:
 			filter.Types = append(filter.Types, corev2.EventTerminalCreated, corev2.EventTerminalExited, corev2.EventTerminalMetadataChanged, corev2.EventTerminalRemoved, corev2.EventTerminalChanged)
-		case apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED:
-			filter.Types = append(filter.Types, corev2.EventTerminalLiveInvalidated)
 		case apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED:
 			filter.Types = append(filter.Types, corev2.EventStorageChanged)
 		}
@@ -65,8 +62,6 @@ func EventSubscriptionToProto(session *apipb.EndpointSessionStamp, token []byte)
 func EncodeEventEnvelope(endpointID string, session *apipb.EndpointSessionStamp, subscriptionToken []byte, event corev2.Event) ([]byte, error) {
 	envelope := &apipb.EventEnvelope{EventId: fmt.Sprintf("%s-%d", event.Type, event.Timestamp.UnixNano()), TimestampUnixNano: event.Timestamp.UnixNano(), ApiVersion: &apipb.ApiVersion{Major: 1}, OriginSession: cloneSessionStamp(session), Subscription: &apipb.ResourceHandle{OpaqueToken: cloneBytes(subscriptionToken), Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, Session: cloneSessionStamp(session), Generation: 1}}
 	switch {
-	case event.Live != nil:
-		envelope.Event = &apipb.EventEnvelope_LiveInvalidated{LiveInvalidated: &apipb.LiveInvalidatedEvent{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: event.TerminalID}, LiveRevision: uint64(event.Live.Revision)}}
 	case event.Storage != nil:
 		envelope.Event = &apipb.EventEnvelope_StorageChanged{StorageChanged: &apipb.StorageChangedEvent{Key: &apipb.StorageKey{AppId: event.Storage.AppID, Scope: storageScopeToProto(event.Storage.Scope), OwnerId: event.Storage.OwnerID, Key: event.Storage.Key}, Version: event.Storage.Version, Operation: event.Storage.Op}}
 	case event.Terminal != nil:

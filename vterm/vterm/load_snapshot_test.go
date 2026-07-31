@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	uv "github.com/charmbracelet/ultraviolet"
 	charmvt "github.com/anytty/anytty/vterm/internal/vt"
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 func TestLoadSnapshotRestoresScreenAndCursor(t *testing.T) {
@@ -4481,6 +4481,23 @@ func TestWriteForLatestFrameSkipsScrollbackDamagePayload(t *testing.T) {
 	}
 	if len(damage.ScrollbackAppend) == 0 {
 		t.Fatalf("expected incremental damage path to keep scrollback append payload, got %#v", damage)
+	}
+}
+
+func TestWriteForLatestFrameExportsOnlyFingerprintProvenRowCopies(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+	if _, err, _ := vt.WriteForLatestFrame([]byte("\x1b[1;1Hone\x1b[2;1Htwo\x1b[3;1Hthree")); err != nil {
+		t.Fatalf("seed latest frame: %v", err)
+	}
+	_, err, damage := vt.WriteForLatestFrame([]byte("\r\nfour"))
+	if err != nil {
+		t.Fatalf("scroll latest frame: %v", err)
+	}
+	if !damage.IncrementalRowsReliable {
+		t.Fatalf("scroll should retain exact row provenance: %#v", damage)
+	}
+	if len(damage.RowCopies) != 1 || damage.RowCopies[0] != (RowCopy{SourceRow: 1, DestinationRow: 0, Count: 2}) {
+		t.Fatalf("expected two proven moved rows and one replacement, got %#v", damage.RowCopies)
 	}
 }
 

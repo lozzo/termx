@@ -115,13 +115,13 @@ func TestGeneratedTerminalScopeListsOnlyAuthorizedTerminal(t *testing.T) {
 		t.Fatalf("terminal-scoped list = %#v", listed.GetTerminals())
 	}
 	if _, _, err := application.EventSubscribe(context.Background(), &apipb.EventSubscribeCommand{
-		Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED},
+		Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE},
 	}); clientruntime.CodeOf(err) != clientruntime.ErrorAuthorization {
 		t.Fatalf("unfiltered terminal-scoped subscription error = %v", err)
 	}
 	if _, _, err := application.EventSubscribe(context.Background(), &apipb.EventSubscribeCommand{
 		Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-scoped-visible"},
-		Types:    []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED},
+		Types:    []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE},
 	}); err != nil {
 		t.Fatalf("filtered terminal-scoped subscription failed: %v", err)
 	}

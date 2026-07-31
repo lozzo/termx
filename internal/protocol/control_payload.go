@@ -44,6 +44,24 @@ func DecodeSessionClosePayload(payload []byte) error {
 	return nil
 }
 
+func EncodeRequestCancelPayload(id uint64) ([]byte, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("protocol request cancel ID is required")
+	}
+	return proto.Marshal(&wirepb.RequestCancel{Id: id})
+}
+
+func DecodeRequestCancelPayload(payload []byte) (uint64, error) {
+	var message wirepb.RequestCancel
+	if err := proto.Unmarshal(payload, &message); err != nil {
+		return 0, err
+	}
+	if message.GetId() == 0 {
+		return 0, fmt.Errorf("protocol request cancel ID is required")
+	}
+	return message.GetId(), nil
+}
+
 func EncodeRequestPayload(request Request) ([]byte, error) {
 	return proto.Marshal(&wirepb.RequestEnvelope{Id: request.ID, Method: request.Method, Params: append([]byte(nil), request.Params...)})
 }

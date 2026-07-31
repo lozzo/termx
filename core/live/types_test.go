@@ -92,6 +92,22 @@ func TestSurfaceTrackWriteResultOnlyCarriesLiveRawSegments(t *testing.T) {
 	}
 }
 
+func TestSurfaceTrackWriteResultComposesRowCopiesAndReplacements(t *testing.T) {
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 12, Rows: 3})
+	surface.Write("\x1b[1;1Hone\x1b[2;1Htwo\x1b[3;1Hthree")
+	result := surface.WriteWithResult("\r\nfour")
+
+	if result.FullReplace {
+		t.Fatalf("ordinary scroll should remain incremental: %#v", result)
+	}
+	if len(result.RowCopies) != 1 || result.RowCopies[0] != (SurfaceRowCopy{SourceRow: 1, DestinationRow: 0, Count: 2}) {
+		t.Fatalf("expected exact scroll row copy: %#v", result.RowCopies)
+	}
+	if len(result.ChangedRows) != 1 || result.ChangedRows[0] != 2 {
+		t.Fatalf("only the rewritten bottom row should be replaced: %#v", result.ChangedRows)
+	}
+}
+
 func BenchmarkSurfaceTrackFastSGRStressWrite(b *testing.B) {
 	output := benchmarkSurfaceFastSGROutput(2048)
 	b.ReportAllocs()

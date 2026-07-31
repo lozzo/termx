@@ -27,7 +27,7 @@ type Terminal struct {
 	liveOpMu         sync.Mutex
 	liveRevision     LiveRevision
 	liveFullRevision LiveRevision
-	liveRowRevisions []LiveRevision
+	liveChanges      liveScreenChangeLog
 	tap              *SemanticTap
 	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
 	// 它同时是 linehist 的查询 gate：ingest 与查询共享同一把锁，滚出行在
@@ -75,7 +75,6 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
 		OnResponse: terminal.handleLiveSurfaceResponse,
 	})
-	terminal.liveRowRevisions = make([]LiveRevision, int(info.Size.Rows))
 	if historyEnabled {
 		terminal.historyStatus = HistoryBacklogStatus{
 			TerminalID:          info.ID,
@@ -239,7 +238,7 @@ func (terminal *Terminal) Resize(size Size) error {
 
 	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.liveRevision++
-	terminal.markLiveFullReplaceLocked(int(size.Rows))
+	terminal.markLiveFullReplaceLocked()
 	revision := terminal.liveRevision
 	if terminal.historyEnabled && terminal.tap != nil {
 		result, err := terminal.tap.Resize(size)
@@ -351,7 +350,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 		terminal.live.ResetForRestartPreservingScreen()
 	}
 	terminal.liveRevision++
-	terminal.markLiveFullReplaceLocked(int(info.Size.Rows))
+	terminal.markLiveFullReplaceLocked()
 	revision := terminal.liveRevision
 	terminal.liveOpMu.Unlock()
 	if terminal.historyEnabled && historyAvailable {
@@ -428,10 +427,30 @@ func (terminal *Terminal) NativeScreenSnapshotSince(terminalID string, observed 
 	}
 	current := terminal.liveRevision
 	size := terminal.live.Size()
-	fullReplace := observed == 0 || observed > current || observed < terminal.liveFullRevision || len(terminal.liveRowRevisions) != size.Rows
+	fullReplace := observed == 0 || observed > current || observed < terminal.liveFullRevision
+	var rowCopies []NativeScreenRowCopy
+	var replacedRows []int
+	if !fullReplace {
+		var ok bool
+		rowCopies, replacedRows, ok = terminal.liveChanges.compose(observed, current, size.Rows)
+		fullReplace = !ok
+	}
+	if fullReplace {
+		replacedRows = make([]int, size.Rows)
+		for row := range replacedRows {
+			replacedRows[row] = row
+		}
+		rowCopies = nil
+	}
+	replaced := make([]bool, size.Rows)
+	for _, row := range replacedRows {
+		if row >= 0 && row < len(replaced) {
+			replaced[row] = true
+		}
+	}
 	rows := make([]NativeScreenRow, 0, size.Rows)
 	info := terminal.live.VisitTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
-		if !fullReplace && (rowIndex < 0 || rowIndex >= len(terminal.liveRowRevisions) || terminal.liveRowRevisions[rowIndex] <= observed) {
+		if rowIndex < 0 || rowIndex >= len(replaced) || !replaced[rowIndex] {
 			return
 		}
 		row := NativeScreenRow{Index: rowIndex}
@@ -449,6 +468,7 @@ func (terminal *Terminal) NativeScreenSnapshotSince(terminalID string, observed 
 		Revision:     current,
 		FullReplace:  fullReplace,
 		Size:         NativeScreenSize{Cols: info.Cols, Rows: info.Rows},
+		RowCopies:    rowCopies,
 		Rows:         rows,
 		Cursor:       info.Cursor,
 		Modes:        info.Modes,
@@ -959,34 +979,31 @@ func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
 		return terminal.liveRevision, nil
 	}
 	result := terminal.live.WriteWithResult(output)
+	baseRevision := terminal.liveRevision
 	terminal.liveRevision++
 	if result.FullReplace {
-		terminal.markLiveFullReplaceLocked(terminal.live.Size().Rows)
+		terminal.markLiveFullReplaceLocked()
 	} else {
-		terminal.ensureLiveRowRevisionsLocked(terminal.live.Size().Rows)
-		for _, row := range result.ChangedRows {
-			if row >= 0 && row < len(terminal.liveRowRevisions) {
-				terminal.liveRowRevisions[row] = terminal.liveRevision
-			}
+		change := liveScreenChange{
+			BaseRevision: baseRevision,
+			Revision:     terminal.liveRevision,
+			ReplacedRows: append([]int(nil), result.ChangedRows...),
+		}
+		for _, rowCopy := range result.RowCopies {
+			change.RowCopies = append(change.RowCopies, NativeScreenRowCopy{
+				SourceRow: rowCopy.SourceRow, DestinationRow: rowCopy.DestinationRow, Count: rowCopy.Count,
+			})
+		}
+		if floor := terminal.liveChanges.append(change); floor > terminal.liveFullRevision {
+			terminal.liveFullRevision = floor
 		}
 	}
 	return terminal.liveRevision, nil
 }
 
-func (terminal *Terminal) ensureLiveRowRevisionsLocked(rows int) {
-	if rows < 0 {
-		rows = 0
-	}
-	if len(terminal.liveRowRevisions) == rows {
-		return
-	}
-	terminal.liveRowRevisions = make([]LiveRevision, rows)
+func (terminal *Terminal) markLiveFullReplaceLocked() {
 	terminal.liveFullRevision = terminal.liveRevision
-}
-
-func (terminal *Terminal) markLiveFullReplaceLocked(rows int) {
-	terminal.liveFullRevision = terminal.liveRevision
-	terminal.liveRowRevisions = make([]LiveRevision, rows)
+	terminal.liveChanges.reset()
 }
 
 func (terminal *Terminal) ingestHistorySemanticOutput(output string) error {

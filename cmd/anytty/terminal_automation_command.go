@@ -239,7 +239,7 @@ func newTerminalCaptureCommand(runtime terminalCommandRuntime) *cobra.Command {
 			var text string
 			if live {
 				source = "live"
-				snapshot, err := target.Client.LiveScreen(ctx, &apipb.LiveScreenGetCommand{Terminal: &apipb.TerminalRef{EndpointId: string(target.Ref.EndpointID), TerminalId: target.Ref.TerminalID}})
+				snapshot, err := target.Client.LiveScreenNext(ctx, &apipb.LiveScreenNextCommand{Terminal: &apipb.TerminalRef{EndpointId: string(target.Ref.EndpointID), TerminalId: target.Ref.TerminalID}})
 				if err != nil {
 					return classifyCLIError(err)
 				}
@@ -305,8 +305,9 @@ func nativeScreenText(snapshot *apipb.NativeScreenResult) string {
 	if snapshot == nil {
 		return ""
 	}
-	rows := make([]string, 0, len(snapshot.Rows))
-	for _, row := range snapshot.GetRows() {
+	rows := make([]string, 0, len(snapshot.GetRowReplacements()))
+	for _, replacement := range snapshot.GetRowReplacements() {
+		row := replacement.GetRow()
 		var text strings.Builder
 		for _, cell := range row.GetCells() {
 			text.WriteString(cell.GetContent())
@@ -640,9 +641,6 @@ func terminalEventView(endpointID endpointdomain.EndpointID, event *apipb.EventE
 	if terminal := event.GetTerminalLifecycle().GetTerminal(); terminal != nil {
 		view.Target = string(endpointID) + ":" + terminal.GetRef().GetTerminalId()
 		view.Data = map[string]any{"state": terminalStateString(terminal.GetState()), "name": terminal.GetName(), "command": terminal.GetCommand(), "cols": terminal.GetSize().GetCols(), "rows": terminal.GetSize().GetRows(), "exit_code": terminal.ExitCode}
-	} else if live := event.GetLiveInvalidated(); live != nil {
-		view.Target = string(endpointID) + ":" + live.GetTerminal().GetTerminalId()
-		view.Data = map[string]any{"live_revision": live.GetLiveRevision()}
 	}
 	return view
 }
@@ -651,8 +649,6 @@ func terminalEventTypeName(event *apipb.EventEnvelope) string {
 	switch event.GetEvent().(type) {
 	case *apipb.EventEnvelope_TerminalLifecycle:
 		return "lifecycle"
-	case *apipb.EventEnvelope_LiveInvalidated:
-		return "live_invalidated"
 	default:
 		return "unknown"
 	}

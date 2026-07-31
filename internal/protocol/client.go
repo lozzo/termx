@@ -747,6 +747,7 @@ func (c *Client) doApplicationRequest(ctx context.Context, command *apipb.Comman
 				return nil, fmt.Errorf("cancelled file resource open did not reach a terminal response")
 			}
 		}
+		_ = c.sendRequestCancel(id)
 		abandonResponse = true
 		finish(len(frame))
 		return nil, ctx.Err()
@@ -758,6 +759,18 @@ func (c *Client) doApplicationRequest(ctx context.Context, command *apipb.Comman
 		finish(len(result.payload))
 		return result.payload, nil
 	}
+}
+
+func (c *Client) sendRequestCancel(id uint64) error {
+	payload, err := EncodeRequestCancelPayload(id)
+	if err != nil {
+		return err
+	}
+	frame, err := wire.EncodeFrame(0, wire.TypeRequestCancel, payload)
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
 }
 
 func (c *Client) send(frame []byte) error {

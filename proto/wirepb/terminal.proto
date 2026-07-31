@@ -18,6 +18,12 @@ message SessionClose {
   uint32 version = 1;
 }
 
+// RequestCancel cancels one in-flight control request without closing the
+// protocol session. Unknown or already completed IDs are an idempotent no-op.
+message RequestCancel {
+  uint64 id = 1;
+}
+
 message RequestEnvelope {
   uint64 id = 1;
   string method = 2;

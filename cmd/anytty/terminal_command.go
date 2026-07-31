@@ -36,7 +36,7 @@ type terminalProtocolClient interface {
 	HistoryWindow(context.Context, *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error)
 	HistoryCopy(context.Context, *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error)
 	HistoryRelease(context.Context, *apipb.HistoryReleaseCommand) error
-	LiveScreen(context.Context, *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error)
+	LiveScreenNext(context.Context, *apipb.LiveScreenNextCommand) (*apipb.NativeScreenResult, error)
 	EventSubscribe(context.Context, *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, <-chan *apipb.EventEnvelope, error)
 	Close() error
 }

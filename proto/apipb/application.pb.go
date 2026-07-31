@@ -135,8 +135,7 @@ type CommandEnvelope struct {
 	//	*CommandEnvelope_HistoryCopy
 	//	*CommandEnvelope_HistoryRelease
 	//	*CommandEnvelope_HistoryBacklogStatus
-	//	*CommandEnvelope_LiveScreenGet
-	//	*CommandEnvelope_LiveInvalidationNext
+	//	*CommandEnvelope_LiveScreenNext
 	//	*CommandEnvelope_EventSubscribe
 	//	*CommandEnvelope_FileList
 	//	*CommandEnvelope_FileStat
@@ -400,19 +399,10 @@ func (x *CommandEnvelope) GetHistoryBacklogStatus() *HistoryBacklogStatusCommand
 	return nil
 }
 
-func (x *CommandEnvelope) GetLiveScreenGet() *LiveScreenGetCommand {
+func (x *CommandEnvelope) GetLiveScreenNext() *LiveScreenNextCommand {
 	if x != nil {
-		if x, ok := x.Command.(*CommandEnvelope_LiveScreenGet); ok {
-			return x.LiveScreenGet
-		}
-	}
-	return nil
-}
-
-func (x *CommandEnvelope) GetLiveInvalidationNext() *LiveInvalidationNextCommand {
-	if x != nil {
-		if x, ok := x.Command.(*CommandEnvelope_LiveInvalidationNext); ok {
-			return x.LiveInvalidationNext
+		if x, ok := x.Command.(*CommandEnvelope_LiveScreenNext); ok {
+			return x.LiveScreenNext
 		}
 	}
 	return nil
@@ -731,12 +721,8 @@ type CommandEnvelope_HistoryBacklogStatus struct {
 	HistoryBacklogStatus *HistoryBacklogStatusCommand `protobuf:"bytes,43,opt,name=history_backlog_status,json=historyBacklogStatus,proto3,oneof"`
 }
 
-type CommandEnvelope_LiveScreenGet struct {
-	LiveScreenGet *LiveScreenGetCommand `protobuf:"bytes,44,opt,name=live_screen_get,json=liveScreenGet,proto3,oneof"`
-}
-
-type CommandEnvelope_LiveInvalidationNext struct {
-	LiveInvalidationNext *LiveInvalidationNextCommand `protobuf:"bytes,45,opt,name=live_invalidation_next,json=liveInvalidationNext,proto3,oneof"`
+type CommandEnvelope_LiveScreenNext struct {
+	LiveScreenNext *LiveScreenNextCommand `protobuf:"bytes,44,opt,name=live_screen_next,json=liveScreenNext,proto3,oneof"`
 }
 
 type CommandEnvelope_EventSubscribe struct {
@@ -881,9 +867,7 @@ func (*CommandEnvelope_HistoryRelease) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_HistoryBacklogStatus) isCommandEnvelope_Command() {}
 
-func (*CommandEnvelope_LiveScreenGet) isCommandEnvelope_Command() {}
-
-func (*CommandEnvelope_LiveInvalidationNext) isCommandEnvelope_Command() {}
+func (*CommandEnvelope_LiveScreenNext) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_EventSubscribe) isCommandEnvelope_Command() {}
 
@@ -990,7 +974,6 @@ type ResultEnvelope struct {
 	//	*ResultEnvelope_HistoryCopy
 	//	*ResultEnvelope_HistoryBacklogStatus
 	//	*ResultEnvelope_LiveScreen
-	//	*ResultEnvelope_LiveInvalidation
 	//	*ResultEnvelope_EventSubscription
 	//	*ResultEnvelope_FileList
 	//	*ResultEnvelope_FileStat
@@ -1178,15 +1161,6 @@ func (x *ResultEnvelope) GetLiveScreen() *NativeScreenResult {
 	if x != nil {
 		if x, ok := x.Result.(*ResultEnvelope_LiveScreen); ok {
 			return x.LiveScreen
-		}
-	}
-	return nil
-}
-
-func (x *ResultEnvelope) GetLiveInvalidation() *LiveInvalidationResult {
-	if x != nil {
-		if x, ok := x.Result.(*ResultEnvelope_LiveInvalidation); ok {
-			return x.LiveInvalidation
 		}
 	}
 	return nil
@@ -1419,10 +1393,6 @@ type ResultEnvelope_LiveScreen struct {
 	LiveScreen *NativeScreenResult `protobuf:"bytes,43,opt,name=live_screen,json=liveScreen,proto3,oneof"`
 }
 
-type ResultEnvelope_LiveInvalidation struct {
-	LiveInvalidation *LiveInvalidationResult `protobuf:"bytes,44,opt,name=live_invalidation,json=liveInvalidation,proto3,oneof"`
-}
-
 type ResultEnvelope_EventSubscription struct {
 	EventSubscription *EventSubscriptionResult `protobuf:"bytes,45,opt,name=event_subscription,json=eventSubscription,proto3,oneof"`
 }
@@ -1524,8 +1494,6 @@ func (*ResultEnvelope_HistoryCopy) isResultEnvelope_Result() {}
 func (*ResultEnvelope_HistoryBacklogStatus) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_LiveScreen) isResultEnvelope_Result() {}
-
-func (*ResultEnvelope_LiveInvalidation) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_EventSubscription) isResultEnvelope_Result() {}
 
@@ -1665,7 +1633,6 @@ type EventEnvelope struct {
 	//	*EventEnvelope_OperationCancelled
 	//	*EventEnvelope_ResourceReleased
 	//	*EventEnvelope_TerminalLifecycle
-	//	*EventEnvelope_LiveInvalidated
 	//	*EventEnvelope_StorageChanged
 	//	*EventEnvelope_FileTransferCompleted
 	Event         isEventEnvelope_Event `protobuf_oneof:"event"`
@@ -1772,15 +1739,6 @@ func (x *EventEnvelope) GetTerminalLifecycle() *TerminalLifecycleEvent {
 	return nil
 }
 
-func (x *EventEnvelope) GetLiveInvalidated() *LiveInvalidatedEvent {
-	if x != nil {
-		if x, ok := x.Event.(*EventEnvelope_LiveInvalidated); ok {
-			return x.LiveInvalidated
-		}
-	}
-	return nil
-}
-
 func (x *EventEnvelope) GetStorageChanged() *StorageChangedEvent {
 	if x != nil {
 		if x, ok := x.Event.(*EventEnvelope_StorageChanged); ok {
@@ -1815,10 +1773,6 @@ type EventEnvelope_TerminalLifecycle struct {
 	TerminalLifecycle *TerminalLifecycleEvent `protobuf:"bytes,20,opt,name=terminal_lifecycle,json=terminalLifecycle,proto3,oneof"`
 }
 
-type EventEnvelope_LiveInvalidated struct {
-	LiveInvalidated *LiveInvalidatedEvent `protobuf:"bytes,22,opt,name=live_invalidated,json=liveInvalidated,proto3,oneof"`
-}
-
 type EventEnvelope_StorageChanged struct {
 	StorageChanged *StorageChangedEvent `protobuf:"bytes,30,opt,name=storage_changed,json=storageChanged,proto3,oneof"`
 }
@@ -1833,8 +1787,6 @@ func (*EventEnvelope_ResourceReleased) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_TerminalLifecycle) isEventEnvelope_Event() {}
 
-func (*EventEnvelope_LiveInvalidated) isEventEnvelope_Event() {}
-
 func (*EventEnvelope_StorageChanged) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_FileTransferCompleted) isEventEnvelope_Event() {}
@@ -1847,7 +1799,7 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x16CancelOperationCommand\x12;\n" +
 	"\toperation\x18\x02 \x01(\v2\x1d.anytty.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"Y\n" +
 	"\x16ReleaseResourceCommand\x129\n" +
-	"\bresource\x18\x02 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xa4\x1f\n" +
+	"\bresource\x18\x02 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xc3\x1e\n" +
 	"\x0fCommandEnvelope\x127\n" +
 	"\acontext\x18\x01 \x01(\v2\x1d.anytty.api.v1.RequestContextR\acontext\x12R\n" +
 	"\x10cancel_operation\x18\n" +
@@ -1871,9 +1823,8 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x0ehistory_window\x18( \x01(\v2#.anytty.api.v1.HistoryWindowCommandH\x00R\rhistoryWindow\x12F\n" +
 	"\fhistory_copy\x18) \x01(\v2!.anytty.api.v1.HistoryCopyCommandH\x00R\vhistoryCopy\x12O\n" +
 	"\x0fhistory_release\x18* \x01(\v2$.anytty.api.v1.HistoryReleaseCommandH\x00R\x0ehistoryRelease\x12b\n" +
-	"\x16history_backlog_status\x18+ \x01(\v2*.anytty.api.v1.HistoryBacklogStatusCommandH\x00R\x14historyBacklogStatus\x12M\n" +
-	"\x0flive_screen_get\x18, \x01(\v2#.anytty.api.v1.LiveScreenGetCommandH\x00R\rliveScreenGet\x12b\n" +
-	"\x16live_invalidation_next\x18- \x01(\v2*.anytty.api.v1.LiveInvalidationNextCommandH\x00R\x14liveInvalidationNext\x12O\n" +
+	"\x16history_backlog_status\x18+ \x01(\v2*.anytty.api.v1.HistoryBacklogStatusCommandH\x00R\x14historyBacklogStatus\x12P\n" +
+	"\x10live_screen_next\x18, \x01(\v2$.anytty.api.v1.LiveScreenNextCommandH\x00R\x0eliveScreenNext\x12O\n" +
 	"\x0fevent_subscribe\x18. \x01(\v2$.anytty.api.v1.EventSubscribeCommandH\x00R\x0eeventSubscribe\x12=\n" +
 	"\tfile_list\x18< \x01(\v2\x1e.anytty.api.v1.FileListCommandH\x00R\bfileList\x12=\n" +
 	"\tfile_stat\x18= \x01(\v2\x1e.anytty.api.v1.FileStatCommandH\x00R\bfileStat\x12F\n" +
@@ -1905,7 +1856,7 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x13remote_local_status\x18q \x01(\v2'.anytty.api.v1.RemoteLocalStatusCommandH\x00R\x11remoteLocalStatus\x12\\\n" +
 	"\x14remote_local_disable\x18r \x01(\v2(.anytty.api.v1.RemoteLocalDisableCommandH\x00R\x12remoteLocalDisableB\t\n" +
 	"\acommand\"\x13\n" +
-	"\x11AcknowledgeResult\"\xbf\x15\n" +
+	"\x11AcknowledgeResult\"\xe9\x14\n" +
 	"\x0eResultEnvelope\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12J\n" +
@@ -1924,8 +1875,7 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\fhistory_copy\x18) \x01(\v2 .anytty.api.v1.HistoryCopyResultH\x00R\vhistoryCopy\x12a\n" +
 	"\x16history_backlog_status\x18* \x01(\v2).anytty.api.v1.HistoryBacklogStatusResultH\x00R\x14historyBacklogStatus\x12D\n" +
 	"\vlive_screen\x18+ \x01(\v2!.anytty.api.v1.NativeScreenResultH\x00R\n" +
-	"liveScreen\x12T\n" +
-	"\x11live_invalidation\x18, \x01(\v2%.anytty.api.v1.LiveInvalidationResultH\x00R\x10liveInvalidation\x12W\n" +
+	"liveScreen\x12W\n" +
 	"\x12event_subscription\x18- \x01(\v2&.anytty.api.v1.EventSubscriptionResultH\x00R\x11eventSubscription\x12<\n" +
 	"\tfile_list\x18< \x01(\v2\x1d.anytty.api.v1.FileListResultH\x00R\bfileList\x12<\n" +
 	"\tfile_stat\x18= \x01(\v2\x1d.anytty.api.v1.FileStatResultH\x00R\bfileStat\x12E\n" +
@@ -1952,7 +1902,7 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x17OperationCancelledEvent\x12;\n" +
 	"\toperation\x18\x01 \x01(\v2\x1d.anytty.api.v1.OperationStampR\toperation\"R\n" +
 	"\x15ResourceReleasedEvent\x129\n" +
-	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\"\xc8\x06\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresource\"\xfc\x05\n" +
 	"\rEventEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x02 \x01(\x03R\x11timestampUnixNano\x12:\n" +
@@ -1963,11 +1913,10 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x13operation_cancelled\x18\n" +
 	" \x01(\v2&.anytty.api.v1.OperationCancelledEventH\x00R\x12operationCancelled\x12S\n" +
 	"\x11resource_released\x18\v \x01(\v2$.anytty.api.v1.ResourceReleasedEventH\x00R\x10resourceReleased\x12V\n" +
-	"\x12terminal_lifecycle\x18\x14 \x01(\v2%.anytty.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12P\n" +
-	"\x10live_invalidated\x18\x16 \x01(\v2#.anytty.api.v1.LiveInvalidatedEventH\x00R\x0fliveInvalidated\x12M\n" +
+	"\x12terminal_lifecycle\x18\x14 \x01(\v2%.anytty.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12M\n" +
 	"\x0fstorage_changed\x18\x1e \x01(\v2\".anytty.api.v1.StorageChangedEventH\x00R\x0estorageChanged\x12c\n" +
 	"\x17file_transfer_completed\x18( \x01(\v2).anytty.api.v1.FileTransferCompletedEventH\x00R\x15fileTransferCompletedB\a\n" +
-	"\x05eventJ\x04\b\x15\x10\x16J\x04\b\x17\x10\x18B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
+	"\x05eventJ\x04\b\x15\x10\x16J\x04\b\x16\x10\x17J\x04\b\x17\x10\x18B&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_application_proto_rawDescOnce sync.Once
@@ -2013,71 +1962,68 @@ var file_apipb_application_proto_goTypes = []any{
 	(*HistoryCopyCommand)(nil),              // 27: anytty.api.v1.HistoryCopyCommand
 	(*HistoryReleaseCommand)(nil),           // 28: anytty.api.v1.HistoryReleaseCommand
 	(*HistoryBacklogStatusCommand)(nil),     // 29: anytty.api.v1.HistoryBacklogStatusCommand
-	(*LiveScreenGetCommand)(nil),            // 30: anytty.api.v1.LiveScreenGetCommand
-	(*LiveInvalidationNextCommand)(nil),     // 31: anytty.api.v1.LiveInvalidationNextCommand
-	(*EventSubscribeCommand)(nil),           // 32: anytty.api.v1.EventSubscribeCommand
-	(*FileListCommand)(nil),                 // 33: anytty.api.v1.FileListCommand
-	(*FileStatCommand)(nil),                 // 34: anytty.api.v1.FileStatCommand
-	(*FilePreviewCommand)(nil),              // 35: anytty.api.v1.FilePreviewCommand
-	(*FileMkdirCommand)(nil),                // 36: anytty.api.v1.FileMkdirCommand
-	(*FileRenameCommand)(nil),               // 37: anytty.api.v1.FileRenameCommand
-	(*FileDeleteCommand)(nil),               // 38: anytty.api.v1.FileDeleteCommand
-	(*FileCopyCommand)(nil),                 // 39: anytty.api.v1.FileCopyCommand
-	(*FileMoveCommand)(nil),                 // 40: anytty.api.v1.FileMoveCommand
-	(*FileDownloadOpenCommand)(nil),         // 41: anytty.api.v1.FileDownloadOpenCommand
-	(*FileUploadOpenCommand)(nil),           // 42: anytty.api.v1.FileUploadOpenCommand
-	(*FileTransferCancelCommand)(nil),       // 43: anytty.api.v1.FileTransferCancelCommand
-	(*StorageGetCommand)(nil),               // 44: anytty.api.v1.StorageGetCommand
-	(*StoragePutCommand)(nil),               // 45: anytty.api.v1.StoragePutCommand
-	(*StorageDeleteCommand)(nil),            // 46: anytty.api.v1.StorageDeleteCommand
-	(*StorageListCommand)(nil),              // 47: anytty.api.v1.StorageListCommand
-	(*ClientAccessIdentityCommand)(nil),     // 48: anytty.api.v1.ClientAccessIdentityCommand
-	(*ClientAccessListCommand)(nil),         // 49: anytty.api.v1.ClientAccessListCommand
-	(*ClientAccessTicketCreateCommand)(nil), // 50: anytty.api.v1.ClientAccessTicketCreateCommand
-	(*ClientAccessRevokeCommand)(nil),       // 51: anytty.api.v1.ClientAccessRevokeCommand
-	(*RemoteStatusCommand)(nil),             // 52: anytty.api.v1.RemoteStatusCommand
-	(*RemotePairStartCommand)(nil),          // 53: anytty.api.v1.RemotePairStartCommand
-	(*RemoteLocalEnableCommand)(nil),        // 54: anytty.api.v1.RemoteLocalEnableCommand
-	(*RemoteLocalStatusCommand)(nil),        // 55: anytty.api.v1.RemoteLocalStatusCommand
-	(*RemoteLocalDisableCommand)(nil),       // 56: anytty.api.v1.RemoteLocalDisableCommand
-	(*EndpointSessionStamp)(nil),            // 57: anytty.api.v1.EndpointSessionStamp
-	(*ApiError)(nil),                        // 58: anytty.api.v1.ApiError
-	(*TerminalDefaultsResult)(nil),          // 59: anytty.api.v1.TerminalDefaultsResult
-	(*TerminalCreateResult)(nil),            // 60: anytty.api.v1.TerminalCreateResult
-	(*TerminalListResult)(nil),              // 61: anytty.api.v1.TerminalListResult
-	(*TerminalGetResult)(nil),               // 62: anytty.api.v1.TerminalGetResult
-	(*TerminalAttachResult)(nil),            // 63: anytty.api.v1.TerminalAttachResult
-	(*TerminalResizeResult)(nil),            // 64: anytty.api.v1.TerminalResizeResult
-	(*PathListDirectoriesResult)(nil),       // 65: anytty.api.v1.PathListDirectoriesResult
-	(*HistoryWindowResult)(nil),             // 66: anytty.api.v1.HistoryWindowResult
-	(*HistoryCopyResult)(nil),               // 67: anytty.api.v1.HistoryCopyResult
-	(*HistoryBacklogStatusResult)(nil),      // 68: anytty.api.v1.HistoryBacklogStatusResult
-	(*NativeScreenResult)(nil),              // 69: anytty.api.v1.NativeScreenResult
-	(*LiveInvalidationResult)(nil),          // 70: anytty.api.v1.LiveInvalidationResult
-	(*EventSubscriptionResult)(nil),         // 71: anytty.api.v1.EventSubscriptionResult
-	(*FileListResult)(nil),                  // 72: anytty.api.v1.FileListResult
-	(*FileStatResult)(nil),                  // 73: anytty.api.v1.FileStatResult
-	(*FilePreviewResult)(nil),               // 74: anytty.api.v1.FilePreviewResult
-	(*FileOperationResult)(nil),             // 75: anytty.api.v1.FileOperationResult
-	(*FileBatchResult)(nil),                 // 76: anytty.api.v1.FileBatchResult
-	(*FileTransferOpenResult)(nil),          // 77: anytty.api.v1.FileTransferOpenResult
-	(*FileTransferCancelResult)(nil),        // 78: anytty.api.v1.FileTransferCancelResult
-	(*StorageGetResult)(nil),                // 79: anytty.api.v1.StorageGetResult
-	(*StoragePutResult)(nil),                // 80: anytty.api.v1.StoragePutResult
-	(*StorageDeleteResult)(nil),             // 81: anytty.api.v1.StorageDeleteResult
-	(*StorageListResult)(nil),               // 82: anytty.api.v1.StorageListResult
-	(*ClientAccessIdentityResult)(nil),      // 83: anytty.api.v1.ClientAccessIdentityResult
-	(*ClientAccessListResult)(nil),          // 84: anytty.api.v1.ClientAccessListResult
-	(*ClientAccessTicketCreateResult)(nil),  // 85: anytty.api.v1.ClientAccessTicketCreateResult
-	(*ClientAccessRevokeResult)(nil),        // 86: anytty.api.v1.ClientAccessRevokeResult
-	(*RemoteStatusResult)(nil),              // 87: anytty.api.v1.RemoteStatusResult
-	(*RemotePairStartResult)(nil),           // 88: anytty.api.v1.RemotePairStartResult
-	(*RemoteLocalStatusResult)(nil),         // 89: anytty.api.v1.RemoteLocalStatusResult
-	(*ApiVersion)(nil),                      // 90: anytty.api.v1.ApiVersion
-	(*TerminalLifecycleEvent)(nil),          // 91: anytty.api.v1.TerminalLifecycleEvent
-	(*LiveInvalidatedEvent)(nil),            // 92: anytty.api.v1.LiveInvalidatedEvent
-	(*StorageChangedEvent)(nil),             // 93: anytty.api.v1.StorageChangedEvent
-	(*FileTransferCompletedEvent)(nil),      // 94: anytty.api.v1.FileTransferCompletedEvent
+	(*LiveScreenNextCommand)(nil),           // 30: anytty.api.v1.LiveScreenNextCommand
+	(*EventSubscribeCommand)(nil),           // 31: anytty.api.v1.EventSubscribeCommand
+	(*FileListCommand)(nil),                 // 32: anytty.api.v1.FileListCommand
+	(*FileStatCommand)(nil),                 // 33: anytty.api.v1.FileStatCommand
+	(*FilePreviewCommand)(nil),              // 34: anytty.api.v1.FilePreviewCommand
+	(*FileMkdirCommand)(nil),                // 35: anytty.api.v1.FileMkdirCommand
+	(*FileRenameCommand)(nil),               // 36: anytty.api.v1.FileRenameCommand
+	(*FileDeleteCommand)(nil),               // 37: anytty.api.v1.FileDeleteCommand
+	(*FileCopyCommand)(nil),                 // 38: anytty.api.v1.FileCopyCommand
+	(*FileMoveCommand)(nil),                 // 39: anytty.api.v1.FileMoveCommand
+	(*FileDownloadOpenCommand)(nil),         // 40: anytty.api.v1.FileDownloadOpenCommand
+	(*FileUploadOpenCommand)(nil),           // 41: anytty.api.v1.FileUploadOpenCommand
+	(*FileTransferCancelCommand)(nil),       // 42: anytty.api.v1.FileTransferCancelCommand
+	(*StorageGetCommand)(nil),               // 43: anytty.api.v1.StorageGetCommand
+	(*StoragePutCommand)(nil),               // 44: anytty.api.v1.StoragePutCommand
+	(*StorageDeleteCommand)(nil),            // 45: anytty.api.v1.StorageDeleteCommand
+	(*StorageListCommand)(nil),              // 46: anytty.api.v1.StorageListCommand
+	(*ClientAccessIdentityCommand)(nil),     // 47: anytty.api.v1.ClientAccessIdentityCommand
+	(*ClientAccessListCommand)(nil),         // 48: anytty.api.v1.ClientAccessListCommand
+	(*ClientAccessTicketCreateCommand)(nil), // 49: anytty.api.v1.ClientAccessTicketCreateCommand
+	(*ClientAccessRevokeCommand)(nil),       // 50: anytty.api.v1.ClientAccessRevokeCommand
+	(*RemoteStatusCommand)(nil),             // 51: anytty.api.v1.RemoteStatusCommand
+	(*RemotePairStartCommand)(nil),          // 52: anytty.api.v1.RemotePairStartCommand
+	(*RemoteLocalEnableCommand)(nil),        // 53: anytty.api.v1.RemoteLocalEnableCommand
+	(*RemoteLocalStatusCommand)(nil),        // 54: anytty.api.v1.RemoteLocalStatusCommand
+	(*RemoteLocalDisableCommand)(nil),       // 55: anytty.api.v1.RemoteLocalDisableCommand
+	(*EndpointSessionStamp)(nil),            // 56: anytty.api.v1.EndpointSessionStamp
+	(*ApiError)(nil),                        // 57: anytty.api.v1.ApiError
+	(*TerminalDefaultsResult)(nil),          // 58: anytty.api.v1.TerminalDefaultsResult
+	(*TerminalCreateResult)(nil),            // 59: anytty.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),              // 60: anytty.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),               // 61: anytty.api.v1.TerminalGetResult
+	(*TerminalAttachResult)(nil),            // 62: anytty.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),            // 63: anytty.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),       // 64: anytty.api.v1.PathListDirectoriesResult
+	(*HistoryWindowResult)(nil),             // 65: anytty.api.v1.HistoryWindowResult
+	(*HistoryCopyResult)(nil),               // 66: anytty.api.v1.HistoryCopyResult
+	(*HistoryBacklogStatusResult)(nil),      // 67: anytty.api.v1.HistoryBacklogStatusResult
+	(*NativeScreenResult)(nil),              // 68: anytty.api.v1.NativeScreenResult
+	(*EventSubscriptionResult)(nil),         // 69: anytty.api.v1.EventSubscriptionResult
+	(*FileListResult)(nil),                  // 70: anytty.api.v1.FileListResult
+	(*FileStatResult)(nil),                  // 71: anytty.api.v1.FileStatResult
+	(*FilePreviewResult)(nil),               // 72: anytty.api.v1.FilePreviewResult
+	(*FileOperationResult)(nil),             // 73: anytty.api.v1.FileOperationResult
+	(*FileBatchResult)(nil),                 // 74: anytty.api.v1.FileBatchResult
+	(*FileTransferOpenResult)(nil),          // 75: anytty.api.v1.FileTransferOpenResult
+	(*FileTransferCancelResult)(nil),        // 76: anytty.api.v1.FileTransferCancelResult
+	(*StorageGetResult)(nil),                // 77: anytty.api.v1.StorageGetResult
+	(*StoragePutResult)(nil),                // 78: anytty.api.v1.StoragePutResult
+	(*StorageDeleteResult)(nil),             // 79: anytty.api.v1.StorageDeleteResult
+	(*StorageListResult)(nil),               // 80: anytty.api.v1.StorageListResult
+	(*ClientAccessIdentityResult)(nil),      // 81: anytty.api.v1.ClientAccessIdentityResult
+	(*ClientAccessListResult)(nil),          // 82: anytty.api.v1.ClientAccessListResult
+	(*ClientAccessTicketCreateResult)(nil),  // 83: anytty.api.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeResult)(nil),        // 84: anytty.api.v1.ClientAccessRevokeResult
+	(*RemoteStatusResult)(nil),              // 85: anytty.api.v1.RemoteStatusResult
+	(*RemotePairStartResult)(nil),           // 86: anytty.api.v1.RemotePairStartResult
+	(*RemoteLocalStatusResult)(nil),         // 87: anytty.api.v1.RemoteLocalStatusResult
+	(*ApiVersion)(nil),                      // 88: anytty.api.v1.ApiVersion
+	(*TerminalLifecycleEvent)(nil),          // 89: anytty.api.v1.TerminalLifecycleEvent
+	(*StorageChangedEvent)(nil),             // 90: anytty.api.v1.StorageChangedEvent
+	(*FileTransferCompletedEvent)(nil),      // 91: anytty.api.v1.FileTransferCompletedEvent
 }
 var file_apipb_application_proto_depIdxs = []int32{
 	8,  // 0: anytty.api.v1.CancelOperationCommand.operation:type_name -> anytty.api.v1.OperationStamp
@@ -2104,83 +2050,80 @@ var file_apipb_application_proto_depIdxs = []int32{
 	27, // 21: anytty.api.v1.CommandEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyCommand
 	28, // 22: anytty.api.v1.CommandEnvelope.history_release:type_name -> anytty.api.v1.HistoryReleaseCommand
 	29, // 23: anytty.api.v1.CommandEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusCommand
-	30, // 24: anytty.api.v1.CommandEnvelope.live_screen_get:type_name -> anytty.api.v1.LiveScreenGetCommand
-	31, // 25: anytty.api.v1.CommandEnvelope.live_invalidation_next:type_name -> anytty.api.v1.LiveInvalidationNextCommand
-	32, // 26: anytty.api.v1.CommandEnvelope.event_subscribe:type_name -> anytty.api.v1.EventSubscribeCommand
-	33, // 27: anytty.api.v1.CommandEnvelope.file_list:type_name -> anytty.api.v1.FileListCommand
-	34, // 28: anytty.api.v1.CommandEnvelope.file_stat:type_name -> anytty.api.v1.FileStatCommand
-	35, // 29: anytty.api.v1.CommandEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewCommand
-	36, // 30: anytty.api.v1.CommandEnvelope.file_mkdir:type_name -> anytty.api.v1.FileMkdirCommand
-	37, // 31: anytty.api.v1.CommandEnvelope.file_rename:type_name -> anytty.api.v1.FileRenameCommand
-	38, // 32: anytty.api.v1.CommandEnvelope.file_delete:type_name -> anytty.api.v1.FileDeleteCommand
-	39, // 33: anytty.api.v1.CommandEnvelope.file_copy:type_name -> anytty.api.v1.FileCopyCommand
-	40, // 34: anytty.api.v1.CommandEnvelope.file_move:type_name -> anytty.api.v1.FileMoveCommand
-	41, // 35: anytty.api.v1.CommandEnvelope.file_download_open:type_name -> anytty.api.v1.FileDownloadOpenCommand
-	42, // 36: anytty.api.v1.CommandEnvelope.file_upload_open:type_name -> anytty.api.v1.FileUploadOpenCommand
-	43, // 37: anytty.api.v1.CommandEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelCommand
-	44, // 38: anytty.api.v1.CommandEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetCommand
-	45, // 39: anytty.api.v1.CommandEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutCommand
-	46, // 40: anytty.api.v1.CommandEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteCommand
-	47, // 41: anytty.api.v1.CommandEnvelope.storage_list:type_name -> anytty.api.v1.StorageListCommand
-	48, // 42: anytty.api.v1.CommandEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityCommand
-	49, // 43: anytty.api.v1.CommandEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListCommand
-	50, // 44: anytty.api.v1.CommandEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateCommand
-	51, // 45: anytty.api.v1.CommandEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeCommand
-	52, // 46: anytty.api.v1.CommandEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusCommand
-	53, // 47: anytty.api.v1.CommandEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartCommand
-	54, // 48: anytty.api.v1.CommandEnvelope.remote_local_enable:type_name -> anytty.api.v1.RemoteLocalEnableCommand
-	55, // 49: anytty.api.v1.CommandEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusCommand
-	56, // 50: anytty.api.v1.CommandEnvelope.remote_local_disable:type_name -> anytty.api.v1.RemoteLocalDisableCommand
-	57, // 51: anytty.api.v1.ResultEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
-	3,  // 52: anytty.api.v1.ResultEnvelope.acknowledge:type_name -> anytty.api.v1.AcknowledgeResult
-	58, // 53: anytty.api.v1.ResultEnvelope.error:type_name -> anytty.api.v1.ApiError
-	59, // 54: anytty.api.v1.ResultEnvelope.terminal_defaults:type_name -> anytty.api.v1.TerminalDefaultsResult
-	60, // 55: anytty.api.v1.ResultEnvelope.terminal_create:type_name -> anytty.api.v1.TerminalCreateResult
-	61, // 56: anytty.api.v1.ResultEnvelope.terminal_list:type_name -> anytty.api.v1.TerminalListResult
-	62, // 57: anytty.api.v1.ResultEnvelope.terminal_get:type_name -> anytty.api.v1.TerminalGetResult
-	63, // 58: anytty.api.v1.ResultEnvelope.terminal_attach:type_name -> anytty.api.v1.TerminalAttachResult
-	64, // 59: anytty.api.v1.ResultEnvelope.terminal_resize:type_name -> anytty.api.v1.TerminalResizeResult
-	65, // 60: anytty.api.v1.ResultEnvelope.path_list_directories:type_name -> anytty.api.v1.PathListDirectoriesResult
-	66, // 61: anytty.api.v1.ResultEnvelope.history_window:type_name -> anytty.api.v1.HistoryWindowResult
-	67, // 62: anytty.api.v1.ResultEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyResult
-	68, // 63: anytty.api.v1.ResultEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusResult
-	69, // 64: anytty.api.v1.ResultEnvelope.live_screen:type_name -> anytty.api.v1.NativeScreenResult
-	70, // 65: anytty.api.v1.ResultEnvelope.live_invalidation:type_name -> anytty.api.v1.LiveInvalidationResult
-	71, // 66: anytty.api.v1.ResultEnvelope.event_subscription:type_name -> anytty.api.v1.EventSubscriptionResult
-	72, // 67: anytty.api.v1.ResultEnvelope.file_list:type_name -> anytty.api.v1.FileListResult
-	73, // 68: anytty.api.v1.ResultEnvelope.file_stat:type_name -> anytty.api.v1.FileStatResult
-	74, // 69: anytty.api.v1.ResultEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewResult
-	75, // 70: anytty.api.v1.ResultEnvelope.file_operation:type_name -> anytty.api.v1.FileOperationResult
-	76, // 71: anytty.api.v1.ResultEnvelope.file_batch:type_name -> anytty.api.v1.FileBatchResult
-	77, // 72: anytty.api.v1.ResultEnvelope.file_transfer_open:type_name -> anytty.api.v1.FileTransferOpenResult
-	78, // 73: anytty.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelResult
-	79, // 74: anytty.api.v1.ResultEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetResult
-	80, // 75: anytty.api.v1.ResultEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutResult
-	81, // 76: anytty.api.v1.ResultEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteResult
-	82, // 77: anytty.api.v1.ResultEnvelope.storage_list:type_name -> anytty.api.v1.StorageListResult
-	83, // 78: anytty.api.v1.ResultEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityResult
-	84, // 79: anytty.api.v1.ResultEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListResult
-	85, // 80: anytty.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateResult
-	86, // 81: anytty.api.v1.ResultEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeResult
-	87, // 82: anytty.api.v1.ResultEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusResult
-	88, // 83: anytty.api.v1.ResultEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartResult
-	89, // 84: anytty.api.v1.ResultEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusResult
-	8,  // 85: anytty.api.v1.OperationCancelledEvent.operation:type_name -> anytty.api.v1.OperationStamp
-	9,  // 86: anytty.api.v1.ResourceReleasedEvent.resource:type_name -> anytty.api.v1.ResourceHandle
-	90, // 87: anytty.api.v1.EventEnvelope.api_version:type_name -> anytty.api.v1.ApiVersion
-	57, // 88: anytty.api.v1.EventEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
-	9,  // 89: anytty.api.v1.EventEnvelope.subscription:type_name -> anytty.api.v1.ResourceHandle
-	5,  // 90: anytty.api.v1.EventEnvelope.operation_cancelled:type_name -> anytty.api.v1.OperationCancelledEvent
-	6,  // 91: anytty.api.v1.EventEnvelope.resource_released:type_name -> anytty.api.v1.ResourceReleasedEvent
-	91, // 92: anytty.api.v1.EventEnvelope.terminal_lifecycle:type_name -> anytty.api.v1.TerminalLifecycleEvent
-	92, // 93: anytty.api.v1.EventEnvelope.live_invalidated:type_name -> anytty.api.v1.LiveInvalidatedEvent
-	93, // 94: anytty.api.v1.EventEnvelope.storage_changed:type_name -> anytty.api.v1.StorageChangedEvent
-	94, // 95: anytty.api.v1.EventEnvelope.file_transfer_completed:type_name -> anytty.api.v1.FileTransferCompletedEvent
-	96, // [96:96] is the sub-list for method output_type
-	96, // [96:96] is the sub-list for method input_type
-	96, // [96:96] is the sub-list for extension type_name
-	96, // [96:96] is the sub-list for extension extendee
-	0,  // [0:96] is the sub-list for field type_name
+	30, // 24: anytty.api.v1.CommandEnvelope.live_screen_next:type_name -> anytty.api.v1.LiveScreenNextCommand
+	31, // 25: anytty.api.v1.CommandEnvelope.event_subscribe:type_name -> anytty.api.v1.EventSubscribeCommand
+	32, // 26: anytty.api.v1.CommandEnvelope.file_list:type_name -> anytty.api.v1.FileListCommand
+	33, // 27: anytty.api.v1.CommandEnvelope.file_stat:type_name -> anytty.api.v1.FileStatCommand
+	34, // 28: anytty.api.v1.CommandEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewCommand
+	35, // 29: anytty.api.v1.CommandEnvelope.file_mkdir:type_name -> anytty.api.v1.FileMkdirCommand
+	36, // 30: anytty.api.v1.CommandEnvelope.file_rename:type_name -> anytty.api.v1.FileRenameCommand
+	37, // 31: anytty.api.v1.CommandEnvelope.file_delete:type_name -> anytty.api.v1.FileDeleteCommand
+	38, // 32: anytty.api.v1.CommandEnvelope.file_copy:type_name -> anytty.api.v1.FileCopyCommand
+	39, // 33: anytty.api.v1.CommandEnvelope.file_move:type_name -> anytty.api.v1.FileMoveCommand
+	40, // 34: anytty.api.v1.CommandEnvelope.file_download_open:type_name -> anytty.api.v1.FileDownloadOpenCommand
+	41, // 35: anytty.api.v1.CommandEnvelope.file_upload_open:type_name -> anytty.api.v1.FileUploadOpenCommand
+	42, // 36: anytty.api.v1.CommandEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelCommand
+	43, // 37: anytty.api.v1.CommandEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetCommand
+	44, // 38: anytty.api.v1.CommandEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutCommand
+	45, // 39: anytty.api.v1.CommandEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteCommand
+	46, // 40: anytty.api.v1.CommandEnvelope.storage_list:type_name -> anytty.api.v1.StorageListCommand
+	47, // 41: anytty.api.v1.CommandEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityCommand
+	48, // 42: anytty.api.v1.CommandEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListCommand
+	49, // 43: anytty.api.v1.CommandEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateCommand
+	50, // 44: anytty.api.v1.CommandEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeCommand
+	51, // 45: anytty.api.v1.CommandEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusCommand
+	52, // 46: anytty.api.v1.CommandEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartCommand
+	53, // 47: anytty.api.v1.CommandEnvelope.remote_local_enable:type_name -> anytty.api.v1.RemoteLocalEnableCommand
+	54, // 48: anytty.api.v1.CommandEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusCommand
+	55, // 49: anytty.api.v1.CommandEnvelope.remote_local_disable:type_name -> anytty.api.v1.RemoteLocalDisableCommand
+	56, // 50: anytty.api.v1.ResultEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
+	3,  // 51: anytty.api.v1.ResultEnvelope.acknowledge:type_name -> anytty.api.v1.AcknowledgeResult
+	57, // 52: anytty.api.v1.ResultEnvelope.error:type_name -> anytty.api.v1.ApiError
+	58, // 53: anytty.api.v1.ResultEnvelope.terminal_defaults:type_name -> anytty.api.v1.TerminalDefaultsResult
+	59, // 54: anytty.api.v1.ResultEnvelope.terminal_create:type_name -> anytty.api.v1.TerminalCreateResult
+	60, // 55: anytty.api.v1.ResultEnvelope.terminal_list:type_name -> anytty.api.v1.TerminalListResult
+	61, // 56: anytty.api.v1.ResultEnvelope.terminal_get:type_name -> anytty.api.v1.TerminalGetResult
+	62, // 57: anytty.api.v1.ResultEnvelope.terminal_attach:type_name -> anytty.api.v1.TerminalAttachResult
+	63, // 58: anytty.api.v1.ResultEnvelope.terminal_resize:type_name -> anytty.api.v1.TerminalResizeResult
+	64, // 59: anytty.api.v1.ResultEnvelope.path_list_directories:type_name -> anytty.api.v1.PathListDirectoriesResult
+	65, // 60: anytty.api.v1.ResultEnvelope.history_window:type_name -> anytty.api.v1.HistoryWindowResult
+	66, // 61: anytty.api.v1.ResultEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyResult
+	67, // 62: anytty.api.v1.ResultEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusResult
+	68, // 63: anytty.api.v1.ResultEnvelope.live_screen:type_name -> anytty.api.v1.NativeScreenResult
+	69, // 64: anytty.api.v1.ResultEnvelope.event_subscription:type_name -> anytty.api.v1.EventSubscriptionResult
+	70, // 65: anytty.api.v1.ResultEnvelope.file_list:type_name -> anytty.api.v1.FileListResult
+	71, // 66: anytty.api.v1.ResultEnvelope.file_stat:type_name -> anytty.api.v1.FileStatResult
+	72, // 67: anytty.api.v1.ResultEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewResult
+	73, // 68: anytty.api.v1.ResultEnvelope.file_operation:type_name -> anytty.api.v1.FileOperationResult
+	74, // 69: anytty.api.v1.ResultEnvelope.file_batch:type_name -> anytty.api.v1.FileBatchResult
+	75, // 70: anytty.api.v1.ResultEnvelope.file_transfer_open:type_name -> anytty.api.v1.FileTransferOpenResult
+	76, // 71: anytty.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelResult
+	77, // 72: anytty.api.v1.ResultEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetResult
+	78, // 73: anytty.api.v1.ResultEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutResult
+	79, // 74: anytty.api.v1.ResultEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteResult
+	80, // 75: anytty.api.v1.ResultEnvelope.storage_list:type_name -> anytty.api.v1.StorageListResult
+	81, // 76: anytty.api.v1.ResultEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityResult
+	82, // 77: anytty.api.v1.ResultEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListResult
+	83, // 78: anytty.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateResult
+	84, // 79: anytty.api.v1.ResultEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeResult
+	85, // 80: anytty.api.v1.ResultEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusResult
+	86, // 81: anytty.api.v1.ResultEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartResult
+	87, // 82: anytty.api.v1.ResultEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusResult
+	8,  // 83: anytty.api.v1.OperationCancelledEvent.operation:type_name -> anytty.api.v1.OperationStamp
+	9,  // 84: anytty.api.v1.ResourceReleasedEvent.resource:type_name -> anytty.api.v1.ResourceHandle
+	88, // 85: anytty.api.v1.EventEnvelope.api_version:type_name -> anytty.api.v1.ApiVersion
+	56, // 86: anytty.api.v1.EventEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
+	9,  // 87: anytty.api.v1.EventEnvelope.subscription:type_name -> anytty.api.v1.ResourceHandle
+	5,  // 88: anytty.api.v1.EventEnvelope.operation_cancelled:type_name -> anytty.api.v1.OperationCancelledEvent
+	6,  // 89: anytty.api.v1.EventEnvelope.resource_released:type_name -> anytty.api.v1.ResourceReleasedEvent
+	89, // 90: anytty.api.v1.EventEnvelope.terminal_lifecycle:type_name -> anytty.api.v1.TerminalLifecycleEvent
+	90, // 91: anytty.api.v1.EventEnvelope.storage_changed:type_name -> anytty.api.v1.StorageChangedEvent
+	91, // 92: anytty.api.v1.EventEnvelope.file_transfer_completed:type_name -> anytty.api.v1.FileTransferCompletedEvent
+	93, // [93:93] is the sub-list for method output_type
+	93, // [93:93] is the sub-list for method input_type
+	93, // [93:93] is the sub-list for extension type_name
+	93, // [93:93] is the sub-list for extension extendee
+	0,  // [0:93] is the sub-list for field type_name
 }
 
 func init() { file_apipb_application_proto_init() }
@@ -2217,8 +2160,7 @@ func file_apipb_application_proto_init() {
 		(*CommandEnvelope_HistoryCopy)(nil),
 		(*CommandEnvelope_HistoryRelease)(nil),
 		(*CommandEnvelope_HistoryBacklogStatus)(nil),
-		(*CommandEnvelope_LiveScreenGet)(nil),
-		(*CommandEnvelope_LiveInvalidationNext)(nil),
+		(*CommandEnvelope_LiveScreenNext)(nil),
 		(*CommandEnvelope_EventSubscribe)(nil),
 		(*CommandEnvelope_FileList)(nil),
 		(*CommandEnvelope_FileStat)(nil),
@@ -2259,7 +2201,6 @@ func file_apipb_application_proto_init() {
 		(*ResultEnvelope_HistoryCopy)(nil),
 		(*ResultEnvelope_HistoryBacklogStatus)(nil),
 		(*ResultEnvelope_LiveScreen)(nil),
-		(*ResultEnvelope_LiveInvalidation)(nil),
 		(*ResultEnvelope_EventSubscription)(nil),
 		(*ResultEnvelope_FileList)(nil),
 		(*ResultEnvelope_FileStat)(nil),
@@ -2284,7 +2225,6 @@ func file_apipb_application_proto_init() {
 		(*EventEnvelope_OperationCancelled)(nil),
 		(*EventEnvelope_ResourceReleased)(nil),
 		(*EventEnvelope_TerminalLifecycle)(nil),
-		(*EventEnvelope_LiveInvalidated)(nil),
 		(*EventEnvelope_StorageChanged)(nil),
 		(*EventEnvelope_FileTransferCompleted)(nil),
 	}

@@ -394,6 +394,20 @@ func TestClientAbandonedLateResponseReleasesWaiterCapacity(t *testing.T) {
 	waitForClientAccounting(t, client, func() bool {
 		return len(client.waiters) == 0 && len(client.abandonedWaiters) == 1
 	})
+	cancelFrame, err := serverTransport.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, typ, payload, err = wire.DecodeFrame(cancelFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if channel != 0 || typ != wire.TypeRequestCancel {
+		t.Fatalf("cancel frame = channel:%d type:%d", channel, typ)
+	}
+	if canceledID, err := DecodeRequestCancelPayload(payload); err != nil || canceledID != request.ID {
+		t.Fatalf("cancel request ID = %d err=%v, want %d", canceledID, err, request.ID)
+	}
 	response, err := EncodeResponsePayload(Response{ID: request.ID, Result: []byte("late")})
 	if err != nil {
 		t.Fatal(err)

@@ -410,14 +410,15 @@ func assertR5TerminalIO(t *testing.T, session *cloudadapter.Session, endpointID,
 		t.Fatalf("write terminal input through Cloud: %v", err)
 	}
 	eventually(t, 5*time.Second, func() bool {
-		screen, screenErr := session.LiveScreen(ctx, &apipb.LiveScreenGetCommand{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: terminalID}})
+		screen, screenErr := session.LiveScreenNext(ctx, &apipb.LiveScreenNextCommand{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: terminalID}})
 		return screenErr == nil && strings.Contains(r5ScreenText(screen), marker)
 	})
 }
 
 func r5ScreenText(screen *apipb.NativeScreenResult) string {
 	var text strings.Builder
-	for _, row := range screen.GetRows() {
+	for _, replacement := range screen.GetRowReplacements() {
+		row := replacement.GetRow()
 		for _, cell := range row.GetCells() {
 			text.WriteString(cell.GetContent())
 		}

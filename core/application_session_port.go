@@ -431,8 +431,8 @@ func (session *protocolSession) ApplicationHistoryBacklogStatus(_ context.Contex
 	return session.server.TerminalHistoryBacklogStatus(terminalID)
 }
 
-// ApplicationLiveScreen 返回 latest-only native screen，不把 live surface 当作 history truth。
-func (session *protocolSession) ApplicationLiveScreen(_ context.Context, terminalID string, observed LiveRevision) (NativeScreenSnapshot, error) {
+// ApplicationLiveScreenNext 返回或等待 latest-only native screen，不把 live surface 当作 history truth。
+func (session *protocolSession) ApplicationLiveScreenNext(ctx context.Context, terminalID string, observed LiveRevision) (NativeScreenSnapshot, error) {
 	if _, err := session.server.GetTerminal(terminalID); err != nil {
 		return NativeScreenSnapshot{}, err
 	}
@@ -449,19 +449,7 @@ func (session *protocolSession) ApplicationLiveScreen(_ context.Context, termina
 	if liveErr != nil {
 		return NativeScreenSnapshot{}, liveErr
 	}
-	return terminal.NativeScreenSnapshotSince(terminalID, observed), nil
-}
-
-// ApplicationLiveInvalidation 等待 observed revision 之后的单次唤醒边沿。
-func (session *protocolSession) ApplicationLiveInvalidation(ctx context.Context, terminalID string, observed LiveRevision) (LiveScreenInvalidated, error) {
-	event, err := session.server.NextLiveInvalidation(ctx, terminalID, observed)
-	if err != nil {
-		return LiveScreenInvalidated{}, err
-	}
-	if event.Live == nil {
-		return LiveScreenInvalidated{}, ErrTerminalNotFound
-	}
-	return LiveScreenInvalidated{TerminalID: event.TerminalID, Revision: event.Live.Revision}, nil
+	return session.server.NextLiveScreen(ctx, terminalID, observed)
 }
 
 // ApplicationEventSubscribe 建立当前 protocol session owning 的异步事件订阅。
@@ -473,8 +461,12 @@ func (session *protocolSession) ApplicationEventSubscribe(ctx context.Context, f
 	if err := session.reserveEventSubscription(); err != nil {
 		return nil, err
 	}
-	eventCtx, cancel := context.WithCancel(ctx)
 	session.mu.Lock()
+	baseCtx := session.sessionCtx
+	if baseCtx == nil {
+		baseCtx = ctx
+	}
+	eventCtx, cancel := context.WithCancel(baseCtx)
 	session.nextEventSub++
 	subscriptionID := session.nextEventSub
 	session.eventSubscriptions[subscriptionID] = applicationEventSubscription{cancel: cancel, filter: filter}

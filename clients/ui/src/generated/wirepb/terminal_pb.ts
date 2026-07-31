@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file terminal.proto.
  */
 export const file_terminal: GenFile = /*@__PURE__*/
-  fileDesc("Cg50ZXJtaW5hbC5wcm90bxIWYW55dHR5LnByb3RvY29sLndpcmVwYiI4CgVIZWxsbxIPCgd2ZXJzaW9uGAEgASgNEg4KBmNsaWVudBgCIAEoCRIOCgZzZXJ2ZXIYAyABKAkiHwoMU2Vzc2lvbkNsb3NlEg8KB3ZlcnNpb24YASABKA0iPQoPUmVxdWVzdEVudmVsb3BlEgoKAmlkGAEgASgEEg4KBm1ldGhvZBgCIAEoCRIOCgZwYXJhbXMYAyABKAwiLgoQUmVzcG9uc2VFbnZlbG9wZRIKCgJpZBgBIAEoBBIOCgZyZXN1bHQYAiABKAwiLgoNUHJvdG9jb2xFcnJvchIMCgRjb2RlGAEgASgFEg8KB21lc3NhZ2UYAiABKAkiUQoNRXJyb3JFbnZlbG9wZRIKCgJpZBgBIAEoBBI0CgVlcnJvchgCIAEoCzIlLmFueXR0eS5wcm90b2NvbC53aXJlcGIuUHJvdG9jb2xFcnJvciIwChBGaWxlVHJhbnNmZXJEYXRhEg4KBm9mZnNldBgBIAEoAxIMCgRkYXRhGAIgASgMIjcKD0ZpbGVUcmFuc2ZlckFjaxIOCgZvZmZzZXQYASABKAMSFAoMd2luZG93X2J5dGVzGAIgASgDIjIKEkZpbGVUcmFuc2ZlckZpbmlzaBIMCgRzaXplGAEgASgDEg4KBnNoYTI1NhgCIAEoDCJAChJGaWxlVHJhbnNmZXJSZXN1bHQSDAoEcGF0aBgBIAEoCRIMCgRzaXplGAIgASgDEg4KBnNoYTI1NhgDIAEoDEInWiVnaXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vd2lyZXBiYgZwcm90bzM");
+  fileDesc("Cg50ZXJtaW5hbC5wcm90bxIWYW55dHR5LnByb3RvY29sLndpcmVwYiI4CgVIZWxsbxIPCgd2ZXJzaW9uGAEgASgNEg4KBmNsaWVudBgCIAEoCRIOCgZzZXJ2ZXIYAyABKAkiHwoMU2Vzc2lvbkNsb3NlEg8KB3ZlcnNpb24YASABKA0iGwoNUmVxdWVzdENhbmNlbBIKCgJpZBgBIAEoBCI9Cg9SZXF1ZXN0RW52ZWxvcGUSCgoCaWQYASABKAQSDgoGbWV0aG9kGAIgASgJEg4KBnBhcmFtcxgDIAEoDCIuChBSZXNwb25zZUVudmVsb3BlEgoKAmlkGAEgASgEEg4KBnJlc3VsdBgCIAEoDCIuCg1Qcm90b2NvbEVycm9yEgwKBGNvZGUYASABKAUSDwoHbWVzc2FnZRgCIAEoCSJRCg1FcnJvckVudmVsb3BlEgoKAmlkGAEgASgEEjQKBWVycm9yGAIgASgLMiUuYW55dHR5LnByb3RvY29sLndpcmVwYi5Qcm90b2NvbEVycm9yIjAKEEZpbGVUcmFuc2ZlckRhdGESDgoGb2Zmc2V0GAEgASgDEgwKBGRhdGEYAiABKAwiNwoPRmlsZVRyYW5zZmVyQWNrEg4KBm9mZnNldBgBIAEoAxIUCgx3aW5kb3dfYnl0ZXMYAiABKAMiMgoSRmlsZVRyYW5zZmVyRmluaXNoEgwKBHNpemUYASABKAMSDgoGc2hhMjU2GAIgASgMIkAKEkZpbGVUcmFuc2ZlclJlc3VsdBIMCgRwYXRoGAEgASgJEgwKBHNpemUYAiABKAMSDgoGc2hhMjU2GAMgASgMQidaJWdpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by93aXJlcGJiBnByb3RvMw");
 
 /**
  * wirepb 只拥有 DataChannel framing 与 file resource stream payload。
@@ -63,6 +63,26 @@ export const SessionCloseSchema: GenMessage<SessionClose> = /*@__PURE__*/
   messageDesc(file_terminal, 1);
 
 /**
+ * RequestCancel cancels one in-flight control request without closing the
+ * protocol session. Unknown or already completed IDs are an idempotent no-op.
+ *
+ * @generated from message anytty.protocol.wirepb.RequestCancel
+ */
+export type RequestCancel = Message<"anytty.protocol.wirepb.RequestCancel"> & {
+  /**
+   * @generated from field: uint64 id = 1;
+   */
+  id: bigint;
+};
+
+/**
+ * Describes the message anytty.protocol.wirepb.RequestCancel.
+ * Use `create(RequestCancelSchema)` to create a new message.
+ */
+export const RequestCancelSchema: GenMessage<RequestCancel> = /*@__PURE__*/
+  messageDesc(file_terminal, 2);
+
+/**
  * @generated from message anytty.protocol.wirepb.RequestEnvelope
  */
 export type RequestEnvelope = Message<"anytty.protocol.wirepb.RequestEnvelope"> & {
@@ -87,7 +107,7 @@ export type RequestEnvelope = Message<"anytty.protocol.wirepb.RequestEnvelope"> 
  * Use `create(RequestEnvelopeSchema)` to create a new message.
  */
 export const RequestEnvelopeSchema: GenMessage<RequestEnvelope> = /*@__PURE__*/
-  messageDesc(file_terminal, 2);
+  messageDesc(file_terminal, 3);
 
 /**
  * @generated from message anytty.protocol.wirepb.ResponseEnvelope
@@ -109,7 +129,7 @@ export type ResponseEnvelope = Message<"anytty.protocol.wirepb.ResponseEnvelope"
  * Use `create(ResponseEnvelopeSchema)` to create a new message.
  */
 export const ResponseEnvelopeSchema: GenMessage<ResponseEnvelope> = /*@__PURE__*/
-  messageDesc(file_terminal, 3);
+  messageDesc(file_terminal, 4);
 
 /**
  * @generated from message anytty.protocol.wirepb.ProtocolError
@@ -131,7 +151,7 @@ export type ProtocolError = Message<"anytty.protocol.wirepb.ProtocolError"> & {
  * Use `create(ProtocolErrorSchema)` to create a new message.
  */
 export const ProtocolErrorSchema: GenMessage<ProtocolError> = /*@__PURE__*/
-  messageDesc(file_terminal, 4);
+  messageDesc(file_terminal, 5);
 
 /**
  * @generated from message anytty.protocol.wirepb.ErrorEnvelope
@@ -153,7 +173,7 @@ export type ErrorEnvelope = Message<"anytty.protocol.wirepb.ErrorEnvelope"> & {
  * Use `create(ErrorEnvelopeSchema)` to create a new message.
  */
 export const ErrorEnvelopeSchema: GenMessage<ErrorEnvelope> = /*@__PURE__*/
-  messageDesc(file_terminal, 5);
+  messageDesc(file_terminal, 6);
 
 /**
  * @generated from message anytty.protocol.wirepb.FileTransferData
@@ -175,7 +195,7 @@ export type FileTransferData = Message<"anytty.protocol.wirepb.FileTransferData"
  * Use `create(FileTransferDataSchema)` to create a new message.
  */
 export const FileTransferDataSchema: GenMessage<FileTransferData> = /*@__PURE__*/
-  messageDesc(file_terminal, 6);
+  messageDesc(file_terminal, 7);
 
 /**
  * @generated from message anytty.protocol.wirepb.FileTransferAck
@@ -197,7 +217,7 @@ export type FileTransferAck = Message<"anytty.protocol.wirepb.FileTransferAck"> 
  * Use `create(FileTransferAckSchema)` to create a new message.
  */
 export const FileTransferAckSchema: GenMessage<FileTransferAck> = /*@__PURE__*/
-  messageDesc(file_terminal, 7);
+  messageDesc(file_terminal, 8);
 
 /**
  * @generated from message anytty.protocol.wirepb.FileTransferFinish
@@ -219,7 +239,7 @@ export type FileTransferFinish = Message<"anytty.protocol.wirepb.FileTransferFin
  * Use `create(FileTransferFinishSchema)` to create a new message.
  */
 export const FileTransferFinishSchema: GenMessage<FileTransferFinish> = /*@__PURE__*/
-  messageDesc(file_terminal, 8);
+  messageDesc(file_terminal, 9);
 
 /**
  * @generated from message anytty.protocol.wirepb.FileTransferResult
@@ -246,4 +266,4 @@ export type FileTransferResult = Message<"anytty.protocol.wirepb.FileTransferRes
  * Use `create(FileTransferResultSchema)` to create a new message.
  */
 export const FileTransferResultSchema: GenMessage<FileTransferResult> = /*@__PURE__*/
-  messageDesc(file_terminal, 9);
+  messageDesc(file_terminal, 10);

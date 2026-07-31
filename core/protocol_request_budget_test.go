@@ -96,6 +96,30 @@ func TestProtocolServerRequestBudgetCancellationAndConnectionCloseRelease(t *tes
 		assertProtocolBudgetIdle(t, server, first, second)
 	})
 
+	t.Run("request cancel frame", func(t *testing.T) {
+		server := NewServer(withProtocolRequestBudgetForTest(1))
+		executor := newProtocolBudgetExecutor(1)
+		session, client, daemon := newProtocolBudgetSession(server, executor)
+		defer client.Close()
+		defer daemon.Close()
+		handleProtocolRequestDirect(t, session, context.Background(), protocol.Request{ID: 7, Method: "api.execute", Params: protocolBudgetCommandPayload(t)})
+		awaitProtocolBudgetStart(t, executor)
+		cancelPayload, err := protocol.EncodeRequestCancelPayload(7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := session.handleControlFrame(context.Background(), wire.TypeRequestCancel, cancelPayload); err != nil {
+			t.Fatal(err)
+		}
+		assertProtocolResponseID(t, client, 7)
+		session.requests.Wait()
+		assertProtocolBudgetIdle(t, server, session)
+
+		if err := session.handleControlFrame(context.Background(), wire.TypeRequestCancel, cancelPayload); err != nil {
+			t.Fatalf("late duplicate cancel should be a no-op: %v", err)
+		}
+	})
+
 	t.Run("connection close", func(t *testing.T) {
 		server := NewServer(withProtocolRequestBudgetForTest(1))
 		executor := newProtocolBudgetExecutor(1)

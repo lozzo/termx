@@ -12,10 +12,9 @@ func TestLiveSurfaceSnapshotFromProtoPreservesSparseRows(t *testing.T) {
 		LiveRevision: 10,
 		BaseRevision: 7,
 		Size:         &apipb.TerminalSize{Cols: 80, Rows: 24},
-		RowIndices:   []int32{3, 9},
-		Rows: []*apipb.ScreenRow{
-			{Cells: []*apipb.ScreenCell{{Content: "three", Width: 5}}},
-			{Cells: []*apipb.ScreenCell{{Content: "nine", Width: 4}}},
+		RowReplacements: []*apipb.ScreenRowReplace{
+			{RowIndex: 3, Row: &apipb.ScreenRow{Cells: []*apipb.ScreenCell{{Content: "three", Width: 5}}}},
+			{RowIndex: 9, Row: &apipb.ScreenRow{Cells: []*apipb.ScreenCell{{Content: "nine", Width: 4}}}},
 		},
 	})
 
