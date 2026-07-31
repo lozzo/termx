@@ -2,15 +2,14 @@ import { create } from '@bufbuild/protobuf'
 import { act, render, waitFor } from '@testing-library/react'
 import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { EventEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
 import {
   HistoryRowSchema,
   HistoryWindowOperation,
   HistoryWindowResultSchema,
-  LiveInvalidatedEventSchema,
   NativeScreenResultSchema,
   ScreenCellSchema,
+  ScreenRowReplaceSchema,
   ScreenRowSchema,
 } from '../generated/apipb/history_pb'
 import {
@@ -42,8 +41,8 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
-          return protoResult('liveScreen', create(NativeScreenResultSchema))
+        case 'liveScreenNext':
+          return protoResult('liveScreen', screen('', 1n))
         case 'historyWindow':
           return new Promise(() => {})
         default:
@@ -75,11 +74,10 @@ describe('useTerminalSession scrollback lifecycle', () => {
     let liveText = 'LIVE-1'
     let historyCalls = 0
     let session: MockProtoSession
-    const subscription = () => resource(ResourceKind.SUBSCRIPTION, 1, session)
     session = new MockProtoSession('machine-local', (command) => {
       switch (command.command.case) {
         case 'eventSubscribe':
-          return protoResult('eventSubscription', { subscription: subscription() })
+          return protoResult('eventSubscription', { subscription: resource(ResourceKind.SUBSCRIPTION, 1, session) })
         case 'terminalAttach':
           return protoResult('terminalAttach', create(TerminalAttachResultSchema, {
             attachment: create(AttachmentHandleSchema, {
@@ -91,7 +89,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen(liveText, liveRevision))
         case 'historyWindow': {
           historyCalls += 1
@@ -126,27 +124,12 @@ describe('useTerminalSession scrollback lifecycle', () => {
       expect(current?.terminalSnapshot?.history?.loadedRows).toBe(1)
     })
 
-    for (let revision = 2; revision <= 10; revision += 1) {
-      liveText = `LIVE-${revision}`
-      liveRevision = BigInt(revision)
-      act(() => {
-        session.emit(create(EventEnvelopeSchema, {
-          subscription: subscription(),
-          event: {
-            case: 'liveInvalidated',
-            value: create(LiveInvalidatedEventSchema, {
-              terminal: terminalRef(session),
-              liveRevision,
-            }),
-          },
-        }))
-      })
-      await waitFor(() => {
-        expect(current?.terminalText).toContain('HISTORY-LATEST')
-        expect(current?.terminalText).not.toContain(`LIVE-${revision}`)
-        expect(current?.terminalSnapshot?.history).toMatchObject({ revision: 1, loadedRows: 1 })
-      })
-    }
+    liveText = 'LIVE-10'
+    liveRevision = 10n
+    expect(session.commands.filter((entry) => entry.command.case === 'liveScreenNext')).toHaveLength(1)
+    expect(current?.terminalText).toContain('HISTORY-LATEST')
+    expect(current?.terminalText).not.toContain('LIVE-10')
+    expect(current?.terminalSnapshot?.history).toMatchObject({ revision: 1, loadedRows: 1 })
 
     await act(async () => {
       await current?.loadScrollback(1, false, 50)
@@ -160,19 +143,8 @@ describe('useTerminalSession scrollback lifecycle', () => {
 
     liveText = 'LIVE-11'
     liveRevision = 11n
-    act(() => {
-      session.emit(create(EventEnvelopeSchema, {
-        subscription: subscription(),
-        event: {
-          case: 'liveInvalidated',
-          value: create(LiveInvalidatedEventSchema, { terminal: terminalRef(session), liveRevision }),
-        },
-      }))
-    })
-    await waitFor(() => {
-      expect(current?.terminalText).toContain('HISTORY-OLDER')
-      expect(current?.terminalText).not.toContain('LIVE-11')
-    })
+    expect(current?.terminalText).toContain('HISTORY-OLDER')
+    expect(current?.terminalText).not.toContain('LIVE-11')
     await act(async () => {
       const exhausted = await current?.loadScrollback(1, false, 50)
       expect(exhausted?.hasMore).toBe(false)
@@ -183,9 +155,14 @@ describe('useTerminalSession scrollback lifecycle', () => {
     act(() => {
       resumed = current?.resumeLiveScrollback() ?? ''
     })
-    expect(resumed).toContain('LIVE-11')
+    expect(resumed).toContain('LIVE-1')
     expect(resumed).not.toContain('HISTORY-LATEST')
     await waitFor(() => expect(current?.terminalSnapshot?.history).toBeUndefined())
+    act(() => {
+      current?.markLiveScreenSubmitted(1n)
+      current?.markLiveScreenCompleted(1n)
+    })
+    await waitFor(() => expect(current?.terminalText).toContain('LIVE-11'))
     await waitFor(() => {
       expect(session.commands.some((entry) => entry.command.case === 'historyRelease')).toBe(true)
     })
@@ -210,7 +187,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen(boundaryText, 1n))
         case 'historyWindow':
           return protoResult('historyWindow', create(HistoryWindowResultSchema, {
@@ -261,7 +238,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen('EMPTY-HISTORY-LIVE', 1n))
         case 'historyWindow':
           return protoResult('historyWindow', create(HistoryWindowResultSchema, {
@@ -313,7 +290,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen('PREFETCH-LIVE', 1n))
         case 'historyWindow':
           return protoResult('historyWindow', create(HistoryWindowResultSchema, {
@@ -360,11 +337,10 @@ describe('useTerminalSession scrollback lifecycle', () => {
     let liveRevision = 1n
     let historyCalls = 0
     let session: MockProtoSession
-    const subscription = () => resource(ResourceKind.SUBSCRIPTION, 1, session)
     session = new MockProtoSession('machine-local', (command) => {
       switch (command.command.case) {
         case 'eventSubscribe':
-          return protoResult('eventSubscription', { subscription: subscription() })
+          return protoResult('eventSubscription', { subscription: resource(ResourceKind.SUBSCRIPTION, 1, session) })
         case 'terminalAttach':
           return protoResult('terminalAttach', create(TerminalAttachResultSchema, {
             attachment: create(AttachmentHandleSchema, {
@@ -376,7 +352,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen(liveText, liveRevision))
         case 'historyWindow':
           historyCalls += 1
@@ -405,13 +381,8 @@ describe('useTerminalSession scrollback lifecycle', () => {
     liveText = 'LIVE-AFTER-PREFETCH'
     liveRevision = 2n
     act(() => {
-      session.emit(create(EventEnvelopeSchema, {
-        subscription: subscription(),
-        event: {
-          case: 'liveInvalidated',
-          value: create(LiveInvalidatedEventSchema, { terminal: terminalRef(session), liveRevision }),
-        },
-      }))
+      current?.markLiveScreenSubmitted(1n)
+      current?.markLiveScreenCompleted(1n)
     })
     await waitFor(() => expect(current?.terminalText).toContain('LIVE-AFTER-PREFETCH'))
 
@@ -446,7 +417,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen(`REENTRY-LIVE-${historyCalls}`, BigInt(historyCalls + 1)))
         case 'historyWindow':
           historyCalls += 1
@@ -504,7 +475,7 @@ describe('useTerminalSession scrollback lifecycle', () => {
           return protoResult('terminalGet', create(TerminalGetResultSchema, {
             terminal: create(TerminalInfoSchema, { ref: terminalRef(session), name: 'zsh' }),
           }))
-        case 'liveScreenGet':
+        case 'liveScreenNext':
           return protoResult('liveScreen', screen('LIVE', 1n))
         case 'historyWindow':
           historyCalls += 1
@@ -582,7 +553,15 @@ function historyRow(text: string, lineId: bigint) {
 function screen(text: string, liveRevision: bigint) {
   return create(NativeScreenResultSchema, {
     size: create(TerminalSizeSchema, { cols: 50, rows: 24 }),
-    rows: [create(ScreenRowSchema, { cells: [create(ScreenCellSchema, { content: text, width: text.length })] })],
     liveRevision,
+    fullReplace: true,
+    rowReplacements: text
+      ? [create(ScreenRowReplaceSchema, {
+          rowIndex: 0,
+          row: create(ScreenRowSchema, {
+            cells: [create(ScreenCellSchema, { content: text, width: text.length })],
+          }),
+        })]
+      : [],
   })
 }

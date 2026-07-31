@@ -4,11 +4,12 @@ import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import {
-  LiveScreenGetCommandSchema,
   CursorShape,
+  LiveScreenNextCommandSchema,
   type CellStyle,
-  type NativeScreenResult,
   type ScreenRow,
+  type TerminalCursor,
+  type TerminalModes,
 } from '../generated/apipb/history_pb'
 import {
   AttachmentMode,
@@ -38,17 +39,25 @@ import type {
 import { coreV2HistoryRowsANSI } from './coreV2HistoryANSI'
 import { createCoreV2HistorySource } from './coreV2HistorySource'
 import { CoreV2ScrollbackPager } from './coreV2ScrollbackPager'
+import {
+  mergeLiveScreenResult,
+  type CanonicalLiveScreen,
+  type LiveScreenDamage,
+} from './liveScreenCache'
 
 type ProtoAttachment = {
   handle: AttachmentHandle
   channel: ProtoTerminalChannel
 }
 
-type LiveScreenRefreshState = {
-  pending: boolean
-  minimumRevision: bigint
+type LiveScreenDeliveryState = {
+  received: CanonicalLiveScreen | undefined
+  damage: LiveScreenDamage | undefined
+  publishedRevision: bigint | undefined
+  renderingRevision: bigint | undefined
+  requestController: AbortController | undefined
+  demand: boolean
   reason: TerminalSnapshotPayload['refreshReason']
-  completion?: Promise<void>
 }
 
 /** createProtoTerminalProtocolSession projects generated apipb into the existing UI-only TerminalClient contract. */
@@ -60,11 +69,23 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   private readonly attachments = new Map<string, ProtoAttachment>()
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
   private readonly terminalSizes = new Map<string, TerminalInputSize>()
-  private readonly liveRevisions = new Map<string, bigint>()
   private readonly inputTails = new Map<string, Promise<void>>()
   private readonly eventSubscriptions = new Map<string, Promise<ProtoClientSubscription>>()
-  private readonly liveScreenRefreshes = new Map<string, LiveScreenRefreshState>()
+  private readonly liveScreens = new Map<string, LiveScreenDeliveryState>()
   private readonly scrollbackPager: CoreV2ScrollbackPager
+  private documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  private readonly handleVisibilityChange = () => {
+    const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
+    if (visible === this.documentVisible) return
+    this.documentVisible = visible
+    for (const [terminalId, state] of this.liveScreens) {
+      if (!visible) {
+        this.pauseLiveScreen(state, 'terminal view hidden')
+        continue
+      }
+      this.resumeLiveScreen(terminalId, state)
+    }
+  }
 
   constructor(private readonly session: ProtoClientSession) {
     this.scrollbackPager = new CoreV2ScrollbackPager(createCoreV2HistorySource(session, session.stamp.endpointId))
@@ -75,11 +96,8 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     if (existing) return existing
     const opening = openProtoEventSubscription(this.session, create(EventSubscribeCommandSchema, {
       terminal: this.terminalRef(terminalId),
-      types: [ApplicationEventType.TERMINAL_LIVE_INVALIDATED, ApplicationEventType.TERMINAL_LIFECYCLE],
+      types: [ApplicationEventType.TERMINAL_LIFECYCLE],
     }), (event) => {
-      if (event.event.case === 'liveInvalidated' && event.event.value.terminal?.terminalId) {
-        this.refreshLiveScreen(event.event.value.terminal.terminalId, 'live_invalidated', event.event.value.liveRevision)
-      }
       if (event.event.case === 'terminalLifecycle') {
         const terminal = event.event.value.terminal
         const terminalId = terminal?.ref?.terminalId
@@ -120,9 +138,24 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
       throw new Error('terminal attach returned no attachment resource')
     }
     const channel = new ProtoTerminalChannel(this, terminalId)
+    const firstAttachment = this.attachments.size === 0
     this.attachments.set(terminalId, { handle: result.result.value.attachment, channel })
+    if (firstAttachment && typeof document !== 'undefined') {
+      this.documentVisible = document.visibilityState !== 'hidden'
+      document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    }
+    const liveState: LiveScreenDeliveryState = {
+      received: undefined,
+      damage: undefined,
+      publishedRevision: undefined,
+      renderingRevision: undefined,
+      requestController: undefined,
+      demand: true,
+      reason: 'open',
+    }
+    this.liveScreens.set(terminalId, liveState)
     this.publish(terminalId, { type: 'resizeControl', control: resizeControlView(result.result.value.resizeControl) })
-    await Promise.all([this.publishTerminalInfo(terminalId), this.enqueueLiveScreenRefresh(terminalId, 'open').completion])
+    await Promise.all([this.publishTerminalInfo(terminalId), this.startLiveScreenRequest(terminalId, liveState)])
     return channel
   }
 
@@ -185,7 +218,11 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   closeTerminalChannel(terminalId: string): void {
     this.scrollbackPager.forget(terminalId)
     this.closeEventSubscription(terminalId)
-    this.liveScreenRefreshes.delete(terminalId)
+    const liveState = this.liveScreens.get(terminalId)
+    if (liveState) {
+      this.pauseLiveScreen(liveState, 'terminal channel closed')
+      this.liveScreens.delete(terminalId)
+    }
     const attachment = this.attachments.get(terminalId)
     if (!attachment) return
     this.attachments.delete(terminalId)
@@ -193,56 +230,65 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     void this.session.execute(command('terminalDetach', create(TerminalDetachCommandSchema, {
       attachment: attachment.handle.resource,
     }))).catch(() => undefined)
+    if (this.attachments.size === 0 && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    }
   }
 
   markSyncLost(terminalId: string): void {
-    this.refreshLiveScreen(terminalId, 'manual_sync_lost')
+    const state = this.liveScreens.get(terminalId)
+    if (!state) return
+    this.pauseLiveScreen(state, 'terminal live screen sync lost')
+    state.received = undefined
+    state.damage = undefined
+    state.publishedRevision = undefined
+    state.reason = 'manual_sync_lost'
+    void this.startLiveScreenRequest(terminalId, state)
   }
 
-  private refreshLiveScreen(terminalId: string, reason: TerminalSnapshotPayload['refreshReason'], minimumRevision = 0n): void {
-    const refresh = this.enqueueLiveScreenRefresh(terminalId, reason, minimumRevision)
-    if (!refresh.started) return
-    void refresh.completion.catch((error) => {
-      if (!this.session.isAlive()) return
-      if (!this.attachments.has(terminalId)) return
-      this.publish(terminalId, { type: 'closed', reason: errorMessage(error) })
-    })
-  }
-
-  private enqueueLiveScreenRefresh(
-    terminalId: string,
-    reason: TerminalSnapshotPayload['refreshReason'],
-    minimumRevision = 0n,
-  ): { completion: Promise<void>; started: boolean } {
-    const existing = this.liveScreenRefreshes.get(terminalId)
-    if (existing) {
-      existing.pending = true
-      if (minimumRevision > existing.minimumRevision) existing.minimumRevision = minimumRevision
-      existing.reason = reason
-      return { completion: existing.completion!, started: false }
+  setLiveScreenDemand(terminalId: string, enabled: boolean): void {
+    const state = this.liveScreens.get(terminalId)
+    if (!state || state.demand === enabled) return
+    state.demand = enabled
+    if (!enabled) {
+      this.pauseLiveScreen(state, 'terminal live screen demand disabled')
+      return
     }
-    const state: LiveScreenRefreshState = { pending: true, minimumRevision, reason }
-    this.liveScreenRefreshes.set(terminalId, state)
-    const completion = this.drainLiveScreenRefresh(terminalId, state)
-    state.completion = completion
-    return { completion, started: true }
+    this.resumeLiveScreen(terminalId, state)
   }
 
-  private async drainLiveScreenRefresh(terminalId: string, state: LiveScreenRefreshState): Promise<void> {
-    try {
-      while (this.liveScreenRefreshes.get(terminalId) === state && state.pending) {
-        state.pending = false
-        const screen = await this.requestLiveScreen(terminalId)
-        if (!screen || this.liveScreenRefreshes.get(terminalId) !== state) return
-        if (screen.liveRevision < state.minimumRevision) {
-          state.pending = true
-          continue
-        }
-        this.commitLiveScreen(terminalId, screen, state.reason)
-      }
-    } finally {
-      if (this.liveScreenRefreshes.get(terminalId) === state) this.liveScreenRefreshes.delete(terminalId)
+  markLiveScreenSubmitted(terminalId: string, revision: bigint): void {
+    const state = this.liveScreens.get(terminalId)
+    if (!state || state.publishedRevision !== revision || state.renderingRevision !== undefined) return
+    state.publishedRevision = undefined
+    state.renderingRevision = revision
+    state.reason = 'live_screen'
+    void this.startLiveScreenRequest(terminalId, state)
+  }
+
+  markLiveScreenCompleted(terminalId: string, revision: bigint): void {
+    const state = this.liveScreens.get(terminalId)
+    if (!state || state.renderingRevision !== revision) return
+    state.renderingRevision = undefined
+    if (state.damage) this.publishReceivedScreen(terminalId, state)
+  }
+
+  private pauseLiveScreen(state: LiveScreenDeliveryState, reason: string): void {
+    state.requestController?.abort(new DOMException(reason, 'AbortError'))
+    state.requestController = undefined
+    if (state.publishedRevision !== undefined && state.renderingRevision === undefined && state.received) {
+      state.publishedRevision = undefined
+      state.damage = fullScreenDamage(state.received.rows)
     }
+  }
+
+  private resumeLiveScreen(terminalId: string, state: LiveScreenDeliveryState): void {
+    if (!state.demand || !this.documentVisible) return
+    if (state.damage && state.publishedRevision === undefined && state.renderingRevision === undefined) {
+      this.publishReceivedScreen(terminalId, state)
+      return
+    }
+    void this.startLiveScreenRequest(terminalId, state)
   }
 
   requestResizeOwner(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl> {
@@ -309,20 +355,69 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
     }
   }
 
-  private async requestLiveScreen(terminalId: string): Promise<NativeScreenResult | undefined> {
+  private async startLiveScreenRequest(terminalId: string, state: LiveScreenDeliveryState): Promise<void> {
     const attachment = this.attachments.get(terminalId)
-    if (!attachment) return undefined
-    const result = await this.session.execute(command('liveScreenGet', create(LiveScreenGetCommandSchema, { terminal: this.terminalRef(terminalId) })))
-    if (result.result.case !== 'liveScreen') throw new Error('live screen returned no result')
-    if (this.attachments.get(terminalId) !== attachment) return undefined
-    return result.result.value
+    if (
+      !attachment ||
+      this.liveScreens.get(terminalId) !== state ||
+      state.requestController ||
+      !state.demand ||
+      !this.documentVisible ||
+      state.publishedRevision !== undefined ||
+      state.damage !== undefined
+    ) return
+
+    const controller = new AbortController()
+    state.requestController = controller
+    const observedRevision = state.received?.revision ?? 0n
+    try {
+      const result = await this.session.execute(command('liveScreenNext', create(LiveScreenNextCommandSchema, {
+        terminal: this.terminalRef(terminalId),
+        observedRevision,
+      })), { signal: controller.signal })
+      if (result.result.case !== 'liveScreen') throw new Error('live screen next returned no result')
+      if (
+        controller.signal.aborted ||
+        this.attachments.get(terminalId) !== attachment ||
+        this.liveScreens.get(terminalId) !== state
+      ) return
+      state.requestController = undefined
+      const incoming = result.result.value
+      if (state.received && incoming.liveRevision <= state.received.revision) return
+      const merged = mergeLiveScreenResult(
+        state.received,
+        incoming,
+        this.session.stamp.generation,
+        this.terminalRef(terminalId),
+      )
+      if (!merged) {
+        state.received = undefined
+        state.damage = undefined
+        state.reason = 'sync_lost'
+        await this.startLiveScreenRequest(terminalId, state)
+        return
+      }
+      state.received = merged.screen
+      state.damage = merged.damage
+      this.rememberSize(terminalId, { cols: merged.screen.cols, rows: merged.screen.rows })
+      if (state.renderingRevision === undefined && state.publishedRevision === undefined && this.documentVisible && state.demand) {
+        this.publishReceivedScreen(terminalId, state)
+      }
+    } catch (error) {
+      if (state.requestController === controller) state.requestController = undefined
+      if (controller.signal.aborted || isAbortError(error)) return
+      if (!this.session.isAlive() || !this.attachments.has(terminalId)) return
+      this.publish(terminalId, { type: 'closed', reason: errorMessage(error) })
+    }
   }
 
-  private commitLiveScreen(terminalId: string, screen: NativeScreenResult, reason: TerminalSnapshotPayload['refreshReason']): void {
-    if (screen.liveRevision < (this.liveRevisions.get(terminalId) ?? 0n)) return
-    this.liveRevisions.set(terminalId, screen.liveRevision)
-    this.rememberSize(terminalId, screen.size)
-    this.publish(terminalId, { type: 'snapshot', snapshot: screenSnapshot(screen, reason) })
+  private publishReceivedScreen(terminalId: string, state: LiveScreenDeliveryState): void {
+    const screen = state.received
+    const damage = state.damage
+    if (!screen || !damage || state.publishedRevision !== undefined || state.renderingRevision !== undefined) return
+    state.damage = undefined
+    state.publishedRevision = screen.revision
+    this.publish(terminalId, { type: 'snapshot', snapshot: screenSnapshot(screen, damage, state.reason) })
   }
 
   private rememberSize(terminalId: string, size: { cols: number; rows: number } | undefined): void {
@@ -357,19 +452,41 @@ function command(caseName: string, value: object) {
   return create(CommandEnvelopeSchema, { command: { case: caseName, value } } as never)
 }
 
-function screenSnapshot(screen: NativeScreenResult, reason: TerminalSnapshotPayload['refreshReason']): TerminalSnapshotPayload {
-  const cols = screen.size?.cols ?? 0
-  const text = `\u001b[2J\u001b[H${rowsANSI(screen.rows, cols)}${cursorANSI(screen)}`
+function screenSnapshot(
+  screen: CanonicalLiveScreen,
+  damage: LiveScreenDamage,
+  reason: TerminalSnapshotPayload['refreshReason'],
+): TerminalSnapshotPayload {
+  const text = fullScreenANSI(screen)
   return {
     text,
     screenReplay: text,
-    screenText: rowsText(screen.rows),
-    cols: screen.size?.cols ?? 0,
-    rows: screen.size?.rows ?? screen.rows.length,
+    screenText: rowsText(screen.screenRows),
+    liveReplay: damage.fullReplace ? text : changedRowsANSI(screen, damage.changedRows),
+    liveRevision: screen.revision,
+    liveFullReplace: damage.fullReplace,
+    cols: screen.cols,
+    rows: screen.rows,
     alternateScreen: screen.alternateScreen,
     ...(reason ? { refreshReason: reason } : {}),
-    raw: screen,
   }
+}
+
+function fullScreenDamage(rows: number): LiveScreenDamage {
+  return { fullReplace: true, changedRows: Array.from({ length: rows }, (_, rowIndex) => rowIndex) }
+}
+
+function fullScreenANSI(screen: CanonicalLiveScreen): string {
+  const alternate = screen.alternateScreen ? '\u001b[?1049h' : ''
+  return `${alternate}\u001b[?7l\u001b[H\u001b[2J\u001b[H${rowsANSI(screen.screenRows, screen.cols)}${modesANSI(screen.modes)}${cursorANSI(screen.cursor)}`
+}
+
+function changedRowsANSI(screen: CanonicalLiveScreen, changedRows: number[]): string {
+  let output = '\u001b[?7l'
+  for (const rowIndex of changedRows) {
+    output += `\u001b[${rowIndex + 1};1H${rowANSI(screen.screenRows[rowIndex]!, screen.cols)}`
+  }
+  return `${output}${modesANSI(screen.modes)}${cursorANSI(screen.cursor)}`
 }
 
 function rowsText(rows: ScreenRow[]): string {
@@ -377,23 +494,25 @@ function rowsText(rows: ScreenRow[]): string {
 }
 
 function rowsANSI(rows: ScreenRow[], cols: number): string {
-  return rows.map((row) => {
-    let current = ''
-    let width = 0
-    let output = ''
-    for (const cell of row.cells) {
-      const style = styleANSI(cell.style)
-      if (style !== current) {
-        output += `\u001b[0m${style}`
-        current = style
-      }
-      const content = cell.content || ' '.repeat(Math.max(1, cell.width))
-      output += content
-      width += Math.max(1, cell.width)
+  return rows.map((row) => rowANSI(row, cols)).join('\r\n')
+}
+
+function rowANSI(row: ScreenRow, cols: number): string {
+  let current = ''
+  let width = 0
+  let output = ''
+  for (const cell of row.cells) {
+    const style = styleANSI(cell.style)
+    if (style !== current) {
+      output += `\u001b[0m${style}`
+      current = style
     }
-    if (cols > width) output += `\u001b[0m${styleANSI(row.tailFill)}${' '.repeat(cols - width)}`
-    return `${output}\u001b[0m`
-  }).join('\r\n')
+    const content = cell.content || ' '.repeat(Math.max(1, cell.width))
+    output += content
+    width += Math.max(1, cell.width)
+  }
+  if (cols > width) output += `\u001b[0m${styleANSI(row.tailFill)}${' '.repeat(cols - width)}`
+  return `${output}\u001b[0m`
 }
 
 function styleANSI(style: CellStyle | undefined): string {
@@ -425,14 +544,34 @@ function colorANSI(value: string, foreground: boolean): string {
   return `${foreground ? 38 : 48};2;${parseInt(rgb[1]!, 16)};${parseInt(rgb[2]!, 16)};${parseInt(rgb[3]!, 16)}`
 }
 
-function cursorANSI(screen: NativeScreenResult): string {
-  const cursor = screen.cursor
+function cursorANSI(cursor: TerminalCursor | undefined): string {
   if (!cursor) return ''
   const visibility = cursor.visible ? '\u001b[?25h' : '\u001b[?25l'
   const shape = cursor.shape === CursorShape.UNDERLINE ? (cursor.blink ? 3 : 4)
     : cursor.shape === CursorShape.BAR ? (cursor.blink ? 5 : 6)
       : cursor.blink ? 1 : 2
   return `\u001b[${Math.max(1, cursor.row + 1)};${Math.max(1, cursor.col + 1)}H\u001b[${shape} q${visibility}`
+}
+
+function modesANSI(modes: TerminalModes | undefined): string {
+  if (!modes) return ''
+  const mouseNormal = modes.mouseNormal || (modes.mouseTracking && !modes.mouseX10 && !modes.mouseButtonEvent && !modes.mouseAnyEvent)
+  return [
+    privateModeANSI(1, modes.applicationCursor),
+    privateModeANSI(7, modes.autoWrap),
+    privateModeANSI(1007, modes.alternateScroll),
+    privateModeANSI(2004, modes.bracketedPaste),
+    privateModeANSI(9, modes.mouseX10),
+    privateModeANSI(1000, mouseNormal),
+    privateModeANSI(1002, modes.mouseButtonEvent),
+    privateModeANSI(1003, modes.mouseAnyEvent),
+    privateModeANSI(1005, false),
+    privateModeANSI(1006, modes.mouseSgr),
+  ].join('')
+}
+
+function privateModeANSI(mode: number, enabled: boolean): string {
+  return `\u001b[?${mode}${enabled ? 'h' : 'l'}`
 }
 
 function terminalInfoView(info: TerminalInfo): Record<string, unknown> {
@@ -458,3 +597,9 @@ function resizeControlView(control: ResizeControl | undefined): TerminalResizeCo
 }
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError'
+}

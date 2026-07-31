@@ -6,7 +6,7 @@ import { logTerminalDiagnostic } from './terminalDiagnostics'
 /**
  * TerminalSnapshotPayload 是客户端消费 owning daemon 权威屏幕的只读投影。
  * `refreshReason` 只描述本次客户端拉取链路，不能作为 terminal lifecycle、history 或屏幕内容真值；
- * `live_invalidated` 表示 daemon 已先发布更高 revision，渲染层必须用该快照替换旧画面。
+ * live revision 只表示 daemon canonical screen 版本；renderer completion 通过独立方法回传。
  */
 export interface TerminalSnapshotPayload {
   text: string
@@ -15,10 +15,13 @@ export interface TerminalSnapshotPayload {
   replay?: string
   screenReplay?: string
   screenText?: string
+  liveReplay?: string
+  liveRevision?: bigint
+  liveFullReplace?: boolean
   raw?: unknown
   scrollbackRows?: unknown[]
   alternateScreen?: boolean
-  refreshReason?: 'open' | 'live_invalidated' | 'sync_lost' | 'manual_sync_lost'
+  refreshReason?: 'open' | 'live_screen' | 'sync_lost' | 'manual_sync_lost'
   recovery?: {
     revision: number
     reason: string
@@ -124,6 +127,9 @@ export interface TerminalProtocolSession {
   resetScrollback?(terminalId: string): void
   closeTerminalChannel(terminalId: string): void
   markSyncLost?(terminalId: string, reason?: string): void
+  setLiveScreenDemand?(terminalId: string, enabled: boolean): void
+  markLiveScreenSubmitted?(terminalId: string, revision: bigint): void
+  markLiveScreenCompleted?(terminalId: string, revision: bigint): void
   requestResizeOwner?(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl>
   releaseResizeOwner?(terminalId: string): Promise<TerminalResizeControl>
 }
@@ -253,6 +259,21 @@ export class TerminalClient {
   markSyncLost(reason?: string): void {
     if (!this.session || !this.terminalId) return
     this.session.markSyncLost?.(this.terminalId, reason)
+  }
+
+  setLiveScreenDemand(enabled: boolean): void {
+    if (!this.session || !this.terminalId) return
+    this.session.setLiveScreenDemand?.(this.terminalId, enabled)
+  }
+
+  markLiveScreenSubmitted(revision: bigint): void {
+    if (!this.session || !this.terminalId) return
+    this.session.markLiveScreenSubmitted?.(this.terminalId, revision)
+  }
+
+  markLiveScreenCompleted(revision: bigint): void {
+    if (!this.session || !this.terminalId) return
+    this.session.markLiveScreenCompleted?.(this.terminalId, revision)
   }
 
   private bind(
