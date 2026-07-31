@@ -36,8 +36,8 @@ func TestDaemonRuntimeValidatesServerFirstChallengeIdentityAndGateway(t *testing
 			value.GetChallenge().Target = cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY
 		},
 		"expired": func(value *cloudv1.EdgeCommand) {
-			value.GetChallenge().IssuedAt = timestamppb.New(now.Add(-ticket.EdgeChallengeLifetime))
-			value.GetChallenge().ExpiresAt = timestamppb.New(now)
+			value.GetChallenge().IssuedAt = timestamppb.New(now.Add(-ticket.EdgeChallengeLifetime - ticket.EdgeChallengeClockSkew))
+			value.GetChallenge().ExpiresAt = timestamppb.New(now.Add(-ticket.EdgeChallengeClockSkew))
 		},
 	}
 	for name, mutate := range tests {

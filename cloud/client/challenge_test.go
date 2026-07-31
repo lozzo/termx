@@ -37,8 +37,8 @@ func TestCloudClientValidatesServerFirstChallengeIdentityAndWindow(t *testing.T)
 		},
 		"wrong length": func(value *cloudv1.EdgeSignal) { value.GetChallenge().Nonce = value.GetChallenge().Nonce[:31] },
 		"future": func(value *cloudv1.EdgeSignal) {
-			value.GetChallenge().IssuedAt = timestamppb.New(now.Add(time.Nanosecond))
-			value.GetChallenge().ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + time.Nanosecond))
+			value.GetChallenge().IssuedAt = timestamppb.New(now.Add(ticket.EdgeChallengeClockSkew + time.Nanosecond))
+			value.GetChallenge().ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + ticket.EdgeChallengeClockSkew + time.Nanosecond))
 		},
 	}
 	for name, mutate := range tests {

@@ -26,6 +26,7 @@ const (
 
 	EdgeChallengeNonceSize = 32
 	EdgeChallengeLifetime  = 10 * time.Second
+	EdgeChallengeClockSkew = 5 * time.Second
 	// MaxKeyBundleTTL 限制 Edge 可离线信任 Controller binding keyset 的最长窗口。
 	MaxKeyBundleTTL = 24 * time.Hour
 )
@@ -154,7 +155,7 @@ func VerifyDaemonBinding(envelope *cloudv1.SignedEnvelope, keys KeySet, edgeID s
 	return claims, nil
 }
 
-// ValidateEdgeChallenge 验证 Edge 单次 challenge 的目标、结构和严格 10 秒期限。
+// ValidateEdgeChallenge 验证 Edge 单次 challenge 的目标、结构、固定 10 秒窗口和 5 秒时钟容差。
 func ValidateEdgeChallenge(challenge *cloudv1.EdgeChallenge, target cloudv1.EdgeChallengeTarget, now time.Time) error {
 	if challenge == nil || len(challenge.ProtoReflect().GetUnknown()) != 0 || len(challenge.GetNonce()) != EdgeChallengeNonceSize ||
 		strings.TrimSpace(challenge.GetEdgeId()) == "" || strings.TrimSpace(challenge.GetEdgeBootId()) == "" || strings.TrimSpace(challenge.GetStreamId()) == "" ||
@@ -167,10 +168,10 @@ func ValidateEdgeChallenge(challenge *cloudv1.EdgeChallenge, target cloudv1.Edge
 	if expiresAt.Sub(issuedAt) != EdgeChallengeLifetime {
 		return errors.New("Edge challenge lifetime is invalid")
 	}
-	if issuedAt.After(now) {
+	if issuedAt.After(now.Add(EdgeChallengeClockSkew)) {
 		return errors.New("Edge challenge was issued in the future")
 	}
-	if !expiresAt.After(now) {
+	if !expiresAt.After(now.Add(-EdgeChallengeClockSkew)) {
 		return errors.New("Edge challenge expired")
 	}
 	return nil

@@ -100,6 +100,14 @@ func TestEdgeChallengeRejectsWrongGatewayTimeAndLength(t *testing.T) {
 	if err := ticket.ValidateEdgeChallenge(valid, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err != nil {
 		t.Fatal(err)
 	}
+	withinSkew := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now.Add(ticket.EdgeChallengeClockSkew))
+	if err := ticket.ValidateEdgeChallenge(withinSkew, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err != nil {
+		t.Fatalf("challenge within clock skew was rejected: %v", err)
+	}
+	recentlyExpired := testEdgeChallenge(cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now.Add(-ticket.EdgeChallengeLifetime-ticket.EdgeChallengeClockSkew+time.Nanosecond))
+	if err := ticket.ValidateEdgeChallenge(recentlyExpired, cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY, now); err != nil {
+		t.Fatalf("challenge within expiration clock skew was rejected: %v", err)
+	}
 	tests := map[string]func(*cloudv1.EdgeChallenge){
 		"short nonce": func(value *cloudv1.EdgeChallenge) { value.Nonce = value.Nonce[:31] },
 		"long nonce":  func(value *cloudv1.EdgeChallenge) { value.Nonce = append(value.Nonce, 0) },
@@ -107,12 +115,12 @@ func TestEdgeChallengeRejectsWrongGatewayTimeAndLength(t *testing.T) {
 			value.Target = cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_AGENT_GATEWAY
 		},
 		"future": func(value *cloudv1.EdgeChallenge) {
-			value.IssuedAt = timestamppb.New(now.Add(time.Nanosecond))
-			value.ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + time.Nanosecond))
+			value.IssuedAt = timestamppb.New(now.Add(ticket.EdgeChallengeClockSkew + time.Nanosecond))
+			value.ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + ticket.EdgeChallengeClockSkew + time.Nanosecond))
 		},
 		"expired": func(value *cloudv1.EdgeChallenge) {
-			value.IssuedAt = timestamppb.New(now.Add(-ticket.EdgeChallengeLifetime))
-			value.ExpiresAt = timestamppb.New(now)
+			value.IssuedAt = timestamppb.New(now.Add(-ticket.EdgeChallengeLifetime - ticket.EdgeChallengeClockSkew))
+			value.ExpiresAt = timestamppb.New(now.Add(-ticket.EdgeChallengeClockSkew))
 		},
 		"wrong lifetime": func(value *cloudv1.EdgeChallenge) {
 			value.ExpiresAt = timestamppb.New(now.Add(ticket.EdgeChallengeLifetime + time.Nanosecond))
