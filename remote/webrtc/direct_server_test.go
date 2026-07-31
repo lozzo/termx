@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"container/heap"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -342,7 +343,7 @@ func TestDirectServerConsumedCapacityAndReplayPriority(t *testing.T) {
 	harness.start(t)
 	expiresAt := harness.now.Add(remoteauth.DirectSignalingMaxTTL)
 	for index := 0; index < directSignalingConsumedLimit-1; index++ {
-		harness.server.consumed[fmt.Sprintf("used-%04d", index)] = expiresAt
+		seedDirectConsumed(harness.server, fmt.Sprintf("used-%04d", index), expiresAt)
 	}
 
 	last := harness.request("last-capacity-slot")
@@ -360,6 +361,61 @@ func TestDirectServerConsumedCapacityAndReplayPriority(t *testing.T) {
 	}
 	if got := len(harness.server.consumed); got != directSignalingConsumedLimit {
 		t.Fatalf("full consumed entries changed to %d", got)
+	}
+}
+
+func TestDirectServerHighWaterCleanupInspectsOnlyExpiredHeapEntries(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	harness.start(t)
+	const expiredEntries = 7
+	for index := 0; index < directSignalingConsumedLimit; index++ {
+		expiresAt := harness.now.Add(remoteauth.DirectSignalingMaxTTL)
+		if index < expiredEntries {
+			expiresAt = harness.now
+		}
+		seedDirectConsumed(harness.server, fmt.Sprintf("high-water-%04d", index), expiresAt)
+	}
+
+	harness.server.mu.Lock()
+	inspected := harness.server.cleanupExpiredConsumed(harness.now)
+	remaining := len(harness.server.consumed)
+	remainingExpiry := len(harness.server.consumedExpiry)
+	harness.server.mu.Unlock()
+	if inspected != expiredEntries+1 {
+		t.Fatalf("heap entries inspected = %d, want %d for %d expired of %d", inspected, expiredEntries+1, expiredEntries, directSignalingConsumedLimit)
+	}
+	if remaining != directSignalingConsumedLimit-expiredEntries || remainingExpiry != remaining {
+		t.Fatalf("high-water cleanup retained map=%d heap=%d, want %d", remaining, remainingExpiry, directSignalingConsumedLimit-expiredEntries)
+	}
+	for index := 0; index < expiredEntries; index++ {
+		if got := harness.server.admit(harness.request(fmt.Sprintf("high-water-replacement-%d", index))); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED {
+			t.Fatalf("replacement admission %d = %s", index, got)
+		}
+	}
+	if got := harness.server.admit(harness.request("high-water-over-capacity")); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED {
+		t.Fatalf("high-water over-capacity admission = %s", got)
+	}
+	if got := harness.server.admit(harness.request("high-water-0007")); got != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED {
+		t.Fatalf("high-water replay admission = %s", got)
+	}
+}
+
+func TestDirectServerExpiryHeapLazyDeletionPreservesNewerMapEntry(t *testing.T) {
+	harness := newDirectServerHarness(t)
+	harness.start(t)
+	requestID := "lazy-expiry"
+	newExpiry := harness.now.Add(remoteauth.DirectSignalingMaxTTL)
+	harness.server.consumed[requestID] = newExpiry
+	heap.Push(&harness.server.consumedExpiry, directConsumedExpiry{requestID: requestID, expiresAt: harness.now})
+	heap.Push(&harness.server.consumedExpiry, directConsumedExpiry{requestID: requestID, expiresAt: newExpiry})
+
+	harness.server.mu.Lock()
+	inspected := harness.server.cleanupExpiredConsumed(harness.now)
+	gotExpiry, exists := harness.server.consumed[requestID]
+	remainingExpiry := len(harness.server.consumedExpiry)
+	harness.server.mu.Unlock()
+	if inspected != 2 || !exists || !gotExpiry.Equal(newExpiry) || remainingExpiry != 1 {
+		t.Fatalf("lazy cleanup inspected=%d exists=%v expiry=%s heap=%d", inspected, exists, gotExpiry, remainingExpiry)
 	}
 }
 
@@ -426,7 +482,7 @@ func TestDirectServerPeerFullDoesNotExceedConsumedLimit(t *testing.T) {
 	harness := newDirectServerHarness(t)
 	expiresAt := harness.now.Add(remoteauth.DirectSignalingMaxTTL)
 	for index := 0; index < directSignalingConsumedLimit-1; index++ {
-		harness.server.consumed[fmt.Sprintf("peer-full-used-%04d", index)] = expiresAt
+		seedDirectConsumed(harness.server, fmt.Sprintf("peer-full-used-%04d", index), expiresAt)
 	}
 	for index := 0; index < directSignalingPeerLimit; index++ {
 		harness.server.peerSlots <- struct{}{}
@@ -773,6 +829,11 @@ func directRequestAt(harness *directServerHarness, id string, now time.Time) *re
 	request.ExpiresAtUnixNano = now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano()
 	request.GrantExpiresAtUnixNano = now.Add(time.Hour).UnixNano()
 	return request
+}
+
+func seedDirectConsumed(server *DirectServer, requestID string, expiresAt time.Time) {
+	server.consumed[requestID] = expiresAt
+	heap.Push(&server.consumedExpiry, directConsumedExpiry{requestID: requestID, expiresAt: expiresAt})
 }
 
 func readDirectResponse(t *testing.T, connection net.Conn) *remoteauthpb.DirectSignalingResponseV2 {

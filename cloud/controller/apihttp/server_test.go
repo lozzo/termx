@@ -94,7 +94,10 @@ func TestLoginResponseAndLogContractRedactsCredentialAndStoreDetails(t *testing.
 				maxClientBuckets: 10, maxAccountBuckets: 10,
 			})
 			var logs bytes.Buffer
-			handler := &handler{config: Config{Accounts: accounts, PublicOrigin: "https://cloud.example"}, loginLimiter: limiter, logger: slog.New(slog.NewJSONHandler(&logs, nil))}
+			handler := &handler{
+				config: Config{Accounts: accounts, PublicOrigin: "https://cloud.example"}, loginLimiter: limiter,
+				logger: slog.New(slog.NewJSONHandler(&logs, nil)), setReadDeadlineForTest: successfulReadDeadline,
+			}
 			payload, err := protojson.Marshal(&cloudv1.LoginAccountRequest{Login: test.login, Password: "wrong-password"})
 			if err != nil {
 				t.Fatal(err)
@@ -174,37 +177,16 @@ func TestSlowRequestBodyReturnsStable408WithoutCallingService(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	connection, err := net.Dial("tcp", server.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connection.Close()
-	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	started := time.Now()
-	_, err = io.WriteString(connection, "POST /api/account/login HTTP/1.1\r\nHost: "+server.Listener.Addr().String()+"\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n{\"login\":\"sensitive-slow-login@example.com\"")
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: http.MethodPost})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	payload, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if elapsed := time.Since(started); elapsed > 750*time.Millisecond {
+	statusCode, header, payload, elapsed := slowBodyHTTPResponse(t, server, "/api/account/login", "application/json")
+	if elapsed > 750*time.Millisecond {
 		t.Fatalf("slow body timeout took %s", elapsed)
 	}
 	var body map[string]string
 	if err := json.Unmarshal(payload, &body); err != nil {
 		t.Fatalf("decode timeout response %q: %v", payload, err)
 	}
-	if response.StatusCode != http.StatusRequestTimeout || body["code"] != "request_timeout" || body["message"] != "请求体读取超时。" || body["request_id"] == "" || response.Header.Get("X-Request-ID") != body["request_id"] {
-		t.Fatalf("status=%d header=%q body=%v", response.StatusCode, response.Header.Get("X-Request-ID"), body)
+	if statusCode != http.StatusRequestTimeout || body["code"] != "request_timeout" || body["message"] != "请求体读取超时。" || body["request_id"] == "" || header.Get("X-Request-ID") != body["request_id"] {
+		t.Fatalf("status=%d header=%q body=%v", statusCode, header.Get("X-Request-ID"), body)
 	}
 	if strings.Contains(string(payload), "sensitive-slow-login") || strings.Contains(string(payload), errRequestBodyTimeout.Error()) {
 		t.Fatalf("timeout response leaked request or internal error: %s", payload)
@@ -214,8 +196,93 @@ func TestSlowRequestBodyReturnsStable408WithoutCallingService(t *testing.T) {
 	}
 }
 
+func TestEarlyHTTPRejectionsBoundUnreadSlowBodies(t *testing.T) {
+	store := &loginContractStore{}
+	accounts, err := account.New(account.Config{
+		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
+		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := &handler{
+		config: Config{Accounts: accounts, PublicOrigin: "https://cloud.example"}, bodyReadTimeout: 35 * time.Millisecond,
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	for _, test := range []struct {
+		name        string
+		path        string
+		contentType string
+		wantStatus  int
+		wantCode    string
+	}{
+		{name: "content type", path: "/api/account/login", contentType: "text/plain", wantStatus: http.StatusUnsupportedMediaType, wantCode: "unsupported_media_type"},
+		{name: "authentication", path: "/api/account/password", contentType: "application/json", wantStatus: http.StatusUnauthorized, wantCode: "unauthenticated"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			statusCode, header, payload, elapsed := slowBodyHTTPResponse(t, server, test.path, test.contentType)
+			if elapsed > 750*time.Millisecond {
+				t.Fatalf("early rejection with unread body took %s", elapsed)
+			}
+			var body map[string]string
+			if err := json.Unmarshal(payload, &body); err != nil {
+				t.Fatalf("decode early rejection %q: %v", payload, err)
+			}
+			if statusCode != test.wantStatus || body["code"] != test.wantCode || body["request_id"] == "" || header.Get("X-Request-ID") != body["request_id"] {
+				t.Fatalf("status=%d header=%q body=%v", statusCode, header.Get("X-Request-ID"), body)
+			}
+		})
+	}
+	if got := store.calls.Load(); got != 0 {
+		t.Fatalf("early rejections called account service store %d times", got)
+	}
+}
+
+func TestBodyEOFDeadlineDoesNotCancelSlowService(t *testing.T) {
+	store := &delayedLoginStore{delay: 120 * time.Millisecond}
+	accounts, err := account.New(account.Config{
+		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
+		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := &handler{
+		config: Config{Accounts: accounts, PublicOrigin: "https://cloud.example"},
+		loginLimiter: testLoginLimiter(t, loginLimiterConfig{
+			globalLimit: 10, clientLimit: 10, accountLimit: 10, window: time.Minute, bucketTTL: time.Minute, maxClientBuckets: 10, maxAccountBuckets: 10,
+		}),
+		bodyReadTimeout: 25 * time.Millisecond,
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/account/login", strings.NewReader(`{"login":"slow@example.com","password":"wrong-password"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed < store.delay {
+		t.Fatalf("service returned before configured delay: %s", elapsed)
+	}
+	if response.StatusCode != http.StatusUnauthorized || !store.called.Load() || store.canceled.Load() {
+		t.Fatalf("status=%d called=%v canceled=%v", response.StatusCode, store.called.Load(), store.canceled.Load())
+	}
+}
+
 func TestOversizedBodyStillReturns413ThroughDeadlineWrapper(t *testing.T) {
-	handler := &handler{config: Config{PublicOrigin: "https://cloud.example"}}
+	handler := &handler{config: Config{PublicOrigin: "https://cloud.example"}, setReadDeadlineForTest: successfulReadDeadline}
 	request := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader(strings.Repeat("x", (1<<20)+1)))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
@@ -230,7 +297,7 @@ func TestOversizedBodyStillReturns413ThroughDeadlineWrapper(t *testing.T) {
 	}
 }
 
-func TestRequestBodyDeadlineStartsOnFirstReadAndClearsOnReturn(t *testing.T) {
+func TestRequestBodyDeadlineStartsAtLifecycleAndClearsAtEOF(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		method  string
@@ -252,28 +319,52 @@ func TestRequestBodyDeadlineStartsOnFirstReadAndClearsOnReturn(t *testing.T) {
 				},
 			}
 			request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
-			body := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+			started := time.Now()
+			body, err := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if body == nil {
 				t.Fatal("request body was not wrapped")
 			}
-			if len(deadlines) != 0 {
-				t.Fatalf("deadline set before first Read: %v", deadlines)
-			}
-			started := time.Now()
-			if _, err := io.ReadAll(request.Body); err != nil {
-				t.Fatal(err)
-			}
 			if len(deadlines) != 1 {
-				t.Fatalf("deadline calls after Read = %v", deadlines)
+				t.Fatalf("deadline calls at request lifecycle start = %v", deadlines)
 			}
 			if got := deadlines[0].Sub(started); got < test.timeout-time.Second || got > test.timeout+time.Second {
 				t.Fatalf("read deadline offset = %s, want about %s", got, test.timeout)
 			}
-			body.clearDeadline()
+			if _, err := io.ReadAll(request.Body); err != nil {
+				t.Fatal(err)
+			}
 			if len(deadlines) != 2 || !deadlines[1].IsZero() {
-				t.Fatalf("deadline was not cleared: %v", deadlines)
+				t.Fatalf("deadline was not cleared at EOF: %v", deadlines)
+			}
+			if err := body.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if len(deadlines) != 2 {
+				t.Fatalf("Close cleared an already-cleared deadline again: %v", deadlines)
 			}
 		})
+	}
+}
+
+func TestRequestBodyDeadlineClearsOnCloseWithoutRead(t *testing.T) {
+	deadlines := make([]time.Time, 0, 2)
+	handler := &handler{setReadDeadlineForTest: func(deadline time.Time) error {
+		deadlines = append(deadlines, deadline)
+		return nil
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader("unread"))
+	body, err := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(deadlines) != 2 || deadlines[0].IsZero() || !deadlines[1].IsZero() {
+		t.Fatalf("deadline calls = %v, want set then clear", deadlines)
 	}
 }
 
@@ -290,9 +381,15 @@ func TestProductionRequestBodyDeadlineDurations(t *testing.T) {
 		{method: http.MethodPut, path: "/api/operator/certificates/profile-1", want: certificateBodyReadTimeout},
 	} {
 		request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
-		body := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+		body, err := handler.limitRequestBodyRead(httptest.NewRecorder(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if body == nil || body.timeout != test.want {
 			t.Fatalf("%s %s timeout = %v, want %s", test.method, test.path, body, test.want)
+		}
+		if err := body.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
@@ -323,6 +420,57 @@ func TestGRPCAndGetRequestsAreNotDeadlineWrapped(t *testing.T) {
 		if request.Body != originalBody || deadlineCalls.Load() != 0 {
 			t.Fatalf("GET %s body was wrapped or deadline set: body_changed=%v calls=%d", path, request.Body != originalBody, deadlineCalls.Load())
 		}
+	}
+}
+
+func TestUnsupportedResponseWriterAbortsBeforeReadingBody(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/account/login", nil)
+	body := &countingReadCloser{reader: strings.NewReader(`{"login":"must-not-be-read"}`)}
+	request.Body = body
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	writer := &opaqueResponseWriter{target: recorder}
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		(&handler{}).ServeHTTP(writer, request)
+	}()
+	if recovered != http.ErrAbortHandler {
+		t.Fatalf("recovered panic = %v, want http.ErrAbortHandler", recovered)
+	}
+	if !request.Close || body.reads.Load() != 0 || body.closes.Load() != 0 {
+		t.Fatalf("failed deadline request close=%v body reads=%d closes=%d", request.Close, body.reads.Load(), body.closes.Load())
+	}
+}
+
+func TestReadDeadlineClearFailureAbortsBeforeService(t *testing.T) {
+	var setCalls atomic.Int32
+	var clearCalls atomic.Int32
+	handler := &handler{
+		config: Config{PublicOrigin: "https://cloud.example"},
+		setReadDeadlineForTest: func(deadline time.Time) error {
+			if deadline.IsZero() {
+				clearCalls.Add(1)
+				return errors.New("injected deadline clear failure")
+			}
+			setCalls.Add(1)
+			return nil
+		},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader(`{"login":"must-not-reach-service"}`))
+	request.Header.Set("Content-Type", "application/json")
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+	}()
+	if recovered != http.ErrAbortHandler {
+		t.Fatalf("recovered panic = %v, want http.ErrAbortHandler", recovered)
+	}
+	if !request.Close || setCalls.Load() != 1 || clearCalls.Load() == 0 {
+		t.Fatalf("clear failure request close=%v set calls=%d clear calls=%d", request.Close, setCalls.Load(), clearCalls.Load())
 	}
 }
 
@@ -504,6 +652,13 @@ type loginContractStore struct {
 	calls     atomic.Int32
 }
 
+type delayedLoginStore struct {
+	account.Store
+	delay    time.Duration
+	called   atomic.Bool
+	canceled atomic.Bool
+}
+
 type setupContractStore struct {
 	account.Store
 	record  account.Record
@@ -514,6 +669,38 @@ type changePasswordContractStore struct {
 	account.Store
 	record  account.Record
 	updated bool
+}
+
+type opaqueResponseWriter struct {
+	target http.ResponseWriter
+}
+
+func (writer *opaqueResponseWriter) Header() http.Header {
+	return writer.target.Header()
+}
+
+func (writer *opaqueResponseWriter) Write(payload []byte) (int, error) {
+	return writer.target.Write(payload)
+}
+
+func (writer *opaqueResponseWriter) WriteHeader(status int) {
+	writer.target.WriteHeader(status)
+}
+
+type countingReadCloser struct {
+	reader io.Reader
+	reads  atomic.Int32
+	closes atomic.Int32
+}
+
+func (body *countingReadCloser) Read(buffer []byte) (int, error) {
+	body.reads.Add(1)
+	return body.reader.Read(buffer)
+}
+
+func (body *countingReadCloser) Close() error {
+	body.closes.Add(1)
+	return nil
 }
 
 func (store *changePasswordContractStore) AccountByID(context.Context, string) (account.Record, error) {
@@ -547,6 +734,19 @@ func (store *loginContractStore) AccountByLogin(context.Context, string) (accoun
 	return store.record, store.lookupErr
 }
 
+func (store *delayedLoginStore) AccountByLogin(ctx context.Context, _ string) (account.Record, error) {
+	store.called.Store(true)
+	timer := time.NewTimer(store.delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return account.Record{}, account.ErrAccountNotFound
+	case <-ctx.Done():
+		store.canceled.Store(true)
+		return account.Record{}, ctx.Err()
+	}
+}
+
 func (store *loginContractStore) CreateSession(_ context.Context, record account.Record, _ account.Session, _ time.Time) (account.Record, error) {
 	return record, nil
 }
@@ -561,6 +761,36 @@ func cloneLogEvent(event map[string]any) map[string]any {
 	return result
 }
 
+func slowBodyHTTPResponse(t *testing.T, server *httptest.Server, path, contentType string) (int, http.Header, []byte, time.Duration) {
+	t.Helper()
+	connection, err := net.Dial("tcp", server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err = io.WriteString(connection, "POST "+path+" HTTP/1.1\r\nHost: "+server.Listener.Addr().String()+"\r\nContent-Type: "+contentType+"\r\nContent-Length: 1024\r\n\r\n{\"login\":\"sensitive-slow-login@example.com\"")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: http.MethodPost})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, response.Header.Clone(), payload, time.Since(started)
+}
+
+func successfulReadDeadline(time.Time) error { return nil }
+
 var _ account.Store = (*loginContractStore)(nil)
+var _ account.Store = (*delayedLoginStore)(nil)
 var _ account.Store = (*setupContractStore)(nil)
 var _ account.Store = (*changePasswordContractStore)(nil)

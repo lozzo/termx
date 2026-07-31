@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"container/heap"
 	"context"
 	"errors"
 	"fmt"
@@ -38,6 +39,39 @@ type directServerOptions struct {
 type directAnswerFunc func(context.Context, Answerer, *SignalingOffer) (*SignalingAnswer, error)
 
 var errDirectConnectionClosePanic = errors.New("direct signaling connection close failed")
+
+type directConsumedExpiry struct {
+	requestID string
+	expiresAt time.Time
+}
+
+type directConsumedExpiryHeap []directConsumedExpiry
+
+func (entries directConsumedExpiryHeap) Len() int { return len(entries) }
+
+func (entries directConsumedExpiryHeap) Less(left, right int) bool {
+	if entries[left].expiresAt.Equal(entries[right].expiresAt) {
+		return entries[left].requestID < entries[right].requestID
+	}
+	return entries[left].expiresAt.Before(entries[right].expiresAt)
+}
+
+func (entries directConsumedExpiryHeap) Swap(left, right int) {
+	entries[left], entries[right] = entries[right], entries[left]
+}
+
+func (entries *directConsumedExpiryHeap) Push(value any) {
+	*entries = append(*entries, value.(directConsumedExpiry))
+}
+
+func (entries *directConsumedExpiryHeap) Pop() any {
+	old := *entries
+	last := len(old) - 1
+	entry := old[last]
+	old[last] = directConsumedExpiry{}
+	*entries = old[:last]
+	return entry
+}
 
 type directConnection struct {
 	net.Conn
@@ -83,16 +117,17 @@ type DirectServer struct {
 	beforeConnectionWorkerRun func()
 	answerForTest             directAnswerFunc
 
-	mu           sync.Mutex
-	consumed     map[string]time.Time
-	conns        map[*directConnection]struct{}
-	preAuthTotal int
-	preAuthByIP  map[string]int
-	peerSlots    chan struct{}
-	closed       bool
-	closeOnce    sync.Once
-	closeErr     error
-	wg           sync.WaitGroup
+	mu             sync.Mutex
+	consumed       map[string]time.Time
+	consumedExpiry directConsumedExpiryHeap
+	conns          map[*directConnection]struct{}
+	preAuthTotal   int
+	preAuthByIP    map[string]int
+	peerSlots      chan struct{}
+	closed         bool
+	closeOnce      sync.Once
+	closeErr       error
+	wg             sync.WaitGroup
 }
 
 // DirectSignalingAdmission 只在公开信令分配 peer 前检查持久 grant 或一次性 pairing claim；它不能替代 DataChannel proof。
@@ -376,11 +411,7 @@ func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV2
 	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	for requestID, expiry := range server.consumed {
-		if !expiry.After(now) {
-			delete(server.consumed, requestID)
-		}
-	}
+	server.cleanupExpiredConsumed(now)
 	if _, exists := server.consumed[request.GetRequestId()]; exists {
 		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED
 	}
@@ -388,7 +419,25 @@ func (server *DirectServer) admit(request *remoteauthpb.DirectSignalingRequestV2
 		return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_OVERLOADED
 	}
 	server.consumed[request.GetRequestId()] = expiresAt
+	heap.Push(&server.consumedExpiry, directConsumedExpiry{requestID: request.GetRequestId(), expiresAt: expiresAt})
 	return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED
+}
+
+// cleanupExpiredConsumed returns the number of heap-head entries inspected while server.mu is held.
+func (server *DirectServer) cleanupExpiredConsumed(now time.Time) int {
+	inspected := 0
+	for len(server.consumedExpiry) > 0 {
+		inspected++
+		entry := server.consumedExpiry[0]
+		if entry.expiresAt.After(now) {
+			break
+		}
+		heap.Pop(&server.consumedExpiry)
+		if expiry, exists := server.consumed[entry.requestID]; exists && expiry.Equal(entry.expiresAt) {
+			delete(server.consumed, entry.requestID)
+		}
+	}
+	return inspected
 }
 
 func (server *DirectServer) writeError(ctx context.Context, connection net.Conn, code remoteauthpb.DirectSignalingErrorCode, message string) {

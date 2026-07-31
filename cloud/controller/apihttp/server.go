@@ -174,8 +174,21 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		handler.grpcServer.ServeHTTP(writer, request)
 		return
 	}
-	if body := handler.limitRequestBodyRead(writer, request); body != nil {
-		defer body.clearDeadline()
+	lifecycleRequest := request
+	body, err := handler.limitRequestBodyRead(writer, lifecycleRequest)
+	if err != nil {
+		lifecycleRequest.Close = true
+		panic(http.ErrAbortHandler)
+	}
+	if body != nil {
+		defer func() {
+			if body.deadlineActive() {
+				lifecycleRequest.Close = true
+			}
+			if err := body.Close(); errors.Is(err, errRequestBodyDeadlineUnavailable) {
+				panic(http.ErrAbortHandler)
+			}
+		}()
 	}
 	requestID := uuid.NewString()
 	writer.Header().Set("X-Request-ID", requestID)
@@ -518,9 +531,9 @@ func readProtoLimit(request *http.Request, message proto.Message, limit int64) e
 	return (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, message)
 }
 
-func (handler *handler) limitRequestBodyRead(writer http.ResponseWriter, request *http.Request) *lazyReadDeadlineBody {
+func (handler *handler) limitRequestBodyRead(writer http.ResponseWriter, request *http.Request) (*lazyReadDeadlineBody, error) {
 	if request == nil || request.Body == nil || request.Body == http.NoBody || !requestBodyMayBeRead(request) {
-		return nil
+		return nil, nil
 	}
 	timeout := handler.bodyReadTimeout
 	if timeout <= 0 {
@@ -536,9 +549,12 @@ func (handler *handler) limitRequestBodyRead(writer http.ResponseWriter, request
 	if setReadDeadline == nil {
 		setReadDeadline = http.NewResponseController(writer).SetReadDeadline
 	}
-	body := &lazyReadDeadlineBody{ReadCloser: request.Body, timeout: timeout, setReadDeadline: setReadDeadline}
+	if err := setReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, errRequestBodyDeadlineUnavailable
+	}
+	body := &lazyReadDeadlineBody{ReadCloser: request.Body, timeout: timeout, setReadDeadline: setReadDeadline, deadlineSet: true}
 	request.Body = body
-	return body
+	return body, nil
 }
 
 func requestBodyMayBeRead(request *http.Request) bool {
@@ -562,33 +578,55 @@ type lazyReadDeadlineBody struct {
 	io.ReadCloser
 	timeout         time.Duration
 	setReadDeadline func(time.Time) error
-	once            sync.Once
 	mu              sync.Mutex
 	deadlineSet     bool
+	closeOnce       sync.Once
+	closeErr        error
 }
 
 func (body *lazyReadDeadlineBody) Read(buffer []byte) (int, error) {
-	body.once.Do(func() {
-		if err := body.setReadDeadline(time.Now().Add(body.timeout)); err == nil {
-			body.mu.Lock()
-			body.deadlineSet = true
-			body.mu.Unlock()
-		}
-	})
 	read, err := body.ReadCloser.Read(buffer)
 	if bodyReadTimedOut(err) {
 		return read, errRequestBodyTimeout
 	}
+	if errors.Is(err, io.EOF) {
+		if clearErr := body.clearDeadline(); clearErr != nil {
+			return read, clearErr
+		}
+	}
 	return read, err
 }
 
-func (body *lazyReadDeadlineBody) clearDeadline() {
-	body.mu.Lock()
-	set := body.deadlineSet
-	body.mu.Unlock()
-	if set {
-		_ = body.setReadDeadline(time.Time{})
+func (body *lazyReadDeadlineBody) Close() error {
+	body.closeOnce.Do(func() {
+		body.closeErr = body.ReadCloser.Close()
+	})
+	if err := body.clearDeadline(); err != nil {
+		return err
 	}
+	if bodyReadTimedOut(body.closeErr) {
+		return errRequestBodyTimeout
+	}
+	return body.closeErr
+}
+
+func (body *lazyReadDeadlineBody) deadlineActive() bool {
+	body.mu.Lock()
+	defer body.mu.Unlock()
+	return body.deadlineSet
+}
+
+func (body *lazyReadDeadlineBody) clearDeadline() error {
+	body.mu.Lock()
+	defer body.mu.Unlock()
+	if !body.deadlineSet {
+		return nil
+	}
+	if err := body.setReadDeadline(time.Time{}); err != nil {
+		return errRequestBodyDeadlineUnavailable
+	}
+	body.deadlineSet = false
+	return nil
 }
 
 func bodyReadTimedOut(err error) bool {
@@ -653,8 +691,9 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 }
 
 var (
-	errRequestBodyTooLarge = errors.New("request body exceeds limit")
-	errRequestBodyTimeout  = errors.New("request body read timed out")
+	errRequestBodyTooLarge            = errors.New("request body exceeds limit")
+	errRequestBodyTimeout             = errors.New("request body read timed out")
+	errRequestBodyDeadlineUnavailable = errors.New("request body read deadline is unavailable")
 )
 
 type apiResponseWriter struct {
