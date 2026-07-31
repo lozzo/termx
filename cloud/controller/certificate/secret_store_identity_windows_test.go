@@ -16,7 +16,7 @@ func TestFileSecretStoreRootAndMarkerUseProtectedDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	directory, err := openDirectoryNoFollow(root)
+	directory, err := store.root.Open(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestFileSecretStoreRootAndMarkerUseProtectedDACL(t *testing.T) {
 	if err := directory.Close(); err != nil {
 		t.Fatal(err)
 	}
-	marker, err := openFileNoFollow(filepath.Join(root, storeMarkerFile))
+	marker, err := store.root.Open(storeMarkerFile)
 	if err != nil {
 		t.Fatal(err)
 	}

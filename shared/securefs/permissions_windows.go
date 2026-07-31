@@ -28,16 +28,6 @@ func SecureDirectory(path string) error { return secureWindowsPath(path, true) }
 // New directories receive their protected DACL as part of CreateDirectory;
 // existing directories are never repaired and must pass same-handle checks.
 func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
-	return openOrCreatePrivateDirectory(path, true)
-}
-
-// CreatePrivateDirectory atomically creates one protected-DACL directory and
-// rejects an existing path instead of adopting or repairing it.
-func CreatePrivateDirectory(path string) (*os.File, error) {
-	return openOrCreatePrivateDirectory(path, false)
-}
-
-func openOrCreatePrivateDirectory(path string, allowExisting bool) (*os.File, error) {
 	path = filepath.Clean(path)
 	descriptor, err := privateWindowsSecurityDescriptor(true)
 	if err != nil {
@@ -52,7 +42,7 @@ func openOrCreatePrivateDirectory(path string, allowExisting bool) (*os.File, er
 		SecurityDescriptor: descriptor,
 	}
 	createErr := windows.CreateDirectory(pathPointer, attributes)
-	if createErr != nil && (!allowExisting || !errors.Is(createErr, windows.ERROR_ALREADY_EXISTS)) {
+	if createErr != nil && !errors.Is(createErr, windows.ERROR_ALREADY_EXISTS) {
 		return nil, createErr
 	}
 	handle, err := windows.CreateFile(
@@ -79,9 +69,64 @@ func openOrCreatePrivateDirectory(path string, allowExisting bool) (*os.File, er
 	return directory, nil
 }
 
+var reOpenFile = windows.NewLazySystemDLL("kernel32.dll").NewProc("ReOpenFile")
+
+// SecureDirectoryHandle writes a protected private DACL through the identity
+// of an already-open directory rather than resolving its path again.
+func SecureDirectoryHandle(directory *os.File) error {
+	return secureWindowsHandle(directory, true)
+}
+
 // SecureFile 为 Windows 私钥、credential 或 runtime record 写入受保护 DACL。
 // 权限失败时调用方必须停止使用该秘密，不能回退到 chmod 的只读位映射。
 func SecureFile(path string) error { return secureWindowsPath(path, false) }
+
+// SecureFileHandle writes a protected private DACL through the identity of an
+// already-open file rather than resolving its path again.
+func SecureFileHandle(file *os.File) error {
+	return secureWindowsHandle(file, false)
+}
+
+func secureWindowsHandle(file *os.File, directory bool) error {
+	if file == nil {
+		return errors.New("private object handle is required")
+	}
+	descriptor, err := privateWindowsSecurityDescriptor(directory)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := descriptor.DACL()
+	if err != nil {
+		return err
+	}
+	flags := uint32(0)
+	if directory {
+		flags = windows.FILE_FLAG_BACKUP_SEMANTICS
+	}
+	handle, _, callErr := reOpenFile.Call(
+		file.Fd(),
+		uintptr(windows.WRITE_DAC),
+		uintptr(windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE),
+		uintptr(flags),
+	)
+	if windows.Handle(handle) == windows.InvalidHandle {
+		if callErr != nil {
+			return callErr
+		}
+		return errors.New("reopen private object handle for DACL update")
+	}
+	reopened := windows.Handle(handle)
+	defer windows.CloseHandle(reopened)
+	return windows.SetSecurityInfo(
+		reopened,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil,
+		nil,
+		dacl,
+		nil,
+	)
+}
 
 // IsPrivateFile verifies the opened file rather than querying security metadata by path.
 func IsPrivateFile(path string, info os.FileInfo) bool {

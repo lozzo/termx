@@ -28,7 +28,71 @@ func TestNewFileSecretStoreRejectsWideExistingRootWithoutChmod(t *testing.T) {
 	}
 }
 
-func TestFileSecretStoreFailsClosedAfterAncestorPathRetarget(t *testing.T) {
+func TestNewFileSecretStoreRejectsWideImmediateParentWithoutMutation(t *testing.T) {
+	base := physicalTempDir(t)
+	parent := filepath.Join(base, "wide-parent")
+	if err := os.Mkdir(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "certificates")
+	if store, err := NewFileSecretStore(root); err == nil {
+		_ = store.Close()
+		t.Fatal("group-accessible immediate parent was accepted")
+	}
+	info, err := os.Lstat(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("immediate parent mode was repaired to %#o", info.Mode().Perm())
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatalf("root was created under unsafe parent: %v", err)
+	}
+}
+
+func TestPinnedManagedDirectorySurvivesCheckThenReplacement(t *testing.T) {
+	root := filepath.Join(physicalTempDir(t), "certificates")
+	store, err := NewFileSecretStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	reference, err := store.Put([]byte("original certificate"), []byte("original private key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, exists, err := openManagedDirectory(store.root, reference, true)
+	if err != nil || !exists {
+		t.Fatalf("pin managed directory: exists=%v err=%v", exists, err)
+	}
+	defer directory.Close()
+	moved := filepath.Join(root, ".checked-original")
+	if err := os.Rename(filepath.Join(root, reference), moved); err != nil {
+		t.Fatal(err)
+	}
+	replacement := filepath.Join(root, reference)
+	createPrivateDirectoryForTest(t, replacement)
+	writePrivateFileForTest(t, filepath.Join(replacement, certificateFile), []byte("replacement certificate"))
+	writePrivateFileForTest(t, filepath.Join(replacement, privateKeyFile), []byte("replacement private key"))
+	certificatePEM, err := readPrivateFile(directory, certificateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKeyPEM, err := readPrivateFile(directory, privateKeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(certificatePEM) != "original certificate" || string(privateKeyPEM) != "original private key" {
+		t.Fatalf("pinned read followed replacement: certificate=%q key=%q", certificatePEM, privateKeyPEM)
+	}
+	replacementCertificate, err := os.ReadFile(filepath.Join(replacement, certificateFile))
+	if err != nil || string(replacementCertificate) != "replacement certificate" {
+		t.Fatalf("replacement was modified: payload=%q err=%v", replacementCertificate, err)
+	}
+}
+
+func TestFileSecretStoreKeepsPinnedRootAfterAncestorRetarget(t *testing.T) {
 	base := physicalTempDir(t)
 	parent := filepath.Join(base, "owner")
 	if err := os.Mkdir(parent, 0o700); err != nil {
@@ -67,11 +131,12 @@ func TestFileSecretStoreFailsClosedAfterAncestorPathRetarget(t *testing.T) {
 	if err := os.Symlink(external, parent); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Reconcile(nil); err == nil {
-		t.Fatal("retargeted ancestor path was accepted")
+	certificatePEM, privateKeyPEM, err := store.Read(reference)
+	if err != nil || string(certificatePEM) != "certificate" || string(privateKeyPEM) != "private key" {
+		t.Fatalf("pinned store read changed after retarget: certificate=%q key=%q err=%v", certificatePEM, privateKeyPEM, err)
 	}
 	if _, err := os.Lstat(filepath.Join(movedParent, "certificates", reference)); err != nil {
-		t.Fatalf("original physical store was modified: %v", err)
+		t.Fatalf("original pinned store was not used: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(externalRoot, externalReference)); err != nil {
 		t.Fatalf("retargeted external store was modified: %v", err)

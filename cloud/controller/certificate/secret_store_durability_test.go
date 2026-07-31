@@ -17,22 +17,23 @@ func TestFileSecretStorePutSyncFailureUsesDurableDeleteOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	realRename, realRemove := store.rename, store.remove
 	operations := make([]string, 0, 8)
 	store.rename = func(from, to string) error {
+		assertRelativeStorePath(t, from)
+		assertRelativeStorePath(t, to)
 		operations = append(operations, "rename:"+secretPathKind(from)+"->"+secretPathKind(to))
 		return realRename(from, to)
 	}
 	store.remove = func(path string) error {
+		assertRelativeStorePath(t, path)
 		operations = append(operations, "remove:"+secretPathKind(path))
 		return realRemove(path)
 	}
 	wantErr := errors.New("publish root sync failed")
 	syncCalls := 0
-	store.syncDirectory = func(path string) error {
-		if path != root {
-			t.Fatalf("sync path = %q, want root", path)
-		}
+	store.syncRoot = func() error {
 		syncCalls++
 		operations = append(operations, "sync:root")
 		if syncCalls == 1 {
@@ -59,10 +60,11 @@ func TestFileSecretStorePutJoinsPublishAndCleanupSyncFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	publishErr := errors.New("publish sync failed")
 	cleanupErr := errors.New("tombstone sync failed")
 	syncCalls := 0
-	store.syncDirectory = func(string) error {
+	store.syncRoot = func() error {
 		syncCalls++
 		if syncCalls == 1 {
 			return publishErr
@@ -76,7 +78,7 @@ func TestFileSecretStorePutJoinsPublishAndCleanupSyncFailures(t *testing.T) {
 	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), deletePrefix) {
 		t.Fatalf("failed durable cleanup state = %v, want one tombstone", entries)
 	}
-	store.syncDirectory = func(string) error { return nil }
+	store.syncRoot = func() error { return nil }
 	reference := strings.TrimPrefix(entries[0].Name(), deletePrefix)
 	if err := store.Delete(reference); err != nil {
 		t.Fatalf("retry tombstone cleanup: %v", err)
@@ -89,6 +91,7 @@ func TestFileSecretStoreDeleteRetriesInterruptedTombstone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	reference, err := store.Put([]byte("certificate"), []byte("private key"))
 	if err != nil {
 		t.Fatal(err)
@@ -131,13 +134,14 @@ func TestFileSecretStoreDeleteRetriesFinalRootSyncFromNeitherState(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	reference, err := store.Put([]byte("certificate"), []byte("private key"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantErr := errors.New("final deletion sync failed")
 	syncCalls := 0
-	store.syncDirectory = func(string) error {
+	store.syncRoot = func() error {
 		syncCalls++
 		if syncCalls == 2 {
 			return wantErr
@@ -164,13 +168,14 @@ func TestFileSecretStoreReconcileRetriesFinalRootSyncAfterCleanup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	orphan, err := store.Put([]byte("certificate"), []byte("private key"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantErr := errors.New("orphan deletion sync failed")
 	syncCalls := 0
-	store.syncDirectory = func(string) error {
+	store.syncRoot = func() error {
 		syncCalls++
 		if syncCalls == 2 {
 			return wantErr
@@ -197,6 +202,7 @@ func TestFileSecretStoreReconcileRestoresAndCleansManagedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	active, err := store.Put([]byte("active cert"), []byte("active key"))
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +258,7 @@ func TestFileSecretStoreReconcileSyncsRestoredTruthBeforeCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	active, err := store.Put([]byte("active cert"), []byte("active key"))
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +270,7 @@ func TestFileSecretStoreReconcileSyncsRestoredTruthBeforeCleanup(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, active), filepath.Join(root, deletePrefix+active)); err != nil {
 		t.Fatal(err)
 	}
-	realRename, realRemove, realSync := store.rename, store.remove, store.syncDirectory
+	realRename, realRemove, realSync := store.rename, store.remove, store.syncRoot
 	operations := make([]string, 0, 8)
 	store.rename = func(from, to string) error {
 		operations = append(operations, "rename:"+secretPathKind(from)+"->"+secretPathKind(to))
@@ -273,9 +280,9 @@ func TestFileSecretStoreReconcileSyncsRestoredTruthBeforeCleanup(t *testing.T) {
 		operations = append(operations, "remove:"+secretPathKind(path))
 		return realRemove(path)
 	}
-	store.syncDirectory = func(path string) error {
+	store.syncRoot = func() error {
 		operations = append(operations, "sync:root")
-		return realSync(path)
+		return realSync()
 	}
 	if err := store.Reconcile([]string{active}); err != nil {
 		t.Fatal(err)
@@ -294,6 +301,7 @@ func TestFileSecretStoreReconcileFailsClosedBeforeCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	orphan, err := store.Put([]byte("orphan cert"), []byte("orphan key"))
 	if err != nil {
 		t.Fatal(err)
@@ -313,6 +321,7 @@ func TestFileSecretStoreReconcileRejectsIncompleteActiveTombstone(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	reference := uuid.NewString()
 	tombstone := filepath.Join(root, deletePrefix+reference)
 	if err := os.Mkdir(tombstone, 0o700); err != nil {
@@ -336,6 +345,7 @@ func TestFileSecretStoreReconcileRejectsUnsafeEntries(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { _ = store.Close() })
 		outside := t.TempDir()
 		path := filepath.Join(root, uuid.NewString())
 		if err := os.Symlink(outside, path); err != nil {
@@ -355,6 +365,7 @@ func TestFileSecretStoreReconcileRejectsUnsafeEntries(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { _ = store.Close() })
 		reference, err := store.Put([]byte("certificate"), []byte("private key"))
 		if err != nil {
 			t.Fatal(err)
@@ -387,6 +398,13 @@ func secretPathKind(path string) string {
 		return "live"
 	default:
 		return base
+	}
+}
+
+func assertRelativeStorePath(t *testing.T, path string) {
+	t.Helper()
+	if filepath.IsAbs(path) || !filepath.IsLocal(path) {
+		t.Fatalf("durability hook received non-local path %q", path)
 	}
 }
 

@@ -31,21 +31,40 @@ func TestSecureFileAndDirectoryArePrivate(t *testing.T) {
 	}
 }
 
-func TestCreatePrivateDirectoryDoesNotAdoptExistingPath(t *testing.T) {
-	directory := filepath.Join(t.TempDir(), "create-only")
-	handle, err := CreatePrivateDirectory(directory)
+func TestSecureHandlePermissionsArePrivate(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "handle-private")
+	if err := os.Mkdir(directory, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	directoryHandle, err := os.Open(directory)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePrivateDirectoryHandle(handle); err != nil {
-		_ = handle.Close()
+	if err := SecureDirectoryHandle(directoryHandle); err != nil {
+		_ = directoryHandle.Close()
 		t.Fatal(err)
 	}
-	if err := handle.Close(); err != nil {
+	if err := ValidatePrivateDirectoryHandle(directoryHandle); err != nil {
+		_ = directoryHandle.Close()
 		t.Fatal(err)
 	}
-	if adopted, err := CreatePrivateDirectory(directory); err == nil {
-		_ = adopted.Close()
-		t.Fatal("create-only private directory adopted an existing path")
+	if err := directoryHandle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := os.OpenFile(filepath.Join(directory, "secret"), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SecureFileHandle(file); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := ValidatePrivateFileHandle(file); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

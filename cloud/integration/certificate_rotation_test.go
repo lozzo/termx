@@ -29,6 +29,7 @@ import (
 	controllerruntime "github.com/anytty/anytty/cloud/controller/runtime"
 	edgeruntime "github.com/anytty/anytty/cloud/edge/runtime"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/shared/securefs"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -97,6 +98,9 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	}
 	temporary, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := securefs.SecureDirectory(temporary); err != nil {
 		t.Fatal(err)
 	}
 	secretRoot := filepath.Join(temporary, "controller-certificates")

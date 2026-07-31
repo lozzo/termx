@@ -118,8 +118,63 @@ func TestNewFileSecretStorePersistsMarkerAndReopensExistingRoot(t *testing.T) {
 		t.Fatalf("reopen correctly marked root: %v", err)
 	}
 	defer reopened.Close()
-	if !sameFilesystemPath(reopened.root, root) {
-		t.Fatalf("stored physical root=%q want=%q", reopened.root, root)
+	if err := reopened.Reconcile(nil); err != nil {
+		t.Fatalf("reconcile reopened store: %v", err)
+	}
+}
+
+func TestPinnedParentCreatesRootInOriginalDirectoryAfterPathReplacement(t *testing.T) {
+	base := physicalTempDir(t)
+	parentPath := filepath.Join(base, "owner")
+	createPrivateDirectoryForTest(t, parentPath)
+	rootPath := filepath.Join(parentPath, "certificates")
+	parent, name, err := openPinnedParent(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	movedParent := filepath.Join(base, "pinned-owner")
+	if err := os.Rename(parentPath, movedParent); err != nil {
+		_ = parent.Close()
+		t.Fatal(err)
+	}
+	createPrivateDirectoryForTest(t, parentPath)
+	store, err := openFileSecretStore(parent, name)
+	closeErr := parent.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(errors.Join(err, closeErr))
+	}
+	defer store.Close()
+	if _, err := os.Lstat(filepath.Join(movedParent, "certificates", storeMarkerFile)); err != nil {
+		t.Fatalf("pinned parent did not receive new root: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(parentPath, "certificates")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("replacement parent was modified: %v", err)
+	}
+}
+
+func TestFileSecretStoreCloseIsIdempotentAndFailsClosed(t *testing.T) {
+	store, err := NewFileSecretStore(filepath.Join(physicalTempDir(t), "certificates"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	reference := uuid.NewString()
+	if _, err := store.Put([]byte("certificate"), []byte("private key")); err == nil {
+		t.Fatal("Put succeeded after Close")
+	}
+	if _, _, err := store.Read(reference); err == nil {
+		t.Fatal("Read succeeded after Close")
+	}
+	if err := store.Delete(reference); err == nil {
+		t.Fatal("Delete succeeded after Close")
+	}
+	if err := store.Reconcile(nil); err == nil {
+		t.Fatal("Reconcile succeeded after Close")
 	}
 }
 
@@ -185,11 +240,10 @@ func TestFileSecretStoreReconcileDoesNotFollowUUIDSymlink(t *testing.T) {
 
 func createPrivateDirectoryForTest(t *testing.T, path string) {
 	t.Helper()
-	directory, err := securefs.CreatePrivateDirectory(path)
-	if err != nil {
+	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := directory.Close(); err != nil {
+	if err := securefs.SecureDirectory(path); err != nil {
 		t.Fatal(err)
 	}
 }

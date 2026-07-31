@@ -25,15 +25,6 @@ func OpenOrCreatePrivateDirectory(path string) (*os.File, error) {
 	return openPrivateDirectory(path)
 }
 
-// CreatePrivateDirectory atomically creates one private directory and rejects
-// an existing path instead of adopting or repairing it.
-func CreatePrivateDirectory(path string) (*os.File, error) {
-	if err := os.Mkdir(path, 0o700); err != nil {
-		return nil, err
-	}
-	return openPrivateDirectory(path)
-}
-
 func openPrivateDirectory(path string) (*os.File, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
@@ -49,6 +40,15 @@ func openPrivateDirectory(path string) (*os.File, error) {
 		return nil, err
 	}
 	return directory, nil
+}
+
+// SecureDirectoryHandle restricts an already-open directory without resolving
+// its path again.
+func SecureDirectoryHandle(directory *os.File) error {
+	if directory == nil {
+		return errors.New("private directory handle is required")
+	}
+	return directory.Chmod(0o700)
 }
 
 // ValidatePrivateDirectoryHandle verifies owner and mode on an already-open directory.
@@ -73,6 +73,14 @@ func ValidatePrivateDirectoryHandle(directory *os.File) error {
 // SecureFile 把私钥、credential 或 runtime record 限制为当前 Unix 账号可读写。
 // 该函数不创建文件，也不替代调用方的原子发布和 Sync 边界。
 func SecureFile(path string) error { return os.Chmod(path, 0o600) }
+
+// SecureFileHandle restricts an already-open file without resolving its path again.
+func SecureFileHandle(file *os.File) error {
+	if file == nil {
+		return errors.New("private file handle is required")
+	}
+	return file.Chmod(0o600)
+}
 
 // IsPrivateFile 验证文件由当前 Unix 账号拥有且 group/other 没有权限。
 // 元数据缺失或平台 owner 信息不可用时返回 false，调用方必须 fail closed。

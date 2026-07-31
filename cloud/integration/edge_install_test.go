@@ -35,6 +35,7 @@ import (
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/anytty/anytty/shared/securefs"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -66,6 +67,9 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	caCertificate, caKey := newCertificateAuthority(t)
 	temporary, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := securefs.SecureDirectory(temporary); err != nil {
 		t.Fatal(err)
 	}
 	caCertificateFile := writeTestFile(t, temporary, "edge-ca.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCertificate.Raw}))

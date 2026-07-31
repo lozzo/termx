@@ -311,6 +311,7 @@ func TestReconcileSecretsFailsClosedWhenStartupActiveSecretIsMissing(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = fileStore.Close() })
 	service := newDurabilityTestService(t, store, fileStore, now, nil)
 	if err := service.ReconcileSecrets(context.Background()); err == nil {
 		t.Fatal("startup reconciliation accepted a missing active secret")

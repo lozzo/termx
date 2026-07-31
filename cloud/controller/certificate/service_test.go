@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/anytty/anytty/shared/securefs"
 )
 
 func TestValidatePairAndEndpoint(t *testing.T) {
@@ -61,6 +63,7 @@ func TestFileSecretStorePermissionsAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	certificatePEM, privateKeyPEM := testPair(t, time.Now().UTC(), "edge.example.com")
 	reference, err := store.Put(certificatePEM, privateKeyPEM)
 	if err != nil {
@@ -95,9 +98,10 @@ func TestFileSecretStoreRejectsAnUnsyncedPublishedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	wantErr := errors.New("directory sync failed")
 	syncCalls := 0
-	store.syncDirectory = func(string) error {
+	store.syncRoot = func() error {
 		syncCalls++
 		if syncCalls == 1 {
 			return wantErr
@@ -131,6 +135,9 @@ func physicalTempDir(t *testing.T) string {
 	t.Helper()
 	directory, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := securefs.SecureDirectory(directory); err != nil {
 		t.Fatal(err)
 	}
 	return directory
