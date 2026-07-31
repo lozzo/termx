@@ -1,7 +1,7 @@
 CREATE TABLE accounts (
     account_id uuid PRIMARY KEY,
     display_name text NOT NULL,
-    state text NOT NULL CHECK (state IN ('pending', 'active', 'disabled')),
+    state text NOT NULL CHECK (state IN ('active', 'disabled')),
     revision bigint NOT NULL CHECK (revision > 0),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
@@ -18,7 +18,6 @@ CREATE TABLE daemons (
     revision bigint NOT NULL CHECK (revision > 0),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
-    UNIQUE (account_id, daemon_id),
     CHECK (octet_length(device_public_key) = 32)
 );
 
