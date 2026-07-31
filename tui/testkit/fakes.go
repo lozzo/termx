@@ -84,46 +84,46 @@ func (client *FakeCoreClient) ReleaseHistory(_ context.Context, req port.History
 }
 
 type FakeTerminalService struct {
-	liveInvalidationMu       sync.Mutex
-	liveInvalidationRequests []port.TerminalLiveEventRequest
-	AttachResult             port.TerminalAttachResult
-	ListResult               port.TerminalListResult
-	CreateResult             port.TerminalCreateResult
-	SurfaceResult            port.TerminalSurfaceResult
-	AttachErr                error
-	ListErr                  error
-	CreateErr                error
-	RestartErr               error
-	ReconnectErr             error
-	KillErr                  error
-	RemoveErr                error
-	EditErr                  error
-	EditTagsErr              error
-	InputErr                 error
-	ResizeErr                error
-	ResizeResult             port.TerminalResizeResult
-	SurfaceErr               error
-	LiveInvalidationsCh      chan port.TerminalLiveEvent
-	LiveInvalidationsErr     error
-	PathResult               port.PathListDirectoriesResult
-	PathErr                  error
-	PathDefaultsResult       port.PathDefaultsResult
-	PathDefaultsErr          error
-	Attaches                 []port.TerminalAttachRequest
-	Detaches                 []port.TerminalDetachRequest
-	Lists                    []port.TerminalListRequest
-	Creates                  []port.TerminalCreateRequest
-	Restarts                 []port.TerminalRestartRequest
-	Reconnects               []port.TerminalReconnectRequest
-	Kills                    []port.TerminalKillRequest
-	Removes                  []port.TerminalRemoveRequest
-	Edits                    []port.TerminalEditMetadataRequest
-	TagEdits                 []port.TerminalEditTagsRequest
-	Inputs                   []port.TerminalInputRequest
-	Resizes                  []port.TerminalResizeRequest
-	Surfaces                 []port.TerminalSurfaceRequest
-	PathRequests             []port.PathListDirectoriesRequest
-	PathDefaultsRequests     []port.PathDefaultsRequest
+	liveScreenNextMu       sync.Mutex
+	liveScreenNextRequests []port.TerminalSurfaceRequest
+	AttachResult           port.TerminalAttachResult
+	ListResult             port.TerminalListResult
+	CreateResult           port.TerminalCreateResult
+	SurfaceResult          port.TerminalSurfaceResult
+	AttachErr              error
+	ListErr                error
+	CreateErr              error
+	RestartErr             error
+	ReconnectErr           error
+	KillErr                error
+	RemoveErr              error
+	EditErr                error
+	EditTagsErr            error
+	InputErr               error
+	ResizeErr              error
+	ResizeResult           port.TerminalResizeResult
+	SurfaceErr             error
+	LiveScreenNextCh       chan port.TerminalSurfaceResult
+	LiveScreenNextErr      error
+	PathResult             port.PathListDirectoriesResult
+	PathErr                error
+	PathDefaultsResult     port.PathDefaultsResult
+	PathDefaultsErr        error
+	Attaches               []port.TerminalAttachRequest
+	Detaches               []port.TerminalDetachRequest
+	Lists                  []port.TerminalListRequest
+	Creates                []port.TerminalCreateRequest
+	Restarts               []port.TerminalRestartRequest
+	Reconnects             []port.TerminalReconnectRequest
+	Kills                  []port.TerminalKillRequest
+	Removes                []port.TerminalRemoveRequest
+	Edits                  []port.TerminalEditMetadataRequest
+	TagEdits               []port.TerminalEditTagsRequest
+	Inputs                 []port.TerminalInputRequest
+	Resizes                []port.TerminalResizeRequest
+	Surfaces               []port.TerminalSurfaceRequest
+	PathRequests           []port.PathListDirectoriesRequest
+	PathDefaultsRequests   []port.PathDefaultsRequest
 }
 
 type FakeWorkbenchStorageService struct {
@@ -463,40 +463,40 @@ func (service *FakeTerminalService) LiveSurface(_ context.Context, req port.Term
 	return result, nil
 }
 
-func (service *FakeTerminalService) ArmLiveInvalidation(ctx context.Context, req port.TerminalLiveEventRequest) (port.TerminalLiveEvent, error) {
-	service.liveInvalidationMu.Lock()
-	service.liveInvalidationRequests = append(service.liveInvalidationRequests, req)
-	service.liveInvalidationMu.Unlock()
-	if service.LiveInvalidationsErr != nil {
-		return port.TerminalLiveEvent{}, service.LiveInvalidationsErr
+func (service *FakeTerminalService) LiveScreenNext(ctx context.Context, req port.TerminalSurfaceRequest) (port.TerminalSurfaceResult, error) {
+	service.liveScreenNextMu.Lock()
+	service.liveScreenNextRequests = append(service.liveScreenNextRequests, req)
+	service.liveScreenNextMu.Unlock()
+	if service.LiveScreenNextErr != nil {
+		return port.TerminalSurfaceResult{}, service.LiveScreenNextErr
 	}
-	if service.LiveInvalidationsCh != nil {
+	if service.LiveScreenNextCh != nil {
 		select {
-		case event, ok := <-service.LiveInvalidationsCh:
+		case result, ok := <-service.LiveScreenNextCh:
 			if !ok {
-				return port.TerminalLiveEvent{}, context.Canceled
+				return port.TerminalSurfaceResult{}, context.Canceled
 			}
-			if event.EndpointID == "" {
-				event.EndpointID = req.EndpointID
+			if result.Snapshot.EndpointID == "" {
+				result.Snapshot.EndpointID = req.EndpointID
 			}
-			if event.Snapshot.EndpointID == "" {
-				event.Snapshot.EndpointID = req.EndpointID
+			if result.Snapshot.TerminalID == "" {
+				result.Snapshot.TerminalID = req.TerminalID
 			}
-			return event, nil
+			return result, nil
 		case <-ctx.Done():
-			return port.TerminalLiveEvent{}, ctx.Err()
+			return port.TerminalSurfaceResult{}, ctx.Err()
 		}
 	}
 	<-ctx.Done()
-	return port.TerminalLiveEvent{}, ctx.Err()
+	return port.TerminalSurfaceResult{}, ctx.Err()
 }
 
-// LiveInvalidationRequestsSnapshot 返回 fake 已观测到的 one-shot live wake 请求快照。
-// ArmLiveInvalidation 可由异步 effect 调用；测试只能读取本方法返回的副本，禁止直接共享可变 slice。
-func (service *FakeTerminalService) LiveInvalidationRequestsSnapshot() []port.TerminalLiveEventRequest {
-	service.liveInvalidationMu.Lock()
-	defer service.liveInvalidationMu.Unlock()
-	return append([]port.TerminalLiveEventRequest(nil), service.liveInvalidationRequests...)
+// LiveScreenNextRequestsSnapshot 返回 fake 已观测到的 one-shot live wake 请求快照。
+// LiveScreenNext 可由异步 effect 调用；测试只能读取本方法返回的副本，禁止直接共享可变 slice。
+func (service *FakeTerminalService) LiveScreenNextRequestsSnapshot() []port.TerminalSurfaceRequest {
+	service.liveScreenNextMu.Lock()
+	defer service.liveScreenNextMu.Unlock()
+	return append([]port.TerminalSurfaceRequest(nil), service.liveScreenNextRequests...)
 }
 
 func clonePathDirectoryEntries(entries []port.PathDirectoryEntry) []port.PathDirectoryEntry {

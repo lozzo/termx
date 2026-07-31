@@ -15,7 +15,7 @@ import (
 )
 
 // ProtocolTerminalClient 是 tui-v3 service adapter 依赖的 core-v2 protocol 边界。
-// live invalidation 方法只透传 observed native revision 补 wake 边沿；adapter
+// live screen next 方法只透传 observed native revision 补 wake 边沿；adapter
 // 不把 renderer/FrameSink 状态写回 core，也不从 protocol 侧推断 history truth。
 type ProtocolTerminalClient interface {
 	clientruntime.ProtoApplicationExecutor
@@ -352,27 +352,26 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	}, nil
 }
 
-func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Context, req port.TerminalLiveEventRequest) (port.TerminalLiveEvent, error) {
+func (adapter ProtocolTerminalServiceAdapter) LiveScreenNext(ctx context.Context, req port.TerminalSurfaceRequest) (port.TerminalSurfaceResult, error) {
 	if adapter.Application == nil {
-		return port.TerminalLiveEvent{}, port.ErrMissingTerminalClient
+		return port.TerminalSurfaceResult{}, port.ErrMissingTerminalClient
 	}
 	finishRPC := perftrace.Measure("tui.protocol.live_screen_next.rpc")
 	event, err := adapter.Application.LiveScreenNext(ctx, &apipb.LiveScreenNextCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, ObservedRevision: req.ObservedRevision})
 	finishRPC(0)
 	if err != nil {
-		return port.TerminalLiveEvent{}, err
+		return port.TerminalSurfaceResult{}, err
 	}
 	if event == nil {
-		return port.TerminalLiveEvent{}, context.Canceled
+		return port.TerminalSurfaceResult{}, context.Canceled
 	}
-	liveEvent := port.TerminalLiveEvent{
-		EndpointID: req.EndpointID,
-		TerminalID: event.GetTerminal().GetTerminalId(),
-		Snapshot:   liveSurfaceSnapshotFromProto(req.TerminalID, event),
-		Ready:      true,
+	snapshot := liveSurfaceSnapshotFromProto(req.TerminalID, event)
+	snapshot.EndpointID = req.EndpointID
+	if snapshot.TerminalID == "" {
+		snapshot.TerminalID = event.GetTerminal().GetTerminalId()
 	}
-	perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
-	return liveEvent, nil
+	perftrace.Count("tui.protocol.live_screen_next", liveSnapshotApproxBytes(snapshot))
+	return port.TerminalSurfaceResult{Snapshot: snapshot, Ready: true}, nil
 }
 
 func liveSurfaceSnapshotFromProto(terminalID string, snapshot *apipb.NativeScreenResult) state.LiveSurfaceSnapshot {
@@ -407,22 +406,6 @@ func liveSurfaceSnapshotFromProto(terminalID string, snapshot *apipb.NativeScree
 		result.ChangedRows = append(result.ChangedRows, int(replacement.GetRowIndex()))
 	}
 	return result
-}
-
-func protocolLiveEventApproxBytes(event port.TerminalLiveEvent) int {
-	if !event.Ready {
-		return 0
-	}
-	total := 0
-	for _, line := range event.Snapshot.Lines {
-		total += len(line)
-	}
-	for _, row := range event.Snapshot.Screen {
-		for _, cell := range row {
-			total += len(cell.Text)
-		}
-	}
-	return total
 }
 
 func liveSnapshotApproxBytes(snapshot state.LiveSurfaceSnapshot) int {

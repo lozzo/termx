@@ -13,10 +13,10 @@ type NativeScreenSource interface {
 	LiveSurface(context.Context, TerminalSurfaceRequest) (TerminalSurfaceResult, error)
 }
 
-// LiveInvalidationSource 提供 one-shot latest live screen 请求。
-// 调用方每次 arm 最多得到一份基于 observed revision 的 latest 行变化，不排队保存中间帧。
-type LiveInvalidationSource interface {
-	ArmLiveInvalidation(context.Context, TerminalLiveEventRequest) (TerminalLiveEvent, error)
+// LiveScreenSource 提供 one-shot latest live screen 请求。
+// 每次请求最多返回一份基于 observed revision 的 latest 行变化，不排队保存中间帧。
+type LiveScreenSource interface {
+	LiveScreenNext(context.Context, TerminalSurfaceRequest) (TerminalSurfaceResult, error)
 }
 
 // TerminalSurfaceResult 返回当前 live native screen projection，不包含 committed history truth。
@@ -36,19 +36,8 @@ type TerminalSurfaceRequest struct {
 	ObservedRevision uint64
 }
 
-// TerminalLiveEventRequest 是 TUI service 层 one-shot live wake 请求。
-// ObservedRevision 来自 core native screen/wake 的已观察版本，只用于补 arm 间隙；
-// 它不是 FrameSink 写出进度，不能把 TUI 渲染状态反传成 core truth。
-type TerminalLiveEventRequest struct {
-	EndpointID       state.EndpointID
-	TerminalID       string
-	Cols             int
-	Rows             int
-	ObservedRevision uint64
-}
-
-// TerminalLiveEvent 是 daemon one-shot live 请求进入 TUI effect 的投影。
-// Ready 事件直接携带自 ObservedRevision 以来的 latest native screen 行变化。
+// TerminalLiveEvent 是 daemon 事件总线进入 TUI effect 的 lifecycle/metadata 投影。
+// 普通 Refresh 只作为被动失效提示；连续 live screen 由 LiveScreenSource 独立拉取。
 type TerminalLiveEvent struct {
 	EndpointID state.EndpointID
 	TerminalID string

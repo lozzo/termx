@@ -51,7 +51,7 @@ func TestHostRenderFuncKeepsCompleteFrameByDefault(t *testing.T) {
 	}
 }
 
-func TestHostRenderFuncDescribesStableLiveRegion(t *testing.T) {
+func TestHostRenderFuncDescribesVisibleLiveTarget(t *testing.T) {
 	host := renderPreferenceHost{sink: ansiOnlyPreferenceSink{}}
 	root := state.Root{
 		Viewport: state.ViewportStore{Valid: true, Cols: 20, Rows: 8},
@@ -74,15 +74,8 @@ func TestHostRenderFuncDescribesStableLiveRegion(t *testing.T) {
 	builder := render.NewRenderVMBuilder()
 	frame := hostRenderFunc(host, builder, render.NewRenderer(render.DefaultTheme()))(root)
 
-	if len(frame.LiveRegions) != 1 {
-		t.Fatalf("expected one stable live region, got %#v", frame.LiveRegions)
-	}
 	if len(frame.LiveTargets) != 1 || frame.LiveTargets[0].TerminalID != "term-1" || frame.LiveTargets[0].Revision != 7 {
-		t.Fatalf("expected the rendered live surface to be a completion target, got %#v", frame.LiveTargets)
-	}
-	region := frame.LiveRegions[0]
-	if region.TerminalID != "term-1" || region.Revision != 7 || region.Rect.W != 18 || region.Rect.H != 4 {
-		t.Fatalf("unexpected live region metadata: %#v", region)
+		t.Fatalf("expected the rendered live surface to be a demand target, got %#v", frame.LiveTargets)
 	}
 }
 

@@ -371,7 +371,6 @@ type RenderResult struct {
 	Blink       bool
 	HitRegions  []HitRegion
 	LiveTargets []LiveRenderTarget
-	LiveRegions []LiveRenderRegion
 	Metadata    RenderMetadata
 	Layers      []Layer
 	Theme       Theme

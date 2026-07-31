@@ -1,6 +1,7 @@
 package terminalhost
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -8,6 +9,20 @@ import (
 
 	"github.com/anytty/anytty/tui/render"
 )
+
+func TestLatestFrameSinkPropagatesUnderlyingWriteError(t *testing.T) {
+	want := errors.New("write failed")
+	sink := NewLatestFrameSink(frameSinkFunc(func(render.Frame) error { return want }))
+	done, err := sink.WriteFrameWithCompletion(render.Frame{Lines: []string{"frame"}})
+	if err != nil {
+		t.Fatalf("enqueue frame: %v", err)
+	}
+	completion := <-done
+	if completion.Written || !errors.Is(completion.Err, want) {
+		t.Fatalf("underlying error must reach runtime completion, got %#v", completion)
+	}
+	sink.Close()
+}
 
 func TestLatestFrameSinkDropsIntermediateFramesWhileWriterBusy(t *testing.T) {
 	underlying := newBlockingRecordingFrameSink()
@@ -169,6 +184,10 @@ type blockingRecordingFrameSink struct {
 	frames  []render.Frame
 	writes  int
 }
+
+type frameSinkFunc func(render.Frame) error
+
+func (fn frameSinkFunc) WriteFrame(frame render.Frame) error { return fn(frame) }
 
 func newBlockingRecordingFrameSink() *blockingRecordingFrameSink {
 	return &blockingRecordingFrameSink{

@@ -81,6 +81,25 @@ func (host blockingCompletionHost) InputEvents() <-chan input.InputEvent { retur
 func (host blockingCompletionHost) EventsReady() <-chan struct{}         { return nil }
 func (host blockingCompletionHost) FrameSink() render.FrameSink          { return host.sink }
 
+type staticFrameSinkHost struct {
+	sink render.FrameSink
+}
+
+func (host staticFrameSinkHost) Size() (int, int, error)              { return 0, 0, nil }
+func (host staticFrameSinkHost) InputEvents() <-chan input.InputEvent { return nil }
+func (host staticFrameSinkHost) EventsReady() <-chan struct{}         { return nil }
+func (host staticFrameSinkHost) FrameSink() render.FrameSink          { return host.sink }
+
+type failingFrameSink struct {
+	err    error
+	writes int
+}
+
+func (sink *failingFrameSink) WriteFrame(render.Frame) error {
+	sink.writes++
+	return sink.err
+}
+
 func waitForRuntimeQueue(t *testing.T, runtime *AppRuntime) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
@@ -179,113 +198,159 @@ func TestAppRuntimeDroppedFrameReleasesWriteGate(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain dropped completion: %v", err)
 	}
-	if runtime.frameWriteInFlight {
-		t.Fatal("Written=false must release frame gate")
+	if !runtime.frameWriteInFlight || len(sink.frames) != 2 {
+		t.Fatalf("Written=false must retry the latest state with a full frame, in_flight=%v frames=%d", runtime.frameWriteInFlight, len(sink.frames))
+	}
+	sink.completions[1] <- render.FrameWriteCompletion{Written: true}
+	close(sink.completions[1])
+	waitForRuntimeQueue(t, runtime)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain retry completion: %v", err)
 	}
 
 	_ = runtime.Post(testMsg{Name: "second"})
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain second: %v", err)
 	}
-	if len(sink.frames) != 2 {
+	if len(sink.frames) != 3 {
 		t.Fatalf("next update must render after dropped completion, got %d frames", len(sink.frames))
 	}
 }
 
-func TestAppRuntimePendingRenderSuppressesOldFrameReadyTargets(t *testing.T) {
+func TestAppRuntimeReturnsFrameSinkErrorWithoutRetryLoop(t *testing.T) {
+	want := errors.New("tty write failed")
+	sink := &failingFrameSink{err: want}
+	renderCalls := 0
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, _ Msg) (state.Root, []Effect) { return root.Advance(), nil },
+		func(state.Root) render.Frame {
+			renderCalls++
+			return render.Frame{Lines: []string{"frame"}}
+		},
+		staticFrameSinkHost{sink: sink},
+		NewSyncEffectRunner(),
+	)
+	_ = runtime.Post(testMsg{Name: "render"})
+	err := runtime.Run(context.Background())
+	if !errors.Is(err, want) {
+		t.Fatalf("Run must return the underlying sink error, got %v", err)
+	}
+	if sink.writes != 1 || renderCalls != 1 || runtime.frameWriteInFlight || runtime.renderPending {
+		t.Fatalf("sink error must terminate without retry loop, writes=%d renders=%d in_flight=%v pending=%v", sink.writes, renderCalls, runtime.frameWriteInFlight, runtime.renderPending)
+	}
+}
+
+func TestAppRuntimeCommitsVisualBaselineOnlyAfterWriteCompletion(t *testing.T) {
+	sink := &blockingCompletionSink{}
+	hit := render.HitRegion{PaneID: "pane-1"}
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, _ Msg) (state.Root, []Effect) { return root.Advance(), nil },
+		func(state.Root) render.Frame {
+			return render.Frame{Lines: []string{"frame"}, HitRegions: []render.HitRegion{hit}}
+		},
+		blockingCompletionHost{sink: sink},
+		NewSyncEffectRunner(),
+	)
+	_ = runtime.Post(testMsg{Name: "render"})
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	if len(runtime.lastHitRegions) != 0 {
+		t.Fatalf("in-flight proposal must not advance presented baseline: hits=%#v", runtime.lastHitRegions)
+	}
+	sink.completions[0] <- render.FrameWriteCompletion{Written: true}
+	close(sink.completions[0])
+	waitForRuntimeQueue(t, runtime)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain completion: %v", err)
+	}
+	if !reflect.DeepEqual(runtime.lastHitRegions, []render.HitRegion{hit}) {
+		t.Fatalf("successful completion must commit proposal: hits=%#v", runtime.lastHitRegions)
+	}
+}
+
+func TestAppRuntimeFrameCompletionOnlyReleasesWriter(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, NewFakeTerminalHost(1), NewSyncEffectRunner())
 	runtime.frameWriteInFlight = true
 	runtime.renderPending = true
 
-	if runtime.prepareRuntimeMessage(frameWriteCompletedMsg{
-		Written: true,
-		Targets: []liveFrameReadyTarget{{TerminalID: "old-terminal", ObservedRevision: 4}},
-	}) {
+	if runtime.prepareRuntimeMessage(frameWriteCompletedMsg{Written: true}) {
 		t.Fatal("frame completion should not run reducers")
 	}
 	if runtime.frameWriteInFlight {
 		t.Fatal("frame completion must release the write gate")
 	}
 	if _, ok := runtime.dequeue(); ok {
-		t.Fatal("an obsolete frame must not rearm live delivery before the pending frame is written")
+		t.Fatal("physical completion must not control live-screen requests")
 	}
 }
 
-func TestAppRuntimeSparseLiveEventWritesPatchWithoutFullRender(t *testing.T) {
-	sink := &blockingCompletionSink{}
-	root := state.Root{Viewport: state.ViewportStore{Valid: true, Cols: 20, Rows: 8}}
-	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
-		EndpointID:  state.DefaultEndpointID,
-		TerminalID:  "term-1",
-		Revision:    7,
-		FullReplace: true,
-		Cols:        8,
-		Rows:        3,
-		Screen: [][]state.LiveCell{
-			{{Text: "zero", Width: 4}},
-			{{Text: "one", Width: 3}},
-			{{Text: "two", Width: 3}},
-		},
-	})
-	fullRenderCalls := 0
+func TestAppRuntimeContinuousLiveUpdatesBuildCompleteLogicalFrames(t *testing.T) {
+	host := NewFakeTerminalHost(8)
 	runtime := NewAppRuntime(
-		root,
+		state.Root{},
 		func(root state.Root, msg Msg) (state.Root, []Effect) {
-			if live, ok := msg.(LiveEventMsg); ok {
-				root.Surface = root.Surface.ApplySnapshot(live.Event.Snapshot)
+			if live, ok := msg.(LiveScreenNextResultMsg); ok {
+				root.Surface = root.Surface.ApplySnapshot(live.Snapshot)
 			}
 			return root.Advance(), nil
 		},
-		func(state.Root) render.Frame {
-			fullRenderCalls++
-			return render.Frame{Lines: []string{"full"}}
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: append([]string(nil), root.Surface.Lines...), Metadata: render.RenderMetadata{Width: 20, Height: 8}}
 		},
-		blockingCompletionHost{sink: sink},
+		host,
 		NewSyncEffectRunner(),
 	)
-	runtime.liveSurfacePatch = liveSurfacePatchState{
-		Regions: []render.LiveRenderRegion{{
-			EndpointID: string(state.DefaultEndpointID),
+
+	for revision, line := range []string{"first", "second"} {
+		if err := runtime.Post(LiveScreenNextResultMsg{
+			EndpointID: state.DefaultEndpointID,
 			TerminalID: "term-1",
-			Revision:   7,
-			Rect:       render.Rect{X: 2, Y: 3, W: 8, H: 3},
-			Active:     true,
-		}},
-		Metadata: render.RenderMetadata{Width: 20, Height: 8},
-		Theme:    render.DefaultTheme(),
+			Snapshot: state.LiveSurfaceSnapshot{
+				EndpointID:  state.DefaultEndpointID,
+				TerminalID:  "term-1",
+				Revision:    uint64(revision + 1),
+				FullReplace: true,
+				Cols:        20,
+				Rows:        8,
+				Lines:       []string{line},
+			},
+		}); err != nil {
+			t.Fatalf("post live update %d: %v", revision, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain live update %d: %v", revision, err)
+		}
 	}
 
-	if err := runtime.Post(LiveEventMsg{Event: port.TerminalLiveEvent{
-		EndpointID: state.DefaultEndpointID,
-		TerminalID: "term-1",
-		Ready:      true,
-		Snapshot: state.LiveSurfaceSnapshot{
-			EndpointID:   state.DefaultEndpointID,
-			TerminalID:   "term-1",
-			BaseRevision: 7,
-			Revision:     8,
-			Cols:         8,
-			Rows:         3,
-			ChangedRows:  []int{1},
-			Screen:       [][]state.LiveCell{{{Text: "changed", Width: 7}}},
-			Cursor:       state.LiveCursor{Visible: true, Row: 1, Col: 7, Shape: "bar"},
-		},
-	}}); err != nil {
-		t.Fatalf("post sparse live event: %v", err)
+	frames := host.Frames()
+	if len(frames) != 2 {
+		t.Fatalf("expected one logical frame per live update, got %#v", frames)
 	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain sparse live event: %v", err)
+	for index, frame := range frames {
+		if frame.Patch != nil {
+			t.Fatalf("continuous live frame %d must be complete, got patch %#v", index, frame.Patch)
+		}
 	}
+	if frames[0].Lines[0] != "first" || frames[1].Lines[0] != "second" {
+		t.Fatalf("complete frames must carry the latest surfaces, got %#v", frames)
+	}
+}
 
-	if fullRenderCalls != 0 || len(sink.frames) != 1 || sink.frames[0].Patch == nil {
-		t.Fatalf("sparse live event must bypass full renderer, calls=%d frames=%#v", fullRenderCalls, sink.frames)
+func TestAppRuntimeMixedCopyAndLiveDirtyForcesFullFrame(t *testing.T) {
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.copyHistoryPatch = copyHistoryPatchCache{Valid: true}
+	runtime.noteRenderPending(testMsg{Name: "copy-scroll"})
+	if !runtime.copyHistoryPatch.Valid {
+		t.Fatal("copy-only dirty state should keep its incremental baseline")
 	}
-	patch := sink.frames[0].Patch
-	if !patch.Rewrite || patch.LineY != 4 || patch.LineX != 2 || patch.LineWidth != 8 || len(patch.LinesANSI) != 1 {
-		t.Fatalf("unexpected sparse live patch: %#v", patch)
-	}
-	if runtime.State().Surface.Screen[0][0].Text != "zero" || runtime.State().Surface.Screen[1][0].Text != "changed" || runtime.State().Surface.Screen[2][0].Text != "two" {
-		t.Fatalf("sparse patch state lost unchanged rows: %#v", runtime.State().Surface.Screen)
+	runtime.noteRenderPending(LiveScreenNextResultMsg{TerminalID: "term-1", Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1", BaseRevision: 7, Revision: 8, Cols: 80, Rows: 24, ChangedRows: []int{1},
+	}})
+	if !runtime.forceFullFrame || !runtime.copyHistoryPatch.Valid || !runtime.renderPending {
+		t.Fatalf("live dirtiness must select a complete logical frame without destroying the copy baseline: force_full=%v copy=%#v pending=%v", runtime.forceFullFrame, runtime.copyHistoryPatch, runtime.renderPending)
 	}
 }
 
@@ -375,19 +440,19 @@ func TestAppRuntimeDequeClearsProcessedMessageReferences(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeCoalescedLiveInvalidationClearsStalePayloadReference(t *testing.T) {
+func TestAppRuntimeCoalescedLiveScreenNextClearsStalePayloadReference(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.queue = make([]Msg, 0, 2)
 	runtime.enqueue(LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 	runtime.enqueue(LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 
 	if len(runtime.queue) != 1 {
-		t.Fatalf("live invalidations should coalesce to one message, queue=%#v", runtime.queue)
+		t.Fatalf("live screen nexts should coalesce to one message, queue=%#v", runtime.queue)
 	}
 	retained := runtime.queue[:cap(runtime.queue)]
 	for i := len(runtime.queue); i < len(retained); i++ {
 		if retained[i] != nil {
-			t.Fatalf("coalesced live invalidation kept stale queue slot %d: %#v", i, retained[i])
+			t.Fatalf("coalesced live screen next kept stale queue slot %d: %#v", i, retained[i])
 		}
 	}
 }
@@ -409,7 +474,7 @@ func TestAppRuntimeCoalescedLiveSurfaceClearsStalePayloadReference(t *testing.T)
 	}
 }
 
-func TestAppRuntimeDoesNotCoalesceLiveInvalidationWakeWithSurfaceResult(t *testing.T) {
+func TestAppRuntimePassiveRefreshDoesNotStartSecondScreenSource(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{SurfaceResult: port.TerminalSurfaceResult{
 		Ready: true,
 		Snapshot: state.LiveSurfaceSnapshot{
@@ -426,11 +491,6 @@ func TestAppRuntimeDoesNotCoalesceLiveInvalidationWakeWithSurfaceResult(t *testi
 		Rows:       24,
 		Lines:      []string{"ready"},
 	})
-	var armed bool
-	root.Surface, armed = root.Surface.ArmLiveInvalidation("term-1", 80, 24)
-	if !armed {
-		t.Fatalf("test setup should arm live invalidation, got %#v", root.Surface.Refreshes)
-	}
 	runtime := NewAppRuntime(root, newLiveReducerPrepared(LiveDeps{Terminal: terminal}), nil, nil, NewSyncEffectRunner())
 
 	if err := runtime.Post(LiveEventMsg{Event: port.TerminalLiveEvent{
@@ -451,11 +511,8 @@ func TestAppRuntimeDoesNotCoalesceLiveInvalidationWakeWithSurfaceResult(t *testi
 		t.Fatalf("drain: %v", err)
 	}
 
-	if len(terminal.Surfaces) == 0 {
-		t.Fatal("live invalidation wake must survive queue coalescing and request latest surface")
-	}
-	if refresh, ok := runtime.State().Surface.Refreshes["term-1"]; ok && refresh.Armed {
-		t.Fatalf("wake/surface interleave must release armed pending state, got %#v", refresh)
+	if len(terminal.Surfaces) != 0 || runtime.State().Surface.Revision != 11 {
+		t.Fatalf("passive hint must not fetch; explicit surface result must still reduce, requests=%#v surface=%#v", terminal.Surfaces, runtime.State().Surface)
 	}
 }
 
@@ -1106,9 +1163,9 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterSurfaceReturn(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeArmsLiveInvalidationAfterFrameWrite(t *testing.T) {
+func TestAppRuntimeRequestsNextScreenAtFrameSubmission(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
 	liveDeps := LiveDeps{Terminal: terminal}
 	runner := &recordingRuntimeEffectRunner{}
 	runtime := NewAppRuntime(
@@ -1137,15 +1194,15 @@ func TestAppRuntimeArmsLiveInvalidationAfterFrameWrite(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 	if len(runner.Effects) != 1 {
-		t.Fatalf("frame write completion should schedule one async arm effect, got %#v", runner.Effects)
+		t.Fatalf("frame submission should schedule one async next-screen effect, got %#v", runner.Effects)
 	}
 	arm, ok := runner.Effects[0].(FuncEffect)
-	if !ok || arm.Token != liveInvalidationTokenForTerminal("term-1") || !arm.Async {
-		t.Fatalf("expected terminal-scoped async arm effect, got %#v", runner.Effects[0])
+	if !ok || arm.Token != liveScreenNextTokenForRef(state.LocalTerminalRef("term-1")) || !arm.Async {
+		t.Fatalf("expected terminal-scoped async next-screen effect, got %#v", runner.Effects[0])
 	}
 }
 
-func TestAppRuntimeArmsLiveInvalidationAfterNonSurfaceFrameWrite(t *testing.T) {
+func TestAppRuntimeUsesOnlyTargetsSelectedByFrame(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
 	runner := &recordingRuntimeEffectRunner{}
 	root := state.Root{}
@@ -1155,20 +1212,21 @@ func TestAppRuntimeArmsLiveInvalidationAfterNonSurfaceFrameWrite(t *testing.T) {
 	done <- render.FrameWriteCompletion{Written: true}
 	close(done)
 
-	runtime.rememberLiveFrameCompletion(render.Frame{LiveTargets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 12}}}, done)
+	runtime.enqueueLiveScreenFrameSelected(render.Frame{LiveTargets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 12}}}, true)
+	runtime.trackFrameCompletion(done, nil)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
 	}
 	if len(runner.Effects) != 1 {
-		t.Fatalf("written frame carrying live surface should arm next invalidation, got %#v", runner.Effects)
+		t.Fatalf("selected live target should request its next screen, got %#v", runner.Effects)
 	}
 	arm, ok := runner.Effects[0].(FuncEffect)
-	if !ok || arm.Token != liveInvalidationTokenForTerminal("term-1") || !arm.Async {
-		t.Fatalf("expected terminal-scoped async arm effect, got %#v", runner.Effects[0])
+	if !ok || arm.Token != liveScreenNextTokenForRef(state.LocalTerminalRef("term-1")) || !arm.Async {
+		t.Fatalf("expected terminal-scoped async next-screen effect, got %#v", runner.Effects[0])
 	}
 }
 
-func TestAppRuntimeDoesNotArmLiveInvalidationForDroppedFrame(t *testing.T) {
+func TestAppRuntimeNetworkRequestDoesNotWaitForPhysicalWriteSuccess(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
 	runner := &recordingRuntimeEffectRunner{}
 	root := state.Root{}
@@ -1178,16 +1236,17 @@ func TestAppRuntimeDoesNotArmLiveInvalidationForDroppedFrame(t *testing.T) {
 	done <- render.FrameWriteCompletion{Written: false}
 	close(done)
 
-	runtime.rememberLiveFrameCompletion(render.Frame{LiveTargets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 12}}}, done)
+	runtime.enqueueLiveScreenFrameSelected(render.Frame{LiveTargets: []render.LiveRenderTarget{{TerminalID: "term-1", Revision: 12}}}, true)
+	runtime.trackFrameCompletion(done, nil)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
 	}
-	if len(runner.Effects) != 0 {
-		t.Fatalf("dropped local frame must not arm next invalidation, got %#v", runner.Effects)
+	if len(runner.Effects) != 1 {
+		t.Fatalf("next-screen wait must overlap physical output and not depend on completion, got %#v", runner.Effects)
 	}
 }
 
-func TestAppRuntimeArmsAllVisibleLiveTerminalsAfterFrameWrite(t *testing.T) {
+func TestAppRuntimeRequestsAllVisibleLiveTerminalsAtSubmission(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
 	runner := &recordingRuntimeEffectRunner{}
 	root := state.Root{Shell: state.DefaultShell().
@@ -1203,15 +1262,16 @@ func TestAppRuntimeArmsAllVisibleLiveTerminalsAfterFrameWrite(t *testing.T) {
 	done <- render.FrameWriteCompletion{Written: true}
 	close(done)
 
-	runtime.rememberLiveFrameCompletion(render.Frame{LiveTargets: []render.LiveRenderTarget{
+	runtime.enqueueLiveScreenFrameSelected(render.Frame{LiveTargets: []render.LiveRenderTarget{
 		{TerminalID: "term-1", Revision: 10},
 		{TerminalID: "term-2", Revision: 20},
-	}}, done)
+	}}, true)
+	runtime.trackFrameCompletion(done, nil)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
 	}
 	if len(runner.Effects) != 2 {
-		t.Fatalf("frame write should arm every visible terminal once, got %#v", runner.Effects)
+		t.Fatalf("frame submission should request every visible terminal once, got %#v", runner.Effects)
 	}
 }
 
@@ -1277,7 +1337,7 @@ func TestAppRuntimeDoesNotSkipLifecycleLiveSurfaceUnderPressure(t *testing.T) {
 			case LiveSurfaceMsg:
 				root.Surface = root.Surface.ApplySnapshotWithLifecycle(msg.Snapshot, msg.LifecycleKnown)
 				return root.Advance(), nil
-			case LiveFrameReadyMsg:
+			case LiveScreenFrameSelectedMsg:
 				return root, nil
 			default:
 				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
@@ -1404,61 +1464,41 @@ func TestAppRuntimeLiveCoalescingIsEndpointScoped(t *testing.T) {
 	}
 }
 
-func TestLiveFrameReadyTargetsPreserveEndpoint(t *testing.T) {
-	targets := []liveFrameReadyTarget{
-		{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", ObservedRevision: 3},
-		{EndpointID: "west", TerminalID: "term-1", ObservedRevision: 8},
-	}
-	if len(targets) != 2 {
-		t.Fatalf("expected local and west frame ready targets, got %#v", targets)
-	}
+func TestLiveScreenSelectedTargetsPreserveEndpoint(t *testing.T) {
+	targets := []render.LiveRenderTarget{{EndpointID: string(state.DefaultEndpointID), TerminalID: "term-1", Revision: 3}, {EndpointID: "west", TerminalID: "term-1", Revision: 8}}
 	runtime := NewAppRuntime(state.Root{}, nil, nil, NewFakeTerminalHost(1), NewSyncEffectRunner())
-	runtime.enqueueLiveFrameReadyTargets(targets)
-	var seen []LiveFrameReadyMsg
-	for {
-		msg, ok := runtime.dequeue()
-		if !ok {
-			break
-		}
-		ready, ok := msg.(LiveFrameReadyMsg)
-		if !ok {
-			t.Fatalf("expected LiveFrameReadyMsg, got %T", msg)
-		}
-		seen = append(seen, ready)
-	}
-
-	want := []LiveFrameReadyMsg{
-		{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", ObservedRevision: 3},
-		{EndpointID: "west", TerminalID: "term-1", ObservedRevision: 8},
-	}
-	if !reflect.DeepEqual(seen, want) {
-		t.Fatalf("frame ready messages must preserve endpoint refs, got %#v want %#v", seen, want)
+	runtime.enqueueLiveScreenFrameSelected(render.Frame{LiveTargets: targets}, true)
+	msg, ok := runtime.dequeue()
+	selected, selectedOK := msg.(LiveScreenFrameSelectedMsg)
+	if !ok || !selectedOK || !selected.Full || !reflect.DeepEqual(selected.Targets, targets) {
+		t.Fatalf("selected frame must preserve endpoint refs, got %#v", msg)
 	}
 }
 
-func TestLiveFrameReadyUsesOnlyTargetsPresentedByFrame(t *testing.T) {
+func TestLiveScreenSubmissionUsesOnlyTargetsPresentedByFrame(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, NewFakeTerminalHost(1), NewSyncEffectRunner())
-	runtime.rememberLiveFrameCompletion(render.Frame{LiveTargets: []render.LiveRenderTarget{{
+	targets := []render.LiveRenderTarget{{
 		TerminalID: "term-local",
 		Revision:   3,
-	}}}, nil)
+	}}
+	runtime.enqueueLiveScreenFrameSelected(render.Frame{LiveTargets: targets}, true)
 
 	msg, ok := runtime.dequeue()
 	if !ok {
-		t.Fatal("presented live target should be rearmed")
+		t.Fatal("presented live target should be selected")
 	}
-	want := LiveFrameReadyMsg{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", ObservedRevision: 3}
-	if msg != want {
-		t.Fatalf("frame ready must follow the frame's live targets, got %#v want %#v", msg, want)
+	selected, ok := msg.(LiveScreenFrameSelectedMsg)
+	if !ok || !reflect.DeepEqual(selected.Targets, targets) {
+		t.Fatalf("submission must follow the frame's live targets, got %#v", msg)
 	}
 	if _, ok := runtime.dequeue(); ok {
-		t.Fatal("surfaces absent from the frame must not be rearmed")
+		t.Fatal("surfaces absent from the frame must not become live demand")
 	}
 }
 
 func TestAppRuntimeVisibleLocalInputContinuesAfterHiddenRemoteSurface(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
+	terminal := &testkit.FakeTerminalService{LiveScreenNextCh: make(chan port.TerminalSurfaceResult, 1)}
 	root := state.Root{Shell: state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-local")}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Revision: 1, Lines: []string{"ready"}})
@@ -1481,10 +1521,10 @@ func TestAppRuntimeVisibleLocalInputContinuesAfterHiddenRemoteSurface(t *testing
 	if err := runtime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post initial frame: %v", err)
 	}
-	if err := waitForLiveInvalidationRequest(context.Background(), runtime, terminal, "term-local"); err != nil {
-		t.Fatalf("local frame should arm live invalidation: %v", err)
+	if err := waitForLiveScreenNextRequest(context.Background(), runtime, terminal, "term-local"); err != nil {
+		t.Fatalf("local frame should arm live screen next: %v", err)
 	}
-	requests := terminal.LiveInvalidationRequestsSnapshot()
+	requests := terminal.LiveScreenNextRequestsSnapshot()
 	if len(requests) != 1 || requests[0].EndpointID != state.DefaultEndpointID {
 		t.Fatalf("hidden remote cache must not create an arm request, got %#v", requests)
 	}
@@ -1496,7 +1536,7 @@ func TestAppRuntimeVisibleLocalInputContinuesAfterHiddenRemoteSurface(t *testing
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"}); err != nil {
 		t.Fatalf("send input: %v", err)
 	}
-	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 2}}
+	terminal.LiveScreenNextCh <- port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Revision: 2, Cols: 80, Rows: 24, Lines: []string{"typed"}, FullReplace: true}}
 	if err := drainUntilFrameContains(context.Background(), runtime, host, "typed"); err != nil {
 		t.Fatalf("input wake should fetch and render latest local surface: %v", err)
 	}

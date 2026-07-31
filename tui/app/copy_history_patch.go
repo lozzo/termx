@@ -99,12 +99,14 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		Metadata:   current.Metadata,
 		Theme:      current.Theme,
 	}
-	runtime.lastHitRegions = copyHistoryPatchHitRegions(runtime.lastHitRegions, patchRoot.History, patchRoot.CopyMode, current.ContentRect)
+	hitRegions := copyHistoryPatchHitRegions(runtime.lastHitRegions, patchRoot.History, patchRoot.CopyMode, current.ContentRect)
 	done := runtime.writeFrame(frame)
 	runtime.firstFrameWritten = true
-	runtime.copyHistoryPatch = current
 	runtime.observeRuntimePatchFrame(frame)
-	runtime.trackFrameCompletion(nil, done)
+	runtime.trackFrameCompletion(done, func() {
+		runtime.lastHitRegions = hitRegions
+		runtime.copyHistoryPatch = current
+	})
 	return true
 }
 
@@ -124,9 +126,10 @@ func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(root state.Root, curr
 	}
 	done := runtime.writeFrame(frame)
 	runtime.firstFrameWritten = true
-	runtime.copyHistoryPatch = current
 	runtime.observeRuntimePatchFrame(frame)
-	runtime.trackFrameCompletion(nil, done)
+	runtime.trackFrameCompletion(done, func() {
+		runtime.copyHistoryPatch = current
+	})
 	return true
 }
 
@@ -181,18 +184,16 @@ func (runtime *AppRuntime) canUseIncompleteFrameSink() bool {
 	return ok && !preference.NeedsCompleteFrame()
 }
 
-func (runtime *AppRuntime) rememberCopyHistoryPatchFrame(frame render.Frame) {
-	if !runtime.canUseIncompleteFrameSink() || frame.Metadata.Width <= 0 || frame.Metadata.Height <= 0 {
-		runtime.copyHistoryPatch = copyHistoryPatchCache{}
-		return
+func copyHistoryPatchCacheForFrame(runtime *AppRuntime, root state.Root, frame render.Frame) (copyHistoryPatchCache, bool) {
+	if runtime == nil || !runtime.canUseIncompleteFrameSink() || frame.Metadata.Width <= 0 || frame.Metadata.Height <= 0 {
+		return copyHistoryPatchCache{}, false
 	}
-	cache, ok := buildCopyHistoryPatchCache(runtime.state, frame.Theme)
+	cache, ok := buildCopyHistoryPatchCache(root, frame.Theme)
 	if !ok {
-		runtime.copyHistoryPatch = copyHistoryPatchCache{}
-		return
+		return copyHistoryPatchCache{}, false
 	}
 	cache.Metadata = frame.Metadata
-	runtime.copyHistoryPatch = cache
+	return cache, true
 }
 
 func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistoryPatchCache, bool) {
