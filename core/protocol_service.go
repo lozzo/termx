@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/anytty/anytty/core/history"
 	"github.com/anytty/anytty/internal/protocol"
@@ -109,6 +110,11 @@ type protocolSession struct {
 	requestSlots                  chan struct{}
 	requestMu                     sync.Mutex
 	activeRequests                map[uint64]context.CancelFunc
+	liveBaselineMu                sync.Mutex
+	liveBaselines                 map[string]*sessionLiveScreenBaselines
+	liveBaselineBytes             int64
+	liveBaselineTimer             *time.Timer
+	liveBaselineClosed            bool
 	resourceMu                    sync.Mutex
 	nextChannel                   uint32
 	channelKinds                  map[uint16]protocolChannelKind
@@ -253,6 +259,7 @@ func newProtocolSessionObserved(server *Server, conn transport.Transport, scope 
 		rawPTYStreams:      make(map[uint16]*protocolRawPTYStream),
 		requestSlots:       make(chan struct{}, server.cfg.protocolLimits.MaxInFlightRequests),
 		activeRequests:     make(map[uint64]context.CancelFunc),
+		liveBaselines:      make(map[string]*sessionLiveScreenBaselines),
 		channelKinds:       make(map[uint16]protocolChannelKind),
 		historyTokens:      make(map[protocolHistoryResourceKey]struct{}),
 		lifecycleObserver:  observer,
@@ -278,6 +285,7 @@ func (session *protocolSession) run(ctx context.Context) error {
 		session.releaseAllFileTransfers()
 		session.stopEvents()
 		session.releaseProtocolAttachments()
+		session.clearLiveScreenBaselines()
 	}()
 	for {
 		frame, err := session.conn.Recv()

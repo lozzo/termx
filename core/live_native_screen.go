@@ -48,114 +48,57 @@ type NativeScreenSnapshot struct {
 	Timestamp    time.Time
 }
 
-const (
-	liveScreenChangeLogMaxRevisions = 64
-	liveScreenChangeLogMaxMarkers   = 4096
-)
-
-type liveScreenChange struct {
-	BaseRevision LiveRevision
-	Revision     LiveRevision
-	RowCopies    []NativeScreenRowCopy
-	ReplacedRows []int
+// nativeScreenBaseline is a compact, session-owned description of one frame
+// the client may have merged. It intentionally stores row fingerprints instead
+// of another cell matrix; the current screen remains owned by Terminal.
+type nativeScreenBaseline struct {
+	terminal   *Terminal
+	revision   LiveRevision
+	generation uint64
+	size       NativeScreenSize
+	rowHashes  []uint64
+	altScreen  bool
 }
 
-type liveScreenChangeLog struct {
-	entries []liveScreenChange
-	markers int
-}
-
-func (log *liveScreenChangeLog) reset() {
-	log.entries = nil
-	log.markers = 0
-}
-
-// append adds one terminal-global revision and returns the oldest revision that
-// can still be used as a delta base after bounded eviction.
-func (log *liveScreenChangeLog) append(change liveScreenChange) LiveRevision {
-	markers := len(change.RowCopies) + len(change.ReplacedRows)
-	if markers > liveScreenChangeLogMaxMarkers {
-		log.reset()
-		return change.Revision
-	}
-	log.entries = append(log.entries, change)
-	log.markers += markers
-	floor := LiveRevision(0)
-	for len(log.entries) > liveScreenChangeLogMaxRevisions || log.markers > liveScreenChangeLogMaxMarkers {
-		removed := log.entries[0]
-		log.entries = log.entries[1:]
-		log.markers -= len(removed.RowCopies) + len(removed.ReplacedRows)
-		floor = removed.Revision
-	}
-	return floor
-}
-
-func (log *liveScreenChangeLog) compose(observed, current LiveRevision, rows int) ([]NativeScreenRowCopy, []int, bool) {
-	if observed == current {
-		return nil, nil, true
-	}
-	first := -1
-	for index := range log.entries {
-		if log.entries[index].BaseRevision == observed {
-			first = index
-			break
-		}
-	}
-	if first < 0 {
+func nativeScreenDeltaRows(base *nativeScreenBaseline, current []uint64) ([]NativeScreenRowCopy, []int, bool) {
+	if base == nil || len(base.rowHashes) != len(current) {
 		return nil, nil, false
 	}
-	sources := make([]int, rows)
-	for row := range sources {
-		sources[row] = row
-	}
-	expected := observed
-	for _, change := range log.entries[first:] {
-		if change.BaseRevision != expected {
-			return nil, nil, false
-		}
-		previous := append([]int(nil), sources...)
-		for _, rowCopy := range change.RowCopies {
-			for offset := 0; offset < rowCopy.Count; offset++ {
-				sourceRow := rowCopy.SourceRow + offset
-				destinationRow := rowCopy.DestinationRow + offset
-				if sourceRow < 0 || sourceRow >= rows || destinationRow < 0 || destinationRow >= rows {
-					return nil, nil, false
-				}
-				sources[destinationRow] = previous[sourceRow]
-			}
-		}
-		for _, row := range change.ReplacedRows {
-			if row < 0 || row >= rows {
-				return nil, nil, false
-			}
-			sources[row] = -1
-		}
-		expected = change.Revision
-		if expected == current {
-			break
+	sourcesByHash := make(map[uint64]int, len(base.rowHashes))
+	for source, hash := range base.rowHashes {
+		if _, exists := sourcesByHash[hash]; !exists {
+			sourcesByHash[hash] = source
 		}
 	}
-	if expected != current {
-		return nil, nil, false
+	sources := make([]int, len(current))
+	for destination, hash := range current {
+		sources[destination] = -1
+		if base.rowHashes[destination] == hash {
+			sources[destination] = destination
+			continue
+		}
+		if source, ok := sourcesByHash[hash]; ok {
+			sources[destination] = source
+		}
 	}
 	var copies []NativeScreenRowCopy
 	var replacements []int
-	for destinationRow, sourceRow := range sources {
-		if sourceRow < 0 {
-			replacements = append(replacements, destinationRow)
+	for destination, source := range sources {
+		if source < 0 {
+			replacements = append(replacements, destination)
 			continue
 		}
-		if sourceRow == destinationRow {
+		if source == destination {
 			continue
 		}
 		if len(copies) > 0 {
 			last := &copies[len(copies)-1]
-			if last.SourceRow+last.Count == sourceRow && last.DestinationRow+last.Count == destinationRow {
+			if last.SourceRow+last.Count == source && last.DestinationRow+last.Count == destination {
 				last.Count++
 				continue
 			}
 		}
-		copies = append(copies, NativeScreenRowCopy{SourceRow: sourceRow, DestinationRow: destinationRow, Count: 1})
+		copies = append(copies, NativeScreenRowCopy{SourceRow: source, DestinationRow: destination, Count: 1})
 	}
 	return copies, replacements, true
 }

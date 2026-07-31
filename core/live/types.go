@@ -375,6 +375,18 @@ func (surface *SurfaceTrack) VisitTrimmedScreenRows(visit func(rowIndex int, cel
 	return surface.vt.VisitTrimmedScreenRows(visit)
 }
 
+// VisualRowHashes returns the compact current-screen baseline used by a
+// protocol session to compare the next client-confirmed frame.
+func (surface *SurfaceTrack) VisualRowHashes() []uint64 {
+	surface.ensureVTerm()
+	return surface.vt.ScreenVisualHashes()
+}
+
+func (surface *SurfaceTrack) IsAlternateScreen() bool {
+	surface.ensureVTerm()
+	return surface.vt.IsAltScreen()
+}
+
 func (surface *SurfaceTrack) ensureVTerm() {
 	if surface.vt != nil {
 		return

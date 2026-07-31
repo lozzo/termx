@@ -182,6 +182,7 @@ type Server struct {
 	shutdownErr            error
 	nextProtocolSessionID  atomic.Uint64
 	protocolRequestSlots   chan struct{}
+	liveBaselineBytes      atomic.Int64
 	lifecycleMu            sync.Mutex
 	protocolAttachmentMu   sync.Mutex
 	protocolAttachments    map[string]protocolAttachment
@@ -804,30 +805,31 @@ func (server *Server) TerminalHistoryBacklogStatus(id string) (HistoryBacklogSta
 	return terminal.HistoryBacklogStatus(), nil
 }
 
-// NextLiveScreen returns one canonical latest-screen response. Revision zero is
-// a full bootstrap; an observed current revision waits for the next internal
-// invalidation edge before constructing the response.
-func (server *Server) NextLiveScreen(ctx context.Context, id string, observedRevision LiveRevision) (NativeScreenSnapshot, error) {
+// nextLiveScreenWithBaseline returns one canonical latest-screen response.
+// Revision zero bootstraps; an observed current revision waits for the next
+// invalidation before comparing against this protocol session's confirmed frame.
+func (server *Server) nextLiveScreenWithBaseline(ctx context.Context, id string, observedRevision LiveRevision, base *nativeScreenBaseline) (NativeScreenSnapshot, *nativeScreenBaseline, error) {
 	terminal, err := server.Terminal(id)
 	if err != nil {
-		return NativeScreenSnapshot{}, err
+		return NativeScreenSnapshot{}, nil, err
 	}
 	current := terminal.LiveRevision()
 	switch {
 	case observedRevision == 0:
 		if err := terminal.flushLiveOutput(ctx); err != nil {
-			return NativeScreenSnapshot{}, err
+			return NativeScreenSnapshot{}, nil, err
 		}
 	case observedRevision <= current:
 		if _, err := server.NextLiveInvalidation(ctx, id, observedRevision); err != nil {
-			return NativeScreenSnapshot{}, err
+			return NativeScreenSnapshot{}, nil, err
 		}
 	default:
 		if err := terminal.flushLiveOutput(ctx); err != nil {
-			return NativeScreenSnapshot{}, err
+			return NativeScreenSnapshot{}, nil, err
 		}
 	}
-	return terminal.NativeScreenSnapshotSince(id, observedRevision), nil
+	snapshot, currentBase := terminal.nativeScreenSnapshotSinceBaseline(id, observedRevision, base)
+	return snapshot, currentBase, nil
 }
 
 // NextLiveInvalidation 等待指定 terminal 的下一次 live invalidation。

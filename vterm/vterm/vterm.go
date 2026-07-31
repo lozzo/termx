@@ -2107,6 +2107,28 @@ func (v *VTerm) RowVisualHash(rowIndex int) uint64 {
 	return rowFingerprintVisualHash(v.screenRowFingerprintLocked(rowIndex))
 }
 
+// ScreenVisualHashes returns one compact visual fingerprint per current screen
+// row. The returned slice is detached from VTerm's incremental cache.
+func (v *VTerm) ScreenVisualHashes() []uint64 {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil {
+		return nil
+	}
+	height := v.emu.Height()
+	rows := make([]uint64, height)
+	if len(v.screenFingerprintCache) == height {
+		for row, fingerprint := range v.screenFingerprintCache {
+			rows[row] = rowFingerprintVisualHash(fingerprint)
+		}
+		return rows
+	}
+	for row := 0; row < height; row++ {
+		rows[row] = rowFingerprintVisualHash(v.screenRowFingerprintLocked(row))
+	}
+	return rows
+}
+
 func (v *VTerm) CursorState() CursorState {
 	v.mu.RLock()
 	defer v.mu.RUnlock()

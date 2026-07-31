@@ -449,7 +449,14 @@ func (session *protocolSession) ApplicationLiveScreenNext(ctx context.Context, t
 	if liveErr != nil {
 		return NativeScreenSnapshot{}, liveErr
 	}
-	return session.server.NextLiveScreen(ctx, terminalID, observed)
+	base, releaseBase := session.acquireLiveScreenBaseline(terminalID, observed)
+	defer releaseBase()
+	snapshot, currentBase, err := session.server.nextLiveScreenWithBaseline(ctx, terminalID, observed, base)
+	if err != nil {
+		return NativeScreenSnapshot{}, err
+	}
+	session.offerLiveScreenBaseline(terminalID, currentBase)
+	return snapshot, nil
 }
 
 // ApplicationEventSubscribe 建立当前 protocol session owning 的异步事件订阅。

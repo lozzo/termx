@@ -553,12 +553,14 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 	}
 }
 
-func TestServerNextLiveScreenReturnsPayloadFromOneLongPoll(t *testing.T) {
+func TestProtocolSessionNextLiveScreenReturnsDeltaFromConfirmedBaseline(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-screen-next", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 3}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	bootstrap, err := server.NextLiveScreen(context.Background(), "term-live-screen-next", 0)
+	session := newProtocolSession(server, nil, fullDaemonTransportScope())
+	defer session.clearLiveScreenBaselines()
+	bootstrap, err := session.ApplicationLiveScreenNext(context.Background(), "term-live-screen-next", 0)
 	if err != nil || !bootstrap.FullReplace {
 		t.Fatalf("bootstrap screen = %#v err=%v", bootstrap, err)
 	}
@@ -568,7 +570,7 @@ func TestServerNextLiveScreenReturnsPayloadFromOneLongPoll(t *testing.T) {
 	done := make(chan NativeScreenSnapshot, 1)
 	errs := make(chan error, 1)
 	go func() {
-		snapshot, nextErr := server.NextLiveScreen(ctx, "term-live-screen-next", bootstrap.Revision)
+		snapshot, nextErr := session.ApplicationLiveScreenNext(ctx, "term-live-screen-next", bootstrap.Revision)
 		if nextErr != nil {
 			errs <- nextErr
 			return
@@ -647,8 +649,9 @@ func TestNativeScreenSnapshotSinceCoalescesLatestChangedRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write base: %v", err)
 	}
-	if snapshot := terminal.NativeScreenSnapshotSince("term-live-delta", 0); !snapshot.FullReplace || snapshot.Revision != base || len(snapshot.Rows) != 3 {
-		t.Fatalf("bootstrap must return full native screen: %#v", snapshot)
+	bootstrap, clientBase := terminal.nativeScreenSnapshotSinceBaseline("term-live-delta", 0, nil)
+	if !bootstrap.FullReplace || bootstrap.Revision != base || len(bootstrap.Rows) != 3 {
+		t.Fatalf("bootstrap must return full native screen: %#v", bootstrap)
 	}
 	if _, err := terminal.applyLiveOutput("\x1b[2;1Hone"); err != nil {
 		t.Fatalf("write row one: %v", err)
@@ -658,7 +661,7 @@ func TestNativeScreenSnapshotSinceCoalescesLatestChangedRows(t *testing.T) {
 		t.Fatalf("write row two: %v", err)
 	}
 
-	delta := terminal.NativeScreenSnapshotSince("term-live-delta", base)
+	delta, _ := terminal.nativeScreenSnapshotSinceBaseline("term-live-delta", base, clientBase)
 	if delta.FullReplace || delta.BaseRevision != base || delta.Revision != latest {
 		t.Fatalf("matching base should return sparse latest snapshot: %#v", delta)
 	}

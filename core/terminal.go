@@ -24,11 +24,10 @@ type Terminal struct {
 	live    *live.SurfaceTrack
 	// 中文说明：liveOpMu 串行化 live SurfaceTrack 的 PTY 输出与 resize/restart 操作。
 	// live 是唯一 response owner；resize 期间产生的新输出必须等 live 调整到新尺寸后再写入。
-	liveOpMu         sync.Mutex
-	liveRevision     LiveRevision
-	liveFullRevision LiveRevision
-	liveChanges      liveScreenChangeLog
-	tap              *SemanticTap
+	liveOpMu       sync.Mutex
+	liveRevision   LiveRevision
+	liveGeneration uint64
+	tap            *SemanticTap
 	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
 	// 它同时是 linehist 的查询 gate：ingest 与查询共享同一把锁，滚出行在
 	// 冷段（文件）与热段（emulator 当前屏）之间不重不漏。
@@ -238,7 +237,7 @@ func (terminal *Terminal) Resize(size Size) error {
 
 	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.liveRevision++
-	terminal.markLiveFullReplaceLocked()
+	terminal.liveGeneration++
 	revision := terminal.liveRevision
 	if terminal.historyEnabled && terminal.tap != nil {
 		result, err := terminal.tap.Resize(size)
@@ -350,7 +349,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 		terminal.live.ResetForRestartPreservingScreen()
 	}
 	terminal.liveRevision++
-	terminal.markLiveFullReplaceLocked()
+	terminal.liveGeneration++
 	revision := terminal.liveRevision
 	terminal.liveOpMu.Unlock()
 	if terminal.historyEnabled && historyAvailable {
@@ -414,25 +413,34 @@ func (terminal *Terminal) VisitLiveTrimmedScreenRowsWithRevision(visit func(rowI
 // NativeScreenSnapshot 返回 core 当前 latest native screen。
 // 调用方只能把它用于实时显示 projection；history/window/copy truth 必须继续走 HistoryWindow/Copy。
 func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSnapshot {
-	return terminal.NativeScreenSnapshotSince(terminalID, 0)
+	snapshot, _ := terminal.nativeScreenSnapshotSinceBaseline(terminalID, 0, nil)
+	return snapshot
 }
 
-// NativeScreenSnapshotSince 返回 observed revision 之后变化的当前屏行。
-// 行内容始终取查询时刻的 latest screen；中间 revision 不形成待消费帧队列。
-func (terminal *Terminal) NativeScreenSnapshotSince(terminalID string, observed LiveRevision) NativeScreenSnapshot {
+func (terminal *Terminal) nativeScreenSnapshotSinceBaseline(terminalID string, observed LiveRevision, base *nativeScreenBaseline) (NativeScreenSnapshot, *nativeScreenBaseline) {
 	terminal.liveOpMu.Lock()
 	defer terminal.liveOpMu.Unlock()
 	if terminal.live == nil {
-		return NativeScreenSnapshot{TerminalID: terminalID, BaseRevision: observed, Revision: terminal.liveRevision, FullReplace: true, Timestamp: time.Now().UTC()}
+		snapshot := NativeScreenSnapshot{TerminalID: terminalID, BaseRevision: observed, Revision: terminal.liveRevision, FullReplace: true, Timestamp: time.Now().UTC()}
+		return snapshot, &nativeScreenBaseline{terminal: terminal, revision: terminal.liveRevision, generation: terminal.liveGeneration}
 	}
 	current := terminal.liveRevision
 	size := terminal.live.Size()
-	fullReplace := observed == 0 || observed > current || observed < terminal.liveFullRevision
+	nativeSize := NativeScreenSize{Cols: size.Cols, Rows: size.Rows}
+	rowHashes := terminal.live.VisualRowHashes()
+	altScreen := terminal.live.IsAlternateScreen()
+	currentBase := &nativeScreenBaseline{
+		terminal: terminal, revision: current, generation: terminal.liveGeneration, size: nativeSize,
+		rowHashes: rowHashes, altScreen: altScreen,
+	}
+	fullReplace := observed == 0 || observed > current || base == nil ||
+		base.terminal != terminal || base.revision != observed || base.generation != terminal.liveGeneration ||
+		base.size != nativeSize || base.altScreen != altScreen
 	var rowCopies []NativeScreenRowCopy
 	var replacedRows []int
 	if !fullReplace {
 		var ok bool
-		rowCopies, replacedRows, ok = terminal.liveChanges.compose(observed, current, size.Rows)
+		rowCopies, replacedRows, ok = nativeScreenDeltaRows(base, rowHashes)
 		fullReplace = !ok
 	}
 	if fullReplace {
@@ -474,7 +482,7 @@ func (terminal *Terminal) NativeScreenSnapshotSince(terminalID string, observed 
 		Modes:        info.Modes,
 		AltScreen:    info.IsAlternateScreen,
 		Timestamp:    time.Now().UTC(),
-	}
+	}, currentBase
 }
 
 // LiveRevision 返回当前 terminal native screen 的 latest-only revision。
@@ -978,32 +986,9 @@ func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
 	if terminal.live == nil {
 		return terminal.liveRevision, nil
 	}
-	result := terminal.live.WriteWithResult(output)
-	baseRevision := terminal.liveRevision
+	terminal.live.Write(output)
 	terminal.liveRevision++
-	if result.FullReplace {
-		terminal.markLiveFullReplaceLocked()
-	} else {
-		change := liveScreenChange{
-			BaseRevision: baseRevision,
-			Revision:     terminal.liveRevision,
-			ReplacedRows: append([]int(nil), result.ChangedRows...),
-		}
-		for _, rowCopy := range result.RowCopies {
-			change.RowCopies = append(change.RowCopies, NativeScreenRowCopy{
-				SourceRow: rowCopy.SourceRow, DestinationRow: rowCopy.DestinationRow, Count: rowCopy.Count,
-			})
-		}
-		if floor := terminal.liveChanges.append(change); floor > terminal.liveFullRevision {
-			terminal.liveFullRevision = floor
-		}
-	}
 	return terminal.liveRevision, nil
-}
-
-func (terminal *Terminal) markLiveFullReplaceLocked() {
-	terminal.liveFullRevision = terminal.liveRevision
-	terminal.liveChanges.reset()
 }
 
 func (terminal *Terminal) ingestHistorySemanticOutput(output string) error {
