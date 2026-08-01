@@ -92,9 +92,9 @@ func (database *Database) GetDaemon(ctx context.Context, daemonID string) (enrol
 	return scanDaemon(database.pool.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, daemonID))
 }
 
-// ListDaemons 返回持久 daemon 列表；在线状态由上层和 Directory 合并。
+// ListDaemons 返回未删除的持久 daemon 列表；在线状态由上层和 Directory 合并。
 func (database *Database) ListDaemons(ctx context.Context) ([]enrollment.Daemon, error) {
-	return database.listDaemons(ctx, daemonSelect+` ORDER BY daemon.created_at,daemon.daemon_id`)
+	return database.listDaemons(ctx, daemonSelect+` WHERE daemon.state<>'deleted' ORDER BY daemon.created_at,daemon.daemon_id`)
 }
 
 // ListDaemonsByAccount 返回账号持久 daemon identity；在线位置仍由 Directory 合并。

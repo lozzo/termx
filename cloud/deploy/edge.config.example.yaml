@@ -1,0 +1,11 @@
+# Bootstrap-only example. Prefer the one-time install command emitted by Controller.
+# The Edge removes bootstrap_token and adds registered Controller fields atomically.
+controller_origin: https://cloud.anytty.com
+register_url: https://cloud.anytty.com/api/install/register
+edge_id: REPLACE_EDGE_ID
+bootstrap_token: REPLACE_ONE_TIME_BOOTSTRAP_TOKEN
+state_directory: /var/lib/anytty-cloud-edge
+public_endpoint: edge.example.com:41102
+listen_override: 0.0.0.0:41102
+turn_listen_override: 0.0.0.0:3478
+log_level: info

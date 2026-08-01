@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const defaultSoftwareVersion = "development"
+var defaultSoftwareVersion = "development"
 
 type options struct {
 	configFile              string

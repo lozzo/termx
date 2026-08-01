@@ -104,6 +104,10 @@ func TestConsumeDaemonEnrollmentCreatesNewIdentityAfterDelete(t *testing.T) {
 	if err != nil || len(daemons) != 1 || daemons[0].ID != restored.ID {
 		t.Fatalf("account daemons=%+v err=%v", daemons, err)
 	}
+	managedDaemons, err := database.ListDaemons(ctx)
+	if err != nil || len(managedDaemons) != 1 || managedDaemons[0].ID != restored.ID {
+		t.Fatalf("managed daemons=%+v err=%v", managedDaemons, err)
+	}
 	if _, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, fingerprint, publicKey, now.Add(3*time.Minute)); !errors.Is(err, enrollment.ErrEnrollmentInvalid) {
 		t.Fatalf("reused enrollment token error=%v", err)
 	}

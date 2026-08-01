@@ -37,9 +37,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	softwareVersion = "development"
-)
+var softwareVersion = "development"
 
 type options struct {
 	migrate              bool

@@ -58,6 +58,24 @@ func (database *Database) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if item.version == 7 {
+			if _, err := tx.Exec(ctx, `LOCK TABLE relay_usage_aggregates, relay_usage_events, usage_periods IN ACCESS EXCLUSIVE MODE`); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("lock migration 7 legacy usage tables: %w", err)
+			}
+			var legacyUsageExists bool
+			if err := tx.QueryRow(ctx, `SELECT
+EXISTS (SELECT 1 FROM relay_usage_aggregates) OR
+EXISTS (SELECT 1 FROM relay_usage_events) OR
+EXISTS (SELECT 1 FROM usage_periods)`).Scan(&legacyUsageExists); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("preflight migration 7 legacy usage data: %w", err)
+			}
+			if legacyUsageExists {
+				_ = tx.Rollback(ctx)
+				return errors.New("migration 7 requires empty legacy usage tables; archive or migrate their data before retrying")
+			}
+		}
 		if _, err = tx.Exec(ctx, item.sql); err == nil {
 			_, err = tx.Exec(ctx, `INSERT INTO anytty_schema_migrations(version, checksum) VALUES($1,$2)`, item.version, item.checksum)
 		}
