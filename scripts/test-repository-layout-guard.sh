@@ -39,12 +39,14 @@ expect_fail() {
 create_fixture() {
   local name="$1"
   local fixture="$tmp_dir/$name"
-  mkdir -p "$fixture/scripts"
+  mkdir -p "$fixture/scripts" "$fixture/docs" "$fixture/cloud/deploy"
   cp "$guard" "$fixture/scripts/repository-layout-guard.sh"
   chmod +x "$fixture/scripts/repository-layout-guard.sh"
   for document in \
     README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md \
-    ARCHITECTURE.md CONNECTION_ARCHITECTURE.md workflow.md; do
+    ARCHITECTURE.md docs/README.md docs/TERMINAL_DELIVERY.md \
+    docs/PAIRING_PROTOCOL.md docs/CLOUD_DAEMON_LIFECYCLE.md \
+    cloud/deploy/README.md; do
     : >"$fixture/$document"
   done
   printf '/.artifacts/\n*.apk\n*.aab\n' >"$fixture/.gitignore"

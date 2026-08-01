@@ -16,8 +16,11 @@ required_documents=(
   SECURITY.md
   CHANGELOG.md
   ARCHITECTURE.md
-  CONNECTION_ARCHITECTURE.md
-  workflow.md
+  docs/README.md
+  docs/TERMINAL_DELIVERY.md
+  docs/PAIRING_PROTOCOL.md
+  docs/CLOUD_DAEMON_LIFECYCLE.md
+  cloud/deploy/README.md
 )
 for path in "${required_documents[@]}"; do
   [[ -f "$path" ]] || fail "required document is missing: $path"

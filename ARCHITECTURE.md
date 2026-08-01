@@ -1,39 +1,149 @@
-# AnyTTY Cloud 当前架构
+# AnyTTY 架构
 
-## 1. 文档地位
+本文描述当前 `master` 的稳定组件边界、连接模型、持久化和故障语义。它是架构总览，不记录整改批次、历史提交或未来功能清单。
 
-本文是当前开发协议和实现边界的唯一总览。连接安全、性能审查和故障矩阵见 [CONNECTION_ARCHITECTURE.md](CONNECTION_ARCHITECTURE.md)。
+## 1. 设计原则
 
-仓库不维护开发期协议兼容层。协议、记录或测试与本文不一致时，必须删除旧实现并一次性升级开发数据，不能通过双协议分支继续保留。
+1. daemon 是终端、文件、设备身份和客户端授权的最终所有者。
+2. endpoint 是客户端本地保存的目标，route 是到达该目标的一种方式。
+3. Local、SSH、Direct 和 Cloud 共用同一终端协议，不建立多套业务实现。
+4. Controller 管理长期策略和注册真值，Edge 管理在线数据面的有界内存状态。
+5. Controller 与 Edge 都不能替代 daemon 授予 terminal 或 file 权限。
+6. 高频输出的主 PTY payload 必须受每 terminal 和全 daemon 的固定字节预算约束；附加订阅队列也必须独立有界。
+7. 项目未发布，协议和开发数据直接升级；不保留旧格式兼容分支。
 
-## 2. 产品边界
-
-AnyTTY Cloud 由三个运行角色组成：
-
-- Controller：账号、订阅、设备注册、Edge 配置、Directory fallback、运营管理和用量结算。
-- Edge：面向 daemon 和客户端的公网入口、内存 Presence、WebRTC 信令、TURN Relay 及 durable reservation journal。
-- daemon：终端能力的最终所有者，持有 DeviceIdentity、AccessStore 和与客户端的端到端授权状态。
-
-客户端不把 Controller 或 Edge 当作终端授权方。terminal、file、command 和 CapabilityGrant 只在客户端与 daemon 的端到端通道中处理。
-
-## 3. 核心决策
-
-1. daemon 只在首次注册时直接访问 Controller。
-2. 注册成功后，daemon 持久化 Controller 签名的 `DaemonBindingClaims` 和与其摘要绑定的 `EdgeLocator`。
-3. daemon 启动和重连直接访问记录中的 Edge。
-4. pairing offer 携带 daemon 签名的短期 pairing route grant 和同一 Edge locator，客户端不经 Controller 即可配对。
-5. 已授权客户端优先使用 credential 中缓存的 Edge locator。
-6. 只有 locator 缺失、明确过期或 Edge 传输不可达时，客户端才访问 Controller Directory。
-7. 每个 ClientGateway Relay session 必须通过当前 ready EdgeControl generation 向 Controller 提交强事务 reservation；Edge 不从 binding、locator 或本地状态创建商业授权。
-8. 同一 EdgeControl 双向流承担状态投影、策略与证书控制、主动关闭命令，以及有界关联的 Relay reserve、renew、settle 和 query。
-
-## 4. 拓扑
+## 2. 仓库分层
 
 ```text
-                           account / operator / fallback
+cmd/anytty                    CLI、TUI 和 daemon 进程组装
+tui/                          TUI 状态、布局、渲染与配置
+core/                         PTY、terminal、history、file 与 live screen
+api_layer/                    core API 边界
+client/                       endpoint、credential、session 与 route 选择
+remote/                       Direct、SSH、WebRTC、DTLS/DataChannel
+clients/ui/                   共享 React 产品界面
+clients/mobile/               Android Capacitor 宿主与原生 Go bridge
+
+cmd/anytty-cloud-controller   Controller 进程组装
+cloud/controller/             账号、注册、策略、Directory、证书、用量
+cmd/anytty-cloud-edge         Edge 进程组装
+cloud/edge/                   Gateway、在线状态、Relay、Controller link
+cloud/daemon/                 daemon 的 Cloud Agent runtime
+cloud/web/                    公开网站、用户和运营控制台
+proto/                        protobuf 源文件与生成物
+```
+
+## 3. 本地终端链路
+
+```text
+CLI / TUI / Mobile UI
+        |
+        | core protocol session
+        v
+daemon API -> TerminalProcess -> PTY -> shell / command
+        |           |
+        |           +-> bounded output buffer -> Live cursor
+        |                                  \--> History cursor -> history store
+        +-> file / access / endpoint services
+```
+
+daemon 由当前用户运行，默认使用用户级 socket。终端创建后拥有稳定 terminal ID 和独立 generation；终端退出会保留记录与历史，`kill` 停止进程，`rm` 删除已退出记录。
+
+## 4. Endpoint 与 route
+
+endpoint registry 是客户端本地配置。一个 endpoint 包含目标 daemon identity、展示信息、route 列表和选择策略。
+
+| Route | 传输入口 | 信任锚 |
+| --- | --- | --- |
+| Local | 当前用户 daemon socket | 本机文件系统权限与 daemon identity |
+| SSH | OpenSSH + 远端 loopback signaling/ICE-TCP | SSH host key pin + daemon identity |
+| Direct | daemon 公开 signaling/ICE-TCP | 配对写入的 daemon identity 与 route credential |
+| Cloud | Edge AgentGateway/ClientGateway | Controller 签名 grant、Edge CA、daemon/client proof |
+
+route 选择只决定如何到达 daemon，不改变 CapabilityGrant 的权限。连接失败按结构化错误决定是否尝试下一条 route；授权、协议或终端错误不能伪装成网络失败触发宽泛 fallback。
+
+## 5. 移动客户端
+
+Android App 由 Capacitor WebView、共享 React UI 和原生 Go client bridge 组成。
+
+- App 无账号、无登录、无自动发现。
+- 用户只能扫描目标服务生成的一次性 pairing URI；App 不提供文本导入入口。
+- endpoint registry 和客户端凭据保存在当前设备。
+- 原生层拥有连接 session、secure credential、文件下载和 Android 生命周期协调。
+- WebView 重载、App 前后台切换和系统网络变化通过 generation fence 使旧请求失效。
+- 当前仓库包含 Android 工程；iOS 和桌面 GUI 只保留协议 product enum，不是已交付客户端。
+
+## 6. 实时画面与背压
+
+终端实时展示使用客户端基线驱动的 pull 模型：
+
+1. 客户端用 `TerminalRef + observed_revision` 请求下一帧；protocol session 本身隔离不同客户端。
+2. daemon 的短期 session baseline cache 能找到该 terminal revision 时，比较基线与最新画面并返回增量。
+3. 基线缺失、过期、输出 gap 或尺寸不一致时返回全量画面。
+4. 客户端把该 revision 选入唯一 renderer submission 后立即重挂 long-poll；渲染期间到达的结果只合并最新 damage。
+5. 没有更新时请求等待；会话取消会终止等待，不保留孤立请求。
+
+该模型避免按固定帧率持续推送，也避免每次都传完整屏幕。网络等待与物理渲染重叠，renderer 仍保持单写入。
+
+每个 client baseline 只短期存在并自动清理；它不是持久历史，也不是全局帧 ring 的替代品。具体契约见 [docs/TERMINAL_DELIVERY.md](docs/TERMINAL_DELIVERY.md)。
+
+## 7. 有界内存输出缓冲
+
+每个 terminal generation 拥有一个共享 PTY payload buffer，Live 和 History 各自维护 cursor，同一主 payload 不复制两份。raw PTY stream 会为每个订阅者复制 chunk，并保留最多 16 个 chunk 的独立有界队列；这部分不计入 `resident_budget_bytes`。
+
+默认预算：
+
+| 参数 | 默认值 | 允许范围 |
+| --- | ---: | ---: |
+| 单 terminal `capacity_bytes` | 32 MiB | 64 KiB - 256 MiB |
+| daemon `resident_budget_bytes` | 512 MiB | 64 KiB - 2 GiB |
+| overflow | `block` | `block` / `drop` |
+
+- `block`：缓冲满时停止继续读取/提交 PTY 输出，让上游自然减速。
+- `drop`：不等待，淘汰旧 payload，并向每个受影响 consumer 发送有序 gap。
+- gap 会切断 parser epoch；后续查询不能把 gap 两侧误当成连续画面。
+- terminal 关闭、consumer 失败和 daemon shutdown 都会释放 resident budget。
+
+因此主 PTY payload 受配置上限约束，raw-stream 内存受“订阅者数量 x 固定队列深度 x chunk 上限”约束；两者都不随累计输出总量增长，但当前实现不是与订阅者数量无关的严格每-terminal 常量。磁盘历史由独立大小和时间保留策略约束。
+
+## 8. 历史、搜索与复制
+
+history store 保存带时间信息的逻辑行和可重放终端内容。客户端用 token、generation、before/after cursor 和逻辑边界分页获取；协议没有数字 offset，也不一次加载全部历史。
+
+- 进入历史模式时冻结 Live 末端和当前屏幕内位置。
+- 首个历史页在 Live 画面后方 staging，避免进入模式时画面跳到错误末行。
+- 向旧内容滚动时按当前列宽连续 prepend 页面。
+- 新 Live 输出继续写历史，但冻结视口不会被推动。
+- 返回逻辑尾部时客户端自动退出历史模式，并请求最新 Live 基线。
+- 搜索返回逻辑行位置，复制保存 start/end range；确认复制时才分块物化文本。
+- clipboard 是独立能力，不要求先进入复制模式。
+
+共享 React UI 在 Android WebView 中交付，并使用同一套分页、搜索、复制和底部恢复逻辑。其普通浏览器构建当前只用于开发预览和测试，不是已发布的 Web terminal 产品。
+
+## 9. 扫码配对
+
+```text
+daemon                  App / Client                    Edge (Cloud route)
+  | create one-time offer    |                                  |
+  |---------------- QR ----->|                                  |
+  |                           | validate identity + route        |
+  |                           |---- pairing admission ---------->|
+  |<------------------------- live authorize -------------------|
+  |<========== DTLS claim / capability exchange ===============>|
+  |                           | verify daemon, save credential   |
+```
+
+pairing offer 可携带 Local 之外的 SSH、Direct 或 Cloud route hint。一次性 claim 有过期时间并在 daemon 内原子消费。Edge 和 Controller 不能根据二维码自行生成 terminal 权限；配对最终仍在客户端与 daemon 的端到端通道内完成。
+
+稳定字段和失败语义见 [docs/PAIRING_PROTOCOL.md](docs/PAIRING_PROTOCOL.md)。
+
+## 10. Cloud 拓扑
+
+```text
+                           account / enrollment / policy
 Client ----------------------------------------------------> Controller
    |                                                            ^
-   | cached locator, ClientGateway                               | mTLS EdgeControl
+   | cached locator, ClientGateway                               | mTLS EdgeControl v6
    v                                                            |
  Edge <----------------------------------------------------------+
    ^
@@ -44,150 +154,102 @@ daemon
 Client <========== WebRTC + DTLS + DataChannel ==========> daemon
 ```
 
-Controller 不运输 SDP、ICE、terminal、file 或 CapabilityGrant。Edge 只运输 WebRTC 建连所需信令，不能读取端到端 terminal 数据。
+### Controller
 
-## 5. 首次注册
+Controller 使用 PostgreSQL 保存账号、daemon 状态、注册、套餐/用量、Edge desired config、证书档案和审计。它提供：
 
-1. daemon 使用一次性 enrollment code、DeviceIdentity public key 和指纹请求 challenge。
-2. daemon 用 DeviceIdentity 私钥签 challenge。
-3. Controller 在同一事务中消费 code 并创建持久 daemon identity。
-4. Controller 按可用性和负载选择 owning Edge。
-5. Controller 投影公开 `EdgeLocator`，对其确定性编码计算 SHA-256。
-6. Controller 签发 `DaemonBindingClaims`，绑定 daemon、账号、设备公钥、owning Edge、locator 摘要、revision 和有效期；binding 不携带 Relay authority。
-7. daemon 原子保存 version 2 enrollment record。
+- 一次性 daemon enrollment 与 Edge bootstrap。
+- Controller 签名的 binding、route grant 和 KeyBundle。
+- EdgeControl v6 全量 snapshot、增量、daemon lifecycle 和证书/config 控制。
+- 仅在客户端可信 locator 缺失或明确不可达时使用的 Directory fallback。
+- Relay reservation、renew 和 settlement 的商业真值。
+- Cloud Web 的公开页面、JSON API 和运营入口。
 
-version 2 记录只包含：
+### Edge
 
-- `daemon_id`、`account_id`。
-- 完整签名 binding envelope。
-- 完整 Edge locator protobuf。
-- enrollment 时间。
+Edge 提供公网 AgentGateway、ClientGateway 和 TURN。它保存：
 
-加载记录时必须拒绝未知字段、错误版本、损坏 protobuf、身份不一致、Edge 不一致及 locator 摘要不一致。记录中不保存 Controller 地址、运行时 generation、session、TURN credential 或私钥。
+- 当前 Agent、client session、pending signaling、Relay allocation/group 的有界内存状态。
+- Controller 下发的 daemon policy 内存投影。
+- 可验证 desired config、managed certificate、binding KeyBundle cache。
+- 未 ACK Relay reservation/settlement journal。
 
-## 6. daemon 日常连接
+EdgeControl 断开后，Edge 清空 daemon policy 投影、关闭 Agent 并排空它仍跟踪的 Cloud session；新的受控准入 fail closed。Local、SSH 和 Direct 不依赖该控制链。Relay 不能离线创建或续租新的 authority。
 
-daemon 从记录解码 binding 和 locator，使用 locator 的独立 CA pool、SNI 和 endpoint 连接 Edge。`AgentHello` 携带：
+### daemon enrollment
 
-- 签名 binding。
-- binding payload 摘要、daemon ID、boot ID 和 connection ID 的 DeviceIdentity proof。
-- 当前协议版本和软件版本。
+1. daemon 使用一次性 code 和 DeviceIdentity proof 访问 Controller。
+2. Controller 选择 binding 目标 Edge，签发 binding 与 locator。
+3. daemon 原子保存 Cloud enrollment record。
+4. 后续启动直接连接记录中的 Edge，不在正常路径访问 Controller。
+5. 已授权客户端优先使用 credential 中缓存的 locator。
 
-Edge 使用从 EdgeControl 获得的 Controller verification key 验签，检查 target Edge、时间窗、revision 和 DeviceIdentity proof，然后把认证 claims 与当前 AgentGateway generation 一起放入内存状态。
+AgentGateway 与 ClientGateway 均由 Edge 先发送一次性 challenge。proof 覆盖 challenge、Edge/boot/stream identity、双方 session/generation 和授权 envelope 摘要，避免捕获 Hello 在新连接重放。
 
-AgentGateway 断开后，daemon 对同一 Edge 指数退避重连，不访问 Controller。当前实现没有跨 Edge 自动迁移；原 Edge 永久不可达时需要重新对齐 locator。
+## 11. Daemon 生命周期
 
-## 7. pairing
+Cloud daemon 的持久状态只有：
 
-daemon 生成紧凑 `PairingClaimOffer`，其中只包含：
+- `ACTIVE`：允许新的 Cloud client、pairing、P2P 和 Relay。
+- `BLOCKED`：可恢复；Edge 先关闭准入，再排空现有 Cloud session/Relay，并通过保留的 Agent 连接通知 daemon。
+- `DELETED`：终态；旧 binding 与 enrollment generation 永久拒绝，daemon 删除 Cloud enrollment 并断开 Agent。
 
-- 128-bit 一次性 claim、daemon ID、device public key 和过期时间。
-- 首次连接 owning Edge 所需的 edge ID、endpoint、server name。
-- Edge CA 根证书 DER 的 SHA-256 指纹，不包含 CA PEM。
+Controller 提交状态后向所有 EdgeControl 广播 snapshot/delta。Edge 重连时必须先获取全量 snapshot；控制链断开时 Edge 丢弃该内存表并关闭 Agent。daemon 重连到 binding 指定的 Edge 时，该 Edge 使用当前 policy table 决定准入并下发目标状态。Controller 不持久化在线 Agent connection；在线 connection ownership 是 Edge 内存事实。
 
-客户端使用 CA 指纹校验 Edge 在 TLS handshake 中发送的完整证书链，然后直接建立 ClientGateway pairing stream。Edge 将 daemon identity、客户端公钥、claim 摘要、产品、session 和 generation 与当前在线 AgentGateway binding 对齐，并向 owning daemon 发起实时 `AgentAuthorize`。claim 本体只在通过 DTLS 建立的端到端通道中提交，Edge 和 Controller 都不能据此生成 terminal 权限。
+完整状态机见 [docs/CLOUD_DAEMON_LIFECYCLE.md](docs/CLOUD_DAEMON_LIFECYCLE.md)。
 
-daemon 原子把 claim 绑定到新的 ClientAccessIdentity，并通过 `PairingAccepted` 返回 CapabilityGrant、CloudRouteGrant 和完整 Edge locator。客户端验证 daemon identity 与签名后才写入 secure credential。
+## 12. 信任与持久化
 
-## 8. 已授权客户端连接
+| 位置 | 持久数据 | 不应持久化 |
+| --- | --- | --- |
+| Controller PostgreSQL | 账号、daemon state、Edge config、证书元数据、用量、Relay reservation | terminal/file payload、私钥、在线连接对象 |
+| Controller secret dir | signing key、证书私钥 | 普通 API 响应或日志 |
+| Edge state dir | identity、公开 TLS、config cache、KeyBundle、Relay journal | Presence、session、terminal 数据 |
+| daemon state | DeviceIdentity、AccessStore、Cloud enrollment、history | 客户端明文私钥、Controller session |
+| client secure store | ClientAccessIdentity、CapabilityGrant、route credential/locator | Cloud 账号密码 |
+
+任何一方都不得记录私钥、enrollment/claim token、完整 signed envelope、CapabilityGrant、TURN credential、SDP、ICE candidate、terminal 或 file payload。
+
+## 13. 并发与资源边界
+
+- 公网 gRPC 和协议消息有明确 byte limit，昂贵对象在完整校验后创建。
+- Direct、AgentGateway、ClientGateway、Relay 和 terminal 请求均有并发/队列上限。
+- 双向 stream 只有一个 writer，消息 sequence 严格单调。
+- boot ID、connection ID、generation 和 revision 防止迟到清理影响新连接。
+- state actor 线性化 Edge runtime mutation；关闭有 deadline，不无限等待 peer。
+- Web 路由、Android native session 和文件传输使用 owner/generation fence 清理旧异步任务。
+- 队列满时明确失败、block 或 drop，不允许无界 goroutine、slice、channel 或 JS promise 累积。
+
+## 14. 故障语义
+
+| 故障 | 行为 |
+| --- | --- |
+| 客户端丢失 live baseline | daemon 返回全量帧，建立新 baseline |
+| terminal output buffer 满 | 按 `block` 减慢上游，或按 `drop` 产生 gap |
+| History consumer 失败 | 错误可见，释放其 cursor；不能拖住 Live 内存 |
+| Controller 停止 / EdgeControl 断开 | Edge 清空 policy、关闭 Agent 并排空 Edge 跟踪的 Cloud session；新准入 fail closed |
+| Edge 重启且 Controller 暂时不可达 | KeyBundle 只能验证签名，不能恢复 daemon policy；Controller snapshot 恢复前所有托管 admission fail closed |
+| binding Edge 不可达 | 已授权客户端只对明确 locator 网络/位置错误尝试 Directory fallback |
+| App 进后台或 WebView 重载 | native generation 失效旧请求，前台恢复后按本地 registry 重建 session |
+| daemon 被阻断 | Edge 拒绝新 Cloud 数据面并关闭现有 Cloud session，允许恢复 |
+| daemon 被删除 | Cloud enrollment 清理；Local、SSH、Direct 和本地历史保留 |
+
+## 15. 明确非目标
+
+- App 账号登录、账号设备同步和自动发现。
+- Controller 或 Edge 读取、代理或授权终端内容。
+- daemon 自动跨 Edge 迁移。
+- Web 浏览器终端产品；当前 Cloud Web 是公开信息和控制台。
+- iOS 或桌面 GUI 的发布承诺。
+- 开发期旧协议、旧 YAML 或旧 enrollment 数据兼容层。
+- 通用事件总线、通用 actor 框架或为假设需求预留的扩展层。
+
+## 16. 变更要求
+
+跨边界变更按以下顺序完成：
 
 ```text
-secure credential
-  -> 校验 locator 结构和 CloudRouteGrant envelope
-  -> TLS 连接 Edge
-  -> ClientGateway Hello + ClientAccessIdentity proof
-  -> Edge 验 daemon grant 和当前 daemon Presence
-  -> daemon AccessStore 实时预检
-  -> offer / answer / ICE
-  -> DTLS DataChannel
-  -> daemon identity + CapabilityGrant 鉴权
-  -> protocol Hello
-  -> ReadyPeerSession
+schema -> generated code -> store/runtime -> API mapping -> client/UI -> tests -> docs
 ```
 
-缓存命中时 Controller RPC 数为零。只有以下条件允许 Directory fallback：
-
-- credential 没有 locator。
-- Edge dial/TLS/HTTP2 在发送 ClientHello 前失败，并被包装为结构化 locator-unreachable 错误。
-- Edge 明确返回位置不存在。
-
-授权失败、daemon 拒绝、配额、Relay、协议或 DataChannel 错误不得触发 fallback。新的 locator 只有在端到端认证和 protocol Hello 完成后才写回 credential；写缓存失败不关闭已经成功的 session。
-
-## 9. Relay reservation 和续期
-
-Relay 与连接存活是不同状态。heartbeat 只证明传输活着；Controller 已提交的 reservation 决定 TURN allocation 是否仍可转发。`reservation_id` 同时是请求、grant、唯一 settlement 和 ACK identity，一个 ClientGateway session 固定占一个套餐并发 slot。
-
-Edge 在发送 reserve 前写 `REQUESTED`，收到 grant 后写 `HELD_UNEXPOSED`，并在 ICE credential 离开 Edge 前最后写入 `EXPOSED`。续期先 durable 写 `RENEW_PENDING(sequence)`，丢失响应时以同一 sequence 重放；续期只推进短期 expiry，不增加 slot、hold 或字节预算。
-
-同一 reservation 最多容纳四个 physical TURN allocation，它们只属于 Edge 本地 group，共享字节和速率 limiter。关闭单个 allocation 只累加 group counter；session 正常关闭先停止 admission，待 pending、active、closing 全部静止后写一个 aggregate settlement。Controller ACK 后才删除 journal；进程崩溃后的 `EXPOSED` 或 `CLOSING` 记录按 `RECOVERY_MAX` 重放，且不恢复 Relay authority。
-
-Controller 不 ready 时，AUTO 只尝试 P2P，RELAY_ONLY 明确不可用，不能从 locator、binding、delegation 或本地续期获得新的 Relay authority。
-
-## 10. 真值与持久化
-
-Controller PostgreSQL 中只有绑定真实订阅周期的 `usage_periods` 和长期保留终态的 `relay_reservations` 是 Relay 授权与结算真值；运营 aggregate 仅可作为同事务可重建投影。实时 Presence 只存在于 Controller Directory 内存，由 Edge snapshot/delta 重建。
-
-Edge 内存保存当前 AgentGateway、ClientGateway、Relay group/allocation、认证 claims、correlation 和有界 mailbox。Edge 磁盘只保存运行配置、证书、可验证配置缓存和未 ACK 的 reservation journal。
-
-daemon 磁盘保存 DeviceIdentity、AccessStore 和 enrollment record。客户端 secure store 保存 ClientAccessIdentity、CapabilityGrant、CloudRouteGrant 和公开 locator。
-
-任何一方都不得在日志中记录私钥、enrollment/claim token、完整 signed envelope、CapabilityGrant、TURN credential、SDP、ICE candidate、terminal 或 file payload。
-
-## 11. EdgeControl
-
-EdgeControl 使用 mTLS 双向流。协议版本 5 的 payload 包含：
-
-- Hello/Welcome 和 binding verification keys。
-- 原子 snapshot、增量、heartbeat 和 resync。
-- desired config 与证书热更新。
-- 精确 generation 的 daemon/session 关闭命令与结果。
-- Relay reserve、renew、settle、query response，并按 reservation ID 有界关联。
-
-Controller 断开不影响已有 P2P/DataChannel，但禁止新的 Relay reservation 和 renewal；现存 allocation 只能使用已提交 grant 的剩余短期 authority。
-
-## 12. 资源和并发
-
-- 公网 Edge gRPC 单消息上限 1 MiB，单连接并发 stream 上限 256。
-- Runtime actor 对 Agent、session、pending signaling、Relay、mailbox 和 delta buffer 设硬上限。
-- SDP、candidate、grant 和 offer 在创建 PeerConnection 或 Relay allocation 前校验大小和数量。
-- 每个双向 stream 只有一个 writer；所有 envelope 使用严格单调 `stream_seq`。
-- generation fence 防止旧连接、旧命令或迟到清理删除新状态。
-- 队列满时快速失败，不能无限阻塞或无界增长。
-
-## 13. 故障语义
-
-| 故障 | 当前行为 |
-| --- | --- |
-| Controller 停止，Edge 仍运行 | daemon 可重连同一 Edge；已授权客户端和 pairing 可直连；AUTO 只走 P2P，RELAY_ONLY 不可用 |
-| Controller 与 EdgeControl 断开 | Edge `ready=false`，数据面 listener 和既有认证状态继续运行 |
-| public Controller 被墙，国内 Edge 可达 | 缓存连接不受影响；仅 locator fallback 失败 |
-| Edge 重启且 Controller 不可达 | verification key 尚未持久化，新的 daemon admission 会 fail closed |
-| owning Edge 不可达 | 客户端只对传输/位置错误 fallback；daemon 当前不做自动跨 Edge 迁移 |
-| locator 缓存写失败 | 已完成端到端认证的 session 保持成功 |
-| settlement/ACK 丢失 | 唯一 aggregate fact 保留在 journal，恢复后按同一 reservation ID 幂等重放 |
-
-## 14. 安全门禁
-
-- Controller enrollment code 一次性消费。
-- 所有身份 proof 使用 Ed25519 和 domain separation。
-- binding、route grant 和 pairing grant 都覆盖各自目标和时间窗。
-- binding 间接签名 daemon 保存的完整 Edge locator；短期 pairing grant 绑定 offer 中的 locator 摘要。
-- 长期 CloudRouteGrant 不绑定固定 locator，确保 Controller 认证 fallback 后可以迁移 Edge 而不永久回源。
-- 私有 Edge CA 不与系统 root pool 混用。
-- Directory 在返回位置前验证 daemon grant 和 ClientAccessIdentity proof。
-- Edge 在 daemon binding 过期后拒绝新的 session 和 Relay。
-- terminal 权限必须再次通过 DataChannel 内 daemon 身份和 CapabilityGrant 校验。
-
-尚未达到上线门禁的项目记录在连接审查文档中。开发阶段不能用兼容分支规避这些门禁。
-
-## 15. 验证基线
-
-必须持续通过：
-
-- `go test ./...`
-- `./scripts/check-generated-code.sh`
-- Controller 停止后的 cached P2P/pairing、AUTO P2P-only 和 RELAY_ONLY fail-closed 集成测试。
-- binding/locator 任意篡改拒绝测试。
-- 协议 descriptor contract 测试，确保被删除的 RPC 和 payload 不会重新出现。
-
-任何协议变更必须同时更新 proto、生成代码、descriptor baseline、实现、集成测试和本文；仓库不接受只为旧开发数据保留的解析或 fallback 分支。
+至少保持 `go test ./...`、生成代码检查、相关 workspace test/typecheck/build 和对应平台测试通过。稳定行为必须进入本文件或 `docs/` 专题文档；一次性计划、审查报告和阶段状态不作为长期真值提交。

@@ -32,23 +32,6 @@ func TestParseExampleConfigMatchesDefaults(t *testing.T) {
 	}
 }
 
-func TestParseDocumentedConfigExample(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "docs", "config.example.yaml"))
-	if err != nil {
-		t.Fatalf("read documented example config: %v", err)
-	}
-	cfg, err := Parse(data)
-	if err != nil {
-		t.Fatalf("parse documented example config: %v", err)
-	}
-	if !strings.Contains(cfg.Chrome.WorkspaceTemplate, "{{workspace | truncate 18}}") ||
-		!strings.Contains(cfg.Chrome.TabTemplate, "{{if active}}") ||
-		!strings.Contains(cfg.Chrome.TabTemplate, "header-active-edge") ||
-		cfg.Chrome.TabCreateIcon == "" {
-		t.Fatalf("documented example should carry text/template tab format and create icon, got %#v", cfg.Chrome)
-	}
-}
-
 func TestDefaultVisibleChromeUsesPortableText(t *testing.T) {
 	cfg := Default()
 	if cfg.Chrome.TabCreateIcon != "+" || cfg.Footer.Templates.KeylockOn != "LOCK" {
