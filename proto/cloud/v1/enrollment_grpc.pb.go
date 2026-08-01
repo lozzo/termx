@@ -163,9 +163,9 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	DaemonManagementService_CreateMyEnrollment_FullMethodName = "/anytty.cloud.v1.DaemonManagementService/CreateMyEnrollment"
-	DaemonManagementService_ListMyDaemons_FullMethodName      = "/anytty.cloud.v1.DaemonManagementService/ListMyDaemons"
-	DaemonManagementService_RevokeMyDaemon_FullMethodName     = "/anytty.cloud.v1.DaemonManagementService/RevokeMyDaemon"
+	DaemonManagementService_CreateMyEnrollment_FullMethodName  = "/anytty.cloud.v1.DaemonManagementService/CreateMyEnrollment"
+	DaemonManagementService_ListMyDaemons_FullMethodName       = "/anytty.cloud.v1.DaemonManagementService/ListMyDaemons"
+	DaemonManagementService_ChangeMyDaemonState_FullMethodName = "/anytty.cloud.v1.DaemonManagementService/ChangeMyDaemonState"
 )
 
 // DaemonManagementServiceClient is the client API for DaemonManagementService service.
@@ -176,7 +176,7 @@ const (
 type DaemonManagementServiceClient interface {
 	CreateMyEnrollment(ctx context.Context, in *CreateMyDaemonEnrollmentRequest, opts ...grpc.CallOption) (*CreateDaemonEnrollmentResponse, error)
 	ListMyDaemons(ctx context.Context, in *ListMyDaemonsRequest, opts ...grpc.CallOption) (*ListMyDaemonsResponse, error)
-	RevokeMyDaemon(ctx context.Context, in *RevokeMyDaemonRequest, opts ...grpc.CallOption) (*RevokeMyDaemonResponse, error)
+	ChangeMyDaemonState(ctx context.Context, in *ChangeMyDaemonStateRequest, opts ...grpc.CallOption) (*ChangeMyDaemonStateResponse, error)
 }
 
 type daemonManagementServiceClient struct {
@@ -207,10 +207,10 @@ func (c *daemonManagementServiceClient) ListMyDaemons(ctx context.Context, in *L
 	return out, nil
 }
 
-func (c *daemonManagementServiceClient) RevokeMyDaemon(ctx context.Context, in *RevokeMyDaemonRequest, opts ...grpc.CallOption) (*RevokeMyDaemonResponse, error) {
+func (c *daemonManagementServiceClient) ChangeMyDaemonState(ctx context.Context, in *ChangeMyDaemonStateRequest, opts ...grpc.CallOption) (*ChangeMyDaemonStateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RevokeMyDaemonResponse)
-	err := c.cc.Invoke(ctx, DaemonManagementService_RevokeMyDaemon_FullMethodName, in, out, cOpts...)
+	out := new(ChangeMyDaemonStateResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_ChangeMyDaemonState_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (c *daemonManagementServiceClient) RevokeMyDaemon(ctx context.Context, in *
 type DaemonManagementServiceServer interface {
 	CreateMyEnrollment(context.Context, *CreateMyDaemonEnrollmentRequest) (*CreateDaemonEnrollmentResponse, error)
 	ListMyDaemons(context.Context, *ListMyDaemonsRequest) (*ListMyDaemonsResponse, error)
-	RevokeMyDaemon(context.Context, *RevokeMyDaemonRequest) (*RevokeMyDaemonResponse, error)
+	ChangeMyDaemonState(context.Context, *ChangeMyDaemonStateRequest) (*ChangeMyDaemonStateResponse, error)
 	mustEmbedUnimplementedDaemonManagementServiceServer()
 }
 
@@ -242,8 +242,8 @@ func (UnimplementedDaemonManagementServiceServer) CreateMyEnrollment(context.Con
 func (UnimplementedDaemonManagementServiceServer) ListMyDaemons(context.Context, *ListMyDaemonsRequest) (*ListMyDaemonsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMyDaemons not implemented")
 }
-func (UnimplementedDaemonManagementServiceServer) RevokeMyDaemon(context.Context, *RevokeMyDaemonRequest) (*RevokeMyDaemonResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RevokeMyDaemon not implemented")
+func (UnimplementedDaemonManagementServiceServer) ChangeMyDaemonState(context.Context, *ChangeMyDaemonStateRequest) (*ChangeMyDaemonStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChangeMyDaemonState not implemented")
 }
 func (UnimplementedDaemonManagementServiceServer) mustEmbedUnimplementedDaemonManagementServiceServer() {
 }
@@ -303,20 +303,20 @@ func _DaemonManagementService_ListMyDaemons_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DaemonManagementService_RevokeMyDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RevokeMyDaemonRequest)
+func _DaemonManagementService_ChangeMyDaemonState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangeMyDaemonStateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DaemonManagementServiceServer).RevokeMyDaemon(ctx, in)
+		return srv.(DaemonManagementServiceServer).ChangeMyDaemonState(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DaemonManagementService_RevokeMyDaemon_FullMethodName,
+		FullMethod: DaemonManagementService_ChangeMyDaemonState_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DaemonManagementServiceServer).RevokeMyDaemon(ctx, req.(*RevokeMyDaemonRequest))
+		return srv.(DaemonManagementServiceServer).ChangeMyDaemonState(ctx, req.(*ChangeMyDaemonStateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -337,8 +337,8 @@ var DaemonManagementService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DaemonManagementService_ListMyDaemons_Handler,
 		},
 		{
-			MethodName: "RevokeMyDaemon",
-			Handler:    _DaemonManagementService_RevokeMyDaemon_Handler,
+			MethodName: "ChangeMyDaemonState",
+			Handler:    _DaemonManagementService_ChangeMyDaemonState_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

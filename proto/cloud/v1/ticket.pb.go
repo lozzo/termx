@@ -69,7 +69,7 @@ func (DaemonCapability) EnumDescriptor() ([]byte, []int) {
 	return file_cloud_v1_ticket_proto_rawDescGZIP(), []int{0}
 }
 
-// DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和 owning Edge，
+// DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和目标 Edge，
 // 不是 bearer token；每次 AgentGateway 连接仍必须证明 DeviceIdentity 私钥持有权。
 type DaemonBindingClaims struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -82,7 +82,6 @@ type DaemonBindingClaims struct {
 	Capabilities      []DaemonCapability     `protobuf:"varint,7,rep,packed,name=capabilities,proto3,enum=anytty.cloud.v1.DaemonCapability" json:"capabilities,omitempty"`
 	IssuedAt          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	Revision          uint64                 `protobuf:"varint,11,opt,name=revision,proto3" json:"revision,omitempty"`
 	EdgeLocatorSha256 []byte                 `protobuf:"bytes,12,opt,name=edge_locator_sha256,json=edgeLocatorSha256,proto3" json:"edge_locator_sha256,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -179,13 +178,6 @@ func (x *DaemonBindingClaims) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
-}
-
-func (x *DaemonBindingClaims) GetRevision() uint64 {
-	if x != nil {
-		return x.Revision
-	}
-	return 0
 }
 
 func (x *DaemonBindingClaims) GetEdgeLocatorSha256() []byte {
@@ -637,7 +629,7 @@ var File_cloud_v1_ticket_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\n" +
-	"\x15cloud/v1/ticket.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\"\xdf\x03\n" +
+	"\x15cloud/v1/ticket.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\"\xc9\x03\n" +
 	"\x13DaemonBindingClaims\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tR\tbindingId\x12\x1b\n" +
@@ -650,10 +642,9 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\fcapabilities\x18\a \x03(\x0e2!.anytty.cloud.v1.DaemonCapabilityR\fcapabilities\x127\n" +
 	"\tissued_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
-	"\brevision\x18\v \x01(\x04R\brevision\x12.\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12.\n" +
 	"\x13edge_locator_sha256\x18\f \x01(\fR\x11edgeLocatorSha256J\x04\b\n" +
-	"\x10\v\"\xf3\x03\n" +
+	"\x10\vJ\x04\b\v\x10\f\"\xf3\x03\n" +
 	"\x14AgentHelloProofInput\x126\n" +
 	"\x17binding_envelope_sha256\x18\x01 \x01(\fR\x15bindingEnvelopeSha256\x12\x1b\n" +
 	"\tdaemon_id\x18\x02 \x01(\tR\bdaemonId\x12$\n" +

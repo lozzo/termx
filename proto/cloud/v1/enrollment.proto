@@ -7,6 +7,14 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
+// DaemonState 是 daemon identity 的持久生命周期。DELETED 是不可恢复的终态墓碑。
+enum DaemonState {
+  DAEMON_STATE_UNSPECIFIED = 0;
+  DAEMON_STATE_ACTIVE = 1;
+  DAEMON_STATE_BLOCKED = 2;
+  DAEMON_STATE_DELETED = 3;
+}
+
 // DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
 message DaemonRecord {
   string daemon_id = 1;
@@ -15,10 +23,17 @@ message DaemonRecord {
   string display_name = 4;
   string device_id = 5;
   string device_fingerprint = 6;
-  bool revoked = 7;
-  uint64 revision = 8;
+  DaemonState state = 7;
+  uint64 state_revision = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+}
+
+// DaemonStateRecord 是 Controller 向 Edge 广播的最小持久状态。
+message DaemonStateRecord {
+  string daemon_id = 1;
+  DaemonState state = 2;
+  uint64 state_revision = 3;
 }
 
 // DaemonRuntimeProjection 来自 Controller Directory 内存，Controller 重启后必须由 Edge 重建。
@@ -59,16 +74,14 @@ message CreateMyDaemonEnrollmentRequest { string daemon_name = 1; }
 message ListMyDaemonsRequest {}
 message ListMyDaemonsResponse { repeated ManagedDaemon daemons = 1; }
 
-message RevokeMyDaemonRequest {
+message ChangeMyDaemonStateRequest {
   string daemon_id = 1;
-  uint64 expected_revision = 2;
-  string reason = 3;
+  DaemonState target_state = 2;
+  uint64 expected_state_revision = 3;
+  string reason = 4;
 }
-message RevokeMyDaemonResponse {
-  DaemonRecord daemon = 1;
-  bool runtime_was_online = 2;
-  bool runtime_disconnect_applied = 3;
-}
+
+message ChangeMyDaemonStateResponse { DaemonRecord daemon = 1; }
 
 message BeginDaemonEnrollmentRequest {
   string enrollment_code = 1;
@@ -115,5 +128,5 @@ service EnrollmentService {
 service DaemonManagementService {
   rpc CreateMyEnrollment(CreateMyDaemonEnrollmentRequest) returns (CreateDaemonEnrollmentResponse);
   rpc ListMyDaemons(ListMyDaemonsRequest) returns (ListMyDaemonsResponse);
-  rpc RevokeMyDaemon(RevokeMyDaemonRequest) returns (RevokeMyDaemonResponse);
+  rpc ChangeMyDaemonState(ChangeMyDaemonStateRequest) returns (ChangeMyDaemonStateResponse);
 }

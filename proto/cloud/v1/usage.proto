@@ -63,8 +63,8 @@ message RelayPolicySnapshot {
   bool edge_enabled = 20;
   string edge_region = 21;
   string daemon_id = 22;
-  uint64 daemon_revision = 23;
-  bool daemon_revoked = 24;
+  uint64 daemon_state_revision = 23;
+  reserved 24 to 28;
 }
 
 message RelayReserveRequest {

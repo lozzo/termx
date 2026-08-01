@@ -10,6 +10,8 @@ import type { EdgeCertificateBundle } from "./certificate_pb";
 import { file_cloud_v1_certificate } from "./certificate_pb";
 import type { SignedEdgeDesiredConfig } from "./edge_config_pb";
 import { file_cloud_v1_edge_config } from "./edge_config_pb";
+import type { DaemonStateRecord } from "./enrollment_pb";
+import { file_cloud_v1_enrollment } from "./enrollment_pb";
 import type { AgentPresence, ClientSessionSummary, RuntimeDelta } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { RelayQueryRequest, RelayQueryResponse, RelayRenewRequest, RelayRenewResponse, RelayReserveRequest, RelayReserveResponse, RelaySettlement, RelaySettlementAck } from "./usage_pb";
@@ -22,7 +24,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/edge_control.proto.
  */
 export const file_cloud_v1_edge_control: GenFile = /*@__PURE__*/
-  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD2FueXR0eS5jbG91ZC52MSLKAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5hbnl0dHkuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEEh4KFmNlcnRpZmljYXRlX3Byb2ZpbGVfaWQYBiABKAkinQEKC0VkZ2VXZWxjb21lEiEKGWFjY2VwdGVkX3Byb3RvY29sX3ZlcnNpb24YASABKA0SMwoJaGVhcnRiZWF0GAIgASgLMiAuYW55dHR5LmNsb3VkLnYxLkhlYXJ0YmVhdFBvbGljeRI2ChJiaW5kaW5nX2tleV9idW5kbGUYAyABKAsyGi5hbnl0dHkuY2xvdWQudjEuS2V5QnVuZGxlIjYKDVNuYXBzaG90QmVnaW4SEwoLc25hcHNob3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQiqAEKDVNuYXBzaG90Q2h1bmsSEwoLc25hcHNob3RfaWQYASABKAkSEwoLY2h1bmtfaW5kZXgYAiABKA0SLgoGYWdlbnRzGAMgAygLMh4uYW55dHR5LmNsb3VkLnYxLkFnZW50UHJlc2VuY2USNwoIc2Vzc2lvbnMYBCADKAsyJS5hbnl0dHkuY2xvdWQudjEuQ2xpZW50U2Vzc2lvblN1bW1hcnlKBAgFEAYiWQoLU25hcHNob3RFbmQSEwoLc25hcHNob3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQSEwoLY2h1bmtfY291bnQYAyABKA0SDgoGZGlnZXN0GAQgASgMIikKDUVkZ2VIZWFydGJlYXQSGAoQcnVudGltZV9yZXZpc2lvbhgBIAEoBCI5ChBTbmFwc2hvdEFjY2VwdGVkEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIjsKDlJlc3luY1JlcXVpcmVkEhkKEWV4cGVjdGVkX3JldmlzaW9uGAEgASgEEg4KBnJlYXNvbhgCIAEoCSJFCg1Db25maWdBcHBsaWVkEg8KB3ZlcnNpb24YASABKAQSDwoHYXBwbGllZBgCIAEoCBISCgplcnJvcl9jb2RlGAMgASgJIoIBChJDZXJ0aWZpY2F0ZUFwcGxpZWQSHgoWY2VydGlmaWNhdGVfcHJvZmlsZV9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoBBIPCgdhcHBsaWVkGAMgASgIEhIKCmVycm9yX2NvZGUYBCABKAkSFQoNZXJyb3JfbWVzc2FnZRgFIAEoCSKoAQoVQ2xvc2VEYWVtb25Db25uZWN0aW9uEhIKCmNvbW1hbmRfaWQYASABKAkSFgoOY29ycmVsYXRpb25faWQYAiABKAkSLAoIZGVhZGxpbmUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCWRhZW1vbl9pZBgEIAEoCRISCgpnZW5lcmF0aW9uGAUgASgEEg4KBnJlYXNvbhgGIAEoCSKmAQoSQ2xvc2VDbGllbnRTZXNzaW9uEhIKCmNvbW1hbmRfaWQYASABKAkSFgoOY29ycmVsYXRpb25faWQYAiABKAkSLAoIZGVhZGxpbmUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKZ2VuZXJhdGlvbhgFIAEoBBIOCgZyZWFzb24YBiABKAkitAEKEUVkZ2VDb21tYW5kUmVzdWx0EhIKCmNvbW1hbmRfaWQYASABKAkSFgoOY29ycmVsYXRpb25faWQYAiABKAkSMAoEY29kZRgDIAEoDjIiLmFueXR0eS5jbG91ZC52MS5Db21tYW5kUmVzdWx0Q29kZRIPCgdtZXNzYWdlGAQgASgJEjAKDGNvbXBsZXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAirwcKCUVkZ2VFdmVudBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKBWhlbGxvGBQgASgLMhouYW55dHR5LmNsb3VkLnYxLkVkZ2VIZWxsb0gAEjgKDnNuYXBzaG90X2JlZ2luGBUgASgLMh4uYW55dHR5LmNsb3VkLnYxLlNuYXBzaG90QmVnaW5IABI4Cg5zbmFwc2hvdF9jaHVuaxgWIAEoCzIeLmFueXR0eS5jbG91ZC52MS5TbmFwc2hvdENodW5rSAASNAoMc25hcHNob3RfZW5kGBcgASgLMhwuYW55dHR5LmNsb3VkLnYxLlNuYXBzaG90RW5kSAASNgoNcnVudGltZV9kZWx0YRgYIAEoCzIdLmFueXR0eS5jbG91ZC52MS5SdW50aW1lRGVsdGFIABIzCgloZWFydGJlYXQYGSABKAsyHi5hbnl0dHkuY2xvdWQudjEuRWRnZUhlYXJ0YmVhdEgAEjgKDmNvbmZpZ19hcHBsaWVkGBogASgLMh4uYW55dHR5LmNsb3VkLnYxLkNvbmZpZ0FwcGxpZWRIABI9Cg1yZWxheV9yZXNlcnZlGBwgASgLMiQuYW55dHR5LmNsb3VkLnYxLlJlbGF5UmVzZXJ2ZVJlcXVlc3RIABI8Cg5jb21tYW5kX3Jlc3VsdBgdIAEoCzIiLmFueXR0eS5jbG91ZC52MS5FZGdlQ29tbWFuZFJlc3VsdEgAEkIKE2NlcnRpZmljYXRlX2FwcGxpZWQYHiABKAsyIy5hbnl0dHkuY2xvdWQudjEuQ2VydGlmaWNhdGVBcHBsaWVkSAASOQoLcmVsYXlfcmVuZXcYHyABKAsyIi5hbnl0dHkuY2xvdWQudjEuUmVsYXlSZW5ld1JlcXVlc3RIABI4CgxyZWxheV9zZXR0bGUYICABKAsyIC5hbnl0dHkuY2xvdWQudjEuUmVsYXlTZXR0bGVtZW50SAASOQoLcmVsYXlfcXVlcnkYISABKAsyIi5hbnl0dHkuY2xvdWQudjEuUmVsYXlRdWVyeVJlcXVlc3RIAEIJCgdwYXlsb2FkIqwHChFDb250cm9sbGVyQ29tbWFuZBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KB3dlbGNvbWUYFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuRWRnZVdlbGNvbWVIABI+ChFzbmFwc2hvdF9hY2NlcHRlZBgVIAEoCzIhLmFueXR0eS5jbG91ZC52MS5TbmFwc2hvdEFjY2VwdGVkSAASOgoPcmVzeW5jX3JlcXVpcmVkGBYgASgLMh8uYW55dHR5LmNsb3VkLnYxLlJlc3luY1JlcXVpcmVkSAASQgoOZGVzaXJlZF9jb25maWcYFyABKAsyKC5hbnl0dHkuY2xvdWQudjEuU2lnbmVkRWRnZURlc2lyZWRDb25maWdIABI4ChJiaW5kaW5nX2tleV9idW5kbGUYGCABKAsyGi5hbnl0dHkuY2xvdWQudjEuS2V5QnVuZGxlSAASPgoNcmVsYXlfcmVzZXJ2ZRgZIAEoCzIlLmFueXR0eS5jbG91ZC52MS5SZWxheVJlc2VydmVSZXNwb25zZUgAEj4KDGNsb3NlX2RhZW1vbhgaIAEoCzImLmFueXR0eS5jbG91ZC52MS5DbG9zZURhZW1vbkNvbm5lY3Rpb25IABI8Cg1jbG9zZV9zZXNzaW9uGBsgASgLMiMuYW55dHR5LmNsb3VkLnYxLkNsb3NlQ2xpZW50U2Vzc2lvbkgAEkQKEmNlcnRpZmljYXRlX2J1bmRsZRgcIAEoCzImLmFueXR0eS5jbG91ZC52MS5FZGdlQ2VydGlmaWNhdGVCdW5kbGVIABI6CgtyZWxheV9yZW5ldxgdIAEoCzIjLmFueXR0eS5jbG91ZC52MS5SZWxheVJlbmV3UmVzcG9uc2VIABI7CgxyZWxheV9zZXR0bGUYHiABKAsyIy5hbnl0dHkuY2xvdWQudjEuUmVsYXlTZXR0bGVtZW50QWNrSAASOgoLcmVsYXlfcXVlcnkYHyABKAsyIy5hbnl0dHkuY2xvdWQudjEuUmVsYXlRdWVyeVJlc3BvbnNlSABCCQoHcGF5bG9hZCrFAQoORWRnZUNhcGFiaWxpdHkSHwobRURHRV9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASIgoeRURHRV9DQVBBQklMSVRZX0NPTlRST0xfU1RSRUFNEAESGQoVRURHRV9DQVBBQklMSVRZX1JFTEFZEAISJwojRURHRV9DQVBBQklMSVRZX1JFU0VSVkFUSU9OX0pPVVJOQUwQAxIqCiZFREdFX0NBUEFCSUxJVFlfQ0VSVElGSUNBVEVfSE9UX1JFTE9BRBAEKpoBChFDb21tYW5kUmVzdWx0Q29kZRIjCh9DT01NQU5EX1JFU1VMVF9DT0RFX1VOU1BFQ0lGSUVEEAASHwobQ09NTUFORF9SRVNVTFRfQ09ERV9BUFBMSUVEEAESIAocQ09NTUFORF9SRVNVTFRfQ09ERV9SRUpFQ1RFRBACEh0KGUNPTU1BTkRfUkVTVUxUX0NPREVfU1RBTEUQAzJcCgtFZGdlQ29udHJvbBJNCgdDb25uZWN0EhouYW55dHR5LmNsb3VkLnYxLkVkZ2VFdmVudBoiLmFueXR0eS5jbG91ZC52MS5Db250cm9sbGVyQ29tbWFuZCgBMAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_cloud_v1_certificate, file_cloud_v1_edge_config, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
+  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD2FueXR0eS5jbG91ZC52MSLKAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5hbnl0dHkuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEEh4KFmNlcnRpZmljYXRlX3Byb2ZpbGVfaWQYBiABKAki2gEKC0VkZ2VXZWxjb21lEiEKGWFjY2VwdGVkX3Byb3RvY29sX3ZlcnNpb24YASABKA0SMwoJaGVhcnRiZWF0GAIgASgLMiAuYW55dHR5LmNsb3VkLnYxLkhlYXJ0YmVhdFBvbGljeRI2ChJiaW5kaW5nX2tleV9idW5kbGUYAyABKAsyGi5hbnl0dHkuY2xvdWQudjEuS2V5QnVuZGxlEjsKDWRhZW1vbl9zdGF0ZXMYBCABKAsyJC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uU3RhdGVTbmFwc2hvdCI2Cg1TbmFwc2hvdEJlZ2luEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIqgBCg1TbmFwc2hvdENodW5rEhMKC3NuYXBzaG90X2lkGAEgASgJEhMKC2NodW5rX2luZGV4GAIgASgNEi4KBmFnZW50cxgDIAMoCzIeLmFueXR0eS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAQgAygLMiUuYW55dHR5LmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5SgQIBRAGIlkKC1NuYXBzaG90RW5kEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEEhMKC2NodW5rX2NvdW50GAMgASgNEg4KBmRpZ2VzdBgEIAEoDCIpCg1FZGdlSGVhcnRiZWF0EhgKEHJ1bnRpbWVfcmV2aXNpb24YASABKAQiOQoQU25hcHNob3RBY2NlcHRlZBITCgtzbmFwc2hvdF9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoBCI7Cg5SZXN5bmNSZXF1aXJlZBIZChFleHBlY3RlZF9yZXZpc2lvbhgBIAEoBBIOCgZyZWFzb24YAiABKAkiRQoNQ29uZmlnQXBwbGllZBIPCgd2ZXJzaW9uGAEgASgEEg8KB2FwcGxpZWQYAiABKAgSEgoKZXJyb3JfY29kZRgDIAEoCSKCAQoSQ2VydGlmaWNhdGVBcHBsaWVkEh4KFmNlcnRpZmljYXRlX3Byb2ZpbGVfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQSDwoHYXBwbGllZBgDIAEoCBISCgplcnJvcl9jb2RlGAQgASgJEhUKDWVycm9yX21lc3NhZ2UYBSABKAkiSgoTRGFlbW9uU3RhdGVTbmFwc2hvdBIzCgdkYWVtb25zGAEgAygLMiIuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlUmVjb3JkIkYKEERhZW1vblN0YXRlRGVsdGESMgoGZGFlbW9uGAEgASgLMiIuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlUmVjb3JkIjkKEERhZW1vblN0YXRlUXVlcnkSEgoKcmVxdWVzdF9pZBgBIAEoCRIRCglkYWVtb25faWQYAiABKAkiggEKFkRhZW1vblN0YXRlUXVlcnlSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIRCglkYWVtb25faWQYAiABKAkSDQoFZm91bmQYAyABKAgSMgoGZGFlbW9uGAQgASgLMiIuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlUmVjb3JkIqgBChVDbG9zZURhZW1vbkNvbm5lY3Rpb24SEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIsCghkZWFkbGluZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZGFlbW9uX2lkGAQgASgJEhIKCmdlbmVyYXRpb24YBSABKAQSDgoGcmVhc29uGAYgASgJIqYBChJDbG9zZUNsaWVudFNlc3Npb24SEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIsCghkZWFkbGluZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKc2Vzc2lvbl9pZBgEIAEoCRISCgpnZW5lcmF0aW9uGAUgASgEEg4KBnJlYXNvbhgGIAEoCSK0AQoRRWRnZUNvbW1hbmRSZXN1bHQSEgoKY29tbWFuZF9pZBgBIAEoCRIWCg5jb3JyZWxhdGlvbl9pZBgCIAEoCRIwCgRjb2RlGAMgASgOMiIuYW55dHR5LmNsb3VkLnYxLkNvbW1hbmRSZXN1bHRDb2RlEg8KB21lc3NhZ2UYBCABKAkSMAoMY29tcGxldGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLwBwoJRWRnZUV2ZW50EhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoFaGVsbG8YFCABKAsyGi5hbnl0dHkuY2xvdWQudjEuRWRnZUhlbGxvSAASOAoOc25hcHNob3RfYmVnaW4YFSABKAsyHi5hbnl0dHkuY2xvdWQudjEuU25hcHNob3RCZWdpbkgAEjgKDnNuYXBzaG90X2NodW5rGBYgASgLMh4uYW55dHR5LmNsb3VkLnYxLlNuYXBzaG90Q2h1bmtIABI0CgxzbmFwc2hvdF9lbmQYFyABKAsyHC5hbnl0dHkuY2xvdWQudjEuU25hcHNob3RFbmRIABI2Cg1ydW50aW1lX2RlbHRhGBggASgLMh0uYW55dHR5LmNsb3VkLnYxLlJ1bnRpbWVEZWx0YUgAEjMKCWhlYXJ0YmVhdBgZIAEoCzIeLmFueXR0eS5jbG91ZC52MS5FZGdlSGVhcnRiZWF0SAASOAoOY29uZmlnX2FwcGxpZWQYGiABKAsyHi5hbnl0dHkuY2xvdWQudjEuQ29uZmlnQXBwbGllZEgAEj0KDXJlbGF5X3Jlc2VydmUYHCABKAsyJC5hbnl0dHkuY2xvdWQudjEuUmVsYXlSZXNlcnZlUmVxdWVzdEgAEjwKDmNvbW1hbmRfcmVzdWx0GB0gASgLMiIuYW55dHR5LmNsb3VkLnYxLkVkZ2VDb21tYW5kUmVzdWx0SAASQgoTY2VydGlmaWNhdGVfYXBwbGllZBgeIAEoCzIjLmFueXR0eS5jbG91ZC52MS5DZXJ0aWZpY2F0ZUFwcGxpZWRIABI5CgtyZWxheV9yZW5ldxgfIAEoCzIiLmFueXR0eS5jbG91ZC52MS5SZWxheVJlbmV3UmVxdWVzdEgAEjgKDHJlbGF5X3NldHRsZRggIAEoCzIgLmFueXR0eS5jbG91ZC52MS5SZWxheVNldHRsZW1lbnRIABI5CgtyZWxheV9xdWVyeRghIAEoCzIiLmFueXR0eS5jbG91ZC52MS5SZWxheVF1ZXJ5UmVxdWVzdEgAEj8KEmRhZW1vbl9zdGF0ZV9xdWVyeRgiIAEoCzIhLmFueXR0eS5jbG91ZC52MS5EYWVtb25TdGF0ZVF1ZXJ5SABCCQoHcGF5bG9hZCK7CAoRQ29udHJvbGxlckNvbW1hbmQSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgd3ZWxjb21lGBQgASgLMhwuYW55dHR5LmNsb3VkLnYxLkVkZ2VXZWxjb21lSAASPgoRc25hcHNob3RfYWNjZXB0ZWQYFSABKAsyIS5hbnl0dHkuY2xvdWQudjEuU25hcHNob3RBY2NlcHRlZEgAEjoKD3Jlc3luY19yZXF1aXJlZBgWIAEoCzIfLmFueXR0eS5jbG91ZC52MS5SZXN5bmNSZXF1aXJlZEgAEkIKDmRlc2lyZWRfY29uZmlnGBcgASgLMiguYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVkZ2VEZXNpcmVkQ29uZmlnSAASOAoSYmluZGluZ19rZXlfYnVuZGxlGBggASgLMhouYW55dHR5LmNsb3VkLnYxLktleUJ1bmRsZUgAEj4KDXJlbGF5X3Jlc2VydmUYGSABKAsyJS5hbnl0dHkuY2xvdWQudjEuUmVsYXlSZXNlcnZlUmVzcG9uc2VIABI+CgxjbG9zZV9kYWVtb24YGiABKAsyJi5hbnl0dHkuY2xvdWQudjEuQ2xvc2VEYWVtb25Db25uZWN0aW9uSAASPAoNY2xvc2Vfc2Vzc2lvbhgbIAEoCzIjLmFueXR0eS5jbG91ZC52MS5DbG9zZUNsaWVudFNlc3Npb25IABJEChJjZXJ0aWZpY2F0ZV9idW5kbGUYHCABKAsyJi5hbnl0dHkuY2xvdWQudjEuRWRnZUNlcnRpZmljYXRlQnVuZGxlSAASOgoLcmVsYXlfcmVuZXcYHSABKAsyIy5hbnl0dHkuY2xvdWQudjEuUmVsYXlSZW5ld1Jlc3BvbnNlSAASOwoMcmVsYXlfc2V0dGxlGB4gASgLMiMuYW55dHR5LmNsb3VkLnYxLlJlbGF5U2V0dGxlbWVudEFja0gAEjoKC3JlbGF5X3F1ZXJ5GB8gASgLMiMuYW55dHR5LmNsb3VkLnYxLlJlbGF5UXVlcnlSZXNwb25zZUgAEj8KEmRhZW1vbl9zdGF0ZV9kZWx0YRggIAEoCzIhLmFueXR0eS5jbG91ZC52MS5EYWVtb25TdGF0ZURlbHRhSAASTAoZZGFlbW9uX3N0YXRlX3F1ZXJ5X3Jlc3VsdBghIAEoCzInLmFueXR0eS5jbG91ZC52MS5EYWVtb25TdGF0ZVF1ZXJ5UmVzdWx0SABCCQoHcGF5bG9hZCryAQoORWRnZUNhcGFiaWxpdHkSHwobRURHRV9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASIgoeRURHRV9DQVBBQklMSVRZX0NPTlRST0xfU1RSRUFNEAESGQoVRURHRV9DQVBBQklMSVRZX1JFTEFZEAISJwojRURHRV9DQVBBQklMSVRZX1JFU0VSVkFUSU9OX0pPVVJOQUwQAxIqCiZFREdFX0NBUEFCSUxJVFlfQ0VSVElGSUNBVEVfSE9UX1JFTE9BRBAEEisKJ0VER0VfQ0FQQUJJTElUWV9EQUVNT05fTElGRUNZQ0xFX1BPTElDWRAFKpoBChFDb21tYW5kUmVzdWx0Q29kZRIjCh9DT01NQU5EX1JFU1VMVF9DT0RFX1VOU1BFQ0lGSUVEEAASHwobQ09NTUFORF9SRVNVTFRfQ09ERV9BUFBMSUVEEAESIAocQ09NTUFORF9SRVNVTFRfQ09ERV9SRUpFQ1RFRBACEh0KGUNPTU1BTkRfUkVTVUxUX0NPREVfU1RBTEUQAzJcCgtFZGdlQ29udHJvbBJNCgdDb25uZWN0EhouYW55dHR5LmNsb3VkLnYxLkVkZ2VFdmVudBoiLmFueXR0eS5jbG91ZC52MS5Db250cm9sbGVyQ29tbWFuZCgBMAFCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_cloud_v1_certificate, file_cloud_v1_edge_config, file_cloud_v1_enrollment, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
 
 /**
  * EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -90,6 +92,11 @@ export type EdgeWelcome = Message<"anytty.cloud.v1.EdgeWelcome"> & {
    * @generated from field: anytty.cloud.v1.KeyBundle binding_key_bundle = 3;
    */
   bindingKeyBundle?: KeyBundle | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonStateSnapshot daemon_states = 4;
+   */
+  daemonStates?: DaemonStateSnapshot | undefined;
 };
 
 /**
@@ -328,6 +335,96 @@ export const CertificateAppliedSchema: GenMessage<CertificateApplied> = /*@__PUR
   messageDesc(file_cloud_v1_edge_control, 9);
 
 /**
+ * DaemonStateSnapshot 在 EdgeControl 建连时原子替换 Edge 的内存状态表。
+ *
+ * @generated from message anytty.cloud.v1.DaemonStateSnapshot
+ */
+export type DaemonStateSnapshot = Message<"anytty.cloud.v1.DaemonStateSnapshot"> & {
+  /**
+   * @generated from field: repeated anytty.cloud.v1.DaemonStateRecord daemons = 1;
+   */
+  daemons: DaemonStateRecord[];
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonStateSnapshot.
+ * Use `create(DaemonStateSnapshotSchema)` to create a new message.
+ */
+export const DaemonStateSnapshotSchema: GenMessage<DaemonStateSnapshot> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 10);
+
+/**
+ * @generated from message anytty.cloud.v1.DaemonStateDelta
+ */
+export type DaemonStateDelta = Message<"anytty.cloud.v1.DaemonStateDelta"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonStateRecord daemon = 1;
+   */
+  daemon?: DaemonStateRecord | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonStateDelta.
+ * Use `create(DaemonStateDeltaSchema)` to create a new message.
+ */
+export const DaemonStateDeltaSchema: GenMessage<DaemonStateDelta> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 11);
+
+/**
+ * @generated from message anytty.cloud.v1.DaemonStateQuery
+ */
+export type DaemonStateQuery = Message<"anytty.cloud.v1.DaemonStateQuery"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string daemon_id = 2;
+   */
+  daemonId: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonStateQuery.
+ * Use `create(DaemonStateQuerySchema)` to create a new message.
+ */
+export const DaemonStateQuerySchema: GenMessage<DaemonStateQuery> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 12);
+
+/**
+ * @generated from message anytty.cloud.v1.DaemonStateQueryResult
+ */
+export type DaemonStateQueryResult = Message<"anytty.cloud.v1.DaemonStateQueryResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string daemon_id = 2;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: bool found = 3;
+   */
+  found: boolean;
+
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonStateRecord daemon = 4;
+   */
+  daemon?: DaemonStateRecord | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonStateQueryResult.
+ * Use `create(DaemonStateQueryResultSchema)` to create a new message.
+ */
+export const DaemonStateQueryResultSchema: GenMessage<DaemonStateQueryResult> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 13);
+
+/**
  * @generated from message anytty.cloud.v1.CloseDaemonConnection
  */
 export type CloseDaemonConnection = Message<"anytty.cloud.v1.CloseDaemonConnection"> & {
@@ -367,7 +464,7 @@ export type CloseDaemonConnection = Message<"anytty.cloud.v1.CloseDaemonConnecti
  * Use `create(CloseDaemonConnectionSchema)` to create a new message.
  */
 export const CloseDaemonConnectionSchema: GenMessage<CloseDaemonConnection> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 10);
+  messageDesc(file_cloud_v1_edge_control, 14);
 
 /**
  * @generated from message anytty.cloud.v1.CloseClientSession
@@ -409,7 +506,7 @@ export type CloseClientSession = Message<"anytty.cloud.v1.CloseClientSession"> &
  * Use `create(CloseClientSessionSchema)` to create a new message.
  */
 export const CloseClientSessionSchema: GenMessage<CloseClientSession> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 11);
+  messageDesc(file_cloud_v1_edge_control, 15);
 
 /**
  * @generated from message anytty.cloud.v1.EdgeCommandResult
@@ -446,7 +543,7 @@ export type EdgeCommandResult = Message<"anytty.cloud.v1.EdgeCommandResult"> & {
  * Use `create(EdgeCommandResultSchema)` to create a new message.
  */
 export const EdgeCommandResultSchema: GenMessage<EdgeCommandResult> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 12);
+  messageDesc(file_cloud_v1_edge_control, 16);
 
 /**
  * EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
@@ -571,6 +668,12 @@ export type EdgeEvent = Message<"anytty.cloud.v1.EdgeEvent"> & {
      */
     value: RelayQueryRequest;
     case: "relayQuery";
+  } | {
+    /**
+     * @generated from field: anytty.cloud.v1.DaemonStateQuery daemon_state_query = 34;
+     */
+    value: DaemonStateQuery;
+    case: "daemonStateQuery";
   } | { case: undefined; value?: undefined };
 };
 
@@ -579,7 +682,7 @@ export type EdgeEvent = Message<"anytty.cloud.v1.EdgeEvent"> & {
  * Use `create(EdgeEventSchema)` to create a new message.
  */
 export const EdgeEventSchema: GenMessage<EdgeEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 13);
+  messageDesc(file_cloud_v1_edge_control, 17);
 
 /**
  * ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
@@ -698,6 +801,18 @@ export type ControllerCommand = Message<"anytty.cloud.v1.ControllerCommand"> & {
      */
     value: RelayQueryResponse;
     case: "relayQuery";
+  } | {
+    /**
+     * @generated from field: anytty.cloud.v1.DaemonStateDelta daemon_state_delta = 32;
+     */
+    value: DaemonStateDelta;
+    case: "daemonStateDelta";
+  } | {
+    /**
+     * @generated from field: anytty.cloud.v1.DaemonStateQueryResult daemon_state_query_result = 33;
+     */
+    value: DaemonStateQueryResult;
+    case: "daemonStateQueryResult";
   } | { case: undefined; value?: undefined };
 };
 
@@ -706,7 +821,7 @@ export type ControllerCommand = Message<"anytty.cloud.v1.ControllerCommand"> & {
  * Use `create(ControllerCommandSchema)` to create a new message.
  */
 export const ControllerCommandSchema: GenMessage<ControllerCommand> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 14);
+  messageDesc(file_cloud_v1_edge_control, 18);
 
 /**
  * EdgeCapability 是 Edge 进程已实现并愿意承诺的版本化能力。
@@ -738,6 +853,11 @@ export enum EdgeCapability {
    * @generated from enum value: EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
    */
   CERTIFICATE_HOT_RELOAD = 4,
+
+  /**
+   * @generated from enum value: EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY = 5;
+   */
+  DAEMON_LIFECYCLE_POLICY = 5,
 }
 
 /**

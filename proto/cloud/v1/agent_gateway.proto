@@ -4,6 +4,7 @@ package anytty.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "cloud/v1/client_gateway.proto";
+import "cloud/v1/enrollment.proto";
 import "cloud/v1/runtime.proto";
 import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
@@ -67,6 +68,21 @@ message AgentSignalRejected {
 message AgentReady {
   uint64 generation = 1;
   HeartbeatPolicy heartbeat = 2;
+  DaemonStateRecord daemon_state = 3;
+}
+
+// DaemonLifecycleCommand 要求当前 Agent generation 应用最新持久状态。
+message DaemonLifecycleCommand {
+  DaemonStateRecord daemon_state = 1;
+  uint64 agent_generation = 2;
+}
+
+// DaemonLifecycleResult 在 Cloud peers 已按状态收敛后返回。
+message DaemonLifecycleResult {
+  DaemonStateRecord daemon_state = 1;
+  uint64 agent_generation = 2;
+  bool applied = 3;
+  string error_message = 4;
 }
 
 message AgentEvent {
@@ -83,6 +99,7 @@ message AgentEvent {
     AgentAnswer answer = 22;
     AgentSignalRejected rejected = 23;
     AgentAuthorizationResult authorization = 24;
+    DaemonLifecycleResult lifecycle_result = 25;
   }
 }
 
@@ -99,6 +116,7 @@ message EdgeCommand {
     AgentOffer offer = 21;
     AgentAuthorize authorize = 22;
     EdgeChallenge challenge = 23;
+    DaemonLifecycleCommand lifecycle = 24;
   }
 }
 

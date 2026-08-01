@@ -15,7 +15,7 @@ enum DaemonCapability {
   DAEMON_CAPABILITY_SIGNALING = 1;
 }
 
-// DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和 owning Edge，
+// DaemonBindingClaims 是 enrollment 的持久结果。它只绑定 daemon 身份和目标 Edge，
 // 不是 bearer token；每次 AgentGateway 连接仍必须证明 DeviceIdentity 私钥持有权。
 message DaemonBindingClaims {
   string binding_id = 1;
@@ -27,8 +27,7 @@ message DaemonBindingClaims {
   repeated DaemonCapability capabilities = 7;
   google.protobuf.Timestamp issued_at = 8;
   google.protobuf.Timestamp expires_at = 9;
-  reserved 10;
-  uint64 revision = 11;
+  reserved 10, 11;
   bytes edge_locator_sha256 = 12;
 }
 

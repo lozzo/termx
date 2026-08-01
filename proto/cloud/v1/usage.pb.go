@@ -325,8 +325,7 @@ type RelayPolicySnapshot struct {
 	EdgeEnabled                bool                   `protobuf:"varint,20,opt,name=edge_enabled,json=edgeEnabled,proto3" json:"edge_enabled,omitempty"`
 	EdgeRegion                 string                 `protobuf:"bytes,21,opt,name=edge_region,json=edgeRegion,proto3" json:"edge_region,omitempty"`
 	DaemonId                   string                 `protobuf:"bytes,22,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	DaemonRevision             uint64                 `protobuf:"varint,23,opt,name=daemon_revision,json=daemonRevision,proto3" json:"daemon_revision,omitempty"`
-	DaemonRevoked              bool                   `protobuf:"varint,24,opt,name=daemon_revoked,json=daemonRevoked,proto3" json:"daemon_revoked,omitempty"`
+	DaemonStateRevision        uint64                 `protobuf:"varint,23,opt,name=daemon_state_revision,json=daemonStateRevision,proto3" json:"daemon_state_revision,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -515,18 +514,11 @@ func (x *RelayPolicySnapshot) GetDaemonId() string {
 	return ""
 }
 
-func (x *RelayPolicySnapshot) GetDaemonRevision() uint64 {
+func (x *RelayPolicySnapshot) GetDaemonStateRevision() uint64 {
 	if x != nil {
-		return x.DaemonRevision
+		return x.DaemonStateRevision
 	}
 	return 0
-}
-
-func (x *RelayPolicySnapshot) GetDaemonRevoked() bool {
-	if x != nil {
-		return x.DaemonRevoked
-	}
-	return false
 }
 
 type RelayReserveRequest struct {
@@ -1444,7 +1436,7 @@ var File_cloud_v1_usage_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\n" +
-	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\b\n" +
+	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x86\b\n" +
 	"\x13RelayPolicySnapshot\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12)\n" +
@@ -1471,9 +1463,8 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\fedge_enabled\x18\x14 \x01(\bR\vedgeEnabled\x12\x1f\n" +
 	"\vedge_region\x18\x15 \x01(\tR\n" +
 	"edgeRegion\x12\x1b\n" +
-	"\tdaemon_id\x18\x16 \x01(\tR\bdaemonId\x12'\n" +
-	"\x0fdaemon_revision\x18\x17 \x01(\x04R\x0edaemonRevision\x12%\n" +
-	"\x0edaemon_revoked\x18\x18 \x01(\bR\rdaemonRevoked\"\x98\x02\n" +
+	"\tdaemon_id\x18\x16 \x01(\tR\bdaemonId\x122\n" +
+	"\x15daemon_state_revision\x18\x17 \x01(\x04R\x13daemonStateRevisionJ\x04\b\x18\x10\x1d\"\x98\x02\n" +
 	"\x13RelayReserveRequest\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12\x1d\n" +
 	"\n" +

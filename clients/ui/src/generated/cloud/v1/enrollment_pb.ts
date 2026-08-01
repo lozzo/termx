@@ -2,8 +2,8 @@
 // @generated from file cloud/v1/enrollment.proto (package anytty.cloud.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { SignedEnvelope } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/enrollment.proto.
  */
 export const file_cloud_v1_enrollment: GenFile = /*@__PURE__*/
-  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEikwIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSDwoHcmV2b2tlZBgHIAEoCBIQCghyZXZpc2lvbhgIIAEoBBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK8AQoXRGFlbW9uUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2VkZ2VfaWQYAiABKAkSEQoJZWRnZV9uYW1lGAMgASgJEhMKC2VkZ2VfcmVnaW9uGAQgASgJEg8KB2Jvb3RfaWQYBSABKAkSFQoNY29ubmVjdGlvbl9pZBgGIAEoCRISCgpnZW5lcmF0aW9uGAcgASgEEhwKFGVkZ2VfcHVibGljX2VuZHBvaW50GAggASgJInkKDU1hbmFnZWREYWVtb24SLQoGZGFlbW9uGAEgASgLMh0uYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlY29yZBI5CgdydW50aW1lGAIgASgLMiguYW55dHR5LmNsb3VkLnYxLkRhZW1vblJ1bnRpbWVQcm9qZWN0aW9uIl4KHUNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSFAoMYWNjb3VudF9uYW1lGAIgASgJEhMKC2RhZW1vbl9uYW1lGAMgASgJIpUBCh5DcmVhdGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2USEgoKYWNjb3VudF9pZBgBIAEoCRIXCg9lbnJvbGxtZW50X2NvZGUYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOZW5yb2xsX2NvbW1hbmQYBCABKAkiFAoSTGlzdERhZW1vbnNSZXF1ZXN0IkYKE0xpc3REYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIjYKH0NyZWF0ZU15RGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEwoLZGFlbW9uX25hbWUYASABKAkiFgoUTGlzdE15RGFlbW9uc1JlcXVlc3QiSAoVTGlzdE15RGFlbW9uc1Jlc3BvbnNlEi8KB2RhZW1vbnMYASADKAsyHi5hbnl0dHkuY2xvdWQudjEuTWFuYWdlZERhZW1vbiJVChVSZXZva2VNeURhZW1vblJlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSKHAQoWUmV2b2tlTXlEYWVtb25SZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEhoKEnJ1bnRpbWVfd2FzX29ubGluZRgCIAEoCBIiChpydW50aW1lX2Rpc2Nvbm5lY3RfYXBwbGllZBgDIAEoCCKBAQocQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBIXCg9lbnJvbGxtZW50X2NvZGUYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgEIAEoDCJsChFJZGVudGl0eUNoYWxsZW5nZRIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KH0NvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCKYAQoLRWRnZUxvY2F0b3ISDwoHZWRnZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnJlZ2lvbhgDIAEoCRIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkSEwoLc2VydmVyX25hbWUYBSABKAkSGgoSY2FfY2VydGlmaWNhdGVfcGVtGAYgASgMEhAKCHJldmlzaW9uGAcgASgEIr4BCiBDb21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjcKDmRhZW1vbl9iaW5kaW5nGAIgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEjIKDGVkZ2VfbG9jYXRvchgDIAEoCzIcLmFueXR0eS5jbG91ZC52MS5FZGdlTG9jYXRvcjKAAgoRRW5yb2xsbWVudFNlcnZpY2USagoVQmVnaW5EYWVtb25FbnJvbGxtZW50Ei0uYW55dHR5LmNsb3VkLnYxLkJlZ2luRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaIi5hbnl0dHkuY2xvdWQudjEuSWRlbnRpdHlDaGFsbGVuZ2USfwoYQ29tcGxldGVEYWVtb25FbnJvbGxtZW50EjAuYW55dHR5LmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaMS5hbnl0dHkuY2xvdWQudjEuQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2Uy1QIKF0RhZW1vbk1hbmFnZW1lbnRTZXJ2aWNlEncKEkNyZWF0ZU15RW5yb2xsbWVudBIwLmFueXR0eS5jbG91ZC52MS5DcmVhdGVNeURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0Gi8uYW55dHR5LmNsb3VkLnYxLkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRJeCg1MaXN0TXlEYWVtb25zEiUuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXF1ZXN0GiYuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXNwb25zZRJhCg5SZXZva2VNeURhZW1vbhImLmFueXR0eS5jbG91ZC52MS5SZXZva2VNeURhZW1vblJlcXVlc3QaJy5hbnl0dHkuY2xvdWQudjEuUmV2b2tlTXlEYWVtb25SZXNwb25zZUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEitQIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSKwoFc3RhdGUYByABKA4yHC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uU3RhdGUSFgoOc3RhdGVfcmV2aXNpb24YCCABKAQSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiawoRRGFlbW9uU3RhdGVSZWNvcmQSEQoJZGFlbW9uX2lkGAEgASgJEisKBXN0YXRlGAIgASgOMhwuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlEhYKDnN0YXRlX3JldmlzaW9uGAMgASgEIrwBChdEYWVtb25SdW50aW1lUHJvamVjdGlvbhIOCgZvbmxpbmUYASABKAgSDwoHZWRnZV9pZBgCIAEoCRIRCgllZGdlX25hbWUYAyABKAkSEwoLZWRnZV9yZWdpb24YBCABKAkSDwoHYm9vdF9pZBgFIAEoCRIVCg1jb25uZWN0aW9uX2lkGAYgASgJEhIKCmdlbmVyYXRpb24YByABKAQSHAoUZWRnZV9wdWJsaWNfZW5kcG9pbnQYCCABKAkieQoNTWFuYWdlZERhZW1vbhItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjkKB3J1bnRpbWUYAiABKAsyKC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUnVudGltZVByb2plY3Rpb24iXgodQ3JlYXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIUCgxhY2NvdW50X25hbWUYAiABKAkSEwoLZGFlbW9uX25hbWUYAyABKAkilQEKHkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRISCgphY2NvdW50X2lkGAEgASgJEhcKD2Vucm9sbG1lbnRfY29kZRgCIAEoCRIuCgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5lbnJvbGxfY29tbWFuZBgEIAEoCSIUChJMaXN0RGFlbW9uc1JlcXVlc3QiRgoTTGlzdERhZW1vbnNSZXNwb25zZRIvCgdkYWVtb25zGAEgAygLMh4uYW55dHR5LmNsb3VkLnYxLk1hbmFnZWREYWVtb24iNgofQ3JlYXRlTXlEYWVtb25FbnJvbGxtZW50UmVxdWVzdBITCgtkYWVtb25fbmFtZRgBIAEoCSIWChRMaXN0TXlEYWVtb25zUmVxdWVzdCJIChVMaXN0TXlEYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIpQBChpDaGFuZ2VNeURhZW1vblN0YXRlUmVxdWVzdBIRCglkYWVtb25faWQYASABKAkSMgoMdGFyZ2V0X3N0YXRlGAIgASgOMhwuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlEh8KF2V4cGVjdGVkX3N0YXRlX3JldmlzaW9uGAMgASgEEg4KBnJlYXNvbhgEIAEoCSJMChtDaGFuZ2VNeURhZW1vblN0YXRlUmVzcG9uc2USLQoGZGFlbW9uGAEgASgLMh0uYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlY29yZCKBAQocQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBIXCg9lbnJvbGxtZW50X2NvZGUYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgEIAEoDCJsChFJZGVudGl0eUNoYWxsZW5nZRIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KH0NvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCKYAQoLRWRnZUxvY2F0b3ISDwoHZWRnZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnJlZ2lvbhgDIAEoCRIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkSEwoLc2VydmVyX25hbWUYBSABKAkSGgoSY2FfY2VydGlmaWNhdGVfcGVtGAYgASgMEhAKCHJldmlzaW9uGAcgASgEIr4BCiBDb21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjcKDmRhZW1vbl9iaW5kaW5nGAIgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEjIKDGVkZ2VfbG9jYXRvchgDIAEoCzIcLmFueXR0eS5jbG91ZC52MS5FZGdlTG9jYXRvcip4CgtEYWVtb25TdGF0ZRIcChhEQUVNT05fU1RBVEVfVU5TUEVDSUZJRUQQABIXChNEQUVNT05fU1RBVEVfQUNUSVZFEAESGAoUREFFTU9OX1NUQVRFX0JMT0NLRUQQAhIYChREQUVNT05fU1RBVEVfREVMRVRFRBADMoACChFFbnJvbGxtZW50U2VydmljZRJqChVCZWdpbkRhZW1vbkVucm9sbG1lbnQSLS5hbnl0dHkuY2xvdWQudjEuQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBoiLmFueXR0eS5jbG91ZC52MS5JZGVudGl0eUNoYWxsZW5nZRJ/ChhDb21wbGV0ZURhZW1vbkVucm9sbG1lbnQSMC5hbnl0dHkuY2xvdWQudjEuQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVxdWVzdBoxLmFueXR0eS5jbG91ZC52MS5Db21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZTLkAgoXRGFlbW9uTWFuYWdlbWVudFNlcnZpY2USdwoSQ3JlYXRlTXlFbnJvbGxtZW50EjAuYW55dHR5LmNsb3VkLnYxLkNyZWF0ZU15RGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaLy5hbnl0dHkuY2xvdWQudjEuQ3JlYXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEl4KDUxpc3RNeURhZW1vbnMSJS5hbnl0dHkuY2xvdWQudjEuTGlzdE15RGFlbW9uc1JlcXVlc3QaJi5hbnl0dHkuY2xvdWQudjEuTGlzdE15RGFlbW9uc1Jlc3BvbnNlEnAKE0NoYW5nZU15RGFlbW9uU3RhdGUSKy5hbnl0dHkuY2xvdWQudjEuQ2hhbmdlTXlEYWVtb25TdGF0ZVJlcXVlc3QaLC5hbnl0dHkuY2xvdWQudjEuQ2hhbmdlTXlEYWVtb25TdGF0ZVJlc3BvbnNlQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
@@ -53,14 +53,14 @@ export type DaemonRecord = Message<"anytty.cloud.v1.DaemonRecord"> & {
   deviceFingerprint: string;
 
   /**
-   * @generated from field: bool revoked = 7;
+   * @generated from field: anytty.cloud.v1.DaemonState state = 7;
    */
-  revoked: boolean;
+  state: DaemonState;
 
   /**
-   * @generated from field: uint64 revision = 8;
+   * @generated from field: uint64 state_revision = 8;
    */
-  revision: bigint;
+  stateRevision: bigint;
 
   /**
    * @generated from field: google.protobuf.Timestamp created_at = 9;
@@ -79,6 +79,35 @@ export type DaemonRecord = Message<"anytty.cloud.v1.DaemonRecord"> & {
  */
 export const DaemonRecordSchema: GenMessage<DaemonRecord> = /*@__PURE__*/
   messageDesc(file_cloud_v1_enrollment, 0);
+
+/**
+ * DaemonStateRecord 是 Controller 向 Edge 广播的最小持久状态。
+ *
+ * @generated from message anytty.cloud.v1.DaemonStateRecord
+ */
+export type DaemonStateRecord = Message<"anytty.cloud.v1.DaemonStateRecord"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonState state = 2;
+   */
+  state: DaemonState;
+
+  /**
+   * @generated from field: uint64 state_revision = 3;
+   */
+  stateRevision: bigint;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonStateRecord.
+ * Use `create(DaemonStateRecordSchema)` to create a new message.
+ */
+export const DaemonStateRecordSchema: GenMessage<DaemonStateRecord> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 1);
 
 /**
  * DaemonRuntimeProjection 来自 Controller Directory 内存，Controller 重启后必须由 Edge 重建。
@@ -132,7 +161,7 @@ export type DaemonRuntimeProjection = Message<"anytty.cloud.v1.DaemonRuntimeProj
  * Use `create(DaemonRuntimeProjectionSchema)` to create a new message.
  */
 export const DaemonRuntimeProjectionSchema: GenMessage<DaemonRuntimeProjection> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 1);
+  messageDesc(file_cloud_v1_enrollment, 2);
 
 /**
  * @generated from message anytty.cloud.v1.ManagedDaemon
@@ -154,7 +183,7 @@ export type ManagedDaemon = Message<"anytty.cloud.v1.ManagedDaemon"> & {
  * Use `create(ManagedDaemonSchema)` to create a new message.
  */
 export const ManagedDaemonSchema: GenMessage<ManagedDaemon> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 2);
+  messageDesc(file_cloud_v1_enrollment, 3);
 
 /**
  * @generated from message anytty.cloud.v1.CreateDaemonEnrollmentRequest
@@ -181,7 +210,7 @@ export type CreateDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CreateDaemo
  * Use `create(CreateDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CreateDaemonEnrollmentRequestSchema: GenMessage<CreateDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 3);
+  messageDesc(file_cloud_v1_enrollment, 4);
 
 /**
  * @generated from message anytty.cloud.v1.CreateDaemonEnrollmentResponse
@@ -213,7 +242,7 @@ export type CreateDaemonEnrollmentResponse = Message<"anytty.cloud.v1.CreateDaem
  * Use `create(CreateDaemonEnrollmentResponseSchema)` to create a new message.
  */
 export const CreateDaemonEnrollmentResponseSchema: GenMessage<CreateDaemonEnrollmentResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 4);
+  messageDesc(file_cloud_v1_enrollment, 5);
 
 /**
  * @generated from message anytty.cloud.v1.ListDaemonsRequest
@@ -226,7 +255,7 @@ export type ListDaemonsRequest = Message<"anytty.cloud.v1.ListDaemonsRequest"> &
  * Use `create(ListDaemonsRequestSchema)` to create a new message.
  */
 export const ListDaemonsRequestSchema: GenMessage<ListDaemonsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 5);
+  messageDesc(file_cloud_v1_enrollment, 6);
 
 /**
  * @generated from message anytty.cloud.v1.ListDaemonsResponse
@@ -243,7 +272,7 @@ export type ListDaemonsResponse = Message<"anytty.cloud.v1.ListDaemonsResponse">
  * Use `create(ListDaemonsResponseSchema)` to create a new message.
  */
 export const ListDaemonsResponseSchema: GenMessage<ListDaemonsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 6);
+  messageDesc(file_cloud_v1_enrollment, 7);
 
 /**
  * CreateMyDaemonEnrollmentRequest 只允许用户命名 daemon；账号来自认证 session。
@@ -262,7 +291,7 @@ export type CreateMyDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CreateMyD
  * Use `create(CreateMyDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CreateMyDaemonEnrollmentRequestSchema: GenMessage<CreateMyDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 7);
+  messageDesc(file_cloud_v1_enrollment, 8);
 
 /**
  * @generated from message anytty.cloud.v1.ListMyDaemonsRequest
@@ -275,7 +304,7 @@ export type ListMyDaemonsRequest = Message<"anytty.cloud.v1.ListMyDaemonsRequest
  * Use `create(ListMyDaemonsRequestSchema)` to create a new message.
  */
 export const ListMyDaemonsRequestSchema: GenMessage<ListMyDaemonsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 8);
+  messageDesc(file_cloud_v1_enrollment, 9);
 
 /**
  * @generated from message anytty.cloud.v1.ListMyDaemonsResponse
@@ -292,61 +321,56 @@ export type ListMyDaemonsResponse = Message<"anytty.cloud.v1.ListMyDaemonsRespon
  * Use `create(ListMyDaemonsResponseSchema)` to create a new message.
  */
 export const ListMyDaemonsResponseSchema: GenMessage<ListMyDaemonsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 9);
+  messageDesc(file_cloud_v1_enrollment, 10);
 
 /**
- * @generated from message anytty.cloud.v1.RevokeMyDaemonRequest
+ * @generated from message anytty.cloud.v1.ChangeMyDaemonStateRequest
  */
-export type RevokeMyDaemonRequest = Message<"anytty.cloud.v1.RevokeMyDaemonRequest"> & {
+export type ChangeMyDaemonStateRequest = Message<"anytty.cloud.v1.ChangeMyDaemonStateRequest"> & {
   /**
    * @generated from field: string daemon_id = 1;
    */
   daemonId: string;
 
   /**
-   * @generated from field: uint64 expected_revision = 2;
+   * @generated from field: anytty.cloud.v1.DaemonState target_state = 2;
    */
-  expectedRevision: bigint;
+  targetState: DaemonState;
 
   /**
-   * @generated from field: string reason = 3;
+   * @generated from field: uint64 expected_state_revision = 3;
+   */
+  expectedStateRevision: bigint;
+
+  /**
+   * @generated from field: string reason = 4;
    */
   reason: string;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RevokeMyDaemonRequest.
- * Use `create(RevokeMyDaemonRequestSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.ChangeMyDaemonStateRequest.
+ * Use `create(ChangeMyDaemonStateRequestSchema)` to create a new message.
  */
-export const RevokeMyDaemonRequestSchema: GenMessage<RevokeMyDaemonRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 10);
+export const ChangeMyDaemonStateRequestSchema: GenMessage<ChangeMyDaemonStateRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 11);
 
 /**
- * @generated from message anytty.cloud.v1.RevokeMyDaemonResponse
+ * @generated from message anytty.cloud.v1.ChangeMyDaemonStateResponse
  */
-export type RevokeMyDaemonResponse = Message<"anytty.cloud.v1.RevokeMyDaemonResponse"> & {
+export type ChangeMyDaemonStateResponse = Message<"anytty.cloud.v1.ChangeMyDaemonStateResponse"> & {
   /**
    * @generated from field: anytty.cloud.v1.DaemonRecord daemon = 1;
    */
   daemon?: DaemonRecord | undefined;
-
-  /**
-   * @generated from field: bool runtime_was_online = 2;
-   */
-  runtimeWasOnline: boolean;
-
-  /**
-   * @generated from field: bool runtime_disconnect_applied = 3;
-   */
-  runtimeDisconnectApplied: boolean;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RevokeMyDaemonResponse.
- * Use `create(RevokeMyDaemonResponseSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.ChangeMyDaemonStateResponse.
+ * Use `create(ChangeMyDaemonStateResponseSchema)` to create a new message.
  */
-export const RevokeMyDaemonResponseSchema: GenMessage<RevokeMyDaemonResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 11);
+export const ChangeMyDaemonStateResponseSchema: GenMessage<ChangeMyDaemonStateResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 12);
 
 /**
  * @generated from message anytty.cloud.v1.BeginDaemonEnrollmentRequest
@@ -378,7 +402,7 @@ export type BeginDaemonEnrollmentRequest = Message<"anytty.cloud.v1.BeginDaemonE
  * Use `create(BeginDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const BeginDaemonEnrollmentRequestSchema: GenMessage<BeginDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 12);
+  messageDesc(file_cloud_v1_enrollment, 13);
 
 /**
  * @generated from message anytty.cloud.v1.IdentityChallenge
@@ -405,7 +429,7 @@ export type IdentityChallenge = Message<"anytty.cloud.v1.IdentityChallenge"> & {
  * Use `create(IdentityChallengeSchema)` to create a new message.
  */
 export const IdentityChallengeSchema: GenMessage<IdentityChallenge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 13);
+  messageDesc(file_cloud_v1_enrollment, 14);
 
 /**
  * @generated from message anytty.cloud.v1.CompleteDaemonEnrollmentRequest
@@ -427,7 +451,7 @@ export type CompleteDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CompleteD
  * Use `create(CompleteDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CompleteDaemonEnrollmentRequestSchema: GenMessage<CompleteDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 14);
+  messageDesc(file_cloud_v1_enrollment, 15);
 
 /**
  * EdgeLocator 是 daemon 和已授权客户端可持久化的公开连接位置，不包含授权秘密。
@@ -476,7 +500,7 @@ export type EdgeLocator = Message<"anytty.cloud.v1.EdgeLocator"> & {
  * Use `create(EdgeLocatorSchema)` to create a new message.
  */
 export const EdgeLocatorSchema: GenMessage<EdgeLocator> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 15);
+  messageDesc(file_cloud_v1_enrollment, 16);
 
 /**
  * @generated from message anytty.cloud.v1.CompleteDaemonEnrollmentResponse
@@ -503,7 +527,40 @@ export type CompleteDaemonEnrollmentResponse = Message<"anytty.cloud.v1.Complete
  * Use `create(CompleteDaemonEnrollmentResponseSchema)` to create a new message.
  */
 export const CompleteDaemonEnrollmentResponseSchema: GenMessage<CompleteDaemonEnrollmentResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 16);
+  messageDesc(file_cloud_v1_enrollment, 17);
+
+/**
+ * DaemonState 是 daemon identity 的持久生命周期。DELETED 是不可恢复的终态墓碑。
+ *
+ * @generated from enum anytty.cloud.v1.DaemonState
+ */
+export enum DaemonState {
+  /**
+   * @generated from enum value: DAEMON_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DAEMON_STATE_ACTIVE = 1;
+   */
+  ACTIVE = 1,
+
+  /**
+   * @generated from enum value: DAEMON_STATE_BLOCKED = 2;
+   */
+  BLOCKED = 2,
+
+  /**
+   * @generated from enum value: DAEMON_STATE_DELETED = 3;
+   */
+  DELETED = 3,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.DaemonState.
+ */
+export const DaemonStateSchema: GenEnum<DaemonState> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_enrollment, 0);
 
 /**
  * EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
@@ -553,12 +610,12 @@ export const DaemonManagementService: GenService<{
     output: typeof ListMyDaemonsResponseSchema;
   },
   /**
-   * @generated from rpc anytty.cloud.v1.DaemonManagementService.RevokeMyDaemon
+   * @generated from rpc anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState
    */
-  revokeMyDaemon: {
+  changeMyDaemonState: {
     methodKind: "unary";
-    input: typeof RevokeMyDaemonRequestSchema;
-    output: typeof RevokeMyDaemonResponseSchema;
+    input: typeof ChangeMyDaemonStateRequestSchema;
+    output: typeof ChangeMyDaemonStateResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cloud_v1_enrollment, 1);

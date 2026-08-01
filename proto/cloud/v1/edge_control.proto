@@ -5,6 +5,7 @@ package anytty.cloud.v1;
 import "cloud/v1/common.proto";
 import "cloud/v1/certificate.proto";
 import "cloud/v1/edge_config.proto";
+import "cloud/v1/enrollment.proto";
 import "cloud/v1/runtime.proto";
 import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
@@ -18,6 +19,7 @@ enum EdgeCapability {
   EDGE_CAPABILITY_RELAY = 2;
   EDGE_CAPABILITY_RESERVATION_JOURNAL = 3;
   EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
+  EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY = 5;
 }
 
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -37,6 +39,7 @@ message EdgeWelcome {
   uint32 accepted_protocol_version = 1;
   HeartbeatPolicy heartbeat = 2;
   KeyBundle binding_key_bundle = 3;
+  DaemonStateSnapshot daemon_states = 4;
 }
 
 // SnapshotBegin 开始当前 connection generation 的临时快照命名空间。
@@ -96,6 +99,25 @@ message CertificateApplied {
   string error_message = 5;
 }
 
+// DaemonStateSnapshot 在 EdgeControl 建连时原子替换 Edge 的内存状态表。
+message DaemonStateSnapshot {
+  repeated DaemonStateRecord daemons = 1;
+}
+
+message DaemonStateDelta { DaemonStateRecord daemon = 1; }
+
+message DaemonStateQuery {
+  string request_id = 1;
+  string daemon_id = 2;
+}
+
+message DaemonStateQueryResult {
+  string request_id = 1;
+  string daemon_id = 2;
+  bool found = 3;
+  DaemonStateRecord daemon = 4;
+}
+
 message CloseDaemonConnection {
   string command_id = 1;
   string correlation_id = 2;
@@ -153,6 +175,7 @@ message EdgeEvent {
     RelayRenewRequest relay_renew = 31;
     RelaySettlement relay_settle = 32;
     RelayQueryRequest relay_query = 33;
+    DaemonStateQuery daemon_state_query = 34;
   }
 }
 
@@ -179,6 +202,8 @@ message ControllerCommand {
     RelayRenewResponse relay_renew = 29;
     RelaySettlementAck relay_settle = 30;
     RelayQueryResponse relay_query = 31;
+    DaemonStateDelta daemon_state_delta = 32;
+    DaemonStateQueryResult daemon_state_query_result = 33;
   }
 }
 
