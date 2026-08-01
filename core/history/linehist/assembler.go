@@ -1,6 +1,8 @@
 package linehist
 
 import (
+	"time"
+
 	vterm "github.com/anytty/anytty/vterm/vterm"
 )
 
@@ -16,6 +18,7 @@ type Assembler struct {
 	open      []Run
 	openBytes int
 	maxOpen   int
+	updatedAt time.Time
 }
 
 // NewAssembler 创建 logical line 拼装器。
@@ -38,19 +41,24 @@ func (a *Assembler) AppendEvictedRow(row vterm.TerminalSemanticScrollOut) []Line
 		a.open = appendMergedRun(a.open, run)
 		a.openBytes += len(run.Text)
 	}
+	if row.Timestamp.After(a.updatedAt) {
+		a.updatedAt = row.Timestamp
+	}
 	wrapped := row.WrappedSet && row.Wrapped
 	if wrapped {
 		if a.openBytes < a.maxOpen {
 			return nil
 		}
-		chunk := Line{Runs: a.open, HardEnd: false}
+		chunk := Line{Runs: a.open, HardEnd: false, UpdatedAt: a.updatedAt}
 		a.open = nil
 		a.openBytes = 0
+		a.updatedAt = time.Time{}
 		return []Line{chunk}
 	}
-	line := Line{Runs: trimTrailingPaddingRuns(a.open), HardEnd: true}
+	line := Line{Runs: trimTrailingPaddingRuns(a.open), HardEnd: true, UpdatedAt: a.updatedAt}
 	a.open = nil
 	a.openBytes = 0
+	a.updatedAt = time.Time{}
 	return []Line{line}
 }
 
@@ -65,15 +73,23 @@ func (a *Assembler) Open() []Run {
 	return out
 }
 
+func (a *Assembler) OpenUpdatedAt() time.Time {
+	if a == nil {
+		return time.Time{}
+	}
+	return a.updatedAt
+}
+
 // SealOpen 把未闭合尾部强制闭合为一条硬结束 line（用于进程退出等边界：
 // 续写上下文已不存在，再等续行没有意义）。没有未闭合内容时返回 false。
 func (a *Assembler) SealOpen() (Line, bool) {
 	if a == nil || len(a.open) == 0 {
 		return Line{}, false
 	}
-	line := Line{Runs: trimTrailingPaddingRuns(a.open), HardEnd: true}
+	line := Line{Runs: trimTrailingPaddingRuns(a.open), HardEnd: true, UpdatedAt: a.updatedAt}
 	a.open = nil
 	a.openBytes = 0
+	a.updatedAt = time.Time{}
 	return line, true
 }
 
@@ -85,4 +101,5 @@ func (a *Assembler) DiscardOpen() {
 	}
 	a.open = nil
 	a.openBytes = 0
+	a.updatedAt = time.Time{}
 }

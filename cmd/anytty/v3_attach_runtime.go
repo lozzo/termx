@@ -136,7 +136,7 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	return app.NewInteractiveRuntimeWithStorage(
 		initial, host, app.NewAsyncEffectRunner(),
 		app.LiveDeps{Terminal: terminalService, Path: pathService, EndpointEvents: endpointEvents, EndpointConnections: endpointConnections, Logger: logger},
-		app.CopyModeDeps{Core: coreService, Clipboard: &systemadapter.ClipboardService{}, Terminal: terminalService, Logger: logger, Rows: rows},
+		app.CopyModeDeps{Core: coreService, Clipboard: &systemadapter.ClipboardService{}, Logger: logger, Rows: rows},
 		workbench, clipboard,
 	)
 }

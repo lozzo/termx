@@ -15,11 +15,13 @@ type FakeCoreClient struct {
 	NewerResponses  []port.HistoryResult
 	OldestResponses []port.HistoryResult
 	CopyResponses   []port.HistoryCopyRangeResult
+	SearchResponses []port.HistorySearchResult
 	LatestRequests  []port.HistoryLatestRequest
 	OlderRequests   []port.HistoryOlderRequest
 	NewerRequests   []port.HistoryNewerRequest
 	OldestRequests  []port.HistoryOldestRequest
 	CopyRequests    []port.HistoryCopyRangeRequest
+	SearchRequests  []port.HistorySearchRequest
 	ReleaseRequests []port.HistoryReleaseRequest
 	ReleaseErr      error
 }
@@ -75,6 +77,17 @@ func (client *FakeCoreClient) HistoryCopyRange(_ context.Context, req port.Histo
 	}
 	result := client.CopyResponses[0]
 	client.CopyResponses = client.CopyResponses[1:]
+	return result, nil
+}
+
+func (client *FakeCoreClient) HistorySearch(_ context.Context, req port.HistorySearchRequest) (port.HistorySearchResult, error) {
+	client.SearchRequests = append(client.SearchRequests, req)
+	if len(client.SearchResponses) == 0 {
+		return port.HistorySearchResult{RequestID: req.RequestID}, port.ErrMissingHistoryResponse
+	}
+	result := client.SearchResponses[0]
+	client.SearchResponses = client.SearchResponses[1:]
+	result.RequestID = req.RequestID
 	return result, nil
 }
 

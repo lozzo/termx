@@ -272,6 +272,18 @@ func (session *ApplicationSession) LiveScreenNext(ctx context.Context, command *
 	return result.GetLiveScreen(), nil
 }
 
+// HistorySearch executes the history_search application command.
+func (session *ApplicationSession) HistorySearch(ctx context.Context, command *apipb.HistorySearchCommand) (*apipb.HistorySearchResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistorySearch{HistorySearch: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetHistorySearch() == nil {
+		return nil, missingApplicationResult("history_search")
+	}
+	return result.GetHistorySearch(), nil
+}
+
 // executeEventSubscribe executes the event_subscribe application command.
 func (session *ApplicationSession) executeEventSubscribe(ctx context.Context, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error) {
 	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_EventSubscribe{EventSubscribe: command}})

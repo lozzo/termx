@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file apipb/history.proto.
  */
 export const file_apipb_history: GenFile = /*@__PURE__*/
-  fileDesc("ChNhcGlwYi9oaXN0b3J5LnByb3RvEg1hbnl0dHkuYXBpLnYxIpsBCglDZWxsU3R5bGUSEgoKZm9yZWdyb3VuZBgBIAEoCRISCgpiYWNrZ3JvdW5kGAIgASgJEgwKBGJvbGQYAyABKAgSDgoGaXRhbGljGAQgASgIEhEKCXVuZGVybGluZRgFIAEoCBINCgVibGluaxgGIAEoCBIPCgdyZXZlcnNlGAcgASgIEhUKDXN0cmlrZXRocm91Z2gYCCABKAgifAoKU2NyZWVuQ2VsbBIPCgdjb250ZW50GAEgASgJEg0KBXdpZHRoGAIgASgFEicKBXN0eWxlGAMgASgLMhguYW55dHR5LmFwaS52MS5DZWxsU3R5bGUSEAoIbGlua191cmwYBCABKAkSEwoLbGlua19wYXJhbXMYBSABKAkiYgoJU2NyZWVuUm93EigKBWNlbGxzGAEgAygLMhkuYW55dHR5LmFwaS52MS5TY3JlZW5DZWxsEisKCXRhaWxfZmlsbBgCIAEoCzIYLmFueXR0eS5hcGkudjEuQ2VsbFN0eWxlInUKDlRlcm1pbmFsQ3Vyc29yEgsKA3JvdxgBIAEoBRILCgNjb2wYAiABKAUSDwoHdmlzaWJsZRgDIAEoCBIpCgVzaGFwZRgEIAEoDjIaLmFueXR0eS5hcGkudjEuQ3Vyc29yU2hhcGUSDQoFYmxpbmsYBSABKAgilAIKDVRlcm1pbmFsTW9kZXMSGAoQYWx0ZXJuYXRlX3NjcmVlbhgBIAEoCBIYChBhbHRlcm5hdGVfc2Nyb2xsGAIgASgIEhYKDm1vdXNlX3RyYWNraW5nGAMgASgIEhEKCW1vdXNlX3gxMBgEIAEoCBIUCgxtb3VzZV9ub3JtYWwYBSABKAgSGgoSbW91c2VfYnV0dG9uX2V2ZW50GAYgASgIEhcKD21vdXNlX2FueV9ldmVudBgHIAEoCBIRCgltb3VzZV9zZ3IYCCABKAgSFwoPYnJhY2tldGVkX3Bhc3RlGAkgASgIEhoKEmFwcGxpY2F0aW9uX2N1cnNvchgKIAEoCBIRCglhdXRvX3dyYXAYCyABKAgicQoNSGlzdG9yeUN1cnNvchIPCgdsaW5lX2lkGAEgASgEEhMKC3Jvd19pbl9saW5lGAIgASgFEjQKB3NlZ21lbnQYBCABKA4yIy5hbnl0dHkuYXBpLnYxLkhpc3RvcnlDdXJzb3JTZWdtZW50SgQIAxAEIl4KDEhpc3RvcnlSYW5nZRIVCg1zdGFydF9saW5lX2lkGAEgASgEEhEKCXN0YXJ0X2NvbBgCIAEoBRITCgtlbmRfbGluZV9pZBgDIAEoBBIPCgdlbmRfY29sGAQgASgFIpwDChRIaXN0b3J5V2luZG93Q29tbWFuZBIsCgh0ZXJtaW5hbBgCIAEoCzIaLmFueXR0eS5hcGkudjEuVGVybWluYWxSZWYSLgoEbW9kZRgDIAEoDjIgLmFueXR0eS5hcGkudjEuSGlzdG9yeVdpbmRvd01vZGUSDQoFbGltaXQYBSABKAUSDAoEY29scxgGIAEoBRINCgV0b2tlbhgHIAEoCRIaChJoaXN0b3J5X2dlbmVyYXRpb24YCCABKAQSMwoNYmVmb3JlX2N1cnNvchgJIAEoCzIcLmFueXR0eS5hcGkudjEuSGlzdG9yeUN1cnNvchIyCgxhZnRlcl9jdXJzb3IYCiABKAsyHC5hbnl0dHkuYXBpLnYxLkhpc3RvcnlDdXJzb3ISHgoWYm91bmRhcnlfZmlyc3RfbGluZV9pZBgLIAEoBBIdChVib3VuZGFyeV9sYXN0X2xpbmVfaWQYDCABKAQSKgoFcmFuZ2UYDSABKAsyGy5hbnl0dHkuYXBpLnYxLkhpc3RvcnlSYW5nZUoECAEQAkoECAQQBSJ9ChJIaXN0b3J5Q29weUNvbW1hbmQSLAoIdGVybWluYWwYAiABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEjMKBndpbmRvdxgDIAEoCzIjLmFueXR0eS5hcGkudjEuSGlzdG9yeVdpbmRvd0NvbW1hbmRKBAgBEAIidgoVSGlzdG9yeVJlbGVhc2VDb21tYW5kEiwKCHRlcm1pbmFsGAIgASgLMhouYW55dHR5LmFwaS52MS5UZXJtaW5hbFJlZhINCgV0b2tlbhgDIAEoCRIaChJoaXN0b3J5X2dlbmVyYXRpb24YBCABKARKBAgBEAIiUQobSGlzdG9yeUJhY2tsb2dTdGF0dXNDb21tYW5kEiwKCHRlcm1pbmFsGAIgASgLMhouYW55dHR5LmFwaS52MS5UZXJtaW5hbFJlZkoECAEQAiKiAgoPSGlzdG9yeUxpbmVTcGFuEhEKCXN0YXJ0X3JvdxgBIAEoBRIPCgdlbmRfcm93GAIgASgFEhAKCHJvd19raW5kGAMgASgJEhcKD2xvZ2ljYWxfbGluZV9pZBgEIAEoBBISCgpzZXNzaW9uX2lkGAUgASgEEhAKCGZyYW1lX2lkGAYgASgEEhIKCmZpeGVkX2dyaWQYByABKAgSEwoLc2NyZWVuX2NvbHMYCCABKAUSIQoZdGltZXN0YW1wX3N0YXJ0X3VuaXhfbmFubxgJIAEoAxIfChd0aW1lc3RhbXBfZW5kX3VuaXhfbmFubxgKIAEoAxIWCg5jbGlwcGVkX2JlZm9yZRgLIAEoCBIVCg1jbGlwcGVkX2FmdGVyGAwgASgIIokDCgpIaXN0b3J5Um93EiUKA3JvdxgBIAEoCzIYLmFueXR0eS5hcGkudjEuU2NyZWVuUm93EhsKE3RpbWVzdGFtcF91bml4X25hbm8YAiABKAMSEAoIcm93X2tpbmQYAyABKAkSDwoHd3JhcHBlZBgEIAEoCBIuCglvd25lcnNoaXAYBSABKA4yGy5hbnl0dHkuYXBpLnYxLlJvd093bmVyc2hpcBI0CgdzZWdtZW50GAYgASgOMiMuYW55dHR5LmFwaS52MS5IaXN0b3J5Q3Vyc29yU2VnbWVudBISCgpzZXNzaW9uX2lkGAcgASgEEhAKCGZyYW1lX2lkGAggASgEEhIKCmZpeGVkX2dyaWQYCSABKAgSEwoLc2NyZWVuX2NvbHMYCiABKAUSEwoLc2NyZWVuX3Jvd3MYCyABKAUSFgoOc2NyZWVuX3Jvd19zZXQYDCABKAgSFwoPbG9naWNhbF9saW5lX2lkGA4gASgEEhMKC3Jvd19pbl9saW5lGA8gASgFSgQIDRAOIn8KFUhpc3RvcnlWaWV3cG9ydEFuY2hvchITCgt0b3BfbGluZV9pZBgBIAEoBBIXCg90b3BfY2VsbF9vZmZzZXQYAiABKAUSDgoGYXRfZW5kGAMgASgIEhMKC3NjcmVlbl9jb2xzGAQgASgNEhMKC3NjcmVlbl9yb3dzGAUgASgNIvsEChNIaXN0b3J5V2luZG93UmVzdWx0EiwKCHRlcm1pbmFsGAEgASgLMhouYW55dHR5LmFwaS52MS5UZXJtaW5hbFJlZhINCgV0b2tlbhgCIAEoCRI4CglvcGVyYXRpb24YAyABKA4yJS5hbnl0dHkuYXBpLnYxLkhpc3RvcnlXaW5kb3dPcGVyYXRpb24SKQoEc2l6ZRgEIAEoCzIbLmFueXR0eS5hcGkudjEuVGVybWluYWxTaXplEicKBHJvd3MYBSADKAsyGS5hbnl0dHkuYXBpLnYxLkhpc3RvcnlSb3cSLQoFbGluZXMYBiADKAsyHi5hbnl0dHkuYXBpLnYxLkhpc3RvcnlMaW5lU3BhbhITCgtsb2FkZWRfcm93cxgIIAEoBRISCgp0b3RhbF9yb3dzGAkgASgFEhQKDGxvYWRlZF9saW5lcxgKIAEoBRIVCg1sb2dpY2FsX3RvdGFsGAsgASgFEhAKCGhhc19tb3JlGAwgASgIEhoKEmhpc3RvcnlfZ2VuZXJhdGlvbhgNIAEoBBIUCgxmaXJzdF9yb3dfaWQYDiABKAQSEwoLbGFzdF9yb3dfaWQYDyABKAQSFQoNZmlyc3RfbGluZV9pZBgQIAEoBBIUCgxsYXN0X2xpbmVfaWQYESABKAQSLAoGY3Vyc29yGBIgASgLMhwuYW55dHR5LmFwaS52MS5IaXN0b3J5Q3Vyc29yEhsKE3RpbWVzdGFtcF91bml4X25hbm8YEyABKAMSPQoPdmlld3BvcnRfYW5jaG9yGBQgASgLMiQuYW55dHR5LmFwaS52MS5IaXN0b3J5Vmlld3BvcnRBbmNob3JKBAgHEAgiIQoRSGlzdG9yeUNvcHlSZXN1bHQSDAoEdGV4dBgBIAEoCSKHAwoaSGlzdG9yeUJhY2tsb2dTdGF0dXNSZXN1bHQSLAoIdGVybWluYWwYASABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEhcKD2hpc3RvcnlfZW5hYmxlZBgCIAEoCBIcChRvdXRwdXRfYnVmZmVyX3BvbGljeRgDIAEoCRIdChVidWZmZXJfY2FwYWNpdHlfYnl0ZXMYBCABKAMSFgoOcmVzaWRlbnRfYnl0ZXMYBSABKAMSIAoYYWdncmVnYXRlX3Jlc2lkZW50X2J5dGVzGAYgASgDEh4KFmFnZ3JlZ2F0ZV9idWRnZXRfYnl0ZXMYByABKAMSFQoNZHJvcHBlZF9ieXRlcxgIIAEoBBIRCglnYXBfY291bnQYCSABKAQSIAoYb3V0cHV0X2J1ZmZlcl93YWl0X25hbm9zGAogASgDEhMKC3VuYXZhaWxhYmxlGAsgASgIEhoKEnVuYXZhaWxhYmxlX3JlYXNvbhgMIAEoCRIOCgZjbG9zZWQYDSABKAgiZgoVTGl2ZVNjcmVlbk5leHRDb21tYW5kEiwKCHRlcm1pbmFsGAIgASgLMhouYW55dHR5LmFwaS52MS5UZXJtaW5hbFJlZhIZChFvYnNlcnZlZF9yZXZpc2lvbhgDIAEoBEoECAEQAiJLCg1TY3JlZW5Sb3dDb3B5EhIKCnNvdXJjZV9yb3cYASABKAUSFwoPZGVzdGluYXRpb25fcm93GAIgASgFEg0KBWNvdW50GAMgASgFIkwKEFNjcmVlblJvd1JlcGxhY2USEQoJcm93X2luZGV4GAEgASgFEiUKA3JvdxgCIAEoCzIYLmFueXR0eS5hcGkudjEuU2NyZWVuUm93IrEDChJOYXRpdmVTY3JlZW5SZXN1bHQSLAoIdGVybWluYWwYASABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEhUKDWxpdmVfcmV2aXNpb24YAiABKAQSKQoEc2l6ZRgDIAEoCzIbLmFueXR0eS5hcGkudjEuVGVybWluYWxTaXplEjkKEHJvd19yZXBsYWNlbWVudHMYBCADKAsyHy5hbnl0dHkuYXBpLnYxLlNjcmVlblJvd1JlcGxhY2USGAoQYWx0ZXJuYXRlX3NjcmVlbhgFIAEoCBItCgZjdXJzb3IYBiABKAsyHS5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsQ3Vyc29yEisKBW1vZGVzGAcgASgLMhwuYW55dHR5LmFwaS52MS5UZXJtaW5hbE1vZGVzEhsKE3RpbWVzdGFtcF91bml4X25hbm8YCCABKAMSFQoNYmFzZV9yZXZpc2lvbhgJIAEoBBIwCgpyb3dfY29waWVzGAogAygLMhwuYW55dHR5LmFwaS52MS5TY3JlZW5Sb3dDb3B5EhQKDGZ1bGxfcmVwbGFjZRgLIAEoCCq2AQoRSGlzdG9yeVdpbmRvd01vZGUSIwofSElTVE9SWV9XSU5ET1dfTU9ERV9VTlNQRUNJRklFRBAAEh4KGkhJU1RPUllfV0lORE9XX01PREVfTEFURVNUEAESHQoZSElTVE9SWV9XSU5ET1dfTU9ERV9PTERFUhACEh0KGUhJU1RPUllfV0lORE9XX01PREVfTkVXRVIQAxIeChpISVNUT1JZX1dJTkRPV19NT0RFX09MREVTVBAEKrMBChZIaXN0b3J5V2luZG93T3BlcmF0aW9uEigKJEhJU1RPUllfV0lORE9XX09QRVJBVElPTl9VTlNQRUNJRklFRBAAEiQKIEhJU1RPUllfV0lORE9XX09QRVJBVElPTl9SRVBMQUNFEAESJAogSElTVE9SWV9XSU5ET1dfT1BFUkFUSU9OX1BSRVBFTkQQAhIjCh9ISVNUT1JZX1dJTkRPV19PUEVSQVRJT05fQVBQRU5EEAMq9wEKFEhpc3RvcnlDdXJzb3JTZWdtZW50EiYKIkhJU1RPUllfQ1VSU09SX1NFR01FTlRfVU5TUEVDSUZJRUQQABIkCiBISVNUT1JZX0NVUlNPUl9TRUdNRU5UX0NPTU1JVFRFRBABEjAKLEhJU1RPUllfQ1VSU09SX1NFR01FTlRfQ1VSUkVOVF9QUklNQVJZX0ZSQU1FEAISMQotSElTVE9SWV9DVVJTT1JfU0VHTUVOVF9BUkNISVZFRF9QUklNQVJZX0ZSQU1FEAMSLAooSElTVE9SWV9DVVJTT1JfU0VHTUVOVF9DVVJSRU5UX0FMVF9GUkFNRRAEKq0BCgxSb3dPd25lcnNoaXASHQoZUk9XX09XTkVSU0hJUF9VTlNQRUNJRklFRBAAEhsKF1JPV19PV05FUlNISVBfUEVSU0lTVEVEEAESJQohUk9XX09XTkVSU0hJUF9MSVZFX1RBSUxfUkVDTEFJTUVEEAISIAocUk9XX09XTkVSU0hJUF9MSVZFX1RBSUxfTElWRRADEhgKFFJPV19PV05FUlNISVBfU0NSRUVOEAQqdQoLQ3Vyc29yU2hhcGUSHAoYQ1VSU09SX1NIQVBFX1VOU1BFQ0lGSUVEEAASFgoSQ1VSU09SX1NIQVBFX0JMT0NLEAESGgoWQ1VSU09SX1NIQVBFX1VOREVSTElORRACEhQKEENVUlNPUl9TSEFQRV9CQVIQA0ImWiRnaXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vYXBpcGJiBnByb3RvMw", [file_apipb_terminal]);
+  fileDesc("ChNhcGlwYi9oaXN0b3J5LnByb3RvEg1hbnl0dHkuYXBpLnYxIpsBCglDZWxsU3R5bGUSEgoKZm9yZWdyb3VuZBgBIAEoCRISCgpiYWNrZ3JvdW5kGAIgASgJEgwKBGJvbGQYAyABKAgSDgoGaXRhbGljGAQgASgIEhEKCXVuZGVybGluZRgFIAEoCBINCgVibGluaxgGIAEoCBIPCgdyZXZlcnNlGAcgASgIEhUKDXN0cmlrZXRocm91Z2gYCCABKAgifAoKU2NyZWVuQ2VsbBIPCgdjb250ZW50GAEgASgJEg0KBXdpZHRoGAIgASgFEicKBXN0eWxlGAMgASgLMhguYW55dHR5LmFwaS52MS5DZWxsU3R5bGUSEAoIbGlua191cmwYBCABKAkSEwoLbGlua19wYXJhbXMYBSABKAkiYgoJU2NyZWVuUm93EigKBWNlbGxzGAEgAygLMhkuYW55dHR5LmFwaS52MS5TY3JlZW5DZWxsEisKCXRhaWxfZmlsbBgCIAEoCzIYLmFueXR0eS5hcGkudjEuQ2VsbFN0eWxlInUKDlRlcm1pbmFsQ3Vyc29yEgsKA3JvdxgBIAEoBRILCgNjb2wYAiABKAUSDwoHdmlzaWJsZRgDIAEoCBIpCgVzaGFwZRgEIAEoDjIaLmFueXR0eS5hcGkudjEuQ3Vyc29yU2hhcGUSDQoFYmxpbmsYBSABKAgilAIKDVRlcm1pbmFsTW9kZXMSGAoQYWx0ZXJuYXRlX3NjcmVlbhgBIAEoCBIYChBhbHRlcm5hdGVfc2Nyb2xsGAIgASgIEhYKDm1vdXNlX3RyYWNraW5nGAMgASgIEhEKCW1vdXNlX3gxMBgEIAEoCBIUCgxtb3VzZV9ub3JtYWwYBSABKAgSGgoSbW91c2VfYnV0dG9uX2V2ZW50GAYgASgIEhcKD21vdXNlX2FueV9ldmVudBgHIAEoCBIRCgltb3VzZV9zZ3IYCCABKAgSFwoPYnJhY2tldGVkX3Bhc3RlGAkgASgIEhoKEmFwcGxpY2F0aW9uX2N1cnNvchgKIAEoCBIRCglhdXRvX3dyYXAYCyABKAgicQoNSGlzdG9yeUN1cnNvchIPCgdsaW5lX2lkGAEgASgEEhMKC3Jvd19pbl9saW5lGAIgASgFEjQKB3NlZ21lbnQYBCABKA4yIy5hbnl0dHkuYXBpLnYxLkhpc3RvcnlDdXJzb3JTZWdtZW50SgQIAxAEIl4KDEhpc3RvcnlSYW5nZRIVCg1zdGFydF9saW5lX2lkGAEgASgEEhEKCXN0YXJ0X2NvbBgCIAEoBRITCgtlbmRfbGluZV9pZBgDIAEoBBIPCgdlbmRfY29sGAQgASgFIpwDChRIaXN0b3J5V2luZG93Q29tbWFuZBIsCgh0ZXJtaW5hbBgCIAEoCzIaLmFueXR0eS5hcGkudjEuVGVybWluYWxSZWYSLgoEbW9kZRgDIAEoDjIgLmFueXR0eS5hcGkudjEuSGlzdG9yeVdpbmRvd01vZGUSDQoFbGltaXQYBSABKAUSDAoEY29scxgGIAEoBRINCgV0b2tlbhgHIAEoCRIaChJoaXN0b3J5X2dlbmVyYXRpb24YCCABKAQSMwoNYmVmb3JlX2N1cnNvchgJIAEoCzIcLmFueXR0eS5hcGkudjEuSGlzdG9yeUN1cnNvchIyCgxhZnRlcl9jdXJzb3IYCiABKAsyHC5hbnl0dHkuYXBpLnYxLkhpc3RvcnlDdXJzb3ISHgoWYm91bmRhcnlfZmlyc3RfbGluZV9pZBgLIAEoBBIdChVib3VuZGFyeV9sYXN0X2xpbmVfaWQYDCABKAQSKgoFcmFuZ2UYDSABKAsyGy5hbnl0dHkuYXBpLnYxLkhpc3RvcnlSYW5nZUoECAEQAkoECAQQBSKjAQoSSGlzdG9yeUNvcHlDb21tYW5kEiwKCHRlcm1pbmFsGAIgASgLMhouYW55dHR5LmFwaS52MS5UZXJtaW5hbFJlZhIzCgZ3aW5kb3cYAyABKAsyIy5hbnl0dHkuYXBpLnYxLkhpc3RvcnlXaW5kb3dDb21tYW5kEhEKCW1heF9saW5lcxgEIAEoBRIRCgltYXhfYnl0ZXMYBSABKAVKBAgBEAIiMwoTSGlzdG9yeVRleHRQb3NpdGlvbhIPCgdsaW5lX2lkGAEgASgEEgsKA2NvbBgCIAEoBSKOAgoUSGlzdG9yeVNlYXJjaENvbW1hbmQSLAoIdGVybWluYWwYAiABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEg0KBXRva2VuGAMgASgJEhoKEmhpc3RvcnlfZ2VuZXJhdGlvbhgEIAEoBBINCgVxdWVyeRgFIAEoCRI4CglkaXJlY3Rpb24YBiABKA4yJS5hbnl0dHkuYXBpLnYxLkhpc3RvcnlTZWFyY2hEaXJlY3Rpb24SDAoEY29scxgHIAEoBRINCgVsaW1pdBgIIAEoBRIxCgVzdGFydBgJIAEoCzIiLmFueXR0eS5hcGkudjEuSGlzdG9yeVRleHRQb3NpdGlvbkoECAEQAiJ2ChVIaXN0b3J5UmVsZWFzZUNvbW1hbmQSLAoIdGVybWluYWwYAiABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEg0KBXRva2VuGAMgASgJEhoKEmhpc3RvcnlfZ2VuZXJhdGlvbhgEIAEoBEoECAEQAiJRChtIaXN0b3J5QmFja2xvZ1N0YXR1c0NvbW1hbmQSLAoIdGVybWluYWwYAiABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmSgQIARACIqICCg9IaXN0b3J5TGluZVNwYW4SEQoJc3RhcnRfcm93GAEgASgFEg8KB2VuZF9yb3cYAiABKAUSEAoIcm93X2tpbmQYAyABKAkSFwoPbG9naWNhbF9saW5lX2lkGAQgASgEEhIKCnNlc3Npb25faWQYBSABKAQSEAoIZnJhbWVfaWQYBiABKAQSEgoKZml4ZWRfZ3JpZBgHIAEoCBITCgtzY3JlZW5fY29scxgIIAEoBRIhChl0aW1lc3RhbXBfc3RhcnRfdW5peF9uYW5vGAkgASgDEh8KF3RpbWVzdGFtcF9lbmRfdW5peF9uYW5vGAogASgDEhYKDmNsaXBwZWRfYmVmb3JlGAsgASgIEhUKDWNsaXBwZWRfYWZ0ZXIYDCABKAgiiQMKCkhpc3RvcnlSb3cSJQoDcm93GAEgASgLMhguYW55dHR5LmFwaS52MS5TY3JlZW5Sb3cSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgCIAEoAxIQCghyb3dfa2luZBgDIAEoCRIPCgd3cmFwcGVkGAQgASgIEi4KCW93bmVyc2hpcBgFIAEoDjIbLmFueXR0eS5hcGkudjEuUm93T3duZXJzaGlwEjQKB3NlZ21lbnQYBiABKA4yIy5hbnl0dHkuYXBpLnYxLkhpc3RvcnlDdXJzb3JTZWdtZW50EhIKCnNlc3Npb25faWQYByABKAQSEAoIZnJhbWVfaWQYCCABKAQSEgoKZml4ZWRfZ3JpZBgJIAEoCBITCgtzY3JlZW5fY29scxgKIAEoBRITCgtzY3JlZW5fcm93cxgLIAEoBRIWCg5zY3JlZW5fcm93X3NldBgMIAEoCBIXCg9sb2dpY2FsX2xpbmVfaWQYDiABKAQSEwoLcm93X2luX2xpbmUYDyABKAVKBAgNEA4ifwoVSGlzdG9yeVZpZXdwb3J0QW5jaG9yEhMKC3RvcF9saW5lX2lkGAEgASgEEhcKD3RvcF9jZWxsX29mZnNldBgCIAEoBRIOCgZhdF9lbmQYAyABKAgSEwoLc2NyZWVuX2NvbHMYBCABKA0SEwoLc2NyZWVuX3Jvd3MYBSABKA0i+wQKE0hpc3RvcnlXaW5kb3dSZXN1bHQSLAoIdGVybWluYWwYASABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEg0KBXRva2VuGAIgASgJEjgKCW9wZXJhdGlvbhgDIAEoDjIlLmFueXR0eS5hcGkudjEuSGlzdG9yeVdpbmRvd09wZXJhdGlvbhIpCgRzaXplGAQgASgLMhsuYW55dHR5LmFwaS52MS5UZXJtaW5hbFNpemUSJwoEcm93cxgFIAMoCzIZLmFueXR0eS5hcGkudjEuSGlzdG9yeVJvdxItCgVsaW5lcxgGIAMoCzIeLmFueXR0eS5hcGkudjEuSGlzdG9yeUxpbmVTcGFuEhMKC2xvYWRlZF9yb3dzGAggASgFEhIKCnRvdGFsX3Jvd3MYCSABKAUSFAoMbG9hZGVkX2xpbmVzGAogASgFEhUKDWxvZ2ljYWxfdG90YWwYCyABKAUSEAoIaGFzX21vcmUYDCABKAgSGgoSaGlzdG9yeV9nZW5lcmF0aW9uGA0gASgEEhQKDGZpcnN0X3Jvd19pZBgOIAEoBBITCgtsYXN0X3Jvd19pZBgPIAEoBBIVCg1maXJzdF9saW5lX2lkGBAgASgEEhQKDGxhc3RfbGluZV9pZBgRIAEoBBIsCgZjdXJzb3IYEiABKAsyHC5hbnl0dHkuYXBpLnYxLkhpc3RvcnlDdXJzb3ISGwoTdGltZXN0YW1wX3VuaXhfbmFubxgTIAEoAxI9Cg92aWV3cG9ydF9hbmNob3IYFCABKAsyJC5hbnl0dHkuYXBpLnYxLkhpc3RvcnlWaWV3cG9ydEFuY2hvckoECAcQCCJhChFIaXN0b3J5Q29weVJlc3VsdBIMCgR0ZXh0GAEgASgJEjAKBG5leHQYAiABKAsyIi5hbnl0dHkuYXBpLnYxLkhpc3RvcnlUZXh0UG9zaXRpb24SDAoEZG9uZRgDIAEoCCKVAQoTSGlzdG9yeVNlYXJjaFJlc3VsdBINCgVmb3VuZBgBIAEoCBIqCgVtYXRjaBgCIAEoCzIbLmFueXR0eS5hcGkudjEuSGlzdG9yeVJhbmdlEjIKBndpbmRvdxgDIAEoCzIiLmFueXR0eS5hcGkudjEuSGlzdG9yeVdpbmRvd1Jlc3VsdBIPCgd3cmFwcGVkGAQgASgIIocDChpIaXN0b3J5QmFja2xvZ1N0YXR1c1Jlc3VsdBIsCgh0ZXJtaW5hbBgBIAEoCzIaLmFueXR0eS5hcGkudjEuVGVybWluYWxSZWYSFwoPaGlzdG9yeV9lbmFibGVkGAIgASgIEhwKFG91dHB1dF9idWZmZXJfcG9saWN5GAMgASgJEh0KFWJ1ZmZlcl9jYXBhY2l0eV9ieXRlcxgEIAEoAxIWCg5yZXNpZGVudF9ieXRlcxgFIAEoAxIgChhhZ2dyZWdhdGVfcmVzaWRlbnRfYnl0ZXMYBiABKAMSHgoWYWdncmVnYXRlX2J1ZGdldF9ieXRlcxgHIAEoAxIVCg1kcm9wcGVkX2J5dGVzGAggASgEEhEKCWdhcF9jb3VudBgJIAEoBBIgChhvdXRwdXRfYnVmZmVyX3dhaXRfbmFub3MYCiABKAMSEwoLdW5hdmFpbGFibGUYCyABKAgSGgoSdW5hdmFpbGFibGVfcmVhc29uGAwgASgJEg4KBmNsb3NlZBgNIAEoCCJmChVMaXZlU2NyZWVuTmV4dENvbW1hbmQSLAoIdGVybWluYWwYAiABKAsyGi5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsUmVmEhkKEW9ic2VydmVkX3JldmlzaW9uGAMgASgESgQIARACIksKDVNjcmVlblJvd0NvcHkSEgoKc291cmNlX3JvdxgBIAEoBRIXCg9kZXN0aW5hdGlvbl9yb3cYAiABKAUSDQoFY291bnQYAyABKAUiTAoQU2NyZWVuUm93UmVwbGFjZRIRCglyb3dfaW5kZXgYASABKAUSJQoDcm93GAIgASgLMhguYW55dHR5LmFwaS52MS5TY3JlZW5Sb3cisQMKEk5hdGl2ZVNjcmVlblJlc3VsdBIsCgh0ZXJtaW5hbBgBIAEoCzIaLmFueXR0eS5hcGkudjEuVGVybWluYWxSZWYSFQoNbGl2ZV9yZXZpc2lvbhgCIAEoBBIpCgRzaXplGAMgASgLMhsuYW55dHR5LmFwaS52MS5UZXJtaW5hbFNpemUSOQoQcm93X3JlcGxhY2VtZW50cxgEIAMoCzIfLmFueXR0eS5hcGkudjEuU2NyZWVuUm93UmVwbGFjZRIYChBhbHRlcm5hdGVfc2NyZWVuGAUgASgIEi0KBmN1cnNvchgGIAEoCzIdLmFueXR0eS5hcGkudjEuVGVybWluYWxDdXJzb3ISKwoFbW9kZXMYByABKAsyHC5hbnl0dHkuYXBpLnYxLlRlcm1pbmFsTW9kZXMSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgIIAEoAxIVCg1iYXNlX3JldmlzaW9uGAkgASgEEjAKCnJvd19jb3BpZXMYCiADKAsyHC5hbnl0dHkuYXBpLnYxLlNjcmVlblJvd0NvcHkSFAoMZnVsbF9yZXBsYWNlGAsgASgIKrYBChFIaXN0b3J5V2luZG93TW9kZRIjCh9ISVNUT1JZX1dJTkRPV19NT0RFX1VOU1BFQ0lGSUVEEAASHgoaSElTVE9SWV9XSU5ET1dfTU9ERV9MQVRFU1QQARIdChlISVNUT1JZX1dJTkRPV19NT0RFX09MREVSEAISHQoZSElTVE9SWV9XSU5ET1dfTU9ERV9ORVdFUhADEh4KGkhJU1RPUllfV0lORE9XX01PREVfT0xERVNUEAQqswEKFkhpc3RvcnlXaW5kb3dPcGVyYXRpb24SKAokSElTVE9SWV9XSU5ET1dfT1BFUkFUSU9OX1VOU1BFQ0lGSUVEEAASJAogSElTVE9SWV9XSU5ET1dfT1BFUkFUSU9OX1JFUExBQ0UQARIkCiBISVNUT1JZX1dJTkRPV19PUEVSQVRJT05fUFJFUEVORBACEiMKH0hJU1RPUllfV0lORE9XX09QRVJBVElPTl9BUFBFTkQQAyqPAQoWSGlzdG9yeVNlYXJjaERpcmVjdGlvbhIoCiRISVNUT1JZX1NFQVJDSF9ESVJFQ1RJT05fVU5TUEVDSUZJRUQQABIkCiBISVNUT1JZX1NFQVJDSF9ESVJFQ1RJT05fRk9SV0FSRBABEiUKIUhJU1RPUllfU0VBUkNIX0RJUkVDVElPTl9CQUNLV0FSRBACKvcBChRIaXN0b3J5Q3Vyc29yU2VnbWVudBImCiJISVNUT1JZX0NVUlNPUl9TRUdNRU5UX1VOU1BFQ0lGSUVEEAASJAogSElTVE9SWV9DVVJTT1JfU0VHTUVOVF9DT01NSVRURUQQARIwCixISVNUT1JZX0NVUlNPUl9TRUdNRU5UX0NVUlJFTlRfUFJJTUFSWV9GUkFNRRACEjEKLUhJU1RPUllfQ1VSU09SX1NFR01FTlRfQVJDSElWRURfUFJJTUFSWV9GUkFNRRADEiwKKEhJU1RPUllfQ1VSU09SX1NFR01FTlRfQ1VSUkVOVF9BTFRfRlJBTUUQBCqtAQoMUm93T3duZXJzaGlwEh0KGVJPV19PV05FUlNISVBfVU5TUEVDSUZJRUQQABIbChdST1dfT1dORVJTSElQX1BFUlNJU1RFRBABEiUKIVJPV19PV05FUlNISVBfTElWRV9UQUlMX1JFQ0xBSU1FRBACEiAKHFJPV19PV05FUlNISVBfTElWRV9UQUlMX0xJVkUQAxIYChRST1dfT1dORVJTSElQX1NDUkVFThAEKnUKC0N1cnNvclNoYXBlEhwKGENVUlNPUl9TSEFQRV9VTlNQRUNJRklFRBAAEhYKEkNVUlNPUl9TSEFQRV9CTE9DSxABEhoKFkNVUlNPUl9TSEFQRV9VTkRFUkxJTkUQAhIUChBDVVJTT1JfU0hBUEVfQkFSEANCJlokZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2FwaXBiYgZwcm90bzM", [file_apipb_terminal]);
 
 /**
  * @generated from message anytty.api.v1.CellStyle
@@ -368,6 +368,16 @@ export type HistoryCopyCommand = Message<"anytty.api.v1.HistoryCopyCommand"> & {
    * @generated from field: anytty.api.v1.HistoryWindowCommand window = 3;
    */
   window?: HistoryWindowCommand | undefined;
+
+  /**
+   * @generated from field: int32 max_lines = 4;
+   */
+  maxLines: number;
+
+  /**
+   * @generated from field: int32 max_bytes = 5;
+   */
+  maxBytes: number;
 };
 
 /**
@@ -376,6 +386,80 @@ export type HistoryCopyCommand = Message<"anytty.api.v1.HistoryCopyCommand"> & {
  */
 export const HistoryCopyCommandSchema: GenMessage<HistoryCopyCommand> = /*@__PURE__*/
   messageDesc(file_apipb_history, 8);
+
+/**
+ * @generated from message anytty.api.v1.HistoryTextPosition
+ */
+export type HistoryTextPosition = Message<"anytty.api.v1.HistoryTextPosition"> & {
+  /**
+   * @generated from field: uint64 line_id = 1;
+   */
+  lineId: bigint;
+
+  /**
+   * @generated from field: int32 col = 2;
+   */
+  col: number;
+};
+
+/**
+ * Describes the message anytty.api.v1.HistoryTextPosition.
+ * Use `create(HistoryTextPositionSchema)` to create a new message.
+ */
+export const HistoryTextPositionSchema: GenMessage<HistoryTextPosition> = /*@__PURE__*/
+  messageDesc(file_apipb_history, 9);
+
+/**
+ * @generated from message anytty.api.v1.HistorySearchCommand
+ */
+export type HistorySearchCommand = Message<"anytty.api.v1.HistorySearchCommand"> & {
+  /**
+   * @generated from field: anytty.api.v1.TerminalRef terminal = 2;
+   */
+  terminal?: TerminalRef | undefined;
+
+  /**
+   * @generated from field: string token = 3;
+   */
+  token: string;
+
+  /**
+   * @generated from field: uint64 history_generation = 4;
+   */
+  historyGeneration: bigint;
+
+  /**
+   * @generated from field: string query = 5;
+   */
+  query: string;
+
+  /**
+   * @generated from field: anytty.api.v1.HistorySearchDirection direction = 6;
+   */
+  direction: HistorySearchDirection;
+
+  /**
+   * @generated from field: int32 cols = 7;
+   */
+  cols: number;
+
+  /**
+   * @generated from field: int32 limit = 8;
+   */
+  limit: number;
+
+  /**
+   * @generated from field: anytty.api.v1.HistoryTextPosition start = 9;
+   */
+  start?: HistoryTextPosition | undefined;
+};
+
+/**
+ * Describes the message anytty.api.v1.HistorySearchCommand.
+ * Use `create(HistorySearchCommandSchema)` to create a new message.
+ */
+export const HistorySearchCommandSchema: GenMessage<HistorySearchCommand> = /*@__PURE__*/
+  messageDesc(file_apipb_history, 10);
 
 /**
  * @generated from message anytty.api.v1.HistoryReleaseCommand
@@ -402,7 +486,7 @@ export type HistoryReleaseCommand = Message<"anytty.api.v1.HistoryReleaseCommand
  * Use `create(HistoryReleaseCommandSchema)` to create a new message.
  */
 export const HistoryReleaseCommandSchema: GenMessage<HistoryReleaseCommand> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 9);
+  messageDesc(file_apipb_history, 11);
 
 /**
  * @generated from message anytty.api.v1.HistoryBacklogStatusCommand
@@ -419,7 +503,7 @@ export type HistoryBacklogStatusCommand = Message<"anytty.api.v1.HistoryBacklogS
  * Use `create(HistoryBacklogStatusCommandSchema)` to create a new message.
  */
 export const HistoryBacklogStatusCommandSchema: GenMessage<HistoryBacklogStatusCommand> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 10);
+  messageDesc(file_apipb_history, 12);
 
 /**
  * @generated from message anytty.api.v1.HistoryLineSpan
@@ -491,7 +575,7 @@ export type HistoryLineSpan = Message<"anytty.api.v1.HistoryLineSpan"> & {
  * Use `create(HistoryLineSpanSchema)` to create a new message.
  */
 export const HistoryLineSpanSchema: GenMessage<HistoryLineSpan> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 11);
+  messageDesc(file_apipb_history, 13);
 
 /**
  * @generated from message anytty.api.v1.HistoryRow
@@ -573,7 +657,7 @@ export type HistoryRow = Message<"anytty.api.v1.HistoryRow"> & {
  * Use `create(HistoryRowSchema)` to create a new message.
  */
 export const HistoryRowSchema: GenMessage<HistoryRow> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 12);
+  messageDesc(file_apipb_history, 14);
 
 /**
  * @generated from message anytty.api.v1.HistoryViewportAnchor
@@ -610,7 +694,7 @@ export type HistoryViewportAnchor = Message<"anytty.api.v1.HistoryViewportAnchor
  * Use `create(HistoryViewportAnchorSchema)` to create a new message.
  */
 export const HistoryViewportAnchorSchema: GenMessage<HistoryViewportAnchor> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 13);
+  messageDesc(file_apipb_history, 15);
 
 /**
  * @generated from message anytty.api.v1.HistoryWindowResult
@@ -717,7 +801,7 @@ export type HistoryWindowResult = Message<"anytty.api.v1.HistoryWindowResult"> &
  * Use `create(HistoryWindowResultSchema)` to create a new message.
  */
 export const HistoryWindowResultSchema: GenMessage<HistoryWindowResult> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 14);
+  messageDesc(file_apipb_history, 16);
 
 /**
  * @generated from message anytty.api.v1.HistoryCopyResult
@@ -727,6 +811,16 @@ export type HistoryCopyResult = Message<"anytty.api.v1.HistoryCopyResult"> & {
    * @generated from field: string text = 1;
    */
   text: string;
+
+  /**
+   * @generated from field: anytty.api.v1.HistoryTextPosition next = 2;
+   */
+  next?: HistoryTextPosition | undefined;
+
+  /**
+   * @generated from field: bool done = 3;
+   */
+  done: boolean;
 };
 
 /**
@@ -734,7 +828,39 @@ export type HistoryCopyResult = Message<"anytty.api.v1.HistoryCopyResult"> & {
  * Use `create(HistoryCopyResultSchema)` to create a new message.
  */
 export const HistoryCopyResultSchema: GenMessage<HistoryCopyResult> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 15);
+  messageDesc(file_apipb_history, 17);
+
+/**
+ * @generated from message anytty.api.v1.HistorySearchResult
+ */
+export type HistorySearchResult = Message<"anytty.api.v1.HistorySearchResult"> & {
+  /**
+   * @generated from field: bool found = 1;
+   */
+  found: boolean;
+
+  /**
+   * @generated from field: anytty.api.v1.HistoryRange match = 2;
+   */
+  match?: HistoryRange | undefined;
+
+  /**
+   * @generated from field: anytty.api.v1.HistoryWindowResult window = 3;
+   */
+  window?: HistoryWindowResult | undefined;
+
+  /**
+   * @generated from field: bool wrapped = 4;
+   */
+  wrapped: boolean;
+};
+
+/**
+ * Describes the message anytty.api.v1.HistorySearchResult.
+ * Use `create(HistorySearchResultSchema)` to create a new message.
+ */
+export const HistorySearchResultSchema: GenMessage<HistorySearchResult> = /*@__PURE__*/
+  messageDesc(file_apipb_history, 18);
 
 /**
  * @generated from message anytty.api.v1.HistoryBacklogStatusResult
@@ -811,7 +937,7 @@ export type HistoryBacklogStatusResult = Message<"anytty.api.v1.HistoryBacklogSt
  * Use `create(HistoryBacklogStatusResultSchema)` to create a new message.
  */
 export const HistoryBacklogStatusResultSchema: GenMessage<HistoryBacklogStatusResult> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 16);
+  messageDesc(file_apipb_history, 19);
 
 /**
  * @generated from message anytty.api.v1.LiveScreenNextCommand
@@ -833,7 +959,7 @@ export type LiveScreenNextCommand = Message<"anytty.api.v1.LiveScreenNextCommand
  * Use `create(LiveScreenNextCommandSchema)` to create a new message.
  */
 export const LiveScreenNextCommandSchema: GenMessage<LiveScreenNextCommand> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 17);
+  messageDesc(file_apipb_history, 20);
 
 /**
  * @generated from message anytty.api.v1.ScreenRowCopy
@@ -860,7 +986,7 @@ export type ScreenRowCopy = Message<"anytty.api.v1.ScreenRowCopy"> & {
  * Use `create(ScreenRowCopySchema)` to create a new message.
  */
 export const ScreenRowCopySchema: GenMessage<ScreenRowCopy> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 18);
+  messageDesc(file_apipb_history, 21);
 
 /**
  * @generated from message anytty.api.v1.ScreenRowReplace
@@ -882,7 +1008,7 @@ export type ScreenRowReplace = Message<"anytty.api.v1.ScreenRowReplace"> & {
  * Use `create(ScreenRowReplaceSchema)` to create a new message.
  */
 export const ScreenRowReplaceSchema: GenMessage<ScreenRowReplace> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 19);
+  messageDesc(file_apipb_history, 22);
 
 /**
  * @generated from message anytty.api.v1.NativeScreenResult
@@ -949,7 +1075,7 @@ export type NativeScreenResult = Message<"anytty.api.v1.NativeScreenResult"> & {
  * Use `create(NativeScreenResultSchema)` to create a new message.
  */
 export const NativeScreenResultSchema: GenMessage<NativeScreenResult> = /*@__PURE__*/
-  messageDesc(file_apipb_history, 20);
+  messageDesc(file_apipb_history, 23);
 
 /**
  * @generated from enum anytty.api.v1.HistoryWindowMode
@@ -1019,6 +1145,32 @@ export const HistoryWindowOperationSchema: GenEnum<HistoryWindowOperation> = /*@
   enumDesc(file_apipb_history, 1);
 
 /**
+ * @generated from enum anytty.api.v1.HistorySearchDirection
+ */
+export enum HistorySearchDirection {
+  /**
+   * @generated from enum value: HISTORY_SEARCH_DIRECTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: HISTORY_SEARCH_DIRECTION_FORWARD = 1;
+   */
+  FORWARD = 1,
+
+  /**
+   * @generated from enum value: HISTORY_SEARCH_DIRECTION_BACKWARD = 2;
+   */
+  BACKWARD = 2,
+}
+
+/**
+ * Describes the enum anytty.api.v1.HistorySearchDirection.
+ */
+export const HistorySearchDirectionSchema: GenEnum<HistorySearchDirection> = /*@__PURE__*/
+  enumDesc(file_apipb_history, 2);
+
+/**
  * @generated from enum anytty.api.v1.HistoryCursorSegment
  */
 export enum HistoryCursorSegment {
@@ -1052,7 +1204,7 @@ export enum HistoryCursorSegment {
  * Describes the enum anytty.api.v1.HistoryCursorSegment.
  */
 export const HistoryCursorSegmentSchema: GenEnum<HistoryCursorSegment> = /*@__PURE__*/
-  enumDesc(file_apipb_history, 2);
+  enumDesc(file_apipb_history, 3);
 
 /**
  * @generated from enum anytty.api.v1.RowOwnership
@@ -1088,7 +1240,7 @@ export enum RowOwnership {
  * Describes the enum anytty.api.v1.RowOwnership.
  */
 export const RowOwnershipSchema: GenEnum<RowOwnership> = /*@__PURE__*/
-  enumDesc(file_apipb_history, 3);
+  enumDesc(file_apipb_history, 4);
 
 /**
  * @generated from enum anytty.api.v1.CursorShape
@@ -1119,4 +1271,4 @@ export enum CursorShape {
  * Describes the enum anytty.api.v1.CursorShape.
  */
 export const CursorShapeSchema: GenEnum<CursorShape> = /*@__PURE__*/
-  enumDesc(file_apipb_history, 4);
+  enumDesc(file_apipb_history, 5);

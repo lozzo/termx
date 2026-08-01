@@ -1,8 +1,10 @@
 package linehist
 
 import (
+	"context"
 	"errors"
 	"sync"
+	"time"
 
 	vterm "github.com/anytty/anytty/vterm/vterm"
 )
@@ -228,6 +230,54 @@ func (e *Engine) VisitLinesAtRetention(epoch uint64, start int, end int, reverse
 	return nil
 }
 
+// VisitLinesAtRetentionBatched releases the engine lock between storage
+// batches. Long-running search therefore does not hold up PTY ingestion for
+// the duration of the complete scan.
+func (e *Engine) VisitLinesAtRetentionBatched(ctx context.Context, epoch uint64, start int, end int, reverse bool, batchSize int, visit func(index int, line Line) bool) error {
+	if e == nil || end <= start {
+		return nil
+	}
+	if batchSize <= 0 {
+		batchSize = 256
+	}
+	if reverse {
+		for batchEnd := end; batchEnd > start; {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			batchStart := maxInt(start, batchEnd-batchSize)
+			lines, err := e.LinesAtRetention(epoch, batchStart, batchEnd)
+			if err != nil {
+				return err
+			}
+			for index := len(lines) - 1; index >= 0; index-- {
+				if !visit(batchStart+index, lines[index]) {
+					return nil
+				}
+			}
+			batchEnd = batchStart
+		}
+		return nil
+	}
+	for batchStart := start; batchStart < end; {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		batchEnd := minInt(end, batchStart+batchSize)
+		lines, err := e.LinesAtRetention(epoch, batchStart, batchEnd)
+		if err != nil {
+			return err
+		}
+		for index, line := range lines {
+			if !visit(batchStart+index, line) {
+				return nil
+			}
+		}
+		batchStart = batchEnd
+	}
+	return nil
+}
+
 func storageRetentionEpoch(file LineStorage) uint64 {
 	if tracker, ok := file.(retentionTracker); ok {
 		return tracker.RetentionEpoch()
@@ -244,6 +294,15 @@ func (e *Engine) OpenTail() []Run {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.asm.Open()
+}
+
+func (e *Engine) OpenTailUpdatedAt() time.Time {
+	if e == nil {
+		return time.Time{}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.asm.OpenUpdatedAt()
 }
 
 // SealOpenTail 把未闭合尾部强制闭合落盘，用于进程退出等边界。
@@ -273,6 +332,7 @@ func (e *Engine) SealPrimaryScreenRows(rows []ScreenRow) error {
 	for _, row := range rows {
 		batch = append(batch, e.asm.AppendEvictedRow(vterm.TerminalSemanticScrollOut{
 			Cells:      cloneScreenRowCells(row.Cells),
+			Timestamp:  row.UpdatedAt,
 			Wrapped:    row.Wrapped,
 			WrappedSet: true,
 		})...)
@@ -298,8 +358,9 @@ func (e *Engine) AppendLifecycleLines(texts []string) error {
 	batch := make([]Line, 0, len(texts))
 	for _, text := range texts {
 		batch = append(batch, Line{
-			Runs:    []Run{{Text: text}},
-			HardEnd: true,
+			Runs:      []Run{{Text: text}},
+			HardEnd:   true,
+			UpdatedAt: time.Now().UTC(),
 		})
 	}
 	return e.file.AppendLines(batch)

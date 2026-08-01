@@ -19,7 +19,7 @@ import (
 
 const (
 	compressedBlockMagic           uint32 = 0x424C5854 // "TXLB"
-	compressedBlockVersion         uint16 = 2
+	compressedBlockVersion         uint16 = 3
 	compressedBlockHeaderSize             = 32
 	compressedBlockTargetBytes            = 256 * 1024
 	compressedBlockMaxRawBytes            = 2 * 1024 * 1024

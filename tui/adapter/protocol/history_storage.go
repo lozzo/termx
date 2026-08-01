@@ -126,15 +126,78 @@ func (adapter ProtocolCoreClientAdapter) ReleaseHistory(ctx context.Context, req
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, req port.HistoryCopyRangeRequest) (port.HistoryCopyRangeResult, error) {
-	window := &apipb.HistoryWindowCommand{Token: req.Token, Cols: int32(req.Cols), HistoryGeneration: req.Generation, BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID}
-	if req.Start.Valid && req.End.Valid {
-		window.Range = &apipb.HistoryRange{StartLineId: req.Start.LineID, StartCol: int32(req.Start.Col), EndLineId: req.End.LineID, EndCol: int32(req.End.Col)}
+	if !req.Start.Valid || !req.End.Valid {
+		return port.HistoryCopyRangeResult{}, port.ErrHistoryCopyTooLarge
 	}
-	result, err := adapter.Application.HistoryCopy(ctx, &apipb.HistoryCopyCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Window: window})
+	const maxMaterializedCopyBytes = 64 << 20
+	current := req.Start
+	var text strings.Builder
+	firstChunk := true
+	for {
+		window := &apipb.HistoryWindowCommand{
+			Token: req.Token, Cols: int32(req.Cols), HistoryGeneration: req.Generation,
+			BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
+			Range: &apipb.HistoryRange{StartLineId: current.LineID, StartCol: int32(current.Col), EndLineId: req.End.LineID, EndCol: int32(req.End.Col)},
+		}
+		result, err := adapter.Application.HistoryCopy(ctx, &apipb.HistoryCopyCommand{
+			Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
+			Window:   window, MaxLines: 8192, MaxBytes: 512 << 10,
+		})
+		if err != nil {
+			return port.HistoryCopyRangeResult{}, normalizeProtocolHistoryCopyError(err)
+		}
+		separatorBytes := 0
+		if !firstChunk {
+			separatorBytes = 1
+		}
+		if text.Len()+separatorBytes+len(result.GetText()) > maxMaterializedCopyBytes {
+			return port.HistoryCopyRangeResult{}, port.ErrHistoryCopyTooLarge
+		}
+		if separatorBytes != 0 {
+			text.WriteByte('\n')
+		}
+		text.WriteString(result.GetText())
+		if result.GetDone() {
+			return port.HistoryCopyRangeResult{Text: text.String()}, nil
+		}
+		next := result.GetNext()
+		if next.GetLineId() == 0 || next.GetLineId() <= current.LineID {
+			return port.HistoryCopyRangeResult{}, port.ErrMissingHistoryResponse
+		}
+		current = state.CopyLogicalPosition{Valid: true, LineID: next.GetLineId(), Col: int(next.GetCol())}
+		firstChunk = false
+	}
+}
+
+func (adapter ProtocolCoreClientAdapter) HistorySearch(ctx context.Context, req port.HistorySearchRequest) (port.HistorySearchResult, error) {
+	direction := apipb.HistorySearchDirection_HISTORY_SEARCH_DIRECTION_FORWARD
+	if req.Direction == port.HistorySearchBackward {
+		direction = apipb.HistorySearchDirection_HISTORY_SEARCH_DIRECTION_BACKWARD
+	}
+	command := &apipb.HistorySearchCommand{
+		Terminal:          &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
+		Token:             req.Token,
+		HistoryGeneration: req.Generation,
+		Query:             req.Query,
+		Direction:         direction,
+		Cols:              int32(req.Cols),
+		Limit:             int32(req.Rows),
+	}
+	if req.Start.Valid {
+		command.Start = &apipb.HistoryTextPosition{LineId: req.Start.LineID, Col: int32(req.Start.Col)}
+	}
+	result, err := adapter.Application.HistorySearch(ctx, command)
 	if err != nil {
-		return port.HistoryCopyRangeResult{}, normalizeProtocolHistoryCopyError(err)
+		return port.HistorySearchResult{RequestID: req.RequestID}, normalizeProtocolHistoryWindowError(err)
 	}
-	return port.HistoryCopyRangeResult{Text: result.GetText()}, nil
+	out := port.HistorySearchResult{RequestID: req.RequestID, Found: result.GetFound(), Wrapped: result.GetWrapped()}
+	if !out.Found {
+		return out, nil
+	}
+	out.Start = state.CopyLogicalPosition{Valid: true, LineID: result.GetMatch().GetStartLineId(), Col: int(result.GetMatch().GetStartCol())}
+	out.End = state.CopyLogicalPosition{Valid: true, LineID: result.GetMatch().GetEndLineId(), Col: int(result.GetMatch().GetEndCol())}
+	out.Window = historyWindowFromProto(result.GetWindow(), req.Cols)
+	return out, nil
 }
 
 func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, command *apipb.HistoryWindowCommand, terminalResponse bool) (state.HistoryWindow, error) {
@@ -259,9 +322,9 @@ func historySourceLinesFromProto(window *apipb.HistoryWindowResult) []state.Hist
 	lines := make([]state.HistoryLogicalLine, 0, len(window.GetRows()))
 	for _, row := range window.GetRows() {
 		text, cells := historyTextAndCellsFromProto(row.GetRow())
-		next := state.HistoryLogicalLine{Text: text, Cells: cells, LineID: row.GetLogicalLineId(), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE}
+		next := state.HistoryLogicalLine{Text: text, Cells: cells, LineID: row.GetLogicalLineId(), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE, UpdatedAt: historyTimeFromUnixNano(row.GetTimestampUnixNano())}
 		if len(lines) > 0 && sameProtoHistorySource(lines[len(lines)-1], next) {
-			appendProtoHistorySegment(&lines[len(lines)-1], text, cells)
+			appendProtoHistorySegment(&lines[len(lines)-1], next)
 			continue
 		}
 		lines = append(lines, next)
@@ -284,7 +347,7 @@ func historyRowsFromProto(window *apipb.HistoryWindowResult, sourceLines []state
 	rows := make([]state.HistoryRow, 0, len(window.GetRows()))
 	for _, row := range window.GetRows() {
 		text, cells := historyTextAndCellsFromProto(row.GetRow())
-		rows = append(rows, state.HistoryRow{Text: text, Cells: cells, TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LineID: row.GetLogicalLineId(), RowInLine: int(row.GetRowInLine()), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE})
+		rows = append(rows, state.HistoryRow{Text: text, Cells: cells, TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LineID: row.GetLogicalLineId(), RowInLine: int(row.GetRowInLine()), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE, UpdatedAt: historyTimeFromUnixNano(row.GetTimestampUnixNano())})
 	}
 	lines := make([]state.HistoryLineSpan, 0, len(window.GetLines()))
 	for _, span := range window.GetLines() {
@@ -294,7 +357,7 @@ func historyRowsFromProto(window *apipb.HistoryWindowResult, sourceLines []state
 		if index := int(span.GetStartRow()); index >= 0 && index < len(rows) {
 			segment, screenRow, screenRowSet = rows[index].Segment, rows[index].ScreenRow, rows[index].ScreenRowSet
 		}
-		lines = append(lines, state.HistoryLineSpan{LineID: span.GetLogicalLineId(), StartRow: int(span.GetStartRow()), EndRow: int(span.GetEndRow()), Kind: span.GetRowKind(), Segment: segment, SessionID: span.GetSessionId(), FrameID: span.GetFrameId(), FixedGrid: span.GetFixedGrid(), ScreenCols: int(span.GetScreenCols()), ScreenRow: screenRow, ScreenRowSet: screenRowSet, ClippedBefore: span.GetClippedBefore(), ClippedAfter: span.GetClippedAfter()})
+		lines = append(lines, state.HistoryLineSpan{LineID: span.GetLogicalLineId(), StartRow: int(span.GetStartRow()), EndRow: int(span.GetEndRow()), Kind: span.GetRowKind(), Segment: segment, SessionID: span.GetSessionId(), FrameID: span.GetFrameId(), FixedGrid: span.GetFixedGrid(), ScreenCols: int(span.GetScreenCols()), ScreenRow: screenRow, ScreenRowSet: screenRowSet, ClippedBefore: span.GetClippedBefore(), ClippedAfter: span.GetClippedAfter(), UpdatedAt: historyTimeFromUnixNano(span.GetTimestampEndUnixNano())})
 	}
 	if len(lines) == 0 {
 		lines = protoLineSpansFromRows(rows, sourceLines)
@@ -361,9 +424,12 @@ func sameProtoHistorySource(left, right state.HistoryLogicalLine) bool {
 	return left.LineID != 0 && left.LineID == right.LineID && left.Kind == right.Kind && left.Segment == right.Segment && left.SessionID == right.SessionID && left.FrameID == right.FrameID && left.FixedGrid == right.FixedGrid && (!left.FixedGrid || left.ScreenCols == right.ScreenCols)
 }
 
-func appendProtoHistorySegment(line *state.HistoryLogicalLine, text string, cells []state.HistoryCell) {
-	line.Text += text
-	line.Cells = append(line.Cells, cells...)
+func appendProtoHistorySegment(line *state.HistoryLogicalLine, next state.HistoryLogicalLine) {
+	line.Text += next.Text
+	line.Cells = append(line.Cells, next.Cells...)
+	if next.UpdatedAt.After(line.UpdatedAt) {
+		line.UpdatedAt = next.UpdatedAt
+	}
 }
 
 func protoLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.HistoryLogicalLine) []state.HistoryLineSpan {
@@ -377,10 +443,17 @@ func protoLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.History
 			continue
 		}
 		row := rows[start]
-		spans = append(spans, state.HistoryLineSpan{LineID: row.LineID, StartRow: start, EndRow: index - 1, Kind: row.Kind, Segment: row.Segment, SessionID: row.SessionID, FrameID: row.FrameID, FixedGrid: row.FixedGrid, ScreenCols: row.ScreenCols, ScreenRow: row.ScreenRow, ScreenRowSet: row.ScreenRowSet})
+		spans = append(spans, state.HistoryLineSpan{LineID: row.LineID, StartRow: start, EndRow: index - 1, Kind: row.Kind, Segment: row.Segment, SessionID: row.SessionID, FrameID: row.FrameID, FixedGrid: row.FixedGrid, ScreenCols: row.ScreenCols, ScreenRow: row.ScreenRow, ScreenRowSet: row.ScreenRowSet, UpdatedAt: row.UpdatedAt})
 		start = index
 	}
 	return spans
+}
+
+func historyTimeFromUnixNano(value int64) time.Time {
+	if value == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, value).UTC()
 }
 
 func protoHistoryCellsPlainText(cells []state.HistoryCell) string {

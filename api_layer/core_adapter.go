@@ -170,11 +170,26 @@ func (adapter *coreApplicationAdapter) HistoryWindow(ctx context.Context, origin
 }
 
 func (adapter *coreApplicationAdapter) HistoryCopy(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error) {
+	if command.GetMaxLines() > 0 || command.GetMaxBytes() > 0 {
+		result, err := adapter.port.ApplicationHistoryCopyChunk(ctx, apimapping.HistoryCopyChunkRequestFromProto(command))
+		if err != nil {
+			return nil, apimapping.CoreError(err)
+		}
+		return apimapping.HistoryCopyChunkToProto(result), nil
+	}
 	text, err := adapter.port.ApplicationHistoryCopy(ctx, apimapping.HistoryCopyRequestFromProto(command))
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
 	return apimapping.HistoryCopyToProto(text), nil
+}
+
+func (adapter *coreApplicationAdapter) HistorySearch(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.HistorySearchCommand) (*apipb.HistorySearchResult, error) {
+	result, err := adapter.port.ApplicationHistorySearch(ctx, apimapping.HistorySearchRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.HistorySearchToProto(origin.GetEndpointId(), result), nil
 }
 
 func (adapter *coreApplicationAdapter) HistoryRelease(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.HistoryReleaseCommand) (*apipb.AcknowledgeResult, error) {

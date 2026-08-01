@@ -158,11 +158,14 @@ try {
   step('frozen-live-output', { before: frozenBefore, after: frozenAfter })
 
   const resumeBefore = eventCount(readDebugLog(serial), 'xterm.history_resume_live')
+  const historyRequestsBeforeResume = eventCount(readDebugLog(serial), 'session.scrollback_load_start')
   await swipeUntilBottom()
   await waitForLogCount(serial, 'xterm.history_resume_live', resumeBefore + 1, 30_000)
   await sleep(1_000)
   const resumeAfter = eventCount(readDebugLog(serial), 'xterm.history_resume_live')
   assert(resumeAfter === resumeBefore + 1, `history resumed ${resumeAfter - resumeBefore} times instead of once`)
+  assert(eventCount(readDebugLog(serial), 'session.scrollback_load_start') === historyRequestsBeforeResume,
+    'returning to the frozen tail unexpectedly requested another history page')
   const bottomState = await viewportState()
   assert(bottomState?.atBottom, 'viewport did not return to the live bottom')
   await capture('06-returned-to-bottom')
@@ -583,7 +586,7 @@ async function viewportState() {
       cols,
       viewportY,
       maxViewportY,
-      atBottom: viewportY >= maxViewportY - 1,
+      atBottom: viewportY >= maxViewportY,
     }
   })()`)
 }

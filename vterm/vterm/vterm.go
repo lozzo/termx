@@ -179,6 +179,7 @@ type VTerm struct {
 
 	scrollbackTimestamps     []time.Time
 	screenTimestamps         []time.Time
+	primarySavedTimestamps   []time.Time
 	scrollbackRowKinds       []string
 	screenRowKinds           []string
 	scrollbackOwnership      []string
@@ -873,6 +874,7 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 		afterHeight = v.emu.Height()
 		afterAltScreen = v.emu.IsAltScreen()
 	}
+	v.capturePrimaryTimestampsOnAltEnter(beforeAltScreen, afterAltScreen, beforeScreenTimestamps)
 	dirtyRows, dirtyReliable := v.consumeTouchedRowsLocked()
 	now := time.Now().UTC()
 	var afterScreen []rowFingerprint
@@ -897,6 +899,7 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 	fingerprintFinish(0)
 	metadataFinish := traceMeasure("vterm.write.reconcile.metadata")
 	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
+	v.restorePrimaryTimestampsOnAltExit(beforeAltScreen, afterAltScreen, afterHeight)
 	metadataFinish(0)
 	rowCacheFinish := traceMeasure("vterm.write.reconcile.row_cache")
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
@@ -1028,6 +1031,7 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 		afterHeight = v.emu.Height()
 		afterAltScreen = v.emu.IsAltScreen()
 	}
+	v.capturePrimaryTimestampsOnAltEnter(beforeAltScreen, afterAltScreen, beforeScreenTimestamps)
 	dirtyRows, dirtyReliable := v.consumeTouchedRowsLocked()
 	now := time.Now().UTC()
 	var afterScreen []rowFingerprint
@@ -1052,6 +1056,7 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 	fingerprintFinish(0)
 	metadataFinish := traceMeasure("vterm.write_latest.reconcile.metadata")
 	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
+	v.restorePrimaryTimestampsOnAltExit(beforeAltScreen, afterAltScreen, afterHeight)
 	metadataFinish(0)
 	rowCacheFinish := traceMeasure("vterm.write_latest.reconcile.row_cache")
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
@@ -2018,21 +2023,39 @@ func (v *VTerm) ScrollbackRowOwnershipAt(y int) string {
 	return stringAt(v.scrollbackOwnership, y)
 }
 
-// PrimarySavedScreenRows 返回 primary 屏当前行（used 宽度裁剪）与软换行标志，
+func (v *VTerm) capturePrimaryTimestampsOnAltEnter(beforeAlt bool, afterAlt bool, before []time.Time) {
+	if !beforeAlt && afterAlt {
+		v.primarySavedTimestamps = cloneTimeSlice(before)
+	}
+}
+
+func (v *VTerm) restorePrimaryTimestampsOnAltExit(beforeAlt bool, afterAlt bool, height int) {
+	if !beforeAlt || afterAlt {
+		return
+	}
+	v.screenTimestamps = normalizeTimeSlice(v.primarySavedTimestamps, height)
+	v.primarySavedTimestamps = nil
+}
+
+// PrimarySavedScreenRows 返回 primary 屏当前行（used 宽度裁剪）、软换行标志与时间，
 // 与是否处于 alt screen 无关。linehist 无限历史在 alt 期间用它投影"被 alt
 // 覆盖但仍未滚出"的主屏时间线尾部；它是 live 读投影，不是第二份 history truth。
-func (v *VTerm) PrimarySavedScreenRows() ([][]Cell, []bool) {
+func (v *VTerm) PrimarySavedScreenRows() ([][]Cell, []bool, []time.Time) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	if v.emu == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	height := v.emu.PrimaryHeight()
 	if height <= 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	rows := make([][]Cell, height)
 	wrapped := make([]bool, height)
+	timestamps := v.screenTimestamps
+	if v.emu.IsAltScreen() {
+		timestamps = v.primarySavedTimestamps
+	}
 	for y := 0; y < height; y++ {
 		line := v.emu.PrimaryLine(y)
 		if len(line) > 0 {
@@ -2044,7 +2067,7 @@ func (v *VTerm) PrimarySavedScreenRows() ([][]Cell, []bool) {
 		}
 		wrapped[y] = v.emu.PrimaryLineWrapped(y)
 	}
-	return rows, wrapped
+	return rows, wrapped, normalizeTimeSlice(timestamps, height)
 }
 
 func (v *VTerm) ScreenWrapped() []bool {

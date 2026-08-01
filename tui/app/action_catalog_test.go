@@ -59,8 +59,8 @@ func TestDefaultShortcutActionsReachObservableOwnerBoundary(t *testing.T) {
 			assertDefaultActionServiceOwner(t, invocation, execution)
 		})
 	}
-	if len(seen) != 156 {
-		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=156", len(seen))
+	if len(seen) != 158 {
+		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=158", len(seen))
 	}
 }
 
@@ -110,11 +110,18 @@ func runDefaultActionToOwnerBoundary(t *testing.T, root state.Root, invocation a
 		NewerResponses:  []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowAppend, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "newer", LineID: 40}})}},
 		OldestResponses: []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "oldest", LineID: 1}})}},
 		CopyResponses:   []port.HistoryCopyRangeResult{{Text: "alpha\nbravo"}},
+		SearchResponses: []port.HistorySearchResult{{
+			Found: true,
+			Start: state.CopyLogicalPosition{Valid: true, LineID: 20},
+			End:   state.CopyLogicalPosition{Valid: true, LineID: 20, Col: 5},
+			Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "copy-token", 98, 0,
+				[]state.HistoryRow{{Text: "bravo", LineID: 20}}),
+		}},
 	}
 	clipboard := &testkit.FakeClipboardService{ReadResult: port.ClipboardReadResult{Text: "system clip"}}
 	workbenchStorage := &testkit.FakeWorkbenchStorageService{}
 	clipboardStorage := &testkit.FakeClipboardStorageService{}
-	copyDeps := CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 3}
+	copyDeps := CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 3}
 	connectionProjection := root.Endpoints
 	if item, ok := connectionProjection.Endpoint("west"); ok {
 		item.Label = "West refreshed"
@@ -122,7 +129,7 @@ func runDefaultActionToOwnerBoundary(t *testing.T, root state.Root, invocation a
 	}
 	liveDeps := LiveDeps{Terminal: terminal, EndpointConnections: defaultActionEndpointConnections{store: connectionProjection}}
 	reducer := ComposeReducers(
-		NewBackNavigationReducer(copyDeps), NewShellReducer(), NewUIInputReducer(),
+		NewBackNavigationReducer(copyDeps), NewClipboardActionReducer(ClipboardActionDeps{Core: core, Clipboard: clipboard, Terminal: terminal}), NewShellReducer(), NewUIInputReducer(),
 		NewEndpointConnectionsReducer(liveDeps),
 		NewEndpointStatusReducer(liveDeps), NewEndpointDefaultsReducer(liveDeps), NewPromptPathCompletionReducer(liveDeps),
 		newTerminalPoolReducerPrepared(liveDeps),
@@ -174,7 +181,7 @@ func runDefaultActionEffects(effects []Effect) []Msg {
 
 func (execution defaultActionExecution) reachedOwnerBoundary(id actiondomain.ID, before state.Root) bool {
 	coreCalls := len(execution.core.LatestRequests) + len(execution.core.OlderRequests) + len(execution.core.NewerRequests) +
-		len(execution.core.OldestRequests) + len(execution.core.CopyRequests) + len(execution.core.ReleaseRequests)
+		len(execution.core.OldestRequests) + len(execution.core.CopyRequests) + len(execution.core.SearchRequests) + len(execution.core.ReleaseRequests)
 	if execution.quit || terminalServiceCallCount(execution.terminal) > 0 || len(execution.clipboard.Writes) > 0 ||
 		len(execution.workbenchStorage.Saves) > 0 || len(execution.clipboardStorage.Saves) > 0 || coreCalls > 0 {
 		return true
@@ -200,10 +207,6 @@ func assertDefaultActionServiceOwner(t *testing.T, invocation actiondomain.Invoc
 	id := invocation.ID
 	terminal := execution.terminal
 	switch id {
-	case "copy.paste_latest", "copy.paste_system":
-		if len(execution.core.ReleaseRequests) != 1 {
-			t.Fatalf("copy paste must release frozen history exactly once: releases=%d messages=%v", len(execution.core.ReleaseRequests), execution.messageTypes)
-		}
 	case "menu.terminal_picker", "menu.terminal_pool":
 		if len(terminal.Lists) != 1 {
 			t.Fatalf("inventory action must list exactly once: lists=%#v messages=%v", terminal.Lists, execution.messageTypes)
@@ -228,9 +231,13 @@ func assertDefaultActionServiceOwner(t *testing.T, invocation actiondomain.Invoc
 			return state.NewTerminalRef(execution.core.OldestRequests[0].EndpointID, execution.core.OldestRequests[0].TerminalID)
 		})
 		assertHistoryReadCount(t, execution, 1)
+	case "copy.search_next", "copy.search_previous":
+		assertSingleHistoryRef(t, "history search", len(execution.core.SearchRequests), execution.messageTypes, func() state.TerminalRef {
+			return state.NewTerminalRef(execution.core.SearchRequests[0].EndpointID, execution.core.SearchRequests[0].TerminalID)
+		})
 	case "copy.copy_selection", "copy.accept":
-		if len(execution.core.CopyRequests) != 0 || len(execution.clipboard.Writes) != 1 || len(execution.clipboardStorage.Saves) != 1 {
-			t.Fatalf("loaded selection must copy locally and persist exactly once: backend=%d writes=%d saves=%d messages=%v", len(execution.core.CopyRequests), len(execution.clipboard.Writes), len(execution.clipboardStorage.Saves), execution.messageTypes)
+		if len(execution.core.CopyRequests) != 1 || len(execution.clipboard.Writes) != 1 || len(execution.clipboardStorage.Saves) != 1 {
+			t.Fatalf("selection must copy from frozen history and persist exactly once: backend=%d writes=%d saves=%d messages=%v", len(execution.core.CopyRequests), len(execution.clipboard.Writes), len(execution.clipboardStorage.Saves), execution.messageTypes)
 		}
 		expectedReleases := 0
 		if id == "copy.accept" {
@@ -381,7 +388,7 @@ func expectedDefaultActionTerminalMutations(invocation actiondomain.Invocation) 
 		return terminalMutationVector{}
 	case "panel.size_lock":
 		return terminalMutationVector{TagEdits: []state.TerminalRef{term1}}
-	case "copy.paste_latest", "copy.paste_system", "clipboard_history.paste":
+	case "clipboard.paste_latest", "clipboard.paste_system", "clipboard_history.paste":
 		return terminalMutationVector{Inputs: []state.TerminalRef{term1}}
 	case "workbench_tree.delete", "workbench_tree.detach":
 		return terminalMutationVector{Detaches: []state.TerminalRef{term2}}
@@ -660,6 +667,8 @@ func defaultActionExecutionRoot(t *testing.T, id actiondomain.ID) state.Root {
 			root.CopyMode.Cursor = state.CopyPosition{Row: 0, Col: 2}
 		case "copy.request_newer":
 			root.CopyMode.Cursor = state.CopyPosition{Row: 2, Col: 2}
+		case "copy.search_next", "copy.search_previous":
+			root.CopyMode.Query = "bravo"
 		}
 		if id == "menu.copy" {
 			root.CopyMode = state.CopyModeStore{}

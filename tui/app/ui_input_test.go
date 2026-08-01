@@ -929,7 +929,7 @@ func TestUIInputReducerWorkbenchTreeDeleteKeysTrimQuery(t *testing.T) {
 }
 
 func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Terminal: &testkit.FakeTerminalService{}, Rows: 20})
+	reducer := ComposeReducers(NewClipboardActionReducer(ClipboardActionDeps{}), NewShellReducer(), NewUIInputReducer(), NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Rows: 20}))
 	root := state.Root{
 		CopyMode: state.CopyModeStore{Active: true},
 		Clipboard: state.ClipboardStore{
@@ -941,26 +941,26 @@ func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
 	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory {
 		t.Fatalf("expected clipboard history overlay, got %#v", next.Shell.Overlay)
 	}
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and storage load effects, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("expected storage load effect, got %#v", effects)
 	}
-	if _, ok := effects[1].(FuncEffect); !ok {
+	if _, ok := effects[0].(FuncEffect); !ok {
 		t.Fatalf("expected storage load effect, got %#v", effects)
 	}
 }
 
 func TestUIInputReducerOpensClipboardHistoryWhileCopyModeEntering(t *testing.T) {
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Terminal: &testkit.FakeTerminalService{}, Rows: 20})
+	reducer := ComposeReducers(NewClipboardActionReducer(ClipboardActionDeps{}), NewShellReducer(), NewUIInputReducer(), NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Rows: 20}))
 	root := state.Root{CopyMode: state.CopyModeStore{Entering: true, RequestID: 1}}
 
 	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "H"}})
 	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory || !next.CopyMode.Entering {
 		t.Fatalf("expected clipboard history overlay without canceling entering copy mode, got %#v", next)
 	}
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and storage load effects, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("expected storage load effect, got %#v", effects)
 	}
-	if _, ok := effects[1].(FuncEffect); !ok {
+	if _, ok := effects[0].(FuncEffect); !ok {
 		t.Fatalf("expected storage load effect, got %#v", effects)
 	}
 }

@@ -100,7 +100,8 @@ func NewInteractiveRuntimeWithStorage(
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	live = liveDepsWithEndpointEvents(live)
-	runtime := NewAppRuntime(initial, ComposeReducers(NewBackNavigationReducer(copyMode), NewShellReducer(), NewUIInputReducer(), NewEndpointConnectionsReducer(live), NewEndpointStatusReducer(live), NewEndpointDefaultsReducer(live), NewPromptPathCompletionReducer(live), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	clipboardActions := ClipboardActionDeps{Core: copyMode.Core, Clipboard: copyMode.Clipboard, Terminal: live.Terminal}
+	runtime := NewAppRuntime(initial, ComposeReducers(NewBackNavigationReducer(copyMode), NewClipboardActionReducer(clipboardActions), NewShellReducer(), NewUIInputReducer(), NewEndpointConnectionsReducer(live), NewEndpointStatusReducer(live), NewEndpointDefaultsReducer(live), NewPromptPathCompletionReducer(live), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(live.Logger)
 	if live.EndpointEvents != nil && shouldAutoStartEndpointWatch(runner) {
 		runtime.enqueue(EndpointWatchRequestMsg{})
@@ -676,7 +677,8 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			activePaneID = existing.PaneID
 		}
 		if existing.FloatingID != "" {
-			root = invalidateCopyModeForTerminalRebindRef(root, existing.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
+			var copyHistoryEffects []Effect
+			root, copyHistoryEffects = invalidateCopyModeForTerminalRebindRef(root, existing.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
 			binding := state.NewEndpointFloatingTerminalView(result.EndpointID, existing.FloatingID, existing.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 			binding.Session = result.Session
 			binding.OperationID = result.OperationID
@@ -695,7 +697,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			})
 			root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 			logLiveAttachApplied(deps, root, result, "floating-existing")
-			effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
+			effects := append(copyHistoryEffects, liveAttachAppliedEffects(result.EndpointID, result.TerminalID)...)
 			effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 			root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 			effects = appendPreviousAttachmentCleanup(effects, previous, result)
@@ -703,7 +705,8 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		}
 	}
 	if hasTarget && target.FloatingID != "" {
-		root = invalidateCopyModeForTerminalRebindRef(root, target.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
+		var copyHistoryEffects []Effect
+		root, copyHistoryEffects = invalidateCopyModeForTerminalRebindRef(root, target.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
 		binding := state.NewEndpointFloatingTerminalView(result.EndpointID, target.FloatingID, target.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 		binding.Session = result.Session
 		binding.OperationID = result.OperationID
@@ -722,7 +725,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(target.FloatingID, result.TerminalID)
 		logLiveAttachApplied(deps, root, result, "floating-target")
-		effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
+		effects := append(copyHistoryEffects, liveAttachAppliedEffects(result.EndpointID, result.TerminalID)...)
 		effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 		root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 		effects = appendPreviousAttachmentCleanup(effects, previous, result)
@@ -730,7 +733,8 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
-	root = invalidateCopyModeForTerminalRebindRef(root, activePaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
+	var copyHistoryEffects []Effect
+	root, copyHistoryEffects = invalidateCopyModeForTerminalRebindRef(root, activePaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
 	binding := state.NewEndpointPaneTerminalView(result.EndpointID, activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 	binding.Session = result.Session
 	binding.OperationID = result.OperationID
@@ -751,7 +755,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	})
 	root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	logLiveAttachApplied(deps, root, result, "pane")
-	effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
+	effects := append(copyHistoryEffects, liveAttachAppliedEffects(result.EndpointID, result.TerminalID)...)
 	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 	root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 	effects = appendPreviousAttachmentCleanup(effects, previous, result)
@@ -956,26 +960,27 @@ func liveAttachFloatingViewID(root state.Root, floatingID string) string {
 	return root.TerminalViews.FloatingViewID(floatingID)
 }
 
-func invalidateCopyModeForTerminalRebindRef(root state.Root, paneID string, viewID string, ref state.TerminalRef) state.Root {
+func invalidateCopyModeForTerminalRebindRef(root state.Root, paneID string, viewID string, ref state.TerminalRef) (state.Root, []Effect) {
 	ref = ref.Normalize()
 	if viewID != "" {
 		root = rootWithCopyHistorySessionForView(root, viewID)
 	}
 	if !copyModeInputContext(root.CopyMode) || ref.Empty() || state.NewTerminalRef(root.CopyMode.EndpointID, root.CopyMode.TerminalID).Equal(ref) {
-		return root
+		return root, nil
 	}
 	sameView := viewID != "" && root.CopyMode.ViewID == viewID
 	samePane := paneID != "" && root.CopyMode.PaneID == paneID
 	if !sameView && !samePane {
-		return root
+		return root, nil
 	}
+	effects := copyHistoryCleanupEffectsForView(root, viewID)
 	if root.CopyMode.Entering {
 		root.History = root.History.InvalidateWindow()
 		root.History.EndpointID = ref.EndpointID
 		root.History.TerminalID = ref.TerminalID
 		root.CopyMode = state.CopyModeStore{}
 		root = root.WithoutCopyHistorySession(viewID)
-		return root
+		return root, effects
 	}
 	// 当前 pane/view 已经重绑到新的 terminal，旧 frozen history 不能继续留在屏幕上。
 	root.History = root.History.InvalidateWindow()
@@ -996,7 +1001,7 @@ func invalidateCopyModeForTerminalRebindRef(root state.Root, paneID string, view
 	root.CopyMode.ActiveMatch = 0
 	root.CopyMode.Empty = true
 	root = saveCopyHistorySessionForView(root, viewID)
-	return root
+	return root, effects
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {

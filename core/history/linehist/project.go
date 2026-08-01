@@ -179,15 +179,17 @@ func spansForRows(rows []history.HistoryRow) []history.HistoryLineSpan {
 	spans := make([]history.HistoryLineSpan, 0, len(rows))
 	for i, row := range rows {
 		spans = append(spans, history.HistoryLineSpan{
-			StartRow:      i,
-			EndRow:        i,
-			Kind:          row.Kind,
-			Segment:       row.Segment,
-			LogicalLineID: row.LineID,
-			SessionID:     row.SessionID,
-			FrameID:       row.FrameID,
-			ScreenRow:     row.ScreenRow,
-			ScreenRowSet:  row.ScreenRowSet,
+			StartRow:       i,
+			EndRow:         i,
+			Kind:           row.Kind,
+			Segment:        row.Segment,
+			LogicalLineID:  row.LineID,
+			SessionID:      row.SessionID,
+			FrameID:        row.FrameID,
+			TimestampStart: row.Timestamp,
+			TimestampEnd:   row.Timestamp,
+			ScreenRow:      row.ScreenRow,
+			ScreenRowSet:   row.ScreenRowSet,
 		})
 	}
 	return spans

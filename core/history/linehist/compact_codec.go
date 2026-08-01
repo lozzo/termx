@@ -3,6 +3,7 @@ package linehist
 import (
 	"encoding/binary"
 	"errors"
+	"time"
 
 	"github.com/anytty/anytty/core/history"
 )
@@ -18,6 +19,7 @@ func encodeCompactLines(lines []Line) []byte {
 			flags = compactLineFlagHardEnd
 		}
 		payload = append(payload, flags)
+		payload = binary.AppendVarint(payload, unixNanoOrZero(line.UpdatedAt))
 		payload = binary.AppendUvarint(payload, uint64(len(line.Runs)))
 		for _, run := range line.Runs {
 			payload = appendCompactString(payload, run.Text)
@@ -47,6 +49,14 @@ func decodeCompactLines(payload []byte) ([]Line, error) {
 		}
 		line := Line{HardEnd: payload[0]&compactLineFlagHardEnd != 0}
 		payload = payload[1:]
+		updatedAt, size := binary.Varint(payload)
+		if size <= 0 {
+			return nil, errors.New("invalid compact history timestamp")
+		}
+		payload = payload[size:]
+		if updatedAt != 0 {
+			line.UpdatedAt = time.Unix(0, updatedAt).UTC()
+		}
 		runCount, size := binary.Uvarint(payload)
 		if size <= 0 {
 			return nil, errors.New("invalid compact history run count")
@@ -115,7 +125,7 @@ func compactLinesEncodedSize(lines []Line) int {
 }
 
 func compactLineEncodedSize(line Line) int {
-	size := 1 + uvarintSize(uint64(len(line.Runs)))
+	size := 1 + varintSize(unixNanoOrZero(line.UpdatedAt)) + uvarintSize(uint64(len(line.Runs)))
 	for _, run := range line.Runs {
 		for _, value := range []string{run.Text, run.Style.FG, run.Style.BG, run.LinkURL, run.LinkParams} {
 			size += uvarintSize(uint64(len(value))) + len(value)
@@ -123,6 +133,18 @@ func compactLineEncodedSize(line Line) int {
 		size++
 	}
 	return size
+}
+
+func unixNanoOrZero(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UnixNano()
+}
+
+func varintSize(value int64) int {
+	var buf [binary.MaxVarintLen64]byte
+	return binary.PutVarint(buf[:], value)
 }
 
 func uvarintSize(value uint64) int {

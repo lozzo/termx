@@ -138,6 +138,16 @@ func TestValidateTerminalAttachResultRejectsCrossSessionResource(t *testing.T) {
 	}
 }
 
+func TestHistorySearchAdmissionCarriesTerminalScope(t *testing.T) {
+	command := &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistorySearch{HistorySearch: &apipb.HistorySearchCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: "studio", TerminalId: "term-1"},
+	}}}
+	admission := ApplicationAdmissionFromCommand(command, apipb.ApiCapability_API_CAPABILITY_HISTORY)
+	if admission.TerminalID != "term-1" || admission.Capability != corev2.ApplicationCapabilityHistory {
+		t.Fatalf("history search admission = %#v", admission)
+	}
+}
+
 func terminalRequestContext(requestID string) *apipb.RequestContext {
 	return &apipb.RequestContext{
 		RequestId: requestID, ApiVersion: &apipb.ApiVersion{Major: 1},

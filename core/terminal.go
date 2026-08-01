@@ -1240,6 +1240,30 @@ func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, e
 	return terminal.historyStore.Copy(req)
 }
 
+func (terminal *Terminal) HistoryCopyChunk(ctx context.Context, req history.HistoryCopyChunkRequest) (history.HistoryCopyChunkResult, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return history.HistoryCopyChunkResult{}, ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		return history.HistoryCopyChunkResult{}, ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.CopyChunk(ctx, req)
+}
+
+func (terminal *Terminal) HistorySearch(ctx context.Context, req history.HistorySearchRequest) (history.HistorySearchResult, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return history.HistorySearchResult{}, ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		return history.HistorySearchResult{}, ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.Search(ctx, req)
+}
+
 func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
 	finish := perftrace.Measure("core.terminal.history_freeze.total")
 	terminal.historyMu.Lock()

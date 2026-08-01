@@ -3,6 +3,7 @@ package linehist
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anytty/anytty/core/history"
 	vterm "github.com/anytty/anytty/vterm/vterm"
@@ -53,6 +54,23 @@ func TestAssemblerJoinsSoftWrappedRows(t *testing.T) {
 	lines := asm.AppendEvictedRow(evictedRowForTest("ghijkl", false))
 	if len(lines) != 1 || LineText(lines[0]) != "abcdefghijkl" || !lines[0].HardEnd {
 		t.Fatalf("joined line = %v, want single hard line abcdefghijkl", lineTextsForTest(lines))
+	}
+}
+
+func TestAssemblerUsesLastPhysicalRowTimestamp(t *testing.T) {
+	asm := NewAssembler()
+	first := time.Date(2026, 8, 1, 9, 30, 0, 0, time.UTC)
+	last := first.Add(2 * time.Second)
+	wrapped := evictedRowForTest("abcdef", true)
+	wrapped.Timestamp = first
+	if lines := asm.AppendEvictedRow(wrapped); len(lines) != 0 {
+		t.Fatalf("wrapped row must stay open, got %#v", lines)
+	}
+	hardEnd := evictedRowForTest("ghijkl", false)
+	hardEnd.Timestamp = last
+	lines := asm.AppendEvictedRow(hardEnd)
+	if len(lines) != 1 || !lines[0].UpdatedAt.Equal(last) {
+		t.Fatalf("logical line timestamp = %v, want %v", lines[0].UpdatedAt, last)
 	}
 }
 

@@ -47,6 +47,7 @@ message CommandEnvelope {
     HistoryReleaseCommand history_release = 42;
     HistoryBacklogStatusCommand history_backlog_status = 43;
     LiveScreenNextCommand live_screen_next = 44;
+    HistorySearchCommand history_search = 45;
     EventSubscribeCommand event_subscribe = 46;
     FileListCommand file_list = 60;
     FileStatCommand file_stat = 61;
@@ -94,6 +95,7 @@ message ResultEnvelope {
     HistoryCopyResult history_copy = 41;
     HistoryBacklogStatusResult history_backlog_status = 42;
     NativeScreenResult live_screen = 43;
+    HistorySearchResult history_search = 44;
     EventSubscriptionResult event_subscription = 45;
     FileListResult file_list = 60;
     FileStatResult file_stat = 61;

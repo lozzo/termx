@@ -1107,6 +1107,7 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 			TerminalID: "term-1",
 			Token:      "tok-1",
 			Cols:       12,
+			TotalLines: 11,
 			Rows: []state.HistoryRow{
 				{Text: "alpha", LineID: 10, RowInLine: 0, ClippedStart: true},
 				{Text: "beta好", LineID: 10, RowInLine: 1, ClippedEnd: true},
@@ -1144,7 +1145,7 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != 4 {
 		t.Fatalf("expected cursor in content coordinates without copy marker offset, got %#v", content.Cursor)
 	}
-	if !strings.Contains(content.Status, "row 2/3 line:10 part:2 cols:12") || !strings.Contains(content.Status, "span:1-2") {
+	if !strings.Contains(content.Status, "line 10/11 wrap 2/?") {
 		t.Fatalf("expected position status, got %q", content.Status)
 	}
 	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 ||
@@ -2084,7 +2085,7 @@ func TestRenderVMBuilderDerivesFooterModePrecedence(t *testing.T) {
 	if !containsFooterAction(copyFooter.ActionTokens, "PgUp", "SCROLL", "copy.request_older") {
 		t.Fatalf("expected copy footer older action id, got %#v", copyFooter.ActionTokens)
 	}
-	if !containsFooterAction(copyFooter.ActionTokens, "H", "CLIPBOARD", "copy.open_clipboard_history") {
+	if !containsFooterAction(copyFooter.ActionTokens, "H", "CLIPBOARD", "menu.clipboard_history") {
 		t.Fatalf("expected copy footer clipboard action id, got %#v", copyFooter.ActionTokens)
 	}
 	if got := builder.Build(state.Root{

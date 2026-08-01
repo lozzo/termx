@@ -237,6 +237,9 @@ type ApplicationSessionPort interface {
 	ApplicationHistoryWindow(context.Context, history.HistoryWindowRequest) (history.HistoryWindow, error)
 	// ApplicationHistoryCopy 从 frozen history token 复制文本。
 	ApplicationHistoryCopy(context.Context, history.HistoryCopyRequest) (string, error)
+	ApplicationHistoryCopyChunk(context.Context, history.HistoryCopyChunkRequest) (history.HistoryCopyChunkResult, error)
+	// ApplicationHistorySearch searches a frozen history token and returns one match window.
+	ApplicationHistorySearch(context.Context, history.HistorySearchRequest) (history.HistorySearchResult, error)
 	// ApplicationHistoryRelease 释放当前 terminal 的 frozen history token。
 	ApplicationHistoryRelease(context.Context, string, history.HistoryToken) error
 	// ApplicationHistoryBacklogStatus 返回 history ingest 的诊断状态。

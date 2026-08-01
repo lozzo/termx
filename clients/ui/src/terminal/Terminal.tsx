@@ -14,7 +14,7 @@ import {
 import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { holdTerminalFrame, type TerminalFrameHold } from './terminalFrameHold'
-import { historyReplayWithViewportTail, historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, TerminalHistoryViewportController } from './terminalHistoryViewport'
+import { historyReplayWithViewportTail, historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, terminalViewportAtBottom, TerminalHistoryViewportController } from './terminalHistoryViewport'
 import { appendTerminalText } from './terminalTextWindow'
 import { useTerminalSession } from './useTerminalSession'
 import type { ProtoClientSession } from '../core/protoClientSession'
@@ -565,7 +565,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   const isScrolledToBottom = useCallback((term: XTerm) => {
     const buffer = term.buffer.active
-    return buffer.viewportY >= Math.max(0, buffer.length - term.rows - 1)
+    return terminalViewportAtBottom(buffer.viewportY, buffer.baseY)
   }, [])
 
   const reloadHistoryProjectionWhenIdle = useCallback(() => {
@@ -689,7 +689,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const resumeFrozenHistoryAtBottom = useCallback((includePrimed = false) => {
     const term = xtermRef.current
     if (!term || terminalDisposedRef.current) return false
-    const busy = historyLoadingRef.current || historyApplyingRef.current || pendingHistoryApplyRef.current !== null
+    const busy = historyLoadingRef.current ||
+      historyApplyingRef.current ||
+      pendingHistoryApplyRef.current !== null ||
+      historyRequestAwaitingApply(historyLoadedRowsRequestedRef.current, historyLoadedRowsAppliedRef.current) ||
+      pullingHistoryRef.current ||
+      historyProjectionReloadPendingRef.current
     if (!historyViewportControllerRef.current.resumeAtBottom(isScrolledToBottom(term), busy, includePrimed)) return false
 
     primedHistoryFrameRef.current?.remove()
@@ -1367,6 +1372,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         historyLoadingRef.current = false
         historyRestoreViewportOnLoadRef.current = false
         if (!keepVisibleForApply) {
+          pullingHistoryRef.current = false
           hideHistoryLoading()
           resumeFrozenHistoryAtBottomRef.current(true)
           if (loadFailed) {
@@ -1427,19 +1433,26 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       pendingHistoryApplyRef.current = null
       historyApplyQueuedAtRef.current = 0
       let heldFrame: TerminalFrameHold | null = null
+      let historyApplyReleased = false
+      let historyApplyWatchdog: number | null = null
+      const abandonHistoryApply = () => {
+        if (historyApplyReleased) return
+        historyApplyReleased = true
+        if (historyApplyWatchdog !== null) {
+          window.clearTimeout(historyApplyWatchdog)
+          historyApplyWatchdog = null
+        }
+        heldFrame?.remove()
+        historyApplyingRef.current = false
+        pullingHistoryRef.current = false
+        historyProjectionReloadPendingRef.current = false
+        historyLoadedRowsRequestedRef.current = historyLoadedRowsAppliedRef.current
+        hideHistoryLoading()
+        resumeFrozenHistoryAtBottomRef.current(true)
+      }
       try {
         historyApplyingRef.current = true
-        let historyApplyReleased = false
-        let historyApplyWatchdog: number | null = window.setTimeout(() => {
-          historyApplyWatchdog = null
-          if (historyApplyReleased) return
-          historyApplyReleased = true
-          heldFrame?.remove()
-          historyApplyingRef.current = false
-          hideHistoryLoading()
-          resumeFrozenHistoryAtBottomRef.current(true)
-          reloadHistoryProjectionWhenIdle()
-        }, historyApplyWatchdogMs)
+        historyApplyWatchdog = window.setTimeout(abandonHistoryApply, historyApplyWatchdogMs)
         const finishHistoryApply = () => {
           if (historyApplyReleased) return
           historyApplyReleased = true
@@ -1454,6 +1467,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             maybePrefetchScrollbackRef.current()
           }
           reloadHistoryProjectionWhenIdle()
+          resumeFrozenHistoryAtBottomRef.current()
         }
         const previouslyAppliedRows = historyLoadedRowsAppliedRef.current
         const rowsAddedSinceLastApply = Math.max(0, pending.loadedRows - previouslyAppliedRows)
@@ -1521,11 +1535,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         })
         lastWrittenTextRef.current = textToApply
       } catch (error) {
-        heldFrame?.remove()
-        historyApplyingRef.current = false
-        hideHistoryLoading()
-        resumeFrozenHistoryAtBottomRef.current(true)
-        reloadHistoryProjectionWhenIdle()
+        abandonHistoryApply()
         if (!terminalDisposedRef.current) throw error
       }
     }
@@ -2075,6 +2085,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       ? term.onRender(() => {
         const viewportY = term.buffer.active.viewportY
         if (viewportY !== renderedViewportY) {
+          const movingTowardOlderHistory = viewportY < renderedViewportY
           if (historyViewportControllerRef.current.confirmHistoryMovement(isScrolledToBottom(term))) {
             const primedFrame = primedHistoryFrameRef.current
             primedHistoryFrameRef.current = null
@@ -2088,7 +2099,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               pendingHistoryViewportRef.current = term.buffer.active.viewportY
             }
           } else {
-            if (historyLoadArmedByUserRef.current) {
+            if (historyLoadArmedByUserRef.current && movingTowardOlderHistory) {
               maybePrefetchScrollback()
             }
           }

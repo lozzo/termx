@@ -91,6 +91,10 @@ type ShellOpenHelpMsg struct {
 	Section string
 }
 
+type ShellOpenClipboardHistoryMsg struct{}
+
+func (ShellOpenClipboardHistoryMsg) isMsg() {}
+
 func (ShellOpenHelpMsg) isMsg() {}
 
 type ShellCloseOverlayMsg struct{}
@@ -281,6 +285,11 @@ func NewShellReducer() Reducer {
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return ConnectionsLoadRequestMsg{} }}}
 		case ShellOpenWorkbenchTreeMsg:
 			root.Shell = openWorkbenchTreeAtActivePane(root)
+		case ShellOpenClipboardHistoryMsg:
+			root.Shell = root.Shell.OpenClipboardHistory()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return ClipboardStorageLoadRequestMsg{Reason: "open"}
+			}}}
 		case ShellOpenFloatingOverviewMsg:
 			root.Shell = root.Shell.OpenFloatingOverview()
 		case ShellOpenPromptMsg:
@@ -631,7 +640,7 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 			}}}
 		}
 		if after.Purpose == "clipboard.new" {
-			root.Clipboard = root.Clipboard.WithCopiedText(after.LastResult)
+			root.Clipboard, _ = root.Clipboard.WithCopiedTextLimit(after.LastResult, clipboardHistoryMaxItems(root))
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return ClipboardStoragePersistRequestMsg{Reason: "new"}
@@ -650,6 +659,13 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "prompt.confirm", Body: after.LastResult})
 	}
 	return root.Advance(), nil
+}
+
+func clipboardHistoryMaxItems(root state.Root) int {
+	if root.Config.Interaction.ClipboardHistory.MaxItems > 0 {
+		return root.Config.Interaction.ClipboardHistory.MaxItems
+	}
+	return state.DefaultClipboardHistoryMaxItems
 }
 
 func promptWorkbenchCommand(prompt state.PromptState) (state.WorkbenchCommand, bool) {
@@ -684,7 +700,7 @@ func reduceClipboardHistoryPaste(root state.Root) (state.Root, []Effect) {
 	}
 	root.Shell = root.Shell.CloseOverlay()
 	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
-		return CopyModePasteTextMsg{Text: selected.Text}
+		return ClipboardPasteTextMsg{Text: selected.Text}
 	}}}
 }
 
@@ -1422,6 +1438,9 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	if result.Status == state.PaneCommandOK {
 		effects := paneCommandEffects(root, command, result, targetPane, hasTargetPane)
 		detachEffects := terminalDetachEffectsForPaneCommand(root, command, result)
+		if command.Action == state.PaneCommandClose {
+			effects = append(effects, copyHistoryCleanupEffectsForView(root, root.TerminalViews.PaneViewID(command.Target.PaneID))...)
+		}
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
@@ -1464,6 +1483,7 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
 	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
+		effects = append(effects, copyHistoryCleanupEffectsForView(root, root.TerminalViews.FloatingViewID(result.ID))...)
 		root = invalidateCopyModeForClosedFloating(root, result.ID)
 		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
 		effects = append(effects, detachEffects...)
@@ -1495,6 +1515,7 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 		return root.Advance(), nil
 	}
 	detachEffects := terminalDetachEffectsForWorkbenchCommand(root, previousShell, command, result)
+	copyHistoryEffects := copyHistoryCleanupEffectsForWorkbenchCommand(root, previousShell, command, result)
 	killEffects := terminalKillEffectsForWorkbenchResult(root, previousShell, result)
 	root = updateTerminalViewsAfterWorkbenchCommand(root, previousShell, command, result)
 	if workbenchCommandChangesActiveView(command.Action) {
@@ -1508,7 +1529,27 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 	}
 	effects = append(effects, killEffects...)
 	effects = append(effects, detachEffects...)
+	effects = append(effects, copyHistoryEffects...)
 	return root.Advance(), effects
+}
+
+func copyHistoryCleanupEffectsForWorkbenchCommand(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) []Effect {
+	var viewIDs []string
+	switch result.Action {
+	case state.WorkbenchCommandPaneDetach, state.WorkbenchCommandPaneClose:
+		viewIDs = append(viewIDs, root.TerminalViews.PaneViewID(result.ID))
+	case state.WorkbenchCommandTabClose:
+		for _, pane := range panesForWorkbenchTarget(previousShell, command.TargetID) {
+			viewIDs = append(viewIDs, root.TerminalViews.PaneViewID(pane.ID))
+		}
+	default:
+		return nil
+	}
+	var effects []Effect
+	for _, viewID := range viewIDs {
+		effects = append(effects, copyHistoryCleanupEffectsForView(root, viewID)...)
+	}
+	return effects
 }
 
 func terminalKillEffectsForWorkbenchResult(root state.Root, previousShell state.ShellStore, result state.WorkbenchCommandResult) []Effect {

@@ -974,6 +974,40 @@ func (server *Server) TerminalHistoryCopy(_ context.Context, id string, req hist
 	return terminal.HistoryCopy(req)
 }
 
+func (server *Server) TerminalHistoryCopyChunk(ctx context.Context, id string, req history.HistoryCopyChunkRequest) (history.HistoryCopyChunkResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if req.Token == "" {
+		return history.HistoryCopyChunkResult{}, history.ErrHistoryInvalidMutation
+	}
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.HistoryCopyChunkResult{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistoryCopyChunk(ctx, req)
+}
+
+func (server *Server) TerminalHistorySearch(ctx context.Context, id string, req history.HistorySearchRequest) (history.HistorySearchResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if req.Token == "" {
+		return history.HistorySearchResult{}, history.ErrHistoryInvalidMutation
+	}
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.HistorySearchResult{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistorySearch(ctx, req)
+}
+
 // TerminalHistoryFreeze 创建 core-v2 terminal 内部 frozen history boundary。它为
 // protocol latest/copy 建立 core-owned token，后续 repaint 不得改写该 token 的复制边界。
 func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {

@@ -629,12 +629,13 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	result = normalizeTerminalAttachResultForLock(root, result)
 	root = applyLiveAttachRuntimeProjection(root, result, result.ViewID)
 	root = applyTerminalAttachmentProjectionFromAttach(root, result)
+	var copyHistoryEffects []Effect
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID
 		if floating, ok := root.Shell.FloatingByID(msg.TargetFloatingID); ok {
 			paneID = floating.Pane.ID
 		}
-		root = invalidateCopyModeForTerminalRebindRef(root, paneID, result.ViewID, ref)
+		root, copyHistoryEffects = invalidateCopyModeForTerminalRebindRef(root, paneID, result.ViewID, ref)
 		binding := state.NewEndpointFloatingTerminalView(result.EndpointID, msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize)
 		binding.Session = result.Session
 		binding.OperationID = result.OperationID
@@ -647,7 +648,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		if targetPaneID == "" {
 			targetPaneID = root.Shell.EnsureDefaults().ActivePaneID
 		}
-		root = invalidateCopyModeForTerminalRebindRef(root, targetPaneID, result.ViewID, ref)
+		root, copyHistoryEffects = invalidateCopyModeForTerminalRebindRef(root, targetPaneID, result.ViewID, ref)
 		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: targetPaneID}, result.TerminalID)
 		binding := state.NewEndpointPaneTerminalView(result.EndpointID, targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize)
 		binding.Session = result.Session
@@ -657,7 +658,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	}
 	root.Shell = root.Shell.CloseOverlay().ExitInteractionMode()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
-	effects := workbenchPersistEffects("terminal.attach")
+	effects := append(copyHistoryEffects, workbenchPersistEffects("terminal.attach")...)
 	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 	effects = appendPreviousAttachmentCleanup(effects, previous, result)
 	return root.Advance(), effects

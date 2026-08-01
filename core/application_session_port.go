@@ -424,6 +424,46 @@ func (session *protocolSession) ApplicationHistoryCopy(ctx context.Context, requ
 	return text, err
 }
 
+func (session *protocolSession) ApplicationHistoryCopyChunk(ctx context.Context, request history.HistoryCopyChunkRequest) (history.HistoryCopyChunkResult, error) {
+	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
+		if request.Token != "" {
+			session.forgetHistoryToken(request.TerminalID, request.Token)
+		}
+		return history.HistoryCopyChunkResult{}, err
+	}
+	if request.Token == "" {
+		return history.HistoryCopyChunkResult{}, history.ErrHistoryInvalidMutation
+	}
+	if !session.ownsHistoryToken(request.TerminalID, request.Token) {
+		return history.HistoryCopyChunkResult{}, history.ErrHistoryStaleWindow
+	}
+	result, err := session.server.TerminalHistoryCopyChunk(ctx, request.TerminalID, request)
+	if historyTokenInvalidated(err) {
+		session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
+	}
+	return result, err
+}
+
+func (session *protocolSession) ApplicationHistorySearch(ctx context.Context, request history.HistorySearchRequest) (history.HistorySearchResult, error) {
+	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
+		if request.Token != "" {
+			session.forgetHistoryToken(request.TerminalID, request.Token)
+		}
+		return history.HistorySearchResult{}, err
+	}
+	if request.Token == "" {
+		return history.HistorySearchResult{}, history.ErrHistoryInvalidMutation
+	}
+	if !session.ownsHistoryToken(request.TerminalID, request.Token) {
+		return history.HistorySearchResult{}, history.ErrHistoryStaleWindow
+	}
+	result, err := session.server.TerminalHistorySearch(ctx, request.TerminalID, request)
+	if historyTokenInvalidated(err) {
+		session.releaseOwnedHistoryToken(request.TerminalID, request.Token)
+	}
+	return result, err
+}
+
 // ApplicationHistoryRelease 释放 core-owned frozen history token。
 func (session *protocolSession) ApplicationHistoryRelease(ctx context.Context, terminalID string, token history.HistoryToken) error {
 	if token == "" {

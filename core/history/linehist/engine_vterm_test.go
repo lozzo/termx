@@ -159,6 +159,25 @@ func TestEngineLifecycleSealPersistsCurrentPrimaryScreen(t *testing.T) {
 	}
 }
 
+func TestScreenSnapshotKeepsPrimaryTimestampsWhileAltIsActive(t *testing.T) {
+	engine := newEngineForTest(t, t.TempDir())
+	defer engine.Close()
+	source := vterm.NewSemanticSource(12, 3, 0, nil)
+	applyWriteForTest(t, source, engine, "one\r\ntwo")
+	before := ScreenSnapshotFromVTerm(source.VTerm())
+	applyWriteForTest(t, source, engine, "\x1b[?1049h\x1b[2J\x1b[HALT")
+	after := ScreenSnapshotFromVTerm(source.VTerm())
+	if !after.InAlt || len(after.PrimaryRows) < 2 {
+		t.Fatalf("missing saved primary rows in alt snapshot: %#v", after)
+	}
+	if after.PrimaryRows[0].UpdatedAt.IsZero() || after.PrimaryRows[1].UpdatedAt.IsZero() {
+		t.Fatalf("saved primary timestamps are zero: %#v", after.PrimaryRows)
+	}
+	if !after.PrimaryRows[0].UpdatedAt.Equal(before.Rows[0].UpdatedAt) || !after.PrimaryRows[1].UpdatedAt.Equal(before.Rows[1].UpdatedAt) {
+		t.Fatalf("saved primary timestamps changed: before=%#v after=%#v", before.Rows, after.PrimaryRows)
+	}
+}
+
 func TestEnginePersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
 	engine := newEngineForTest(t, dir)

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { historyReplayWithViewportTail, historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, TerminalHistoryViewportController } from './terminalHistoryViewport'
+import { historyReplayWithViewportTail, historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, terminalViewportAtBottom, TerminalHistoryViewportController } from './terminalHistoryViewport'
+
+describe('terminalViewportAtBottom', () => {
+  it('only reports the exact xterm buffer bottom', () => {
+    expect(terminalViewportAtBottom(98, 99)).toBe(false)
+    expect(terminalViewportAtBottom(99, 99)).toBe(true)
+  })
+})
 
 describe('TerminalHistoryViewportController', () => {
   it('stages the first page before a later gesture enters history', () => {

@@ -21,6 +21,12 @@ enum HistoryWindowOperation {
   HISTORY_WINDOW_OPERATION_APPEND = 3;
 }
 
+enum HistorySearchDirection {
+  HISTORY_SEARCH_DIRECTION_UNSPECIFIED = 0;
+  HISTORY_SEARCH_DIRECTION_FORWARD = 1;
+  HISTORY_SEARCH_DIRECTION_BACKWARD = 2;
+}
+
 enum HistoryCursorSegment {
   HISTORY_CURSOR_SEGMENT_UNSPECIFIED = 0;
   HISTORY_CURSOR_SEGMENT_COMMITTED = 1;
@@ -123,6 +129,25 @@ message HistoryCopyCommand {
   reserved 1;
   TerminalRef terminal = 2;
   HistoryWindowCommand window = 3;
+  int32 max_lines = 4;
+  int32 max_bytes = 5;
+}
+
+message HistoryTextPosition {
+  uint64 line_id = 1;
+  int32 col = 2;
+}
+
+message HistorySearchCommand {
+  reserved 1;
+  TerminalRef terminal = 2;
+  string token = 3;
+  uint64 history_generation = 4;
+  string query = 5;
+  HistorySearchDirection direction = 6;
+  int32 cols = 7;
+  int32 limit = 8;
+  HistoryTextPosition start = 9;
 }
 
 message HistoryReleaseCommand {
@@ -203,6 +228,15 @@ message HistoryWindowResult {
 
 message HistoryCopyResult {
   string text = 1;
+  HistoryTextPosition next = 2;
+  bool done = 3;
+}
+
+message HistorySearchResult {
+  bool found = 1;
+  HistoryRange match = 2;
+  HistoryWindowResult window = 3;
+  bool wrapped = 4;
 }
 
 message HistoryBacklogStatusResult {

@@ -504,7 +504,7 @@ func TestCopyModeEnteringPageUpBeyondLatestContinuesOlder(t *testing.T) {
 	if len(core.olderRequests()) != 1 {
 		t.Fatalf("entering page up beyond latest should request older, got %#v", core.olderRequests())
 	}
-	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestOlder || runtime.State().History.Pending.ScrollDeltaAfterPrepend != 16 {
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestOlder || runtime.State().History.Pending.DeferredScrollRows != 16 {
 		t.Fatalf("older request should carry unconsumed entering scroll, got %#v", runtime.State().History.Pending)
 	}
 	if runtime.State().CopyMode.ViewportTop != 0 || runtime.State().CopyMode.Cursor.Row < runtime.State().CopyMode.ViewportTop || runtime.State().CopyMode.Cursor.Row >= runtime.State().CopyMode.ViewportTop+runtime.State().CopyMode.ViewRows || runtime.State().CopyMode.Entering {
@@ -5308,6 +5308,9 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 	if runtime.State().History.Pending != nil {
 		t.Fatalf("exit while pending must clear pending history request, got %#v", runtime.State().History.Pending)
 	}
+	if len(runner.CancelTokens) != 1 || runner.CancelTokens[0] != copyModeHistoryRequestToken(state.TerminalPaneViewID(state.DefaultPaneID)) {
+		t.Fatalf("exit while latest is pending must cancel its request, got %#v", runner.CancelTokens)
+	}
 
 	delayed := historyWindowForApp(
 		state.HistoryWindowReplace,
@@ -5547,8 +5550,70 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 	if runtime.State().History.OlderRequestState() == state.OlderRequestPending {
 		t.Fatalf("older request state must not stay loading after matching stale response")
 	}
-	if runtime.State().Surface.Err == "" || runtime.State().Session.LastError == "" {
-		t.Fatalf("matching stale response should surface retryable error, state=%#v", runtime.State())
+	if runtime.State().Surface.Err != "" || runtime.State().Session.LastError != "" || !runtime.State().Session.Attached {
+		t.Fatalf("matching stale response must not break the live session, state=%#v", runtime.State())
+	}
+}
+
+func TestCopyModeLatestNetworkErrorReturnsToAttachedLiveSession(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	history, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
+		ID: 4, PaneID: state.DefaultPaneID, ViewID: viewID, TerminalID: "term-1", Cols: 80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+	root := state.Root{
+		Shell: state.DefaultShell(), History: history,
+		CopyMode: state.CopyModeStore{}.BindLatest(state.DefaultPaneID, viewID, "term-1", 4, 80, 20),
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Channel: 7},
+		Surface:  state.TerminalSurfaceStore{TerminalID: "term-1", Lines: []string{"live"}},
+	}
+	next, _ := reduceCopyModeHistoryResult(root, CopyModeHistoryResultMsg{
+		Err: errors.New("network unavailable"), RequestID: 4, ViewID: viewID, TerminalID: "term-1",
+	}, CopyModeDeps{})
+
+	if next.CopyMode.Active || next.CopyMode.Entering || next.History.Pending != nil {
+		t.Fatalf("latest failure should leave history mode: copy=%#v history=%#v", next.CopyMode, next.History)
+	}
+	if !next.Session.Attached || next.Session.Channel != 7 || next.Session.LastError != "" || next.Surface.Err != "" {
+		t.Fatalf("latest failure broke the live terminal: session=%#v surface=%#v", next.Session, next.Surface)
+	}
+}
+
+func TestCopyModeOlderNetworkErrorKeepsLoadedRowsAndAllowsRetry(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	history := state.HistoryStore{
+		PaneID: state.DefaultPaneID, ViewID: viewID, TerminalID: "term-1", Token: "tok-1", Cols: 80,
+		Boundary: state.HistoryBoundary{FirstLineID: 10, LastLineID: 20},
+		Rows:     []state.HistoryRow{{Text: "loaded", LineID: 20}},
+	}
+	var err error
+	history, err = history.BeginOlder(state.HistoryPendingRequest{
+		ID: 5, Kind: state.HistoryRequestOlder, PaneID: state.DefaultPaneID, ViewID: viewID,
+		TerminalID: "term-1", Token: "tok-1", Cols: 80, Boundary: history.Boundary,
+	})
+	if err != nil {
+		t.Fatalf("begin older: %v", err)
+	}
+	root := state.Root{
+		Shell: state.DefaultShell(), History: history,
+		CopyMode: state.CopyModeStore{Active: true, PaneID: state.DefaultPaneID, ViewID: viewID, TerminalID: "term-1", BoundToken: "tok-1"},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Channel: 7},
+		Surface:  state.TerminalSurfaceStore{TerminalID: "term-1", Lines: []string{"live"}},
+	}
+	next, _ := reduceCopyModeHistoryResult(root, CopyModeHistoryResultMsg{
+		Err: errors.New("network unavailable"), RequestID: 5, ViewID: viewID, TerminalID: "term-1",
+	}, CopyModeDeps{})
+
+	if next.History.Pending != nil || next.History.OlderRequestState() == state.OlderRequestPending {
+		t.Fatalf("older failure should clear pending for retry: %#v", next.History.Pending)
+	}
+	if !next.CopyMode.Active || len(next.History.Rows) != 1 || next.History.Rows[0].Text != "loaded" {
+		t.Fatalf("older failure should keep the loaded history window: copy=%#v history=%#v", next.CopyMode, next.History)
+	}
+	if !next.Session.Attached || next.Session.Channel != 7 || next.Session.LastError != "" || next.Surface.Err != "" {
+		t.Fatalf("older failure broke the live terminal: session=%#v surface=%#v", next.Session, next.Surface)
 	}
 }
 
@@ -5701,15 +5766,18 @@ func TestCopyModeCopyTooLargeKeepsSelectionAndShowsWarning(t *testing.T) {
 		Rows:       []state.HistoryRow{{Text: "visible", LineID: 30}},
 	}
 	runtime.state.CopyMode = state.CopyModeStore{
-		Active:     true,
-		TerminalID: "term-1",
-		BoundToken: "tok-1",
-		Selection:  selection,
+		Active:        true,
+		TerminalID:    "term-1",
+		BoundToken:    "tok-1",
+		Selection:     selection,
+		CopyPending:   true,
+		CopyRequestID: 9,
 	}
 
 	if err := runtime.Post(CopyModeCopyResultMsg{
-		Err:    fmt.Errorf("%w: bounded copy exceeded", port.ErrHistoryCopyTooLarge),
-		Commit: true,
+		Err:       fmt.Errorf("%w: bounded copy exceeded", port.ErrHistoryCopyTooLarge),
+		Commit:    true,
+		RequestID: 9,
 	}); err != nil {
 		t.Fatalf("post copy-too-large: %v", err)
 	}
@@ -5898,8 +5966,9 @@ func TestInteractiveRuntimePassesRawSpecialKeysAndSwallowsUIModeUnboundKeys(t *t
 
 func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	clipboard := &testkit.FakeClipboardService{}
+	core := &testkit.FakeCoreClient{CopyResponses: []port.HistoryCopyRangeResult{{Text: "lpha\nbe"}}}
 	host := NewFakeTerminalHost(4)
-	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, clipboard)
+	runtime := newCopyModeRuntime(host, core, clipboard)
 	runtime.state.History = historyStoreForCopySelection()
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
@@ -5987,8 +6056,9 @@ func TestCopyModeSelectionFetchesTrimmedRangeFromBackend(t *testing.T) {
 
 func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 	clipboard := &testkit.FakeClipboardService{}
+	core := &testkit.FakeCoreClient{CopyResponses: []port.HistoryCopyRangeResult{{Text: "gamma"}}}
 	host := NewFakeTerminalHost(16)
-	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, clipboard)
+	runtime := newCopyModeRuntime(host, core, clipboard)
 	runtime.state.History = state.HistoryStore{
 		TerminalID: "term-1",
 		Token:      "tok-1",
@@ -6007,11 +6077,13 @@ func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 		ViewRows:   3,
 	}
 	for _, event := range []input.InputEvent{
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "G"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "j"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "j"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "u"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "d"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "g"},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "G"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "j"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "j"},
 		{Kind: input.EventKindKey, Key: input.KeyHome},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: " "},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"},
@@ -6038,8 +6110,9 @@ func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 
 func TestCopyModeEnterCopiesAndExits(t *testing.T) {
 	clipboard := &testkit.FakeClipboardService{}
+	core := &testkit.FakeCoreClient{CopyResponses: []port.HistoryCopyRangeResult{{Text: "alpha"}}}
 	host := NewFakeTerminalHost(16)
-	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, clipboard)
+	runtime := newCopyModeRuntime(host, core, clipboard)
 	runtime.state.History = historyStoreForCopySelection()
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
@@ -6068,11 +6141,69 @@ func TestCopyModeEnterCopiesAndExits(t *testing.T) {
 	}
 }
 
+func TestCopyModeEnterReleasesHistoryOnlyAfterCopySucceeds(t *testing.T) {
+	clipboard := &testkit.FakeClipboardService{}
+	core := &testkit.FakeCoreClient{CopyResponses: []port.HistoryCopyRangeResult{{Text: "alpha"}}}
+	runner := &recordingEffectRunner{}
+	host := NewFakeTerminalHost(16)
+	runtime := newCopyModeRuntimeWithRunner(host, core, clipboard, &testkit.FakeTerminalService{}, runner)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runner.Effects = nil
+	runtime.state.History = historyStoreForCopySelection()
+	mark := state.CopyPosition{Row: 0, Col: 0}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active: true, ViewID: state.TerminalPaneViewID(state.DefaultPaneID), TerminalID: "term-1",
+		BoundToken: "tok-1", BoundCols: 78, ViewRows: 4, Mark: &mark,
+		Selection: &state.CopySelection{
+			Anchor: mark, Focus: state.CopyPosition{Row: 0, Col: 5},
+			LogicalAnchor: state.CopyLogicalPosition{Valid: true, LineID: 10},
+			LogicalFocus:  state.CopyLogicalPosition{Valid: true, LineID: 10, Col: 5},
+		},
+	}
+
+	for index := 0; index < 2; index++ {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+			t.Fatal(err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !runtime.State().CopyMode.Active || !runtime.State().CopyMode.CopyPending || runtime.State().History.Token != "tok-1" {
+		t.Fatalf("enter released frozen history before copy completed: %#v", runtime.State())
+	}
+	if len(runner.Effects) != 1 || len(core.ReleaseRequests) != 0 {
+		t.Fatalf("pending enter should start one copy and no release, effects=%#v releases=%#v", runner.Effects, core.ReleaseRequests)
+	}
+	copyEffect, ok := runner.Effects[0].(FuncEffect)
+	if !ok || copyEffect.Token != copyModeCopyRequestToken(state.TerminalPaneViewID(state.DefaultPaneID)) {
+		t.Fatalf("copy effect missing per-view cancellation token: %#v", runner.Effects[0])
+	}
+	result := copyEffect.Run(context.Background())
+	if err := runtime.Post(result); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.State().CopyMode.Active || runtime.State().History.Token != "" {
+		t.Fatalf("successful enter copy did not exit: %#v", runtime.State())
+	}
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "alpha" {
+		t.Fatalf("copy did not reach clipboard: %#v", clipboard.Writes)
+	}
+	if len(runner.Effects) != 3 {
+		t.Fatalf("copy result should schedule persistence and release after success, effects=%#v", runner.Effects)
+	}
+}
+
 func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
 	clipboard := &testkit.FakeClipboardService{LastCopied: "hello\nworld"}
 	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -6094,6 +6225,33 @@ func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "hello\nworld" {
 		t.Fatalf("paste last copy should target active terminal, got %#v", terminal.Inputs)
+	}
+}
+
+func TestClipboardPasteOutsideCopyModeKeepsFrozenHistoryState(t *testing.T) {
+	clipboard := &testkit.FakeClipboardService{}
+	terminal := &testkit.FakeTerminalService{}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runtime.state.History = state.HistoryStore{
+		TerminalID: "term-1", Token: "tok-1", Cols: 78,
+		Rows: []state.HistoryRow{{Text: "frozen", LineID: 10}},
+	}
+	before := runtime.state.History
+	if err := runtime.Post(ClipboardPasteTextMsg{Text: "paste me"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(runtime.State().History, before) {
+		t.Fatalf("normal paste changed frozen history: before=%#v after=%#v", before, runtime.State().History)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "paste me" {
+		t.Fatalf("normal paste did not reach terminal: %#v", terminal.Inputs)
 	}
 }
 
@@ -6158,6 +6316,37 @@ func TestCopyModePasteClipboardUsesSystemClipboardAndBracketedPaste(t *testing.T
 	}
 }
 
+func TestCopyModeEmptySystemClipboardKeepsHistoryAndLiveAttachment(t *testing.T) {
+	clipboard := &testkit.FakeClipboardService{}
+	terminal := &testkit.FakeTerminalService{}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runtime.state.History = state.HistoryStore{TerminalID: "term-1", Token: "tok-1", Cols: 78, Rows: []state.HistoryRow{{Text: "frozen", LineID: 1}}}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active: true, ViewID: state.TerminalPaneViewID(state.DefaultPaneID), TerminalID: "term-1", BoundToken: "tok-1", BoundCols: 78,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "P"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	result := runtime.State()
+	if !result.CopyMode.Active || result.History.Token != "tok-1" {
+		t.Fatalf("empty clipboard discarded copy history: %#v", result)
+	}
+	if !result.Session.Attached || result.Session.State == state.TerminalLiveError || result.Session.LastError != "" {
+		t.Fatalf("empty clipboard poisoned live session: %#v", result.Session)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("empty clipboard sent terminal input: %#v", terminal.Inputs)
+	}
+}
+
 func TestCopyModeClipboardHistoryOverlayFiltersAndPastesSelectedEntry(t *testing.T) {
 	clipboard := &testkit.FakeClipboardService{}
 	terminal := &testkit.FakeTerminalService{}
@@ -6206,7 +6395,15 @@ func TestCopyModeClipboardHistoryOverlayFiltersAndPastesSelectedEntry(t *testing
 	}
 }
 
-func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
+func TestCopyModeSearchReturnsToLiveAtFrozenBottom(t *testing.T) {
+	rows := []state.HistoryRow{
+		{Text: "alpha", LineID: 10},
+		{Text: "beta", LineID: 11},
+		{Text: "gamma beta", LineID: 12},
+		{Text: "delta", LineID: 13},
+		{Text: "epsilon", LineID: 14},
+		{Text: "zeta", LineID: 15},
+	}
 	core := &testkit.FakeCoreClient{
 		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
@@ -6214,15 +6411,12 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 			"tok-1",
 			78,
 			7,
-			[]state.HistoryRow{
-				{Text: "alpha", LineID: 10},
-				{Text: "beta", LineID: 11},
-				{Text: "gamma beta", LineID: 12},
-				{Text: "delta", LineID: 13},
-				{Text: "epsilon", LineID: 14},
-				{Text: "zeta", LineID: 15},
-			},
+			rows,
 		)}},
+		SearchResponses: []port.HistorySearchResult{
+			{Found: true, Start: state.CopyLogicalPosition{Valid: true, LineID: 11}, End: state.CopyLogicalPosition{Valid: true, LineID: 11, Col: 4}, Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 78, 7, rows)},
+			{Found: true, Start: state.CopyLogicalPosition{Valid: true, LineID: 12, Col: 6}, End: state.CopyLogicalPosition{Valid: true, LineID: 12, Col: 10}, Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 78, 7, rows)},
+		},
 	}
 	host := NewFakeTerminalHost(32)
 	host.SetSize(80, 8)
@@ -6234,6 +6428,9 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain latest: %v", err)
 	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "/"}); err != nil {
+		t.Fatalf("start search: %v", err)
+	}
 	for _, ch := range []string{"b", "e", "t", "a"} {
 		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
 			t.Fatalf("send query %q: %v", ch, err)
@@ -6242,11 +6439,17 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain query: %v", err)
 	}
-	if runtime.State().CopyMode.Query != "beta" || len(runtime.State().CopyMode.Matches) != 2 || runtime.State().CopyMode.Cursor.Row != 1 {
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("submit search: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain search: %v", err)
+	}
+	if runtime.State().CopyMode.Query != "beta" || len(runtime.State().CopyMode.Matches) != 1 || runtime.State().CopyMode.Cursor.Row != 1 {
 		t.Fatalf("expected search matches and cursor on first beta, got %#v", runtime.State().CopyMode)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if status := activeCopyContentStatus(runtime); !strings.Contains(status, `search:"beta" 1/2`) || !strings.Contains(status, "older:top") {
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, `search:"beta"`) || !strings.Contains(status, "older:top") {
 		t.Fatalf("expected search status outside history body, got %q", status)
 	}
 	for _, line := range activeCopyContentLines(runtime) {
@@ -6256,13 +6459,13 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	}
 	assertPaneVisualState(t, queryFrame, "beta", render.StyleWarning)
 
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}); err != nil {
 		t.Fatalf("send next match: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain next match: %v", err)
 	}
-	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 2 {
+	if runtime.State().CopyMode.ActiveMatch != 0 || runtime.State().CopyMode.Cursor.Row != 2 {
 		t.Fatalf("expected next search match, got %#v", runtime.State().CopyMode)
 	}
 	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 5}
@@ -6272,29 +6475,169 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain page down: %v", err)
 	}
-	if runtime.State().CopyMode.ViewportTop == 0 {
-		t.Fatalf("expected copy viewport to scroll down, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Active || runtime.State().History.Token != "" {
+		t.Fatalf("page down at the frozen bottom should resume live mode, copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
 	}
+	if len(core.ReleaseRequests) != 1 || core.ReleaseRequests[0].Token != "tok-1" {
+		t.Fatalf("resuming live should release the frozen token once, got %#v", core.ReleaseRequests)
+	}
+}
 
-	frame := lastFrame(t, host.Frames())
-	var target render.HitRegion
-	for _, region := range frame.HitRegions {
-		if region.Kind == render.HitRegionHistoryRow && region.Row == 2 {
-			target = region
-			break
+func TestCopyModeSelectionStopsAtFrozenBottomWithoutExiting(t *testing.T) {
+	mark := state.CopyPosition{Row: 0}
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1", Token: "tok-1", Cols: 80,
+			Rows:     []state.HistoryRow{{Text: "first", LineID: 1}, {Text: "last", LineID: 2}},
+			Boundary: state.HistoryBoundary{FirstLineID: 1, LastLineID: 2},
+		},
+		CopyMode: state.CopyModeStore{
+			Active: true, TerminalID: "term-1", BoundToken: "tok-1", ViewRows: 2,
+			Cursor: state.CopyPosition{Row: 1}, Mark: &mark,
+			Selection: &state.CopySelection{Anchor: mark, Focus: state.CopyPosition{Row: 1}},
+		},
+	}
+	next, effects := reduceCopyModeScrollNewer(root, CopyModeDeps{Core: &testkit.FakeCoreClient{}}, 1)
+	if !next.CopyMode.Active || next.CopyMode.Selection == nil || next.History.Token != "tok-1" {
+		t.Fatalf("selection was discarded at frozen bottom: %#v", next)
+	}
+	if len(effects) != 0 {
+		t.Fatalf("selection at frozen bottom unexpectedly released history: %#v", effects)
+	}
+}
+
+func TestCopyModeSearchResultReturnsToRequestingView(t *testing.T) {
+	viewA := state.TerminalPaneViewID("pane-a")
+	viewB := state.TerminalPaneViewID("pane-b")
+	historyA := state.HistoryStore{
+		PaneID: "pane-a", ViewID: viewA, TerminalID: "term-a", Token: "tok-a", Cols: 80, Generation: 3,
+		Rows: []state.HistoryRow{{Text: "old-a", LineID: 1}},
+	}
+	copyA := state.CopyModeStore{
+		Active: true, PaneID: "pane-a", ViewID: viewA, TerminalID: "term-a", BoundToken: "tok-a",
+		Query: "needle", SearchPending: true, SearchRequestID: 7,
+	}
+	historyB := state.HistoryStore{
+		PaneID: "pane-b", ViewID: viewB, TerminalID: "term-b", Token: "tok-b", Cols: 80, Generation: 4,
+		Rows: []state.HistoryRow{{Text: "visible-b", LineID: 1}},
+	}
+	copyB := state.CopyModeStore{Active: true, PaneID: "pane-b", ViewID: viewB, TerminalID: "term-b", BoundToken: "tok-b"}
+	root := state.Root{}
+	root = root.WithCopyHistorySession(viewA, historyA, copyA)
+	root = root.WithCopyHistorySession(viewB, historyB, copyB)
+	window := historyWindowForApp(state.HistoryWindowReplace, "term-a", "tok-a", 80, 3, []state.HistoryRow{{Text: "needle", LineID: 1}})
+	window.ViewID = viewA
+	window.PaneID = "pane-a"
+	next, _ := NewCopyModeReducer(CopyModeDeps{})(root, CopyModeSearchResultMsg{
+		RequestID: 7,
+		Result: port.HistorySearchResult{
+			RequestID: 7, Found: true,
+			Start:  state.CopyLogicalPosition{Valid: true, LineID: 1},
+			End:    state.CopyLogicalPosition{Valid: true, LineID: 1, Col: 6},
+			Window: window,
+		},
+		Query: "needle", ViewID: viewA, PaneID: "pane-a", TerminalID: "term-a", Token: "tok-a",
+	})
+
+	updatedA := next.CopyModeByView[viewA]
+	if updatedA.SearchPending || len(updatedA.Matches) != 1 || updatedA.Cursor.Row != 0 {
+		t.Fatalf("search result did not update requesting view: %#v", updatedA)
+	}
+	unchangedB := next.CopyModeByView[viewB]
+	if unchangedB.TerminalID != "term-b" || unchangedB.BoundToken != "tok-b" || len(unchangedB.Matches) != 0 {
+		t.Fatalf("search result polluted active view: %#v", unchangedB)
+	}
+}
+
+func TestCopyModeSearchErrorClearsPendingWithoutBreakingLiveSession(t *testing.T) {
+	viewID := state.TerminalPaneViewID("pane-a")
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Session: state.TerminalSessionStore{TerminalID: "term-a", Attached: true, Channel: 9},
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-a", Lines: []string{"live"}},
+	}
+	root = root.WithCopyHistorySession(viewID,
+		state.HistoryStore{PaneID: "pane-a", ViewID: viewID, TerminalID: "term-a", Token: "tok-a"},
+		state.CopyModeStore{
+			Active: true, PaneID: "pane-a", ViewID: viewID, TerminalID: "term-a", BoundToken: "tok-a",
+			Query: "needle", SearchPending: true, SearchRequestID: 8,
+		},
+	)
+	next, _ := NewCopyModeReducer(CopyModeDeps{})(root, CopyModeSearchResultMsg{
+		Err: errors.New("remote unavailable"), RequestID: 8, Query: "needle", ViewID: viewID,
+		PaneID: "pane-a", TerminalID: "term-a", Token: "tok-a",
+	})
+
+	updated := next.CopyModeByView[viewID]
+	if updated.SearchPending || !updated.Active {
+		t.Fatalf("search error should clear only the pending operation: %#v", updated)
+	}
+	if !next.Session.Attached || next.Session.Channel != 9 || next.Session.LastError != "" || next.Surface.Err != "" {
+		t.Fatalf("search error broke the live terminal session: session=%#v surface=%#v", next.Session, next.Surface)
+	}
+}
+
+func TestClosingPaneCancelsCopyWorkAndReleasesFrozenHistory(t *testing.T) {
+	core := &testkit.FakeCoreClient{}
+	host := NewFakeTerminalHost(16)
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, &testkit.FakeClipboardService{}, &testkit.FakeTerminalService{}, NewSyncEffectRunner())
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initialize runtime: %v", err)
+	}
+	viewID := state.TerminalPaneViewID("pane-2")
+	runtime.state.Shell = runtime.state.Shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(state.NewPaneTerminalView(
+		"pane-2", "term-1", 8, 40, 20, state.TerminalResizeRoleFollower, "surface", viewID, false,
+	))
+	runtime.state = runtime.state.WithCopyHistorySession(viewID,
+		state.HistoryStore{
+			PaneID: "pane-2", ViewID: viewID, TerminalID: "term-1", Token: "tok-close", Cols: 40,
+			Pending: &state.HistoryPendingRequest{ID: 11, ViewID: viewID, TerminalID: "term-1"},
+		},
+		state.CopyModeStore{
+			Active: true, PaneID: "pane-2", ViewID: viewID, TerminalID: "term-1", BoundToken: "tok-close",
+			SearchPending: true, CopyPending: true,
+		},
+	)
+	cleanup := copyHistoryCleanupEffectsForView(runtime.state, viewID)
+	cancelled := map[CancelToken]bool{}
+	for _, effect := range cleanup {
+		if cancel, ok := effect.(CancelEffect); ok {
+			cancelled[cancel.Token] = true
 		}
 	}
-	if target.Kind == "" {
-		t.Fatalf("expected visible history row hit region, got %#v", frame.HitRegions)
+	for _, token := range []CancelToken{copyModeHistoryRequestToken(viewID), copyModeSearchRequestToken(viewID), copyModeCopyRequestToken(viewID)} {
+		if !cancelled[token] {
+			t.Fatalf("missing cleanup cancellation %q in %#v", token, cleanup)
+		}
 	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: target.Rect.Y + 1, Col: target.Rect.X + 6}); err != nil {
-		t.Fatalf("send row click: %v", err)
+	command := state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: "pane-2"}}
+	_, closeEffects := reduceWorkbenchCommand(runtime.state, command)
+	foundRelease := false
+	for _, effect := range closeEffects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil {
+			continue
+		}
+		if release, ok := fn.Run(context.Background()).(CopyModeReleaseHistoryMsg); ok && release.Token == "tok-close" {
+			foundRelease = true
+		}
+	}
+	if !foundRelease {
+		t.Fatalf("pane close did not schedule frozen history release: %#v", closeEffects)
+	}
+
+	if err := runtime.Post(ShellWorkbenchCommandMsg{Command: command}); err != nil {
+		t.Fatalf("post pane close: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain row click: %v", err)
+		t.Fatalf("drain pane close: %v", err)
 	}
-	if runtime.State().CopyMode.Mark == nil || runtime.State().CopyMode.Cursor.Row != 2 {
-		t.Fatalf("expected content-local mouse selection on history row, got %#v", runtime.State().CopyMode)
+	if _, copyMode := runtime.State().CopyHistorySessionForView(viewID); copyMode.Active || copyMode.BoundToken != "" {
+		t.Fatalf("closed pane retained copy history session: %#v", copyMode)
+	}
+	if len(core.ReleaseRequests) != 1 || core.ReleaseRequests[0].TerminalID != "term-1" || core.ReleaseRequests[0].Token != "tok-close" {
+		t.Fatalf("closed pane did not release its frozen history: %#v", core.ReleaseRequests)
 	}
 }
 
@@ -6371,25 +6714,32 @@ func TestCopyModeLatestKeepsFrozenViewportLogicalAnchor(t *testing.T) {
 }
 
 func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
+	searchWindow := state.HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         state.HistoryWindowReplace,
+		Cols:       8,
+		SourceLines: []state.HistoryLogicalLine{{
+			Text:   "alphabetagamma",
+			Cells:  []state.HistoryCell{{Text: "alphabetagamma", Width: 14}},
+			LineID: 10,
+		}},
+		Rows: []state.HistoryRow{
+			{Text: "alphabe", LineID: 10, RowInLine: 0},
+			{Text: "tagamma", LineID: 10, RowInLine: 1},
+		},
+		Lines:      []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
 	core := &testkit.FakeCoreClient{
-		LatestResponses: []port.HistoryResult{{Window: state.HistoryWindow{
-			TerminalID: "term-1",
-			Token:      "tok-1",
-			Op:         state.HistoryWindowReplace,
-			Cols:       8,
-			SourceLines: []state.HistoryLogicalLine{{
-				Text:   "alphabetagamma",
-				Cells:  []state.HistoryCell{{Text: "alphabetagamma", Width: 14}},
-				LineID: 10,
-			}},
-			Rows: []state.HistoryRow{
-				{Text: "alphabe", LineID: 10, RowInLine: 0},
-				{Text: "tagamma", LineID: 10, RowInLine: 1},
-			},
-			Lines:      []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
-			Generation: 7,
-			Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 10},
-		}}},
+		LatestResponses: []port.HistoryResult{{Window: searchWindow}},
+		SearchResponses: []port.HistorySearchResult{{
+			Found:  true,
+			Start:  state.CopyLogicalPosition{Valid: true, LineID: 10, Col: 5},
+			End:    state.CopyLogicalPosition{Valid: true, LineID: 10, Col: 9},
+			Window: searchWindow,
+		}},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(10, 12)
@@ -6401,6 +6751,9 @@ func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain latest: %v", err)
 	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "/"}); err != nil {
+		t.Fatalf("start search: %v", err)
+	}
 	for _, ch := range []string{"b", "e", "t", "a"} {
 		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
 			t.Fatalf("send query %q: %v", ch, err)
@@ -6408,6 +6761,12 @@ func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain query: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("submit search: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain search: %v", err)
 	}
 	if runtime.State().CopyMode.Query != "beta" || len(runtime.State().CopyMode.Matches) != 1 {
 		t.Fatalf("expected one cross-row search match, got %#v", runtime.State().CopyMode)
@@ -6508,6 +6867,12 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 	core := &testkit.FakeCoreClient{
 		LatestResponses: []port.HistoryResult{{Window: latest}},
 		OlderResponses:  []port.HistoryResult{{Window: older}},
+		SearchResponses: []port.HistorySearchResult{{
+			Found:  true,
+			Start:  state.CopyLogicalPosition{Valid: true, LineID: 21},
+			End:    state.CopyLogicalPosition{Valid: true, LineID: 21, Col: 4},
+			Window: latest,
+		}},
 	}
 	host := NewFakeTerminalHost(16)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -6518,6 +6883,9 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain latest: %v", err)
 	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "/"}); err != nil {
+		t.Fatalf("start search: %v", err)
+	}
 	for _, ch := range []string{"b", "e", "t", "a"} {
 		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
 			t.Fatalf("send query %q: %v", ch, err)
@@ -6526,14 +6894,14 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain query: %v", err)
 	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send next match: %v", err)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("submit search: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain next match: %v", err)
+		t.Fatalf("drain search: %v", err)
 	}
-	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 1 {
-		t.Fatalf("expected second match before prepend, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ActiveMatch != 0 || runtime.State().CopyMode.Cursor.Row != 1 {
+		t.Fatalf("expected daemon search match before prepend, got %#v", runtime.State().CopyMode)
 	}
 
 	beginPendingOlderForTest(&runtime.state, 2, 0)
@@ -6545,10 +6913,10 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 		t.Fatalf("drain older: %v", err)
 	}
 
-	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 2 {
+	if runtime.State().CopyMode.ActiveMatch != 0 || runtime.State().CopyMode.Cursor.Row != 2 {
 		t.Fatalf("older prepend should keep active search match on original content, got %#v", runtime.State().CopyMode)
 	}
-	if status := activeCopyContentStatus(runtime); !strings.Contains(status, `search:"beta" 2/2`) {
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, `search:"beta"`) {
 		t.Fatalf("expected search status to stay on second match after prepend, got %q", status)
 	}
 }
@@ -6854,7 +7222,7 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 		newerRows = append(newerRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", i), LineID: uint64(i)})
 	}
 	newer := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
-	newer.Boundary = state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1039}
+	newer.Boundary = state.HistoryBoundary{FirstLineID: newerRows[0].LineID, LastLineID: 1039}
 	core := &testkit.FakeCoreClient{
 		NewerResponses: []port.HistoryResult{{Window: newer}},
 	}
@@ -6921,6 +7289,190 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	}
 }
 
+func TestCopyModeQueuesNewerScrollWhilePageIsPending(t *testing.T) {
+	root := state.Root{}
+	root.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		Rows:       []state.HistoryRow{{Text: "local-tail", LineID: 10}},
+		Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 20},
+		Pending: &state.HistoryPendingRequest{
+			ID:                 1,
+			Kind:               state.HistoryRequestNewer,
+			TerminalID:         "term-1",
+			Token:              "tok-1",
+			DeferredScrollRows: 2,
+		},
+	}
+	root.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		ViewRows:   8,
+	}
+
+	next, effects := reduceCopyModeScrollNewer(root, CopyModeDeps{}, 5)
+
+	if len(effects) != 0 {
+		t.Fatalf("pending newer scroll must not start another request, got %#v", effects)
+	}
+	if next.History.Pending == nil || next.History.Pending.DeferredScrollRows != 7 {
+		t.Fatalf("pending newer scroll should accumulate unconsumed rows, got %#v", next.History.Pending)
+	}
+}
+
+func TestCopyModeQueuesOlderScrollOnceWhilePageIsPending(t *testing.T) {
+	root := state.Root{}
+	root.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		Rows:       []state.HistoryRow{{Text: "local-head", LineID: 10}},
+		Boundary:   state.HistoryBoundary{FirstLineID: 1, LastLineID: 10},
+		Pending: &state.HistoryPendingRequest{
+			ID:                 1,
+			Kind:               state.HistoryRequestOlder,
+			TerminalID:         "term-1",
+			Token:              "tok-1",
+			DeferredScrollRows: 2,
+		},
+	}
+	root.CopyMode = state.CopyModeStore{
+		Active:     true,
+		Phase:      state.CopyModeFrozenHistory,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		ViewRows:   8,
+	}
+
+	next, effects := reduceCopyModeScrollOlderRows(root, CopyModeDeps{}, 5)
+
+	if len(effects) != 0 {
+		t.Fatalf("pending older scroll must not start another request, got %#v", effects)
+	}
+	if next.History.Pending == nil || next.History.Pending.DeferredScrollRows != 7 {
+		t.Fatalf("pending older scroll should add the unconsumed rows once, got %#v", next.History.Pending)
+	}
+}
+
+func TestCopyModeContinuesNewerPagesForDeferredScroll(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 12)
+	firstRows := []state.HistoryRow{{Text: "line-2", LineID: 2}, {Text: "line-3", LineID: 3}}
+	secondRows := make([]state.HistoryRow, 0, 8)
+	for lineID := uint64(4); lineID <= 11; lineID++ {
+		secondRows = append(secondRows, state.HistoryRow{Text: fmt.Sprintf("line-%d", lineID), LineID: lineID})
+	}
+	first := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 78, 7, firstRows)
+	first.Boundary = state.HistoryBoundary{FirstLineID: 2, LastLineID: 11}
+	first.HasMore = true
+	second := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 78, 7, secondRows)
+	second.Boundary = state.HistoryBoundary{FirstLineID: 4, LastLineID: 11}
+	core := &testkit.FakeCoreClient{NewerResponses: []port.HistoryResult{{Window: first}, {Window: second}}}
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "line-1", LineID: 1}}),
+		Rows:        []state.HistoryRow{{Text: "line-1", LineID: 1}},
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: 1, LastLineID: 11},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  "tok-1",
+		BoundCols:   78,
+		ViewRows:    8,
+		ViewportTop: 0,
+		Cursor:      state.CopyPosition{Row: 0},
+	}
+
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}}); err != nil {
+		t.Fatalf("post page down: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain chained newer pages: %v", err)
+	}
+	if len(core.NewerRequests) != 2 {
+		t.Fatalf("deferred scroll should request newer pages serially, got %#v", core.NewerRequests)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 6 || runtime.State().History.Rows[6].LineID != 7 {
+		t.Fatalf("deferred scroll should continue across both pages, copy=%#v rows=%#v", runtime.State().CopyMode, runtime.State().History.Rows)
+	}
+}
+
+func TestCopyModeNewestReturnsToLiveAndIgnoresDelayedNewer(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	core := &testkit.FakeCoreClient{}
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       78,
+		Rows:       []state.HistoryRow{{Text: "line-1", LineID: 1}},
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 1, LastLineID: 20},
+		Pending: &state.HistoryPendingRequest{
+			ID:         41,
+			Kind:       state.HistoryRequestNewer,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Generation: 7,
+		},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		Phase:      state.CopyModeFrozenHistory,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   8,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "G"}); err != nil {
+		t.Fatalf("send newest: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain newest: %v", err)
+	}
+	if runtime.State().CopyMode.Active || runtime.State().History.Token != "" {
+		t.Fatalf("newest should return directly to live, copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
+	}
+	if len(core.ReleaseRequests) != 1 || core.ReleaseRequests[0].Token != "tok-1" {
+		t.Fatalf("newest should release the frozen token once, got %#v", core.ReleaseRequests)
+	}
+
+	delayed := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 78, 7, []state.HistoryRow{{Text: "late", LineID: 2}})
+	delayed.PaneID = state.DefaultPaneID
+	delayed.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
+	delayed.Boundary = state.HistoryBoundary{FirstLineID: 2, LastLineID: 20}
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 41, Window: delayed}}); err != nil {
+		t.Fatalf("post delayed newer: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain delayed newer: %v", err)
+	}
+	if runtime.State().CopyMode.Active || runtime.State().History.Token != "" || runtime.State().Surface.Err != "" {
+		t.Fatalf("delayed newer must not revive history or surface an error, state=%#v", runtime.State())
+	}
+	if len(core.ReleaseRequests) != 1 {
+		t.Fatalf("delayed newer must not release the token twice, got %#v", core.ReleaseRequests)
+	}
+}
+
 func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(100, 12)
@@ -6941,7 +7493,7 @@ func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 		Lines:       []state.HistoryLineSpan{{LineID: loadedRows[0].LineID, StartRow: 0, EndRow: len(loadedRows) - 1}},
 		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: loadedRows[0].LineID},
 		Generation:  7,
-		Boundary:    state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1999},
+		Boundary:    state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 3000},
 		HasMore:     true,
 	}
 	runtime.state.CopyMode = state.CopyModeStore{
@@ -6966,7 +7518,8 @@ func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 		}
 		nextLineID += len(newerRows)
 		window := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
-		window.Boundary = state.HistoryBoundary{FirstLineID: runtime.State().History.Boundary.FirstLineID, LastLineID: 1999}
+		window.Boundary = state.HistoryBoundary{FirstLineID: newerRows[0].LineID, LastLineID: 3000}
+		window.HasMore = true
 		core.NewerResponses = append(core.NewerResponses, port.HistoryResult{Window: window})
 
 		runtime.state.CopyMode.ViewportTop = len(runtime.state.History.Rows) - runtime.state.CopyMode.ViewRows
@@ -6980,7 +7533,7 @@ func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 		if got := len(runtime.State().History.Rows); got > copyModeHistoryMaxRequestRows {
 			t.Fatalf("continuous newer should keep bounded TUI rows, got %d", got)
 		}
-		if runtime.State().History.Boundary.LastLineID != 1999 {
+		if runtime.State().History.Boundary.LastLineID != 3000 {
 			t.Fatalf("trim must keep frozen tail boundary, got %#v", runtime.State().History.Boundary)
 		}
 		if runtime.State().History.Rows[runtime.State().CopyMode.Cursor.Row].LineID < uint64(first) {
@@ -7232,9 +7785,10 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core port.CoreClient, 
 			)),
 		},
 		ComposeReducers(
-			NewBackNavigationReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
-			NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
+			NewBackNavigationReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
+			NewClipboardActionReducer(ClipboardActionDeps{Core: core, Clipboard: clipboard, Terminal: terminal}),
+			NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
@@ -7274,7 +7828,7 @@ func newInteractiveCopyModeRuntimeWithRunner(host *FakeTerminalHost, core port.C
 		host,
 		runner,
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20},
+		CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20},
 		WorkbenchDeps{},
 	)
 }
@@ -7291,14 +7845,17 @@ func copyHistoryRowHitRegionForPane(t *testing.T, frame render.Frame, paneID str
 }
 
 type recordingEffectRunner struct {
-	Effects []Effect
+	Effects      []Effect
+	CancelTokens []CancelToken
 }
 
 func (runner *recordingEffectRunner) Run(_ context.Context, effect Effect, _ func(Msg)) {
 	runner.Effects = append(runner.Effects, effect)
 }
 
-func (runner *recordingEffectRunner) Cancel(CancelToken) {}
+func (runner *recordingEffectRunner) Cancel(token CancelToken) {
+	runner.CancelTokens = append(runner.CancelTokens, token)
+}
 
 func historyRequestEffectCount(effects []Effect) int {
 	count := 0
@@ -7374,6 +7931,10 @@ func (client *blockingHistoryClient) HistoryNewer(context.Context, port.HistoryN
 
 func (client *blockingHistoryClient) HistoryCopyRange(context.Context, port.HistoryCopyRangeRequest) (port.HistoryCopyRangeResult, error) {
 	return port.HistoryCopyRangeResult{}, errors.New("unexpected copy range request")
+}
+
+func (client *blockingHistoryClient) HistorySearch(context.Context, port.HistorySearchRequest) (port.HistorySearchResult, error) {
+	return port.HistorySearchResult{}, errors.New("unexpected search request")
 }
 
 func (client *blockingHistoryClient) ReleaseHistory(context.Context, port.HistoryReleaseRequest) error {
@@ -7528,17 +8089,17 @@ func historyStoreForCopySelection() state.HistoryStore {
 
 func beginPendingOlderForTest(root *state.Root, requestID state.RequestID, scrollDeltaAfterPrepend int) {
 	root.History.Pending = &state.HistoryPendingRequest{
-		ID:                      requestID,
-		Kind:                    state.HistoryRequestOlder,
-		PaneID:                  root.History.PaneID,
-		ViewID:                  root.History.ViewID,
-		TerminalID:              root.History.TerminalID,
-		Cols:                    root.History.Cols,
-		Token:                   root.History.Token,
-		Generation:              root.History.Generation,
-		Cursor:                  root.History.Cursor,
-		Boundary:                root.History.Boundary,
-		ScrollDeltaAfterPrepend: scrollDeltaAfterPrepend,
+		ID:                 requestID,
+		Kind:               state.HistoryRequestOlder,
+		PaneID:             root.History.PaneID,
+		ViewID:             root.History.ViewID,
+		TerminalID:         root.History.TerminalID,
+		Cols:               root.History.Cols,
+		Token:              root.History.Token,
+		Generation:         root.History.Generation,
+		Cursor:             root.History.Cursor,
+		Boundary:           root.History.Boundary,
+		DeferredScrollRows: scrollDeltaAfterPrepend,
 	}
 }
 

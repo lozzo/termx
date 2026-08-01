@@ -83,11 +83,11 @@ func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 
 func TestRouteCopyModePasteShortcuts(t *testing.T) {
 	history := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "H"}, true)
-	assertShortcutAction(t, history, "copy.open_clipboard_history")
+	assertShortcutAction(t, history, "menu.clipboard_history")
 	lastCopy := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, true)
-	assertShortcutAction(t, lastCopy, "copy.paste_latest")
+	assertShortcutAction(t, lastCopy, "clipboard.paste_latest")
 	systemClipboard := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "P"}, true)
-	assertShortcutAction(t, systemClipboard, "copy.paste_system")
+	assertShortcutAction(t, systemClipboard, "clipboard.paste_system")
 }
 
 func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {

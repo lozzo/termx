@@ -54,6 +54,8 @@ func RequiredCapabilityForCommand(command *apipb.CommandEnvelope) apipb.ApiCapab
 		return apipb.ApiCapability_API_CAPABILITY_HISTORY
 	case *apipb.CommandEnvelope_LiveScreenNext:
 		return apipb.ApiCapability_API_CAPABILITY_LIVE_SCREEN
+	case *apipb.CommandEnvelope_HistorySearch:
+		return apipb.ApiCapability_API_CAPABILITY_HISTORY
 	case *apipb.CommandEnvelope_EventSubscribe:
 		return apipb.ApiCapability_API_CAPABILITY_EVENT_SUBSCRIPTION
 	case *apipb.CommandEnvelope_FileList:

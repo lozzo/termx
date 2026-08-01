@@ -92,6 +92,26 @@ type HistoryCopyRangeRequest struct {
 	End        state.CopyLogicalPosition
 }
 
+type HistorySearchDirection string
+
+const (
+	HistorySearchForward  HistorySearchDirection = "forward"
+	HistorySearchBackward HistorySearchDirection = "backward"
+)
+
+type HistorySearchRequest struct {
+	EndpointID state.EndpointID
+	RequestID  RequestID
+	TerminalID string
+	Cols       int
+	Rows       int
+	Token      string
+	Generation uint64
+	Query      string
+	Direction  HistorySearchDirection
+	Start      state.CopyLogicalPosition
+}
+
 // HistoryResult 把异步 request identity 与 authoritative history window 一起回投 reducer。
 type HistoryResult struct {
 	RequestID RequestID
@@ -103,6 +123,15 @@ type HistoryCopyRangeResult struct {
 	Text string
 }
 
+type HistorySearchResult struct {
+	RequestID RequestID
+	Found     bool
+	Start     state.CopyLogicalPosition
+	End       state.CopyLogicalPosition
+	Window    state.HistoryWindow
+	Wrapped   bool
+}
+
 // CoreClient 是 TUI copy/history effect 使用的 application port。
 // 实现必须路由到 owning endpoint runtime，并保持 core-v2 HistoryWindow 为唯一历史真值。
 type CoreClient interface {
@@ -111,6 +140,7 @@ type CoreClient interface {
 	HistoryNewer(context.Context, HistoryNewerRequest) (HistoryResult, error)
 	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
 	HistoryCopyRange(context.Context, HistoryCopyRangeRequest) (HistoryCopyRangeResult, error)
+	HistorySearch(context.Context, HistorySearchRequest) (HistorySearchResult, error)
 	ReleaseHistory(context.Context, HistoryReleaseRequest) error
 }
 

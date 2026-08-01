@@ -375,7 +375,7 @@ func TestHistoryStoreAppendsNewerAndKeepsFrozenBoundary(t *testing.T) {
 		{Text: "new", LineID: 11},
 		{Text: "newer", LineID: 12},
 	})
-	window.Boundary = HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	window.Boundary = HistoryBoundary{FirstLineID: 11, LastLineID: 20}
 	store, inserted, err := store.ApplyWindow(3, window)
 	if err != nil {
 		t.Fatalf("apply newer: %v", err)
@@ -1335,6 +1335,9 @@ func TestCopyModeRestoresFrozenViewportTailAfterNewerPagination(t *testing.T) {
 	if consumed != 1 || copyMode.Cursor.Row != 3 || copyMode.ViewportTop != 1 {
 		t.Fatalf("newer scroll should consume the virtual tail, consumed=%d store=%#v", consumed, copyMode)
 	}
+	if !copyMode.AtFrozenBottom(history) {
+		t.Fatalf("cursor and viewport should reach the frozen bottom, store=%#v", copyMode)
+	}
 }
 
 func TestCopyModeLogicalSelectionRefreshKeepsTrimmedAnchor(t *testing.T) {
@@ -1479,14 +1482,16 @@ func TestCopyModeRebindToReflowedHistoryKeepsCursorAndSelectionOnOriginalContent
 	after.Rows, after.Lines = ReflowHistoryLogicalLines(after.SourceLines, after.Cols)
 	mark := CopyPosition{Row: 0, Col: 1}
 	copyMode := CopyModeStore{
-		Active:      true,
-		ViewportTop: 1,
-		Cursor:      CopyPosition{Row: 1, Col: 2},
-		Mark:        &mark,
-		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 1, Col: 2}},
-		Query:       "ef",
-		Matches:     []CopyMatch{{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 3}},
-		ActiveMatch: 0,
+		Active:           true,
+		ViewportTop:      1,
+		Cursor:           CopyPosition{Row: 1, Col: 2},
+		Mark:             &mark,
+		Selection:        &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 1, Col: 2}},
+		Query:            "ef",
+		Matches:          []CopyMatch{{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 3}},
+		ActiveMatch:      0,
+		SearchMatchStart: CopyLogicalPosition{Valid: true, LineID: 10, Col: 4},
+		SearchMatchEnd:   CopyLogicalPosition{Valid: true, LineID: 10, Col: 6},
 	}
 
 	copyMode = copyMode.RebindToReflowedHistory(before, after)
@@ -1758,126 +1763,15 @@ func TestCopyModeSelectionFollowsMarkAndCursor(t *testing.T) {
 	}
 }
 
-func TestCopyModeSearchMatchesAndScrollClamp(t *testing.T) {
-	history := HistoryStore{Rows: []HistoryRow{
-		{Text: "alpha beta", LineID: 1},
-		{Text: "beta gamma", LineID: 2},
-		{Text: "delta", LineID: 3},
-	}}
-	matches := FindCopyMatches(history, "beta")
-	if len(matches) != 2 || matches[0] != (CopyMatch{StartRow: 0, StartCol: 6, EndRow: 0, EndCol: 10}) || matches[1].StartRow != 1 {
-		t.Fatalf("unexpected matches %#v", matches)
-	}
-	copyMode := (CopyModeStore{ViewRows: 3}).SetQuery("beta", matches)
+func TestCopyModeQueryAndScrollClamp(t *testing.T) {
+	history := HistoryStore{Rows: []HistoryRow{{Text: "alpha beta", LineID: 1}, {Text: "beta gamma", LineID: 2}, {Text: "delta", LineID: 3}}}
+	copyMode := (CopyModeStore{ViewRows: 3}).SetQuery("beta", []CopyMatch{{StartRow: 0, StartCol: 6, EndRow: 0, EndCol: 10}})
 	if copyMode.Cursor.Row != 0 || copyMode.Cursor.Col != 6 {
 		t.Fatalf("expected cursor on first match, got %#v", copyMode)
-	}
-	copyMode = copyMode.MoveMatch(1)
-	if copyMode.ActiveMatch != 1 || copyMode.Cursor.Row != 1 {
-		t.Fatalf("expected second active match, got %#v", copyMode)
 	}
 	copyMode = copyMode.Scroll(20, len(history.Rows))
 	if copyMode.ViewportTop != 0 {
 		t.Fatalf("scroll should clamp to max top for fully visible rows, got %#v", copyMode)
-	}
-}
-
-func TestCopyModeSearchMatchesUseDisplayColumns(t *testing.T) {
-	history := HistoryStore{Rows: []HistoryRow{
-		{Text: "a好bc", LineID: 1},
-		{Text: "x好b", LineID: 2, Cells: []HistoryCell{
-			{Text: "x", Width: 1},
-			{Text: "好", Width: 2},
-			{Text: "b", Width: 1},
-		}},
-	}}
-	matches := FindCopyMatches(history, "好b")
-	if len(matches) != 2 {
-		t.Fatalf("expected two display-column matches, got %#v", matches)
-	}
-	if matches[0] != (CopyMatch{StartRow: 0, StartCol: 1, EndRow: 0, EndCol: 4}) || matches[1] != (CopyMatch{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 4}) {
-		t.Fatalf("matches should use display columns, got %#v", matches)
-	}
-	copyMode := (CopyModeStore{}).SetQuery("好b", matches)
-	if copyMode.Cursor != (CopyPosition{Row: 0, Col: 1}) {
-		t.Fatalf("cursor should use match display column, got %#v", copyMode.Cursor)
-	}
-}
-
-func TestCopyModeSearchMatchesUseGraphemeDisplayColumns(t *testing.T) {
-	family := "👨‍👩‍👧‍👦"
-	history := HistoryStore{Rows: []HistoryRow{
-		{Text: family + "x", LineID: 1},
-		{Text: "e\u0301x", LineID: 2},
-	}}
-	familyMatches := FindCopyMatches(history, family)
-	if len(familyMatches) != 1 || familyMatches[0] != (CopyMatch{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 2}) {
-		t.Fatalf("emoji family match should use grapheme display columns, got %#v", familyMatches)
-	}
-	xMatches := FindCopyMatches(history, "x")
-	if len(xMatches) != 2 || xMatches[0] != (CopyMatch{StartRow: 0, StartCol: 2, EndRow: 0, EndCol: 3}) || xMatches[1] != (CopyMatch{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 2}) {
-		t.Fatalf("following x matches should not be swallowed by previous grapheme, got %#v", xMatches)
-	}
-	combiningMatches := FindCopyMatches(history, "e\u0301")
-	if len(combiningMatches) != 1 || combiningMatches[0] != (CopyMatch{StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 1}) {
-		t.Fatalf("combining mark match should use one display column, got %#v", combiningMatches)
-	}
-}
-
-func TestCopyModeSearchMatchesUseAuthoritativeCellWidth(t *testing.T) {
-	history := HistoryStore{Rows: []HistoryRow{{
-		Text:   "abx",
-		LineID: 1,
-		Cells: []HistoryCell{
-			{Text: "ab", Width: 4},
-			{Text: "x", Width: 1},
-		},
-	}}}
-	matches := FindCopyMatches(history, "x")
-	if len(matches) != 1 || matches[0] != (CopyMatch{StartRow: 0, StartCol: 4, EndRow: 0, EndCol: 5}) {
-		t.Fatalf("match should use authoritative history cell width, got %#v", matches)
-	}
-}
-
-func TestCopyModeSearchMatchesAcrossReflowRowsOfSameLogicalLine(t *testing.T) {
-	history := HistoryStore{
-		Rows: []HistoryRow{
-			{Text: "alphabe", LineID: 10, RowInLine: 0},
-			{Text: "tagamma", LineID: 10, RowInLine: 1},
-		},
-		Lines: []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
-	}
-	matches := FindCopyMatches(history, "beta")
-	if len(matches) != 1 {
-		t.Fatalf("expected cross-row logical-line match, got %#v", matches)
-	}
-	if matches[0] != (CopyMatch{StartRow: 0, StartCol: 5, EndRow: 1, EndCol: 2}) {
-		t.Fatalf("cross-row match should preserve row/col boundaries, got %#v", matches[0])
-	}
-	copyMode := (CopyModeStore{}).SetQuery("beta", matches)
-	if copyMode.Cursor != (CopyPosition{Row: 0, Col: 5}) {
-		t.Fatalf("cursor should jump to cross-row match start, got %#v", copyMode.Cursor)
-	}
-}
-
-func TestCopyModeRefreshQueryMatchesKeepsCurrentActiveMatch(t *testing.T) {
-	copyMode := CopyModeStore{
-		Query:       "beta",
-		Cursor:      CopyPosition{Row: 1, Col: 0},
-		Matches:     []CopyMatch{{StartRow: 0, StartCol: 6, EndRow: 0, EndCol: 10}, {StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 4}},
-		ActiveMatch: 1,
-	}
-
-	copyMode = copyMode.RefreshQueryMatches([]CopyMatch{
-		{StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 4},
-		{StartRow: 2, StartCol: 5, EndRow: 2, EndCol: 9},
-	})
-
-	if copyMode.ActiveMatch != 0 {
-		t.Fatalf("expected refresh to keep active match on current cursor, got %#v", copyMode)
-	}
-	if copyMode.Cursor != (CopyPosition{Row: 1, Col: 0}) {
-		t.Fatalf("expected refresh to keep cursor on current match, got %#v", copyMode.Cursor)
 	}
 }
 

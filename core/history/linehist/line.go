@@ -15,6 +15,7 @@ package linehist
 
 import (
 	"strings"
+	"time"
 
 	"github.com/anytty/anytty/core/history"
 	vterm "github.com/anytty/anytty/vterm/vterm"
@@ -34,8 +35,9 @@ type Run struct {
 // 记录连续拼接。Line 宽度无关：不存 fixed grid / ScreenCols；已落盘
 // 历史的 resize 重排只影响 TUI 本地 visual reflow，不改写 cold truth。
 type Line struct {
-	Runs    []Run
-	HardEnd bool
+	Runs      []Run
+	HardEnd   bool
+	UpdatedAt time.Time
 }
 
 // LineText 返回 logical line 的 plain text 派生值。它只用于测试与诊断，

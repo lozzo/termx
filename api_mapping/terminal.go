@@ -303,6 +303,8 @@ func ApplicationAdmissionFromCommand(command *apipb.CommandEnvelope, capability 
 		admission.TerminalID = value.HistoryBacklogStatus.GetTerminal().GetTerminalId()
 	case *apipb.CommandEnvelope_LiveScreenNext:
 		admission.TerminalID = value.LiveScreenNext.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_HistorySearch:
+		admission.TerminalID = value.HistorySearch.GetTerminal().GetTerminalId()
 	case *apipb.CommandEnvelope_EventSubscribe:
 		admission.TerminalID = value.EventSubscribe.GetTerminal().GetTerminalId()
 		admission.MachineLifecycleEventsOnly = machineLifecycleEventsOnly(value.EventSubscribe)

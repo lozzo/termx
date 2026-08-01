@@ -353,6 +353,7 @@ func reduceFloatingDetach(root state.Root, floatingID string) (state.Root, []Eff
 		return shortcutUnavailable(root, "pane.detach", "terminal unavailable")
 	}
 	effects := workbenchPersistEffects(string(state.WorkbenchCommandPaneDetach))
+	effects = append(effects, copyHistoryCleanupEffectsForView(root, binding.ViewID)...)
 	if request, ok := terminalDetachRequestFromBinding(binding); ok {
 		effects = append(effects, terminalDetachEffect(request))
 	}

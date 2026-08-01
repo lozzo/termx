@@ -1,6 +1,8 @@
 package state
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -11,7 +13,12 @@ const (
 	ClipboardStorageScopePublic = WorkbenchStorageScopePublic
 	ClipboardStorageKeyRoot     = "clipboard/history"
 	ClipboardStorageSchema      = "anytty.tui.v3.clipboard-history"
-	ClipboardStorageSchemaV1    = 1
+	ClipboardStorageSchemaV2    = 2
+
+	DefaultClipboardHistoryMaxItems = 200
+	MaxClipboardHistoryBytes        = 1 << 20
+	MaxClipboardHistoryEntryBytes   = 256 << 10
+	clipboardEntrySummaryRunes      = 72
 )
 
 var ErrInvalidClipboardSnapshot = errors.New("invalid clipboard snapshot")
@@ -84,9 +91,14 @@ func (ref ClipboardStorageRef) KeyPrefix() string {
 }
 
 func (store ClipboardStore) WithCopiedText(text string) ClipboardStore {
+	store, _ = store.WithCopiedTextLimit(text, DefaultClipboardHistoryMaxItems)
+	return store
+}
+
+func (store ClipboardStore) WithCopiedTextLimit(text string, maxItems int) (ClipboardStore, bool) {
 	entry, ok := NewClipboardEntry(text)
 	if !ok {
-		return store
+		return store, false
 	}
 	entries := make([]ClipboardEntry, 0, len(store.Entries)+1)
 	entries = append(entries, entry)
@@ -96,9 +108,9 @@ func (store ClipboardStore) WithCopiedText(text string) ClipboardStore {
 		}
 		entries = append(entries, existing)
 	}
-	store.Entries = entries
+	store.Entries = limitClipboardEntries(entries, maxItems, MaxClipboardHistoryBytes)
 	store = store.markDirty(true)
-	return store
+	return store, true
 }
 
 func (store ClipboardStore) ReplaceEntryText(entryID string, text string) ClipboardStore {
@@ -220,7 +232,7 @@ func (store ClipboardStore) PendingChangesAreMergeable() bool {
 
 func NewClipboardEntry(text string) (ClipboardEntry, bool) {
 	text = normalizeClipboardText(text)
-	if strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" || len(text) > MaxClipboardHistoryEntryBytes {
 		return ClipboardEntry{}, false
 	}
 	return ClipboardEntry{
@@ -234,7 +246,7 @@ func NewClipboardEntry(text string) (ClipboardEntry, bool) {
 func SnapshotClipboardForStorage(store ClipboardStore) ClipboardStorageSnapshot {
 	snapshot := ClipboardStorageSnapshot{
 		Schema:        ClipboardStorageSchema,
-		SchemaVersion: ClipboardStorageSchemaV1,
+		SchemaVersion: ClipboardStorageSchemaV2,
 		Entries:       make([]ClipboardEntry, 0, len(store.Entries)),
 	}
 	seen := map[string]struct{}{}
@@ -265,6 +277,7 @@ func (snapshot ClipboardStorageSnapshot) ToClipboardStore() (ClipboardStore, err
 		}
 		store.Entries = append(store.Entries, normalized)
 	}
+	store.Entries = limitClipboardEntries(store.Entries, DefaultClipboardHistoryMaxItems, MaxClipboardHistoryBytes)
 	return store, nil
 }
 
@@ -289,12 +302,12 @@ func (store ClipboardStore) MergeLoadedEntries(loaded ClipboardStore) ClipboardS
 	for _, entry := range loaded.Entries {
 		appendUnique(entry)
 	}
-	store.Entries = entries
+	store.Entries = limitClipboardEntries(entries, DefaultClipboardHistoryMaxItems, MaxClipboardHistoryBytes)
 	return store
 }
 
 func (snapshot ClipboardStorageSnapshot) Validate() error {
-	if snapshot.Schema != ClipboardStorageSchema || snapshot.SchemaVersion != ClipboardStorageSchemaV1 {
+	if snapshot.Schema != ClipboardStorageSchema || snapshot.SchemaVersion != ClipboardStorageSchemaV2 {
 		return ErrInvalidClipboardSnapshot
 	}
 	for _, entry := range snapshot.Entries {
@@ -328,9 +341,6 @@ func normalizeClipboardEntry(entry ClipboardEntry) (ClipboardEntry, bool) {
 	if !ok {
 		return ClipboardEntry{}, false
 	}
-	if strings.TrimSpace(entry.ID) != "" {
-		normalized.ID = entry.ID
-	}
 	return normalized, true
 }
 
@@ -341,7 +351,8 @@ func normalizeClipboardText(text string) string {
 }
 
 func clipboardEntryID(text string) string {
-	return "clip:" + text
+	sum := sha256.Sum256([]byte(text))
+	return "clip:" + hex.EncodeToString(sum[:16])
 }
 
 func clipboardEntryTitle(text string) string {
@@ -357,17 +368,45 @@ func clipboardEntryTitle(text string) string {
 	if first == "" {
 		return "clipboard entry"
 	}
-	return first
+	return clipboardSummary(first)
 }
 
 func clipboardEntryPreview(text string) string {
 	lines := strings.Split(text, "\n")
 	if len(lines) <= 1 {
-		return text
+		return clipboardSummary(text)
 	}
 	first := strings.TrimSpace(lines[0])
 	if first == "" {
-		return "…"
+		return "..."
 	}
-	return first + " …"
+	return clipboardSummary(first + " ...")
+}
+
+func clipboardSummary(text string) string {
+	runes := []rune(text)
+	if len(runes) <= clipboardEntrySummaryRunes {
+		return text
+	}
+	return string(runes[:clipboardEntrySummaryRunes-3]) + "..."
+}
+
+func limitClipboardEntries(entries []ClipboardEntry, maxItems int, maxBytes int) []ClipboardEntry {
+	if maxItems <= 0 {
+		maxItems = DefaultClipboardHistoryMaxItems
+	}
+	limited := make([]ClipboardEntry, 0, maxItems)
+	usedBytes := 0
+	for _, entry := range entries {
+		if len(limited) >= maxItems {
+			break
+		}
+		entryBytes := len(entry.Text)
+		if entryBytes > MaxClipboardHistoryEntryBytes || usedBytes+entryBytes > maxBytes {
+			continue
+		}
+		limited = append(limited, entry)
+		usedBytes += entryBytes
+	}
+	return limited
 }

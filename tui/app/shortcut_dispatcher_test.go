@@ -85,7 +85,7 @@ func TestCopyShortcutInvocationIsOwnedByCopyReducer(t *testing.T) {
 	}
 	requestEffects := 0
 	for _, effect := range effects {
-		if fn, ok := effect.(FuncEffect); ok && fn.Token == "" {
+		if fn, ok := effect.(FuncEffect); ok && fn.Token == copyModeHistoryRequestToken(state.TerminalPaneViewID(state.DefaultPaneID)) {
 			requestEffects++
 		}
 	}

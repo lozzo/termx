@@ -37,20 +37,21 @@ func TestClipboardStorageReducerLoadsEntriesFromCoreStorage(t *testing.T) {
 }
 
 func TestCopySelectionPersistsClipboardHistoryToCoreStorage(t *testing.T) {
-	core := &testkit.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{CopyResponses: []port.HistoryCopyRangeResult{{Text: "alpha"}}}
 	clipboard := &testkit.FakeClipboardService{}
 	storage := &testkit.FakeClipboardStorageService{}
 	reducer := ComposeReducers(
+		NewClipboardActionReducer(ClipboardActionDeps{}),
 		NewClipboardStorageReducer(ClipboardDeps{Storage: storage}),
-		NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: &testkit.FakeTerminalService{}, Rows: 20}),
+		NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
 	)
 	root := state.Root{
 		Shell: state.DefaultShell(),
-		History: state.HistoryStore{Rows: []state.HistoryRow{
+		History: state.HistoryStore{TerminalID: "term-1", Token: "tok-1", Cols: 80, Rows: []state.HistoryRow{
 			{Text: "alpha", LineID: 1},
 		}},
 		CopyMode: state.CopyModeStore{
-			Active: true,
+			Active: true, TerminalID: "term-1", BoundToken: "tok-1",
 			Selection: &state.CopySelection{
 				Anchor: state.CopyPosition{Row: 0, Col: 0},
 				Focus:  state.CopyPosition{Row: 0, Col: 5},
@@ -89,8 +90,11 @@ func TestCopySelectionPersistsClipboardHistoryToCoreStorage(t *testing.T) {
 func TestClipboardHistoryOpenRequestsStorageLoad(t *testing.T) {
 	storage := &testkit.FakeClipboardStorageService{}
 	reducer := ComposeReducers(
+		NewClipboardActionReducer(ClipboardActionDeps{}),
 		NewClipboardStorageReducer(ClipboardDeps{Storage: storage}),
-		NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Terminal: &testkit.FakeTerminalService{}, Rows: 20}),
+		NewShellReducer(),
+		NewUIInputReducer(),
+		NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Rows: 20}),
 	)
 	root := state.Root{CopyMode: state.CopyModeStore{Active: true}}
 

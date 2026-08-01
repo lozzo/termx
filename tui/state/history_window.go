@@ -214,9 +214,6 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 		if pending.Generation != 0 && pending.Generation != window.Generation {
 			return ErrStaleHistoryResponse
 		}
-		if len(window.SourceLines) != 0 && pending.Boundary.FirstLineID != 0 && pending.Boundary.FirstLineID != window.Boundary.FirstLineID {
-			return ErrStaleHistoryResponse
-		}
 		if len(window.SourceLines) != 0 && pending.Boundary.LastLineID != 0 && pending.Boundary.LastLineID != window.Boundary.LastLineID {
 			return ErrStaleHistoryResponse
 		}
@@ -247,8 +244,26 @@ func (store HistoryStore) replace(window HistoryWindow, cols int) HistoryStore {
 	store.Boundary = window.Boundary
 	store.ViewportAnchor = window.ViewportAnchor
 	store.HasMore = window.HasMore
+	store.LoadedLines = len(store.SourceLines)
+	store.TotalLines = window.TotalLines
 	store.Exhausted = ExhaustedMarker{}
 	return store
+}
+
+func (store HistoryStore) ReplaceSearchWindow(window HistoryWindow) (HistoryStore, error) {
+	if window.Op != HistoryWindowReplace {
+		return store, ErrHistoryWindowMismatch
+	}
+	if store.Token == "" || store.Token != window.Token {
+		return store, ErrStaleHistoryResponse
+	}
+	if store.Generation != 0 && store.Generation != window.Generation {
+		return store, ErrStaleHistoryResponse
+	}
+	if store.TerminalID != "" && store.TerminalID != window.TerminalID {
+		return store, ErrHistoryWindowMismatch
+	}
+	return store.replace(window, store.Cols), nil
 }
 
 func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
@@ -270,6 +285,8 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	store.Generation = window.Generation
 	store.Boundary.FirstLineID = window.Boundary.FirstLineID
 	store.HasMore = window.HasMore
+	store.LoadedLines = len(store.SourceLines)
+	store.TotalLines = window.TotalLines
 	store.Exhausted = ExhaustedMarker{}
 	return store
 }
@@ -292,6 +309,8 @@ func (store HistoryStore) append(window HistoryWindow) HistoryStore {
 	store.Generation = window.Generation
 	store.Boundary.LastLineID = window.Boundary.LastLineID
 	store.HasMore = window.HasMore
+	store.LoadedLines = len(store.SourceLines)
+	store.TotalLines = window.TotalLines
 	store.Exhausted = ExhaustedMarker{}
 	return store
 }
@@ -404,6 +423,9 @@ func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []Hi
 			lastOlder.TailFill = cloneHistoryCellStyle(firstExisting.TailFill)
 		}
 		lastOlder.LiveTail = lastOlder.LiveTail || firstExisting.LiveTail
+		if firstExisting.UpdatedAt.After(lastOlder.UpdatedAt) {
+			lastOlder.UpdatedAt = firstExisting.UpdatedAt
+		}
 		// 中文说明：boundary overlap 代表 older partial 的尾部和 existing partial 的头部
 		// 正好拼上了同一 logical line 的中缝；合并后只保留真正外侧还没补齐的 clipped 边。
 		lastOlder.ClippedAfter = firstExisting.ClippedAfter

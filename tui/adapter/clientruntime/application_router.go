@@ -501,6 +501,14 @@ func (router *EndpointApplicationRouter) HistoryCopyRange(ctx context.Context, r
 	return adapter.HistoryCopyRange(ctx, req)
 }
 
+func (router *EndpointApplicationRouter) HistorySearch(ctx context.Context, req port.HistorySearchRequest) (port.HistorySearchResult, error) {
+	adapter, err := router.core(ctx, req.EndpointID)
+	if err != nil {
+		return port.HistorySearchResult{RequestID: req.RequestID}, err
+	}
+	return adapter.HistorySearch(ctx, req)
+}
+
 func (router *EndpointApplicationRouter) ReleaseHistory(ctx context.Context, req port.HistoryReleaseRequest) error {
 	adapter, err := router.core(ctx, req.EndpointID)
 	if err != nil {

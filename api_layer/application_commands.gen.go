@@ -37,6 +37,7 @@ type PlatformController interface {
 	HistoryRelease(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryReleaseCommand) (*apipb.AcknowledgeResult, error)
 	HistoryBacklogStatus(context.Context, *apipb.EndpointSessionStamp, *apipb.HistoryBacklogStatusCommand) (*apipb.HistoryBacklogStatusResult, error)
 	LiveScreenNext(context.Context, *apipb.EndpointSessionStamp, *apipb.LiveScreenNextCommand) (*apipb.NativeScreenResult, error)
+	HistorySearch(context.Context, *apipb.EndpointSessionStamp, *apipb.HistorySearchCommand) (*apipb.HistorySearchResult, error)
 	EventSubscribe(context.Context, *apipb.EndpointSessionStamp, *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error)
 	FileList(context.Context, *apipb.EndpointSessionStamp, *apipb.FileListCommand) (*apipb.FileListResult, error)
 	FileStat(context.Context, *apipb.EndpointSessionStamp, *apipb.FileStatCommand) (*apipb.FileStatResult, error)
@@ -109,7 +110,8 @@ func validateApplicationCommand(command *apipb.CommandEnvelope) error {
 		*apipb.CommandEnvelope_HistoryCopy,
 		*apipb.CommandEnvelope_HistoryRelease,
 		*apipb.CommandEnvelope_HistoryBacklogStatus,
-		*apipb.CommandEnvelope_LiveScreenNext:
+		*apipb.CommandEnvelope_LiveScreenNext,
+		*apipb.CommandEnvelope_HistorySearch:
 		return apimapping.ValidateHistoryLiveCommand(command)
 	case *apipb.CommandEnvelope_EventSubscribe:
 		return apimapping.ValidateEventSubscribeCommand(command)
@@ -270,6 +272,12 @@ func (service *Service) dispatchPlatformCommand(ctx context.Context, requestID s
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_LiveScreen{LiveScreen: result}}
+	case *apipb.CommandEnvelope_HistorySearch:
+		result, err := service.platform.HistorySearch(ctx, session, value.HistorySearch)
+		if err != nil || result == nil {
+			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_HistorySearch{HistorySearch: result}}
 	case *apipb.CommandEnvelope_EventSubscribe:
 		result, err := service.platform.EventSubscribe(ctx, session, value.EventSubscribe)
 		if err != nil || result == nil {

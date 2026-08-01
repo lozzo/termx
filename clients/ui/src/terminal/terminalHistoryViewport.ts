@@ -1,5 +1,9 @@
 export type TerminalHistoryViewportPhase = 'live' | 'primed' | 'entering' | 'frozen'
 
+export function terminalViewportAtBottom(viewportY: number, baseY: number): boolean {
+  return Number.isFinite(viewportY) && Number.isFinite(baseY) && viewportY >= baseY
+}
+
 /** Keeps live transport updates separate from the xterm viewport while history is visible. */
 export class TerminalHistoryViewportController {
   private phase: TerminalHistoryViewportPhase = 'live'

@@ -1229,6 +1229,9 @@ fi
 if [[ "$USE_REAL_STATE" == "0" ]]; then
   printf 'export XDG_STATE_HOME=%s\n' "$(shell_quote "$DAEMON_DEFAULT_STATE_DIR")" >>"$ATTACH_SCRIPT"
 fi
+if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+  printf 'export XDG_CONFIG_HOME=%s\n' "$(shell_quote "$XDG_CONFIG_HOME")" >>"$ATTACH_SCRIPT"
+fi
 if [[ "$PROFILE_MODE" == "all" ]]; then
   cat >>"$ATTACH_SCRIPT" <<EOF
 export ANYTTY_TUI_HEAP_PROFILE_EVERY_MB=8

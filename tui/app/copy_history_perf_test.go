@@ -187,17 +187,17 @@ func BenchmarkCopyHistoryRuntimeOlderResultIncremental(b *testing.B) {
 	root.CopyMode.ViewportTop = 0
 	root.CopyMode.Cursor = state.CopyPosition{Col: 8}
 	root.History.Pending = &state.HistoryPendingRequest{
-		ID:                      1,
-		Kind:                    state.HistoryRequestOlder,
-		PaneID:                  root.History.PaneID,
-		ViewID:                  root.History.ViewID,
-		TerminalID:              root.History.TerminalID,
-		Cols:                    root.History.Cols,
-		Token:                   root.History.Token,
-		Generation:              root.History.Generation,
-		Cursor:                  root.History.Cursor,
-		Boundary:                root.History.Boundary,
-		ScrollDeltaAfterPrepend: 1,
+		ID:                 1,
+		Kind:               state.HistoryRequestOlder,
+		PaneID:             root.History.PaneID,
+		ViewID:             root.History.ViewID,
+		TerminalID:         root.History.TerminalID,
+		Cols:               root.History.Cols,
+		Token:              root.History.Token,
+		Generation:         root.History.Generation,
+		Cursor:             root.History.Cursor,
+		Boundary:           root.History.Boundary,
+		DeferredScrollRows: 1,
 	}
 	window := copyHistoryPerfOlderWindow(128, root.History)
 	runtime := NewAppRuntime(

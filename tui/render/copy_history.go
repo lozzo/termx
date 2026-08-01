@@ -446,14 +446,42 @@ func copyHistoryStatus(history state.HistoryStore, copyMode state.CopyModeStore)
 	historyRow := history.Rows[row]
 	span := copyLineSpanForRow(history, row)
 	visible := minInt(copyHistoryVisibleHeight(copyMode), len(history.Rows))
-	status := fmt.Sprintf("copy row %d/%d line:%d part:%d cols:%d", row+1, len(history.Rows), historyRow.LineID, historyRow.RowInLine+1, history.Cols)
-	if span.LineID != 0 {
-		status += fmt.Sprintf(" span:%d-%d", span.StartRow+1, span.EndRow+1)
+	totalLines := history.TotalLines
+	if totalLines <= 0 {
+		totalLines = maxInt(maxInt(history.LoadedLines, len(history.Lines)), int(history.Boundary.LastLineID))
 	}
-	if copyMode.Query != "" {
-		status += fmt.Sprintf(" search:%q %d/%d", copyMode.Query, activeCopyMatchOrdinal(copyMode), len(copyMode.Matches))
+	lineNumber := int(historyRow.LineID)
+	if lineNumber <= 0 {
+		lineNumber = row + 1
+	}
+	totalLines = maxInt(totalLines, lineNumber)
+	status := fmt.Sprintf("line %d/%d", lineNumber, totalLines)
+	if span.LineID != 0 && !(span.StartRow == span.EndRow && historyRow.RowInLine == 0) {
+		if span.ClippedBefore || span.ClippedAfter {
+			status += fmt.Sprintf(" wrap %d/?", historyRow.RowInLine+1)
+		} else {
+			status += fmt.Sprintf(" wrap %d/%d", historyRow.RowInLine+1, span.EndRow-span.StartRow+1)
+		}
+	}
+	if !historyRow.UpdatedAt.IsZero() {
+		status += " " + historyRow.UpdatedAt.Local().Format("15:04:05")
+	}
+	if copyMode.SearchEditing {
+		status += " search:/" + copyMode.Query
+	} else if copyMode.SearchPending {
+		status += fmt.Sprintf(" searching:%q", copyMode.Query)
+	} else if copyMode.Query != "" {
+		status += fmt.Sprintf(" search:%q", copyMode.Query)
+		if len(copyMode.Matches) == 0 {
+			status += " no-match"
+		} else if copyMode.SearchWrapped {
+			status += " wrapped"
+		}
 	} else {
 		status += " search:/"
+	}
+	if copyMode.CopyPending {
+		status += " copying"
 	}
 	status += " " + copyHistoryOlderLabel(history)
 	status += " " + copyHistoryBottomLabel(history, copyMode, visible)

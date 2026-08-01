@@ -22,6 +22,8 @@ const terminalHarness = vi.hoisted(() => ({
   channelState: 'open' as 'open' | 'connecting',
   historyLoad: vi.fn(),
   historyReset: vi.fn(),
+  historyFreeze: vi.fn(),
+  historyResume: vi.fn(() => ''),
   liveSnapshot: null as null | {
     text: string
     screenReplay: string
@@ -57,7 +59,7 @@ vi.mock('@xterm/xterm', () => ({
     rows = 24
     element: HTMLElement | null = null
     options: Record<string, unknown>
-    bufferLine = { type: 'normal', cursorY: 0, viewportY: 0, length: 24 }
+    bufferLine = { type: 'normal', cursorY: 0, viewportY: 0, baseY: 0, length: 24 }
     buffer = {
       active: this.bufferLine,
       normal: this.bufferLine,
@@ -152,8 +154,8 @@ vi.mock('./useTerminalSession', () => ({
     loadScrollback: terminalHarness.historyLoad,
     prefetchScrollback: async () => false,
     resetScrollback: terminalHarness.historyReset,
-    freezeScrollback: () => {},
-    resumeLiveScrollback: () => '',
+    freezeScrollback: terminalHarness.historyFreeze,
+    resumeLiveScrollback: terminalHarness.historyResume,
     markSyncLost: () => {},
     markLiveScreenSubmitted: terminalHarness.liveSubmitted,
     markLiveScreenCompleted: terminalHarness.liveCompleted,
@@ -184,6 +186,8 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.sessionSendResize.mockReset().mockReturnValue(false)
     terminalHarness.historyLoad.mockReset().mockResolvedValue({ loadedRows: 0, totalRows: 0, hasMore: false, alternate: false })
     terminalHarness.historyReset.mockReset()
+    terminalHarness.historyFreeze.mockReset()
+    terminalHarness.historyResume.mockReset().mockReturnValue('')
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: ResizeObserverCallback) { terminalHarness.resizeObserverCallback = callback }
       observe() {}
@@ -470,6 +474,20 @@ describe('Terminal input modifier boundary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reload history' }))
     await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledTimes(2))
     expect(terminalHarness.historyReset).toHaveBeenCalledOnce()
+  })
+
+  it('returns to live when the first history request is empty', async () => {
+    terminalHarness.historySnapshot = true
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const output = (terminalHarness.instances[0] as FakeXTermInstance).element?.querySelector('.xterm-screen')
+    if (!output) throw new Error('missing terminal screen')
+
+    fireEvent.wheel(output, { deltaY: -1 })
+
+    await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledOnce())
+    await waitFor(() => expect(terminalHarness.historyResume).toHaveBeenCalledOnce())
+    expect(terminalHarness.historyFreeze).toHaveBeenCalledOnce()
   })
 
   it('dismisses a nonretryable oversized history line without offering reload', async () => {

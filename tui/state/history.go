@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"strings"
+	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
@@ -82,8 +83,8 @@ type HistoryPendingRequest struct {
 	Cursor          HistoryCursor
 	Boundary        HistoryBoundary
 	BoundCopyModeID uint64
-	// older 返回时先保持原内容锚点，再消费用户在顶部继续向上滚动但尚未满足的行数。
-	ScrollDeltaAfterPrepend int
+	// 分页返回后继续消费用户越过当前本地窗口、但尚未完成的滚动行数。
+	DeferredScrollRows int
 }
 
 // HistoryRow 是 authoritative HistoryWindow 的 visual row 投影。
@@ -104,6 +105,7 @@ type HistoryRow struct {
 	ClippedStart bool
 	ClippedEnd   bool
 	LiveTail     bool
+	UpdatedAt    time.Time
 }
 
 // HistoryCell 是 core-v2 authoritative HistoryWindow 的 styled cell 投影。
@@ -143,6 +145,7 @@ type HistoryLogicalLine struct {
 	ScreenRowSet bool
 	TailFill     *HistoryCellStyle
 	LiveTail     bool
+	UpdatedAt    time.Time
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
 	// 的局部片段；本地 reflow 时必须继续保留，不能把 partial 片段误当成完整行。
 	ClippedBefore bool
@@ -164,6 +167,7 @@ type HistoryLineSpan struct {
 	ScreenRowSet  bool
 	ClippedBefore bool
 	ClippedAfter  bool
+	UpdatedAt     time.Time
 }
 
 // HistoryWindow 是 state 层使用的 core-v2 authoritative window DTO。
@@ -206,6 +210,8 @@ type HistoryStore struct {
 	HasMore        bool
 	Exhausted      ExhaustedMarker
 	Pending        *HistoryPendingRequest
+	LoadedLines    int
+	TotalLines     int
 }
 
 // ExhaustedMarker 表示某次 older response 证明对应 cursor 已 exhausted。
@@ -259,20 +265,29 @@ type CopyModeStore struct {
 	EndpointID EndpointID
 	TerminalID string
 	// latest 飞行期间只累计净滚动行数；不能保存输入事件队列或历史文本副本。
-	EnteringScrollDelta int
-	ViewportTop         int
-	ViewportTailRows    int
-	ViewRows            int
-	Cursor              CopyPosition
-	Mark                *CopyPosition
-	Selection           *CopySelection
-	Query               string
-	Matches             []CopyMatch
-	ActiveMatch         int
-	BoundToken          string
-	BoundCols           int
-	RequestID           RequestID
-	Empty               bool
+	EnteringScrollDelta  int
+	ViewportTop          int
+	ViewportTailRows     int
+	ViewRows             int
+	Cursor               CopyPosition
+	Mark                 *CopyPosition
+	Selection            *CopySelection
+	Query                string
+	Matches              []CopyMatch
+	ActiveMatch          int
+	SearchEditing        bool
+	SearchPending        bool
+	SearchRequestID      RequestID
+	SearchMatchStart     CopyLogicalPosition
+	SearchMatchEnd       CopyLogicalPosition
+	SearchWrapped        bool
+	CopyPending          bool
+	CopyRequestID        RequestID
+	CopyExitAfterSuccess bool
+	BoundToken           string
+	BoundCols            int
+	RequestID            RequestID
+	Empty                bool
 }
 
 type CopyPosition struct {
@@ -334,6 +349,9 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 				lines[len(lines)-1].Segment = row.Segment
 			}
 			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || row.LiveTail
+			if row.UpdatedAt.After(lines[len(lines)-1].UpdatedAt) {
+				lines[len(lines)-1].UpdatedAt = row.UpdatedAt
+			}
 			continue
 		}
 		span, hasSpan := historySpanForRow(spans, index, row)
@@ -351,6 +369,7 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			ScreenRowSet:  row.ScreenRowSet,
 			TailFill:      cloneHistoryCellStyle(row.TailFill),
 			LiveTail:      row.LiveTail,
+			UpdatedAt:     row.UpdatedAt,
 			ClippedBefore: hasSpan && span.ClippedBefore,
 			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
@@ -405,6 +424,7 @@ func (store HistoryStore) EnsureSourceLines() HistoryStore {
 		return store
 	}
 	store.SourceLines = historyRowsToLogicalLines(store.Rows, store.Lines)
+	store.LoadedLines = len(store.SourceLines)
 	return store
 }
 
@@ -451,6 +471,7 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 	source := cloneHistoryLogicalLines(store.SourceLines[startLine : endLine+1])
 	store.SourceLines = source
 	store.Rows, store.Lines = ReflowHistoryLogicalLines(source, store.Cols)
+	store.LoadedLines = len(source)
 	if len(store.Rows) > 0 {
 		store.Boundary.FirstLineID = store.Rows[0].LineID
 		if boundaryLast == 0 {
@@ -738,6 +759,20 @@ func (store CopyModeStore) RestoreViewportTail(history HistoryStore) CopyModeSto
 	return store
 }
 
+// AtFrozenBottom reports whether the cursor and viewport have reached the
+// bottom of the frozen snapshot, including its viewport tail.
+func (store CopyModeStore) AtFrozenBottom(history HistoryStore) bool {
+	if len(history.Rows) == 0 {
+		return history.ViewportAnchor.Valid && history.ViewportAnchor.AtEnd
+	}
+	last := history.Rows[len(history.Rows)-1]
+	if last.LineID != history.Boundary.LastLineID || last.ClippedEnd {
+		return false
+	}
+	return store.Cursor.Row >= len(history.Rows)-1 &&
+		store.ViewportTop >= copyModeViewportMaxTop(store, len(history.Rows))
+}
+
 func copyModeCanShiftSimpleOlderPrepend(insertedRows int, before HistoryStore, after HistoryStore) bool {
 	if insertedRows <= 0 || len(before.Rows) == 0 || len(after.Rows) == 0 {
 		return false
@@ -893,7 +928,8 @@ func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after Hi
 	}
 	store.Empty = false
 	store.ViewportTop = reflowViewportTop(before, after, store.ViewportTop)
-	store.Cursor = reflowCopyPosition(before, after, store.Cursor)
+	reflowedCursor := reflowCopyPosition(before, after, store.Cursor)
+	store.Cursor = reflowedCursor
 	if store.Mark != nil {
 		mark := reflowCopyPosition(before, after, *store.Mark)
 		store.Mark = &mark
@@ -904,14 +940,8 @@ func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after Hi
 		selection.Focus = reflowCopyPosition(before, after, selection.Focus)
 		store.Selection = &selection
 	}
-	if store.Query != "" {
-		matches := FindCopyMatches(after, store.Query)
-		store.Matches = cloneCopyMatches(matches)
-		store.ActiveMatch = reflowActiveMatchIndex(after, store.Cursor, matches)
-	} else {
-		store.Matches = nil
-		store.ActiveMatch = 0
-	}
+	store = store.RefreshSearchMatch(after)
+	store.Cursor = reflowedCursor
 	return store
 }
 
@@ -1075,6 +1105,11 @@ func (store CopyModeStore) SelectionNeedsBackend(history HistoryStore) bool {
 }
 
 func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeStore {
+	if store.Query != query {
+		store.SearchMatchStart = CopyLogicalPosition{}
+		store.SearchMatchEnd = CopyLogicalPosition{}
+		store.SearchWrapped = false
+	}
 	store.Query = query
 	store.Matches = cloneCopyMatches(matches)
 	store.ActiveMatch = 0
@@ -1084,45 +1119,24 @@ func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeS
 	return store
 }
 
-// RefreshQueryMatches 在 history 更新后重算 query 命中，但尽量保留当前正在看的
-// active match / cursor；只有找不到原命中时，才退回到第一个 match。
-func (store CopyModeStore) RefreshQueryMatches(matches []CopyMatch) CopyModeStore {
-	store.Matches = cloneCopyMatches(matches)
-	if len(store.Matches) == 0 {
+func (store CopyModeStore) RefreshSearchMatch(history HistoryStore) CopyModeStore {
+	if !store.SearchMatchStart.Valid || !store.SearchMatchEnd.Valid {
+		store.Matches = nil
 		store.ActiveMatch = 0
 		return store
 	}
-	index := reflowActiveMatchIndexFromMatches(store.Cursor, store.Matches)
-	store.ActiveMatch = index
-	match := store.Matches[index]
-	store.Cursor = CopyPosition{Row: match.StartRow, Col: match.StartCol}
+	start := CopyPositionForLogicalPosition(history, store.SearchMatchStart)
+	end := CopyPositionForLogicalPosition(history, store.SearchMatchEnd)
+	if CopyLogicalPositionForPosition(history, start).LineID != store.SearchMatchStart.LineID ||
+		CopyLogicalPositionForPosition(history, end).LineID != store.SearchMatchEnd.LineID {
+		store.Matches = nil
+		store.ActiveMatch = 0
+		return store
+	}
+	store.Matches = []CopyMatch{{StartRow: start.Row, StartCol: start.Col, EndRow: end.Row, EndCol: end.Col}}
+	store.ActiveMatch = 0
+	store.Cursor = start
 	return store
-}
-
-func FindCopyMatches(history HistoryStore, query string) []CopyMatch {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil
-	}
-	matches := make([]CopyMatch, 0)
-	queryClusters := textGraphemeClusters(query)
-	for _, span := range historyLineSpansForSearch(history) {
-		clusters, boundaries := historySpanGraphemeBoundaries(history, span)
-		for start := 0; start+len(queryClusters) <= len(clusters); start++ {
-			if strings.Join(clusters[start:start+len(queryClusters)], "") != query {
-				continue
-			}
-			startPos := boundaries[start]
-			endPos := boundaries[start+len(queryClusters)]
-			matches = append(matches, CopyMatch{
-				StartRow: startPos.Row,
-				StartCol: startPos.Col,
-				EndRow:   endPos.Row,
-				EndCol:   endPos.Col,
-			})
-		}
-	}
-	return matches
 }
 
 func historyLineSpansForSearch(history HistoryStore) []HistoryLineSpan {
@@ -1161,6 +1175,12 @@ func historyLineSpanForLocalRows(rows []HistoryRow, start int, end int) HistoryL
 		return HistoryLineSpan{}
 	}
 	row := rows[start]
+	updatedAt := row.UpdatedAt
+	for index := start + 1; index <= end && index < len(rows); index++ {
+		if rows[index].UpdatedAt.After(updatedAt) {
+			updatedAt = rows[index].UpdatedAt
+		}
+	}
 	return HistoryLineSpan{
 		LineID:       row.LineID,
 		StartRow:     start,
@@ -1173,35 +1193,8 @@ func historyLineSpanForLocalRows(rows []HistoryRow, start int, end int) HistoryL
 		ScreenCols:   row.ScreenCols,
 		ScreenRow:    row.ScreenRow,
 		ScreenRowSet: row.ScreenRowSet,
+		UpdatedAt:    updatedAt,
 	}
-}
-
-func historySpanGraphemeBoundaries(history HistoryStore, span HistoryLineSpan) ([]string, []CopyPosition) {
-	if len(history.Rows) == 0 || span.StartRow < 0 || span.StartRow >= len(history.Rows) {
-		return nil, nil
-	}
-	endRow := span.EndRow
-	if endRow < span.StartRow {
-		endRow = span.StartRow
-	}
-	if endRow >= len(history.Rows) {
-		endRow = len(history.Rows) - 1
-	}
-	clusters := make([]string, 0)
-	boundaries := make([]CopyPosition, 0)
-	for rowIndex := span.StartRow; rowIndex <= endRow; rowIndex++ {
-		row := history.Rows[rowIndex]
-		rowClusters := textGraphemeClusters(row.Text)
-		rowColumns := HistoryRowGraphemeDisplayColumns(row)
-		for i, cluster := range rowClusters {
-			boundaries = append(boundaries, CopyPosition{Row: rowIndex, Col: rowColumns[i]})
-			clusters = append(clusters, cluster)
-		}
-		if rowIndex == endRow {
-			boundaries = append(boundaries, CopyPosition{Row: rowIndex, Col: rowColumns[len(rowColumns)-1]})
-		}
-	}
-	return clusters, boundaries
 }
 
 func HistoryRowGraphemeDisplayColumns(row HistoryRow) []int {
@@ -1354,20 +1347,6 @@ func rangesOverlap(leftFrom int, leftTo int, rightFrom int, rightTo int) bool {
 	return leftFrom < rightTo && rightFrom < leftTo
 }
 
-func (store CopyModeStore) MoveMatch(delta int) CopyModeStore {
-	if len(store.Matches) == 0 {
-		return store
-	}
-	store.ActiveMatch += delta
-	for store.ActiveMatch < 0 {
-		store.ActiveMatch += len(store.Matches)
-	}
-	store.ActiveMatch %= len(store.Matches)
-	match := store.Matches[store.ActiveMatch]
-	store.Cursor = CopyPosition{Row: match.StartRow, Col: match.StartCol}
-	return store
-}
-
 func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
 	maxTop := copyModeViewportMaxTop(store, totalRows)
 	store.ViewportTop = clampCopyInt(store.ViewportTop+delta, 0, maxTop)
@@ -1450,6 +1429,7 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 			ScreenRowSet:  line.ScreenRowSet,
 			ClippedBefore: line.ClippedBefore,
 			ClippedAfter:  line.ClippedAfter,
+			UpdatedAt:     line.UpdatedAt,
 		})
 	}
 	return rows, spans
@@ -1470,7 +1450,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
-		rows := []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, LiveTail: line.LiveTail}}
+		rows := []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, LiveTail: line.LiveTail, UpdatedAt: line.UpdatedAt}}
 		applyHistoryLineClipFlags(rows, line)
 		return rows
 	}
@@ -1492,6 +1472,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 			ScreenRow:    line.ScreenRow,
 			ScreenRowSet: line.ScreenRowSet,
 			LiveTail:     line.LiveTail,
+			UpdatedAt:    line.UpdatedAt,
 		}
 		rows = append(rows, row)
 		current = current[:0]
@@ -1567,6 +1548,7 @@ func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []Histor
 		ScreenRow:    line.ScreenRow,
 		ScreenRowSet: line.ScreenRowSet,
 		LiveTail:     line.LiveTail,
+		UpdatedAt:    line.UpdatedAt,
 		TailFill:     cloneHistoryCellStyle(line.TailFill),
 	}
 	if row.Text == "" && line.Text != "" {
@@ -1581,7 +1563,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	}
 	clusters := textGraphemeClusters(line.Text)
 	if len(clusters) == 0 {
-		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, LiveTail: line.LiveTail, UpdatedAt: line.UpdatedAt}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	var builder strings.Builder
@@ -1600,6 +1582,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 			ScreenRow:    line.ScreenRow,
 			ScreenRowSet: line.ScreenRowSet,
 			LiveTail:     line.LiveTail,
+			UpdatedAt:    line.UpdatedAt,
 		}
 		rows = append(rows, row)
 		builder.Reset()
@@ -1628,7 +1611,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 
 func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if line.Text == "" {
-		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, LiveTail: line.LiveTail, UpdatedAt: line.UpdatedAt}}
 	}
 	if cols <= 0 {
 		cols = 80
@@ -1652,6 +1635,7 @@ func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []His
 			ScreenRow:    line.ScreenRow,
 			ScreenRowSet: line.ScreenRowSet,
 			LiveTail:     line.LiveTail,
+			UpdatedAt:    line.UpdatedAt,
 		})
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)
@@ -1841,6 +1825,13 @@ func CopyLogicalPositionForPosition(history HistoryStore, pos CopyPosition) Copy
 	return CopyLogicalPosition{Valid: true, LineID: offset.lineID, Col: offset.col}
 }
 
+func CopyPositionForLogicalPosition(history HistoryStore, pos CopyLogicalPosition) CopyPosition {
+	if !pos.Valid {
+		return CopyPosition{}
+	}
+	return positionForHistoryLogicalOffset(history, historyLogicalOffset{lineID: pos.LineID, col: pos.Col})
+}
+
 func copyLogicalPositionSame(left CopyLogicalPosition, right CopyLogicalPosition) bool {
 	return left.Valid == right.Valid && left.LineID == right.LineID && left.Col == right.Col
 }
@@ -1894,39 +1885,6 @@ func positionForHistoryLogicalOffset(history HistoryStore, offset historyLogical
 	}
 	last := len(history.Rows) - 1
 	return CopyPosition{Row: last, Col: HistoryRowDisplayWidth(history.Rows[last])}
-}
-
-func reflowActiveMatchIndex(history HistoryStore, cursor CopyPosition, matches []CopyMatch) int {
-	return reflowActiveMatchIndexFromMatches(cursor, matches)
-}
-
-func reflowActiveMatchIndexFromMatches(cursor CopyPosition, matches []CopyMatch) int {
-	if len(matches) == 0 {
-		return 0
-	}
-	best := 0
-	for index, match := range matches {
-		if match.StartRow == cursor.Row && match.StartCol == cursor.Col {
-			return index
-		}
-		if copyMatchContainsPosition(match, cursor) {
-			best = index
-		}
-	}
-	return best
-}
-
-func copyMatchContainsPosition(match CopyMatch, pos CopyPosition) bool {
-	if pos.Row < match.StartRow || pos.Row > match.EndRow {
-		return false
-	}
-	if pos.Row == match.StartRow && pos.Col < match.StartCol {
-		return false
-	}
-	if pos.Row == match.EndRow && pos.Col > match.EndCol {
-		return false
-	}
-	return true
 }
 
 func historyLogicalPrependedPrefixWidth(before HistoryStore, after HistoryStore, lineID uint64) int {

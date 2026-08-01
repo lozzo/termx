@@ -1,6 +1,9 @@
 package vterm
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 // TerminalSemanticSource 是 vterm 对 core-v2 暴露的终端语义事务源。
 // domain owner：vterm 解码 PTY bytes；history 只能消费 transaction，不能回放 raw。
@@ -26,8 +29,9 @@ type TerminalSemanticCellRun = CellRun
 // Cells 是 cell 级 payload；Runs 是 vterm 在 raw damage 中保留的 styled text payload。
 // core 只能把这些 payload 复制进 logical-line history，不能从 current frame 反推历史。
 type TerminalSemanticScrollOut struct {
-	Cells []TerminalSemanticCell
-	Runs  []TerminalSemanticCellRun
+	Cells     []TerminalSemanticCell
+	Runs      []TerminalSemanticCellRun
+	Timestamp time.Time
 	// Row/RowSet 表示该 proof 来源于清屏/滚动前的 primary viewport row。
 	// core-v2 只能用它过滤 current primary frame ownership，不能据此反推新内容。
 	Row        int
@@ -238,6 +242,7 @@ func terminalSemanticScrollOutFromAppend(scrollOut ScrollbackRowAppend) Terminal
 	return TerminalSemanticScrollOut{
 		Cells:      cloneCellSlice(scrollOut.Cells),
 		Runs:       cloneCellRuns(scrollOut.Runs),
+		Timestamp:  scrollOut.Timestamp,
 		Row:        scrollOut.Row,
 		RowSet:     scrollOut.RowSet,
 		Wrapped:    scrollOut.Wrapped,
@@ -249,6 +254,7 @@ func terminalSemanticScrollOutFromDamageOp(scrollOut DamageOp) TerminalSemanticS
 	return TerminalSemanticScrollOut{
 		Cells:      cloneCellSlice(scrollOut.Cells),
 		Runs:       cloneCellRuns(scrollOut.Runs),
+		Timestamp:  scrollOut.Timestamp,
 		Row:        scrollOut.Row,
 		RowSet:     scrollOut.RowSet,
 		Wrapped:    scrollOut.Wrapped,
@@ -266,7 +272,7 @@ func terminalSemanticScrollOutAlreadyIncluded(existing []TerminalSemanticScrollO
 }
 
 func terminalSemanticScrollOutEqual(left TerminalSemanticScrollOut, right TerminalSemanticScrollOut) bool {
-	if left.Row != right.Row || left.RowSet != right.RowSet || left.Wrapped != right.Wrapped || left.WrappedSet != right.WrappedSet {
+	if left.Row != right.Row || left.RowSet != right.RowSet || left.Wrapped != right.Wrapped || left.WrappedSet != right.WrappedSet || !left.Timestamp.Equal(right.Timestamp) {
 		return false
 	}
 	if len(left.Cells) != len(right.Cells) || len(left.Runs) != len(right.Runs) {

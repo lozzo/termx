@@ -228,7 +228,7 @@ func smokeCopyHistoryRoot() state.Root {
 			TerminalID: "anytty-smoke",
 			Token:      "smoke-token",
 			Cols:       80,
-			Rows:       []state.HistoryRow{{Text: "tui", LineID: 1}},
+			Rows:       []state.HistoryRow{{Text: "tui", LineID: 1}, {Text: "copy row", LineID: 2}},
 		},
 		CopyMode: state.CopyModeStore{
 			Active:     true,

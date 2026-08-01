@@ -30,10 +30,12 @@ const (
 	// MaxHistoryWindowLines is the public and core-side hard ceiling for one
 	// logical-line page. MaxHistoryWindowBytes is a conservative pre-marshal
 	// payload budget for the remote history projection.
-	MaxHistoryWindowLines = 512
-	MaxHistoryWindowBytes = 60 << 10
-	MaxHistoryCopyBytes   = 1 << 20
-	MaxHistoryCopyLines   = 65536
+	MaxHistoryWindowLines    = 512
+	MaxHistoryWindowBytes    = 60 << 10
+	MaxHistoryCopyBytes      = 1 << 20
+	MaxHistoryCopyLines      = 100000
+	MaxHistoryCopyChunkLines = 8192
+	MaxHistoryCopyChunkBytes = 512 << 10
 )
 
 // HistoryWindowOp 告诉 consumer 如何应用返回的 authoritative window。它由 core-v2
@@ -126,6 +128,44 @@ type HistoryCopyRequest struct {
 	Range      *HistoryCopyRange
 }
 
+type HistoryCopyChunkRequest struct {
+	HistoryCopyRequest
+	MaxLines int
+	MaxBytes int
+}
+
+type HistoryCopyChunkResult struct {
+	Text string
+	Next HistoryCopyPosition
+	Done bool
+}
+
+type HistorySearchDirection string
+
+const (
+	HistorySearchForward  HistorySearchDirection = "forward"
+	HistorySearchBackward HistorySearchDirection = "backward"
+)
+
+// HistorySearchRequest searches one frozen history snapshot. Start is the
+// current client position; the returned match is the next one in Direction.
+type HistorySearchRequest struct {
+	TerminalID string
+	Token      HistoryToken
+	Cols       int
+	Limit      int
+	Query      string
+	Direction  HistorySearchDirection
+	Start      HistoryCopyPosition
+}
+
+type HistorySearchResult struct {
+	Found   bool
+	Match   HistoryCopyRange
+	Window  HistoryWindow
+	Wrapped bool
+}
+
 // HistoryLineSpan 把 projected rows 映射回 logical line 和 segment truth。它是
 // selection/copy metadata，不是另一份 history payload store。
 type HistoryLineSpan struct {
@@ -148,6 +188,7 @@ type HistoryLineSpan struct {
 // logical-line/frame payload truth，renderer output 不能写回它。
 type HistoryRow struct {
 	Cells      []Cell
+	Timestamp  time.Time
 	Kind       LineKind
 	Segment    HistorySegment
 	LineID     LogicalLineID

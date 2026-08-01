@@ -1,6 +1,7 @@
 package linehist
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,8 +18,9 @@ import (
 // ScreenRow 是查询时刻 emulator 当前屏的一条物理行快照。
 // Wrapped=true 表示该行软换行续到下一行（与滚出行的 Wrapped 语义一致）。
 type ScreenRow struct {
-	Cells   []vterm.Cell
-	Wrapped bool
+	Cells     []vterm.Cell
+	Wrapped   bool
+	UpdatedAt time.Time
 }
 
 // ScreenSnapshot 是查询时刻的 emulator 当前屏（热段唯一来源）。
@@ -42,11 +44,15 @@ func ScreenSnapshotFromVTerm(vt *vterm.VTerm) ScreenSnapshot {
 		return ScreenSnapshot{}
 	}
 	var rows []ScreenRow
+	timestamps := vt.ScreenTimestamps()
 	info := vt.VisitTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
 		for len(rows) < rowIndex {
 			rows = append(rows, ScreenRow{})
 		}
 		row := ScreenRow{}
+		if rowIndex >= 0 && rowIndex < len(timestamps) {
+			row.UpdatedAt = timestamps[rowIndex]
+		}
 		if cellCount > 0 {
 			row.Cells = make([]vterm.Cell, cellCount)
 			for i := 0; i < cellCount; i++ {
@@ -67,11 +73,14 @@ func ScreenSnapshotFromVTerm(vt *vterm.VTerm) ScreenSnapshot {
 	}
 	snap := ScreenSnapshot{Cols: info.Cols, ViewportRows: info.Rows, Rows: rows[:last+1], InAlt: info.IsAlternateScreen}
 	if info.IsAlternateScreen {
-		primaryCells, primaryWrapped := vt.PrimarySavedScreenRows()
+		primaryCells, primaryWrapped, primaryTimestamps := vt.PrimarySavedScreenRows()
 		primary := make([]ScreenRow, len(primaryCells))
 		lastPrimary := -1
 		for i := range primaryCells {
 			primary[i] = ScreenRow{Cells: primaryCells[i]}
+			if i < len(primaryTimestamps) {
+				primary[i].UpdatedAt = primaryTimestamps[i]
+			}
 			if i < len(primaryWrapped) {
 				primary[i].Wrapped = primaryWrapped[i]
 			}
@@ -499,52 +508,79 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 	}, nil
 }
 
-// Copy incrementally reads one logical line at a time. It never accumulates
-// more than MaxHistoryCopyBytes and never returns partial text on overflow.
 func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
+	result, err := store.CopyChunk(context.Background(), history.HistoryCopyChunkRequest{
+		HistoryCopyRequest: req,
+		MaxLines:           history.MaxHistoryCopyLines,
+		MaxBytes:           history.MaxHistoryCopyBytes,
+	})
+	if err != nil {
+		return "", err
+	}
+	if !result.Done {
+		return "", history.ErrHistoryCopyTooLarge
+	}
+	return result.Text, nil
+}
+
+// CopyChunk streams a bounded logical-line range from one frozen token. Next
+// always points at the first unreturned logical line, so clients can continue
+// without retaining history payload locally.
+func (store *Store) CopyChunk(ctx context.Context, req history.HistoryCopyChunkRequest) (history.HistoryCopyChunkResult, error) {
 	finish := perftrace.Measure("core.linehist.copy")
 	copiedRows := 0
 	defer func() { finish(copiedRows) }()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if req.MaxLines <= 0 || req.MaxLines > history.MaxHistoryCopyLines || req.MaxBytes <= 0 || req.MaxBytes > history.MaxHistoryCopyBytes {
+		return history.HistoryCopyChunkResult{}, history.ErrHistoryInvalidMutation
+	}
 	_, view, err := store.viewForRequest(history.HistoryWindowRequest{
 		TerminalID: req.TerminalID,
 		Cols:       req.Cols,
 		Token:      req.Token,
 	})
 	if err != nil {
-		return "", err
+		return history.HistoryCopyChunkResult{}, err
 	}
 	total := viewLogicalTotal(view)
 	startLine := 0
 	endLine := total
 	if req.Range != nil {
 		if err := validateCopyRange(*req.Range); err != nil {
-			return "", err
+			return history.HistoryCopyChunkResult{}, err
 		}
 		if total == 0 || req.Range.Start.LineID == 0 || req.Range.End.LineID == 0 ||
 			int(req.Range.Start.LineID) > total || int(req.Range.End.LineID) > total {
-			return "", history.ErrHistoryInvalidMutation
+			return history.HistoryCopyChunkResult{}, history.ErrHistoryInvalidMutation
 		}
 		startLine = lineOffsetForCopyPosition(req.Range.Start.LineID, total, 0)
 		endLine = lineOffsetForCopyPosition(req.Range.End.LineID, total, total-1) + 1
 	} else if total == 0 {
-		return "", nil
+		return history.HistoryCopyChunkResult{Done: true}, nil
 	}
 	if endLine-startLine > history.MaxHistoryCopyLines {
-		return "", history.ErrHistoryCopyTooLarge
+		return history.HistoryCopyChunkResult{}, history.ErrHistoryCopyTooLarge
 	}
 	if err := validateGapRange(view, startLine, endLine); err != nil {
-		return "", err
+		return history.HistoryCopyChunkResult{}, err
 	}
 	var text strings.Builder
-	for offset := startLine; offset < endLine; offset++ {
-		rows, err := store.logicalRowsForLineRange(view, offset, offset+1)
-		if err != nil {
-			return "", err
+	result := history.HistoryCopyChunkResult{}
+	stopped := false
+	var processErr error
+	process := func(offset int, cells []history.Cell) bool {
+		if err := ctx.Err(); err != nil {
+			processErr = err
+			return false
 		}
-		if len(rows) == 0 {
-			continue
+		if copiedRows >= req.MaxLines {
+			result.Next = history.HistoryCopyPosition{LineID: history.LogicalLineID(offset + 1)}
+			stopped = true
+			return false
 		}
-		startCol, endCol := 0, historyRowDisplayWidth(rows[0])
+		startCol, endCol := 0, historyCellsDisplayWidth(cells)
 		if req.Range != nil && offset == startLine {
 			startCol = req.Range.Start.Col
 		}
@@ -555,21 +591,64 @@ func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
 		if offset > startLine {
 			separatorBytes = 1
 		}
-		remaining := history.MaxHistoryCopyBytes - text.Len() - separatorBytes
+		remaining := req.MaxBytes - text.Len() - separatorBytes
 		if remaining < 0 {
-			return "", history.ErrHistoryCopyTooLarge
+			result.Next = history.HistoryCopyPosition{LineID: history.LogicalLineID(offset + 1)}
+			stopped = true
+			return false
 		}
-		fragment, ok := rowTextRangeBounded(rows[0].Cells, startCol, endCol, remaining)
+		fragment, ok := rowTextRangeBounded(cells, startCol, endCol, remaining)
 		if !ok {
-			return "", history.ErrHistoryCopyTooLarge
+			if copiedRows == 0 {
+				processErr = history.ErrHistoryCopyTooLarge
+			} else {
+				result.Next = history.HistoryCopyPosition{LineID: history.LogicalLineID(offset + 1)}
+				stopped = true
+			}
+			return false
 		}
 		if separatorBytes != 0 {
 			text.WriteByte('\n')
 		}
 		text.WriteString(fragment)
 		copiedRows++
+		if offset == endLine-1 {
+			result.Done = true
+			return false
+		}
+		result.Next = history.HistoryCopyPosition{LineID: history.LogicalLineID(offset + 2)}
+		return true
 	}
-	return text.String(), nil
+	if startLine < view.coldCount {
+		coldEnd := minInt(endLine, view.coldCount)
+		err := store.engine.VisitLinesAtRetentionBatched(ctx, view.retention, view.coldBase+startLine, view.coldBase+coldEnd, false, historySearchReadBatchLines, func(index int, line Line) bool {
+			return process(index-view.coldBase, cellsFromRuns(line.Runs))
+		})
+		if err != nil {
+			if errors.Is(err, errRetentionChanged) {
+				return history.HistoryCopyChunkResult{}, history.ErrHistoryStaleWindow
+			}
+			return history.HistoryCopyChunkResult{}, err
+		}
+	}
+	if processErr == nil && !stopped && !result.Done {
+		hotStart := maxInt(startLine, view.coldCount)
+		hotEnd := minInt(endLine, view.coldCount+len(view.hot))
+		for offset := hotStart; offset < hotEnd; offset++ {
+			if !process(offset, view.hot[offset-view.coldCount].Cells) {
+				break
+			}
+		}
+	}
+	if processErr != nil {
+		return history.HistoryCopyChunkResult{}, processErr
+	}
+	result.Text = text.String()
+	if !stopped && !result.Done {
+		result.Done = true
+		result.Next = history.HistoryCopyPosition{}
+	}
+	return result, nil
 }
 
 func lineOffsetForCopyPosition(id history.LogicalLineID, total int, fallback int) int {
@@ -681,6 +760,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 	coldBase, coldCount := store.engine.VisibleLineRange()
 	retention := store.engine.RetentionEpoch()
 	openTail := store.engine.OpenTail()
+	openTailUpdatedAt := store.engine.OpenTailUpdatedAt()
 	var snap ScreenSnapshot
 	store.mu.Lock()
 	screen := store.screen
@@ -697,7 +777,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 	if cols <= 0 {
 		cols = 80
 	}
-	hot, anchor := hotRowsFromScreen(coldCount, openTail, snap)
+	hot, anchor := hotRowsFromScreen(coldCount, openTail, openTailUpdatedAt, snap)
 	projectedRows = coldCount + len(hot)
 	perftrace.Count("core.linehist.capture_live.cold_lines", coldCount)
 	perftrace.Count("core.linehist.capture_live.hot_rows", len(hot))
@@ -719,7 +799,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 // openTail 与被 alt 覆盖但仍未滚出的主屏保存行（snap.PrimaryRows）拼成
 // mutable logical line（alt 退出后程序仍可改写它们，不能 seal）——
 // 再把 alt 屏幕行按 fixed grid 原样投影。
-func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) ([]history.HistoryRow, history.HistoryViewportAnchor) {
+func hotRowsFromScreen(coldCount int, openTail []Run, openTailUpdatedAt time.Time, snap ScreenSnapshot) ([]history.HistoryRow, history.HistoryViewportAnchor) {
 	var rows []history.HistoryRow
 	nextID := history.LogicalLineID(coldCount + 1)
 	anchor := history.HistoryViewportAnchor{
@@ -732,23 +812,31 @@ func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) ([]hi
 		primaryRows = snap.PrimaryRows
 	}
 	var lines [][]history.Cell
+	var lineTimes []time.Time
 	current := cellsFromRuns(openTail)
+	currentUpdatedAt := openTailUpdatedAt
 	primaryTopOffset := historyCellsDisplayWidth(current)
 	haveCurrent := len(current) > 0
 	for _, screenRow := range primaryRows {
 		current = append(current, cellsFromVTermCells(screenRow.Cells)...)
+		if screenRow.UpdatedAt.After(currentUpdatedAt) {
+			currentUpdatedAt = screenRow.UpdatedAt
+		}
 		haveCurrent = true
 		if !screenRow.Wrapped {
 			lines = append(lines, current)
+			lineTimes = append(lineTimes, currentUpdatedAt)
 			current = nil
+			currentUpdatedAt = time.Time{}
 			haveCurrent = false
 		}
 	}
 	if haveCurrent {
 		lines = append(lines, current)
+		lineTimes = append(lineTimes, currentUpdatedAt)
 	}
-	for _, lineCells := range lines {
-		rows = appendLogicalLineRow(rows, lineCells, nextID, history.HistorySegmentCurrentPrimaryFrame, false)
+	for index, lineCells := range lines {
+		rows = appendLogicalLineRow(rows, lineCells, nextID, history.HistorySegmentCurrentPrimaryFrame, false, lineTimes[index])
 		nextID++
 	}
 	if snap.InAlt {
@@ -760,6 +848,7 @@ func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot) ([]hi
 		for r, screenRow := range snap.Rows {
 			rows = append(rows, history.HistoryRow{
 				Cells:        cellsFromVTermCells(screenRow.Cells),
+				Timestamp:    screenRow.UpdatedAt,
 				Kind:         history.LineKindAltScreenFrame,
 				Segment:      history.HistorySegmentCurrentAltFrame,
 				LineID:       nextID,
@@ -789,9 +878,10 @@ func historyCellsDisplayWidth(cells []history.Cell) int {
 	return width
 }
 
-func appendLogicalLineRow(rows []history.HistoryRow, cells []history.Cell, id history.LogicalLineID, segment history.HistorySegment, committed bool) []history.HistoryRow {
+func appendLogicalLineRow(rows []history.HistoryRow, cells []history.Cell, id history.LogicalLineID, segment history.HistorySegment, committed bool, updatedAt time.Time) []history.HistoryRow {
 	return append(rows, history.HistoryRow{
 		Cells:     cells,
+		Timestamp: updatedAt,
 		Kind:      history.LineKindOrdinary,
 		Segment:   segment,
 		LineID:    id,
@@ -1008,6 +1098,7 @@ func (store *Store) coldLogicalRowsForLineRange(coldBase int, coldCount int, ret
 func historyRowFromColdLine(line Line, logicalIndex int) history.HistoryRow {
 	return history.HistoryRow{
 		Cells:     cellsFromRuns(line.Runs),
+		Timestamp: line.UpdatedAt,
 		Kind:      history.LineKindOrdinary,
 		Segment:   history.HistorySegmentCommitted,
 		LineID:    history.LogicalLineID(logicalIndex + 1),

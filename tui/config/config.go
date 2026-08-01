@@ -945,8 +945,8 @@ func Validate(cfg state.TUIConfigStore) error {
 	if cfg.Interaction.ShortcutPassthroughIntervalMS <= 0 {
 		return fmt.Errorf("tui.interaction.shortcut_passthrough_interval_ms must be > 0")
 	}
-	if cfg.Interaction.ClipboardHistory.MaxItems < 0 {
-		return fmt.Errorf("tui.interaction.clipboard_history.max_items must be >= 0")
+	if cfg.Interaction.ClipboardHistory.MaxItems <= 0 {
+		return fmt.Errorf("tui.interaction.clipboard_history.max_items must be > 0")
 	}
 	if cfg.Interaction.ClipboardHistory.NameWidth <= 0 {
 		return fmt.Errorf("tui.interaction.clipboard_history.name_width must be > 0")

@@ -57,6 +57,39 @@ func ValidateHistoryLiveCommand(command *apipb.CommandEnvelope) error {
 				return validation("history_copy.window.range", "start must not follow end")
 			}
 		}
+		if value.HistoryCopy.GetMaxLines() != 0 || value.HistoryCopy.GetMaxBytes() != 0 {
+			if value.HistoryCopy.GetMaxLines() < 1 || value.HistoryCopy.GetMaxLines() > history.MaxHistoryCopyChunkLines {
+				return validation("history_copy.max_lines", "must be between 1 and 8192")
+			}
+			if value.HistoryCopy.GetMaxBytes() < 1 || value.HistoryCopy.GetMaxBytes() > history.MaxHistoryCopyChunkBytes {
+				return validation("history_copy.max_bytes", "must be between 1 and 524288")
+			}
+		}
+	case *apipb.CommandEnvelope_HistorySearch:
+		if err := validateTerminalRefForContext(value.HistorySearch.GetTerminal(), requestContext); err != nil {
+			return err
+		}
+		if value.HistorySearch.GetToken() == "" {
+			return validation("history_search.token", "frozen history token is required")
+		}
+		if value.HistorySearch.GetQuery() == "" {
+			return validation("history_search.query", "must not be empty")
+		}
+		if value.HistorySearch.GetCols() < 0 {
+			return validation("history_search.cols", "must not be negative")
+		}
+		if value.HistorySearch.GetLimit() < 1 || value.HistorySearch.GetLimit() > history.MaxHistoryWindowLines {
+			return validation("history_search.limit", "must be between 1 and 512")
+		}
+		if value.HistorySearch.GetStart().GetCol() < 0 {
+			return validation("history_search.start.col", "must not be negative")
+		}
+		switch value.HistorySearch.GetDirection() {
+		case apipb.HistorySearchDirection_HISTORY_SEARCH_DIRECTION_FORWARD,
+			apipb.HistorySearchDirection_HISTORY_SEARCH_DIRECTION_BACKWARD:
+		default:
+			return validation("history_search.direction", "must be forward or backward")
+		}
 	case *apipb.CommandEnvelope_HistoryRelease:
 		if err := validateTerminalRefForContext(value.HistoryRelease.GetTerminal(), requestContext); err != nil {
 			return err
@@ -122,6 +155,36 @@ func HistoryCopyRequestFromProto(command *apipb.HistoryCopyCommand) history.Hist
 	return request
 }
 
+func HistoryCopyChunkRequestFromProto(command *apipb.HistoryCopyCommand) history.HistoryCopyChunkRequest {
+	return history.HistoryCopyChunkRequest{
+		HistoryCopyRequest: HistoryCopyRequestFromProto(command),
+		MaxLines:           int(command.GetMaxLines()),
+		MaxBytes:           int(command.GetMaxBytes()),
+	}
+}
+
+func HistorySearchRequestFromProto(command *apipb.HistorySearchCommand) history.HistorySearchRequest {
+	if command == nil {
+		return history.HistorySearchRequest{}
+	}
+	direction := history.HistorySearchForward
+	if command.GetDirection() == apipb.HistorySearchDirection_HISTORY_SEARCH_DIRECTION_BACKWARD {
+		direction = history.HistorySearchBackward
+	}
+	return history.HistorySearchRequest{
+		TerminalID: command.GetTerminal().GetTerminalId(),
+		Token:      history.HistoryToken(command.GetToken()),
+		Cols:       int(command.GetCols()),
+		Limit:      int(command.GetLimit()),
+		Query:      command.GetQuery(),
+		Direction:  direction,
+		Start: history.HistoryCopyPosition{
+			LineID: history.LogicalLineID(command.GetStart().GetLineId()),
+			Col:    int(command.GetStart().GetCol()),
+		},
+	}
+}
+
 // HistoryWindowToProto 把 core authoritative window 投影为 generated Proto。
 func HistoryWindowToProto(endpointID string, window history.HistoryWindow) *apipb.HistoryWindowResult {
 	result := &apipb.HistoryWindowResult{
@@ -157,7 +220,28 @@ func HistoryWindowToProto(endpointID string, window history.HistoryWindow) *apip
 
 // HistoryCopyToProto 把 core frozen-history copy 文本包装为公共 API result。
 func HistoryCopyToProto(text string) *apipb.HistoryCopyResult {
-	return &apipb.HistoryCopyResult{Text: text}
+	return &apipb.HistoryCopyResult{Text: text, Done: true}
+}
+
+func HistoryCopyChunkToProto(result history.HistoryCopyChunkResult) *apipb.HistoryCopyResult {
+	response := &apipb.HistoryCopyResult{Text: result.Text, Done: result.Done}
+	if !result.Done && result.Next.LineID != 0 {
+		response.Next = &apipb.HistoryTextPosition{LineId: uint64(result.Next.LineID), Col: int32(result.Next.Col)}
+	}
+	return response
+}
+
+func HistorySearchToProto(endpointID string, result history.HistorySearchResult) *apipb.HistorySearchResult {
+	response := &apipb.HistorySearchResult{Found: result.Found, Wrapped: result.Wrapped}
+	if !result.Found {
+		return response
+	}
+	response.Match = &apipb.HistoryRange{
+		StartLineId: uint64(result.Match.Start.LineID), StartCol: int32(result.Match.Start.Col),
+		EndLineId: uint64(result.Match.End.LineID), EndCol: int32(result.Match.End.Col),
+	}
+	response.Window = HistoryWindowToProto(endpointID, result.Window)
+	return response
 }
 
 // AcknowledgeToProto 返回无附加 payload 的成功确认。
@@ -273,6 +357,7 @@ func historyRowToProto(row history.HistoryRow) *apipb.HistoryRow {
 		SessionId: uint64(row.SessionID), FrameId: uint64(row.FrameID), FixedGrid: row.FixedGrid,
 		ScreenCols: int32(row.ScreenCols), ScreenRows: int32(row.ScreenRow), ScreenRowSet: row.ScreenRowSet,
 		LogicalLineId: uint64(row.LineID), RowInLine: int32(row.RowInLine),
+		TimestampUnixNano: unixNanoOrZero(row.Timestamp),
 	}
 }
 
@@ -287,7 +372,7 @@ func historyLineToProto(line history.HistoryLineSpan, rows []history.HistoryRow)
 		fixedGrid = rows[line.StartRow].FixedGrid
 		screenCols = rows[line.StartRow].ScreenCols
 	}
-	return &apipb.HistoryLineSpan{StartRow: int32(line.StartRow), EndRow: int32(end), RowKind: string(line.Kind), LogicalLineId: uint64(line.LogicalLineID), SessionId: uint64(line.SessionID), FrameId: uint64(line.FrameID), FixedGrid: fixedGrid, ScreenCols: int32(screenCols), TimestampStartUnixNano: line.TimestampStart.UnixNano(), TimestampEndUnixNano: line.TimestampEnd.UnixNano(), ClippedBefore: line.ClippedBefore, ClippedAfter: line.ClippedAfter}
+	return &apipb.HistoryLineSpan{StartRow: int32(line.StartRow), EndRow: int32(end), RowKind: string(line.Kind), LogicalLineId: uint64(line.LogicalLineID), SessionId: uint64(line.SessionID), FrameId: uint64(line.FrameID), FixedGrid: fixedGrid, ScreenCols: int32(screenCols), TimestampStartUnixNano: unixNanoOrZero(line.TimestampStart), TimestampEndUnixNano: unixNanoOrZero(line.TimestampEnd), ClippedBefore: line.ClippedBefore, ClippedAfter: line.ClippedAfter}
 }
 
 func historyCellsToProto(cells []history.Cell) *apipb.ScreenRow {

@@ -1275,6 +1275,8 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellOpenConnectionsMsg{}
 	case input.ShellActionOpenTree:
 		msg = ShellOpenWorkbenchTreeMsg{}
+	case input.ShellActionOpenClipboardHistory:
+		msg = ShellOpenClipboardHistoryMsg{}
 	case input.ShellActionOpenPicker:
 		msg = ShellOpenTerminalPickerMsg{}
 	case input.ShellActionOpenPrompt:

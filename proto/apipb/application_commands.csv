@@ -21,6 +21,7 @@ history_copy,history_copy,HistoryCopy,API_CAPABILITY_HISTORY,history_live,value,
 history_release,acknowledge,HistoryRelease,API_CAPABILITY_HISTORY,history_live,ack,false
 history_backlog_status,history_backlog_status,HistoryBacklogStatus,API_CAPABILITY_HISTORY,history_live,value,false
 live_screen_next,live_screen,LiveScreenNext,API_CAPABILITY_LIVE_SCREEN,history_live,value,false
+history_search,history_search,HistorySearch,API_CAPABILITY_HISTORY,history_live,value,false
 event_subscribe,event_subscription,EventSubscribe,API_CAPABILITY_EVENT_SUBSCRIPTION,event,value,true
 file_list,file_list,FileList,API_CAPABILITY_FILE,file_storage,value,false
 file_stat,file_stat,FileStat,API_CAPABILITY_FILE,file_storage,value,false
