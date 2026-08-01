@@ -13,6 +13,7 @@ func TestMigrationChecksums(t *testing.T) {
 		5: "71d330e7303db35031fb41e11864820effbc8e4b118a98237753321475a1b813",
 		6: "25ae44bc9a383b0825fc6dc658d6777e63add6b3decb2b1952565eee98e4fcee",
 		7: "e03cea7a2a098f5cc2d62cd7a973f5f40fc9afda8feeb5ce9560bbe51bbe7f51",
+		8: "a556ae097dc095f1fb0162d23b4f0b917ddae37208916a209307bb1548e5e9af",
 	}
 
 	migrations, err := loadMigrations()

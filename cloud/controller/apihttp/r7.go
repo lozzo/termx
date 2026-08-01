@@ -233,15 +233,15 @@ func (handler *handler) daemons(writer http.ResponseWriter, request *http.Reques
 		}
 		response, err := handler.config.DaemonManagement.CreateMyEnrollment(request.Context(), input)
 		writeServiceResult(writer, response, err)
-	case strings.HasPrefix(request.URL.Path, "/api/daemons/") && strings.HasSuffix(request.URL.Path, "/revoke") && request.Method == http.MethodPost:
-		id := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/daemons/"), "/revoke")
-		input := &cloudv1.RevokeMyDaemonRequest{DaemonId: id}
+	case strings.HasPrefix(request.URL.Path, "/api/daemons/") && strings.HasSuffix(request.URL.Path, "/state") && request.Method == http.MethodPost:
+		id := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/daemons/"), "/state")
+		input := &cloudv1.ChangeMyDaemonStateRequest{DaemonId: id}
 		if err := readProto(request, input); err != nil {
 			writeError(writer, http.StatusBadRequest, err)
 			return
 		}
 		input.DaemonId = id
-		response, err := handler.config.DaemonManagement.RevokeMyDaemon(request.Context(), input)
+		response, err := handler.config.DaemonManagement.ChangeMyDaemonState(request.Context(), input)
 		writeServiceResult(writer, response, err)
 	default:
 		writeError(writer, http.StatusNotFound, errors.New("daemon endpoint was not found"))

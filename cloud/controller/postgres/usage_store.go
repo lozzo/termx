@@ -34,8 +34,8 @@ type relayPolicyRows struct {
 	edgeRevision                                 int64
 	edgeEnabled                                  bool
 	daemonID                                     string
-	daemonRevision                               int64
-	daemonRevoked                                bool
+	daemonStateRevision                          int64
+	daemonState                                  string
 }
 
 type usagePeriodRow struct {
@@ -461,7 +461,7 @@ func lockCurrentPolicy(ctx context.Context, tx pgx.Tx, accountID, daemonID, edge
 	if err := tx.QueryRow(ctx, `SELECT region,revision,enabled FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, edgeID).Scan(&rows.edgeRegion, &rows.edgeRevision, &rows.edgeEnabled); err != nil {
 		return rows, err
 	}
-	if err := tx.QueryRow(ctx, `SELECT revision,revoked FROM daemons WHERE account_id=$1 AND daemon_id=$2 FOR UPDATE`, accountID, daemonID).Scan(&rows.daemonRevision, &rows.daemonRevoked); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT state_revision,state FROM daemons WHERE account_id=$1 AND daemon_id=$2 FOR UPDATE`, accountID, daemonID).Scan(&rows.daemonStateRevision, &rows.daemonState); err != nil {
 		return rows, err
 	}
 	return rows, nil
@@ -475,7 +475,7 @@ func effectiveRelayPolicy(rows relayPolicyRows, now time.Time) (*cloudv1.RelayPo
 	validSubscription := rows.subscriptionState == "active" || rows.subscriptionState == "cancel_at_period_end" || rows.subscriptionState == "past_due"
 	regionAllowed := slices.Contains(rows.allowedRegions, "*") || slices.Contains(rows.allowedRegions, rows.edgeRegion)
 	if rows.accountState != "active" || !validSubscription || now.Before(rows.periodStart) || !now.Before(rows.periodEnd) || !rows.relayEnabled ||
-		rows.quotaBytes <= 0 || rows.maxBytesPerSession <= 0 || rows.maxRateBytes <= 0 || rows.maxConcurrency <= 0 || !rows.edgeEnabled || rows.daemonRevoked || !regionAllowed {
+		rows.quotaBytes <= 0 || rows.maxBytesPerSession <= 0 || rows.maxRateBytes <= 0 || rows.maxConcurrency <= 0 || !rows.edgeEnabled || rows.daemonState != "active" || !regionAllowed {
 		return nil, nil, errors.New("Relay is not enabled by the current account, subscription, plan, daemon, and Edge region")
 	}
 	regions := append([]string(nil), rows.allowedRegions...)
@@ -487,7 +487,7 @@ func effectiveRelayPolicy(rows relayPolicyRows, now time.Time) (*cloudv1.RelayPo
 		RelayEnabled: rows.relayEnabled, RelayMaxBytesPerPeriod: uint64(rows.quotaBytes), RelayMaxBytesPerSession: uint64(rows.maxBytesPerSession),
 		RelayMaxRateBytesPerSecond: uint64(rows.maxRateBytes), RelayMaxConcurrency: uint32(rows.maxConcurrency), AllowedRegions: regions,
 		EdgeId: rows.edgeID, EdgeRevision: uint64(rows.edgeRevision), EdgeEnabled: rows.edgeEnabled, EdgeRegion: rows.edgeRegion,
-		DaemonId: rows.daemonID, DaemonRevision: uint64(rows.daemonRevision), DaemonRevoked: rows.daemonRevoked,
+		DaemonId: rows.daemonID, DaemonStateRevision: uint64(rows.daemonStateRevision),
 	}
 	digest, err := relayquota.PolicyDigest(policy)
 	return policy, digest, err

@@ -122,10 +122,10 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_reserve": 28, "command_result": 29, "certificate_applied": 30, "relay_renew": 31, "relay_settle": 32, "relay_query": 33, "daemon_policy_applied": 34, "resolve_daemon_policy": 35,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_reserve": 28, "command_result": 29, "certificate_applied": 30, "relay_renew": 31, "relay_settle": 32, "relay_query": 33, "daemon_state_query": 34,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31, "daemon_policy_snapshot": 32, "daemon_policy_delta": 33, "resolved_daemon_policy": 34,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31, "daemon_state_delta": 32, "daemon_state_query_result": 33,
 	})
 }
 
@@ -149,52 +149,36 @@ func TestDaemonLifecycleProtocol(t *testing.T) {
 	if record.Fields().ByName("revoked") != nil || record.Fields().ByName("revision") != nil {
 		t.Fatal("DaemonRecord must not retain revoked or a shared revision")
 	}
-	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
-		"state": 7, "state_revision": 8, "edge_policy_revision": 11, "enrollment_generation": 12, "binding_id": 13, "owning_edge_id": 14,
-	} {
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"state": 7, "state_revision": 8} {
 		field := record.Fields().ByName(name)
 		if field == nil || field.Number() != number {
 			t.Fatalf("DaemonRecord.%s = %v, want %d", name, field, number)
 		}
 	}
 	management := File_cloud_v1_enrollment_proto.Services().ByName("DaemonManagementService")
-	if management == nil || management.Methods().Len() != 5 || management.Methods().ByName("BlockMyDaemon") == nil || management.Methods().ByName("RestoreMyDaemon") == nil || management.Methods().ByName("DeleteMyDaemon") == nil || management.Methods().ByName("RevokeMyDaemon") != nil {
+	if management == nil || management.Methods().Len() != 3 || management.Methods().ByName("ChangeMyDaemonState") == nil || management.Methods().ByName("RevokeMyDaemon") != nil {
 		t.Fatalf("DaemonManagementService methods = %v", management)
 	}
 	claims := (&DaemonBindingClaims{}).ProtoReflect().Descriptor()
-	if claims.Fields().ByName("edge_id") != nil || claims.Fields().ByName("revision") != nil {
-		t.Fatal("DaemonBindingClaims must use owning Edge and independent revisions")
+	if claims.Fields().ByName("edge_id") == nil || claims.Fields().ByName("revision") != nil || claims.Fields().ByName("state_revision") != nil {
+		t.Fatal("DaemonBindingClaims must retain its target Edge without lifecycle revisions")
 	}
-	for _, name := range []protoreflect.Name{"binding_id", "owning_edge_id", "state_revision", "edge_policy_revision", "enrollment_generation"} {
+	for _, name := range []protoreflect.Name{"binding_id", "edge_id"} {
 		if claims.Fields().ByName(name) == nil {
 			t.Fatalf("DaemonBindingClaims.%s is missing", name)
 		}
 	}
-	for _, descriptor := range []protoreflect.MessageDescriptor{
-		(&DaemonLifecycleCommand{}).ProtoReflect().Descriptor(),
-		(&DaemonLifecycleResult{}).ProtoReflect().Descriptor(),
-	} {
-		for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"operation_id": 1, "target_state": 2, "state_revision": 3, "enrollment_generation": 4, "agent_generation": 5} {
-			field := descriptor.Fields().ByName(name)
-			if field == nil || field.Number() != number {
-				t.Fatalf("%s.%s = %v, want %d", descriptor.FullName(), name, field, number)
-			}
-		}
+	command := (&DaemonLifecycleCommand{}).ProtoReflect().Descriptor()
+	if command.Fields().ByName("daemon_state") == nil || command.Fields().ByName("agent_generation") == nil {
+		t.Fatal("DaemonLifecycleCommand must target one state and Agent generation")
 	}
-	snapshot := (&DaemonPolicySnapshot{}).ProtoReflect().Descriptor()
-	if field := snapshot.Fields().ByName("edge_policy_revision"); field == nil || field.Number() != 2 {
-		t.Fatalf("DaemonPolicySnapshot.edge_policy_revision = %v", field)
+	snapshot := (&DaemonStateSnapshot{}).ProtoReflect().Descriptor()
+	if field := snapshot.Fields().ByName("daemons"); field == nil || field.Number() != 1 {
+		t.Fatalf("DaemonStateSnapshot.daemons = %v", field)
 	}
-	delta := (&DaemonPolicyDelta{}).ProtoReflect().Descriptor()
-	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"base_revision": 1, "revision": 2, "policy": 3} {
-		field := delta.Fields().ByName(name)
-		if field == nil || field.Number() != number {
-			t.Fatalf("DaemonPolicyDelta.%s = %v, want %d", name, field, number)
-		}
-	}
-	mutation := (&MutateMyDaemonResponse{}).ProtoReflect().Descriptor()
-	if mutation.Fields().ByName("runtime_disconnect_applied") != nil || mutation.Fields().ByName("edge_enforcement") == nil || mutation.Fields().ByName("daemon_cleanup") == nil {
-		t.Fatal("MutateMyDaemonResponse must expose explicit Edge enforcement and daemon cleanup results")
+	response := (&ChangeMyDaemonStateResponse{}).ProtoReflect().Descriptor()
+	if response.Fields().Len() != 1 || response.Fields().ByName("daemon") == nil {
+		t.Fatal("state mutation response must return only committed daemon state")
 	}
 }
 

@@ -60,9 +60,10 @@ func TestRefreshCertificateResolvesLatestDesiredAtWriterSequence(t *testing.T) {
 		CertificateChainPem: []byte("revision-1-certificate"), PrivateKeyPem: []byte("revision-1-key"),
 	}
 	outbound := make(chan externalCommand, 1)
+	generation := &connectionGeneration{external: outbound, invalidated: make(chan struct{})}
 	service := &Service{
 		config:      Config{DesiredCertificate: func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error) { return desired, nil }},
-		connections: map[string]chan externalCommand{"connection-1": outbound}, edgeConnections: map[string]string{"edge-1": "connection-1"},
+		connections: map[string]*connectionGeneration{"connection-1": generation}, edgeConnections: map[string]string{"edge-1": "connection-1"},
 	}
 	refreshResult := make(chan error, 1)
 	go func() { refreshResult <- service.RefreshCertificate(context.Background(), "edge-1") }()

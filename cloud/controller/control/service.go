@@ -25,21 +25,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 5 adds Controller-authorized durable Relay reservations.
-const ProtocolVersion uint32 = 5
+// ProtocolVersion 6 adds daemon lifecycle state synchronization.
+const ProtocolVersion uint32 = 6
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
-	ControllerID       string
-	ControllerBootID   string
-	HeartbeatInterval  time.Duration
-	HeartbeatTimeout   time.Duration
-	BindingKeyBundle   func(context.Context) (*cloudv1.KeyBundle, error)
-	Directory          *directory.Directory
-	DesiredConfig      func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
-	DesiredCertificate func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
-	CertificateApplied func(context.Context, string, *cloudv1.CertificateApplied) error
-	RelayStore         RelayStore
+	ControllerID        string
+	ControllerBootID    string
+	HeartbeatInterval   time.Duration
+	HeartbeatTimeout    time.Duration
+	BindingKeyBundle    func(context.Context) (*cloudv1.KeyBundle, error)
+	Directory           *directory.Directory
+	DesiredConfig       func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
+	DesiredCertificate  func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
+	CertificateApplied  func(context.Context, string, *cloudv1.CertificateApplied) error
+	DaemonStateSnapshot func(context.Context) (*cloudv1.DaemonStateSnapshot, error)
+	ResolveDaemonState  func(context.Context, string) (*cloudv1.DaemonStateRecord, bool, error)
+	RelayStore          RelayStore
 }
 
 // RelayStore is the Controller transaction boundary for durable Relay authority.
@@ -58,7 +60,7 @@ type Service struct {
 	drain           chan struct{}
 	drainOnce       sync.Once
 	connectionsMu   sync.RWMutex
-	connections     map[string]chan externalCommand
+	connections     map[string]*connectionGeneration
 	edgeConnections map[string]string
 }
 
@@ -68,17 +70,27 @@ type externalCommand struct {
 	result             chan error
 }
 
+type connectionGeneration struct {
+	external     chan externalCommand
+	invalidated  chan struct{}
+	invalidateMu sync.Once
+}
+
+func (generation *connectionGeneration) invalidate() {
+	generation.invalidateMu.Do(func() { close(generation.invalidated) })
+}
+
 // NewService 校验 Controller 身份、心跳和 Directory，失败时不创建部分可用 service。
 func NewService(config Config) (*Service, error) {
 	config.ControllerID = strings.TrimSpace(config.ControllerID)
 	config.ControllerBootID = strings.TrimSpace(config.ControllerBootID)
-	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil {
-		return nil, errors.New("controller ID, boot ID, Directory, and binding key bundle provider are required")
+	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil || config.DaemonStateSnapshot == nil || config.ResolveDaemonState == nil {
+		return nil, errors.New("controller ID, boot ID, Directory, binding keys, and daemon state providers are required")
 	}
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
 	}
-	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand), edgeConnections: make(map[string]string)}, nil
+	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]*connectionGeneration), edgeConnections: make(map[string]string)}, nil
 }
 
 // BeginShutdown 拒绝新控制流并通知现有 Connect handler 主动结束。
@@ -137,9 +149,9 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	defer service.config.Directory.Detach(event.GetConnectionId())
 	bootID := event.GetBootId()
 	connectionID := event.GetConnectionId()
-	external := make(chan externalCommand, 64)
+	generation := &connectionGeneration{external: make(chan externalCommand, 64), invalidated: make(chan struct{})}
 	service.connectionsMu.Lock()
-	service.connections[connectionID] = external
+	service.connections[connectionID] = generation
 	service.edgeConnections[certificateEdgeID] = connectionID
 	service.connectionsMu.Unlock()
 	defer func() {
@@ -159,10 +171,15 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	if err != nil {
 		return status.Errorf(codes.FailedPrecondition, "load binding key bundle: %v", err)
 	}
+	daemonStates, err := service.config.DaemonStateSnapshot(stream.Context())
+	if err != nil || !validDaemonStateSnapshot(daemonStates) {
+		return status.Errorf(codes.FailedPrecondition, "load daemon state snapshot: %v", err)
+	}
 	if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_Welcome{Welcome: &cloudv1.EdgeWelcome{
 		AcceptedProtocolVersion: ProtocolVersion,
 		Heartbeat:               &cloudv1.HeartbeatPolicy{Interval: durationpb.New(service.config.HeartbeatInterval), Timeout: durationpb.New(service.config.HeartbeatTimeout)},
 		BindingKeyBundle:        bindingBundle,
+		DaemonStates:            daemonStates,
 	}})); err != nil {
 		return status.Errorf(codes.Unavailable, "send EdgeWelcome: %v", err)
 	}
@@ -209,6 +226,8 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		select {
 		case <-service.drain:
 			return status.Error(codes.Unavailable, "Controller is draining")
+		case <-generation.invalidated:
+			return status.Error(codes.Unavailable, "EdgeControl state delivery was invalidated")
 		case <-stream.Context().Done():
 			return context.Cause(stream.Context())
 		case err = <-writerErrors:
@@ -226,19 +245,28 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 				return status.Errorf(codes.Unavailable, "send binding key bundle: %v", err)
 			}
 			bundleRefresh.Reset(bindingBundleRefreshDelay(bindingBundle, time.Now().UTC()))
-		case request := <-external:
+		case request := <-generation.external:
 			payload, shouldSend, resolveErr := service.resolveExternalCommand(stream.Context(), certificateEdgeID, request)
 			if resolveErr != nil {
-				request.result <- resolveErr
+				if request.result != nil {
+					request.result <- resolveErr
+				}
 				continue
 			}
 			if !shouldSend {
-				request.result <- nil
+				if request.result != nil {
+					request.result <- nil
+				}
 				continue
 			}
 			commandSeq++
 			sendErr := send(service.command(connectionID, commandSeq, payload))
-			request.result <- sendErr
+			if request.result != nil {
+				request.result <- sendErr
+			}
+			if sendErr != nil {
+				return status.Errorf(codes.Unavailable, "send Controller state: %v", sendErr)
+			}
 			continue
 		case received := <-inbound:
 			event, err = received.event, received.err
@@ -352,6 +380,13 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 		}
 		response, err := service.config.RelayStore.QueryRelay(ctx, event.GetSenderId(), payload.RelayQuery)
 		return &cloudv1.ControllerCommand_RelayQuery{RelayQuery: response}, err
+	case *cloudv1.EdgeEvent_DaemonStateQuery:
+		query := payload.DaemonStateQuery
+		if query == nil || strings.TrimSpace(query.GetRequestId()) == "" || strings.TrimSpace(query.GetDaemonId()) == "" {
+			return nil, errors.New("daemon state query is invalid")
+		}
+		record, found, err := service.config.ResolveDaemonState(ctx, strings.TrimSpace(query.GetDaemonId()))
+		return &cloudv1.ControllerCommand_DaemonStateQueryResult{DaemonStateQueryResult: &cloudv1.DaemonStateQueryResult{RequestId: query.GetRequestId(), DaemonId: query.GetDaemonId(), Found: found, Daemon: record}}, err
 	case *cloudv1.EdgeEvent_CommandResult:
 		return nil, service.config.Directory.CompleteCommand(ctx, event.GetConnectionId(), payload.CommandResult)
 	default:
@@ -385,6 +420,10 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_CloseSession:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_CertificateBundle:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_DaemonStateDelta:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_DaemonStateQueryResult:
 		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
@@ -436,22 +475,44 @@ func (service *Service) sendExternal(ctx context.Context, connectionID string, p
 
 func (service *Service) sendExternalRequest(ctx context.Context, connectionID string, request externalCommand) error {
 	service.connectionsMu.RLock()
-	outbound := service.connections[connectionID]
+	generation := service.connections[connectionID]
 	service.connectionsMu.RUnlock()
-	if outbound == nil {
+	if generation == nil {
 		return directory.ErrStaleConnection
 	}
 	request.result = make(chan error, 1)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case outbound <- request:
+	case generation.external <- request:
 	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-request.result:
 		return err
+	}
+}
+
+// BroadcastDaemonState queues one durable state replacement for every online Edge.
+// A full queue invalidates that connection so reconnect will reload the snapshot.
+func (service *Service) BroadcastDaemonState(record *cloudv1.DaemonStateRecord) {
+	if !validDaemonStateRecord(record) {
+		return
+	}
+	service.connectionsMu.RLock()
+	generations := make([]*connectionGeneration, 0, len(service.connections))
+	for _, generation := range service.connections {
+		generations = append(generations, generation)
+	}
+	service.connectionsMu.RUnlock()
+	request := externalCommand{payload: &cloudv1.ControllerCommand_DaemonStateDelta{DaemonStateDelta: &cloudv1.DaemonStateDelta{Daemon: record}}}
+	for _, generation := range generations {
+		select {
+		case generation.external <- request:
+		default:
+			generation.invalidate()
+		}
 	}
 }
 
@@ -509,6 +570,28 @@ func waitRuntimeCommand(ctx context.Context, waiter <-chan *cloudv1.EdgeCommandR
 
 func (service *Service) resyncCommand(connectionID string, sequence, expected uint64, reason string) *cloudv1.ControllerCommand {
 	return service.command(connectionID, sequence, &cloudv1.ControllerCommand_ResyncRequired{ResyncRequired: &cloudv1.ResyncRequired{ExpectedRevision: expected, Reason: reason}})
+}
+
+func validDaemonStateSnapshot(snapshot *cloudv1.DaemonStateSnapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	seen := make(map[string]struct{}, len(snapshot.GetDaemons()))
+	for _, record := range snapshot.GetDaemons() {
+		if !validDaemonStateRecord(record) {
+			return false
+		}
+		if _, exists := seen[record.GetDaemonId()]; exists {
+			return false
+		}
+		seen[record.GetDaemonId()] = struct{}{}
+	}
+	return true
+}
+
+func validDaemonStateRecord(record *cloudv1.DaemonStateRecord) bool {
+	return record != nil && strings.TrimSpace(record.GetDaemonId()) != "" && record.GetStateRevision() > 0 &&
+		(record.GetState() == cloudv1.DaemonState_DAEMON_STATE_ACTIVE || record.GetState() == cloudv1.DaemonState_DAEMON_STATE_BLOCKED || record.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED)
 }
 
 type receiveResult struct {

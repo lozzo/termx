@@ -94,7 +94,7 @@ SELECT s.account_id,s.subscription_id,s.period_start,s.period_end,p.relay_max_by
 FROM subscriptions s JOIN plans p ON p.plan_id=s.plan_id AND p.version=s.plan_version WHERE s.account_id=$2`, now, accountIDs[1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.pool.Exec(ctx, `INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,revoked,revision,created_at,updated_at) VALUES($1,$2,'批量查询设备',$3,$4,$5,false,1,$6,$6)`, uuid.NewString(), accountIDs[1], "device-"+uuid.NewString(), make([]byte, 32), "fingerprint-"+uuid.NewString(), now); err != nil {
+	if _, err := database.pool.Exec(ctx, `INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,state,state_revision,created_at,updated_at) VALUES($1,$2,'批量查询设备',$3,$4,$5,'active',1,$6,$6)`, uuid.NewString(), accountIDs[1], "device-"+uuid.NewString(), make([]byte, 32), "fingerprint-"+uuid.NewString(), now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.pool.Exec(ctx, `UPDATE accounts SET state='disabled',revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, accountIDs[2]); err != nil {

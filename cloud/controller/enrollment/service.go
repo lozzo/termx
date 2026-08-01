@@ -39,8 +39,8 @@ var (
 type Daemon struct {
 	ID, AccountID, AccountName, DisplayName, DeviceID, DeviceFingerprint string
 	DevicePublicKey                                                      ed25519.PublicKey
-	Revoked                                                              bool
-	Revision                                                             uint64
+	State                                                                cloudv1.DaemonState
+	StateRevision                                                        uint64
 	CreatedAt, UpdatedAt                                                 time.Time
 }
 
@@ -66,6 +66,7 @@ type Config struct {
 	EnrollmentTTL       time.Duration
 	ChallengeTTL        time.Duration
 	BindingTTL          time.Duration
+	StateChanged        func(*cloudv1.DaemonStateRecord)
 	Now                 func() time.Time
 }
 
@@ -210,10 +211,13 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	}
 	locatorDigest := sha256.Sum256(locatorPayload)
 	now := service.now()
-	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:]}
+	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), EdgeLocatorSha256: locatorDigest[:]}
 	signed, err := ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if service.config.StateChanged != nil {
+		service.config.StateChanged(&cloudv1.DaemonStateRecord{DaemonId: daemon.ID, State: daemon.State, StateRevision: daemon.StateRevision})
 	}
 	return &cloudv1.CompleteDaemonEnrollmentResponse{Daemon: projectDaemon(daemon), DaemonBinding: signed, EdgeLocator: locator}, nil
 }
@@ -304,5 +308,5 @@ func (service *Service) compactLocked(now time.Time) {
 func (service *Service) now() time.Time { return service.config.Now().UTC() }
 
 func projectDaemon(daemon Daemon) *cloudv1.DaemonRecord {
-	return &cloudv1.DaemonRecord{DaemonId: daemon.ID, AccountId: daemon.AccountID, AccountName: daemon.AccountName, DisplayName: daemon.DisplayName, DeviceId: daemon.DeviceID, DeviceFingerprint: daemon.DeviceFingerprint, Revoked: daemon.Revoked, Revision: daemon.Revision, CreatedAt: timestamppb.New(daemon.CreatedAt), UpdatedAt: timestamppb.New(daemon.UpdatedAt)}
+	return &cloudv1.DaemonRecord{DaemonId: daemon.ID, AccountId: daemon.AccountID, AccountName: daemon.AccountName, DisplayName: daemon.DisplayName, DeviceId: daemon.DeviceID, DeviceFingerprint: daemon.DeviceFingerprint, State: daemon.State, StateRevision: daemon.StateRevision, CreatedAt: timestamppb.New(daemon.CreatedAt), UpdatedAt: timestamppb.New(daemon.UpdatedAt)}
 }

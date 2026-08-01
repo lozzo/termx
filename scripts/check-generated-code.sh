@@ -57,10 +57,10 @@ cloud_proto=(
   proto/cloud/v1/certificate.proto
   proto/cloud/v1/edge_config.proto
   proto/cloud/v1/runtime.proto
+  proto/cloud/v1/enrollment.proto
   proto/cloud/v1/usage.proto
   proto/cloud/v1/edge_control.proto
   proto/cloud/v1/ticket.proto
-  proto/cloud/v1/enrollment.proto
   proto/cloud/v1/directory.proto
   proto/cloud/v1/client_gateway.proto
   proto/cloud/v1/agent_gateway.proto

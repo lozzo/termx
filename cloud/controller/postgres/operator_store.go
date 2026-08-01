@@ -59,7 +59,7 @@ const operatorAccountSummarySelect = `WITH selected_accounts AS MATERIALIZED (
     SELECT d.account_id,count(*) AS daemon_count
       FROM daemons d
       JOIN selected_accounts a ON a.account_id=d.account_id
-     WHERE d.revoked=false
+     WHERE d.state<>'deleted'
      GROUP BY d.account_id
 ), current_usage AS (
     SELECT DISTINCT ON (u.account_id)
@@ -180,7 +180,7 @@ func (database *Database) GetOperatorAccount(ctx context.Context, accountID stri
 		return nil, err
 	}
 	var daemonCount uint64
-	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM daemons WHERE account_id=$1 AND revoked=false`, accountID).Scan(&daemonCount); err != nil {
+	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM daemons WHERE account_id=$1 AND state<>'deleted'`, accountID).Scan(&daemonCount); err != nil {
 		return nil, err
 	}
 	return &cloudv1.AccountSummary{Account: record.Profile, Roles: record.Roles, DaemonCount: daemonCount, Subscription: commercial.GetSubscription(), Entitlement: commercial.GetEntitlement(), Usage: commercial.GetUsage()}, nil

@@ -378,7 +378,7 @@ func deterministicDigest(message proto.Message) ([]byte, error) {
 }
 
 func validateDaemonBinding(claims *cloudv1.DaemonBindingClaims, now time.Time, skew time.Duration) error {
-	if claims == nil || strings.TrimSpace(claims.GetBindingId()) == "" || strings.TrimSpace(claims.GetDaemonId()) == "" || claims.GetRevision() == 0 ||
+	if claims == nil || strings.TrimSpace(claims.GetBindingId()) == "" || strings.TrimSpace(claims.GetDaemonId()) == "" ||
 		strings.TrimSpace(claims.GetAccountId()) == "" || strings.TrimSpace(claims.GetEdgeId()) == "" || strings.TrimSpace(claims.GetDeviceId()) == "" ||
 		len(claims.GetDevicePublicKey()) != ed25519.PublicKeySize || len(claims.GetEdgeLocatorSha256()) != sha256.Size || claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil ||
 		claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) {

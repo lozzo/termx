@@ -12,10 +12,10 @@ import (
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
-// ManagementStore 是用户自助 daemon 查询和撤销的持久边界；实时 Presence 不得写入该接口。
+// ManagementStore 是用户自助 daemon 查询和生命周期变更的持久边界。
 type ManagementStore interface {
 	ListDaemonsByAccount(context.Context, string) ([]Daemon, error)
-	RevokeDaemon(context.Context, string, string, uint64, string, time.Time) (Daemon, error)
+	ChangeDaemonState(context.Context, string, string, cloudv1.DaemonState, uint64, string, time.Time) (Daemon, error)
 }
 
 // ManagementConfig 固定用户 daemon API 所需的持久 owner、Directory、控制流和命令前缀。
@@ -74,24 +74,21 @@ func (service *ManagementService) ListMyDaemons(ctx context.Context, _ *cloudv1.
 	return &cloudv1.ListMyDaemonsResponse{Daemons: managed}, nil
 }
 
-// RevokeMyDaemon 先提交持久撤销，再对撤销前捕获的当前 generation 发一次 best-effort 断开。
-func (service *ManagementService) RevokeMyDaemon(ctx context.Context, request *cloudv1.RevokeMyDaemonRequest) (*cloudv1.RevokeMyDaemonResponse, error) {
+// ChangeMyDaemonState 先提交持久状态，再广播给所有在线 Edge。
+func (service *ManagementService) ChangeMyDaemonState(ctx context.Context, request *cloudv1.ChangeMyDaemonStateRequest) (*cloudv1.ChangeMyDaemonStateResponse, error) {
 	identity, ok := account.IdentityFromContext(ctx)
-	if !ok || request == nil || strings.TrimSpace(request.GetDaemonId()) == "" || request.GetExpectedRevision() == 0 || strings.TrimSpace(request.GetReason()) == "" {
+	if !ok {
 		return nil, account.ErrUnauthenticated
 	}
-	location, online, err := service.config.Directory.LocateDaemon(ctx, request.GetDaemonId())
+	if request == nil || strings.TrimSpace(request.GetDaemonId()) == "" || request.GetExpectedStateRevision() == 0 || strings.TrimSpace(request.GetReason()) == "" ||
+		request.GetTargetState() != cloudv1.DaemonState_DAEMON_STATE_ACTIVE && request.GetTargetState() != cloudv1.DaemonState_DAEMON_STATE_BLOCKED && request.GetTargetState() != cloudv1.DaemonState_DAEMON_STATE_DELETED {
+		return nil, ErrDaemonUnavailable
+	}
+	daemon, err := service.config.Store.ChangeDaemonState(ctx, identity.Account.GetAccountId(), request.GetDaemonId(), request.GetTargetState(), request.GetExpectedStateRevision(), strings.TrimSpace(request.GetReason()), service.config.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
-	daemon, err := service.config.Store.RevokeDaemon(ctx, identity.Account.GetAccountId(), request.GetDaemonId(), request.GetExpectedRevision(), strings.TrimSpace(request.GetReason()), service.config.Now().UTC())
-	if err != nil {
-		return nil, err
-	}
-	applied := false
-	if online {
-		result := service.config.Control.DisconnectDaemon(ctx, daemon.ID, location.Generation, "daemon identity revoked by account owner")
-		applied = result == cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_APPLIED
-	}
-	return &cloudv1.RevokeMyDaemonResponse{Daemon: projectDaemon(daemon), RuntimeWasOnline: online, RuntimeDisconnectApplied: applied}, nil
+	record := &cloudv1.DaemonStateRecord{DaemonId: daemon.ID, State: daemon.State, StateRevision: daemon.StateRevision}
+	service.config.Control.BroadcastDaemonState(record)
+	return &cloudv1.ChangeMyDaemonStateResponse{Daemon: projectDaemon(daemon)}, nil
 }

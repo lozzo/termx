@@ -13,10 +13,10 @@ import (
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
-func TestDaemonManagementDerivesAccountForEnrollmentAndRevoke(t *testing.T) {
+func TestDaemonManagementDerivesAccountForEnrollmentAndStateChange(t *testing.T) {
 	now := time.Unix(3_000, 0).UTC()
 	enrollments := &managementEnrollmentStoreFake{}
-	persistent := &managementStoreFake{daemon: Daemon{ID: "daemon-a", AccountID: "11111111-1111-1111-1111-111111111111", DisplayName: "开发 Mac", Revision: 4}}
+	persistent := &managementStoreFake{daemon: Daemon{ID: "daemon-a", AccountID: "11111111-1111-1111-1111-111111111111", DisplayName: "开发 Mac", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 4}}
 	runtimeDirectory, err := directory.New(directory.Config{MailboxSize: 8, GracePeriod: 0})
 	if err != nil {
 		t.Fatal(err)
@@ -43,17 +43,17 @@ func TestDaemonManagementDerivesAccountForEnrollmentAndRevoke(t *testing.T) {
 		t.Fatal("enrollment command is empty")
 	}
 
-	revoked, err := service.RevokeMyDaemon(ctx, &cloudv1.RevokeMyDaemonRequest{DaemonId: "daemon-a", ExpectedRevision: 4, Reason: "  设备退役  "})
+	changed, err := service.ChangeMyDaemonState(ctx, &cloudv1.ChangeMyDaemonStateRequest{DaemonId: "daemon-a", TargetState: cloudv1.DaemonState_DAEMON_STATE_BLOCKED, ExpectedStateRevision: 4, Reason: "  暂停服务  "})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if persistent.accountID != "11111111-1111-1111-1111-111111111111" || persistent.reason != "设备退役" || revoked.GetRuntimeWasOnline() || revoked.GetRuntimeDisconnectApplied() {
-		t.Fatalf("revoke account=%q reason=%q response=%+v", persistent.accountID, persistent.reason, revoked)
+	if persistent.accountID != "11111111-1111-1111-1111-111111111111" || persistent.reason != "暂停服务" || changed.GetDaemon().GetState() != cloudv1.DaemonState_DAEMON_STATE_BLOCKED {
+		t.Fatalf("change account=%q reason=%q response=%+v", persistent.accountID, persistent.reason, changed)
 	}
 
 	other := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "22222222-2222-2222-2222-222222222222"}, SessionID: "session-b"})
-	if _, err := service.RevokeMyDaemon(other, &cloudv1.RevokeMyDaemonRequest{DaemonId: "daemon-a", ExpectedRevision: 4, Reason: "越权"}); !errors.Is(err, errManagementOwnership) {
-		t.Fatalf("cross-account revoke error=%v", err)
+	if _, err := service.ChangeMyDaemonState(other, &cloudv1.ChangeMyDaemonStateRequest{DaemonId: "daemon-a", TargetState: cloudv1.DaemonState_DAEMON_STATE_DELETED, ExpectedStateRevision: 5, Reason: "越权"}); !errors.Is(err, errManagementOwnership) {
+		t.Fatalf("cross-account change error=%v", err)
 	}
 }
 
@@ -84,16 +84,16 @@ func (store *managementStoreFake) ListDaemonsByAccount(_ context.Context, accoun
 	}
 	return []Daemon{store.daemon}, nil
 }
-func (store *managementStoreFake) RevokeDaemon(_ context.Context, accountID, daemonID string, expectedRevision uint64, reason string, now time.Time) (Daemon, error) {
+func (store *managementStoreFake) ChangeDaemonState(_ context.Context, accountID, daemonID string, target cloudv1.DaemonState, expectedRevision uint64, reason string, now time.Time) (Daemon, error) {
 	store.accountID, store.reason = accountID, reason
 	if accountID != store.daemon.AccountID || daemonID != store.daemon.ID {
 		return Daemon{}, errManagementOwnership
 	}
-	if expectedRevision != store.daemon.Revision {
+	if expectedRevision != store.daemon.StateRevision {
 		return Daemon{}, errors.New("revision conflict")
 	}
-	store.daemon.Revoked = true
-	store.daemon.Revision++
+	store.daemon.State = target
+	store.daemon.StateRevision++
 	store.daemon.UpdatedAt = now
 	return store.daemon, nil
 }

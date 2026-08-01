@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestConsumeDaemonEnrollmentReactivatesSameDeviceIdentity(t *testing.T) {
+func TestConsumeDaemonEnrollmentCreatesNewIdentityAfterDelete(t *testing.T) {
 	databaseURL := os.Getenv("ANYTTY_CLOUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("ANYTTY_CLOUD_TEST_DATABASE_URL is not set")
@@ -62,34 +62,37 @@ func TestConsumeDaemonEnrollmentReactivatesSameDeviceIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoked, err := database.RevokeDaemon(ctx, accountID, first.ID, first.Revision, "test re-enrollment", now.Add(time.Minute))
-	if err != nil || !revoked.Revoked {
-		t.Fatalf("revoke daemon=%+v err=%v", revoked, err)
+	blocked, err := database.ChangeDaemonState(ctx, accountID, first.ID, cloudv1.DaemonState_DAEMON_STATE_BLOCKED, first.StateRevision, "test block", now.Add(time.Minute))
+	if err != nil || blocked.State != cloudv1.DaemonState_DAEMON_STATE_BLOCKED {
+		t.Fatalf("block daemon=%+v err=%v", blocked, err)
 	}
 	secondDigest := sha256.Sum256([]byte("second-" + uuid.NewString()))
 	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "", "Restored name", secondDigest[:], now.Add(time.Hour), now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, fingerprint, publicKey, now.Add(2*time.Minute))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, fingerprint, publicKey, now.Add(2*time.Minute)); !errors.Is(err, enrollment.ErrDaemonIdentityConflict) {
+		t.Fatalf("blocked daemon was replaced: %v", err)
 	}
-	if restored.ID != first.ID || restored.Revoked || restored.Revision != revoked.Revision+1 || restored.DisplayName != "Restored name" || !restored.CreatedAt.Equal(first.CreatedAt) {
-		t.Fatalf("restored daemon=%+v first=%+v revoked=%+v", restored, first, revoked)
+	deleted, err := database.ChangeDaemonState(ctx, accountID, first.ID, cloudv1.DaemonState_DAEMON_STATE_DELETED, blocked.StateRevision, "test delete", now.Add(3*time.Minute))
+	if err != nil || deleted.State != cloudv1.DaemonState_DAEMON_STATE_DELETED {
+		t.Fatalf("delete daemon=%+v err=%v", deleted, err)
+	}
+	restored, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, fingerprint, publicKey, now.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("enroll after delete: %v", err)
+	}
+	if restored.ID == first.ID || restored.State != cloudv1.DaemonState_DAEMON_STATE_ACTIVE || restored.StateRevision != 1 || restored.DisplayName != "Restored name" {
+		t.Fatalf("new daemon=%+v deleted=%+v", restored, deleted)
 	}
 	thirdDigest := sha256.Sum256([]byte("third-" + uuid.NewString()))
-	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "", "Latest name", thirdDigest[:], now.Add(time.Hour), now.Add(3*time.Minute)); err != nil {
+	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "", "Latest name", thirdDigest[:], now.Add(time.Hour), now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	latest, err := database.ConsumeDaemonEnrollment(ctx, thirdDigest[:], deviceID, fingerprint, publicKey, now.Add(3*time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if latest.ID != first.ID || latest.Revoked || latest.Revision != restored.Revision+1 || latest.DisplayName != "Latest name" {
-		t.Fatalf("latest daemon=%+v restored=%+v", latest, restored)
+	if _, err := database.ConsumeDaemonEnrollment(ctx, thirdDigest[:], deviceID, fingerprint, publicKey, now.Add(5*time.Minute)); !errors.Is(err, enrollment.ErrDaemonIdentityConflict) {
+		t.Fatalf("active daemon was replaced: %v", err)
 	}
 	daemons, err := database.ListDaemonsByAccount(ctx, accountID)
-	if err != nil || len(daemons) != 1 || daemons[0].ID != first.ID {
+	if err != nil || len(daemons) != 1 || daemons[0].ID != restored.ID {
 		t.Fatalf("account daemons=%+v err=%v", daemons, err)
 	}
 	if _, err := database.ConsumeDaemonEnrollment(ctx, secondDigest[:], deviceID, fingerprint, publicKey, now.Add(3*time.Minute)); !errors.Is(err, enrollment.ErrEnrollmentInvalid) {

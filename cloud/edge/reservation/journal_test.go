@@ -190,7 +190,7 @@ func journalRequestAndGrant(t *testing.T, now time.Time) (*cloudv1.RelayReserveR
 		t.Fatal(err)
 	}
 	request.RequestDigest = requestDigest
-	policy := &cloudv1.RelayPolicySnapshot{AccountId: request.GetAccountId(), AccountRevision: 1, AccountState: "active", SubscriptionId: uuid.NewString(), SubscriptionRevision: 1, SubscriptionState: "active", PeriodStart: timestamppb.New(now.Add(-time.Hour)), PeriodEnd: timestamppb.New(now.Add(time.Hour)), PlanId: "plan", PlanVersion: 1, PlanRevision: 1, RelayEnabled: true, RelayMaxBytesPerPeriod: 1000, RelayMaxBytesPerSession: 100, RelayMaxRateBytesPerSecond: 1000, RelayMaxConcurrency: 2, AllowedRegions: []string{"test"}, EdgeId: uuid.NewString(), EdgeRevision: 1, EdgeEnabled: true, EdgeRegion: "test", DaemonId: request.GetDaemonId(), DaemonRevision: 1}
+	policy := &cloudv1.RelayPolicySnapshot{AccountId: request.GetAccountId(), AccountRevision: 1, AccountState: "active", SubscriptionId: uuid.NewString(), SubscriptionRevision: 1, SubscriptionState: "active", PeriodStart: timestamppb.New(now.Add(-time.Hour)), PeriodEnd: timestamppb.New(now.Add(time.Hour)), PlanId: "plan", PlanVersion: 1, PlanRevision: 1, RelayEnabled: true, RelayMaxBytesPerPeriod: 1000, RelayMaxBytesPerSession: 100, RelayMaxRateBytesPerSecond: 1000, RelayMaxConcurrency: 2, AllowedRegions: []string{"test"}, EdgeId: uuid.NewString(), EdgeRevision: 1, EdgeEnabled: true, EdgeRegion: "test", DaemonId: request.GetDaemonId(), DaemonStateRevision: 1}
 	policyDigest, err := relayquota.PolicyDigest(policy)
 	if err != nil {
 		t.Fatal(err)

@@ -77,8 +77,11 @@ func (service *Service) BeginClientRoute(ctx context.Context, request *cloudv1.B
 		return nil, status.Error(codes.Unauthenticated, "CloudRouteGrant payload is invalid")
 	}
 	daemon, err := service.config.Store.GetDaemon(ctx, strings.TrimSpace(unverified.GetDaemonId()))
-	if err != nil || daemon.Revoked {
+	if err != nil {
 		return nil, status.Error(codes.NotFound, "daemon is unavailable")
+	}
+	if err := requireActiveDaemon(daemon); err != nil {
+		return nil, err
 	}
 	claims, err := ticket.VerifyCloudRouteGrant(grant, daemon.DevicePublicKey, daemon.ID, service.now())
 	if err != nil {
@@ -117,6 +120,13 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 	current, found, locateErr := service.config.Directory.LocateDaemon(ctx, state.daemon.ID)
 	if locateErr != nil || !found || current != state.location {
 		return nil, status.Error(codes.FailedPrecondition, "daemon Presence changed during route resolution")
+	}
+	daemon, err := service.config.Store.GetDaemon(ctx, state.daemon.ID)
+	if err != nil || daemon.StateRevision != state.daemon.StateRevision {
+		return nil, status.Error(codes.FailedPrecondition, "DAEMON_STATE_CHANGED")
+	}
+	if err := requireActiveDaemon(daemon); err != nil {
+		return nil, err
 	}
 	edge, err := service.config.Edges.GetEdge(ctx, current.EdgeID)
 	if err != nil || !edge.Enabled {
@@ -160,3 +170,16 @@ func (service *Service) compactLocked(now time.Time) {
 }
 
 func (service *Service) now() time.Time { return service.config.Now().UTC() }
+
+func requireActiveDaemon(daemon enrollment.Daemon) error {
+	switch daemon.State {
+	case cloudv1.DaemonState_DAEMON_STATE_ACTIVE:
+		return nil
+	case cloudv1.DaemonState_DAEMON_STATE_BLOCKED:
+		return status.Error(codes.PermissionDenied, "DAEMON_BLOCKED")
+	case cloudv1.DaemonState_DAEMON_STATE_DELETED:
+		return status.Error(codes.NotFound, "DAEMON_DELETED")
+	default:
+		return status.Error(codes.FailedPrecondition, "DAEMON_STATE_UNAVAILABLE")
+	}
+}

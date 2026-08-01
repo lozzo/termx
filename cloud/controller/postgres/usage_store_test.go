@@ -399,7 +399,7 @@ func TestRelayReservationIdentityAndRenewSequence(t *testing.T) {
 	}
 }
 
-func TestRelayRevokeInterleavingAndOldPeriodSettlement(t *testing.T) {
+func TestRelayBlockInterleavingAndOldPeriodSettlement(t *testing.T) {
 	database, ctx := relayTestDatabase(t)
 	now := time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
 	fixture := seedRelayFixture(t, ctx, database, now, 1000, 100, 3)
@@ -408,7 +408,7 @@ func TestRelayRevokeInterleavingAndOldPeriodSettlement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE daemons SET revoked=true,revision=revision+1,updated_at=$1 WHERE account_id=$2 AND daemon_id=$3`, now, fixture.accountID, fixture.daemonID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE daemons SET state='blocked',state_revision=state_revision+1,updated_at=$1 WHERE account_id=$2 AND daemon_id=$3`, now, fixture.accountID, fixture.daemonID); err != nil {
 		t.Fatal(err)
 	}
 	started := make(chan struct{})
@@ -437,7 +437,7 @@ func TestRelayRevokeInterleavingAndOldPeriodSettlement(t *testing.T) {
 		}
 	}
 
-	if _, err := database.pool.Exec(ctx, `UPDATE daemons SET revoked=false,revision=revision+1,updated_at=$1 WHERE daemon_id=$2`, now, fixture.daemonID); err != nil {
+	if _, err := database.pool.Exec(ctx, `UPDATE daemons SET state='active',state_revision=state_revision+1,updated_at=$1 WHERE daemon_id=$2`, now, fixture.daemonID); err != nil {
 		t.Fatal(err)
 	}
 	oldRequest := newReserveRequest(t, fixture, uuid.NewString(), uuid.NewString(), now)
@@ -585,7 +585,7 @@ func seedRelayFixture(t *testing.T, ctx context.Context, database *Database, now
 		{`INSERT INTO plans(plan_id,version,catalog_version,name,description,state,billing_period_days,managed_p2p_enabled,managed_p2p_max_concurrency,relay_enabled,relay_max_concurrency,relay_max_bytes_per_period,relay_max_bytes_per_lease,relay_max_rate_bytes_per_second,cloud_daemon_limit,allowed_regions,revision,created_at,published_at) VALUES($1,1,1,'relay test','relay test','published',30,true,1,true,$2,$3,$4,1000,1,ARRAY['test'],1,$5,$5)`, []any{fixture.planID, concurrency, quota, maxSession, now}},
 		{`INSERT INTO plan_prices(plan_id,plan_version,billing_cycle,currency,minor_units) VALUES($1,1,'monthly','USD',100),($1,1,'yearly','USD',1000)`, []any{fixture.planID}},
 		{`INSERT INTO subscriptions(subscription_id,account_id,plan_id,plan_version,state,cancel_at_period_end,period_start,period_end,revision,updated_at) VALUES($1,$2,$3,1,'active',false,$4,$5,1,$6)`, []any{fixture.subscriptionID, fixture.accountID, fixture.planID, fixture.periodStart, fixture.periodEnd, now}},
-		{`INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,revoked,revision,created_at,updated_at) VALUES($1,$2,'relay test',$3,$4,$5,false,1,$6,$6)`, []any{fixture.daemonID, fixture.accountID, "device-" + uuid.NewString(), make([]byte, 32), "fingerprint-" + uuid.NewString(), now}},
+		{`INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,state,state_revision,created_at,updated_at) VALUES($1,$2,'relay test',$3,$4,$5,'active',1,$6,$6)`, []any{fixture.daemonID, fixture.accountID, "device-" + uuid.NewString(), make([]byte, 32), "fingerprint-" + uuid.NewString(), now}},
 	}
 	for _, statement := range statements {
 		if _, err := tx.Exec(ctx, statement.sql, statement.args...); err != nil {

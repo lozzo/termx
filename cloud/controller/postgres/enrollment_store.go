@@ -7,10 +7,11 @@ import (
 	"errors"
 	"time"
 
+	"github.com/anytty/anytty/cloud/controller/enrollment"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/anytty/anytty/cloud/controller/enrollment"
 )
 
 // CreateDaemonEnrollment 只为已存在的活动账号写入一次性 token 摘要，不隐式创建残缺账号。
@@ -36,8 +37,8 @@ func (database *Database) CreateDaemonEnrollment(ctx context.Context, accountID,
 	return accountID, nil
 }
 
-// ConsumeDaemonEnrollment 原子消费注册 token，并让同一 DeviceIdentity 的后一次 enrollment 接管原 daemon。
-// 重复注册保留 daemon_id/created_at，清除 revoked，并更新账号、名称和 revision；相同 device_id 不能更换公钥。
+// ConsumeDaemonEnrollment 原子消费注册 token，并为当前未注册的 DeviceIdentity 创建新 daemon。
+// DELETED 行是旧 daemon_id 的永久墓碑，不会被重新激活。
 func (database *Database) ConsumeDaemonEnrollment(ctx context.Context, digest []byte, deviceID, fingerprint string, publicKey ed25519.PublicKey, now time.Time) (enrollment.Daemon, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
@@ -52,27 +53,16 @@ func (database *Database) ConsumeDaemonEnrollment(ctx context.Context, digest []
 		return enrollment.Daemon{}, err
 	}
 	daemonID := uuid.NewString()
-	var resolvedDaemonID string
-	err = tx.QueryRow(ctx, `
-INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,revoked,revision,created_at,updated_at)
-VALUES($1,$2,$3,$4,$5,$6,false,1,$7,$7)
-ON CONFLICT (device_id) DO UPDATE SET
-  account_id=EXCLUDED.account_id,
-  display_name=EXCLUDED.display_name,
-  revoked=false,
-  revision=daemons.revision+1,
-  updated_at=EXCLUDED.updated_at
-WHERE daemons.device_public_key=EXCLUDED.device_public_key
-  AND daemons.device_fingerprint=EXCLUDED.device_fingerprint
-RETURNING daemon_id::text`, daemonID, accountID, daemonName, deviceID, []byte(publicKey), fingerprint, now).Scan(&resolvedDaemonID)
+	err = tx.QueryRow(ctx, `INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,state,state_revision,created_at,updated_at)
+VALUES($1,$2,$3,$4,$5,$6,'active',1,$7,$7) RETURNING daemon_id::text`, daemonID, accountID, daemonName, deviceID, []byte(publicKey), fingerprint, now).Scan(&daemonID)
 	if err != nil {
 		var postgresError *pgconn.PgError
-		if errors.Is(err, pgx.ErrNoRows) || errors.As(err, &postgresError) && postgresError.Code == "23505" {
+		if errors.As(err, &postgresError) && postgresError.Code == "23505" {
 			return enrollment.Daemon{}, enrollment.ErrDaemonIdentityConflict
 		}
 		return enrollment.Daemon{}, err
 	}
-	daemon, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, resolvedDaemonID))
+	daemon, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, daemonID))
 	if err != nil {
 		return enrollment.Daemon{}, err
 	}
@@ -97,7 +87,7 @@ func (database *Database) ListDaemons(ctx context.Context) ([]enrollment.Daemon,
 
 // ListDaemonsByAccount 返回账号持久 daemon identity；在线位置仍由 Directory 合并。
 func (database *Database) ListDaemonsByAccount(ctx context.Context, accountID string) ([]enrollment.Daemon, error) {
-	return database.listDaemons(ctx, daemonSelect+` WHERE daemon.account_id=$1 ORDER BY daemon.created_at,daemon.daemon_id`, accountID)
+	return database.listDaemons(ctx, daemonSelect+` WHERE daemon.account_id=$1 AND daemon.state<>'deleted' ORDER BY daemon.created_at,daemon.daemon_id`, accountID)
 }
 
 func (database *Database) listDaemons(ctx context.Context, query string, args ...any) ([]enrollment.Daemon, error) {
@@ -117,21 +107,25 @@ func (database *Database) listDaemons(ctx context.Context, query string, args ..
 	return result, rows.Err()
 }
 
-// RevokeDaemon 用账号归属和 revision CAS 持久撤销 identity，并在同一事务写入审计。
-func (database *Database) RevokeDaemon(ctx context.Context, accountID, daemonID string, expectedRevision uint64, reason string, now time.Time) (enrollment.Daemon, error) {
+// ChangeDaemonState 用账号归属和 state revision CAS 提交生命周期变化。
+func (database *Database) ChangeDaemonState(ctx context.Context, accountID, daemonID string, target cloudv1.DaemonState, expectedRevision uint64, reason string, now time.Time) (enrollment.Daemon, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return enrollment.Daemon{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	result, err := tx.Exec(ctx, `UPDATE daemons SET revoked=true,revision=revision+1,updated_at=$1 WHERE daemon_id=$2 AND account_id=$3 AND revision=$4 AND revoked=false`, now, daemonID, accountID, expectedRevision)
-	if err != nil {
-		return enrollment.Daemon{}, err
-	}
-	if result.RowsAffected() != 1 {
+	current, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1 AND daemon.account_id=$2 FOR UPDATE OF daemon`, daemonID, accountID))
+	if err != nil || current.StateRevision != expectedRevision || !validDaemonStateTransition(current.State, target) {
 		return enrollment.Daemon{}, enrollment.ErrDaemonUnavailable
 	}
-	if err := insertOperatorAudit(ctx, tx, accountID, "daemon.revoke", "daemon", daemonID, reason, "applied", now); err != nil {
+	state, err := daemonStateName(target)
+	if err != nil {
+		return enrollment.Daemon{}, enrollment.ErrDaemonUnavailable
+	}
+	if _, err := tx.Exec(ctx, `UPDATE daemons SET state=$1,state_revision=state_revision+1,updated_at=$2 WHERE daemon_id=$3`, state, now, daemonID); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	if err := insertOperatorAudit(ctx, tx, accountID, "daemon.state.change", "daemon", daemonID, reason, "applied", now); err != nil {
 		return enrollment.Daemon{}, err
 	}
 	daemon, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, daemonID))
@@ -144,14 +138,50 @@ func (database *Database) RevokeDaemon(ctx context.Context, accountID, daemonID 
 	return daemon, nil
 }
 
-const daemonSelect = `SELECT daemon.daemon_id::text,daemon.account_id::text,account.display_name,daemon.display_name,daemon.device_id,daemon.device_public_key,daemon.device_fingerprint,daemon.revoked,daemon.revision,daemon.created_at,daemon.updated_at FROM daemons daemon JOIN accounts account ON account.account_id=daemon.account_id`
+const daemonSelect = `SELECT daemon.daemon_id::text,daemon.account_id::text,account.display_name,daemon.display_name,daemon.device_id,daemon.device_public_key,daemon.device_fingerprint,daemon.state,daemon.state_revision,daemon.created_at,daemon.updated_at FROM daemons daemon JOIN accounts account ON account.account_id=daemon.account_id`
 
 func scanDaemon(row rowScanner) (enrollment.Daemon, error) {
 	var daemon enrollment.Daemon
 	var publicKey []byte
-	if err := row.Scan(&daemon.ID, &daemon.AccountID, &daemon.AccountName, &daemon.DisplayName, &daemon.DeviceID, &publicKey, &daemon.DeviceFingerprint, &daemon.Revoked, &daemon.Revision, &daemon.CreatedAt, &daemon.UpdatedAt); err != nil {
+	var state string
+	if err := row.Scan(&daemon.ID, &daemon.AccountID, &daemon.AccountName, &daemon.DisplayName, &daemon.DeviceID, &publicKey, &daemon.DeviceFingerprint, &state, &daemon.StateRevision, &daemon.CreatedAt, &daemon.UpdatedAt); err != nil {
 		return enrollment.Daemon{}, err
+	}
+	daemon.State = parseDaemonState(state)
+	if daemon.State == cloudv1.DaemonState_DAEMON_STATE_UNSPECIFIED {
+		return enrollment.Daemon{}, errors.New("daemon state is invalid")
 	}
 	daemon.DevicePublicKey = append(ed25519.PublicKey(nil), publicKey...)
 	return daemon, nil
+}
+
+func daemonStateName(state cloudv1.DaemonState) (string, error) {
+	switch state {
+	case cloudv1.DaemonState_DAEMON_STATE_ACTIVE:
+		return "active", nil
+	case cloudv1.DaemonState_DAEMON_STATE_BLOCKED:
+		return "blocked", nil
+	case cloudv1.DaemonState_DAEMON_STATE_DELETED:
+		return "deleted", nil
+	default:
+		return "", errors.New("daemon state is invalid")
+	}
+}
+
+func parseDaemonState(state string) cloudv1.DaemonState {
+	switch state {
+	case "active":
+		return cloudv1.DaemonState_DAEMON_STATE_ACTIVE
+	case "blocked":
+		return cloudv1.DaemonState_DAEMON_STATE_BLOCKED
+	case "deleted":
+		return cloudv1.DaemonState_DAEMON_STATE_DELETED
+	default:
+		return cloudv1.DaemonState_DAEMON_STATE_UNSPECIFIED
+	}
+}
+
+func validDaemonStateTransition(current, target cloudv1.DaemonState) bool {
+	return current == cloudv1.DaemonState_DAEMON_STATE_ACTIVE && (target == cloudv1.DaemonState_DAEMON_STATE_BLOCKED || target == cloudv1.DaemonState_DAEMON_STATE_DELETED) ||
+		current == cloudv1.DaemonState_DAEMON_STATE_BLOCKED && (target == cloudv1.DaemonState_DAEMON_STATE_ACTIVE || target == cloudv1.DaemonState_DAEMON_STATE_DELETED)
 }

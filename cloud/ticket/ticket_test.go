@@ -21,7 +21,7 @@ func TestDaemonBindingBindsEdgeAndRejectsTamper(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	claims := &cloudv1.DaemonBindingClaims{BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), Revision: 1, EdgeLocatorSha256: bytes.Repeat([]byte{0x41}, sha256.Size)}
+	claims := &cloudv1.DaemonBindingClaims{BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge-a", DeviceId: "device", DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)), EdgeLocatorSha256: bytes.Repeat([]byte{0x41}, sha256.Size)}
 	envelope, err := ticket.SignDaemonBinding("key", privateKey, claims)
 	if err != nil {
 		t.Fatal(err)

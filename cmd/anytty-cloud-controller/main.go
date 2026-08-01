@@ -235,6 +235,11 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		Store: database, Edges: edgeService, Directory: directoryState, BindingSigningKey: bindingKey, BindingSigningKeyID: config.bindingSigningKeyID,
 		Entitlement:       commerceService,
 		EdgeCACertificate: edgeCAPayload, EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, BindingTTL: 365 * 24 * time.Hour,
+		StateChanged: func(record *cloudv1.DaemonStateRecord) {
+			if service != nil {
+				service.BroadcastDaemonState(record)
+			}
+		},
 	})
 	if err != nil {
 		return err
@@ -247,13 +252,15 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	service, err = control.NewService(control.Config{
-		ControllerID:      config.controllerID,
-		ControllerBootID:  uuid.NewString(),
-		HeartbeatInterval: config.heartbeatInterval,
-		HeartbeatTimeout:  config.heartbeatTimeout,
-		Directory:         directoryState,
-		BindingKeyBundle:  bindingKeyOwner.Bundle,
-		RelayStore:        database,
+		ControllerID:        config.controllerID,
+		ControllerBootID:    uuid.NewString(),
+		HeartbeatInterval:   config.heartbeatInterval,
+		HeartbeatTimeout:    config.heartbeatTimeout,
+		Directory:           directoryState,
+		BindingKeyBundle:    bindingKeyOwner.Bundle,
+		DaemonStateSnapshot: database.DaemonStateSnapshot,
+		ResolveDaemonState:  database.ResolveDaemonState,
+		RelayStore:          database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
