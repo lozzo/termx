@@ -24,6 +24,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/account"
 	"github.com/anytty/anytty/cloud/controller/certificate"
 	"github.com/anytty/anytty/cloud/controller/commerce"
+	"github.com/anytty/anytty/cloud/controller/control"
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/controller/directoryapi"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
@@ -64,6 +65,7 @@ type Config struct {
 	ClientDirectory    *directoryapi.Service
 	Accounts           *account.Service
 	Commerce           *commerce.Service
+	Control            *control.Service
 	Operator           *operatorservice.Service
 	Certificates       *certificate.Service
 	TrustedProxyCIDRs  []netip.Prefix
@@ -86,7 +88,7 @@ type Server struct {
 // Start 验证 TLS/认证配置、绑定 listener 并启动 HTTPS。
 func Start(config Config) (*Server, error) {
 	config.ListenAddress = strings.TrimSpace(config.ListenAddress)
-	if config.ListenAddress == "" || config.Edges == nil || config.Directory == nil || config.Install == nil || config.Accounts == nil || config.Commerce == nil || config.Operator == nil || config.Certificates == nil {
+	if config.ListenAddress == "" || config.Edges == nil || config.Directory == nil || config.Install == nil || config.Accounts == nil || config.Commerce == nil || config.Control == nil || config.Operator == nil || config.Certificates == nil {
 		return nil, errors.New("HTTP listen and R7 application services are required")
 	}
 	tlsConfig, err := securetransport.NewServerTLSConfig(securetransport.ServerOptions{CertificateFile: config.TLSCertificateFile, PrivateKeyFile: config.TLSPrivateKeyFile})
@@ -171,7 +173,7 @@ func NewHandler(config Config) (http.Handler, error) {
 
 func newHandler(config Config, eventSourceShutdown <-chan struct{}) (http.Handler, error) {
 	config.PublicOrigin = strings.TrimRight(strings.TrimSpace(config.PublicOrigin), "/")
-	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Operator == nil || config.Certificates == nil {
+	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Control == nil || config.Operator == nil || config.Certificates == nil {
 		return nil, errors.New("HTTP handler and R7 application services are required")
 	}
 	if config.Logger == nil {
@@ -444,7 +446,13 @@ func (handler *handler) updateEdge(writer http.ResponseWriter, request *http.Req
 		writeError(writer, status, err)
 		return
 	}
-	runtimeProjection, _, _ := handler.config.Directory.Edge(request.Context(), edge.ID)
+	if !edge.Enabled {
+		handler.config.Control.InvalidateEdge(edge.ID)
+	}
+	runtimeProjection := directory.EdgeProjection{}
+	if edge.Enabled {
+		runtimeProjection, _, _ = handler.config.Directory.Edge(request.Context(), edge.ID)
+	}
 	binding, err := handler.config.Certificates.BindingForEdge(request.Context(), edge.ID)
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, err)

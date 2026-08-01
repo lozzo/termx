@@ -252,11 +252,15 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	service, err = control.NewService(control.Config{
-		ControllerID:        config.controllerID,
-		ControllerBootID:    uuid.NewString(),
-		HeartbeatInterval:   config.heartbeatInterval,
-		HeartbeatTimeout:    config.heartbeatTimeout,
-		Directory:           directoryState,
+		ControllerID:      config.controllerID,
+		ControllerBootID:  uuid.NewString(),
+		HeartbeatInterval: config.heartbeatInterval,
+		HeartbeatTimeout:  config.heartbeatTimeout,
+		Directory:         directoryState,
+		EdgeEnabled: func(ctx context.Context, edgeID string) (bool, error) {
+			edge, err := edgeService.GetEdge(ctx, edgeID)
+			return edge.Enabled, err
+		},
 		BindingKeyBundle:    bindingKeyOwner.Bundle,
 		DaemonStateSnapshot: database.DaemonStateSnapshot,
 		ResolveDaemonState:  database.ResolveDaemonState,
@@ -293,7 +297,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService, Certificates: certificateService, TrustedProxyCIDRs: config.trustedProxyCIDRs, Logger: logger})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Control: service, Operator: operatorService, Certificates: certificateService, TrustedProxyCIDRs: config.trustedProxyCIDRs, Logger: logger})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()

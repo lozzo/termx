@@ -36,6 +36,7 @@ type Config struct {
 	HeartbeatTimeout    time.Duration
 	BindingKeyBundle    func(context.Context) (*cloudv1.KeyBundle, error)
 	Directory           *directory.Directory
+	EdgeEnabled         func(context.Context, string) (bool, error)
 	DesiredConfig       func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
 	DesiredCertificate  func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
 	CertificateApplied  func(context.Context, string, *cloudv1.CertificateApplied) error
@@ -71,6 +72,7 @@ type externalCommand struct {
 }
 
 type connectionGeneration struct {
+	edgeID       string
 	external     chan externalCommand
 	invalidated  chan struct{}
 	invalidateMu sync.Once
@@ -84,8 +86,8 @@ func (generation *connectionGeneration) invalidate() {
 func NewService(config Config) (*Service, error) {
 	config.ControllerID = strings.TrimSpace(config.ControllerID)
 	config.ControllerBootID = strings.TrimSpace(config.ControllerBootID)
-	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil || config.DaemonStateSnapshot == nil || config.ResolveDaemonState == nil {
-		return nil, errors.New("controller ID, boot ID, Directory, binding keys, and daemon state providers are required")
+	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil || config.EdgeEnabled == nil || config.DaemonStateSnapshot == nil || config.ResolveDaemonState == nil {
+		return nil, errors.New("controller ID, boot ID, Directory, Edge admission, binding keys, and daemon state providers are required")
 	}
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
@@ -149,7 +151,7 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	defer service.config.Directory.Detach(event.GetConnectionId())
 	bootID := event.GetBootId()
 	connectionID := event.GetConnectionId()
-	generation := &connectionGeneration{external: make(chan externalCommand, 64), invalidated: make(chan struct{})}
+	generation := &connectionGeneration{edgeID: certificateEdgeID, external: make(chan externalCommand, 64), invalidated: make(chan struct{})}
 	service.connectionsMu.Lock()
 	service.connections[connectionID] = generation
 	service.edgeConnections[certificateEdgeID] = connectionID
@@ -162,6 +164,13 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		}
 		service.connectionsMu.Unlock()
 	}()
+	enabled, err := service.config.EdgeEnabled(stream.Context(), certificateEdgeID)
+	if err != nil {
+		return status.Errorf(codes.FailedPrecondition, "load Edge admission state: %v", err)
+	}
+	if !enabled {
+		return status.Error(codes.PermissionDenied, "Edge is disabled")
+	}
 
 	commandSeq := uint64(1)
 	bindingBundle, err := service.config.BindingKeyBundle(stream.Context())
@@ -513,6 +522,29 @@ func (service *Service) BroadcastDaemonState(record *cloudv1.DaemonStateRecord) 
 		default:
 			generation.invalidate()
 		}
+	}
+}
+
+// InvalidateEdge removes every admitted generation before asking its handler to stop.
+// A later connection must pass the durable Edge enabled check before receiving state.
+func (service *Service) InvalidateEdge(edgeID string) {
+	edgeID = strings.TrimSpace(edgeID)
+	if edgeID == "" {
+		return
+	}
+	service.connectionsMu.Lock()
+	generations := make([]*connectionGeneration, 0)
+	for connectionID, generation := range service.connections {
+		if generation.edgeID != edgeID {
+			continue
+		}
+		delete(service.connections, connectionID)
+		generations = append(generations, generation)
+	}
+	delete(service.edgeConnections, edgeID)
+	service.connectionsMu.Unlock()
+	for _, generation := range generations {
+		generation.invalidate()
 	}
 }
 

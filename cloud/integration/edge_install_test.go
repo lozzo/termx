@@ -109,7 +109,11 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	controlService, err := control.NewService(control.Config{ControllerID: "controller-test", ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, BindingKeyBundle: testBindingKeyBundleProvider(), Directory: directoryState})
+	controlService, err := control.NewService(control.Config{
+		ControllerID: "controller-test", ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second,
+		BindingKeyBundle: testBindingKeyBundleProvider(), Directory: directoryState, EdgeEnabled: integrationEdgeEnabled,
+		DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +133,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := apihttp.NewHandler(apihttp.Config{PublicOrigin: "https://controller.example.com:18444", Edges: edges, Directory: directoryState, Install: installer, Enrollment: enrollmentService, Accounts: accounts, Commerce: commercial, Operator: operatorService, Certificates: certificateService})
+	handler, err := apihttp.NewHandler(apihttp.Config{PublicOrigin: "https://controller.example.com:18444", Edges: edges, Directory: directoryState, Install: installer, Enrollment: enrollmentService, Accounts: accounts, Commerce: commercial, Control: controlService, Operator: operatorService, Certificates: certificateService})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -302,6 +302,28 @@ func TestControllerRejectsHelloIdentityMismatch(t *testing.T) {
 	}
 }
 
+func TestControllerRejectsDisabledEdgeBeforeWelcome(t *testing.T) {
+	certificates := newCertificateFiles(t, testEdgeID)
+	controllerRuntime := startControllerWithAdmission(t, certificates, nil, func(context.Context, string) (bool, error) { return false, nil })
+	tlsConfig, err := securetransport.NewClientTLSConfig(securetransport.ClientOptions{
+		CertificateFile: certificates.edgeIdentityCert, PrivateKeyFile: certificates.edgeIdentityKey,
+		RootCAFile: certificates.rootCA, ServerName: testControllerServer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	openContext, cancelOpen := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelOpen()
+	_, err = controllerlink.Open(openContext, controllerlink.Config{
+		ControllerAddress: controllerRuntime.GRPCAddress(), TLSConfig: tlsConfig, EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: testEdgeSoftwareVersion,
+		OpenRuntimeFeed: emptyRuntimeFeed, ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
+		ApplyDaemonStateSnapshot: ignoreDaemonStateSnapshot, ApplyDaemonStateDelta: ignoreDaemonStateDelta,
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("disabled Edge admission code = %s, want PermissionDenied; error: %v", status.Code(err), err)
+	}
+}
+
 func TestEdgeStaysAliveButNotReadyWhileControllerIsUnavailable(t *testing.T) {
 	certificates := newCertificateFiles(t, testEdgeID)
 	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
@@ -389,6 +411,10 @@ func startController(t *testing.T, certificates certificateFiles) *controllerHar
 }
 
 func startControllerWithDesired(t *testing.T, certificates certificateFiles, desired func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)) *controllerHarness {
+	return startControllerWithAdmission(t, certificates, desired, integrationEdgeEnabled)
+}
+
+func startControllerWithAdmission(t *testing.T, certificates certificateFiles, desired func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error), edgeEnabled func(context.Context, string) (bool, error)) *controllerHarness {
 	t.Helper()
 	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
 	if err != nil {
@@ -401,6 +427,7 @@ func startControllerWithDesired(t *testing.T, certificates certificateFiles, des
 		HeartbeatTimeout:    3 * time.Second,
 		Directory:           directoryState,
 		BindingKeyBundle:    testBindingKeyBundleProvider(),
+		EdgeEnabled:         edgeEnabled,
 		DaemonStateSnapshot: integrationDaemonStateSnapshot,
 		ResolveDaemonState:  integrationDaemonStateResolver,
 		DesiredConfig:       desired,
@@ -429,6 +456,8 @@ func startControllerWithDesired(t *testing.T, certificates certificateFiles, des
 	})
 	return &controllerHarness{Runtime: runtime, directory: directoryState, control: service}
 }
+
+func integrationEdgeEnabled(context.Context, string) (bool, error) { return true, nil }
 
 func integrationDaemonStateSnapshot(context.Context) (*cloudv1.DaemonStateSnapshot, error) {
 	return &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{
