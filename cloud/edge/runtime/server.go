@@ -905,7 +905,7 @@ func validateConfig(config Config) error {
 }
 
 func (runtime *Runtime) relayBroker() clientgateway.RelayBroker {
-	if runtime.credentialDeriver == nil || runtime.relayJournal == nil || runtime.relayServer == nil || runtime.RelayDegraded() {
+	if runtime.credentialDeriver == nil || runtime.relayJournal == nil || runtime.RelayDegraded() {
 		return nil
 	}
 	return runtime

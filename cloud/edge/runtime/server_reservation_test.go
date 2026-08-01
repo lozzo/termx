@@ -41,6 +41,16 @@ func TestRequestRelayPersistsRequestedBeforeSendAndExposedBeforeReturn(t *testin
 	}
 }
 
+func TestRelayBrokerIsAvailableBeforeRelayListenerIsAssigned(t *testing.T) {
+	runtime := newReservationRuntime(t, time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC))
+	if runtime.relayServer != nil {
+		t.Fatal("test runtime unexpectedly has a Relay listener")
+	}
+	if runtime.relayBroker() == nil {
+		t.Fatal("Relay broker was disabled during ClientGateway composition")
+	}
+}
+
 func TestReplayWaitsForInFlightReserveAndRefreshesDurableStage(t *testing.T) {
 	now := time.Date(2026, 7, 31, 2, 3, 4, 0, time.UTC)
 	runtime := newReservationRuntime(t, now)
