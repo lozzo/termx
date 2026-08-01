@@ -1052,6 +1052,10 @@ func apiError(err error) *apipb.ApiError {
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED, "client resource capacity is exhausted"
 		case clientruntime.ErrorEntitlement:
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, "Relay is not included in the current AnyTTY Cloud plan"
+		case clientruntime.ErrorDaemonBlocked:
+			code, message, retryable = apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED, "daemon Cloud access is temporarily disabled", true
+		case clientruntime.ErrorDaemonDeleted:
+			code, message = apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED, "daemon Cloud enrollment was deleted"
 		case clientruntime.ErrorUnavailable, clientruntime.ErrorUnsupportedRoute:
 			code, message, retryable = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, "client session is unavailable", true
 		}

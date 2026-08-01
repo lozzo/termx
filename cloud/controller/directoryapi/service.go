@@ -78,14 +78,14 @@ func (service *Service) BeginClientRoute(ctx context.Context, request *cloudv1.B
 	}
 	daemon, err := service.config.Store.GetDaemon(ctx, strings.TrimSpace(unverified.GetDaemonId()))
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "daemon is unavailable")
-	}
-	if err := requireActiveDaemon(daemon); err != nil {
-		return nil, err
+		return nil, status.Error(codes.Unauthenticated, "CloudRouteGrant signature is invalid")
 	}
 	claims, err := ticket.VerifyCloudRouteGrant(grant, daemon.DevicePublicKey, daemon.ID, service.now())
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, err.Error())
+	}
+	if err := requireActiveDaemon(daemon); err != nil {
+		return nil, err
 	}
 	location, found, err := service.config.Directory.LocateDaemon(ctx, daemon.ID)
 	if err != nil || !found {

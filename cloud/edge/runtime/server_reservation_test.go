@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -373,6 +374,46 @@ func TestReplayContinuesAfterDefinitiveRequestedRejection(t *testing.T) {
 		}
 	}
 }
+
+func TestRelayCloseFailureConvergesThroughDurableReplay(t *testing.T) {
+	now := time.Date(2026, 7, 31, 2, 3, 4, 0, time.UTC)
+	runtime := newReservationRuntime(t, now)
+	grant, _ := seedExposedReservation(t, runtime, now)
+	relay := &retryCloseRelay{}
+	runtime.relayServer = relay
+	session := newFakeRelaySession()
+	session.settle = func(value *cloudv1.RelaySettlement) (*cloudv1.RelaySettlementAck, error) {
+		return settlementAck(value, grant, now.Add(time.Second)), nil
+	}
+	runtime.controlSession = session
+
+	if err := runtime.CloseRelaySession(context.Background(), grant.GetSessionId()); err == nil {
+		t.Fatal("first Relay close unexpectedly succeeded")
+	}
+	runtime.replayWait.Wait()
+	if calls := relay.calls.Load(); calls != 2 {
+		t.Fatalf("Relay close attempts = %d, want initial attempt and one replay", calls)
+	}
+	if _, found, err := runtime.journalRecord(grant.GetReservationId()); err != nil || found {
+		t.Fatalf("replayed Relay journal record found=%v err=%v", found, err)
+	}
+	if live, err := runtime.state.RelayReservationLive(context.Background(), grant.GetReservationId()); err != nil || live {
+		t.Fatalf("replayed Relay group live=%v err=%v", live, err)
+	}
+}
+
+type retryCloseRelay struct{ calls atomic.Int32 }
+
+func (*retryCloseRelay) Address() string { return "" }
+func (*retryCloseRelay) Degraded() bool  { return false }
+func (relay *retryCloseRelay) CloseSessionAllocations(context.Context, string) error {
+	if relay.calls.Add(1) == 1 {
+		return errors.New("injected allocation close timeout")
+	}
+	return nil
+}
+func (*retryCloseRelay) Close(context.Context) error { return nil }
+func (*retryCloseRelay) StateCloseSafe() bool        { return true }
 
 type fakeRelaySession struct {
 	done    chan struct{}

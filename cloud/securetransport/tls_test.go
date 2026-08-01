@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"net/url"
 	"testing"
 	"time"
@@ -22,6 +23,14 @@ func TestValidateServerPairRejectsMalformedTrailingCertificate(t *testing.T) {
 	certificatePEM = append(certificatePEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("malformed trailing certificate")})...)
 	if _, err := ValidateServerPair(certificatePEM, privateKeyPEM, "edge.example.com:443", now); err == nil {
 		t.Fatal("server pair with malformed trailing certificate was accepted")
+	}
+}
+
+func TestValidateServerPairAcceptsMatchingIPAddress(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	certificatePEM, privateKeyPEM := testIPServerPair(t, now, "155.94.155.192")
+	if _, err := ValidateServerPair(certificatePEM, privateKeyPEM, "155.94.155.192:41102", now); err != nil {
+		t.Fatalf("matching IP certificate rejected: %v", err)
 	}
 }
 
@@ -107,6 +116,28 @@ func testServerPair(t *testing.T, now time.Time, dnsName string) ([]byte, []byte
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: dnsName}, DNSNames: []string{dnsName},
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER})
+}
+
+func testIPServerPair(t *testing.T, now time.Time, address string) ([]byte, []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: address}, IPAddresses: []net.IP{net.ParseIP(address)},
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}

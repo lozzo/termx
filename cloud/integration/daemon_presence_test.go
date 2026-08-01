@@ -69,7 +69,7 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: testEdgeID, DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey, Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), Revision: 1, EdgeLocatorSha256: make([]byte, sha256.Size)}
+	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: testEdgeID, DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey, Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), EdgeLocatorSha256: make([]byte, sha256.Size)}
 	signed, err := ticket.SignDaemonBinding("binding-r4", privateKey, claims)
 	if err != nil {
 		t.Fatal(err)
@@ -101,6 +101,7 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 	if err != nil || ready.GetReady() == nil {
 		t.Fatalf("AgentReady=%v err=%v", ready, err)
 	}
+	ackAgentReady(t, stream, hello, ready.GetReady())
 	eventually(t, 5*time.Second, func() bool {
 		location, found, queryErr := firstDirectory.LocateDaemon(context.Background(), claims.GetDaemonId())
 		return queryErr == nil && found && location.EdgeID == testEdgeID && location.Generation == ready.GetReady().GetGeneration()
@@ -119,9 +120,18 @@ func TestAuthenticatedAgentPresenceRebuildsAfterControllerRestart(t *testing.T) 
 		_ = secondRuntime.Shutdown(ctx)
 		secondDirectory.Close()
 	}()
+	secondReadyContext, cancelSecondReady := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := edgeRuntime.WaitReady(secondReadyContext); err != nil {
+		cancelSecondReady()
+		t.Fatal(err)
+	}
+	cancelSecondReady()
+	secondConnection, secondStream, secondReady := openAdmittedAgent(t, edgeRuntime, certificates.rootPool, identity, signed, claims)
+	defer secondConnection.Close()
+	defer secondStream.CloseSend()
 	eventually(t, 8*time.Second, func() bool {
 		location, found, queryErr := secondDirectory.LocateDaemon(context.Background(), claims.GetDaemonId())
-		return queryErr == nil && found && location.EdgeID == testEdgeID && location.Generation == ready.GetReady().GetGeneration()
+		return queryErr == nil && found && location.EdgeID == testEdgeID && location.Generation == secondReady.GetGeneration()
 	})
 	_ = stream.CloseSend()
 }
@@ -174,7 +184,6 @@ func TestBindingKeyBundleRecoversAcrossControllerAndEdgeRestart(t *testing.T) {
 	defer offlineHTTP.CloseIdleConnections()
 	assertEdgeReadiness(t, offlineHTTP, secondEdge.PublicAddress(), http.StatusServiceUnavailable, false, true)
 	identity, signed, claims := restartBinding(t, privateKey)
-	assertAgentAdmission(t, secondEdge, certificates.rootPool, identity, signed, claims)
 
 	secondController, secondDirectory := startPresenceController(t, certificates, controllerAddress, verification)
 	defer func() {
@@ -184,6 +193,7 @@ func TestBindingKeyBundleRecoversAcrossControllerAndEdgeRestart(t *testing.T) {
 		secondDirectory.Close()
 	}()
 	eventually(t, 8*time.Second, secondEdge.Ready)
+	assertAgentAdmission(t, secondEdge, certificates.rootPool, identity, signed, claims)
 }
 
 func TestPostgresOwnerAndEdgeCacheRecoverAcrossRestarts(t *testing.T) {
@@ -420,7 +430,7 @@ func restartBindingForKey(t *testing.T, keyID string, privateKey ed25519.Private
 	now := time.Now().UTC()
 	claims := &cloudv1.DaemonBindingClaims{
 		BindingId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: testEdgeID, DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey,
-		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), Revision: 1, EdgeLocatorSha256: make([]byte, sha256.Size),
+		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(10 * time.Minute)), EdgeLocatorSha256: make([]byte, sha256.Size),
 	}
 	signed, err := ticket.SignDaemonBinding(keyID, privateKey, claims)
 	if err != nil {
@@ -431,13 +441,20 @@ func restartBindingForKey(t *testing.T, keyID string, privateKey ed25519.Private
 
 func assertAgentAdmission(t *testing.T, edgeRuntime *edgeruntime.Runtime, rootPool *x509.CertPool, identity remoteauth.Identity, signed *cloudv1.SignedEnvelope, claims *cloudv1.DaemonBindingClaims) {
 	t.Helper()
+	connection, stream, _ := openAdmittedAgent(t, edgeRuntime, rootPool, identity, signed, claims)
+	_ = stream.CloseSend()
+	_ = connection.Close()
+}
+
+func openAdmittedAgent(t *testing.T, edgeRuntime *edgeruntime.Runtime, rootPool *x509.CertPool, identity remoteauth.Identity, signed *cloudv1.SignedEnvelope, claims *cloudv1.DaemonBindingClaims) (*grpc.ClientConn, cloudv1.AgentGateway_ConnectClient, *cloudv1.AgentReady) {
+	t.Helper()
 	connection, err := grpc.NewClient(edgeRuntime.PublicAddress(), grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: rootPool, ServerName: testEdgePublicServer})))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer connection.Close()
 	stream, err := cloudv1.NewAgentGatewayClient(connection).Connect(context.Background())
 	if err != nil {
+		_ = connection.Close()
 		t.Fatal(err)
 	}
 	challenge, err := stream.Recv()
@@ -458,9 +475,22 @@ func assertAgentAdmission(t *testing.T, edgeRuntime *edgeruntime.Runtime, rootPo
 	}
 	ready, err := stream.Recv()
 	if err != nil || ready.GetReady() == nil {
+		_ = connection.Close()
 		t.Fatalf("cached bundle Agent admission ready=%v err=%v", ready, err)
 	}
-	_ = stream.CloseSend()
+	ackAgentReady(t, stream, hello, ready.GetReady())
+	return connection, stream, ready.GetReady()
+}
+
+func ackAgentReady(t *testing.T, stream cloudv1.AgentGateway_ConnectClient, hello *cloudv1.AgentEvent, ready *cloudv1.AgentReady) {
+	t.Helper()
+	result := &cloudv1.AgentEvent{
+		ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: hello.GetSenderId(), BootId: hello.GetBootId(), ConnectionId: hello.GetConnectionId(), StreamSeq: 2, SentAt: timestamppb.Now(),
+		Payload: &cloudv1.AgentEvent_LifecycleResult{LifecycleResult: &cloudv1.DaemonLifecycleResult{DaemonState: ready.GetDaemonState(), AgentGeneration: ready.GetGeneration(), Applied: true}},
+	}
+	if err := stream.Send(result); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func startPresenceController(t *testing.T, certificates certificateFiles, listen string, key *cloudv1.VerificationKey) (*controllerruntime.Runtime, *directory.Directory) {
@@ -478,7 +508,10 @@ func startPresenceControllerWithOwnership(t *testing.T, certificates certificate
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := control.NewService(control.Config{ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, BindingKeyBundle: provider, Directory: directoryState})
+	service, err := control.NewService(control.Config{
+		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second,
+		BindingKeyBundle: provider, Directory: directoryState, DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver,
+	})
 	if err != nil {
 		directoryState.Close()
 		t.Fatal(err)

@@ -65,6 +65,9 @@ func (store *managementEnrollmentStoreFake) CreateDaemonEnrollment(_ context.Con
 	store.accountID, store.accountName, store.daemonName = accountID, accountName, daemonName
 	return accountID, nil
 }
+func (*managementEnrollmentStoreFake) GetDaemonEnrollmentAccount(context.Context, []byte, time.Time) (string, error) {
+	return "", errors.New("unused")
+}
 func (*managementEnrollmentStoreFake) ConsumeDaemonEnrollment(context.Context, []byte, string, string, ed25519.PublicKey, time.Time) (Daemon, error) {
 	return Daemon{}, errors.New("unused")
 }

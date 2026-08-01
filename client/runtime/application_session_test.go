@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -304,6 +305,29 @@ func TestApplicationSessionConvertsTypedAPIError(t *testing.T) {
 	_, err = session.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}}})
 	if CodeOf(err) != ErrorStaleSession || WasAttempted(err) {
 		t.Fatalf("unexpected runtime error %#v", err)
+	}
+}
+
+func TestRuntimeErrorFromProtoPreservesDaemonLifecycle(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		protoCode apipb.ApiErrorCode
+		wantCode  ErrorCode
+		retryable bool
+	}{
+		{name: "blocked", protoCode: apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED, wantCode: ErrorDaemonBlocked, retryable: true},
+		{name: "deleted", protoCode: apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED, wantCode: ErrorDaemonDeleted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := runtimeErrorFromProto(&apipb.ApiError{Code: test.protoCode, Message: test.name, Attempted: true, Retryable: test.retryable})
+			var runtimeErr *Error
+			if !errors.As(err, &runtimeErr) {
+				t.Fatalf("error = %#v", err)
+			}
+			if runtimeErr.Code != test.wantCode || !runtimeErr.Attempted || runtimeErr.Retryable != test.retryable {
+				t.Fatalf("runtime error = %#v", runtimeErr)
+			}
+		})
 	}
 }
 

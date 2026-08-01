@@ -2,7 +2,7 @@ import { Activity, ArrowRight, CreditCard, MonitorSmartphone, Plus, ReceiptText,
 import { Link } from 'react-router'
 import { bytes, dateTime, subscriptionState } from '../format'
 import { GetAccountCommerceResponseSchema, ListPlansResponseSchema, OrderStatus } from '../generated/cloud/v1/commerce_pb'
-import { ListMyDaemonsResponseSchema } from '../generated/cloud/v1/enrollment_pb'
+import { DaemonState, ListMyDaemonsResponseSchema } from '../generated/cloud/v1/enrollment_pb'
 import { useProtoQuery } from '../query'
 import { useCloudAccount } from '../shell/CloudShell'
 import { ErrorState, PageHeader, Skeleton, Status } from '../ui'
@@ -16,7 +16,7 @@ export function UserOverviewPage() {
   const failedQuery = commerce.error ? commerce : daemons.error ? daemons : plans.error ? plans : undefined
   if (failedQuery) return <ErrorState error={failedQuery.error} onRetry={() => void failedQuery.refetch()} />
   const online = daemons.data?.daemons.filter((value) => value.runtime?.online).length ?? 0
-  const total = daemons.data?.daemons.filter((value) => !value.daemon?.revoked).length ?? 0
+  const total = daemons.data?.daemons.length ?? 0
   const pending = commerce.data?.orders.filter((value) => value.status === OrderStatus.PENDING).length ?? 0
   const subscription = commerce.data?.subscription
   const usage = commerce.data?.usage
@@ -33,7 +33,7 @@ export function UserOverviewPage() {
       <Link to="/app/orders"><ReceiptText size={20} /><span>待支付订单</span><strong>{pending}</strong><ArrowRight size={16} /></Link>
     </section>
     <div className="user-overview-grid">
-      <section className="plain-section"><header><div><h2>daemon 状态</h2><p>Cloud 只显示已注册服务及其 Edge 在线位置</p></div><Link to="/app/devices">全部 daemon</Link></header><div className="device-rows">{!daemons.data?.daemons.length ? <div className="empty-inline"><p>还没有注册 daemon。</p><Link to="/app/devices">生成一次性注册命令<ArrowRight size={15} /></Link></div> : daemons.data.daemons.slice(0, 4).map((value) => <div key={value.daemon?.daemonId}><span><strong>{value.daemon?.displayName}</strong><small>{value.runtime?.online ? `${value.runtime.edgeName} · ${value.runtime.edgeRegion}` : '当前离线'}</small></span><Status active={Boolean(value.runtime?.online)}>{value.runtime?.online ? '在线' : value.daemon?.revoked ? '已撤销' : '离线'}</Status></div>)}</div></section>
+      <section className="plain-section"><header><div><h2>daemon 状态</h2><p>Cloud 只显示已注册服务及其 Edge 在线位置</p></div><Link to="/app/devices">全部 daemon</Link></header><div className="device-rows">{!daemons.data?.daemons.length ? <div className="empty-inline"><p>还没有注册 daemon。</p><Link to="/app/devices">生成一次性注册命令<ArrowRight size={15} /></Link></div> : daemons.data.daemons.slice(0, 4).map((value) => { const blocked = value.daemon?.state === DaemonState.BLOCKED; return <div key={value.daemon?.daemonId}><span><strong>{value.daemon?.displayName}</strong><small>{!blocked && value.runtime?.online ? `${value.runtime.edgeName} · ${value.runtime.edgeRegion}` : blocked ? 'Cloud 已停用' : '当前离线'}</small></span><Status active={!blocked && Boolean(value.runtime?.online)}>{blocked ? '已停用' : value.runtime?.online ? '在线' : '离线'}</Status></div> })}</div></section>
       <section className="plain-section"><header><div><h2>本期 Cloud 权益</h2><p>{subscription ? `${dateTime(subscription.periodStart)} 至 ${dateTime(subscription.periodEnd)}` : '暂无生效订阅'}</p></div>{subscription && <Status active>{subscriptionState(subscription.state)}</Status>}</header><dl className="quota-list"><div><dt>可注册 daemon</dt><dd>{total} / {commerce.data?.entitlement?.capability?.cloudDaemonLimit ?? 0}</dd></div><div><dt>P2P 并发</dt><dd>{commerce.data?.entitlement?.capability?.managedP2pMaxConcurrency ?? 0}</dd></div><div><dt>Relay 剩余</dt><dd>{bytes(commerce.data?.entitlement?.relayRemainingBytes ?? 0n)}</dd></div></dl><Link className="text-action" to="/app/subscription">管理订阅<ArrowRight size={15} /></Link></section>
     </div>
   </>

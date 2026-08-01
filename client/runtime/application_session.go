@@ -401,6 +401,10 @@ func runtimeErrorFromProto(apiError *apipb.ApiError) error {
 		code = ErrorCanceled
 	case apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED:
 		code = ErrorEntitlement
+	case apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED:
+		code = ErrorDaemonBlocked
+	case apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED:
+		code = ErrorDaemonDeleted
 	}
 	return &Error{Code: code, Message: apiError.GetMessage(), Attempted: apiError.GetAttempted(), Retryable: apiError.GetRetryable()}
 }

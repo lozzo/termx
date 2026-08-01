@@ -93,7 +93,7 @@ func TestEdgeControllerHelloWelcomeOverMutualTLS(t *testing.T) {
 		t.Fatalf("publish test agent through Edge runtime: %v", err)
 	}
 	session := &cloudv1.ClientSessionSummary{SessionId: "session-r2-1", AccountId: "account-r2-1", DaemonId: agent.GetDaemonId(), ClientId: "client-r2-1", Product: cloudv1.ClientProduct_CLIENT_PRODUCT_TUI, Generation: 1}
-	if err := edgeRuntime.UpsertSession(context.Background(), session); err != nil {
+	if err := edgeRuntime.AttachSession(context.Background(), session, func() {}); err != nil {
 		t.Fatalf("publish test session through Edge runtime: %v", err)
 	}
 	eventually(t, 5*time.Second, func() bool {
@@ -150,19 +150,28 @@ func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(state.Close)
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon-command-1", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
 	daemonClosed := make(chan struct{}, 1)
+	lifecycleCommands := make(chan *cloudv1.DaemonLifecycleCommand, 1)
 	agent := &cloudv1.AgentPresence{DaemonId: "daemon-command-1", AccountId: "account-command-1", BootId: "daemon-boot-command", ConnectionId: "agent-command", BindingId: "binding-command", BindingIssuedAt: timestamppb.Now()}
 	agentClaims := &cloudv1.DaemonBindingClaims{DaemonId: agent.GetDaemonId(), AccountId: agent.GetAccountId(), EdgeId: testEdgeID, DevicePublicKey: make([]byte, ed25519.PublicKeySize)}
-	generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, agentClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { daemonClosed <- struct{}{} })
+	generation, daemonState, err := state.AttachAuthenticatedAgent(context.Background(), agent, agentClaims, func(command *cloudv1.EdgeCommand) bool {
+		if command.GetLifecycle() != nil {
+			lifecycleCommands <- command.GetLifecycle()
+		}
+		return true
+	}, func() { daemonClosed <- struct{}{} })
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.ApplyDaemonLifecycleResult(context.Background(), agent.GetDaemonId(), generation, &cloudv1.DaemonLifecycleResult{DaemonState: daemonState, AgentGeneration: generation, Applied: true}); err != nil {
 		t.Fatal(err)
 	}
 	sessionClosed := make(chan struct{}, 1)
 	sessionSummary := &cloudv1.ClientSessionSummary{SessionId: "session-command-1", AccountId: agent.GetAccountId(), DaemonId: agent.GetDaemonId(), ClientId: "client-command", Product: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID, Generation: 1}
-	if err := state.UpsertSession(context.Background(), sessionSummary); err != nil {
-		t.Fatal(err)
-	}
-	if err := state.RegisterSessionCloser(context.Background(), sessionSummary.GetSessionId(), sessionSummary.GetGeneration(), func() { sessionClosed <- struct{}{} }); err != nil {
+	if err := state.AttachSession(context.Background(), sessionSummary, func() { sessionClosed <- struct{}{} }); err != nil {
 		t.Fatal(err)
 	}
 	session, err := controllerlink.Open(context.Background(), controllerlink.Config{
@@ -175,7 +184,9 @@ func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.
 			return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 		},
 		CloseDaemon: state.CloseAgentConnection, CloseSession: state.CloseSession,
-		ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
+		ApplyBindingKeyBundle:    func(*cloudv1.KeyBundle) error { return nil },
+		ApplyDaemonStateSnapshot: state.ApplyDaemonStateSnapshot,
+		ApplyDaemonStateDelta:    state.ApplyDaemonStateDelta,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -186,6 +197,18 @@ func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.
 	if err := session.WaitReady(readyCtx); err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case lifecycle := <-lifecycleCommands:
+		if err := state.ApplyDaemonLifecycleResult(context.Background(), agent.GetDaemonId(), generation, &cloudv1.DaemonLifecycleResult{DaemonState: lifecycle.GetDaemonState(), AgentGeneration: generation, Applied: true}); err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Controller snapshot did not reconcile daemon lifecycle state")
+	}
+	eventually(t, 5*time.Second, func() bool {
+		projection, found, queryErr := controllerRuntime.directory.Edge(context.Background(), testEdgeID)
+		return queryErr == nil && found && projection.AgentCount == 1 && projection.SessionCount == 1
+	})
 	commandCtx, cancelCommand := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelCommand()
 	if result := controllerRuntime.control.DisconnectDaemon(commandCtx, agent.GetDaemonId(), generation, "integration command"); result != cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_APPLIED {
@@ -264,13 +287,15 @@ func TestControllerRejectsHelloIdentityMismatch(t *testing.T) {
 	openContext, cancelOpen := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelOpen()
 	_, err = controllerlink.Open(openContext, controllerlink.Config{
-		ControllerAddress:     controllerRuntime.GRPCAddress(),
-		TLSConfig:             tlsConfig,
-		EdgeID:                "edge-does-not-match-certificate",
-		BootID:                testEdgeBootID,
-		SoftwareVersion:       testEdgeSoftwareVersion,
-		OpenRuntimeFeed:       emptyRuntimeFeed,
-		ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
+		ControllerAddress:        controllerRuntime.GRPCAddress(),
+		TLSConfig:                tlsConfig,
+		EdgeID:                   "edge-does-not-match-certificate",
+		BootID:                   testEdgeBootID,
+		SoftwareVersion:          testEdgeSoftwareVersion,
+		OpenRuntimeFeed:          emptyRuntimeFeed,
+		ApplyBindingKeyBundle:    func(*cloudv1.KeyBundle) error { return nil },
+		ApplyDaemonStateSnapshot: ignoreDaemonStateSnapshot,
+		ApplyDaemonStateDelta:    ignoreDaemonStateDelta,
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("mismatched Edge identity code = %s, want InvalidArgument; error: %v", status.Code(err), err)
@@ -321,13 +346,15 @@ func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
 		t.Fatalf("load Edge identity TLS: %v", err)
 	}
 	session, err := controllerlink.Open(context.Background(), controllerlink.Config{
-		ControllerAddress:     controllerRuntime.GRPCAddress(),
-		TLSConfig:             tlsConfig,
-		EdgeID:                testEdgeID,
-		BootID:                testEdgeBootID,
-		SoftwareVersion:       testEdgeSoftwareVersion,
-		OpenRuntimeFeed:       emptyRuntimeFeed,
-		ApplyBindingKeyBundle: func(*cloudv1.KeyBundle) error { return nil },
+		ControllerAddress:        controllerRuntime.GRPCAddress(),
+		TLSConfig:                tlsConfig,
+		EdgeID:                   testEdgeID,
+		BootID:                   testEdgeBootID,
+		SoftwareVersion:          testEdgeSoftwareVersion,
+		OpenRuntimeFeed:          emptyRuntimeFeed,
+		ApplyBindingKeyBundle:    func(*cloudv1.KeyBundle) error { return nil },
+		ApplyDaemonStateSnapshot: ignoreDaemonStateSnapshot,
+		ApplyDaemonStateDelta:    ignoreDaemonStateDelta,
 	})
 	if err != nil {
 		t.Fatalf("open active EdgeControl stream: %v", err)
@@ -368,13 +395,15 @@ func startControllerWithDesired(t *testing.T, certificates certificateFiles, des
 		t.Fatalf("create Controller Directory: %v", err)
 	}
 	service, err := control.NewService(control.Config{
-		ControllerID:      testControllerID,
-		ControllerBootID:  testControllerBootID,
-		HeartbeatInterval: time.Second,
-		HeartbeatTimeout:  3 * time.Second,
-		Directory:         directoryState,
-		BindingKeyBundle:  testBindingKeyBundleProvider(),
-		DesiredConfig:     desired,
+		ControllerID:        testControllerID,
+		ControllerBootID:    testControllerBootID,
+		HeartbeatInterval:   time.Second,
+		HeartbeatTimeout:    3 * time.Second,
+		Directory:           directoryState,
+		BindingKeyBundle:    testBindingKeyBundleProvider(),
+		DaemonStateSnapshot: integrationDaemonStateSnapshot,
+		ResolveDaemonState:  integrationDaemonStateResolver,
+		DesiredConfig:       desired,
 	})
 	if err != nil {
 		t.Fatalf("create EdgeControl service: %v", err)
@@ -401,10 +430,24 @@ func startControllerWithDesired(t *testing.T, certificates certificateFiles, des
 	return &controllerHarness{Runtime: runtime, directory: directoryState, control: service}
 }
 
+func integrationDaemonStateSnapshot(context.Context) (*cloudv1.DaemonStateSnapshot, error) {
+	return &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{
+		{DaemonId: "daemon-r2-1", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1},
+		{DaemonId: "daemon-command-1", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1},
+	}}, nil
+}
+
+func integrationDaemonStateResolver(_ context.Context, daemonID string) (*cloudv1.DaemonStateRecord, bool, error) {
+	return &cloudv1.DaemonStateRecord{DaemonId: daemonID, State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}, true, nil
+}
+
 func emptyRuntimeFeed(context.Context) (*controllerlink.RuntimeFeed, error) {
 	deltas := make(chan *cloudv1.RuntimeDelta)
 	return &controllerlink.RuntimeFeed{Snapshot: &cloudv1.RuntimeSnapshot{}, Deltas: deltas, Close: func() { close(deltas) }}, nil
 }
+
+func ignoreDaemonStateSnapshot(context.Context, *cloudv1.DaemonStateSnapshot) error { return nil }
+func ignoreDaemonStateDelta(context.Context, *cloudv1.DaemonStateDelta) error       { return nil }
 
 func eventually(t *testing.T, timeout time.Duration, condition func() bool) {
 	t.Helper()

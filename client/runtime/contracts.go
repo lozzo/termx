@@ -298,6 +298,8 @@ const (
 	ErrorStaleResource     ErrorCode = "stale_resource"
 	ErrorResourceExhausted ErrorCode = "resource_exhausted"
 	ErrorEntitlement       ErrorCode = "entitlement_denied"
+	ErrorDaemonBlocked     ErrorCode = "daemon_blocked"
+	ErrorDaemonDeleted     ErrorCode = "daemon_deleted"
 )
 
 // Error 是 runtime 边界返回的稳定错误；Cause 只用于日志和 errors.Is/As，不作为 UI 文本协议。

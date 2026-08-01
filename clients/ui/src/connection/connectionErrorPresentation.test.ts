@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { anyttyI18n } from '../i18n'
-import { connectionFailurePresentation, connectionFailureReason } from './connectionErrorPresentation'
+import { connectionFailurePresentation, connectionFailureReason, isAuthorizationConnectionError } from './connectionErrorPresentation'
 
 describe('connection error presentation', () => {
   it.each([
@@ -59,5 +59,15 @@ describe('connection error presentation', () => {
 
   it('does not infer pairing from a generic forbidden error', () => {
     expect(connectionFailureReason(Object.assign(new Error('policy denied'), { code: 'forbidden' }))).toBe('internal')
+  })
+
+  it.each([
+    { code: 'daemon_blocked', reason: 'daemon_blocked', retryable: true },
+    { code: 'daemon_deleted', reason: 'daemon_deleted', retryable: false },
+  ] as const)('presents $code without starting authorization pairing', ({ code, reason, retryable }) => {
+    const source = Object.assign(new Error('Cloud lifecycle state'), { code })
+    const result = connectionFailurePresentation(source, anyttyI18n.t)
+    expect(result).toMatchObject({ reason, retryable, requiresPairing: false })
+    expect(isAuthorizationConnectionError(source)).toBe(false)
   })
 })

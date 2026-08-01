@@ -109,8 +109,8 @@ func ValidateServerPair(certificatePEM, privateKeyPEM []byte, publicEndpoint str
 			leaf = certificate
 		}
 	}
-	if len(leaf.DNSNames) == 0 {
-		return nil, errors.New("certificate must contain at least one DNS SAN")
+	if len(leaf.DNSNames) == 0 && len(leaf.IPAddresses) == 0 {
+		return nil, errors.New("certificate must contain at least one DNS or IP SAN")
 	}
 	if !now.IsZero() {
 		now = now.UTC()

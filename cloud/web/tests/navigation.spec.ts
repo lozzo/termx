@@ -7,7 +7,7 @@ const periodEnd = '2026-08-27T12:00:00Z'
 const provisionSetupCredential = 'P'.repeat(43)
 const resetSetupCredential = 'R'.repeat(43)
 const account = { account_id: '11111111-1111-4111-8111-111111111111', email: 'user@anytty.com', display_name: '测试用户', state: 'ACCOUNT_STATE_ACTIVE', revision: '1', created_at: now, updated_at: now }
-const daemon = { daemon_id: '33333333-3333-4333-8333-333333333333', account_id: account.account_id, account_name: account.display_name, display_name: '开发 Mac', device_id: 'device-1', device_fingerprint: 'fingerprint-1', revision: '1', created_at: now, updated_at: now }
+const daemon = { daemon_id: '33333333-3333-4333-8333-333333333333', account_id: account.account_id, account_name: account.display_name, display_name: '开发 Mac', device_id: 'device-1', device_fingerprint: 'fingerprint-1', state: 'DAEMON_STATE_ACTIVE', state_revision: '1', created_at: now, updated_at: now }
 const plans = [{ plan_id: 'starter', version: '1', name: '基础版', description: '适合个人设备的完整 Cloud 连接能力。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '0' }, yearly_price: { currency: 'CNY', minor_units: '0' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 2, relay_enabled: true, relay_max_concurrency: 2, relay_max_bytes_per_period: '5368709120', cloud_daemon_limit: 3 }, revision: '1', created_at: now }, { plan_id: 'professional', version: '1', name: '专业版', description: '适合多设备与高频远程工作的更高配额。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '3900' }, yearly_price: { currency: 'CNY', minor_units: '39900' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 10, relay_enabled: true, relay_max_concurrency: 8, relay_max_bytes_per_period: '1099511627776', cloud_daemon_limit: 20 }, revision: '1', created_at: now }]
 const commerce = { subscription: { subscription_id: '55555555-5555-4555-8555-555555555555', account_id: account.account_id, plan_id: 'starter', plan_version: '1', state: 'SUBSCRIPTION_STATE_ACTIVE', revision: '1', period_start: now, period_end: periodEnd }, entitlement: { account_id: account.account_id, state: 'ENTITLEMENT_STATE_ACTIVE', plan_id: 'starter', plan_version: '1', relay_remaining_bytes: '5368707584', capability: plans[0].capability }, orders: [], payment_attempts: [], usage: { account_id: account.account_id, period_start: now, period_end: periodEnd, relay_ingress_bytes: '512', relay_egress_bytes: '1024', relay_total_bytes: '1536', quota_bytes: '5368709120', remaining_bytes: '5368707584', revision: '1' } }
 const pendingOrder = { order_id: 'order-pending', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'development', idempotency_key: 'pending-checkout', requested_transition: 'SUBSCRIPTION_TRANSITION_UPGRADE', revision: '1', created_at: now }
@@ -37,6 +37,7 @@ async function mockAPI(page: Page, operator = false, failLogin = false, withPend
     if (path === '/api/commerce/payments/development') return json(route, { order: { order_id: 'order-development', status: 'ORDER_STATUS_PAID' }, subscription: { ...commerce.subscription, plan_id: 'professional', revision: '2' }, entitlement: { ...commerce.entitlement, plan_id: 'professional' } })
     if (path === '/api/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'cn1.edge.anytty.com:41102', generation: '1' } }] })
     if (path === '/api/daemons/enroll') return json(route, { account_id: account.account_id, enrollment_code: 'mxe_test', expires_at: periodEnd, enroll_command: 'anytty cloud enroll --controller https://cloud.anytty.com mxe_test' })
+    if (path === `/api/daemons/${daemon.daemon_id}/state`) return json(route, { daemon })
     if (path === '/api/operator/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {"controller_instance_id":"controller-test"}\n\n' })
     if (path === '/api/operator/overview') return json(route, { overview: { edge_total: '1', edge_online: '1', daemon_total: '1', daemon_online: '1', client_session_online: '1', relay_bytes_current_period: '1536', controller_instance_id: 'controller-test', generated_at: now } })
     if (path === '/api/operator/edges') return json(route, { edges: [
@@ -281,6 +282,11 @@ test('普通用户共享 Shell、复用页面缓存且不能进入运营页面',
   await deviceLink.click()
   await expect(page).toHaveURL(/\/app\/devices$/)
   await expect(page.getByText('CN1 Edge', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '停用' })).toBeVisible()
+  await page.getByRole('button', { name: '删除' }).click()
+  await expect(page.getByText(/重新注册 daemon，再生成并扫描新的配对二维码/)).toBeVisible()
+  await expect(page.getByText(/Direct、SSH 和本地数据不受影响/)).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
   await assertNoHorizontalOverflow(page)
   if (!compact) {
     await userNav.getByRole('link', { name: '概览' }).click()

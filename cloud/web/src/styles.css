@@ -300,6 +300,7 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .table-link { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--accent-hover); font-weight: 630; text-decoration: none; }
 .table-frame td:has(> :is(.table-link, .table-button, .table-select)) { padding-block: 8px; }
 .table-frame td .button { white-space: nowrap; }
+.daemon-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .empty-state, .empty-inline { padding: 46px 20px; color: var(--muted); text-align: center; line-height: 1.6; }
 .empty-inline { padding: 28px 17px; text-align: left; }
 .empty-inline p { color: var(--muted); }
@@ -523,6 +524,7 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
   .user-data-table td[data-label=""] { grid-template-columns: 1fr; }
   .user-data-table td[data-label=""]::before { display: none; }
   .user-data-table td[data-label=""] .button { width: 100%; }
+  .user-data-table .daemon-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .dialog-backdrop { align-items: end; padding: 0; }
 	.dialog { width: 100%; max-height: calc(92dvh - env(safe-area-inset-top)); border-radius: 4px 4px 0 0; border-inline: 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
 	.credential-value { grid-template-columns: 1fr; }

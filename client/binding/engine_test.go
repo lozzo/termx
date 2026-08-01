@@ -1085,6 +1085,25 @@ func nextBindingEvent(t *testing.T, engine *Engine) *bindingpb.EventEnvelope {
 	return event
 }
 
+func TestAPIErrorPreservesDaemonLifecycle(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		runtime   *clientruntime.Error
+		protoCode apipb.ApiErrorCode
+		retryable bool
+	}{
+		{name: "blocked", runtime: &clientruntime.Error{Code: clientruntime.ErrorDaemonBlocked, Message: "blocked", Attempted: true, Retryable: true}, protoCode: apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED, retryable: true},
+		{name: "deleted", runtime: &clientruntime.Error{Code: clientruntime.ErrorDaemonDeleted, Message: "deleted", Attempted: true}, protoCode: apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := apiError(test.runtime)
+			if got.GetCode() != test.protoCode || got.GetRetryable() != test.retryable || !got.GetAttempted() {
+				t.Fatalf("api error = %#v", got)
+			}
+		})
+	}
+}
+
 type bindingHost struct {
 	session clientruntime.ApplicationReadyPeerSession
 	request *bindingpb.OpenSessionRequest

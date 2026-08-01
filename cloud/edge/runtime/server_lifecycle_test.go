@@ -18,6 +18,7 @@ import (
 	grpc_health "google.golang.org/grpc/health"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestRuntimeShutdownDrainsStateOwnedGRPCStream(t *testing.T) {
@@ -178,10 +179,7 @@ func (stream *lifecycleStream) Hold(serverStream grpc.ServerStream) error {
 		SessionId: "session", AccountId: "account", DaemonId: "daemon", ClientId: "client",
 		Product: cloudv1.ClientProduct_CLIENT_PRODUCT_TUI, Generation: 1,
 	}
-	if err := stream.state.UpsertSession(serverStream.Context(), session); err != nil {
-		return err
-	}
-	if err := stream.state.RegisterSessionCloser(serverStream.Context(), "session", 1, stream.close); err != nil {
+	if err := stream.state.AttachSession(serverStream.Context(), session, stream.close); err != nil {
 		return err
 	}
 	close(stream.started)
@@ -223,6 +221,12 @@ func startLifecycleStream(t *testing.T, releaseOnClose bool) (*Runtime, *lifecyc
 	t.Helper()
 	state, err := NewState(StateConfig{MailboxSize: 8, DeltaBuffer: 8})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.UpsertAgent(context.Background(), &cloudv1.AgentPresence{DaemonId: "daemon", AccountId: "account", BootId: "boot", ConnectionId: "connection", Generation: 1, BindingId: "binding", BindingIssuedAt: timestamppb.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	grpcServer := grpc.NewServer()

@@ -58,9 +58,18 @@ func TestConsumeDaemonEnrollmentCreatesNewIdentityAfterDelete(t *testing.T) {
 	if _, err := database.CreateDaemonEnrollment(ctx, accountID, "", "First name", firstDigest[:], now.Add(time.Hour), now); err != nil {
 		t.Fatal(err)
 	}
+	for range 2 {
+		resolvedAccountID, err := database.GetDaemonEnrollmentAccount(ctx, firstDigest[:], now)
+		if err != nil || resolvedAccountID != accountID {
+			t.Fatalf("resolve enrollment account=%q err=%v", resolvedAccountID, err)
+		}
+	}
 	first, err := database.ConsumeDaemonEnrollment(ctx, firstDigest[:], deviceID, fingerprint, publicKey, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := database.GetDaemonEnrollmentAccount(ctx, firstDigest[:], now); !errors.Is(err, enrollment.ErrEnrollmentInvalid) {
+		t.Fatalf("consumed enrollment remained readable: %v", err)
 	}
 	blocked, err := database.ChangeDaemonState(ctx, accountID, first.ID, cloudv1.DaemonState_DAEMON_STATE_BLOCKED, first.StateRevision, "test block", now.Add(time.Minute))
 	if err != nil || blocked.State != cloudv1.DaemonState_DAEMON_STATE_BLOCKED {

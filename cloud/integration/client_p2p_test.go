@@ -72,7 +72,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	daemonRecord := enrollment.Daemon{
 		ID: uuid.NewString(), AccountID: uuid.NewString(), AccountName: "R5 Account", DisplayName: "R5 daemon",
 		DeviceID: daemonIdentity.DeviceID, DeviceFingerprint: daemonIdentity.Fingerprint, DevicePublicKey: append(ed25519.PublicKey(nil), daemonIdentity.PublicKey...),
-		Revision: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	edgeStore := &r5EdgeStore{edge: edgeconfig.Edge{ID: testEdgeID, Name: "R5 Edge", Region: "local", Capacity: 100, PublicEndpoint: "127.0.0.1:1", Enabled: true, ConfigVersion: 1, Revision: 1}}
 	_, configSigningKey, err := ed25519.GenerateKey(rand.Reader)
@@ -454,7 +454,7 @@ func r5DaemonEnrollmentRecord(t *testing.T, daemon enrollment.Daemon, identity r
 	claims := &cloudv1.DaemonBindingClaims{
 		BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: locator.GetEdgeId(), DeviceId: identity.DeviceID,
 		DevicePublicKey: append([]byte(nil), identity.PublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING},
-		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(365 * 24 * time.Hour)), Revision: daemon.Revision, EdgeLocatorSha256: locatorDigest[:],
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(365 * 24 * time.Hour)), EdgeLocatorSha256: locatorDigest[:],
 	}
 	binding, err := ticket.SignDaemonBinding(keyID, privateKey, claims)
 	if err != nil {
@@ -535,6 +535,9 @@ func (source *r5CredentialSource) UpdateCloudEdgeLocator(_ context.Context, endp
 type r5EnrollmentStore struct{ daemon enrollment.Daemon }
 
 func (r5EnrollmentStore) CreateDaemonEnrollment(context.Context, string, string, string, []byte, time.Time, time.Time) (string, error) {
+	return "", errors.New("not implemented by R5 identity fixture")
+}
+func (r5EnrollmentStore) GetDaemonEnrollmentAccount(context.Context, []byte, time.Time) (string, error) {
 	return "", errors.New("not implemented by R5 identity fixture")
 }
 func (r5EnrollmentStore) ConsumeDaemonEnrollment(context.Context, []byte, string, string, ed25519.PublicKey, time.Time) (enrollment.Daemon, error) {

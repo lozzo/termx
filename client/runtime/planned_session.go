@@ -341,6 +341,15 @@ func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.End
 	attempted := false
 	for _, err := range errorsByIndex {
 		attempted = attempted || WasAttempted(err)
+	}
+	for _, code := range []ErrorCode{ErrorDaemonDeleted, ErrorDaemonBlocked} {
+		for _, err := range errorsByIndex {
+			if err != nil && CodeOf(err) == code {
+				return SessionLease{}, err
+			}
+		}
+	}
+	for _, err := range errorsByIndex {
 		if err != nil && CodeOf(err) != ErrorCanceled {
 			return SessionLease{}, err
 		}
@@ -434,11 +443,13 @@ func (owner *SessionOwner) publishEndpointEvent(event EndpointEvent) {
 func attemptedRuntimeError(err error) error {
 	code := CodeOf(err)
 	message := "route attempt failed"
+	retryable := false
 	var value *Error
 	if errors.As(err, &value) && value.Message != "" {
 		message = value.Message
+		retryable = value.Retryable
 	}
-	return &Error{Code: code, Message: message, Cause: err, Attempted: true}
+	return &Error{Code: code, Message: message, Cause: err, Attempted: true, Retryable: retryable}
 }
 
 func plannerRuntimeError(err error) error {

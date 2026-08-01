@@ -65,17 +65,17 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if cachedErr == nil {
 		opened, err = openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
 		if err != nil && !cloudclient.ShouldRefreshEdgeLocator(err) {
-			return nil, err
+			return nil, cloudConnectionError(err)
 		}
 	}
 	if opened == nil {
 		resolved, err = dialer.Cloud.Resolve(ctx, signaling.CloudRouteGrant(), signaling)
 		if err != nil {
-			return nil, err
+			return nil, cloudConnectionError(err)
 		}
 		opened, err = openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
 		if err != nil {
-			return nil, err
+			return nil, cloudConnectionError(err)
 		}
 		discovered = true
 	}
@@ -142,6 +142,17 @@ func relayPreference(mode endpoint.RelayMode) (cloudv1.RelayPreference, port.ICE
 func (dialer *Dialer) report(phase clientruntime.EndpointPhase) {
 	if dialer != nil && dialer.Phase != nil {
 		dialer.Phase(phase)
+	}
+}
+
+func cloudConnectionError(err error) error {
+	switch {
+	case cloudclient.IsDaemonBlocked(err):
+		return &clientruntime.Error{Code: clientruntime.ErrorDaemonBlocked, Message: "daemon Cloud access is temporarily disabled", Cause: err, Retryable: true}
+	case cloudclient.IsDaemonDeleted(err):
+		return &clientruntime.Error{Code: clientruntime.ErrorDaemonDeleted, Message: "daemon Cloud enrollment was deleted", Cause: err}
+	default:
+		return err
 	}
 }
 

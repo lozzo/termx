@@ -332,6 +332,29 @@ describe('ProtoBindingClient failed open ownership', () => {
     await client.close()
   })
 
+  it.each([
+    { protoCode: ApiErrorCode.DAEMON_BLOCKED, code: 'daemon_blocked', retryable: true },
+    { protoCode: ApiErrorCode.DAEMON_DELETED, code: 'daemon_deleted', retryable: false },
+  ])('preserves daemon lifecycle error $code', async ({ protoCode, code, retryable }) => {
+    const backend = new CancellationBackend()
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.OPEN_SESSION) {
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+            operationHandle: 1n,
+            error: create(ApiErrorSchema, { code: protoCode, message: code, retryable }),
+          }) },
+        }))))
+        return 1n
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    await expect(client.openSession(create(OpenSessionRequestSchema, { endpointId: 'studio' }))).rejects.toMatchObject({ code, retryable })
+    await client.close()
+  })
+
   it('releases failed open operations beyond the engine handle capacity', async () => {
     const backend = new CancellationBackend()
     let next = 0n

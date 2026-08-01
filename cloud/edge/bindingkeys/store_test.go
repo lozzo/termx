@@ -287,7 +287,7 @@ func TestConcurrentUpdateAndAdmissionObserveCompleteKeysets(t *testing.T) {
 	claims := &cloudv1.DaemonBindingClaims{
 		BindingId: uuid.NewString(), DaemonId: uuid.NewString(), AccountId: uuid.NewString(), EdgeId: "edge-concurrent", DeviceId: "device-concurrent",
 		DevicePublicKey: make([]byte, ed25519.PublicKeySize), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING},
-		IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Hour)), Revision: 1, EdgeLocatorSha256: make([]byte, sha256.Size),
+		IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Hour)), EdgeLocatorSha256: make([]byte, sha256.Size),
 	}
 	signedA, err := ticket.SignDaemonBinding("key-a", privateA, claims)
 	if err != nil {

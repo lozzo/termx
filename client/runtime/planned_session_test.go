@@ -384,6 +384,72 @@ func TestSessionOwnerPlannedRaceReturnsStableFirstFailure(t *testing.T) {
 	assertEndpointAcquireLocksEmpty(t, owner)
 }
 
+func TestSessionOwnerPlannedRacePrioritizesDaemonLifecycleFailure(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		localErr  error
+		sshErr    error
+		wantCode  ErrorCode
+		retryable bool
+	}{
+		{
+			name:      "blocked over generic route failure",
+			localErr:  io.ErrUnexpectedEOF,
+			sshErr:    &Error{Code: ErrorDaemonBlocked, Message: "Cloud disabled", Retryable: true},
+			wantCode:  ErrorDaemonBlocked,
+			retryable: true,
+		},
+		{
+			name:     "deleted over blocked",
+			localErr: &Error{Code: ErrorDaemonBlocked, Message: "Cloud disabled", Retryable: true},
+			sshErr:   &Error{Code: ErrorDaemonDeleted, Message: "Cloud enrollment deleted"},
+			wantCode: ErrorDaemonDeleted,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			owner := NewSessionOwner()
+			defer owner.Close()
+			dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{
+				"local": {err: test.localErr},
+				"ssh":   {err: test.sshErr},
+			})
+			resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
+				endpoint.RouteLocalUnix:    dialer,
+				endpoint.RouteSSHWebRTCTCP: dialer,
+			})
+			_, err := owner.ConnectPlanned(context.Background(), plannedEndpoint(false), "", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
+			if CodeOf(err) != test.wantCode || !WasAttempted(err) {
+				t.Fatalf("race error = %#v, want code %q", err, test.wantCode)
+			}
+			var runtimeErr *Error
+			if !errors.As(err, &runtimeErr) || runtimeErr.Retryable != test.retryable {
+				t.Fatalf("retryable = %v, want %v", runtimeErr.Retryable, test.retryable)
+			}
+			assertEndpointAcquireLocksEmpty(t, owner)
+		})
+	}
+}
+
+func TestSessionOwnerPlannedRaceKeepsSuccessfulRouteOverDaemonLifecycleFailure(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{
+		"local": {err: &Error{Code: ErrorDaemonDeleted, Message: "Cloud enrollment deleted"}},
+		"ssh":   {},
+	})
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
+	})
+	lease, err := owner.ConnectPlanned(context.Background(), plannedEndpoint(false), "", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Stamp.RouteID != "ssh" {
+		t.Fatalf("winner = %q, want ssh", lease.Stamp.RouteID)
+	}
+}
+
 func TestSessionOwnerLifecycleMailboxKeepsLatestStateUnderBackpressure(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()

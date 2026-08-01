@@ -218,6 +218,22 @@ func (store *AccessStore) ConfigureManagedPairingBootstrapIssuer(issuer func() (
 	return nil
 }
 
+// DisableManagedCloudRoute removes the current Cloud-only pairing and route issuers.
+// Direct and SSH grants remain owned by the same AccessStore.
+func (store *AccessStore) DisableManagedCloudRoute() error {
+	if store == nil {
+		return errors.New("client access store is required")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.ensureOpenLocked(); err != nil {
+		return err
+	}
+	store.managedRouteGrantIssuer = nil
+	store.managedPairingBootstrapIssue = nil
+	return nil
+}
+
 // AccessProjectionRevision 返回 grant 管理投影的持久单调 revision。
 // pairing ticket 本身不改变该 revision；grant 新增、撤销或 retention 清理才推进。
 func (store *AccessStore) AccessProjectionRevision() uint64 {

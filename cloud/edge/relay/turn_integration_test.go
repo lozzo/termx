@@ -105,6 +105,9 @@ func startRealTURN(t *testing.T) (*relay.Server, *edgeruntime.State, *cloudv1.Re
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
 	policySnapshot := &cloudv1.RelayPolicySnapshot{AccountId: "account", SubscriptionId: "subscription", PlanId: "plan", RelayEnabled: true, EdgeId: "edge", DaemonId: "daemon"}
 	digest, err := relayquota.PolicyDigest(policySnapshot)
 	if err != nil {

@@ -828,6 +828,8 @@ function apiErrorCode(code: AnyTTYApiCommon.ApiErrorCode | undefined): string {
     case AnyTTYApiCommon.ApiErrorCode.ENTITLEMENT_DENIED: return 'entitlement_denied'
     case AnyTTYApiCommon.ApiErrorCode.RESOURCE_EXHAUSTED: return 'resource_exhausted'
     case AnyTTYApiCommon.ApiErrorCode.STALE_RESOURCE: return 'stale_resource'
+    case AnyTTYApiCommon.ApiErrorCode.DAEMON_BLOCKED: return 'daemon_blocked'
+    case AnyTTYApiCommon.ApiErrorCode.DAEMON_DELETED: return 'daemon_deleted'
     default: return ''
   }
 }

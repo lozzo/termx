@@ -272,7 +272,7 @@ func TestStateCloseWaitsForAttachOldCloser(t *testing.T) {
 	}
 	attached := make(chan error, 1)
 	go func() {
-		_, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() { newCalls.Add(1) })
+		_, _, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() { newCalls.Add(1) })
 		attached <- err
 	}()
 	<-entered
@@ -308,13 +308,14 @@ func TestAttachAuthenticatedAgentInvalidPresenceLeavesStateUnchanged(t *testing.
 	state := agentLimitTestState(t, 1)
 	var oldCloses, oldSends, rejectedCloses atomic.Int32
 	agent, claims := actorTestAuthenticatedAgent("daemon")
-	generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
+	generation, daemonState, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
 		oldSends.Add(1)
 		return true
 	}, func() { oldCloses.Add(1) })
 	if err != nil || generation != 1 {
 		t.Fatalf("initial attach generation=%d err=%v", generation, err)
 	}
+	acknowledgeActorAgent(t, state, "daemon", generation, daemonState)
 	pendingGeneration, pending, err := state.BeginAgentSignal(context.Background(), "invalid-presence-pending", "daemon", "session")
 	if err != nil || pendingGeneration != generation {
 		t.Fatalf("begin pending signal generation=%d err=%v", pendingGeneration, err)
@@ -330,7 +331,7 @@ func TestAttachAuthenticatedAgentInvalidPresenceLeavesStateUnchanged(t *testing.
 	invalidAgent.BootId = ""
 	invalidAgent.BindingId = "rejected-binding"
 	invalidClaims.BindingId = "rejected-binding"
-	generation, err = state.AttachAuthenticatedAgent(context.Background(), invalidAgent, invalidClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { rejectedCloses.Add(1) })
+	generation, _, err = state.AttachAuthenticatedAgent(context.Background(), invalidAgent, invalidClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { rejectedCloses.Add(1) })
 	if err == nil || generation != 0 {
 		t.Fatalf("invalid attach generation=%d err=%v", generation, err)
 	}
@@ -421,13 +422,14 @@ func TestStateAgentCapacityAtBothEntrances(t *testing.T) {
 		state := agentLimitTestState(t, 1)
 		var oldCloses, oldSends, rejectedCloses atomic.Int32
 		agent, claims := actorTestAuthenticatedAgent("daemon-1")
-		generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
+		generation, daemonState, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
 			oldSends.Add(1)
 			return true
 		}, func() { oldCloses.Add(1) })
 		if err != nil || generation != 1 {
 			t.Fatalf("initial attach generation=%d err=%v", generation, err)
 		}
+		acknowledgeActorAgent(t, state, "daemon-1", generation, daemonState)
 		pendingGeneration, pending, err := state.BeginAgentSignal(context.Background(), "capacity-pending", "daemon-1", "session")
 		if err != nil || pendingGeneration != generation {
 			t.Fatalf("begin pending signal generation=%d err=%v", pendingGeneration, err)
@@ -439,7 +441,7 @@ func TestStateAgentCapacityAtBothEntrances(t *testing.T) {
 		defer feed.Close()
 		before := feed.Snapshot
 		rejectedAgent, rejectedClaims := actorTestAuthenticatedAgent("daemon-2")
-		generation, err = state.AttachAuthenticatedAgent(context.Background(), rejectedAgent, rejectedClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { rejectedCloses.Add(1) })
+		generation, _, err = state.AttachAuthenticatedAgent(context.Background(), rejectedAgent, rejectedClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() { rejectedCloses.Add(1) })
 		if !errors.Is(err, ErrAgentCapacityExhausted) || generation != 0 {
 			t.Fatalf("new daemon generation=%d error=%v", generation, err)
 		}
@@ -477,7 +479,7 @@ func TestStateAgentCapacityAtBothEntrances(t *testing.T) {
 
 		var replacementSends atomic.Int32
 		replacementAgent, replacementClaims := actorTestAuthenticatedAgent("daemon-1")
-		generation, err = state.AttachAuthenticatedAgent(context.Background(), replacementAgent, replacementClaims, func(*cloudv1.EdgeCommand) bool {
+		generation, _, err = state.AttachAuthenticatedAgent(context.Background(), replacementAgent, replacementClaims, func(*cloudv1.EdgeCommand) bool {
 			replacementSends.Add(1)
 			return true
 		}, func() {})
@@ -500,24 +502,26 @@ func TestStateAgentDetachAndReattachKeepsOldGenerationStale(t *testing.T) {
 	state := agentLimitTestState(t, 1)
 	var firstCloses, firstSends, secondSends atomic.Int32
 	agent, claims := actorTestAuthenticatedAgent("daemon")
-	firstGeneration, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
+	firstGeneration, firstState, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
 		firstSends.Add(1)
 		return true
 	}, func() { firstCloses.Add(1) })
 	if err != nil || firstGeneration != 1 {
 		t.Fatalf("first attach generation=%d err=%v", firstGeneration, err)
 	}
+	acknowledgeActorAgent(t, state, "daemon", firstGeneration, firstState)
 	if err := state.DetachAgent(context.Background(), "daemon", firstGeneration); err != nil {
 		t.Fatalf("first detach: %v", err)
 	}
 	secondAgent, secondClaims := actorTestAuthenticatedAgent("daemon")
-	secondGeneration, err := state.AttachAuthenticatedAgent(context.Background(), secondAgent, secondClaims, func(*cloudv1.EdgeCommand) bool {
+	secondGeneration, secondState, err := state.AttachAuthenticatedAgent(context.Background(), secondAgent, secondClaims, func(*cloudv1.EdgeCommand) bool {
 		secondSends.Add(1)
 		return true
 	}, func() {})
 	if err != nil || secondGeneration != 2 {
 		t.Fatalf("second attach generation=%d err=%v", secondGeneration, err)
 	}
+	acknowledgeActorAgent(t, state, "daemon", secondGeneration, secondState)
 	feed, err := state.OpenFeed(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -561,13 +565,13 @@ func TestStateAgentCapacityReleaseKeepsGlobalGeneration(t *testing.T) {
 	for index := range daemonCount {
 		daemonID := fmt.Sprintf("daemon-%02d", index)
 		agent, claims := actorTestAuthenticatedAgent(daemonID)
-		generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() {})
+		generation, _, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() {})
 		if err != nil || generation != uint64(index+1) {
 			t.Fatalf("attach %s generation=%d err=%v", daemonID, generation, err)
 		}
 		if index == 0 {
 			blockedAgent, blockedClaims := actorTestAuthenticatedAgent("blocked")
-			if _, err := state.AttachAuthenticatedAgent(context.Background(), blockedAgent, blockedClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() {}); !errors.Is(err, ErrAgentCapacityExhausted) {
+			if _, _, err := state.AttachAuthenticatedAgent(context.Background(), blockedAgent, blockedClaims, func(*cloudv1.EdgeCommand) bool { return true }, func() {}); !errors.Is(err, ErrAgentCapacityExhausted) {
 				t.Fatalf("full-capacity attach error = %v", err)
 			}
 		}
@@ -595,13 +599,14 @@ func TestAttachAuthenticatedAgentFailsClosedAtMaxGeneration(t *testing.T) {
 		t.Fatalf("advance external generation: %v", err)
 	}
 	agent, claims := actorTestAuthenticatedAgent("current")
-	generation, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
+	generation, daemonState, err := state.AttachAuthenticatedAgent(context.Background(), agent, claims, func(*cloudv1.EdgeCommand) bool {
 		oldSends.Add(1)
 		return true
 	}, func() { oldCloses.Add(1) })
 	if err != nil || generation != ^uint64(0) {
 		t.Fatalf("initial attach generation=%d err=%v", generation, err)
 	}
+	acknowledgeActorAgent(t, state, "current", generation, daemonState)
 	pendingGeneration, pending, err := state.BeginAgentSignal(context.Background(), "max-generation-pending", "current", "session")
 	if err != nil || pendingGeneration != generation {
 		t.Fatalf("begin pending signal generation=%d err=%v", pendingGeneration, err)
@@ -613,7 +618,7 @@ func TestAttachAuthenticatedAgentFailsClosedAtMaxGeneration(t *testing.T) {
 	defer feed.Close()
 	before := feed.Snapshot
 	replacementAgent, replacementClaims := actorTestAuthenticatedAgent("current")
-	generation, err = state.AttachAuthenticatedAgent(context.Background(), replacementAgent, replacementClaims, func(*cloudv1.EdgeCommand) bool {
+	generation, _, err = state.AttachAuthenticatedAgent(context.Background(), replacementAgent, replacementClaims, func(*cloudv1.EdgeCommand) bool {
 		replacementSends.Add(1)
 		return true
 	}, func() { replacementCloses.Add(1) })
@@ -632,7 +637,7 @@ func TestAttachAuthenticatedAgentFailsClosedAtMaxGeneration(t *testing.T) {
 	if err := state.call(context.Background(), func(data *stateData) error {
 		writer := data.agentWriters["current"]
 		pendingState, pendingExists := data.pendingSignals["max-generation-pending"]
-		if data.revision != 2 || data.nextAgentGeneration != ^uint64(0) || data.agents["current"].GetGeneration() != ^uint64(0) || writer.generation != ^uint64(0) || writer.send == nil || writer.close == nil {
+		if data.revision != 3 || data.nextAgentGeneration != ^uint64(0) || data.agents["current"].GetGeneration() != ^uint64(0) || writer.generation != ^uint64(0) || writer.send == nil || writer.close == nil {
 			return fmt.Errorf("exhausted state: revision=%d generation=%d writer=%+v", data.revision, data.nextAgentGeneration, writer)
 		}
 		if !pendingExists || pendingState.daemonID != "current" || pendingState.sessionID != "session" || pendingState.agentGeneration != ^uint64(0) || pendingState.result != pending {
@@ -730,6 +735,7 @@ func actorTestState(t *testing.T, mailboxSize int) *State {
 	if err != nil {
 		t.Fatal(err)
 	}
+	applyActorTestDaemonStates(t, state)
 	t.Cleanup(state.Close)
 	return state
 }
@@ -740,8 +746,32 @@ func agentLimitTestState(t *testing.T, maxAgents int) *State {
 	if err != nil {
 		t.Fatal(err)
 	}
+	applyActorTestDaemonStates(t, state)
 	t.Cleanup(state.Close)
 	return state
+}
+
+func applyActorTestDaemonStates(t *testing.T, state *State) {
+	t.Helper()
+	ids := []string{"agent", "daemon", "daemon-1", "daemon-2", "blocked", "current"}
+	for index := 0; index < 32; index++ {
+		ids = append(ids, fmt.Sprintf("daemon-%02d", index))
+	}
+	records := make([]*cloudv1.DaemonStateRecord, 0, len(ids))
+	for _, daemonID := range ids {
+		records = append(records, &cloudv1.DaemonStateRecord{DaemonId: daemonID, State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1})
+	}
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: records}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func acknowledgeActorAgent(t *testing.T, state *State, daemonID string, generation uint64, daemonState *cloudv1.DaemonStateRecord) {
+	t.Helper()
+	result := &cloudv1.DaemonLifecycleResult{DaemonState: daemonState, AgentGeneration: generation, Applied: true}
+	if err := state.ApplyDaemonLifecycleResult(context.Background(), daemonID, generation, result); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func actorTestAgent(daemonID string, generation uint64) *cloudv1.AgentPresence {

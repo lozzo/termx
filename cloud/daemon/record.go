@@ -112,3 +112,12 @@ func SaveRecord(path string, record EnrollmentRecord) error {
 	}
 	return os.Chmod(path, 0o600)
 }
+
+// DeleteRecord removes only the Cloud enrollment credential. Device identity and local access data remain intact.
+func DeleteRecord(path string) error {
+	err := os.Remove(filepath.Clean(path))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}

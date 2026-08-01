@@ -12,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"sync"
@@ -180,7 +181,7 @@ func TestAnswerOfferConcurrentFactoryFailuresBalancePeerAccounting(t *testing.T)
 		go func() {
 			defer workers.Done()
 			response := runtime.answerOffer(context.Background(), &cloudv1.AgentOffer{
-				CorrelationId: "race", SessionId: "race", ClientPublicKey: clientPublicKey,
+				CorrelationId: fmt.Sprintf("race-%d", index), SessionId: fmt.Sprintf("race-%d", index), ClientPublicKey: clientPublicKey,
 				AccessMode: cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_CAPABILITY, OfferSdp: "offer",
 			}, &peers)
 			if response.GetRejected().GetCode() != "ANSWER_FAILED" {
@@ -247,7 +248,9 @@ func daemonRuntimeFixture(t *testing.T, answerer webrtc.Answerer) (*Runtime, ed2
 			Record: EnrollmentRecord{DaemonID: "daemon-runtime-test"}, Identity: identity, Answerer: answerer,
 			AccessStore: store, SoftwareVersion: "runtime-test",
 		},
-		bootID: "daemon-runtime-boot",
+		bootID:        "daemon-runtime-boot",
+		daemonState:   &cloudv1.DaemonStateRecord{DaemonId: "daemon-runtime-test", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE},
+		cloudSessions: make(map[string]*cloudSession),
 	}, append(ed25519.PublicKey(nil), client.PublicKey...)
 }
 
@@ -369,6 +372,7 @@ func (gateway *daemonTestAgentGateway) Connect(stream cloudv1.AgentGateway_Conne
 		ProtocolVersion: agentgateway.ProtocolVersion, MessageId: "ready", SenderId: challenge.GetEdgeId(), BootId: challenge.GetEdgeBootId(), ConnectionId: hello.GetConnectionId(),
 		StreamSeq: 2, SentAt: timestamppb.Now(), Payload: &cloudv1.EdgeCommand_Ready{Ready: &cloudv1.AgentReady{
 			Generation: 1, Heartbeat: &cloudv1.HeartbeatPolicy{Interval: durationpb.New(time.Hour), Timeout: durationpb.New(2 * time.Hour)},
+			DaemonState: &cloudv1.DaemonStateRecord{DaemonId: "daemon-runtime-test", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1},
 		}},
 	}); err != nil {
 		return err

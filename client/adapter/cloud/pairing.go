@@ -41,11 +41,11 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	}
 	resolved, err := connector.Cloud.PairingRoute(pairing.PairingClaimOffer)
 	if err != nil {
-		return remoteauth.PairingExchangeResult{}, err
+		return remoteauth.PairingExchangeResult{}, cloudConnectionError(err)
 	}
 	opened, err := openResolvedCloudPeer(ctx, request, connector.Peers, connector.Cloud, resolved, pairing.Identity, pairing.Signer, connector.Product, connector.Phase)
 	if err != nil {
-		return remoteauth.PairingExchangeResult{}, err
+		return remoteauth.PairingExchangeResult{}, cloudConnectionError(err)
 	}
 	if connector.Phase != nil {
 		connector.Phase(clientruntime.EndpointPhaseAuthorizing)

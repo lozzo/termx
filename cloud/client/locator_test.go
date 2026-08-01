@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/anytty/anytty/cloud/edge/clientgateway"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -54,6 +55,29 @@ func TestShouldRefreshEdgeLocatorOnlyForStaleOrUnreachableEdge(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if got := ShouldRefreshEdgeLocator(test.err); got != test.want {
 				t.Fatalf("ShouldRefreshEdgeLocator() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestClassifyDaemonLifecycleError(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		code string
+	}{
+		{name: "blocked", err: status.Error(codes.PermissionDenied, clientgateway.DaemonBlockedCode), code: clientgateway.DaemonBlockedCode},
+		{name: "deleted", err: status.Error(codes.NotFound, clientgateway.DaemonDeletedCode), code: clientgateway.DaemonDeletedCode},
+		{name: "unrelated permission denial", err: status.Error(codes.PermissionDenied, "grant rejected")},
+		{name: "unrelated not found", err: status.Error(codes.NotFound, "daemon moved")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			classified := classifyDaemonLifecycleError(test.err)
+			if got := DaemonLifecycleCode(classified); got != test.code {
+				t.Fatalf("DaemonLifecycleCode() = %q, want %q", got, test.code)
+			}
+			if test.code == "" && classified != test.err {
+				t.Fatal("unrelated gRPC error was replaced")
 			}
 		})
 	}

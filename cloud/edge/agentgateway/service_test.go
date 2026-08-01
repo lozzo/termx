@@ -128,6 +128,31 @@ func TestAgentGatewayDoesNotReceiveHelloAfterChallengeDeadline(t *testing.T) {
 	}
 }
 
+func TestDeletedLifecycleDeadlineIsNotExtendedByHeartbeats(t *testing.T) {
+	service, identity, binding, now := newAgentGatewayFixture(t)
+	deleted := &cloudv1.DaemonStateRecord{DaemonId: "daemon-agent", State: cloudv1.DaemonState_DAEMON_STATE_DELETED, StateRevision: 2}
+	var lifecycleSend func(*cloudv1.EdgeCommand) bool
+	service.config.Runtime = &agentGatewayRuntime{onAttach: func(send func(*cloudv1.EdgeCommand) bool) { lifecycleSend = send }}
+	service.config.DeletedAckTimeout = 30 * time.Millisecond
+	stream := &heartbeatAgentGatewayStream{ctx: context.Background(), t: t, identity: identity, binding: binding, now: now}
+	stream.onReady = func() {
+		if lifecycleSend == nil || !lifecycleSend(&cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Lifecycle{Lifecycle: &cloudv1.DaemonLifecycleCommand{DaemonState: deleted, AgentGeneration: 1}}}) {
+			t.Error("could not queue DELETED lifecycle command")
+		}
+	}
+
+	started := time.Now()
+	err := service.Connect(stream)
+	if status.Code(err) != codes.DeadlineExceeded || time.Since(started) >= service.config.HeartbeatTimeout {
+		t.Fatalf("DELETED acknowledgement deadline error=%v elapsed=%s", err, time.Since(started))
+	}
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if stream.heartbeats < 2 {
+		t.Fatalf("heartbeats before DELETED deadline = %d, want at least 2", stream.heartbeats)
+	}
+}
+
 func newAgentGatewayFixture(t *testing.T) (*Service, remoteauth.Identity, *cloudv1.SignedEnvelope, time.Time) {
 	t.Helper()
 	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
@@ -145,7 +170,7 @@ func newAgentGatewayFixture(t *testing.T) (*Service, remoteauth.Identity, *cloud
 	}
 	claims := &cloudv1.DaemonBindingClaims{
 		BindingId: "binding-agent", DaemonId: "daemon-agent", AccountId: "account-agent", EdgeId: "edge-agent", DeviceId: identity.DeviceID, DevicePublicKey: identity.PublicKey,
-		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Minute)), Revision: 1, EdgeLocatorSha256: make([]byte, sha256.Size),
+		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Minute)), EdgeLocatorSha256: make([]byte, sha256.Size),
 	}
 	binding, err := ticket.SignDaemonBinding("binding-key", controllerPrivate, claims)
 	if err != nil {
@@ -175,14 +200,37 @@ func signedAgentHello(t *testing.T, identity remoteauth.Identity, binding *cloud
 	return event
 }
 
-type agentGatewayRuntime struct{}
+type agentGatewayRuntime struct {
+	state    *cloudv1.DaemonStateRecord
+	onAttach func(func(*cloudv1.EdgeCommand) bool)
+}
 
-func (*agentGatewayRuntime) AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.DaemonBindingClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error) {
-	return 1, nil
+func (runtime *agentGatewayRuntime) daemonState() *cloudv1.DaemonStateRecord {
+	if runtime.state != nil {
+		return proto.Clone(runtime.state).(*cloudv1.DaemonStateRecord)
+	}
+	return activeDaemonState("daemon-agent")
+}
+
+func (runtime *agentGatewayRuntime) ResolveDaemonState(context.Context, string) (*cloudv1.DaemonStateRecord, error) {
+	return runtime.daemonState(), nil
+}
+func (runtime *agentGatewayRuntime) AttachAuthenticatedAgent(_ context.Context, _ *cloudv1.AgentPresence, _ *cloudv1.DaemonBindingClaims, send func(*cloudv1.EdgeCommand) bool, _ func()) (uint64, *cloudv1.DaemonStateRecord, error) {
+	if runtime.onAttach != nil {
+		runtime.onAttach(send)
+	}
+	return 1, runtime.daemonState(), nil
 }
 func (*agentGatewayRuntime) DetachAgent(context.Context, string, uint64) error { return nil }
 func (*agentGatewayRuntime) ResolveAgentSignal(context.Context, string, uint64, *cloudv1.AgentEvent) error {
 	return nil
+}
+func (*agentGatewayRuntime) ApplyDaemonLifecycleResult(context.Context, string, uint64, *cloudv1.DaemonLifecycleResult) error {
+	return nil
+}
+
+func activeDaemonState(daemonID string) *cloudv1.DaemonStateRecord {
+	return &cloudv1.DaemonStateRecord{DaemonId: daemonID, State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}
 }
 
 type agentGatewayTestStream struct {
@@ -223,3 +271,68 @@ func (stream *agentGatewayTestStream) SetTrailer(metadata.MD)       {}
 func (stream *agentGatewayTestStream) Context() context.Context     { return stream.ctx }
 func (stream *agentGatewayTestStream) SendMsg(any) error            { return nil }
 func (stream *agentGatewayTestStream) RecvMsg(any) error            { return nil }
+
+type heartbeatAgentGatewayStream struct {
+	ctx      context.Context
+	t        *testing.T
+	identity remoteauth.Identity
+	binding  *cloudv1.SignedEnvelope
+	now      time.Time
+
+	mu         sync.Mutex
+	hello      *cloudv1.AgentEvent
+	sent       []*cloudv1.EdgeCommand
+	sequence   uint64
+	heartbeats int
+	onReady    func()
+}
+
+func (stream *heartbeatAgentGatewayStream) Send(command *cloudv1.EdgeCommand) error {
+	stream.mu.Lock()
+	stream.sent = append(stream.sent, proto.Clone(command).(*cloudv1.EdgeCommand))
+	if command.GetChallenge() != nil && stream.hello == nil {
+		stream.hello = signedAgentHello(stream.t, stream.identity, stream.binding, command.GetChallenge(), stream.now)
+	}
+	onReady := stream.onReady
+	if command.GetReady() == nil {
+		onReady = nil
+	}
+	stream.mu.Unlock()
+	if onReady != nil {
+		onReady()
+	}
+	return nil
+}
+
+func (stream *heartbeatAgentGatewayStream) Recv() (*cloudv1.AgentEvent, error) {
+	stream.mu.Lock()
+	if stream.sequence == 0 {
+		stream.sequence = 1
+		hello := proto.Clone(stream.hello).(*cloudv1.AgentEvent)
+		stream.mu.Unlock()
+		return hello, nil
+	}
+	stream.sequence++
+	sequence := stream.sequence
+	stream.heartbeats++
+	hello := proto.Clone(stream.hello).(*cloudv1.AgentEvent)
+	stream.mu.Unlock()
+	timer := time.NewTimer(2 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-stream.ctx.Done():
+		return nil, stream.ctx.Err()
+	case <-timer.C:
+	}
+	return &cloudv1.AgentEvent{
+		ProtocolVersion: ProtocolVersion, MessageId: "heartbeat", SenderId: hello.GetSenderId(), BootId: hello.GetBootId(), ConnectionId: hello.GetConnectionId(), StreamSeq: sequence, SentAt: timestamppb.Now(),
+		Payload: &cloudv1.AgentEvent_Heartbeat{Heartbeat: &cloudv1.AgentHeartbeat{Generation: 1}},
+	}, nil
+}
+
+func (stream *heartbeatAgentGatewayStream) SetHeader(metadata.MD) error  { return nil }
+func (stream *heartbeatAgentGatewayStream) SendHeader(metadata.MD) error { return nil }
+func (stream *heartbeatAgentGatewayStream) SetTrailer(metadata.MD)       {}
+func (stream *heartbeatAgentGatewayStream) Context() context.Context     { return stream.ctx }
+func (stream *heartbeatAgentGatewayStream) SendMsg(any) error            { return nil }
+func (stream *heartbeatAgentGatewayStream) RecvMsg(any) error            { return nil }

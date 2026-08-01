@@ -31,6 +31,7 @@ import (
 // Config 是 daemon Cloud owner 的稳定 identity、发现记录和真实 P2P answerer 装配。
 type Config struct {
 	Record          EnrollmentRecord
+	RecordPath      string
 	Identity        remoteauth.Identity
 	Answerer        webrtc.Answerer
 	AccessStore     *remoteauth.AccessStore
@@ -44,10 +45,21 @@ type Runtime struct {
 	config            Config
 	bootID            string
 	attemptGeneration atomic.Uint64
+	lifecycleMu       sync.Mutex
+	daemonState       *cloudv1.DaemonStateRecord
+	cloudSessions     map[string]*cloudSession
+	enrollmentDeleted bool
 }
 
 type authorizedRuntimeOptions struct {
 	pionLogger *slog.Logger
+	recordPath string
+}
+
+type cloudSession struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+	once   sync.Once
 }
 
 // AuthorizedRuntimeOption configures process-owned dependencies for the Cloud WebRTC answerer.
@@ -57,6 +69,13 @@ type AuthorizedRuntimeOption func(*authorizedRuntimeOptions)
 func WithPionLogger(logger *slog.Logger) AuthorizedRuntimeOption {
 	return func(options *authorizedRuntimeOptions) {
 		options.pionLogger = logger
+	}
+}
+
+// WithEnrollmentRecordPath allows DELETED to remove only the Cloud enrollment record.
+func WithEnrollmentRecordPath(path string) AuthorizedRuntimeOption {
+	return func(options *authorizedRuntimeOptions) {
+		options.recordPath = strings.TrimSpace(path)
 	}
 }
 
@@ -110,7 +129,7 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 		OnSessionStart: onSessionStart,
 		OnSessionError: onSessionError,
 	}
-	return NewRuntime(Config{Record: record, Identity: identity, Answerer: answerer, AccessStore: accessStore, SoftwareVersion: softwareVersion})
+	return NewRuntime(Config{Record: record, RecordPath: options.recordPath, Identity: identity, Answerer: answerer, AccessStore: accessStore, SoftwareVersion: softwareVersion})
 }
 
 // NewRuntime 验证 Cloud owner 与 DataChannel 端到端授权 handler 已真实接线。
@@ -131,7 +150,11 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if config.RetryMaximum < config.RetryMinimum {
 		config.RetryMaximum = 5 * time.Second
 	}
-	return &Runtime{config: config, bootID: uuid.NewString()}, nil
+	return &Runtime{
+		config: config, bootID: uuid.NewString(),
+		daemonState:   &cloudv1.DaemonStateRecord{DaemonId: config.Record.DaemonID, State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE},
+		cloudSessions: make(map[string]*cloudSession),
+	}, nil
 }
 
 // Run 维持 AgentGateway 长连接；Controller/Edge 失败只撤销 Presence 并有界重新解析。
@@ -141,6 +164,9 @@ func (runtime *Runtime) Run(ctx context.Context) error {
 		err := runtime.connectOnce(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if runtime.daemonDeleted() {
+			return nil
 		}
 		if err == nil {
 			delay = runtime.config.RetryMinimum
@@ -224,8 +250,12 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 		return errors.New("AgentReady is invalid")
 	}
 	interval := command.GetReady().GetHeartbeat().GetInterval().AsDuration()
-	if interval <= 0 {
+	daemonState := command.GetReady().GetDaemonState()
+	if interval <= 0 || validateDaemonState(daemonState, runtime.config.Record.DaemonID) != nil {
 		return errors.New("AgentReady heartbeat is invalid")
+	}
+	if err := runtime.applyDaemonState(attemptCtx, daemonState); err != nil {
+		return err
 	}
 	outbound := make(chan *cloudv1.AgentEvent, 32)
 	writerErrors := make(chan error, 1)
@@ -239,6 +269,7 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 		defer workers.Done()
 		runtime.runEdgeCommands(attemptCtx, stream, command.GetReady().GetGeneration(), outbound, receive, &peers)
 	}()
+	outbound <- lifecycleResult(command.GetReady().GetGeneration(), daemonState, nil)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -332,6 +363,14 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 				return
 			}
 			response = runtime.answerOffer(ctx, offer, peers)
+		case command.GetLifecycle() != nil:
+			lifecycle := command.GetLifecycle()
+			if lifecycle.GetAgentGeneration() != generation || validateDaemonState(lifecycle.GetDaemonState(), runtime.config.Record.DaemonID) != nil {
+				failures <- errors.New("Edge daemon lifecycle command is invalid")
+				return
+			}
+			applyErr := runtime.applyDaemonState(ctx, lifecycle.GetDaemonState())
+			response = lifecycleResult(generation, lifecycle.GetDaemonState(), applyErr)
 		default:
 			failures <- errors.New("Edge command payload is unsupported")
 			return
@@ -368,21 +407,21 @@ func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOff
 		}
 		iceServers = append(iceServers, webrtc.ICEServer{URLs: append([]string(nil), relay.GetUrls()...), Username: relay.GetUsername(), Credential: relay.GetCredential()})
 	}
+	sessionCtx, session, ok := runtime.beginCloudSession(ctx, offer.GetSessionId(), peers)
+	if !ok {
+		return reject("DAEMON_UNAVAILABLE", "daemon Cloud access is not active")
+	}
 	answerer := runtime.config.Answerer
 	onPeerClosed := answerer.OnPeerClosed
 	var peerClosed sync.Once
-	peers.Add(1)
 	answerer.OnPeerClosed = func() {
 		peerClosed.Do(func() {
-			defer peers.Done()
-			if onPeerClosed != nil {
-				onPeerClosed()
-			}
+			runtime.finishCloudSession(offer.GetSessionId(), session, peers, onPeerClosed)
 		})
 	}
-	answer, err := answerer.Answer(ctx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, iceServers)
+	answer, err := answerer.Answer(sessionCtx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, iceServers)
 	if err != nil {
-		peerClosed.Do(peers.Done)
+		peerClosed.Do(func() { runtime.finishCloudSession(offer.GetSessionId(), session, peers, onPeerClosed) })
 		return reject("ANSWER_FAILED", "daemon could not establish P2P signaling")
 	}
 	wireCandidates := make([]*cloudv1.CloudICECandidate, 0, len(answer.Candidates))
@@ -392,8 +431,127 @@ func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOff
 	return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Answer{Answer: &cloudv1.AgentAnswer{CorrelationId: offer.GetCorrelationId(), SessionId: offer.GetSessionId(), AnswerSdp: answer.SDP, Candidates: wireCandidates}}}
 }
 
+func validateDaemonState(state *cloudv1.DaemonStateRecord, daemonID string) error {
+	if state == nil || state.GetDaemonId() != strings.TrimSpace(daemonID) || state.GetStateRevision() == 0 {
+		return errors.New("daemon lifecycle state is invalid")
+	}
+	switch state.GetState() {
+	case cloudv1.DaemonState_DAEMON_STATE_ACTIVE, cloudv1.DaemonState_DAEMON_STATE_BLOCKED, cloudv1.DaemonState_DAEMON_STATE_DELETED:
+		return nil
+	default:
+		return errors.New("daemon lifecycle state is invalid")
+	}
+}
+
+func lifecycleResult(generation uint64, state *cloudv1.DaemonStateRecord, applyErr error) *cloudv1.AgentEvent {
+	result := &cloudv1.DaemonLifecycleResult{DaemonState: proto.Clone(state).(*cloudv1.DaemonStateRecord), AgentGeneration: generation, Applied: applyErr == nil}
+	if applyErr != nil {
+		result.ErrorMessage = applyErr.Error()
+	}
+	return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_LifecycleResult{LifecycleResult: result}}
+}
+
+func (runtime *Runtime) applyDaemonState(ctx context.Context, state *cloudv1.DaemonStateRecord) error {
+	if err := validateDaemonState(state, runtime.config.Record.DaemonID); err != nil {
+		return err
+	}
+	clone := proto.Clone(state).(*cloudv1.DaemonStateRecord)
+	runtime.lifecycleMu.Lock()
+	current := runtime.daemonState
+	if current != nil && clone.GetStateRevision() < current.GetStateRevision() {
+		runtime.lifecycleMu.Unlock()
+		return errors.New("daemon lifecycle state is stale")
+	}
+	if current != nil && clone.GetStateRevision() == current.GetStateRevision() && current.GetStateRevision() != 0 && !proto.Equal(current, clone) {
+		runtime.lifecycleMu.Unlock()
+		return errors.New("daemon lifecycle revision conflicts with current state")
+	}
+	if current != nil && current.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED && !proto.Equal(current, clone) {
+		runtime.lifecycleMu.Unlock()
+		return errors.New("deleted daemon lifecycle state is terminal")
+	}
+	runtime.daemonState = clone
+	sessions := make([]*cloudSession, 0, len(runtime.cloudSessions))
+	if clone.GetState() != cloudv1.DaemonState_DAEMON_STATE_ACTIVE {
+		for _, session := range runtime.cloudSessions {
+			sessions = append(sessions, session)
+		}
+	}
+	runtime.lifecycleMu.Unlock()
+
+	for _, session := range sessions {
+		session.cancel()
+	}
+	for _, session := range sessions {
+		select {
+		case <-session.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if clone.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED {
+		if runtime.config.AccessStore == nil {
+			return errors.New("client access store is unavailable")
+		}
+		if err := runtime.config.AccessStore.DisableManagedCloudRoute(); err != nil {
+			return err
+		}
+		if runtime.config.RecordPath == "" {
+			return errors.New("Cloud enrollment record path is unavailable")
+		}
+		if err := DeleteRecord(runtime.config.RecordPath); err != nil {
+			return err
+		}
+		runtime.lifecycleMu.Lock()
+		runtime.enrollmentDeleted = true
+		runtime.lifecycleMu.Unlock()
+	}
+	return nil
+}
+
+func (runtime *Runtime) beginCloudSession(parent context.Context, sessionID string, peers *sync.WaitGroup) (context.Context, *cloudSession, bool) {
+	runtime.lifecycleMu.Lock()
+	defer runtime.lifecycleMu.Unlock()
+	if runtime.daemonState == nil || runtime.daemonState.GetState() != cloudv1.DaemonState_DAEMON_STATE_ACTIVE || runtime.cloudSessions[sessionID] != nil {
+		return nil, nil, false
+	}
+	ctx, cancel := context.WithCancel(parent)
+	session := &cloudSession{cancel: cancel, done: make(chan struct{})}
+	peers.Add(1)
+	runtime.cloudSessions[sessionID] = session
+	return ctx, session, true
+}
+
+func (runtime *Runtime) finishCloudSession(sessionID string, session *cloudSession, peers *sync.WaitGroup, onPeerClosed func()) {
+	session.once.Do(func() {
+		session.cancel()
+		runtime.lifecycleMu.Lock()
+		if runtime.cloudSessions[sessionID] == session {
+			delete(runtime.cloudSessions, sessionID)
+		}
+		runtime.lifecycleMu.Unlock()
+		close(session.done)
+		peers.Done()
+		if onPeerClosed != nil {
+			onPeerClosed()
+		}
+	})
+}
+
+func (runtime *Runtime) cloudActive() bool {
+	runtime.lifecycleMu.Lock()
+	defer runtime.lifecycleMu.Unlock()
+	return runtime.daemonState != nil && runtime.daemonState.GetState() == cloudv1.DaemonState_DAEMON_STATE_ACTIVE
+}
+
+func (runtime *Runtime) daemonDeleted() bool {
+	runtime.lifecycleMu.Lock()
+	defer runtime.lifecycleMu.Unlock()
+	return runtime.daemonState != nil && runtime.daemonState.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED && runtime.enrollmentDeleted
+}
+
 func (runtime *Runtime) allowsCloudAccess(clientPublicKey []byte, mode cloudv1.CloudClientAccessMode, pairingClaimDigest []byte, now time.Time) bool {
-	if runtime == nil || runtime.config.AccessStore == nil || len(clientPublicKey) != ed25519.PublicKeySize {
+	if runtime == nil || !runtime.cloudActive() || runtime.config.AccessStore == nil || len(clientPublicKey) != ed25519.PublicKeySize {
 		return false
 	}
 	publicKey := ed25519.PublicKey(clientPublicKey)

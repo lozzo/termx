@@ -21,8 +21,10 @@ import (
 	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -46,6 +48,33 @@ type Config struct {
 type Client struct {
 	config Config
 	bootID string
+}
+
+type daemonLifecycleError struct {
+	code string
+}
+
+func (err *daemonLifecycleError) Error() string {
+	if err.code == clientgateway.DaemonDeletedCode {
+		return "daemon Cloud enrollment was deleted"
+	}
+	return "daemon Cloud access is temporarily disabled"
+}
+
+// DaemonLifecycleCode returns the stable ClientGateway state rejection code.
+func DaemonLifecycleCode(err error) string {
+	var lifecycle *daemonLifecycleError
+	if errors.As(err, &lifecycle) {
+		return lifecycle.code
+	}
+	return ""
+}
+
+func IsDaemonBlocked(err error) bool {
+	return DaemonLifecycleCode(err) == clientgateway.DaemonBlockedCode
+}
+func IsDaemonDeleted(err error) bool {
+	return DaemonLifecycleCode(err) == clientgateway.DaemonDeletedCode
 }
 
 // RouteResolution 是一次已认证的目录结果，或者由本机缓存 Edge locator 与原始 daemon grant 重建。
@@ -149,7 +178,7 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	directory := cloudv1.NewDirectoryServiceClient(connection)
 	challenge, err := directory.BeginClientRoute(ctx, &cloudv1.BeginClientRouteRequest{CloudRouteGrant: grant})
 	if err != nil {
-		return nil, fmt.Errorf("begin Cloud route resolution: %w", err)
+		return nil, fmt.Errorf("begin Cloud route resolution: %w", classifyDaemonLifecycleError(err))
 	}
 	requestID := uuid.NewString()
 	canonical, err := ticket.ClientRouteProofBytes(challenge.GetChallengeId(), challenge.GetChallenge(), grant, requestID)
@@ -162,12 +191,27 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	}
 	resolved, err := directory.ResolveClientRoute(ctx, &cloudv1.ResolveClientRouteRequest{ChallengeId: challenge.GetChallengeId(), RequestId: requestID, ClientProof: proof})
 	if err != nil {
-		return nil, fmt.Errorf("resolve Cloud route: %w", err)
+		return nil, fmt.Errorf("resolve Cloud route: %w", classifyDaemonLifecycleError(err))
 	}
 	if resolved.GetEdgeLocator() == nil {
 		return nil, errors.New("Cloud route response is incomplete")
 	}
 	return NewCachedRoute(resolved.GetEdgeLocator(), grant)
+}
+
+func classifyDaemonLifecycleError(err error) error {
+	if err == nil {
+		return nil
+	}
+	grpcStatus := status.Convert(err)
+	switch {
+	case grpcStatus.Code() == codes.PermissionDenied && grpcStatus.Message() == clientgateway.DaemonBlockedCode:
+		return &daemonLifecycleError{code: clientgateway.DaemonBlockedCode}
+	case grpcStatus.Code() == codes.NotFound && grpcStatus.Message() == clientgateway.DaemonDeletedCode:
+		return &daemonLifecycleError{code: clientgateway.DaemonDeletedCode}
+	default:
+		return err
+	}
 }
 
 // PairingRoute 只使用 claim offer 内的紧凑 Edge 入口和 CA pin，不访问 Controller。
@@ -278,7 +322,16 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
-	if ready.GetReady() == nil || ready.GetProtocolVersion() != clientgateway.ProtocolVersion || ready.GetSenderId() != challenge.GetEdgeId() || ready.GetBootId() != challenge.GetEdgeBootId() || ready.GetConnectionId() != sessionID || ready.GetStreamSeq() != 2 || ready.GetReady().GetGeneration() != attemptGeneration {
+	if ready.GetProtocolVersion() != clientgateway.ProtocolVersion || ready.GetSenderId() != challenge.GetEdgeId() || ready.GetBootId() != challenge.GetEdgeBootId() || ready.GetConnectionId() != sessionID || ready.GetStreamSeq() != 2 {
+		return nil, errors.New("ClientReady is invalid")
+	}
+	if rejected := ready.GetRejected(); rejected != nil {
+		if rejected.GetSessionId() != sessionID || rejected.GetCode() != clientgateway.DaemonBlockedCode && rejected.GetCode() != clientgateway.DaemonDeletedCode {
+			return nil, errors.New("ClientReady rejection is invalid")
+		}
+		return nil, &daemonLifecycleError{code: rejected.GetCode()}
+	}
+	if ready.GetReady() == nil || ready.GetReady().GetGeneration() != attemptGeneration {
 		return nil, errors.New("ClientReady is invalid")
 	}
 	offerSDP, err := createOffer(ctx, ready.GetReady())

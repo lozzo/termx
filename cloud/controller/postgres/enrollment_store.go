@@ -37,6 +37,18 @@ func (database *Database) CreateDaemonEnrollment(ctx context.Context, accountID,
 	return accountID, nil
 }
 
+// GetDaemonEnrollmentAccount 在消费前读取有效 token 的账号，用于完成外部准入预检查。
+func (database *Database) GetDaemonEnrollmentAccount(ctx context.Context, digest []byte, now time.Time) (string, error) {
+	var accountID string
+	if err := database.pool.QueryRow(ctx, `SELECT account_id::text FROM daemon_enrollment_tokens WHERE token_digest=$1 AND consumed_at IS NULL AND expires_at>$2`, digest, now).Scan(&accountID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", enrollment.ErrEnrollmentInvalid
+		}
+		return "", err
+	}
+	return accountID, nil
+}
+
 // ConsumeDaemonEnrollment 原子消费注册 token，并为当前未注册的 DeviceIdentity 创建新 daemon。
 // DELETED 行是旧 daemon_id 的永久墓碑，不会被重新激活。
 func (database *Database) ConsumeDaemonEnrollment(ctx context.Context, digest []byte, deviceID, fingerprint string, publicKey ed25519.PublicKey, now time.Time) (enrollment.Daemon, error) {

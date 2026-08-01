@@ -128,18 +128,24 @@ func register(ctx context.Context, configFile string, config *FileConfig, paths 
 	if err != nil {
 		return err
 	}
-	identityCSR, err := createCSR(identityKey, pkix.Name{CommonName: config.EdgeID}, nil, []*url.URL{identityURI})
+	identityCSR, err := createCSR(identityKey, pkix.Name{CommonName: config.EdgeID}, nil, nil, []*url.URL{identityURI})
 	if err != nil {
 		return err
 	}
 	host := config.PublicEndpoint
 	if parsedHost, _, splitErr := net.SplitHostPort(host); splitErr == nil {
-		host = parsedHost
+		host = strings.Trim(parsedHost, "[]")
 	}
-	if host == "" || !strings.Contains(host, ".") {
+	dnsNames := []string(nil)
+	ipAddresses := []net.IP(nil)
+	if ip := net.ParseIP(host); ip != nil {
+		ipAddresses = []net.IP{ip}
+	} else if host != "" && strings.Contains(host, ".") {
+		dnsNames = []string{host}
+	} else {
 		return errors.New("bootstrap public_endpoint is invalid")
 	}
-	publicCSR, err := createCSR(publicKey, pkix.Name{CommonName: host}, []string{host}, nil)
+	publicCSR, err := createCSR(publicKey, pkix.Name{CommonName: host}, dnsNames, ipAddresses, nil)
 	if err != nil {
 		return err
 	}
@@ -272,8 +278,8 @@ func loadOrCreateKey(path string) (*ecdsa.PrivateKey, error) {
 	return key, nil
 }
 
-func createCSR(key *ecdsa.PrivateKey, subject pkix.Name, dnsNames []string, uris []*url.URL) ([]byte, error) {
-	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: subject, DNSNames: dnsNames, URIs: uris}, key)
+func createCSR(key *ecdsa.PrivateKey, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, uris []*url.URL) ([]byte, error) {
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: subject, DNSNames: dnsNames, IPAddresses: ipAddresses, URIs: uris}, key)
 	if err != nil {
 		return nil, err
 	}

@@ -31,11 +31,18 @@ const (
 	maxOfferSDPBytes     = 256 * 1024
 	maxICECandidates     = 64
 	maxICECandidateBytes = 2 * 1024
+	DaemonBlockedCode    = "DAEMON_BLOCKED"
+	DaemonDeletedCode    = "DAEMON_DELETED"
+)
+
+var (
+	ErrDaemonBlocked = errors.New("daemon Cloud access is blocked")
+	ErrDaemonDeleted = errors.New("daemon Cloud enrollment is deleted")
 )
 
 // Runtime 是 Edge State actor 暴露给 ClientGateway 的唯一状态与 correlation 边界。
 type Runtime interface {
-	UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error
+	AttachSession(context.Context, *cloudv1.ClientSessionSummary, func()) error
 	RemoveSession(context.Context, string, uint64) error
 	BeginAgentSignal(context.Context, string, string, string) (uint64, <-chan *cloudv1.AgentEvent, error)
 	CancelAgentSignal(context.Context, string) error
@@ -122,6 +129,12 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 	claims, err := service.admit(stream.Context(), helloEvent, challenge)
 	if err != nil {
+		if code, message, ok := daemonStateRejection(err); ok {
+			if sendErr := stream.Send(service.edgeSignal(helloEvent.GetConnectionId(), 2, &cloudv1.EdgeSignal_Rejected{Rejected: &cloudv1.SignalRejected{SessionId: helloEvent.GetConnectionId(), Code: code, Message: message}})); sendErr != nil {
+				return status.Errorf(codes.Unavailable, "send daemon state rejection: %v", sendErr)
+			}
+			return nil
+		}
 		if errors.Is(err, errRouteStale) {
 			return status.Error(codes.NotFound, errRouteStale.Error())
 		}
@@ -132,15 +145,17 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	sessionContext, cancelSession := context.WithCancelCause(stream.Context())
 	defer cancelSession(context.Canceled)
 	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.accountID, DaemonId: claims.daemonID, ClientId: claims.clientID, Product: claims.product, Generation: generation, AccessMode: claims.accessMode}
-	if err := service.config.Runtime.UpsertSession(sessionContext, summary); err != nil {
-		return status.Errorf(codes.Aborted, "publish client session: %v", err)
-	}
-	if registry, ok := service.config.Runtime.(interface {
-		RegisterSessionCloser(context.Context, string, uint64, func()) error
-	}); ok {
-		if err := registry.RegisterSessionCloser(sessionContext, sessionID, generation, func() { cancelSession(context.Canceled) }); err != nil {
-			return status.Errorf(codes.Aborted, "register client session owner: %v", err)
+	if err := service.config.Runtime.AttachSession(sessionContext, summary, func() { cancelSession(context.Canceled) }); err != nil {
+		if code, message, ok := daemonStateRejection(err); ok {
+			if !claims.lifecycleAuthenticated {
+				return status.Error(codes.NotFound, errRouteStale.Error())
+			}
+			if sendErr := stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Rejected{Rejected: &cloudv1.SignalRejected{SessionId: sessionID, Code: code, Message: message}})); sendErr != nil {
+				return status.Errorf(codes.Unavailable, "send daemon state rejection: %v", sendErr)
+			}
+			return nil
 		}
+		return status.Errorf(codes.Aborted, "publish client session: %v", err)
 	}
 	defer service.cleanupSession(sessionID, generation)
 	if err := service.authorizeClient(sessionContext, claims, sessionID); err != nil {
@@ -220,6 +235,17 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 			return err
 		}
 		return status.Error(codes.InvalidArgument, "ClientGateway does not accept messages after signaling")
+	}
+}
+
+func daemonStateRejection(err error) (string, string, bool) {
+	switch {
+	case errors.Is(err, ErrDaemonBlocked):
+		return DaemonBlockedCode, "daemon Cloud access is temporarily disabled", true
+	case errors.Is(err, ErrDaemonDeleted):
+		return DaemonDeletedCode, "daemon Cloud enrollment was deleted", true
+	default:
+		return "", "", false
 	}
 }
 
@@ -400,6 +426,7 @@ type admissionClaims struct {
 	product                       cloudv1.ClientProduct
 	accessMode                    cloudv1.CloudClientAccessMode
 	pairingClaimDigest            []byte
+	lifecycleAuthenticated        bool
 }
 
 func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal, challenge *cloudv1.EdgeChallenge) (*admissionClaims, error) {
@@ -435,17 +462,23 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal, 
 	if daemonID == "" {
 		return nil, errors.New("ClientHello authorization payload is invalid")
 	}
-	agent, err := service.config.Runtime.AuthenticatedAgentClaims(ctx, daemonID)
-	if err != nil || agent == nil {
+	clientPublicKey := append([]byte(nil), hello.GetClientPublicKey()...)
+	if err := ticket.VerifyClientHelloProof(clientPublicKey, hello.GetClientProof(), challenge, event, now); err != nil {
+		return nil, err
+	}
+	clientID := remoteauth.Fingerprint(clientPublicKey)
+	if event.GetSenderId() != clientID {
+		return nil, errors.New("ClientHello sender does not match client public key")
+	}
+	agent, agentErr := service.config.Runtime.AuthenticatedAgentClaims(ctx, daemonID)
+	stateErr := errors.Is(agentErr, ErrDaemonBlocked) || errors.Is(agentErr, ErrDaemonDeleted)
+	if agent == nil || (agentErr != nil && !stateErr) {
 		return nil, errRouteStale
 	}
 	if agent.GetEdgeId() != service.config.EdgeID || agent.GetDaemonId() != daemonID {
 		return nil, errRouteStale
 	}
-	claims := &admissionClaims{accountID: agent.GetAccountId(), daemonID: daemonID, clientPublicKey: append([]byte(nil), hello.GetClientPublicKey()...), product: hello.GetProduct(), accessMode: accessMode}
-	if err := ticket.VerifyClientHelloProof(claims.clientPublicKey, hello.GetClientProof(), challenge, event, now); err != nil {
-		return nil, err
-	}
+	claims := &admissionClaims{accountID: agent.GetAccountId(), daemonID: daemonID, clientID: clientID, clientPublicKey: clientPublicKey, product: hello.GetProduct(), accessMode: accessMode}
 	switch authorization := hello.GetAuthorization().(type) {
 	case *cloudv1.ClientHello_CloudRouteGrant:
 		verified, verifyErr := ticket.VerifyCloudRouteGrant(authorization.CloudRouteGrant, agent.GetDevicePublicKey(), daemonID, service.config.Now().UTC())
@@ -455,6 +488,10 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal, 
 		if !bytes.Equal(verified.GetClientPublicKey(), hello.GetClientPublicKey()) || verified.GetProduct() != hello.GetProduct() {
 			return nil, errors.New("ClientHello identity or product does not match CloudRouteGrant")
 		}
+		claims.lifecycleAuthenticated = true
+		if stateErr {
+			return nil, agentErr
+		}
 	case *cloudv1.ClientHello_PairingAdmission:
 		admission := authorization.PairingAdmission
 		expiresAt := time.Unix(0, admission.GetExpiresAtUnixNano()).UTC()
@@ -462,13 +499,12 @@ func (service *Service) admit(ctx context.Context, event *cloudv1.ClientSignal, 
 			admission.GetExpiresAtUnixNano() <= 0 || !expiresAt.After(now) || expiresAt.After(now.Add(24*time.Hour)) {
 			return nil, errors.New("pairing admission does not match the online daemon or validity window")
 		}
+		if stateErr {
+			return nil, errRouteStale
+		}
 		claims.pairingClaimDigest = append([]byte(nil), admission.GetPairingClaimSha256()...)
 	default:
 		return nil, errors.New("ClientHello authorization mode is invalid")
-	}
-	claims.clientID = remoteauth.Fingerprint(claims.clientPublicKey)
-	if event.GetSenderId() != claims.clientID {
-		return nil, errors.New("ClientHello sender does not match client public key")
 	}
 	return claims, nil
 }

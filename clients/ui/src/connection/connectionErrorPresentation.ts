@@ -8,6 +8,8 @@ export type ConnectionFailureReason =
   | 'authorization'
   | 'identity_mismatch'
   | 'entitlement'
+  | 'daemon_blocked'
+  | 'daemon_deleted'
   | 'cancelled'
   | 'internal'
 
@@ -29,6 +31,8 @@ export function connectionFailureReason(error: unknown, phoneOnline = true): Con
     /\b(?:cancelled|canceled|aborted|superseded)\b/i.test(detail) ||
     /(?:native|binding|session) generation changed|stale (?:client )?session/i.test(detail)
   ) return 'cancelled'
+  if (code === 'daemon_deleted') return 'daemon_deleted'
+  if (code === 'daemon_blocked') return 'daemon_blocked'
   if (code === 'entitlement_denied' || /\b(?:entitlement|relay quota|quota exhausted)\b/i.test(detail)) return 'entitlement'
   if (code === 'device_identity_mismatch' || /\b(?:device identity|identity mismatch|fingerprint mismatch)\b/i.test(detail)) return 'identity_mismatch'
   const explicitAuthorizationCode = code === 'login_required' ||
@@ -77,6 +81,10 @@ export function connectionFailurePresentation(
       return failure(reason, t('errors.identityMismatchTitle'), t('errors.identityMismatch'), false, true)
     case 'entitlement':
       return failure(reason, t('errors.connectionProblemTitle'), t('errors.relayEntitlementDenied'), false)
+    case 'daemon_blocked':
+      return failure(reason, t('errors.daemonBlockedTitle'), t('errors.daemonBlocked'), true)
+    case 'daemon_deleted':
+      return failure(reason, t('errors.daemonDeletedTitle'), t('errors.daemonDeleted'), false)
     case 'cancelled':
       return failure(reason, t('errors.connectionProblemTitle'), t('errors.connectionCancelled'), true)
     default:

@@ -47,6 +47,7 @@ type Daemon struct {
 // Store 是 daemon enrollment 的持久事务边界；Presence 不得实现该接口或写入数据库。
 type Store interface {
 	CreateDaemonEnrollment(context.Context, string, string, string, []byte, time.Time, time.Time) (string, error)
+	GetDaemonEnrollmentAccount(context.Context, []byte, time.Time) (string, error)
 	ConsumeDaemonEnrollment(context.Context, []byte, string, string, ed25519.PublicKey, time.Time) (Daemon, error)
 	GetDaemon(context.Context, string) (Daemon, error)
 	ListDaemons(context.Context) ([]Daemon, error)
@@ -189,11 +190,12 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	if err := remoteauth.VerifyDeviceIdentityProof(state.value, state.deviceID, state.fingerprint, state.publicKey, request.GetDeviceProof()); err != nil {
 		return nil, status.Error(codes.Unauthenticated, err.Error())
 	}
-	daemon, err := service.config.Store.ConsumeDaemonEnrollment(ctx, state.tokenDigest, state.deviceID, state.fingerprint, state.publicKey, service.now())
+	now := service.now()
+	accountID, err := service.config.Store.GetDaemonEnrollmentAccount(ctx, state.tokenDigest, now)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	entitlement, entitlementErr := service.config.Entitlement.EffectiveEntitlement(ctx, daemon.AccountID)
+	entitlement, entitlementErr := service.config.Entitlement.EffectiveEntitlement(ctx, accountID)
 	if entitlementErr != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() {
 		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
 	}
@@ -210,7 +212,10 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	locatorDigest := sha256.Sum256(locatorPayload)
-	now := service.now()
+	daemon, err := service.config.Store.ConsumeDaemonEnrollment(ctx, state.tokenDigest, state.deviceID, state.fingerprint, state.publicKey, now)
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
 	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), EdgeLocatorSha256: locatorDigest[:]}
 	signed, err := ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
 	if err != nil {

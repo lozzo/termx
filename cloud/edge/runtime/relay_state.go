@@ -46,6 +46,9 @@ func (state *State) RegisterRelayGrant(ctx context.Context, grant *cloudv1.Relay
 	grantClone := proto.Clone(grant).(*cloudv1.RelayGrant)
 	materialClone := proto.Clone(material).(*cloudv1.RelayICEConfig)
 	return state.mutate(ctx, func(data *stateData) error {
+		if _, err := data.requireActiveDaemon(grantClone.GetPolicy().GetDaemonId()); err != nil {
+			return err
+		}
 		now := state.now().UTC()
 		if !grantClone.GetAuthorizedUntil().AsTime().After(now) {
 			return errors.New("Relay grant is already expired")

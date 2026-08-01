@@ -125,6 +125,9 @@ func newRelayTestState(t *testing.T, now time.Time) *State {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
 	return state
 }
 

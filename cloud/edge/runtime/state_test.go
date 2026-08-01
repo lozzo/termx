@@ -29,7 +29,7 @@ func TestStateFeedIsAtomicAndRejectsStaleGeneration(t *testing.T) {
 	if err := state.UpsertAgent(context.Background(), stateAgent("daemon-1", 1)); !errors.Is(err, edgeruntime.ErrStaleGeneration) {
 		t.Fatalf("stale generation error = %v", err)
 	}
-	if err := state.UpsertSession(context.Background(), stateSession("session-1", 1)); err != nil {
+	if err := state.AttachSession(context.Background(), stateSession("session-1", 1), func() {}); err != nil {
 		t.Fatalf("upsert session: %v", err)
 	}
 	select {
@@ -74,11 +74,18 @@ func TestAuthenticatedAgentClaimsExpireEvenWhileWriterRemainsConnected(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(state.Close)
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
 	claims := &cloudv1.DaemonBindingClaims{
 		BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge", DeviceId: "device", DevicePublicKey: make([]byte, 32),
 		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Second)),
 	}
-	if _, err := state.AttachAuthenticatedAgent(context.Background(), &cloudv1.AgentPresence{DaemonId: "daemon", AccountId: "account", BootId: "boot", ConnectionId: "connection", BindingId: "binding", BindingIssuedAt: claims.GetIssuedAt()}, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() {}); err != nil {
+	generation, daemonState, err := state.AttachAuthenticatedAgent(context.Background(), &cloudv1.AgentPresence{DaemonId: "daemon", AccountId: "account", BootId: "boot", ConnectionId: "connection", BindingId: "binding", BindingIssuedAt: claims.GetIssuedAt()}, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.ApplyDaemonLifecycleResult(context.Background(), "daemon", generation, &cloudv1.DaemonLifecycleResult{DaemonState: daemonState, AgentGeneration: generation, Applied: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := state.AuthenticatedAgentClaims(context.Background(), "daemon"); err != nil {
@@ -90,11 +97,44 @@ func TestAuthenticatedAgentClaimsExpireEvenWhileWriterRemainsConnected(t *testin
 	}
 }
 
+func TestAuthenticatedAgentClaimsAccompanyBlockedStateForGrantVerification(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 16, DeltaBuffer: 16, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(state.Close)
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	claims := &cloudv1.DaemonBindingClaims{
+		BindingId: "binding", DaemonId: "daemon", AccountId: "account", EdgeId: "edge", DeviceId: "device", DevicePublicKey: make([]byte, 32),
+		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Hour)),
+	}
+	generation, active, err := state.AttachAuthenticatedAgent(context.Background(), &cloudv1.AgentPresence{DaemonId: "daemon", AccountId: "account", BootId: "boot", ConnectionId: "connection", BindingId: "binding", BindingIssuedAt: claims.GetIssuedAt()}, claims, func(*cloudv1.EdgeCommand) bool { return true }, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.ApplyDaemonLifecycleResult(context.Background(), "daemon", generation, &cloudv1.DaemonLifecycleResult{DaemonState: active, AgentGeneration: generation, Applied: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.ApplyDaemonStateDelta(context.Background(), &cloudv1.DaemonStateDelta{Daemon: &cloudv1.DaemonStateRecord{DaemonId: "daemon", State: cloudv1.DaemonState_DAEMON_STATE_BLOCKED, StateRevision: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := state.AuthenticatedAgentClaims(context.Background(), "daemon")
+	if !errors.Is(err, edgeruntime.ErrDaemonBlocked) || got == nil || got.GetBindingId() != claims.GetBindingId() {
+		t.Fatalf("blocked claims=%v err=%v", got, err)
+	}
+}
+
 func newState(t *testing.T) *edgeruntime.State {
 	t.Helper()
 	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 256, DeltaBuffer: 256})
 	if err != nil {
 		t.Fatalf("create state: %v", err)
+	}
+	if err := state.ApplyDaemonStateSnapshot(context.Background(), &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{{DaemonId: "daemon-1", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1}}}); err != nil {
+		t.Fatalf("initialize daemon state: %v", err)
 	}
 	t.Cleanup(state.Close)
 	return state

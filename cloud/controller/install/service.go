@@ -187,7 +187,7 @@ echo "AnyTTY Cloud Edge installed: %s"
 `, strconv.Quote(artifactURL), strconv.Quote(service.artifactDigest), strconv.Quote(signature), string(service.artifactPublicPEM), service.artifactVersion, service.artifactVersion, service.artifactVersion, strconv.Quote(service.publicOrigin), strconv.Quote(service.publicOrigin+"/api/install/register"), strconv.Quote(edge.ID), strconv.Quote(bootstrap), strconv.Quote(edge.PublicEndpoint), endpointPort, edge.ID), nil
 }
 
-// Register 校验两个 CSR、原子消费 bootstrap，再签发专属 identity/public 证书。
+// Register 校验两个 CSR 和目标 endpoint、原子消费 bootstrap，再签发专属 identity/public 证书。
 func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterEdgeRequest) (*cloudv1.RegisterEdgeResponse, error) {
 	if request == nil || strings.TrimSpace(request.GetEdgeId()) == "" || strings.TrimSpace(request.GetBootstrapToken()) == "" {
 		return nil, errors.New("Edge ID and bootstrap token are required")
@@ -204,17 +204,17 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterE
 	if err != nil || len(identityCSR.URIs) != 1 || identityCSR.URIs[0].String() != expectedURI.String() {
 		return nil, errors.New("identity CSR does not contain the expected Edge URI SAN")
 	}
-	csrDigest := sha256.Sum256(identityCSR.Raw)
-	edge, err := service.edges.ConsumeBootstrapClaim(ctx, request.GetBootstrapToken(), request.GetEdgeId(), csrDigest[:])
+	edge, err := service.edges.GetEdge(ctx, request.GetEdgeId())
 	if err != nil {
 		return nil, err
 	}
-	host := edge.PublicEndpoint
-	if parsedHost, _, splitErr := net.SplitHostPort(host); splitErr == nil {
-		host = parsedHost
+	if err := validatePublicCSR(publicCSR, edge.PublicEndpoint); err != nil {
+		return nil, err
 	}
-	if len(publicCSR.DNSNames) != 1 || !strings.EqualFold(publicCSR.DNSNames[0], host) {
-		return nil, errors.New("public CSR DNS SAN does not match Edge endpoint")
+	csrDigest := sha256.Sum256(identityCSR.Raw)
+	edge, err = service.edges.ConsumeBootstrapClaim(ctx, request.GetBootstrapToken(), request.GetEdgeId(), csrDigest[:])
+	if err != nil {
+		return nil, err
 	}
 	identityCertificate, err := service.issue(identityCSR, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth})
 	if err != nil {
@@ -232,6 +232,23 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterE
 		ControllerAddress: service.controllerAddress, ControllerServerName: service.controllerServerName,
 		DesiredConfig: edge.SignedConfig, ConfigKeyId: keyID, ConfigSigningPublicKey: configPublicKey,
 	}, nil
+}
+
+func validatePublicCSR(csr *x509.CertificateRequest, publicEndpoint string) error {
+	host := strings.TrimSpace(publicEndpoint)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = strings.Trim(parsedHost, "[]")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if len(csr.IPAddresses) != 1 || !csr.IPAddresses[0].Equal(ip) || len(csr.DNSNames) != 0 {
+			return errors.New("public CSR IP SAN does not match Edge endpoint")
+		}
+		return nil
+	}
+	if len(csr.DNSNames) != 1 || !strings.EqualFold(csr.DNSNames[0], host) || len(csr.IPAddresses) != 0 {
+		return errors.New("public CSR DNS SAN does not match Edge endpoint")
+	}
+	return nil
 }
 
 func (service *Service) issue(csr *x509.CertificateRequest, usages []x509.ExtKeyUsage) ([]byte, error) {

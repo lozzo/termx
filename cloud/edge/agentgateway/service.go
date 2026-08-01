@@ -22,25 +22,28 @@ import (
 )
 
 // ProtocolVersion 是要求 Edge 先发 challenge 的 AgentGateway 协议版本。
-const ProtocolVersion uint32 = 2
+const ProtocolVersion uint32 = 3
 
 // Runtime 是 Edge 唯一 State actor 暴露给 AgentGateway 的窄连接边界。
 type Runtime interface {
-	AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.DaemonBindingClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error)
+	ResolveDaemonState(context.Context, string) (*cloudv1.DaemonStateRecord, error)
+	AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.DaemonBindingClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, *cloudv1.DaemonStateRecord, error)
 	DetachAgent(context.Context, string, uint64) error
 	ResolveAgentSignal(context.Context, string, uint64, *cloudv1.AgentEvent) error
+	ApplyDaemonLifecycleResult(context.Context, string, uint64, *cloudv1.DaemonLifecycleResult) error
 }
 
 // Config 提供 Edge identity、动态 Controller binding key set 和心跳策略。
 type Config struct {
-	EdgeID           string
-	EdgeBootID       string
-	Runtime          Runtime
-	VerificationKeys func(time.Time) (ticket.KeySet, error)
-	Heartbeat        time.Duration
-	HeartbeatTimeout time.Duration
-	Now              func() time.Time
-	ChallengeRandom  io.Reader
+	EdgeID            string
+	EdgeBootID        string
+	Runtime           Runtime
+	VerificationKeys  func(time.Time) (ticket.KeySet, error)
+	Heartbeat         time.Duration
+	HeartbeatTimeout  time.Duration
+	DeletedAckTimeout time.Duration
+	Now               func() time.Time
+	ChallengeRandom   io.Reader
 }
 
 // Service 验证 daemon binding/DeviceIdentity proof，并把连接生命周期提交给 Runtime actor。
@@ -53,7 +56,10 @@ type Service struct {
 func NewService(config Config) (*Service, error) {
 	config.EdgeID = strings.TrimSpace(config.EdgeID)
 	config.EdgeBootID = strings.TrimSpace(config.EdgeBootID)
-	if config.EdgeID == "" || config.EdgeBootID == "" || config.Runtime == nil || config.VerificationKeys == nil || config.Heartbeat <= 0 || config.HeartbeatTimeout < config.Heartbeat {
+	if config.DeletedAckTimeout == 0 {
+		config.DeletedAckTimeout = config.HeartbeatTimeout
+	}
+	if config.EdgeID == "" || config.EdgeBootID == "" || config.Runtime == nil || config.VerificationKeys == nil || config.Heartbeat <= 0 || config.HeartbeatTimeout < config.Heartbeat || config.DeletedAckTimeout <= 0 {
 		return nil, errors.New("AgentGateway Edge identity, runtime, ticket keys, and heartbeat policy are required")
 	}
 	if config.Now == nil {
@@ -91,6 +97,9 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
+	if _, err := service.config.Runtime.ResolveDaemonState(stream.Context(), claims.GetDaemonId()); err != nil {
+		return status.Errorf(codes.Unavailable, "resolve daemon state: %v", err)
+	}
 	connectionCtx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 	writer := newWriter(connectionCtx, cancel, stream, service.config.EdgeID, service.config.EdgeBootID, event.GetConnectionId(), 64)
@@ -99,7 +108,7 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 		DaemonId: claims.GetDaemonId(), AccountId: claims.GetAccountId(), BootId: event.GetBootId(), ConnectionId: event.GetConnectionId(),
 		BindingId: claims.GetBindingId(), BindingIssuedAt: claims.GetIssuedAt(),
 	}
-	generation, err := service.config.Runtime.AttachAuthenticatedAgent(connectionCtx, presence, claims, writer.trySend, writer.close)
+	generation, daemonState, err := service.config.Runtime.AttachAuthenticatedAgent(connectionCtx, presence, claims, writer.trySend, writer.close)
 	if err != nil {
 		writer.close()
 		return status.Errorf(codes.Aborted, "attach Agent generation: %v", err)
@@ -110,7 +119,7 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 		_ = service.config.Runtime.DetachAgent(detachCtx, claims.GetDaemonId(), generation)
 	}()
 	if !writer.trySend(&cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Ready{Ready: &cloudv1.AgentReady{
-		Generation: generation, Heartbeat: &cloudv1.HeartbeatPolicy{Interval: durationpb.New(service.config.Heartbeat), Timeout: durationpb.New(service.config.HeartbeatTimeout)},
+		Generation: generation, Heartbeat: &cloudv1.HeartbeatPolicy{Interval: durationpb.New(service.config.Heartbeat), Timeout: durationpb.New(service.config.HeartbeatTimeout)}, DaemonState: daemonState,
 	}}}) {
 		return status.Error(codes.Unavailable, "Agent writer is unavailable")
 	}
@@ -120,6 +129,14 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	expectedSequence := uint64(2)
 	timer := time.NewTimer(service.config.HeartbeatTimeout)
 	defer timer.Stop()
+	deletedNotice := writer.deleted
+	var deletedTimer *time.Timer
+	var deletedDeadline <-chan time.Time
+	defer func() {
+		if deletedTimer != nil {
+			deletedTimer.Stop()
+		}
+	}()
 	expiresIn := claims.GetExpiresAt().AsTime().Sub(service.config.Now().UTC())
 	if expiresIn <= 0 {
 		return status.Error(codes.Unauthenticated, "daemon binding expired after admission")
@@ -134,6 +151,12 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 			return status.Errorf(codes.Unavailable, "send Edge command: %v", writeErr)
 		case <-timer.C:
 			return status.Error(codes.DeadlineExceeded, "Agent heartbeat timed out")
+		case <-deletedNotice:
+			deletedNotice = nil
+			deletedTimer = time.NewTimer(service.config.DeletedAckTimeout)
+			deletedDeadline = deletedTimer.C
+		case <-deletedDeadline:
+			return status.Error(codes.DeadlineExceeded, "daemon DELETED lifecycle acknowledgement timed out")
 		case <-expiry.C:
 			return status.Error(codes.Unauthenticated, "daemon binding expired")
 		case result := <-received:
@@ -146,7 +169,11 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 			if err := validateAgentEvent(result.event, event, generation, expectedSequence); err != nil {
 				return status.Error(codes.InvalidArgument, err.Error())
 			}
-			if result.event.GetAnswer() != nil || result.event.GetRejected() != nil || result.event.GetAuthorization() != nil {
+			if lifecycle := result.event.GetLifecycleResult(); lifecycle != nil {
+				if err := service.config.Runtime.ApplyDaemonLifecycleResult(connectionCtx, claims.GetDaemonId(), generation, lifecycle); err != nil {
+					return status.Error(codes.FailedPrecondition, err.Error())
+				}
+			} else if result.event.GetAnswer() != nil || result.event.GetRejected() != nil || result.event.GetAuthorization() != nil {
 				if err := service.config.Runtime.ResolveAgentSignal(connectionCtx, claims.GetDaemonId(), generation, result.event); err != nil {
 					return status.Error(codes.FailedPrecondition, err.Error())
 				}
@@ -230,6 +257,14 @@ func validateAgentEvent(event, hello *cloudv1.AgentEvent, generation, expectedSe
 		if strings.TrimSpace(event.GetAuthorization().GetCorrelationId()) == "" || strings.TrimSpace(event.GetAuthorization().GetSessionId()) == "" || (!event.GetAuthorization().GetAuthorized() && strings.TrimSpace(event.GetAuthorization().GetCode()) == "") {
 			return errors.New("Agent authorization result is invalid")
 		}
+	case event.GetLifecycleResult() != nil:
+		result := event.GetLifecycleResult()
+		state := result.GetDaemonState()
+		if result.GetAgentGeneration() != generation || state == nil || state.GetDaemonId() != hello.GetSenderId() || state.GetStateRevision() == 0 ||
+			(state.GetState() != cloudv1.DaemonState_DAEMON_STATE_ACTIVE && state.GetState() != cloudv1.DaemonState_DAEMON_STATE_BLOCKED && state.GetState() != cloudv1.DaemonState_DAEMON_STATE_DELETED) ||
+			(!result.GetApplied() && strings.TrimSpace(result.GetErrorMessage()) == "") {
+			return errors.New("Agent lifecycle result is invalid")
+		}
 	default:
 		return errors.New("Agent event payload is unsupported")
 	}
@@ -265,16 +300,21 @@ type outboundWriter struct {
 	queue                        chan *cloudv1.EdgeCommand
 	errors                       chan error
 	closed                       chan struct{}
+	deleted                      chan struct{}
 	closeOnce                    sync.Once
+	deletedOnce                  sync.Once
 }
 
 func newWriter(ctx context.Context, cancel context.CancelFunc, stream cloudv1.AgentGateway_ConnectServer, edgeID, bootID, connectionID string, size int) *outboundWriter {
-	return &outboundWriter{ctx: ctx, cancel: cancel, stream: stream, edgeID: edgeID, bootID: bootID, connectionID: connectionID, queue: make(chan *cloudv1.EdgeCommand, size), errors: make(chan error, 1), closed: make(chan struct{})}
+	return &outboundWriter{ctx: ctx, cancel: cancel, stream: stream, edgeID: edgeID, bootID: bootID, connectionID: connectionID, queue: make(chan *cloudv1.EdgeCommand, size), errors: make(chan error, 1), closed: make(chan struct{}), deleted: make(chan struct{})}
 }
 
 func (writer *outboundWriter) trySend(command *cloudv1.EdgeCommand) bool {
 	if command == nil {
 		return false
+	}
+	if commandDaemonState(command) == cloudv1.DaemonState_DAEMON_STATE_DELETED {
+		writer.deletedOnce.Do(func() { close(writer.deleted) })
 	}
 	select {
 	case <-writer.closed:
@@ -285,6 +325,16 @@ func (writer *outboundWriter) trySend(command *cloudv1.EdgeCommand) bool {
 		writer.close()
 		return false
 	}
+}
+
+func commandDaemonState(command *cloudv1.EdgeCommand) cloudv1.DaemonState {
+	if ready := command.GetReady(); ready != nil && ready.GetDaemonState() != nil {
+		return ready.GetDaemonState().GetState()
+	}
+	if lifecycle := command.GetLifecycle(); lifecycle != nil && lifecycle.GetDaemonState() != nil {
+		return lifecycle.GetDaemonState().GetState()
+	}
+	return cloudv1.DaemonState_DAEMON_STATE_UNSPECIFIED
 }
 
 func (writer *outboundWriter) close() {

@@ -80,6 +80,10 @@ type relayControlSession interface {
 	QueryRelay(context.Context, *cloudv1.RelayQueryRequest) (*cloudv1.RelayQueryResponse, error)
 }
 
+type daemonStateControlSession interface {
+	ResolveDaemonState(context.Context, string) (*cloudv1.DaemonStateRecord, bool, error)
+}
+
 var errRelayReplayConsumed = errors.New("Relay replay record was consumed")
 
 type relayReplayConsumedError struct{ message string }
@@ -236,7 +240,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		}
 	}
 	agentService, err := agentgateway.NewService(agentgateway.Config{
-		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state,
+		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: runtime,
 		VerificationKeys: runtime.bindingKeys.VerificationKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
 	})
 	if err != nil {
@@ -353,10 +357,48 @@ func (runtime *Runtime) UpsertAgent(ctx context.Context, agent *cloudv1.AgentPre
 	return runtime.state.UpsertAgent(ctx, agent)
 }
 
-// UpsertSession 把认证后的客户端信令摘要提交给唯一 State actor。
-// R2 由 integration harness 调用，R5 将由 ClientGateway 调用同一路径。
-func (runtime *Runtime) UpsertSession(ctx context.Context, session *cloudv1.ClientSessionSummary) error {
-	return runtime.state.UpsertSession(ctx, session)
+// AttachSession atomically submits admission, Presence and its cancellation owner.
+func (runtime *Runtime) AttachSession(ctx context.Context, session *cloudv1.ClientSessionSummary, closeSession func()) error {
+	return runtime.state.AttachSession(ctx, session, closeSession)
+}
+
+func (runtime *Runtime) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1.AgentPresence, claims *cloudv1.DaemonBindingClaims, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, *cloudv1.DaemonStateRecord, error) {
+	return runtime.state.AttachAuthenticatedAgent(ctx, agent, claims, send, closeWriter)
+}
+
+func (runtime *Runtime) DetachAgent(ctx context.Context, daemonID string, generation uint64) error {
+	return runtime.state.DetachAgent(ctx, daemonID, generation)
+}
+
+func (runtime *Runtime) ResolveAgentSignal(ctx context.Context, daemonID string, generation uint64, event *cloudv1.AgentEvent) error {
+	return runtime.state.ResolveAgentSignal(ctx, daemonID, generation, event)
+}
+
+func (runtime *Runtime) ApplyDaemonLifecycleResult(ctx context.Context, daemonID string, generation uint64, result *cloudv1.DaemonLifecycleResult) error {
+	return runtime.state.ApplyDaemonLifecycleResult(ctx, daemonID, generation, result)
+}
+
+func (runtime *Runtime) ResolveDaemonState(ctx context.Context, daemonID string) (*cloudv1.DaemonStateRecord, error) {
+	record, err := runtime.state.DaemonState(ctx, daemonID)
+	if err == nil || !errors.Is(err, ErrDaemonStateUnavailable) {
+		return record, err
+	}
+	session := runtime.currentControlSession()
+	if session == nil {
+		return nil, ErrDaemonStateUnavailable
+	}
+	stateSession, ok := session.(daemonStateControlSession)
+	if !ok {
+		return nil, ErrDaemonStateUnavailable
+	}
+	record, found, err := stateSession.ResolveDaemonState(ctx, daemonID)
+	if err != nil || !found || record == nil {
+		return nil, ErrDaemonStateUnavailable
+	}
+	if err := runtime.state.ApplyDaemonStateDelta(ctx, &cloudv1.DaemonStateDelta{Daemon: record}); err != nil {
+		return nil, err
+	}
+	return runtime.state.DaemonState(ctx, daemonID)
 }
 
 // ServeHTTP 在同一 TLS listener 上路由 gRPC health 和固定 HTTP 健康路径。
@@ -702,7 +744,7 @@ func (runtime *Runtime) runControllerLink() {
 		if len(runtime.configPublicKey) != 0 {
 			applyDesiredConfig = runtime.applyDesiredConfig
 		}
-		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
+		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY}
 		capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD)
 		if runtime.relayServer != nil && runtime.relayJournal != nil && !runtime.RelayDegraded() {
 			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_RESERVATION_JOURNAL)
@@ -724,11 +766,13 @@ func (runtime *Runtime) runControllerLink() {
 				}
 				return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 			},
-			ApplyDesiredConfig:    applyDesiredConfig,
-			ApplyBindingKeyBundle: runtime.applyBindingKeyBundle,
-			ApplyCertificate:      runtime.certificateManager.Apply,
-			CloseDaemon:           runtime.state.CloseAgentConnection,
-			CloseSession:          runtime.state.CloseSession,
+			ApplyDesiredConfig:       applyDesiredConfig,
+			ApplyBindingKeyBundle:    runtime.applyBindingKeyBundle,
+			ApplyDaemonStateSnapshot: runtime.state.ApplyDaemonStateSnapshot,
+			ApplyDaemonStateDelta:    runtime.state.ApplyDaemonStateDelta,
+			ApplyCertificate:         runtime.certificateManager.Apply,
+			CloseDaemon:              runtime.state.CloseAgentConnection,
+			CloseSession:             runtime.state.CloseSession,
 		})
 		if err == nil {
 			if runtime.ctx.Err() != nil {
@@ -737,6 +781,7 @@ func (runtime *Runtime) runControllerLink() {
 			}
 			if err = session.WaitReady(runtime.ctx); err != nil {
 				_ = session.Close()
+				_ = runtime.state.InvalidateDaemonStates(context.Background())
 			} else {
 				runtime.setControlSession(session)
 				runtime.setControllerConnected(true)
@@ -744,6 +789,7 @@ func (runtime *Runtime) runControllerLink() {
 				err = session.Wait()
 				runtime.setControlSession(nil)
 				_ = session.Close()
+				_ = runtime.state.InvalidateDaemonStates(context.Background())
 				runtime.setControllerConnected(false)
 			}
 		}
@@ -998,10 +1044,15 @@ func (runtime *Runtime) RenewRelay(ctx context.Context, current *cloudv1.RelayIC
 }
 
 // CloseRelaySession 把 ClientGateway session 生命周期绑定到同进程 TURN allocations。
-func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string) error {
+func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string) (resultErr error) {
 	if runtime == nil || strings.TrimSpace(sessionID) == "" || runtime.relayJournal == nil {
 		return nil
 	}
+	defer func() {
+		if resultErr != nil {
+			runtime.startRelayReplay(runtime.currentControlSession())
+		}
+	}()
 	record, err := runtime.journalRecordForSession(sessionID)
 	if err != nil || record == nil {
 		return err
@@ -1021,6 +1072,9 @@ func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string)
 		return nil
 	}
 	if record.GetStage() == cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE {
+		if err := runtime.state.ForgetRelayGroup(ctx, record.GetGrant().GetReservationId()); err != nil {
+			return err
+		}
 		return runtime.deliverSettlement(ctx, runtime.currentControlSession(), record.GetSettlement())
 	}
 	grant := record.GetGrant()
@@ -1034,6 +1088,18 @@ func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string)
 		}
 		return runtime.deliverSettlement(ctx, runtime.currentControlSession(), settlement)
 	}
+	if err := runtime.journalMarkClosing(grant.GetReservationId()); err != nil {
+		return err
+	}
+	return runtime.finishClosingRelaySession(ctx, runtime.currentControlSession(), grant)
+}
+
+// finishClosingRelaySession runs under the reservation operation lock. CLOSING is
+// already durable, so any failure can be retried by the existing journal replay.
+func (runtime *Runtime) finishClosingRelaySession(ctx context.Context, session relayControlSession, grant *cloudv1.RelayGrant) error {
+	if grant == nil {
+		return errors.New("Relay journal grant is missing during close")
+	}
 	live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId())
 	if err != nil {
 		return err
@@ -1043,20 +1109,17 @@ func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string)
 		if err := runtime.journalPutSettlement(settlement); err != nil {
 			return err
 		}
-		return runtime.deliverSettlement(ctx, runtime.currentControlSession(), settlement)
+		return runtime.deliverSettlement(ctx, session, settlement)
 	}
-	if err := runtime.state.BeginRelaySessionClose(ctx, sessionID); err != nil {
-		return err
-	}
-	if err := runtime.journalMarkClosing(grant.GetReservationId()); err != nil {
+	if err := runtime.state.BeginRelaySessionClose(ctx, grant.GetSessionId()); err != nil {
 		return err
 	}
 	if runtime.relayServer != nil {
-		if err := runtime.relayServer.CloseSessionAllocations(ctx, sessionID); err != nil {
+		if err := runtime.relayServer.CloseSessionAllocations(ctx, grant.GetSessionId()); err != nil {
 			return err
 		}
 	}
-	settlement, err := runtime.state.RelaySessionSettlement(ctx, sessionID, time.Now().UTC())
+	settlement, err := runtime.state.RelaySessionSettlement(ctx, grant.GetSessionId(), time.Now().UTC())
 	if err != nil || settlement == nil {
 		return errors.Join(err, errors.New("Relay group did not produce a static aggregate settlement"))
 	}
@@ -1066,7 +1129,7 @@ func (runtime *Runtime) CloseRelaySession(ctx context.Context, sessionID string)
 	if err := runtime.state.ForgetRelayGroup(ctx, grant.GetReservationId()); err != nil {
 		return err
 	}
-	return runtime.deliverSettlement(ctx, runtime.currentControlSession(), settlement)
+	return runtime.deliverSettlement(ctx, session, settlement)
 }
 
 func (runtime *Runtime) setControlSession(session relayControlSession) {
@@ -1217,11 +1280,11 @@ func (runtime *Runtime) replayRelayRecord(ctx context.Context, session relayCont
 			return err
 		}
 	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_CLOSING:
-		live, err := runtime.state.RelayReservationLive(ctx, grant.GetReservationId())
-		if err != nil || live {
+		return runtime.finishClosingRelaySession(ctx, session, grant)
+	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE:
+		if err := runtime.state.ForgetRelayGroup(ctx, grant.GetReservationId()); err != nil {
 			return err
 		}
-	case cloudv1.RelayJournalStage_RELAY_JOURNAL_STAGE_SETTLEMENT_DURABLE:
 		return runtime.deliverSettlement(ctx, session, record.GetSettlement())
 	default:
 		return errors.New("Relay journal contains an invalid stage")

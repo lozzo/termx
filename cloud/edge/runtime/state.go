@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/anytty/anytty/cloud/edge/clientgateway"
 	"github.com/anytty/anytty/cloud/runtimesnapshot"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
@@ -24,6 +25,10 @@ var (
 	ErrAgentCapacityExhausted = errors.New("runtime agent capacity is exhausted")
 	// ErrAgentGenerationExhausted 表示 Agent generation 已耗尽，不能安全回绕。
 	ErrAgentGenerationExhausted = errors.New("runtime agent generation is exhausted")
+	// ErrDaemonStateUnavailable means lifecycle truth is not ready for admission.
+	ErrDaemonStateUnavailable = errors.New("daemon lifecycle state is unavailable")
+	ErrDaemonBlocked          = clientgateway.ErrDaemonBlocked
+	ErrDaemonDeleted          = clientgateway.ErrDaemonDeleted
 )
 
 // StateConfig 约束 Edge runtime actor 的 mailbox 和每条 Controller 流的增量缓冲。
@@ -86,12 +91,15 @@ const (
 type stateData struct {
 	revision            uint64
 	agents              map[string]*cloudv1.AgentPresence
+	agentPresences      map[string]*cloudv1.AgentPresence
 	agentClaims         map[string]*cloudv1.DaemonBindingClaims
 	agentWriters        map[string]agentWriter
 	nextAgentGeneration uint64
 	sessions            map[string]*cloudv1.ClientSessionSummary
 	sessionClosers      map[string]sessionCloser
 	pendingSignals      map[string]pendingSignal
+	daemonStates        map[string]*cloudv1.DaemonStateRecord
+	daemonStatesReady   bool
 	relayGroups         map[string]*relayGroup
 	relayAuth           map[string]string
 	relayPending        map[string]relayPendingAllocation
@@ -168,21 +176,26 @@ func (state *State) UpsertAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 }
 
 // AttachAuthenticatedAgent 为已认证 AgentGateway 分配单调 generation，并保留 daemon 身份供 ClientGateway 离线验签。
-func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1.AgentPresence, claims *cloudv1.DaemonBindingClaims, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, error) {
+func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1.AgentPresence, claims *cloudv1.DaemonBindingClaims, send func(*cloudv1.EdgeCommand) bool, closeWriter func()) (uint64, *cloudv1.DaemonStateRecord, error) {
 	if agent == nil || claims == nil || claims.GetDaemonId() != agent.GetDaemonId() || claims.GetAccountId() != agent.GetAccountId() || len(claims.GetDevicePublicKey()) == 0 {
-		return 0, errors.New("authenticated Agent claims do not match Presence")
+		return 0, nil, errors.New("authenticated Agent claims do not match Presence")
 	}
 	claims = proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
 	if agent == nil || send == nil || closeWriter == nil {
-		return 0, errors.New("authenticated agent and writer are required")
+		return 0, nil, errors.New("authenticated agent and writer are required")
 	}
 	clone := proto.Clone(agent).(*cloudv1.AgentPresence)
 	var generation uint64
-	var oldClose func()
+	var daemonState *cloudv1.DaemonStateRecord
+	var closers []func()
 	state.gate.RLock()
 	defer state.gate.RUnlock()
 	if err := state.callUnderGate(ctx, func(data *stateData) error {
-		if data.agents[clone.GetDaemonId()] == nil && len(data.agents) >= state.limits.maxAgents {
+		policy, err := data.requireDaemonState(clone.GetDaemonId())
+		if err != nil {
+			return err
+		}
+		if data.agentWriters[clone.GetDaemonId()].send == nil && len(data.agentWriters) >= state.limits.maxAgents {
 			return ErrAgentCapacityExhausted
 		}
 		if data.nextAgentGeneration == math.MaxUint64 {
@@ -195,63 +208,82 @@ func (state *State) AttachAuthenticatedAgent(ctx context.Context, agent *cloudv1
 		}
 		data.nextAgentGeneration = candidateGeneration
 		if old := data.agentWriters[clone.GetDaemonId()]; old.close != nil {
-			oldClose = old.close
-			data.cancelAgentSignals(clone.GetDaemonId(), old.generation)
+			closers = append(closers, old.close)
 		}
+		closers = append(closers, data.drainDaemonBusiness(clone.GetDaemonId())...)
 		data.agentWriters[clone.GetDaemonId()] = agentWriter{generation: clone.GetGeneration(), send: send, close: closeWriter}
-		data.agents[clone.GetDaemonId()] = clone
+		data.agentPresences[clone.GetDaemonId()] = clone
 		data.agentClaims[clone.GetDaemonId()] = proto.Clone(claims).(*cloudv1.DaemonBindingClaims)
-		data.revision++
-		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: proto.Clone(clone).(*cloudv1.AgentPresence)}})
 		generation = clone.GetGeneration()
+		daemonState = proto.Clone(policy).(*cloudv1.DaemonStateRecord)
 		return nil
 	}); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	if oldClose != nil {
-		oldClose()
-	}
-	return generation, nil
+	runClosers(closers)
+	return generation, daemonState, nil
 }
 
 // AuthenticatedAgentClaims 返回当前 AgentGateway generation 已验证的 daemon 身份，不访问 Controller。
+// BLOCKED/DELETED 时仍返回 claims 和状态错误，供 ClientGateway 先验签 RouteGrant 再决定是否暴露状态。
 func (state *State) AuthenticatedAgentClaims(ctx context.Context, daemonID string) (*cloudv1.DaemonBindingClaims, error) {
 	daemonID = strings.TrimSpace(daemonID)
 	if daemonID == "" {
 		return nil, errors.New("daemon id is required")
 	}
 	var claims *cloudv1.DaemonBindingClaims
-	if err := state.call(ctx, func(data *stateData) error {
+	err := state.call(ctx, func(data *stateData) error {
+		policy, err := data.requireDaemonState(daemonID)
+		if err != nil {
+			return err
+		}
 		currentClaims := data.agentClaims[daemonID]
-		agent := data.agents[daemonID]
+		presence := data.agentPresences[daemonID]
 		writer := data.agentWriters[daemonID]
-		if currentClaims == nil || agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() || currentClaims.GetExpiresAt() == nil || !currentClaims.GetExpiresAt().AsTime().After(state.now().UTC()) {
+		if currentClaims == nil || presence == nil || writer.send == nil || writer.generation != presence.GetGeneration() || currentClaims.GetExpiresAt() == nil || !currentClaims.GetExpiresAt().AsTime().After(state.now().UTC()) {
 			return ErrStaleGeneration
 		}
 		claims = proto.Clone(currentClaims).(*cloudv1.DaemonBindingClaims)
-		return nil
-	}); err != nil {
-		return nil, err
+		switch policy.GetState() {
+		case cloudv1.DaemonState_DAEMON_STATE_ACTIVE:
+			if data.agents[daemonID] == nil {
+				return ErrStaleGeneration
+			}
+			return nil
+		case cloudv1.DaemonState_DAEMON_STATE_BLOCKED:
+			return ErrDaemonBlocked
+		case cloudv1.DaemonState_DAEMON_STATE_DELETED:
+			return ErrDaemonDeleted
+		default:
+			return ErrDaemonStateUnavailable
+		}
+	})
+	if err != nil {
+		return claims, err
 	}
 	return claims, nil
 }
 
 // DetachAgent 删除精确 AgentGateway generation；迟到连接不能删除替换后的 Presence。
 func (state *State) DetachAgent(ctx context.Context, daemonID string, generation uint64) error {
-	return state.mutate(ctx, func(data *stateData) error {
+	var closers []func()
+	err := state.mutate(ctx, func(data *stateData) error {
 		writer := data.agentWriters[daemonID]
-		current := data.agents[daemonID]
+		current := data.agentPresences[daemonID]
 		if current == nil || current.GetGeneration() != generation || writer.generation != generation {
 			return ErrStaleGeneration
 		}
+		closers = append(closers, data.drainDaemonBusiness(daemonID)...)
 		delete(data.agentWriters, daemonID)
-		delete(data.agents, daemonID)
+		delete(data.agentPresences, daemonID)
 		delete(data.agentClaims, daemonID)
-		data.cancelAgentSignals(daemonID, generation)
-		data.revision++
-		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentRemoved{AgentRemoved: &cloudv1.AgentRemoved{DaemonId: daemonID, Generation: generation}}})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	runClosers(closers)
+	return nil
 }
 
 // SendAgentCommand 在 actor 内解析精确 generation，随后在 actor 外执行有界非阻塞入队。
@@ -309,6 +341,9 @@ func (state *State) BeginAgentSignal(ctx context.Context, correlationID, daemonI
 	var generation uint64
 	var response chan *cloudv1.AgentEvent
 	if err := state.call(ctx, func(data *stateData) error {
+		if _, err := data.requireActiveDaemon(daemonID); err != nil {
+			return err
+		}
 		if _, exists := data.pendingSignals[correlationID]; exists {
 			return errors.New("agent signal correlation already exists")
 		}
@@ -392,13 +427,22 @@ func (state *State) RemoveAgent(ctx context.Context, daemonID string, generation
 	})
 }
 
-// UpsertSession 原子写入较新或同 generation 的客户端信令会话。
-func (state *State) UpsertSession(ctx context.Context, session *cloudv1.ClientSessionSummary) error {
+// AttachSession atomically checks admission and registers the owned closer.
+func (state *State) AttachSession(ctx context.Context, session *cloudv1.ClientSessionSummary, closeSession func()) error {
+	if closeSession == nil {
+		return errors.New("session closer is required")
+	}
 	if _, err := runtimesnapshot.NormalizeClone(&cloudv1.RuntimeSnapshot{Sessions: []*cloudv1.ClientSessionSummary{session}}); err != nil {
 		return err
 	}
 	clone := proto.Clone(session).(*cloudv1.ClientSessionSummary)
 	return state.mutate(ctx, func(data *stateData) error {
+		if _, err := data.requireActiveDaemon(clone.GetDaemonId()); err != nil {
+			return err
+		}
+		if data.agents[clone.GetDaemonId()] == nil {
+			return ErrStaleGeneration
+		}
 		if current := data.sessions[clone.GetSessionId()]; current != nil && clone.GetGeneration() < current.GetGeneration() {
 			return ErrStaleGeneration
 		}
@@ -406,23 +450,9 @@ func (state *State) UpsertSession(ctx context.Context, session *cloudv1.ClientSe
 			return errors.New("runtime client session capacity is exhausted")
 		}
 		data.sessions[clone.GetSessionId()] = clone
+		data.sessionClosers[clone.GetSessionId()] = sessionCloser{generation: clone.GetGeneration(), close: closeSession}
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_SessionUpserted{SessionUpserted: proto.Clone(clone).(*cloudv1.ClientSessionSummary)}})
-		return nil
-	})
-}
-
-// RegisterSessionCloser 把 ClientGateway generation 的取消函数登记到同一 actor。
-func (state *State) RegisterSessionCloser(ctx context.Context, sessionID string, generation uint64, closeSession func()) error {
-	if closeSession == nil {
-		return errors.New("session closer is required")
-	}
-	return state.mutate(ctx, func(data *stateData) error {
-		current := data.sessions[sessionID]
-		if current == nil || current.GetGeneration() != generation {
-			return ErrStaleGeneration
-		}
-		data.sessionClosers[sessionID] = sessionCloser{generation: generation, close: closeSession}
 		return nil
 	})
 }
@@ -548,7 +578,7 @@ func (state *State) Close() {
 func (state *State) run(deltaBuffer int) {
 	defer close(state.done)
 	data := &stateData{
-		agents: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
+		agents: make(map[string]*cloudv1.AgentPresence), agentPresences: make(map[string]*cloudv1.AgentPresence), agentClaims: make(map[string]*cloudv1.DaemonBindingClaims), agentWriters: make(map[string]agentWriter), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal), daemonStates: make(map[string]*cloudv1.DaemonStateRecord),
 		relayGroups: make(map[string]*relayGroup), relayAuth: make(map[string]string), relayPending: make(map[string]relayPendingAllocation), allocations: make(map[string]relayAllocation),
 		subscribers: make(map[uint64]chan *cloudv1.RuntimeDelta), deltaBuffer: deltaBuffer,
 	}

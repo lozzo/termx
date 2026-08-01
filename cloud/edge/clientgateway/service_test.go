@@ -50,9 +50,10 @@ func TestPairingAdmissionRequiresClientProofAndOnlineDaemonIdentity(t *testing.T
 		t.Fatal(err)
 	}
 	event.GetHello().ClientProof = ed25519.Sign(clientPrivateKey, proofBytes)
+	runtime := &pairingAdmissionRuntime{claims: &cloudv1.DaemonBindingClaims{AccountId: "account-1", DaemonId: "daemon-1", DeviceId: "device-1", DevicePublicKey: daemonPublicKey, EdgeId: "edge-1"}}
 	service := &Service{config: Config{
 		EdgeID: "edge-1", EdgeBootID: "edge-boot-1", Now: func() time.Time { return now },
-		Runtime: &pairingAdmissionRuntime{claims: &cloudv1.DaemonBindingClaims{AccountId: "account-1", DaemonId: "daemon-1", DeviceId: "device-1", DevicePublicKey: daemonPublicKey, EdgeId: "edge-1"}},
+		Runtime: runtime,
 	}}
 	claims, err := service.admit(context.Background(), event, challenge)
 	if err != nil || claims.accessMode != cloudv1.CloudClientAccessMode_CLOUD_CLIENT_ACCESS_MODE_PAIRING || !proto.Equal(admission, event.GetHello().GetPairingAdmission()) {
@@ -73,6 +74,50 @@ func TestPairingAdmissionRequiresClientProofAndOnlineDaemonIdentity(t *testing.T
 	wrongProof.GetHello().ClientProof[0] ^= 0xff
 	if _, err := service.admit(context.Background(), wrongProof, challenge); err == nil {
 		t.Fatal("pairing admission accepted an invalid client proof")
+	}
+	runtime.err = ErrDaemonBlocked
+	if _, err := service.admit(context.Background(), event, challenge); !errors.Is(err, errRouteStale) {
+		t.Fatalf("pairing request exposed daemon lifecycle state: %v", err)
+	}
+}
+
+func TestDaemonLifecycleStatusRequiresValidCloudRouteGrant(t *testing.T) {
+	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonIdentity, err := remoteauth.NewIdentity("device-route", daemonPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := ticket.SignCloudRouteGrant(daemonIdentity, &cloudv1.CloudRouteGrantClaims{
+		GrantId: "grant-route", DaemonId: "daemon-route", ClientPublicKey: clientPublicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
+		IssuedAt: timestamppb.New(now.Add(-time.Minute)), ExpiresAt: timestamppb.New(now.Add(time.Hour)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &pairingAdmissionRuntime{
+		claims: &cloudv1.DaemonBindingClaims{AccountId: "account-route", DaemonId: "daemon-route", DeviceId: daemonIdentity.DeviceID, DevicePublicKey: daemonIdentity.PublicKey, EdgeId: "edge-route"},
+		err:    ErrDaemonBlocked,
+	}
+	service := &Service{config: Config{EdgeID: "edge-route", EdgeBootID: "edge-route-boot", Runtime: runtime, Now: func() time.Time { return now }}}
+	challenge := &cloudv1.EdgeChallenge{Nonce: bytesOf(0x41, ticket.EdgeChallengeNonceSize), EdgeId: "edge-route", EdgeBootId: "edge-route-boot", StreamId: "edge-route-stream", IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(ticket.EdgeChallengeLifetime)), Target: cloudv1.EdgeChallengeTarget_EDGE_CHALLENGE_TARGET_CLIENT_GATEWAY}
+
+	valid := signedRouteClientHello(t, clientPrivateKey, grant, challenge, now)
+	if _, err := service.admit(context.Background(), valid, challenge); !errors.Is(err, ErrDaemonBlocked) {
+		t.Fatalf("valid route grant did not receive lifecycle state: %v", err)
+	}
+	tamperedGrant := proto.Clone(grant).(*cloudv1.SignedEnvelope)
+	tamperedGrant.Signature[0] ^= 0xff
+	tampered := signedRouteClientHello(t, clientPrivateKey, tamperedGrant, challenge, now)
+	if _, err := service.admit(context.Background(), tampered, challenge); err == nil || errors.Is(err, ErrDaemonBlocked) || errors.Is(err, ErrDaemonDeleted) {
+		t.Fatalf("invalid route grant exposed daemon lifecycle state: %v", err)
 	}
 }
 
@@ -211,9 +256,27 @@ func signedClientHello(t *testing.T, privateKey ed25519.PrivateKey, admission *c
 	return event
 }
 
+func signedRouteClientHello(t *testing.T, privateKey ed25519.PrivateKey, grant *cloudv1.SignedEnvelope, challenge *cloudv1.EdgeChallenge, now time.Time) *cloudv1.ClientSignal {
+	t.Helper()
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	event := &cloudv1.ClientSignal{
+		ProtocolVersion: ProtocolVersion, MessageId: "route-message", SenderId: remoteauth.Fingerprint(publicKey), BootId: "route-boot", ConnectionId: "route-session", StreamSeq: 1, SentAt: timestamppb.New(now),
+		Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{
+			ClientPublicKey: publicKey, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, SoftwareVersion: "client-v2", AttemptGeneration: 1, RelayPreference: cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY,
+			Authorization: &cloudv1.ClientHello_CloudRouteGrant{CloudRouteGrant: proto.Clone(grant).(*cloudv1.SignedEnvelope)},
+		}},
+	}
+	canonical, err := ticket.ClientHelloProofBytes(challenge, event, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.GetHello().ClientProof = ed25519.Sign(privateKey, canonical)
+	return event
+}
+
 type clientGatewayRuntime struct{ claims *cloudv1.DaemonBindingClaims }
 
-func (*clientGatewayRuntime) UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error {
+func (*clientGatewayRuntime) AttachSession(context.Context, *cloudv1.ClientSessionSummary, func()) error {
 	return nil
 }
 func (*clientGatewayRuntime) RemoveSession(context.Context, string, uint64) error { return nil }
@@ -277,9 +340,12 @@ func bytesOf(value byte, size int) []byte {
 	return result
 }
 
-type pairingAdmissionRuntime struct{ claims *cloudv1.DaemonBindingClaims }
+type pairingAdmissionRuntime struct {
+	claims *cloudv1.DaemonBindingClaims
+	err    error
+}
 
-func (*pairingAdmissionRuntime) UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error {
+func (*pairingAdmissionRuntime) AttachSession(context.Context, *cloudv1.ClientSessionSummary, func()) error {
 	return nil
 }
 func (*pairingAdmissionRuntime) RemoveSession(context.Context, string, uint64) error { return nil }
@@ -291,7 +357,7 @@ func (*pairingAdmissionRuntime) SendAgentCommand(context.Context, string, uint64
 	return nil
 }
 func (runtime *pairingAdmissionRuntime) AuthenticatedAgentClaims(context.Context, string) (*cloudv1.DaemonBindingClaims, error) {
-	return proto.Clone(runtime.claims).(*cloudv1.DaemonBindingClaims), nil
+	return proto.Clone(runtime.claims).(*cloudv1.DaemonBindingClaims), runtime.err
 }
 
 func TestCleanupSessionClosesRelayBeforeRemovingRuntimeSession(t *testing.T) {
@@ -331,7 +397,7 @@ func TestOfflineRelayPreferenceFailsClosedWithoutNewAuthority(t *testing.T) {
 
 type cleanupRuntime struct{ order *[]string }
 
-func (*cleanupRuntime) UpsertSession(context.Context, *cloudv1.ClientSessionSummary) error {
+func (*cleanupRuntime) AttachSession(context.Context, *cloudv1.ClientSessionSummary, func()) error {
 	return nil
 }
 func (runtime *cleanupRuntime) RemoveSession(_ context.Context, sessionID string, generation uint64) error {
