@@ -683,16 +683,19 @@ describe('Terminal input modifier boundary', () => {
 
   it('applies live deltas without cloning the screen and stops bottom anchoring after two paints', async () => {
     terminalHarness.autoCompleteWrites = false
-    const view = render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
-    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
-    const xterm = terminalHarness.instances[0] as FakeXTermInstance
-    stubTerminalFrameBounds(xterm)
     const frames: FrameRequestCallback[] = []
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       frames.push(callback)
       return frames.length
     })
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const view = render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    stubTerminalFrameBounds(xterm)
+    act(() => {
+      while (frames.length > 0) frames.shift()?.(0)
+    })
     const scrollsBeforeWrite = terminalHarness.scrollToBottomCalls
 
     terminalHarness.liveSnapshot = {

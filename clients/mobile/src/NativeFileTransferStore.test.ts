@@ -26,10 +26,12 @@ vi.mock('./plugins/nativeFilePicker', () => ({
   },
 }))
 
+vi.stubGlobal('self', globalThis)
+const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+
 describe('NativeFileTransferStore', () => {
   it('persists a user-paused download and keeps the supplied resume offset', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const storage = memoryStorage()
     const first = new NativeFileTransferStore(storage)
     first.startDownload('machine-a', 'archive.bin', 4096, '/tmp/archive.bin', 1024)
@@ -50,7 +52,6 @@ describe('NativeFileTransferStore', () => {
   })
 
   it('discards seeded recovery history and ignores late transfer work after reset', async () => {
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const storage = memoryStorage()
     storage.setItem('anytty.file-transfers.v2', JSON.stringify([{
       id: 'seeded-upload',
@@ -164,7 +165,6 @@ describe('NativeFileTransferStore', () => {
         throw new Error(`unexpected command ${envelope.command.case}`)
       },
     }
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const store = new NativeFileTransferStore(null)
     store.setSessionResolver(async () => session)
     store.startDownload('studio', 'demo.bin', 4, '/tmp/demo.bin')
@@ -242,7 +242,6 @@ describe('NativeFileTransferStore', () => {
         throw new Error(`unexpected command ${envelope.command.case}`)
       },
     }
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const store = new NativeFileTransferStore(storage)
     store.setSessionResolver(async () => session)
     store.startDownload('studio', 'demo.bin', 4, '/tmp/demo.bin', 2)
@@ -255,7 +254,6 @@ describe('NativeFileTransferStore', () => {
 
   it('keeps machine snapshots stable until transfer state changes', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const store = new NativeFileTransferStore()
     const initial = store.getSnapshot('machine-a')
 
@@ -746,7 +744,6 @@ describe('NativeFileTransferStore', () => {
 
   it('bounds pause while session resolution never returns and ignores the late session', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const lateSession = deferred<ProtoClientSession>()
     let resolverCalls = 0
     let lateSessionCloses = 0
@@ -776,7 +773,6 @@ describe('NativeFileTransferStore', () => {
 
   it('accepts ordered upload ACKs that lag behind the current send offset', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const subscribers: Array<(type: number, payload: Uint8Array) => void> = []
     const sentChunks: Array<{ offset: number, size: number }> = []
     const stream: ProtoResourceStream = {
@@ -816,7 +812,6 @@ describe('NativeFileTransferStore', () => {
 
   it('fails a window-blocked upload when the daemon sends FILE_ERROR without closing the stream', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const subscribers: Array<(type: number, payload: Uint8Array) => void> = []
     const sentOffsets: number[] = []
     const stream: ProtoResourceStream = {
@@ -850,7 +845,6 @@ describe('NativeFileTransferStore', () => {
 
   it('closes the session-owned download when the cancel RPC has no usable result', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const counters = { cancelCommands: 0, releaseCommands: 0, sessionCloses: 0, streamCloses: 0, activeResources: 1 }
     const session = downloadSession(counters)
     const store = new NativeFileTransferStore()
@@ -867,7 +861,6 @@ describe('NativeFileTransferStore', () => {
 
   it('keeps a download failed when neither cancel nor release reaches the daemon', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const counters = { cancelCommands: 0, releaseCommands: 0, sessionCloses: 0, streamCloses: 0, activeResources: 1 }
     const session = downloadSession(counters, true)
     const store = new NativeFileTransferStore()
@@ -884,7 +877,6 @@ describe('NativeFileTransferStore', () => {
 
   it('does not let a late download cleanup error overwrite cancelled state', async () => {
     vi.stubGlobal('self', globalThis)
-    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
     const releaseGate = deferred<void>()
     const releaseStarted = deferred<void>()
     let closeListener: ((error: Error) => void) | undefined
@@ -1062,7 +1054,6 @@ async function createUploadHarness(options: {
   storage?: Storage | null
 }) {
   vi.stubGlobal('self', globalThis)
-  const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
   const resumeToken = new Uint8Array([7, 8, 9])
   const resource = create(AnyTTYApiCommon.ResourceHandleSchema, {
     kind: AnyTTYApiCommon.ResourceKind.FILE_TRANSFER,
