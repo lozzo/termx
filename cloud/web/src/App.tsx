@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useOutletContext } from '
 import { LoginPage } from './pages/LoginPage'
 import { LandingPage } from './pages/LandingPage'
 import { SetupPage } from './pages/SetupPage'
+import { DocsPage } from './pages/DocsPage'
 import { AccountAdminGuard, AdminGuard, CloudShell } from './shell/CloudShell'
 import { Button, Notice, Skeleton } from './ui'
 
@@ -101,8 +102,9 @@ function LazyRouteGroup() {
 export default function App() {
   return <Routes>
     <Route path="/" element={<LandingPage />} />
-	<Route path="/login" element={<LoginPage />} />
-	<Route path="/setup" element={<SetupPage />} />
+    <Route path="/docs" element={<DocsPage />} />
+    <Route path="/login" element={<LoginPage />} />
+    <Route path="/setup" element={<SetupPage />} />
     <Route path="/app" element={<CloudShell />}>
       <Route index element={<Navigate to="overview" replace />} />
       <Route element={<LazyRouteGroup />}>

@@ -16,7 +16,7 @@ export function LandingPage() {
     mainRef.current?.focus({ preventScroll: true })
   }, [location.pathname])
   return <div className="landing-page">
-    <header className="landing-header"><Link className="landing-brand" to="/"><img src={logo} alt="AnyTTY" /><strong>AnyTTY Cloud</strong></Link><nav aria-label="公开导航"><a href="#connect">如何连接</a><a href="#plans">套餐</a><a href="#security">安全</a><a href="https://github.com/anytty/anytty" aria-label="在 GitHub 查看 AnyTTY"><GitFork size={19} /></a><Link className="button button-primary" to="/login">登录 Cloud</Link></nav></header>
+    <header className="landing-header"><Link className="landing-brand" to="/"><img src={logo} alt="AnyTTY" /><strong>AnyTTY Cloud</strong></Link><nav aria-label="公开导航"><a href="#connect">如何连接</a><Link to="/docs">文档</Link><a href="#plans">套餐</a><a href="#security">安全</a><a href="https://github.com/anytty/anytty" aria-label="在 GitHub 查看 AnyTTY"><GitFork size={19} /></a><Link className="button button-primary" to="/login">登录 Cloud</Link></nav></header>
     <main id="landing-main-content" ref={mainRef} tabIndex={-1} aria-label="AnyTTY Cloud 公开首页">
       <section className="landing-hero">
         <div className="hero-copy"><span className="eyebrow">ANYTTY CLOUD</span><h1>AnyTTY Cloud</h1><strong className="hero-statement">随时回到你的电脑。</strong><p>Cloud 账号用于 daemon 注册、连接路由、Relay、订阅与管理。AnyTTY App 不需要账号；扫描目标服务生成的配对二维码后，端点只保存在当前设备。</p><div className="hero-actions"><Link className="button button-primary" to="/login">登录 Cloud 控制台<ArrowRight size={18} /></Link></div><dl><div><dt>App 配对</dt><dd>目标服务二维码</dd></div><div><dt>连接方式</dt><dd>P2P / Relay</dd></div><div><dt>本地保存</dt><dd>无账号同步</dd></div></dl></div>
@@ -30,6 +30,6 @@ export function LandingPage() {
       <section className="security-band" id="security"><div className="section-inner security-layout"><div><span className="eyebrow">安全边界</span><h2>Cloud 管理服务路由，但不能把设备加入 App。</h2></div><div><p><ShieldCheck size={20} />App 配对凭据和端点列表保留在本机，不属于 Cloud 账号数据。</p><p><ShieldCheck size={20} />终端权限由目标设备在加密连接内验证，Edge 无法读取或提升权限。</p><p><ShieldCheck size={20} />Cloud 账号只管理 daemon 注册、路由、Relay、订阅与运营配置。</p></div></div></section>
       <section className="final-cta"><div><img src={logo} alt="" /><h2>先注册 daemon，再让 App 扫描目标服务二维码。</h2><p>登录 Cloud 账号管理服务接入；AnyTTY App 本身无需登录。</p><Link className="button button-primary" to="/login">登录 Cloud 控制台<ArrowRight size={18} /></Link></div></section>
     </main>
-    <footer className="landing-footer"><span>AnyTTY Cloud · Development</span><a href="https://github.com/anytty/anytty">GitHub</a></footer>
+    <footer className="landing-footer"><span>AnyTTY Cloud · Development</span><Link to="/docs">文档</Link><a href="https://github.com/anytty/anytty">GitHub</a></footer>
   </div>
 }

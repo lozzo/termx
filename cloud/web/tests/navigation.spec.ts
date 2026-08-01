@@ -144,6 +144,30 @@ test('公开落地页展示真实连接路径和套餐', async ({ page }, testIn
   await page.screenshot({ path: testInfo.outputPath('landing.png'), fullPage: true })
 })
 
+test('公开文档页提供真实连接说明、搜索和响应式目录', async ({ page }, testInfo) => {
+  await page.goto('/docs')
+  await expect(page).toHaveTitle('使用文档 · AnyTTY Cloud')
+  await expect(page.getByRole('heading', { name: 'AnyTTY 使用文档' })).toBeVisible()
+  await expect(page.getByText('AnyTTY App 不登录、不自动发现设备', { exact: false })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '连接路径速览' })).toContainText('Local')
+  await expect(page.getByRole('navigation', { name: '连接路径速览' })).toContainText('SSH / Direct')
+  await expect(page.getByRole('navigation', { name: '连接路径速览' })).toContainText('Cloud')
+
+  const search = page.getByRole('searchbox', { name: '搜索文档主题' })
+  await search.fill('扫码')
+  const results = page.getByRole('navigation', { name: '搜索结果' })
+  await expect(results.getByRole('link', { name: /扫码配对/ })).toBeVisible()
+  await expect(results.getByRole('link')).toHaveCount(1)
+  await search.fill('不存在的主题')
+  await expect(results).toContainText('没有匹配的主题')
+
+  await assertMinimumHitArea(page, '.docs-page .landing-header a, .docs-route-rail a')
+  await assertNoHorizontalOverflow(page)
+  if (testInfo.project.name === 'desktop-chromium') {
+    await page.screenshot({ path: testInfo.outputPath('docs-desktop.png'), fullPage: true })
+  }
+})
+
 test('从登录或 setup 返回公开首页时恢复 title 与 main focus，query-only 更新不窃取焦点', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium')
   await mockAPI(page)
@@ -807,6 +831,11 @@ test('@axe 公开页、Cloud Shell、订单搜索、表格控件与打开的 dia
   await expect(page.getByRole('heading', { name: 'AnyTTY Cloud', exact: true })).toBeVisible()
   await assertThemeApplied(page, colorScheme)
   await assertNoAxeViolations(page, '公开页')
+
+  await page.goto('/docs')
+  await expect(page.getByRole('heading', { name: 'AnyTTY 使用文档' })).toBeVisible()
+  await assertNoHorizontalOverflow(page)
+  await assertNoAxeViolations(page, '公开文档页')
 
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible()
