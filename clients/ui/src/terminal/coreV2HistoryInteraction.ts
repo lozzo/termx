@@ -3,7 +3,9 @@ import type { CoreV2HistorySurfaceSnapshot } from './coreV2HistorySurface'
 import type {
   CoreV2HistoryCursor,
   CoreV2HistoryRange,
-  CoreV2HistoryRow,
+  CoreV2HistorySearchDirection,
+  CoreV2HistorySearchResult,
+  CoreV2HistoryTextPosition,
 } from './coreV2TerminalProtocol'
 
 export interface CoreV2HistoryCellPoint {
@@ -16,10 +18,7 @@ export interface CoreV2HistorySelection {
   focus: CoreV2HistoryCellPoint
 }
 
-export interface CoreV2HistorySearchMatch {
-  range: CoreV2HistoryRange
-  text: string
-}
+export type CoreV2HistorySearchMatch = Extract<CoreV2HistorySearchResult, { found: true }>
 
 export function selectionFromSurfaceRows(
   snapshot: CoreV2HistorySurfaceSnapshot,
@@ -76,35 +75,33 @@ export async function copyHistorySelection(
   })
 }
 
-export function searchHistorySurface(
+export async function searchHistorySurface(
+  source: Pick<CoreV2HistorySource, 'search'>,
   snapshot: CoreV2HistorySurfaceSnapshot,
   query: string,
-  options: { caseSensitive?: boolean | undefined } = {},
-): CoreV2HistorySearchMatch[] {
+  options: {
+    direction?: CoreV2HistorySearchDirection | undefined
+    start?: CoreV2HistoryTextPosition | undefined
+    limit?: number | undefined
+    signal?: AbortSignal | undefined
+  } = {},
+): Promise<CoreV2HistorySearchResult> {
   ensureUsableSnapshot(snapshot)
-  if (query === '') return []
-  const lines = logicalLineTexts(snapshot)
-  const needle = options.caseSensitive === true ? query : query.toLocaleLowerCase()
-  const matches: CoreV2HistorySearchMatch[] = []
-  for (const line of lines) {
-    const haystack = options.caseSensitive === true ? line.text : line.text.toLocaleLowerCase()
-    let from = 0
-    while (from <= haystack.length) {
-      const index = haystack.indexOf(needle, from)
-      if (index < 0) break
-      matches.push({
-        text: line.text.slice(index, index + query.length),
-        range: {
-          startLineId: line.lineId,
-          startCol: index,
-          endLineId: line.lineId,
-          endCol: index + query.length,
-        },
-      })
-      from = index + Math.max(1, query.length)
-    }
+  if (!snapshot.token) throw new Error('history search requires a frozen history token')
+  if (query === '') return { found: false, wrapped: false }
+  const request = {
+    terminalId: snapshot.terminalId,
+    token: snapshot.token,
+    generation: snapshot.generation ?? undefined,
+    query,
+    direction: options.direction ?? 'forward',
+    cols: snapshot.cols,
+    limit: options.limit ?? Math.max(1, snapshot.viewportRows),
+    start: options.start,
   }
-  return matches
+  return options.signal
+    ? await source.search(request, { signal: options.signal })
+    : await source.search(request)
 }
 
 function ensureUsableSnapshot(snapshot: CoreV2HistorySurfaceSnapshot): void {
@@ -179,12 +176,12 @@ function lineOrder(snapshot: CoreV2HistorySurfaceSnapshot): Map<string, number> 
   return order
 }
 
-function rowText(row: CoreV2HistoryRow): string {
-  return row.cells.map((cell) => cell.text).join('')
+function lineWidth(row: CoreV2HistorySurfaceSnapshot['rows'][number]): number {
+  return row.cells.reduce((width, cell) => width + Math.max(0, cell.width), 0)
 }
 
-function lineWidth(row: CoreV2HistoryRow): number {
-  return row.cells.reduce((width, cell) => width + Math.max(0, cell.width), 0)
+function rowText(row: CoreV2HistorySurfaceSnapshot['rows'][number]): string {
+  return row.cells.map((cell) => cell.text).join('')
 }
 
 function clampColumn(value: number, max: number): number {

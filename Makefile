@@ -9,7 +9,7 @@ CLOUD_EDGE_BIN := $(ARTIFACT_DIR)/bin/anytty-cloud-edge
 ANDROID_DIR := $(CURDIR)/clients/mobile/android
 ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 
-.PHONY: help build build-cloud test test-clients test-android test-all doctor clean
+.PHONY: help build build-cloud test test-clients test-android test-android-device test-all doctor clean
 
 help:
 	@printf '%s\n' \
@@ -19,6 +19,7 @@ help:
 		'  make test          Test the Go module' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
 		'  make test-android  Build/test the AnyTTY Android APK' \
+		'  make test-android-device  Run Android instrumentation and history E2E on a connected device' \
 		'  make test-all      Run all repository test gates sequentially' \
 		'  make doctor        Check toolchain, generated code, and repository layout' \
 		'  make clean         Remove known generated build outputs'
@@ -50,6 +51,12 @@ test-android:
 	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleRelease
 	cp "$(ANDROID_DIR)/app/build/outputs/apk/release/app-release-unsigned.apk" "$(ANDROID_ARTIFACT_DIR)/app-release-unsigned.apk"
 	scripts/verify-android-apk-boundary.sh "$(ANDROID_ARTIFACT_DIR)/app-release-unsigned.apk"
+
+test-android-device:
+	adb get-state >/dev/null
+	npm run cap:build
+	cd "$(ANDROID_DIR)" && ./gradlew connectedDebugAndroidTest
+	npm --workspace @anytty/mobile run e2e:android:history
 
 test-all:
 	$(MAKE) test

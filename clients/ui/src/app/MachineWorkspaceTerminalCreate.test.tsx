@@ -64,6 +64,7 @@ vi.mock('../terminal/Terminal', () => ({
       selectAll: () => { terminalHarness.selection = 'selected terminal text' },
       selectVisible: () => { terminalHarness.selection = 'selected terminal text' },
       getSelection: () => terminalHarness.selection,
+      getSelectionForClipboard: async () => terminalHarness.selection,
       hasSelection: () => terminalHarness.selection !== '',
       clearSelection: () => { terminalHarness.selection = '' },
       pasteText: (text: string) => terminalPasteText(terminalId, text),
@@ -459,6 +460,45 @@ describe('MachineWorkspace terminal creation', () => {
     view.rerender(<MachineWorkspace api={api} connector={connector} initialMachine={machine} phoneOnline={false} connectionReady={false} />)
     await screen.findByText('Your phone is offline')
     expect(screen.queryByText('Connection restored')).toBeNull()
+  })
+
+  it('shows re-pairing after the active daemon enrollment is deleted', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
+    const onNeedsReauthorization = vi.fn()
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+      onNeedsReauthorization={onNeedsReauthorization}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    act(() => {
+      session.emitClosed(Object.assign(new Error('cloud enrollment deleted'), {
+        code: 'daemon_deleted',
+        retryable: false,
+      }))
+    })
+
+    expect(await screen.findByText('Cloud enrollment was deleted')).toBeTruthy()
+    const retryOtherRoutes = screen.getByRole('button', { name: 'Retry other routes' })
+    expect(retryOtherRoutes.className).toContain('min-h-11')
+    const scan = screen.getByRole('button', { name: 'Scan QR' })
+    expect(scan.className).toContain('min-h-11')
+    expect(scan.parentElement?.className).toContain('grid-cols-1')
+    expect(scan.parentElement?.className).toContain('min-[360px]:grid-cols-2')
+    await userEvent.click(scan)
+    expect(onNeedsReauthorization).toHaveBeenCalledWith('studio')
   })
 
   it('returns false without a terminal handle and for a rejected single-target send', async () => {

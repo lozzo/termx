@@ -22,22 +22,25 @@ function reflowHistoryRow(row: CoreV2HistoryRow, cols: number): CoreV2HistoryRow
       cells.push(cell)
       width += cellWidth
     }
-    return [{ ...row, cells, wrapped: false }]
+    return [{ ...row, cells, logicalStartCol: 0, wrapped: false }]
   }
   const cells = row.cells.flatMap(splitHistoryCell)
-  if (cells.length === 0) return [{ ...row, rowInLine: 0, cells: [] }]
+  if (cells.length === 0) return [{ ...row, rowInLine: 0, logicalStartCol: 0, cells: [] }]
 
   const visualRows: CoreV2HistoryRow[] = []
   let current: CoreV2HistoryCell[] = []
   let currentWidth = 0
+  let logicalStartCol = 0
   const flush = () => {
     visualRows.push({
       ...row,
       cells: current,
       tailFillStyle: undefined,
       rowInLine: visualRows.length,
+      logicalStartCol,
       wrapped: true,
     })
+    logicalStartCol += currentWidth
     current = []
     currentWidth = 0
   }

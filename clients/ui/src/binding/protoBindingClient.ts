@@ -5,7 +5,7 @@ import * as AnyTTYApiFile from '../generated/apipb/file_pb'
 import * as AnyTTYApiHistory from '../generated/apipb/history_pb'
 import * as AnyTTYClientBinding from '../generated/bindingpb/client_binding_pb'
 import * as AnyTTYRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
-import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
+import type { ProtoClientSession, ProtoClientSessionCloseError, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
 import type { ConnectionPolicy, ConnectionPolicyState } from '../core/transport'
 
 export const BindingOperation = {
@@ -612,6 +612,8 @@ export class ProtoBindingConnector {
 class ProtoBindingSession implements ProtoClientSession {
   private alive = true
   private readonly eventHandlers = new Set<(event: AnyTTYApiApplication.EventEnvelope) => void>()
+  private readonly closeHandlers = new Set<(error: ProtoClientSessionCloseError) => void>()
+  private closeError: ProtoClientSessionCloseError | null = null
 
   constructor(
   private readonly client: ProtoBindingClient,
@@ -638,6 +640,20 @@ class ProtoBindingSession implements ProtoClientSession {
     return { close: () => this.eventHandlers.delete(handler) }
   }
 
+  subscribeClosed(handler: (error: ProtoClientSessionCloseError) => void): ProtoClientSubscription {
+    const error = this.closeError
+    if (error) {
+      let subscribed = true
+      queueMicrotask(() => {
+        if (subscribed) handler(error)
+      })
+      return { close: () => { subscribed = false } }
+    }
+    if (!this.alive) return { close() {} }
+    this.closeHandlers.add(handler)
+    return { close: () => this.closeHandlers.delete(handler) }
+  }
+
   openResourceStream(resource: NonNullable<AnyTTYClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
     return this.client.openResourceStream(this.handle, resource, options)
@@ -655,6 +671,7 @@ class ProtoBindingSession implements ProtoClientSession {
     if (!this.alive) return
     this.alive = false
     this.eventHandlers.clear()
+    this.closeHandlers.clear()
     await this.client.closeSession(this.handle)
   }
 
@@ -663,9 +680,15 @@ class ProtoBindingSession implements ProtoClientSession {
     this.eventHandlers.forEach((handler) => handler(event))
   }
 
-  markClosed(_error?: Error): void {
+  markClosed(error?: ProtoClientSessionCloseError): void {
+    if (!this.alive) return
     this.alive = false
     this.eventHandlers.clear()
+    const handlers = [...this.closeHandlers]
+    this.closeHandlers.clear()
+    if (!error) return
+    this.closeError = error
+    handlers.forEach((handler) => handler(error))
   }
 }
 

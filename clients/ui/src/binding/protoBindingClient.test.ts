@@ -90,13 +90,65 @@ describe('ProtoBindingSession invalidation', () => {
 
     try {
       const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+      const closed = vi.fn()
+      session.subscribeClosed(closed)
       await expect(session.execute(create(CommandEnvelopeSchema))).rejects.toMatchObject({ code: 'unavailable' })
       expect(session.isAlive()).toBe(false)
       expect(invalidated).toHaveBeenCalledTimes(1)
+      expect(closed).toHaveBeenCalledTimes(1)
+      expect(closed).toHaveBeenCalledWith(expect.objectContaining({ code: 'unavailable', retryable: true }))
+
+      backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+        event: { case: 'sessionClosed', value: create(SessionClosedEventSchema, {
+          sessionHandle: 70n,
+          error: create(ApiErrorSchema, { code: ApiErrorCode.UNAVAILABLE, message: 'already closed', retryable: true }),
+        }) },
+      })))
+      expect(closed).toHaveBeenCalledTimes(1)
     } finally {
       document.removeEventListener('anytty:session-invalidated', invalidated)
       await client.close()
     }
+  })
+
+  it('publishes a structured asynchronous close reason exactly once', async () => {
+    const backend = new CancellationBackend()
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.OPEN_SESSION) {
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+            operationHandle: 1n,
+            sessionHandle: 70n,
+            session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+          }) },
+        }))))
+        return 1n
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    const closed = vi.fn()
+    session.subscribeClosed(closed)
+    const event = toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+      event: { case: 'sessionClosed', value: create(SessionClosedEventSchema, {
+        sessionHandle: 70n,
+        error: create(ApiErrorSchema, { code: ApiErrorCode.DAEMON_BLOCKED, message: 'daemon blocked', retryable: true }),
+      }) },
+    }))
+
+    backend.emit(event)
+    backend.emit(event)
+
+    expect(session.isAlive()).toBe(false)
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(closed).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'daemon blocked',
+      code: 'daemon_blocked',
+      retryable: true,
+    }))
+    await client.close()
   })
 })
 
@@ -535,6 +587,8 @@ describe('ProtoBindingClient terminal event release ownership', () => {
   }
   const client = new ProtoBindingClient(backend)
   const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+  const sessionClosed = vi.fn()
+  session.subscribeClosed(sessionClosed)
   const stream = await session.openResourceStream(create(ResourceHandleSchema, { kind: ResourceKind.FILE_TRANSFER, opaqueToken: Uint8Array.of(1) }))
   await stream.close()
   await session.close()
@@ -544,6 +598,7 @@ describe('ProtoBindingClient terminal event release ownership', () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(backend.released.filter((handle) => handle === 80n)).toHaveLength(1)
   expect(backend.released.filter((handle) => handle === 70n)).toHaveLength(1)
+  expect(sessionClosed).not.toHaveBeenCalled()
   expect(backendClosed).toBe(false)
   await client.close()
   })

@@ -17,7 +17,7 @@ describe('CoreV2 history interaction', () => {
   it('copies final text through core-v2 history.copy logical range', async () => {
     const session = new MockProtoSession('machine-local', () => protoResult(
       'historyCopy',
-      create(HistoryCopyResultSchema, { text: 'copied from core' }),
+      create(HistoryCopyResultSchema, { text: 'copied from core', done: true }),
     ))
     const source = createCoreV2HistorySource(session, 'machine-local')
     const snapshot = surfaceSnapshot([
@@ -76,35 +76,32 @@ describe('CoreV2 history interaction', () => {
     })
   })
 
-  it('searches only logical-line surface rows and returns logical ranges', () => {
+  it('searches the complete frozen snapshot through the source in either direction', async () => {
     const snapshot = surfaceSnapshot([
       row('41', 0, 'alpha ALPHA'),
       row('42', 0, 'beta'),
     ])
-    const hiddenLiveAppend = vi.fn(() => 'ALPHA from append log')
+    const result = {
+      found: true as const,
+      match: { startLineId: '4', startCol: 3, endLineId: '4', endCol: 8 },
+      window: { ...emptyWindow(), firstLineId: '4', lastLineId: '4' },
+      wrapped: true,
+    }
+    const source: Pick<CoreV2HistorySource, 'search'> = { search: vi.fn(async () => result) }
 
-    expect(searchHistorySurface(snapshot, 'alpha')).toEqual([
-      {
-        text: 'alpha',
-        range: { startLineId: '41', startCol: 0, endLineId: '41', endCol: 5 },
-      },
-      {
-        text: 'ALPHA',
-        range: { startLineId: '41', startCol: 6, endLineId: '41', endCol: 11 },
-      },
-    ])
-    expect(searchHistorySurface(snapshot, 'ALPHA', { caseSensitive: true })).toEqual([
-      {
-        text: 'ALPHA',
-        range: { startLineId: '41', startCol: 6, endLineId: '41', endCol: 11 },
-      },
-    ])
-    expect(hiddenLiveAppend).not.toHaveBeenCalled()
+    await expect(searchHistorySurface(source, snapshot, 'alpha', {
+      direction: 'backward', start: { lineId: '41', col: 6 }, limit: 12,
+    })).resolves.toEqual(result)
+    expect(source.search).toHaveBeenCalledWith({
+      terminalId: 'terminal-1', token: 'token-1', generation: '7', query: 'alpha',
+      direction: 'backward', cols: 80, limit: 12, start: { lineId: '41', col: 6 },
+    })
   })
 
   it('rejects stale surfaces before building copy/search ranges', async () => {
-    const source: Pick<CoreV2HistorySource, 'copy'> = {
+    const source: Pick<CoreV2HistorySource, 'copy' | 'search'> = {
       copy: vi.fn(async () => 'should not run'),
+      search: vi.fn(async () => ({ found: false, wrapped: false } as const)),
     }
     const snapshot = {
       ...surfaceSnapshot([row('41', 0, 'alpha')]),
@@ -116,9 +113,17 @@ describe('CoreV2 history interaction', () => {
       anchor: { lineId: '41', col: 0 },
       focus: { lineId: '41', col: 5 },
     })).rejects.toThrow(/stale/)
-    expect(() => searchHistorySurface(snapshot, 'alpha')).toThrow(/stale/)
+    await expect(searchHistorySurface(source, snapshot, 'alpha')).rejects.toThrow(/stale/)
+    expect(source.search).not.toHaveBeenCalled()
   })
 })
+
+function emptyWindow() {
+  return {
+    terminalId: 'terminal-1', token: 'token-1', op: 'replace' as const, cols: 80,
+    renderRows: [], lines: [], totalRows: 2, logicalTotal: 2, hasMore: false, generation: '7',
+  }
+}
 
 function surfaceSnapshot(rows: CoreV2HistoryRow[]): CoreV2HistorySurfaceSnapshot {
   const firstLineId = rows[0]?.logicalLineId ?? '0'

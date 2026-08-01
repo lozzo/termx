@@ -206,7 +206,7 @@
     "manage": "管理 {{name}}",
     "state": { "running": "运行中", "exited": "已退出", "unknown": "未知" },
     "paste": { "title": "确认粘贴", "summary": "{{lines}} 行，{{characters}} 个字符", "confirm": "粘贴" },
-    "tools": { "selectAll": "全选", "visible": "可见区域", "cancelSelection": "取消选择", "resizeControl": "尺寸控制", "releaseResize": "释放尺寸控制", "acquireResize": "取得尺寸控制", "owner": "控制方", "follower": "跟随方", "snippets": "快捷短语", "toggleFn": "切换 Fn 快捷键", "showKeyboard": "显示系统键盘", "hideKeyboard": "隐藏系统键盘", "preventKeyboardPopup": "阻止系统键盘弹出", "allowKeyboardPopup": "允许系统键盘弹出", "tabKey": "Tab 键", "modifierAria": "{{modifier}} 修饰键：{{state}}。下一状态：{{nextState}}", "modifierState": { "off": "关闭", "once": "单次", "locked": "锁定" }, "output": "终端输出", "loadingHistory": "正在加载终端历史", "historyUnavailable": "终端历史暂时不可用。", "historyLineTooLarge": "终端历史中有一行内容过大，无法显示。", "reloadHistory": "重新加载历史", "dismissHistoryError": "关闭" }
+    "tools": { "selectAll": "全选", "visible": "可见区域", "cancelSelection": "取消选择", "resizeControl": "尺寸控制", "releaseResize": "释放尺寸控制", "acquireResize": "取得尺寸控制", "owner": "控制方", "follower": "跟随方", "snippets": "快捷短语", "toggleFn": "切换 Fn 快捷键", "showKeyboard": "显示系统键盘", "hideKeyboard": "隐藏系统键盘", "preventKeyboardPopup": "阻止系统键盘弹出", "allowKeyboardPopup": "允许系统键盘弹出", "tabKey": "Tab 键", "modifierAria": "{{modifier}} 修饰键：{{state}}。下一状态：{{nextState}}", "modifierState": { "off": "关闭", "once": "单次", "locked": "锁定" }, "output": "终端输出", "loadingHistory": "正在加载终端历史", "historyPosition": "第 {{current}} / {{total}} 行 {{time}}", "searchHistory": "搜索历史", "searchPrevious": "上一个匹配项", "searchNext": "下一个匹配项", "searchNoResults": "没有匹配内容", "searchMatch": "在第 {{line}} 行找到匹配项", "searchWrapped": "已从另一端继续搜索", "searchUnavailable": "历史搜索暂时不可用", "historyUnavailable": "终端历史暂时不可用。", "historyLineTooLarge": "终端历史中有一行内容过大，无法显示。", "reloadHistory": "重新加载历史", "dismissHistoryError": "关闭" }
   },
   "files": {
     "previewEmptyFile": "文件为空",
@@ -248,6 +248,7 @@
     "restoredCopy": "终端现在可以继续使用。"
   },
   "workspace": {
+    "retryOtherRoutes": "重试其他连接路径",
     "parentDirectory": "上级目录",
     "useThisPath": "使用此路径",
     "pathBookmarked": "已保存 {{path}}",

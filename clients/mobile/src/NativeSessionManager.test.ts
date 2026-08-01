@@ -6,6 +6,9 @@ import { CommandEnvelopeSchema, type CommandEnvelope, type EventEnvelope, type R
 import { ConnectionCandidateType, ConnectionObservedPath, ConnectionRouteKind, ConnectionSnapshotSchema, type ConnectionSnapshot } from '../../ui/src/generated/bindingpb/client_binding_pb'
 import { NativeSessionManager } from './NativeSessionManager'
 
+type ProtoClientSessionCloseHandler = Parameters<ProtoClientSession['subscribeClosed']>[0]
+type ProtoClientSessionCloseError = Parameters<ProtoClientSessionCloseHandler>[0]
+
 describe('NativeSessionManager', () => {
   it('shares one Go session across independent UI leases', async () => {
     const session = fakeSession()
@@ -108,6 +111,72 @@ describe('NativeSessionManager', () => {
     expect(current.stamp.generation).toBe(2n)
   })
 
+  it('evicts an asynchronously closed session and preserves its structured failure', async () => {
+    const first = fakeSession()
+    const second = fakeSession(2n)
+    const connect = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    const manager = new NativeSessionManager('daemon-a', { connect })
+    await manager.get()
+    const failure = Object.assign(new Error('daemon blocked'), {
+      code: 'daemon_blocked',
+      retryable: true,
+    })
+
+    first.fail(failure)
+
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(manager.connectionState.getSnapshot()).toMatchObject({
+      phase: 'failed',
+      statusText: 'daemon blocked',
+      error: { message: 'daemon blocked', code: 'daemon_blocked', retryable: true },
+    })
+    expect(manager.connectionState.getSnapshot().error).toBe(failure)
+
+    const current = await manager.get()
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(current.stamp.generation).toBe(2n)
+  })
+
+  it('keeps structured connection failures in connection-state callbacks', async () => {
+    const failure = Object.assign(new Error('daemon deleted'), {
+      code: 'daemon_deleted',
+      retryable: false,
+    })
+    const connect = vi.fn(async (_input, options) => {
+      options?.onConnectionState?.({
+        machineId: 'daemon-a',
+        phase: 'failed',
+        statusText: failure.message,
+        relayInUse: false,
+        error: failure,
+      })
+      throw failure
+    })
+    const manager = new NativeSessionManager('daemon-a', { connect })
+    const snapshots: Array<{ error?: Error }> = []
+
+    await expect(manager.get({ onConnectionState: (snapshot) => snapshots.push(snapshot) })).rejects.toBe(failure)
+
+    expect(snapshots.some((snapshot) => snapshot.error === failure)).toBe(true)
+    expect(manager.connectionState.getSnapshot().error).toBe(failure)
+  })
+
+  it('does not publish an asynchronous failure for an explicit reset', async () => {
+    const session = fakeSession()
+    const manager = new NativeSessionManager('daemon-a', { connect: vi.fn(async () => session) })
+    const phases: string[] = []
+    manager.connectionState.subscribe(() => phases.push(manager.connectionState.getSnapshot().phase))
+    await manager.get()
+
+    await manager.reset()
+    session.fail(Object.assign(new Error('late close'), { code: 'unavailable' }))
+
+    expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'idle', error: null })
+    expect(phases).not.toContain('failed')
+  })
+
   it('lets one lease cancel its wait without cancelling the shared connect', async () => {
     let resolveConnect!: (session: ProtoClientSession) => void
     let managerSignal: AbortSignal | undefined
@@ -198,16 +267,34 @@ describe('NativeSessionManager', () => {
   })
 })
 
-function fakeSession(generation = 1n, connection?: ConnectionSnapshot): ProtoClientSession & { markDead(): void } {
+function fakeSession(generation = 1n, connection?: ConnectionSnapshot): ProtoClientSession & {
+  markDead(): void
+  fail(error: ProtoClientSessionCloseError): void
+} {
   let alive = true
+  const closeHandlers = new Set<ProtoClientSessionCloseHandler>()
   return {
     stamp: create(EndpointSessionStampSchema, { endpointId: 'daemon-a', routeId: 'direct', generation }),
     ...(connection ? { connection } : {}),
     execute: vi.fn(async (_command: CommandEnvelope) => ({} as ResultEnvelope)),
     subscribeEvents: vi.fn((_handler: (event: EventEnvelope) => void): ProtoClientSubscription => ({ close() {} })),
+    subscribeClosed: vi.fn((handler): ProtoClientSubscription => {
+      closeHandlers.add(handler)
+      return { close: () => closeHandlers.delete(handler) }
+    }),
     openResourceStream: vi.fn(async (_resource: ResourceHandle): Promise<ProtoResourceStream> => { throw new Error('unused') }),
     isAlive: () => alive,
-    close: vi.fn(async () => { alive = false }),
+    close: vi.fn(async () => {
+      alive = false
+      closeHandlers.clear()
+    }),
     markDead: () => { alive = false },
+    fail: (error) => {
+      if (!alive) return
+      alive = false
+      const handlers = [...closeHandlers]
+      closeHandlers.clear()
+      handlers.forEach((handler) => handler(error))
+    },
   }
 }

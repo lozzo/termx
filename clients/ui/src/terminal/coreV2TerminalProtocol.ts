@@ -3,7 +3,9 @@ import {
   RowOwnership,
   type CellStyle,
   type HistoryLineSpan,
+  type HistoryRange,
   type HistoryRow,
+  type HistorySearchResult,
   type HistoryWindowResult,
   type ScreenCell,
 } from '../generated/apipb/history_pb'
@@ -70,6 +72,7 @@ export interface CoreV2HistoryRow {
   screenRowSet?: boolean | undefined
   logicalLineId?: string | undefined
   rowInLine?: number | undefined
+  logicalStartCol?: number | undefined
 }
 
 export interface CoreV2HistoryLineSpan {
@@ -117,9 +120,42 @@ export interface CoreV2HistoryCopyRequest {
   range: CoreV2HistoryRange
 }
 
+export type CoreV2HistorySearchDirection = 'forward' | 'backward'
+
+export interface CoreV2HistoryTextPosition {
+  lineId: string
+  col: number
+}
+
+export interface CoreV2HistorySearchRequest {
+  terminalId: string
+  token: string
+  generation?: string | number | bigint | undefined
+  query: string
+  direction: CoreV2HistorySearchDirection
+  cols: number
+  limit: number
+  start?: CoreV2HistoryTextPosition | undefined
+}
+
+export type CoreV2HistorySearchResult =
+  | { found: false; wrapped: false }
+  | { found: true; match: CoreV2HistoryRange; window: CoreV2HistoryWindow; wrapped: boolean }
+
 export interface CoreV2HistoryReleaseRequest {
   terminalId: string
   token: string
+}
+
+export function coreV2HistorySearchFromAPI(value: HistorySearchResult): CoreV2HistorySearchResult {
+  if (!value.found) return { found: false, wrapped: false }
+  if (!value.match || !value.window) throw new Error('history search returned an incomplete match')
+  return {
+    found: true,
+    match: historyRangeFromAPI(value.match),
+    window: coreV2HistoryWindowFromAPI(value.window),
+    wrapped: value.wrapped,
+  }
 }
 
 export function coreV2HistoryWindowFromAPI(value: HistoryWindowResult): CoreV2HistoryWindow {
@@ -186,6 +222,15 @@ function historyLineFromAPI(line: HistoryLineSpan): CoreV2HistoryLineSpan {
     timestampEndUnixMs: unixNanoToMs(line.timestampEndUnixNano),
     clippedBefore: line.clippedBefore,
     clippedAfter: line.clippedAfter,
+  }
+}
+
+function historyRangeFromAPI(value: HistoryRange): CoreV2HistoryRange {
+  return {
+    startLineId: value.startLineId.toString(),
+    startCol: value.startCol,
+    endLineId: value.endLineId.toString(),
+    endCol: value.endCol,
   }
 }
 

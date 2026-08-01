@@ -3,6 +3,7 @@ import { coreV2ReflowHistoryRows } from './coreV2HistoryANSI'
 import type {
   CoreV2HistoryCursor,
   CoreV2HistoryRow,
+  CoreV2HistorySearchResult,
   CoreV2HistoryWindow,
 } from './coreV2TerminalProtocol'
 
@@ -18,6 +19,14 @@ export interface CoreV2ScrollbackPage {
   lastRowId?: string | undefined
   viewportTop?: number | undefined
   hasMore: boolean
+}
+
+export interface CoreV2ScrollbackSearchPage {
+  found: boolean
+  wrapped: boolean
+  page?: CoreV2ScrollbackPage | undefined
+  match?: { startLineId: string; startCol: number; endLineId: string; endCol: number } | undefined
+  matchRow?: number | undefined
 }
 
 interface CoreV2ScrollbackState {
@@ -97,6 +106,82 @@ export class CoreV2ScrollbackPager {
     return pageFromWindow(window, visualRows, next)
   }
 
+  async search(input: {
+    terminalId: string
+    query: string
+    direction: 'forward' | 'backward'
+    cols: number
+    limit: number
+    start?: { lineId: string; col: number } | undefined
+    signal?: AbortSignal | undefined
+  }): Promise<CoreV2ScrollbackSearchPage> {
+    const current = this.stateByTerminal.get(input.terminalId)
+    if (!current || current.cols !== input.cols) throw new Error('history search requires a loaded frozen window')
+    let result: CoreV2HistorySearchResult
+    try {
+      result = await this.source.search({
+        terminalId: input.terminalId,
+        token: current.token,
+        generation: current.generation,
+        query: input.query,
+        direction: input.direction,
+        cols: input.cols,
+        limit: input.limit,
+        ...(input.start ? { start: input.start } : {}),
+      }, input.signal ? { signal: input.signal } : undefined)
+    } catch (error) {
+      if (isTerminalHistoryControlError(error)) {
+        this.stateByTerminal.delete(input.terminalId)
+        this.release(input.terminalId, current)
+      }
+      throw error
+    }
+    if (!result.found) return { found: false, wrapped: false }
+    if (result.window.token !== current.token || result.window.generation !== current.generation) {
+      this.stateByTerminal.delete(input.terminalId)
+      this.release(input.terminalId, current)
+      throw new Error('history search window changed token or generation')
+    }
+    const visualRows = coreV2ReflowHistoryRows(result.window.renderRows, input.cols)
+    const next = stateFromWindow(result.window, visualRows, input.cols, undefined)
+    this.stateByTerminal.set(input.terminalId, next)
+    const matchRow = historyMatchVisualRow(visualRows, result.match.startLineId, result.match.startCol)
+    return {
+      found: true,
+      wrapped: result.wrapped,
+      page: pageFromWindow(result.window, visualRows, next),
+      match: result.match,
+      matchRow: matchRow < 0 ? 0 : matchRow,
+    }
+  }
+
+  async copy(
+    terminalId: string,
+    cols: number,
+    range: { startLineId: string; startCol: number; endLineId: string; endCol: number },
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const current = this.stateByTerminal.get(terminalId)
+    if (!current || current.cols !== cols) throw new Error('history copy requires a loaded frozen window')
+    try {
+      return await this.source.copy({
+        terminalId,
+        token: current.token,
+        generation: current.generation,
+        cols,
+        boundaryFirstLineId: current.firstLineId,
+        boundaryLastLineId: current.lastLineId,
+        range,
+      }, signal ? { signal } : undefined)
+    } catch (error) {
+      if (isTerminalHistoryControlError(error)) {
+        this.stateByTerminal.delete(terminalId)
+        this.release(terminalId, current)
+      }
+      throw error
+    }
+  }
+
   forget(terminalId: string): void {
     const state = this.stateByTerminal.get(terminalId)
     this.stateByTerminal.delete(terminalId)
@@ -110,6 +195,20 @@ export class CoreV2ScrollbackPager {
       generation: state.generation,
     }).catch(() => undefined)
   }
+}
+
+function historyMatchVisualRow(rows: CoreV2HistoryRow[], lineId: string, column: number): number {
+  let remaining = Math.max(0, Math.trunc(column))
+  let fallback = -1
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!
+    if (row.logicalLineId !== lineId) continue
+    fallback = index
+    const width = row.cells.reduce((total, cell) => total + Math.max(1, cell.width), 0)
+    if (remaining < width || !row.wrapped) return index
+    remaining -= width
+  }
+  return fallback < 0 ? 0 : fallback
 }
 
 function isTerminalHistoryControlError(error: unknown): boolean {

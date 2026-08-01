@@ -7,9 +7,11 @@ import { Terminal, type TerminalHandle } from './Terminal'
 interface FakeXTermInstance {
   element: HTMLElement | null
   textarea: HTMLTextAreaElement | null
+  bufferLine: { viewportY: number; baseY: number }
   emitBinary(data: string): void
   emitData(data: string): void
   emitKey(event: KeyboardEvent): boolean
+  emitRender(): void
 }
 
 const terminalHarness = vi.hoisted(() => ({
@@ -19,6 +21,25 @@ const terminalHarness = vi.hoisted(() => ({
   sessionSendInput: vi.fn(),
   sessionSendResize: vi.fn(),
   historySnapshot: false,
+  historyMetadata: null as null | {
+    revision: number
+    cols: number
+    prependedRows: number
+    loadedRows: number
+    logicalTotalRows: number
+    rowLogicalLineIds: Array<string | undefined>
+    rowInLogicalLines: Array<number | undefined>
+    rowLogicalStartCols: Array<number | undefined>
+    rowTimestampsUnixMs: Array<number | undefined>
+    operation?: 'replace' | 'prepend'
+    searchMatchRow?: number
+    hasMore: boolean
+  },
+  historySelection: '',
+  historySelectionPosition: undefined as undefined | { start: { x: number; y: number }; end: { x: number; y: number } },
+  historyCopy: vi.fn(),
+  historySearch: vi.fn(),
+  historySearchCancel: vi.fn(),
   channelState: 'open' as 'open' | 'connecting',
   historyLoad: vi.fn(),
   historyReset: vi.fn(),
@@ -37,6 +58,8 @@ const terminalHarness = vi.hoisted(() => ({
   liveSubmitted: vi.fn(),
   liveCompleted: vi.fn(),
   xtermWrites: [] as string[],
+  xtermResets: 0,
+  scrollToBottomCalls: 0,
   pendingWriteCallbacks: [] as Array<() => void>,
   autoCompleteWrites: true,
   fitDimensions: { cols: 80, rows: 24 },
@@ -74,6 +97,7 @@ vi.mock('@xterm/xterm', () => ({
     dataHandler: ((data: string) => void) | null = null
     binaryHandler: ((data: string) => void) | null = null
     keyHandler: ((event: KeyboardEvent) => boolean) | null = null
+    renderHandler: (() => void) | null = null
     textarea: HTMLTextAreaElement | null = null
 
     constructor(options: Record<string, unknown>) {
@@ -103,11 +127,15 @@ vi.mock('@xterm/xterm', () => ({
       return { dispose: () => { this.binaryHandler = null } }
     }
     onCursorMove() { return { dispose() {} } }
-    onRender() { return { dispose() {} } }
+    onRender(handler: () => void) {
+      this.renderHandler = handler
+      return { dispose: () => { this.renderHandler = null } }
+    }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) { this.keyHandler = handler }
     emitBinary(data: string) { this.binaryHandler?.(data) }
     emitData(data: string) { this.dataHandler?.(data) }
     emitKey(event: KeyboardEvent) { return this.keyHandler?.(event) ?? true }
+    emitRender() { this.renderHandler?.() }
     resize(cols: number, rows: number) { this.cols = cols; this.rows = rows }
     write(text: string, callback?: () => void) {
       terminalHarness.xtermWrites.push(text)
@@ -115,15 +143,19 @@ vi.mock('@xterm/xterm', () => ({
       if (terminalHarness.autoCompleteWrites) callback()
       else terminalHarness.pendingWriteCallbacks.push(callback)
     }
-    reset() {}
+    reset() { terminalHarness.xtermResets += 1 }
     refresh() {}
-    scrollToBottom() { this.bufferLine.viewportY = 0 }
+    scrollToBottom() {
+      terminalHarness.scrollToBottomCalls += 1
+      this.bufferLine.viewportY = 0
+    }
     scrollToLine(line: number) { this.bufferLine.viewportY = line }
     scrollLines(lines: number) { this.bufferLine.viewportY += lines }
     select() {}
     selectAll() {}
-    getSelection() { return '' }
-    hasSelection() { return false }
+    getSelection() { return terminalHarness.historySelection }
+    getSelectionPosition() { return terminalHarness.historySelectionPosition }
+    hasSelection() { return terminalHarness.historySelection !== '' }
     clearSelection() {}
     focus() {}
     blur() {}
@@ -141,8 +173,8 @@ vi.mock('./useTerminalSession', () => ({
         }
       : { phase: 'connected', terminalChannels: { [terminalId]: { state: terminalHarness.channelState } } },
     inputRecoveryFailure: terminalHarness.inputRecoveryFailure,
-    terminalSnapshot: terminalHarness.liveSnapshot ?? (terminalHarness.historySnapshot
-      ? { text: 'live terminal content', cols: 80, rows: 24, alternateScreen: false }
+    terminalSnapshot: terminalHarness.liveSnapshot ?? (terminalHarness.historySnapshot || terminalHarness.historyMetadata
+      ? { text: 'live terminal content', cols: 80, rows: 24, alternateScreen: false, ...(terminalHarness.historyMetadata ? { history: terminalHarness.historyMetadata } : {}) }
       : null),
     terminalText: terminalHarness.liveSnapshot?.screenReplay ?? (terminalHarness.historySnapshot ? 'live terminal content' : ''),
     terminalInfo: null,
@@ -152,6 +184,9 @@ vi.mock('./useTerminalSession', () => ({
     requestResizeOwner: async () => ({ canResize: true, reason: 'owner' }),
     releaseResizeOwner: async () => ({ canResize: false, reason: 'follower' }),
     loadScrollback: terminalHarness.historyLoad,
+    searchScrollback: terminalHarness.historySearch,
+    copyScrollback: terminalHarness.historyCopy,
+    cancelHistorySearch: terminalHarness.historySearchCancel,
     prefetchScrollback: async () => false,
     resetScrollback: terminalHarness.historyReset,
     freezeScrollback: terminalHarness.historyFreeze,
@@ -173,9 +208,17 @@ describe('Terminal input modifier boundary', () => {
     terminalHarness.inputRecoveryFailure = null
     terminalHarness.unrelatedBanner = false
     terminalHarness.historySnapshot = false
+    terminalHarness.historyMetadata = null
+    terminalHarness.historySelection = ''
+    terminalHarness.historySelectionPosition = undefined
+    terminalHarness.historyCopy.mockReset()
+    terminalHarness.historySearch.mockReset().mockResolvedValue({ found: false, wrapped: false })
+    terminalHarness.historySearchCancel.mockReset()
     terminalHarness.liveSnapshot = null
     terminalHarness.channelState = 'open'
     terminalHarness.xtermWrites.length = 0
+    terminalHarness.xtermResets = 0
+    terminalHarness.scrollToBottomCalls = 0
     terminalHarness.pendingWriteCallbacks.length = 0
     terminalHarness.autoCompleteWrites = true
     terminalHarness.fitDimensions = { cols: 80, rows: 24 }
@@ -198,6 +241,7 @@ describe('Terminal input modifier boundary', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('applies an ASCII modifier in the custom key handler and updates once state before the next synchronous key', async () => {
@@ -532,6 +576,72 @@ describe('Terminal input modifier boundary', () => {
     expect(terminalHarness.historyLoad).toHaveBeenLastCalledWith(expect.any(Number), false, 40)
   })
 
+  it('does not report or leave history when a paging request is superseded', async () => {
+    terminalHarness.historySnapshot = true
+    let rejectLoad: ((reason: unknown) => void) | undefined
+    terminalHarness.historyLoad.mockImplementationOnce(() => new Promise((_, reject) => { rejectLoad = reject }))
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const output = (terminalHarness.instances[0] as FakeXTermInstance).element?.querySelector('.xterm-screen')
+    if (!output) throw new Error('missing terminal screen')
+
+    fireEvent.wheel(output, { deltaY: -1 })
+    await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledOnce())
+    act(() => rejectLoad?.(new DOMException('superseded by search', 'AbortError')))
+
+    await waitFor(() => expect(screen.queryByTestId('anytty-history-error')).toBeNull())
+    expect(terminalHarness.historyResume).not.toHaveBeenCalled()
+  })
+
+  it('keeps a search result in history until the user scrolls back to the bottom', async () => {
+    terminalHarness.historySnapshot = true
+    terminalHarness.historyLoad.mockResolvedValue({ loadedRows: 1, totalRows: 1, cols: 80, hasMore: false, alternate: false })
+    const view = render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    const output = xterm.element?.querySelector('.xterm-screen')
+    if (!output) throw new Error('missing terminal screen')
+
+    fireEvent.wheel(output, { deltaY: -1 })
+    await waitFor(() => expect(terminalHarness.historyLoad).toHaveBeenCalledOnce())
+    terminalHarness.historyMetadata = historyMetadata({ revision: 1 })
+    view.rerender(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.xtermResets).toBeGreaterThan(0))
+    fireEvent.wheel(output, { deltaY: -1 })
+    xterm.bufferLine.baseY = 2
+    xterm.bufferLine.viewportY = 1
+    act(() => xterm.emitRender())
+
+    terminalHarness.historyMetadata = historyMetadata({ revision: 2, operation: 'replace', searchMatchRow: 0 })
+    view.rerender(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.xtermResets).toBeGreaterThan(1))
+    expect(terminalHarness.historyResume).not.toHaveBeenCalled()
+    act(() => xterm.emitRender())
+    expect(terminalHarness.historyResume).not.toHaveBeenCalled()
+
+    xterm.bufferLine.baseY = 0
+    xterm.bufferLine.viewportY = 0
+    fireEvent.wheel(output, { deltaY: 1 })
+    await waitFor(() => expect(terminalHarness.historyResume).toHaveBeenCalledOnce())
+  })
+
+  it('keeps the logical history status visible across search UI rerenders', async () => {
+    terminalHarness.historySnapshot = true
+    terminalHarness.historyMetadata = historyMetadata({ revision: 1, loadedRows: 2, logicalTotalRows: 1 })
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    xterm.bufferLine.viewportY = 1
+    act(() => xterm.emitRender())
+
+    const status = await screen.findByTestId('anytty-history-position')
+    expect(status.hidden).toBe(false)
+    expect(status.textContent).toContain('/ 1')
+    fireEvent.click(screen.getByRole('button', { name: 'Search history' }))
+    expect(await screen.findByTestId('anytty-history-search')).toBeTruthy()
+    expect(status.hidden).toBe(false)
+  })
+
   it('returns the underlying acceptance result from imperative input and paste handles', async () => {
     terminalHarness.sessionSendInput.mockReturnValue(false)
     const ref = createRef<TerminalHandle>()
@@ -542,10 +652,48 @@ describe('Terminal input modifier boundary', () => {
     expect(ref.current?.pasteText('paste')).toBe(false)
   })
 
-  it('opens the next live-screen request before xterm finishes and completes it from the write callback', async () => {
+  it('copies frozen history by logical range instead of reading the rendered text buffer', async () => {
+    terminalHarness.historyMetadata = {
+      revision: 1,
+      cols: 80,
+      prependedRows: 2,
+      loadedRows: 2,
+      logicalTotalRows: 20,
+      rowLogicalLineIds: ['10', '11'],
+      rowInLogicalLines: [1, 0],
+      rowLogicalStartCols: [79, 0],
+      rowTimestampsUnixMs: [undefined, undefined],
+      hasMore: true,
+    }
+    terminalHarness.historySelection = 'rendered fallback'
+    terminalHarness.historySelectionPosition = { start: { x: 2, y: 0 }, end: { x: 5, y: 1 } }
+    terminalHarness.historyCopy.mockResolvedValue('authoritative history text')
+    const ref = createRef<TerminalHandle>()
+    render(<Terminal ref={ref} machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(ref.current).not.toBeNull())
+
+    await expect(ref.current!.getSelectionForClipboard()).resolves.toBe('authoritative history text')
+    expect(terminalHarness.historyCopy).toHaveBeenCalledWith({
+      startLineId: '10',
+      startCol: 81,
+      endLineId: '11',
+      endCol: 5,
+    }, 80)
+  })
+
+  it('applies live deltas without cloning the screen and stops bottom anchoring after two paints', async () => {
     terminalHarness.autoCompleteWrites = false
     const view = render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
     await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    stubTerminalFrameBounds(xterm)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const scrollsBeforeWrite = terminalHarness.scrollToBottomCalls
 
     terminalHarness.liveSnapshot = {
       text: 'canonical frame',
@@ -562,9 +710,43 @@ describe('Terminal input modifier boundary', () => {
     await waitFor(() => expect(terminalHarness.liveSubmitted).toHaveBeenCalledWith(7n))
     expect(terminalHarness.xtermWrites.at(-1)).toBe('incremental frame')
     expect(terminalHarness.liveCompleted).not.toHaveBeenCalled()
+    expect(terminalHarness.xtermResets).toBe(0)
+    expect(xterm.element?.querySelector('[data-anytty-terminal-frame-hold]')).toBeNull()
 
     act(() => terminalHarness.pendingWriteCallbacks.shift()?.())
     expect(terminalHarness.liveCompleted).toHaveBeenCalledWith(7n)
+    expect(terminalHarness.scrollToBottomCalls).toBe(scrollsBeforeWrite + 1)
+    expect(frames).toHaveLength(1)
+
+    act(() => frames.shift()?.(0))
+    expect(frames).toHaveLength(1)
+    act(() => frames.shift()?.(16))
+    expect(frames).toHaveLength(0)
+    expect(terminalHarness.scrollToBottomCalls).toBe(scrollsBeforeWrite + 3)
+  })
+
+  it('holds the previous terminal frame while applying a full live replacement', async () => {
+    terminalHarness.autoCompleteWrites = false
+    const view = render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const xterm = terminalHarness.instances[0] as FakeXTermInstance
+    stubTerminalFrameBounds(xterm)
+
+    terminalHarness.liveSnapshot = {
+      text: 'canonical frame',
+      screenReplay: 'canonical frame',
+      liveReplay: 'canonical frame',
+      liveRevision: 8n,
+      liveFullReplace: true,
+      cols: 80,
+      rows: 24,
+      alternateScreen: false,
+    }
+    view.rerender(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+
+    await waitFor(() => expect(terminalHarness.liveSubmitted).toHaveBeenCalledWith(8n))
+    expect(terminalHarness.xtermResets).toBe(1)
+    expect(xterm.element?.querySelector('[data-anytty-terminal-frame-hold]')).not.toBeNull()
   })
 
   it('leaves unsupported key events to xterm instead of consuming a Ctrl once state', async () => {
@@ -588,3 +770,41 @@ describe('Terminal input modifier boundary', () => {
     expect(onModifierStateChange).not.toHaveBeenCalled()
   })
 })
+
+function historyMetadata(overrides: Partial<NonNullable<typeof terminalHarness.historyMetadata>> = {}): NonNullable<typeof terminalHarness.historyMetadata> {
+  return {
+    revision: 1,
+    cols: 80,
+    prependedRows: 1,
+    loadedRows: 1,
+    logicalTotalRows: 1,
+    rowLogicalLineIds: ['1'],
+    rowInLogicalLines: [0],
+    rowLogicalStartCols: [0],
+    rowTimestampsUnixMs: [undefined],
+    hasMore: false,
+    ...overrides,
+  }
+}
+
+function stubTerminalFrameBounds(xterm: FakeXTermInstance): void {
+  if (!xterm.element) throw new Error('missing terminal element')
+  const output = xterm.element.querySelector('.xterm-screen') as HTMLElement | null
+  if (!output) throw new Error('missing terminal screen')
+  vi.spyOn(xterm.element, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 320, 200))
+  vi.spyOn(output, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 320, 200))
+}
+
+function rect(x: number, y: number, width: number, height: number): DOMRect {
+  return {
+    x,
+    y,
+    width,
+    height,
+    top: y,
+    left: x,
+    right: x + width,
+    bottom: y + height,
+    toJSON: () => ({}),
+  }
+}
