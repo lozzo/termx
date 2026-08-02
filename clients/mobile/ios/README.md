@@ -1,6 +1,6 @@
 # AnyTTY iOS
 
-这是独立新增的 iOS 客户端工程。它复用现有 React 界面、Protobuf 协议和 Go 客户端核心，不修改 Android 工程或原有前端源码。
+这是独立新增的 iOS 客户端工程。它复用现有 React 界面、Protobuf 协议和 Go 客户端核心；iOS 与 Android 共用移动端界面和配对输入逻辑，原生工程彼此独立。
 
 ## 环境
 

@@ -27,11 +27,8 @@ case "${sdk}" in
 esac
 
 (
-  cd "${repo_root}/clients/mobile"
-  node "${repo_root}/clients/mobile/node_modules/typescript/bin/tsc"
-  node "${repo_root}/node_modules/vite/bin/vite.js" build
-  node scripts/check-bundle-size.mjs
-  node scripts/verify-production-bundle.mjs
+  cd "${repo_root}"
+  npm run build --workspace @anytty/mobile
 )
 "${ios_root}/scripts/sync-web-assets.sh"
 DEVELOPER_DIR="${developer_dir}" "${ios_root}/scripts/build-go-xcframework.sh"
