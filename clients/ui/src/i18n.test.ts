@@ -23,11 +23,11 @@ describe('AnyTTY UI i18n', () => {
   it('switches the primary device and pairing vocabulary without changing domain state', async () => {
     await anyttyI18n.changeLanguage('zh-CN')
     expect(anyttyI18n.t('machines.title')).toBe('设备')
-    expect(anyttyI18n.t('machines.scanService')).toBe('扫描服务二维码')
+    expect(anyttyI18n.t('machines.scanService')).toBe('添加设备')
 
     await anyttyI18n.changeLanguage('en')
     expect(anyttyI18n.t('machines.title')).toBe('Devices')
-    expect(anyttyI18n.t('machines.scanService')).toBe('Scan service QR')
+    expect(anyttyI18n.t('machines.scanService')).toBe('Add device')
   })
 
   it('keeps English and Simplified Chinese locale keys symmetric', () => {

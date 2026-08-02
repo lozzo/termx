@@ -3,6 +3,9 @@ import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../../ui/sr
 import type { EndpointSessionStamp, ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
 import { ConnectionCandidateType, ConnectionObservedPath, ConnectionRouteKind } from '../../ui/src/generated/bindingpb/client_binding_pb'
 
+type ProtoClientSessionCloseHandler = Parameters<ProtoClientSession['subscribeClosed']>[0]
+type ProtoClientSessionCloseError = Parameters<ProtoClientSessionCloseHandler>[0]
+
 // Android 总窗口覆盖 route planning、signaling/answer、ICE、鉴权和 Hello；
 // Go peer 仍用独立 deadline 约束 answer 之后的 ICE/DataChannel，不能由 UI 提前截断。
 const NATIVE_SESSION_READY_TIMEOUT_MS = 45_000
@@ -27,6 +30,7 @@ export class NativeSessionManager {
   private session: ProtoClientSession | null = null
   private pending: Promise<ProtoClientSession> | null = null
   private pendingController: AbortController | null = null
+  private sessionClosedSubscription: ProtoClientSubscription | null = null
   private epoch = 0
   private reconnectAttempt = 0
   private snapshot: MachineConnectionSnapshot
@@ -66,9 +70,12 @@ export class NativeSessionManager {
     const session = this.session
     const pending = this.pending
     const pendingController = this.pendingController
+    const sessionClosedSubscription = this.sessionClosedSubscription
     this.session = null
     this.pending = null
     this.pendingController = null
+    this.sessionClosedSubscription = null
+    sessionClosedSubscription?.close()
     this.publish(idleMachineConnectionSnapshot(this.machineId, this.reconnectAttempt))
     pendingController?.abort(new Error('native session generation changed while connecting'))
     // native generation owner 已经关闭旧 engine；close 只做幂等清理，不能等待已经失联的 bridge。
@@ -93,6 +100,8 @@ export class NativeSessionManager {
         return new NativeSessionLease(this.session)
       }
       if (this.session) {
+        this.sessionClosedSubscription?.close()
+        this.sessionClosedSubscription = null
         await this.session.close().catch(() => undefined)
         this.session = null
       }
@@ -131,20 +140,25 @@ export class NativeSessionManager {
             await opened.close().catch(() => undefined)
             throw new Error('native session generation changed while connecting')
           }
+          if (!opened.isAlive()) throw new Error('Go client session is unavailable')
           this.session = opened
+          this.sessionClosedSubscription = opened.subscribeClosed((error) => {
+            this.handleSessionClosed(epoch, opened, error)
+          })
           this.publish(connectedMachineConnectionSnapshot(this.machineId, opened, options?.forceRelay === true, this.reconnectAttempt))
           return opened
         }).catch((error: unknown) => {
           if (epoch === this.epoch) {
+            const failure = connectionFailure(error)
             this.publish({
               machineId: this.machineId,
               phase: 'failed',
-              statusText: error instanceof Error ? error.message : 'Connection failed',
+              statusText: failure.message,
               connectionInfo: null,
               forceRelay: options?.forceRelay === true,
               relayInUse: options?.forceRelay === true,
               reconnectAttempt: this.reconnectAttempt,
-              error: error instanceof Error ? error.message : String(error),
+              error: failure,
             })
           }
           throw error
@@ -177,7 +191,7 @@ export class NativeSessionManager {
         ...(snapshot.connectionInfo?.routeSelectionReason ? { routeSelectionReason: snapshot.connectionInfo.routeSelectionReason } : {}),
         statusText: snapshot.statusText,
         relayInUse: snapshot.relayInUse,
-        ...(snapshot.error ? { failReason: snapshot.error } : {}),
+        ...(snapshot.error ? { error: snapshot.error } : {}),
       })
     }
     if (this.snapshot.phase !== 'idle') forward()
@@ -188,6 +202,28 @@ export class NativeSessionManager {
   private publish(snapshot: MachineConnectionSnapshot): void {
     this.snapshot = snapshot
     for (const listener of this.stateListeners) listener()
+  }
+
+  private handleSessionClosed(
+    epoch: number,
+    session: ProtoClientSession,
+    error: ProtoClientSessionCloseError,
+  ): void {
+    if (epoch !== this.epoch || this.session !== session) return
+    this.sessionClosedSubscription?.close()
+    this.sessionClosedSubscription = null
+    this.session = null
+    const failure = connectionFailure(error)
+    this.publish({
+      machineId: this.machineId,
+      phase: 'failed',
+      statusText: failure.message,
+      connectionInfo: null,
+      forceRelay: this.snapshot.forceRelay,
+      relayInUse: this.snapshot.relayInUse,
+      reconnectAttempt: this.reconnectAttempt,
+      error: failure,
+    })
   }
 }
 
@@ -218,7 +254,7 @@ function connectionStateSnapshot(
     forceRelay,
     relayInUse: snapshot.relayInUse,
     reconnectAttempt,
-    error: snapshot.phase === 'failed' ? snapshot.failReason || snapshot.statusText : null,
+    error: snapshot.phase === 'failed' ? connectionFailure(snapshot.error ?? snapshot.statusText) : null,
   }
 }
 
@@ -295,6 +331,18 @@ class NativeSessionLease implements ProtoClientSession {
     return leaseSubscription
   }
 
+  subscribeClosed(handler: (error: ProtoClientSessionCloseError) => void): ProtoClientSubscription {
+    const subscription = this.requireAlive().subscribeClosed(handler)
+    const leaseSubscription: ProtoClientSubscription = {
+      close: () => {
+        subscription.close()
+        this.subscriptions.delete(leaseSubscription)
+      },
+    }
+    this.subscriptions.add(leaseSubscription)
+    return leaseSubscription
+  }
+
   openResourceStream(resource: ResourceHandle, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
     if (!this.isAlive()) return Promise.reject(new Error('Proto session lease is closed'))
     return this.session.openResourceStream(resource, options)
@@ -351,4 +399,9 @@ async function awaitSessionLease(pending: Promise<ProtoClientSession>, signal: A
 
 function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
+}
+
+function connectionFailure(error: unknown): ProtoClientSessionCloseError {
+  if (error instanceof Error) return error as ProtoClientSessionCloseError
+  return new Error(typeof error === 'string' && error.trim() ? error : 'Connection failed')
 }

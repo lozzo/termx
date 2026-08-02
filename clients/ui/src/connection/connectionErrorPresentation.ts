@@ -84,7 +84,7 @@ export function connectionFailurePresentation(
     case 'daemon_blocked':
       return failure(reason, t('errors.daemonBlockedTitle'), t('errors.daemonBlocked'), true)
     case 'daemon_deleted':
-      return failure(reason, t('errors.daemonDeletedTitle'), t('errors.daemonDeleted'), false)
+      return failure(reason, t('errors.daemonDeletedTitle'), t('errors.daemonDeleted'), true, true)
     case 'cancelled':
       return failure(reason, t('errors.connectionProblemTitle'), t('errors.connectionCancelled'), true)
     default:

@@ -1,4 +1,5 @@
 import type { Machine, Terminal } from './model'
+import type { ProtoClientSessionCloseError } from './protoClientSession'
 
 export type ConnectionPath = 'local' | 'hub'
 
@@ -84,7 +85,7 @@ export interface RtcConnectionStateSnapshot {
   routeSelectionReason?: RouteSelectionReason | undefined
   statusText: string
   relayInUse: boolean
-  failReason?: string | undefined
+  error?: ProtoClientSessionCloseError | undefined
 }
 
 export interface RtcEvent {

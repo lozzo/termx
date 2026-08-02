@@ -29,6 +29,7 @@ import {
 } from '../generated/apipb/terminal_pb'
 import type {
   TerminalInputSize,
+  TerminalHistorySearchResult,
   TerminalProtocolChannel,
   TerminalProtocolEvent,
   TerminalProtocolSession,
@@ -207,9 +208,69 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
       ...(page.firstRowId ? { firstRowId: Number(page.firstRowId) } : {}),
       ...(page.lastRowId ? { lastRowId: Number(page.lastRowId) } : {}),
       ...(page.viewportTop !== undefined ? { viewportTop: page.viewportTop } : {}),
+      rowTimestampsUnixMs: page.rows.map((row) => row.timestampUnixMs),
+      rowLogicalLineIds: page.rows.map((row) => row.logicalLineId),
+      rowInLogicalLines: page.rows.map((row) => row.rowInLine),
+      rowLogicalStartCols: page.rows.map((row) => row.logicalStartCol),
       hasMore: page.hasMore,
       alternate,
     }
+  }
+
+  async searchScrollback(
+    terminalId: string,
+    query: string,
+    direction: 'forward' | 'backward',
+    cols: number,
+    limit: number,
+    start?: { lineId: string; col: number } | undefined,
+    options?: { signal?: AbortSignal | undefined },
+  ): Promise<TerminalHistorySearchResult> {
+    const result = await this.scrollbackPager.search({
+      terminalId,
+      query,
+      direction,
+      cols,
+      limit,
+      ...(start ? { start } : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    })
+    if (!result.found || !result.page) return { found: false, wrapped: false }
+    return {
+      found: true,
+      wrapped: result.wrapped,
+      match: result.match,
+      matchRow: result.matchRow,
+      page: {
+        beforeOffset: 0,
+        limit,
+        rows: result.page.loadedRows,
+        cols,
+        replay: coreV2HistoryRowsANSI(result.page.rows, cols),
+        operation: 'replace',
+        committedTotalRows: result.page.committedTotalRows,
+        logicalTotalRows: result.page.logicalTotalRows,
+        historyGeneration: Number(result.page.historyGeneration),
+        ...(result.page.firstRowId ? { firstRowId: Number(result.page.firstRowId) } : {}),
+        ...(result.page.lastRowId ? { lastRowId: Number(result.page.lastRowId) } : {}),
+        ...(result.page.viewportTop !== undefined ? { viewportTop: result.page.viewportTop } : {}),
+        rowTimestampsUnixMs: result.page.rows.map((row) => row.timestampUnixMs),
+        rowLogicalLineIds: result.page.rows.map((row) => row.logicalLineId),
+        rowInLogicalLines: result.page.rows.map((row) => row.rowInLine),
+        rowLogicalStartCols: result.page.rows.map((row) => row.logicalStartCol),
+        hasMore: result.page.hasMore,
+        alternate: false,
+      },
+    }
+  }
+
+  copyScrollback(
+    terminalId: string,
+    range: { startLineId: string; startCol: number; endLineId: string; endCol: number },
+    cols: number,
+    options?: { signal?: AbortSignal | undefined },
+  ): Promise<string> {
+    return this.scrollbackPager.copy(terminalId, cols, range, options?.signal)
   }
 
   resetScrollback(terminalId: string): void {

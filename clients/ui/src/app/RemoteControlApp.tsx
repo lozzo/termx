@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode, type RefObject, type TouchEvent as ReactTouchEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type FormEvent, type ReactNode, type RefObject, type TouchEvent as ReactTouchEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, Camera, Check, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Link2Off, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, WifiOff, X } from 'lucide-react'
+import { ArrowLeft, Camera, Check, ChevronRight, ClipboardPaste, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, Link2Off, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Unplug, Wifi, WifiOff, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -30,6 +30,7 @@ import { anyttyIntlLocale, anyttyLanguages, normalizeAnyTTYLanguage } from '../i
 import { connectionErrorDisplayMessage } from '../connection/connectionErrorPresentation'
 import { RemoteNetworkStateManager, type NativeNetworkStatusPlugin } from '../connection/remoteNetworkState'
 import { ModalSurface } from '../ui/ModalSurface'
+import { maximumPastedPairingInputLength, parsePastedPairingInput } from './pairingInput'
 
 const appName = 'AnyTTY Remote App'
 
@@ -716,6 +717,7 @@ export function RemoteControlApp({
           canScanWithCamera={Boolean(scanPairingCode)}
           onCommitShare={() => void commitEndpointShare()}
           onClose={() => { hapticSelection(); requestPairSheetClose() }}
+          onPairPastedValue={(value) => { hapticImpact(); void pairScannedValue(value) }}
           onScanWithCamera={() => void scanWithCamera()}
         />
       ) : null}
@@ -1649,6 +1651,7 @@ function PairSheet({
   selectedMachine,
   onClose,
   onCommitShare,
+  onPairPastedValue,
   onScanWithCamera,
 }: {
   cameraScanning: boolean
@@ -1664,15 +1667,31 @@ function PairSheet({
   selectedMachine: RemoteMachine | null
   onClose: () => void
   onCommitShare: () => void
+  onPairPastedValue: (value: string) => void
   onScanWithCamera: () => void
 }) {
   const { t } = useTranslation()
+  const [pastedPairingInput, setPastedPairingInput] = useState('')
+  const [pastedPairingError, setPastedPairingError] = useState(false)
   const title = sshCredentialNotice ? t('pairing.sshReady') : sharePreview ? t('pairing.importConfig') : pairIntent === 'add-local' ? t('pairing.addLocal') : t('pairing.authorize')
   const statusMessage = scanFlowState === 'pairing'
     ? t('pairing.scanned')
     : scanFlowState === 'scanning'
       ? t('pairing.scanning')
       : null
+
+  const submitPastedPairingInput = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    try {
+      const portablePayload = parsePastedPairingInput(pastedPairingInput)
+      setPastedPairingError(false)
+      onPairPastedValue(portablePayload)
+    } catch {
+      hapticError()
+      setPastedPairingError(true)
+    }
+  }
+
   return (
     <div className="anytty-app-page fixed inset-0 z-50">
       <ModalSurface aria-label={title} className="flex h-full min-h-0 flex-col bg-white" data-testid="anytty-pair-sheet" onRequestClose={onClose}>
@@ -1790,6 +1809,54 @@ function PairSheet({
                     ) : null}
                   </div>
                 ) : null}
+
+                {canScanWithCamera ? (
+                  <div className="my-5 flex items-center gap-3" aria-hidden="true">
+                    <span className="h-px flex-1 bg-[var(--anytty-app-line)]" />
+                    <span className="text-xs font-medium text-zinc-500">{t('pairing.or')}</span>
+                    <span className="h-px flex-1 bg-[var(--anytty-app-line)]" />
+                  </div>
+                ) : null}
+
+                <form className={canScanWithCamera ? '' : 'mt-4'} noValidate onSubmit={submitPastedPairingInput}>
+                  <label className="block text-sm font-semibold text-zinc-900" htmlFor="anytty-pasted-pairing-input">
+                    {t('pairing.pasteLabel')}
+                  </label>
+                  <textarea
+                    id="anytty-pasted-pairing-input"
+                    aria-describedby={`anytty-pasted-pairing-security${pastedPairingError ? ' anytty-pasted-pairing-error' : ''}`}
+                    aria-invalid={pastedPairingError}
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    className="mt-2 h-24 w-full resize-none border border-[var(--anytty-app-line)] bg-white px-3 py-2 font-mono text-base leading-6 text-zinc-950 outline-none transition-colors focus:border-[var(--anytty-app-accent)] focus:ring-2 focus:ring-blue-500/25 disabled:bg-zinc-100 disabled:text-zinc-500"
+                    disabled={pairing || cameraScanning}
+                    maxLength={maximumPastedPairingInputLength}
+                    placeholder={t('pairing.pastePlaceholder')}
+                    spellCheck={false}
+                    value={pastedPairingInput}
+                    onChange={(event) => {
+                      setPastedPairingInput(event.target.value)
+                      if (pastedPairingError) setPastedPairingError(false)
+                    }}
+                  />
+                  <p id="anytty-pasted-pairing-security" className="mt-2 text-xs font-medium leading-5 text-zinc-500">
+                    {t('pairing.pasteSecurity')}
+                  </p>
+                  {pastedPairingError ? (
+                    <p id="anytty-pasted-pairing-error" className="mt-2 text-sm font-medium leading-5 text-red-600" role="alert">
+                      {t('pairing.pasteInvalid')}
+                    </p>
+                  ) : null}
+                  <button
+                    className={`${canScanWithCamera ? 'anytty-app-secondary-button' : 'anytty-app-primary-button'} mt-3 min-h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60`}
+                    type="submit"
+                    disabled={pairing || cameraScanning || pastedPairingInput.trim() === ''}
+                  >
+                    {pairing ? <span className="anytty-square-spinner" aria-hidden="true" /> : <ClipboardPaste className="h-4 w-4" />}
+                    {pairing ? t('pairing.pairing') : t('pairing.pasteSubmit')}
+                  </button>
+                </form>
               </>
             ) : !sshCredentialNotice && pairError ? (
               <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-600" role="alert">{pairError}</p>

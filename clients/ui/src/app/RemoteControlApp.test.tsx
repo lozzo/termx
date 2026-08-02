@@ -18,11 +18,11 @@ describe('RemoteControlApp accountless product shell', () => {
     vi.restoreAllMocks()
   })
 
-  it('starts with service pairing and no retired account action', async () => {
+  it('starts with device pairing and no retired account action', async () => {
     renderApp()
 
     expect(await screen.findByTestId('anytty-first-use')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Scan service QR' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add device' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Sign in to AnyTTY Cloud' })).toBeNull()
   })
 
@@ -66,20 +66,20 @@ describe('RemoteControlApp accountless product shell', () => {
     ['camera_permission_denied', 'Camera access was denied. Allow camera access in system settings, then try again.'],
     ['camera_not_found', 'No camera was found on this device.'],
     ['camera_start_failed', 'The camera could not start. Close other apps using it, then try again.'],
-  ])('keeps pairing QR-only and distinguishes %s', async (code, message) => {
+  ])('keeps the pasted fallback available and distinguishes %s', async (code, message) => {
     renderApp({
       scanPairingCode: vi.fn(async () => {
         throw Object.assign(new Error('raw camera detail'), { code })
       }),
     })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
 
     const alert = await screen.findByRole('alert')
     expect(within(alert).getByText(message)).toBeTruthy()
     expect(alert.textContent).not.toContain('raw camera detail')
-    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Pairing command or pairing code' })).toBeTruthy()
   })
 
   it('announces pending camera work and prevents duplicate scans', async () => {
@@ -87,7 +87,7 @@ describe('RemoteControlApp accountless product shell', () => {
     const scanPairingCode = vi.fn(() => scan.promise)
     renderApp({ scanPairingCode })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     const cameraButton = screen.getByRole('button', { name: 'Scan QR with camera' }) as HTMLButtonElement
     await userEvent.click(cameraButton)
 
@@ -106,7 +106,7 @@ describe('RemoteControlApp accountless product shell', () => {
     })
     renderApp({ scanPairingCode })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
 
     const alert = await screen.findByRole('alert')
@@ -130,7 +130,7 @@ describe('RemoteControlApp accountless product shell', () => {
       scanPairingCode,
     })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     const cameraButton = screen.getByRole('button', { name: 'Scan QR with camera' })
     await userEvent.click(cameraButton)
 
@@ -142,12 +142,51 @@ describe('RemoteControlApp accountless product shell', () => {
     expect(document.activeElement).not.toBe(cameraButton)
   })
 
+  it('extracts a portable claim from the generated pairing command', async () => {
+    const pairingImport = vi.fn(async () => ({
+      machine: { id: 'device-1', name: 'Office Mac', accessClass: 'local' as const },
+    }))
+    renderApp({ pairingImport })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
+    const pastedInput = screen.getByRole('textbox', { name: 'Pairing command or pairing code' })
+    await userEvent.type(pastedInput, "anytty pair import --id 'device-1' 'MXP2-PASTED_123'")
+    expect(screen.getByText(/one-time access credential/i)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Pair using pasted content' }))
+
+    expect(pairingImport).toHaveBeenCalledWith('MXP2-PASTED_123', undefined)
+  })
+
+  it('rejects unrelated pasted commands inline without sending their content', async () => {
+    const pairingImport = vi.fn(async () => null)
+    renderApp({ pairingImport })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
+    const pastedInput = screen.getByRole('textbox', { name: 'Pairing command or pairing code' })
+    await userEvent.type(pastedInput, 'curl https://example.invalid MXP2-NOT_RUN')
+    await userEvent.click(screen.getByRole('button', { name: 'Pair using pasted content' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('No valid pairing code was found.')
+    expect(pastedInput.getAttribute('aria-invalid')).toBe('true')
+    expect(pairingImport).not.toHaveBeenCalled()
+  })
+
+  it('offers pasted pairing as the primary fallback without a camera', async () => {
+    renderApp()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
+    expect(screen.getByText('Camera scanning is unavailable on this device. Paste a pairing command or pairing code below.')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Pairing command or pairing code' })).toBeTruthy()
+    expect(screen.getByText(/guard against information disclosure/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Pair using pasted content' }).className).toContain('anytty-app-primary-button')
+  })
+
   it('ends a failed scanned pairing and allows camera retry', async () => {
     const failure = Object.assign(new Error('sanitized connection failure'), { code: 'unavailable' })
     const scanPairingCode = vi.fn(async () => 'MXP2-TEST')
     renderApp({ pairingImport: async () => { throw failure }, scanPairingCode })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     const sheet = screen.getByTestId('anytty-pair-sheet')
     await userEvent.click(within(sheet).getByRole('button', { name: 'Scan QR with camera' }))
 
@@ -174,7 +213,7 @@ describe('RemoteControlApp accountless product shell', () => {
     }))
     renderApp({ scanPairingCode })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
 
     act(() => { expect(dispatchNativeBack()).toBe(true) })
@@ -201,7 +240,7 @@ describe('RemoteControlApp accountless product shell', () => {
       },
     })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     const cameraButton = screen.getByRole('button', { name: 'Scan QR with camera' }) as HTMLButtonElement
     await userEvent.click(cameraButton)
 

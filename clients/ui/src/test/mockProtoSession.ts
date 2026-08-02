@@ -3,7 +3,7 @@ import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../generate
 import { ResultEnvelopeSchema } from '../generated/apipb/application_pb'
 import { EndpointSessionStampSchema, type ResourceHandle } from '../generated/apipb/common_pb'
 import { ResourceStreamFrameType } from '../generated/bindingpb/client_binding_pb'
-import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
+import type { ProtoClientSession, ProtoClientSessionCloseError, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
 
 /** ProtoCommandHandler 以 generated command/result 驱动 UI 单元测试，不复制业务 DTO。 */
 export type ProtoCommandHandler = (command: CommandEnvelope) => ResultEnvelope | Promise<ResultEnvelope>
@@ -16,6 +16,7 @@ export class MockProtoSession implements ProtoClientSession {
   readonly stamp
   private alive = true
   private readonly eventHandlers = new Set<(event: EventEnvelope) => void>()
+  private readonly closeHandlers = new Set<(error: ProtoClientSessionCloseError) => void>()
 
   constructor(
     endpointId = 'machine-local',
@@ -54,8 +55,22 @@ export class MockProtoSession implements ProtoClientSession {
     return { close: () => this.eventHandlers.delete(handler) }
   }
 
+  subscribeClosed(handler: (error: ProtoClientSessionCloseError) => void): ProtoClientSubscription {
+    this.closeHandlers.add(handler)
+    return { close: () => this.closeHandlers.delete(handler) }
+  }
+
   emit(event: EventEnvelope): void {
     for (const handler of this.eventHandlers) handler(event)
+  }
+
+  emitClosed(error: ProtoClientSessionCloseError): void {
+    if (!this.alive) return
+    this.alive = false
+    this.eventHandlers.clear()
+    const handlers = [...this.closeHandlers]
+    this.closeHandlers.clear()
+    for (const handler of handlers) handler(error)
   }
 
   async openResourceStream(resource: ResourceHandle, _options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
@@ -65,7 +80,11 @@ export class MockProtoSession implements ProtoClientSession {
 
   isAlive(): boolean { return this.alive }
 
-  async close(): Promise<void> { this.alive = false }
+  async close(): Promise<void> {
+    this.alive = false
+    this.eventHandlers.clear()
+    this.closeHandlers.clear()
+  }
 }
 
 function abortReason(signal: AbortSignal): Error {

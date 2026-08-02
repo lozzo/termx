@@ -10,6 +10,7 @@ import type {
   CoreV2HistoryCell,
   CoreV2HistoryLineSpan,
   CoreV2HistoryRow,
+  CoreV2HistorySearchResult,
   CoreV2HistoryWindow,
   CoreV2HistoryWindowRequest,
 } from './coreV2TerminalProtocol'
@@ -160,6 +161,10 @@ class MockHistorySource implements CoreV2HistorySource {
 
   async copy(_request: CoreV2HistoryCopyRequest): Promise<string> {
     throw new Error('surface cache tests must not copy through history source')
+  }
+
+  async search(): Promise<CoreV2HistorySearchResult> {
+    throw new Error('surface cache tests must not search through history source')
   }
 }
 

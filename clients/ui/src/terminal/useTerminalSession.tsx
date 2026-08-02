@@ -9,6 +9,7 @@ import {
   defaultTerminalResizeControl,
   TerminalClient,
   type TerminalClientCallbacks,
+  type TerminalHistorySearchResult,
   type TerminalProtocolSession,
   type TerminalResizeControl,
   type TerminalScrollbackLoadResult,
@@ -18,7 +19,7 @@ import {
 import { createProtoTerminalProtocolSession } from './protoTerminalProtocolSession'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
-import { appendTerminalText, terminalTextSoftLimitChars, trimTerminalTextToRecentWindow } from './terminalTextWindow'
+import { appendTerminalText, trimTerminalTextToRecentWindow } from './terminalTextWindow'
 import type { Terminal } from '../core/model'
 import type {
   ConnectionInfo,
@@ -60,6 +61,17 @@ export interface UseTerminalSessionResult {
   requestResizeOwner(size?: { cols: number; rows: number }): Promise<TerminalResizeControl>
   releaseResizeOwner(): Promise<TerminalResizeControl>
   loadScrollback(limit?: number, alternate?: boolean, cols?: number): Promise<TerminalScrollbackLoadResult>
+  searchScrollback(
+    query: string,
+    direction: 'forward' | 'backward',
+    cols: number,
+    start?: { lineId: string; col: number } | undefined,
+  ): Promise<TerminalHistorySearchResult>
+  copyScrollback(
+    range: { startLineId: string; startCol: number; endLineId: string; endCol: number },
+    cols: number,
+  ): Promise<string>
+  cancelHistorySearch(): void
   prefetchScrollback(limit?: number, alternate?: boolean, cols?: number): Promise<boolean>
   resetScrollback(): void
   freezeScrollback(): void
@@ -127,6 +139,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const protocolSessionRef = useRef<TerminalProtocolSession | null>(null)
   const scrollbackPrefixTextRef = useRef('')
   const loadedScrollbackRowsRef = useRef(0)
+  const scrollbackRowTimestampsRef = useRef<Array<number | undefined>>([])
+  const scrollbackRowLineIdsRef = useRef<Array<string | undefined>>([])
+  const scrollbackRowInLinesRef = useRef<Array<number | undefined>>([])
+  const scrollbackRowStartColsRef = useRef<Array<number | undefined>>([])
   const historyRevisionRef = useRef(0)
   const loadingScrollbackRef = useRef(false)
   const scrollbackAbortControllerRef = useRef<AbortController | null>(null)
@@ -590,6 +606,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     setResizeControl(defaultTerminalResizeControl)
     scrollbackPrefixTextRef.current = ''
     loadedScrollbackRowsRef.current = 0
+    scrollbackRowTimestampsRef.current = []
+    scrollbackRowLineIdsRef.current = []
+    scrollbackRowInLinesRef.current = []
+    scrollbackRowStartColsRef.current = []
     historyRevisionRef.current = 0
     loadingScrollbackRef.current = false
     scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal session replaced', 'AbortError'))
@@ -911,6 +931,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clientRef.current?.resetScrollback()
     scrollbackPrefixTextRef.current = ''
     loadedScrollbackRowsRef.current = 0
+    scrollbackRowTimestampsRef.current = []
+    scrollbackRowLineIdsRef.current = []
+    scrollbackRowInLinesRef.current = []
+    scrollbackRowStartColsRef.current = []
     hasMoreScrollbackRef.current = true
     activeScrollbackModeRef.current = 'normal'
     const liveText = terminalContentTextRef.current
@@ -932,6 +956,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     scrollbackPrefetchRef.current = null
     clientRef.current?.resetScrollback()
     loadedScrollbackRowsRef.current = 0
+    scrollbackRowTimestampsRef.current = []
+    scrollbackRowLineIdsRef.current = []
+    scrollbackRowInLinesRef.current = []
+    scrollbackRowStartColsRef.current = []
     hasMoreScrollbackRef.current = true
     activeScrollbackModeRef.current = 'normal'
   }, [])
@@ -943,6 +971,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     if (activeScrollbackModeRef.current !== mode) {
       activeScrollbackModeRef.current = mode
       loadedScrollbackRowsRef.current = 0
+      scrollbackRowTimestampsRef.current = []
+      scrollbackRowLineIdsRef.current = []
+      scrollbackRowInLinesRef.current = []
+      scrollbackRowStartColsRef.current = []
       scrollbackPrefixTextRef.current = ''
       hasMoreScrollbackRef.current = true
     }
@@ -1003,6 +1035,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         hasMoreScrollbackRef.current = false
         if (operation === 'replace') {
           loadedScrollbackRowsRef.current = 0
+          scrollbackRowTimestampsRef.current = []
+          scrollbackRowLineIdsRef.current = []
+          scrollbackRowInLinesRef.current = []
+          scrollbackRowStartColsRef.current = []
           scrollbackPrefixTextRef.current = ''
           terminalTextRef.current = terminalContentTextRef.current
           const revision = historyRevisionRef.current + 1
@@ -1016,6 +1052,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
               loadedRows: 0,
               operation,
               ...historyMetadata,
+              rowTimestampsUnixMs: [],
+              rowLogicalLineIds: [],
+              rowInLogicalLines: [],
+              rowLogicalStartCols: [],
               hasMore: false,
               alternate: page.alternate,
               prefetched,
@@ -1046,13 +1086,29 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       loadedScrollbackRowsRef.current = operation === 'replace'
         ? loadedRows
         : loadedScrollbackRowsRef.current + loadedRows
+      const pageTimestamps = page.rowTimestampsUnixMs ?? Array.from({ length: loadedRows }, () => undefined)
+      scrollbackRowTimestampsRef.current = operation === 'replace'
+        ? pageTimestamps
+        : [...pageTimestamps, ...scrollbackRowTimestampsRef.current]
+      const pageLineIds = page.rowLogicalLineIds ?? Array.from({ length: loadedRows }, () => undefined)
+      scrollbackRowLineIdsRef.current = operation === 'replace'
+        ? pageLineIds
+        : [...pageLineIds, ...scrollbackRowLineIdsRef.current]
+      const pageRowInLines = page.rowInLogicalLines ?? Array.from({ length: loadedRows }, () => undefined)
+      scrollbackRowInLinesRef.current = operation === 'replace'
+        ? pageRowInLines
+        : [...pageRowInLines, ...scrollbackRowInLinesRef.current]
+      const pageRowStartCols = page.rowLogicalStartCols ?? Array.from({ length: loadedRows }, () => undefined)
+      scrollbackRowStartColsRef.current = operation === 'replace'
+        ? pageRowStartCols
+        : [...pageRowStartCols, ...scrollbackRowStartColsRef.current]
       hasMoreScrollbackRef.current = page.hasMore
       const revision = historyRevisionRef.current + 1
       historyRevisionRef.current = revision
       const prefix = page.replay
       scrollbackPrefixTextRef.current = operation === 'replace'
         ? prefix
-        : prependTerminalText(prefix, scrollbackPrefixTextRef.current)
+        : joinTerminalTextWithSeparator(prefix, scrollbackPrefixTextRef.current, '\r\n')
       setTerminalSnapshot((current) => current ? {
         ...current,
         history: {
@@ -1062,6 +1118,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           loadedRows: loadedScrollbackRowsRef.current,
           operation,
           ...historyMetadata,
+          rowTimestampsUnixMs: scrollbackRowTimestampsRef.current,
+          rowLogicalLineIds: scrollbackRowLineIdsRef.current,
+          rowInLogicalLines: scrollbackRowInLinesRef.current,
+          rowLogicalStartCols: scrollbackRowStartColsRef.current,
           hasMore: page.hasMore,
           alternate: page.alternate,
           prefetched,
@@ -1111,6 +1171,75 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }
   }, [consumePrefetchedScrollback, logSession, publishTerminalTextNow])
 
+  const searchScrollback = useCallback(async (
+    query: string,
+    direction: 'forward' | 'backward',
+    cols: number,
+    start?: { lineId: string; col: number } | undefined,
+  ): Promise<TerminalHistorySearchResult> => {
+    const client = clientRef.current
+    if (!client) throw new Error('terminal client is not connected')
+    scrollbackFrozenRef.current = true
+    client.setLiveScreenDemand(false)
+    scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal history search superseded', 'AbortError'))
+    const controller = new AbortController()
+    scrollbackAbortControllerRef.current = controller
+    const timeout = setTimeout(() => controller.abort(new Error(`Terminal history search timed out after ${scrollbackLoadTimeoutMs}ms`)), scrollbackLoadTimeoutMs)
+    try {
+      const result = await client.searchScrollback(query, direction, cols, 100, start, { signal: controller.signal })
+      if (!result.found || !result.page) return result
+      const page = result.page
+      loadedScrollbackRowsRef.current = page.rows
+      scrollbackRowTimestampsRef.current = page.rowTimestampsUnixMs ?? Array.from({ length: page.rows }, () => undefined)
+      scrollbackRowLineIdsRef.current = page.rowLogicalLineIds ?? Array.from({ length: page.rows }, () => undefined)
+      scrollbackRowInLinesRef.current = page.rowInLogicalLines ?? Array.from({ length: page.rows }, () => undefined)
+      scrollbackRowStartColsRef.current = page.rowLogicalStartCols ?? Array.from({ length: page.rows }, () => undefined)
+      scrollbackPrefixTextRef.current = page.replay
+      hasMoreScrollbackRef.current = page.hasMore
+      const revision = historyRevisionRef.current + 1
+      historyRevisionRef.current = revision
+      const historyMetadata = scrollbackResultMetadata(page)
+      setTerminalSnapshot((current) => current ? {
+        ...current,
+        history: {
+          revision,
+          cols: page.cols,
+          prependedRows: page.rows,
+          loadedRows: page.rows,
+          operation: 'replace',
+          ...historyMetadata,
+          rowTimestampsUnixMs: scrollbackRowTimestampsRef.current,
+          rowLogicalLineIds: scrollbackRowLineIdsRef.current,
+          rowInLogicalLines: scrollbackRowInLinesRef.current,
+          rowLogicalStartCols: scrollbackRowStartColsRef.current,
+          searchMatchRow: result.matchRow ?? 0,
+          hasMore: page.hasMore,
+          alternate: false,
+        },
+      } : current)
+      terminalTextRef.current = page.replay
+      publishTerminalTextNow()
+      return result
+    } finally {
+      clearTimeout(timeout)
+      if (scrollbackAbortControllerRef.current === controller) scrollbackAbortControllerRef.current = null
+    }
+  }, [publishTerminalTextNow])
+
+  const copyScrollback = useCallback((
+    range: { startLineId: string; startCol: number; endLineId: string; endCol: number },
+    cols: number,
+  ): Promise<string> => {
+    const client = clientRef.current
+    if (!client) return Promise.reject(new Error('terminal client is not connected'))
+    return client.copyScrollback(range, cols)
+  }, [])
+
+  const cancelHistorySearch = useCallback(() => {
+    scrollbackAbortControllerRef.current?.abort(new DOMException('Terminal history search closed', 'AbortError'))
+    scrollbackAbortControllerRef.current = null
+  }, [])
+
   const handleAppResume = useCallback((resumeKind: 'quick' | 'cold' | 'frozen') => {
     dispatch({ type: 'app.resume', resumeKind })
   }, [])
@@ -1136,6 +1265,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     requestResizeOwner,
     releaseResizeOwner,
     loadScrollback,
+    searchScrollback,
+    copyScrollback,
+    cancelHistorySearch,
     prefetchScrollback,
     resetScrollback,
     freezeScrollback,
@@ -1150,25 +1282,6 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 }
 
 export type TerminalSessionMessage = ConnectionMessage
-
-function prependTerminalText(prefix: string, current: string): string {
-  if (!prefix) return current
-  return trimTerminalTextPreservingPrefix(prefix, current, '\r\n')
-}
-
-function trimTerminalTextPreservingPrefix(prefix: string, current: string, separator: string): string {
-  if (!prefix) return trimTerminalTextToRecentWindow(current)
-  if (!current) return trimTerminalTextToRecentWindow(prefix)
-  const joined = joinTerminalTextWithSeparator(prefix, current, separator)
-  if (joined.length <= terminalTextSoftLimitChars) return joined
-  const currentLimit = terminalTextSoftLimitChars - prefix.length - separator.length
-  if (currentLimit <= 0) {
-    return trimTerminalTextToRecentWindow(prefix)
-  }
-  const trimmedCurrent = trimTerminalTextToRecentWindow(current, currentLimit)
-  if (!trimmedCurrent) return trimTerminalTextToRecentWindow(prefix)
-  return joinTerminalTextWithSeparator(prefix, trimmedCurrent, separator)
-}
 
 function joinTerminalTextWithSeparator(prefix: string, current: string, separator: string): string {
   if (!prefix) return current

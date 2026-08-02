@@ -141,6 +141,7 @@ describe('NativeFileTransferStore', () => {
       isAlive: () => true,
       close: async () => undefined,
       subscribeEvents: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
       openResourceStream: async () => stream,
       execute: async (envelope) => {
         if (envelope.command.case === 'fileDownloadOpen') {
@@ -216,6 +217,7 @@ describe('NativeFileTransferStore', () => {
       isAlive: () => true,
       close: async () => undefined,
       subscribeEvents: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
       openResourceStream: async () => stream,
       execute: async (envelope) => {
         if (envelope.command.case === 'fileDownloadOpen') {
@@ -439,6 +441,7 @@ describe('NativeFileTransferStore', () => {
       isAlive: () => true,
       close: async () => { lateSessionCloses += 1 },
       subscribeEvents: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
       openResourceStream: async () => { throw new Error('unused') },
       execute: async (envelope) => {
         if (envelope.command.case === 'fileTransferCancel') {
@@ -764,6 +767,7 @@ describe('NativeFileTransferStore', () => {
       isAlive: () => true,
       close: async () => { lateSessionCloses += 1 },
       subscribeEvents: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
       openResourceStream: async () => { throw new Error('unused') },
       execute: async () => { throw new Error('unused') },
     })
@@ -898,6 +902,7 @@ describe('NativeFileTransferStore', () => {
       isAlive: () => true,
       close: async () => { sessionCloses += 1 },
       subscribeEvents: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
       openResourceStream: async () => ({
         handle: 1n,
         send: async () => undefined,
@@ -955,6 +960,7 @@ function uploadSession(stream: ProtoResourceStream, size: number, chunkBytes: nu
     isAlive: () => true,
     close: async () => undefined,
     subscribeEvents: () => ({ close() {} }),
+    subscribeClosed: () => ({ close() {} }),
     openResourceStream: async () => stream,
     execute: async (envelope) => {
       if (envelope.command.case === 'fileUploadOpen') {
@@ -998,6 +1004,7 @@ function downloadSession(
     isAlive: () => true,
     close: async () => { counters.sessionCloses += 1 },
     subscribeEvents: () => ({ close() {} }),
+    subscribeClosed: () => ({ close() {} }),
     openResourceStream: async () => ({
       handle: 1n,
       send: async () => undefined,
@@ -1085,6 +1092,7 @@ async function createUploadHarness(options: {
         counters.sessionCloses += 1
       },
       subscribeEvents: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
       openResourceStream: async () => {
         counters.openStreamCalls += 1
         await options.beforeStreamResult?.()

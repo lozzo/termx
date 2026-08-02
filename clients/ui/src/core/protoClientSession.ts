@@ -7,6 +7,11 @@ export interface ProtoClientSubscription {
   close(): void
 }
 
+export interface ProtoClientSessionCloseError extends Error {
+  code?: string
+  retryable?: boolean
+}
+
 export interface ProtoResourceStream {
   readonly handle: bigint
   send(type: ResourceStreamFrameType, payload: Uint8Array): Promise<void>
@@ -25,6 +30,7 @@ export interface ProtoClientSession {
   getConnectionSnapshot?(): Promise<ConnectionSnapshot | undefined>
   execute(command: CommandEnvelope, options?: { signal?: AbortSignal }): Promise<ResultEnvelope>
   subscribeEvents(handler: (event: EventEnvelope) => void): ProtoClientSubscription
+  subscribeClosed(handler: (error: ProtoClientSessionCloseError) => void): ProtoClientSubscription
   openResourceStream(resource: ResourceHandle, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream>
   isAlive(): boolean
   close(): Promise<void>

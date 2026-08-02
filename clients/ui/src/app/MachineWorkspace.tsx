@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { create } from '@bufbuild/protobuf'
-import { Bookmark, BookmarkMinus, BookmarkPlus, Check, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, Scaling, SlidersHorizontal, SquarePen, Trash2, Unlock, WifiOff, X } from 'lucide-react'
+import { Bookmark, BookmarkMinus, BookmarkPlus, Check, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, QrCode, RefreshCw, Rows2, Scaling, SlidersHorizontal, SquarePen, Trash2, Unlock, WifiOff, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { connectionErrorDisplayMessage, connectionFailurePresentation, isAuthorizationConnectionError, isCancelledConnectionError, type ConnectionFailurePresentation } from '../connection/connectionErrorPresentation'
 import { ConnectionRouteManager, type ConnectionRouteManagementAdapter } from '../connection/ConnectionRouteManager'
@@ -468,7 +468,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     onNeedsReauthorization?.(targetMachineId)
   }, [initialMachine?.machineId, onNeedsReauthorization])
 
-  const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: MachineWorkspaceClientSession) => {
+  const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: MachineWorkspaceClientSession, failureSource?: unknown) => {
     if (snapshot.phase === 'connected') {
       setError(null)
       setConnectionFailure(null)
@@ -503,7 +503,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
     if (snapshot.phase === 'failed') {
-      const source = snapshot.failReason || snapshot.statusText || t('machines.connectionFailed')
+      const source = (failureSource ?? snapshot.error) || snapshot.statusText || t('machines.connectionFailed')
       if (isCancelledConnectionError(source)) {
         setError(null)
         setConnectionFailure(null)
@@ -574,8 +574,22 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const attachConnectionStateSubscription = useCallback((session: MachineWorkspaceClientSession) => {
     connectionStateSubscriptionRef.current?.close()
     sessionConnectionPhaseRef.current = null
-    connectionStateSubscriptionRef.current = null
-  }, [])
+    connectionStateSubscriptionRef.current = session.subscribeClosed((error) => {
+      const current = machineSessionRef.current
+      if (!current || current.session !== session) return
+      connectionStateSubscriptionRef.current?.close()
+      connectionStateSubscriptionRef.current = null
+      machineSessionRef.current = null
+      machineSessionPromiseRef.current = null
+      setConnectedSession(null)
+      updateFromConnectionState({
+        machineId: session.stamp.endpointId,
+        phase: 'failed',
+        statusText: error.message,
+        relayInUse: false,
+      }, undefined, error)
+    })
+  }, [updateFromConnectionState])
 
   const releaseMachineSession = useCallback(() => {
     disconnectMachineSession()
@@ -1084,7 +1098,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         phase: 'failed',
         statusText: message,
         relayInUse: forceRelayConnection === true,
-        failReason: message,
+        error: err instanceof Error ? err : new Error(message),
       })
       setConnectionFailure(failure)
     })
@@ -2328,6 +2342,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <MachineConnectionFailureState
             failure={initialConnectionFailure}
             onBack={onBack}
+            onPairAgain={initialConnectionFailure.requiresPairing ? () => handleConnectionAuthFailure(machine.machineId) : undefined}
             onRetry={connectionRecoveryFailed && onRetryConnectionRecovery ? () => { void onRetryConnectionRecovery() } : retryAfterFailure}
           />
         ) : null}
@@ -2337,6 +2352,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             label={displayedConnectionStatus}
             phoneOnline={phoneOnline}
             recovered={connectionRecovered}
+            onPairAgain={(connectionRecoveryFailure ?? connectionFailure)?.requiresPairing ? () => handleConnectionAuthFailure(machine.machineId) : undefined}
             onRetry={connectionRecoveryFailed && onRetryConnectionRecovery ? () => { void onRetryConnectionRecovery() } : retryAfterFailure}
           />
         ) : showDelayedMachineNetworkOverlay ? (
@@ -2684,9 +2700,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 setHasTerminalSelection(true)
               }}
               onCopy={() => {
-                const selected = activeTerminalHandle()?.getSelection() ?? ''
-                if (!selected) return
-                void navigator.clipboard.writeText(selected).then(() => {
+                const terminal = activeTerminalHandle()
+                if (!terminal) return
+                void terminal.getSelectionForClipboard().then(async (selected) => {
+                  if (!selected) return false
+                  await navigator.clipboard.writeText(selected)
+                  return true
+                }).then((copied) => {
+                  if (!copied) return
                   setPairStatus(t('workspace.copied'))
                   setTerminalToolbarOpen(false)
                   setTerminalToolbarModeAndReset('default')
@@ -2724,6 +2745,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               label={displayedConnectionStatus}
               phoneOnline={phoneOnline}
               recovered={connectionRecovered}
+              onPairAgain={(connectionRecoveryFailure ?? connectionFailure)?.requiresPairing ? () => handleConnectionAuthFailure(machine.machineId) : undefined}
               onRetry={connectionRecoveryFailed && onRetryConnectionRecovery ? () => { void onRetryConnectionRecovery() } : retryAfterFailure}
             />
           ) : error ? (
@@ -3022,10 +3044,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 function MachineConnectionFailureState({
   failure,
   onBack,
+  onPairAgain,
   onRetry,
 }: {
   failure: ConnectionFailurePresentation
   onBack?: (() => void) | undefined
+  onPairAgain?: (() => void) | undefined
   onRetry: () => void
 }) {
   const { t } = useTranslation()
@@ -3039,10 +3063,16 @@ function MachineConnectionFailureState({
         <h2 className="mt-4 text-base font-semibold text-zinc-950">{failure.title}</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600">{failure.message}</p>
         <div className="mt-6 grid gap-2">
+          {onPairAgain ? (
+            <button className="anytty-app-primary-button h-11 gap-2 px-4 text-sm font-semibold" type="button" onClick={onPairAgain}>
+              <QrCode className="h-4 w-4" />
+              {t('machines.scanPairing')}
+            </button>
+          ) : null}
           {failure.retryable && !offline ? (
             <button className="anytty-app-primary-button h-11 gap-2 px-4 text-sm font-semibold" type="button" onClick={onRetry}>
               <RefreshCw className="h-4 w-4" />
-              {t('workspace.connection.retry')}
+              {t(failure.reason === 'daemon_deleted' ? 'workspace.retryOtherRoutes' : 'workspace.connection.retry')}
             </button>
           ) : null}
           {onBack ? (
@@ -3063,6 +3093,7 @@ function MachineConnectionBanner({
   label,
   phoneOnline,
   recovered,
+  onPairAgain,
   onRetry,
 }: {
   dark?: boolean | undefined
@@ -3070,6 +3101,7 @@ function MachineConnectionBanner({
   label: string | null
   phoneOnline: boolean
   recovered: boolean
+  onPairAgain?: (() => void) | undefined
   onRetry: () => void
 }) {
   const { t } = useTranslation()
@@ -3090,17 +3122,31 @@ function MachineConnectionBanner({
     : tone === 'success'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
       : 'border-amber-200 bg-amber-50 text-amber-950'
+  const showPairAgain = !showingRecovered && onPairAgain !== undefined
+  const showRetry = !showingRecovered && phoneOnline && activeFailure?.retryable === true
   return (
-    <div className={`${dark ? 'absolute inset-x-0 top-0 z-40' : 'relative z-40'} flex min-h-12 items-center gap-3 border-y px-3 py-2 ${toneClass}`} role={showingRecovered ? 'status' : 'alert'} aria-live="polite">
-      {showingRecovered ? <Check className="h-4 w-4 shrink-0" /> : activeFailure?.reason === 'phone_offline' ? <WifiOff className="h-4 w-4 shrink-0" /> : activeFailure ? <Link2Off className="h-4 w-4 shrink-0" /> : <span className="anytty-square-spinner h-4 w-4 shrink-0" aria-hidden="true" />}
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold leading-4">{title}</p>
-        <p className={`mt-0.5 text-[11px] leading-4 ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>{message}</p>
+    <div className={`${dark ? 'absolute inset-x-0 top-0 z-40' : 'relative z-40'} flex min-h-12 flex-col gap-2 border-y px-3 py-2 ${toneClass}`} role={showingRecovered ? 'status' : 'alert'} aria-live="polite">
+      <div className="flex min-w-0 items-start gap-3">
+        {showingRecovered ? <Check className="mt-0.5 h-4 w-4 shrink-0" /> : activeFailure?.reason === 'phone_offline' ? <WifiOff className="mt-0.5 h-4 w-4 shrink-0" /> : activeFailure ? <Link2Off className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="anytty-square-spinner mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold leading-4">{title}</p>
+          <p className={`mt-0.5 break-words text-[11px] leading-4 ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>{message}</p>
+        </div>
       </div>
-      {!showingRecovered && phoneOnline && activeFailure?.retryable ? (
-        <button className={`min-h-11 shrink-0 border px-3 text-xs font-semibold ${dark ? 'border-white/25 bg-white/10' : 'border-amber-300 bg-white'}`} type="button" onClick={onRetry}>
-          {t('workspace.connection.retry')}
-        </button>
+      {showPairAgain || showRetry ? (
+        <div className="grid w-full grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+          {showPairAgain ? (
+            <button className={`flex min-h-11 items-center justify-center gap-1.5 border px-3 text-center text-xs font-semibold leading-4 ${dark ? 'border-white/25 bg-white/10' : 'border-amber-300 bg-white'}`} type="button" onClick={onPairAgain}>
+              <QrCode className="h-4 w-4 shrink-0" />
+              {t('machines.scan')}
+            </button>
+          ) : null}
+          {showRetry ? (
+            <button className={`min-h-11 border px-3 text-center text-xs font-semibold leading-4 ${dark ? 'border-white/25 bg-white/10' : 'border-amber-300 bg-white'}`} type="button" onClick={onRetry}>
+              {t(activeFailure.reason === 'daemon_deleted' ? 'workspace.retryOtherRoutes' : 'workspace.connection.retry')}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

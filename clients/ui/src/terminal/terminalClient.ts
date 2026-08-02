@@ -40,6 +40,11 @@ export interface TerminalSnapshotPayload {
     firstRowId?: number
     lastRowId?: number
     viewportTop?: number
+    rowTimestampsUnixMs?: Array<number | undefined>
+    rowLogicalLineIds?: Array<string | undefined>
+    rowInLogicalLines?: Array<number | undefined>
+    rowLogicalStartCols?: Array<number | undefined>
+    searchMatchRow?: number
     hasMore: boolean
     alternate?: boolean
     prefetched?: boolean
@@ -59,6 +64,10 @@ export interface TerminalScrollbackPage {
   firstRowId?: number
   lastRowId?: number
   viewportTop?: number
+  rowTimestampsUnixMs?: Array<number | undefined>
+  rowLogicalLineIds?: Array<string | undefined>
+  rowInLogicalLines?: Array<number | undefined>
+  rowLogicalStartCols?: Array<number | undefined>
   hasMore: boolean
   alternate: boolean
 }
@@ -74,9 +83,21 @@ export interface TerminalScrollbackLoadResult {
   firstRowId?: number
   lastRowId?: number
   viewportTop?: number
+  rowTimestampsUnixMs?: Array<number | undefined>
+  rowLogicalLineIds?: Array<string | undefined>
+  rowInLogicalLines?: Array<number | undefined>
+  rowLogicalStartCols?: Array<number | undefined>
   hasMore: boolean
   alternate: boolean
   prefetched?: boolean
+}
+
+export interface TerminalHistorySearchResult {
+  found: boolean
+  wrapped: boolean
+  page?: TerminalScrollbackPage | undefined
+  match?: { startLineId: string; startCol: number; endLineId: string; endCol: number } | undefined
+  matchRow?: number | undefined
 }
 
 export type TerminalInfoPayload = Record<string, unknown>
@@ -130,6 +151,21 @@ export interface TerminalProtocolSession {
     alternate?: boolean,
     options?: { signal?: AbortSignal; cols?: number },
   ): Promise<TerminalScrollbackPage>
+  searchScrollback?(
+    terminalId: string,
+    query: string,
+    direction: 'forward' | 'backward',
+    cols: number,
+    limit: number,
+    start?: { lineId: string; col: number } | undefined,
+    options?: { signal?: AbortSignal | undefined },
+  ): Promise<TerminalHistorySearchResult>
+  copyScrollback?(
+    terminalId: string,
+    range: { startLineId: string; startCol: number; endLineId: string; endCol: number },
+    cols: number,
+    options?: { signal?: AbortSignal | undefined },
+  ): Promise<string>
   resetScrollback?(terminalId: string): void
   closeTerminalChannel(terminalId: string): void
   markSyncLost?(terminalId: string, reason?: string): void
@@ -255,6 +291,31 @@ export class TerminalClient {
       return Promise.reject(new Error('terminal client is not connected'))
     }
     return this.session.loadScrollback(this.terminalId, offset, limit, alternate, options)
+  }
+
+  searchScrollback(
+    query: string,
+    direction: 'forward' | 'backward',
+    cols: number,
+    limit: number,
+    start?: { lineId: string; col: number } | undefined,
+    options?: { signal?: AbortSignal | undefined },
+  ): Promise<TerminalHistorySearchResult> {
+    if (!this.session || !this.terminalId || !this.session.searchScrollback) {
+      return Promise.reject(new Error('terminal history search is not available'))
+    }
+    return this.session.searchScrollback(this.terminalId, query, direction, cols, limit, start, options)
+  }
+
+  copyScrollback(
+    range: { startLineId: string; startCol: number; endLineId: string; endCol: number },
+    cols: number,
+    options?: { signal?: AbortSignal | undefined },
+  ): Promise<string> {
+    if (!this.session || !this.terminalId || !this.session.copyScrollback) {
+      return Promise.reject(new Error('terminal history copy is not available'))
+    }
+    return this.session.copyScrollback(this.terminalId, range, cols, options)
   }
 
   resetScrollback(): void {

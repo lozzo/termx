@@ -4,6 +4,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, Search, X } from 'lucide-react'
 import { hapticSelection } from '../platform/haptics'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
 import {
@@ -11,7 +12,7 @@ import {
   applyXtermNavigationModifiers,
   type TerminalModifierState,
 } from './mobileTerminalInput'
-import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
+import type { TerminalResizeControl, TerminalScrollbackLoadResult, TerminalSnapshotPayload } from './terminalClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { holdTerminalFrame, type TerminalFrameHold } from './terminalFrameHold'
 import { historyReplayWithViewportTail, historyRequestAwaitingApply, historyViewportAfterApply, terminalScrollLineDelta, terminalViewportAtBottom, TerminalHistoryViewportController } from './terminalHistoryViewport'
@@ -32,7 +33,6 @@ const historyApplyBatchDelayMs = 160
 const historyApplyScrollIdleMs = 180
 const historyApplyMaxDelayMs = 900
 const historyApplyWatchdogMs = 4000
-const bottomAnchorSettleMs = 900
 const xtermWriteStatsIntervalMs = 1000
 const xtermWriteSlowMs = 500
 const xtermWriteLargeChars = 128 * 1024
@@ -107,6 +107,7 @@ interface PendingHistoryApply {
   operation: 'replace' | 'prepend'
   restoreViewportY: number | null
   viewportTop?: number | undefined
+  absoluteViewportY?: number | undefined
   text: string
 }
 
@@ -144,6 +145,7 @@ export interface TerminalHandle {
   selectAll(): void
   selectVisible(): void
   getSelection(): string
+  getSelectionForClipboard(): Promise<string>
   hasSelection(): boolean
   clearSelection(): void
   getCursorInfo(): { cursorY: number; rows: number; lineHeight: number } | null
@@ -175,6 +177,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 ) {
   const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const historyStatusRef = useRef<HTMLDivElement | null>(null)
+  const historyStatusTextRef = useRef<HTMLSpanElement | null>(null)
+  const historySearchBottomResumeSuppressedRef = useRef(false)
+  const historyMetadataRef = useRef<NonNullable<TerminalSnapshotPayload['history']> | undefined>(undefined)
+  const updateHistoryStatusRef = useRef<() => void>(() => {})
+  const formatHistoryStatusRef = useRef((current: number, total: number, timestamp?: number) => (
+    t('terminal.tools.historyPosition', {
+      current,
+      total,
+      time: timestamp === undefined ? '' : formatHistoryTimestamp(timestamp),
+    })
+  ))
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const lastWrittenTextRef = useRef('')
@@ -238,7 +252,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const fitRetryTimerRef = useRef<number | null>(null)
   const fitRetryCountRef = useRef(0)
   const preventFocusRef = useRef(preventFocus)
-  const bottomAnchorUntilRef = useRef(0)
   const bottomAnchorFrameRef = useRef<number | null>(null)
   const xtermWriteStatsRef = useRef({
     writes: 0,
@@ -265,7 +278,19 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionResetHandlersRef = useRef(new Set<() => void>())
   const [surfaceReady, setSurfaceReady] = useState(false)
   const [historyLoadingVisible, setHistoryLoadingVisible] = useState(false)
+  const [historyStatusVisible, setHistoryStatusVisible] = useState(false)
   const [historyLoadFailure, setHistoryLoadFailure] = useState<'none' | 'reloadable' | 'line-too-large'>('none')
+  const [historySearchOpen, setHistorySearchOpen] = useState(false)
+  const [historySearchQuery, setHistorySearchQuery] = useState('')
+  const [historySearchBusy, setHistorySearchBusy] = useState(false)
+  const [historySearchMessage, setHistorySearchMessage] = useState('')
+  const historySearchLastMatchRef = useRef<{
+    query: string
+    startLineId: string
+    startCol: number
+    endLineId: string
+    endCol: number
+  } | null>(null)
 
   const showHistoryLoading = useCallback(() => {
     if (historyLoadingHideTimerRef.current !== null) {
@@ -517,6 +542,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   latestLiveScreenRevisionRef.current = terminalSession.terminalSnapshot?.liveRevision
   markLiveScreenSubmittedRef.current = terminalSession.markLiveScreenSubmitted
   markLiveScreenCompletedRef.current = terminalSession.markLiveScreenCompleted
+  historyMetadataRef.current = terminalSession.terminalSnapshot?.history
+  formatHistoryStatusRef.current = (current, total, timestamp) => t('terminal.tools.historyPosition', {
+    current,
+    total,
+    time: timestamp === undefined ? '' : formatHistoryTimestamp(timestamp),
+  })
 
   latestTerminalTextRef.current = terminalSession.terminalText
   settingsRef.current = settings
@@ -530,6 +561,52 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useEffect(() => {
     resetScrollbackRef.current = terminalSession.resetScrollback
   }, [terminalSession.resetScrollback])
+
+  useEffect(() => {
+    updateHistoryStatusRef.current()
+    if (!terminalSession.terminalSnapshot?.history) {
+      setHistorySearchOpen(false)
+      setHistorySearchMessage('')
+      historySearchLastMatchRef.current = null
+    }
+  }, [terminalSession.terminalSnapshot?.history?.revision])
+
+  const runHistorySearch = useCallback(async (direction: 'forward' | 'backward') => {
+    const query = historySearchQuery
+    const term = xtermRef.current
+    if (!query.trim() || !term || historySearchBusy) return
+    setHistorySearchBusy(true)
+    setHistorySearchMessage('')
+    try {
+      if (!historyMetadataRef.current) {
+        await loadScrollbackRef.current(historyScrollbackPageRows, false, term.cols)
+      }
+      const previous = historySearchLastMatchRef.current?.query === query
+        ? historySearchLastMatchRef.current
+        : null
+      const start = previous
+        ? direction === 'forward'
+          ? { lineId: previous.endLineId, col: previous.endCol }
+          : { lineId: previous.startLineId, col: previous.startCol }
+        : undefined
+      const result = await terminalSession.searchScrollback(query, direction, term.cols, start)
+      if (!result.found || !result.match) {
+        historySearchLastMatchRef.current = null
+        setHistorySearchMessage(t('terminal.tools.searchNoResults'))
+        return
+      }
+      historySearchLastMatchRef.current = { query, ...result.match }
+      setHistorySearchMessage(result.wrapped
+        ? t('terminal.tools.searchWrapped')
+        : t('terminal.tools.searchMatch', { line: result.match.startLineId }))
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setHistorySearchMessage(t('terminal.tools.searchUnavailable'))
+      }
+    } finally {
+      setHistorySearchBusy(false)
+    }
+  }, [historySearchBusy, historySearchQuery, t, terminalSession.searchScrollback])
 
   useEffect(() => {
     surfaceReadyRef.current = false
@@ -582,7 +659,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const fitAddon = fitAddonRef.current
     const container = containerRef.current
     if (!term || !fitAddon || !container) return
-    const shouldKeepBottom = Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term)
+    const shouldKeepBottom = isScrolledToBottom(term)
 
     let dimensions: TerminalDimensions | undefined
     try {
@@ -651,7 +728,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [])
 
   const cancelBottomAnchor = useCallback(() => {
-    bottomAnchorUntilRef.current = 0
     if (bottomAnchorFrameRef.current !== null && typeof window !== 'undefined') {
       window.cancelAnimationFrame(bottomAnchorFrameRef.current)
       bottomAnchorFrameRef.current = null
@@ -662,7 +738,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (terminalDisposedRef.current) return
     const term = xtermRef.current
     if (!term) return
-    bottomAnchorUntilRef.current = Date.now() + bottomAnchorSettleMs
     scrollToBottomIfCurrent(term)
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return
     if (bottomAnchorFrameRef.current !== null) {
@@ -670,25 +745,28 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       bottomAnchorFrameRef.current = null
     }
     const generation = terminalGenerationRef.current
-    const tick = () => {
-      if (
-        terminalDisposedRef.current ||
-        terminalGenerationRef.current !== generation ||
-        Date.now() > bottomAnchorUntilRef.current
-      ) {
-        bottomAnchorFrameRef.current = null
-        return
-      }
-      const current = xtermRef.current
-      if (current) scrollToBottomIfCurrent(current)
-      bottomAnchorFrameRef.current = window.requestAnimationFrame(tick)
+    const scrollAfterPaint = (remainingFrames: number) => {
+      bottomAnchorFrameRef.current = window.requestAnimationFrame(() => {
+        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) {
+          bottomAnchorFrameRef.current = null
+          return
+        }
+        const current = xtermRef.current
+        if (current) scrollToBottomIfCurrent(current)
+        if (remainingFrames > 1) {
+          scrollAfterPaint(remainingFrames - 1)
+        } else {
+          bottomAnchorFrameRef.current = null
+        }
+      })
     }
-    bottomAnchorFrameRef.current = window.requestAnimationFrame(tick)
+    scrollAfterPaint(2)
   }, [scrollToBottomIfCurrent])
 
   const resumeFrozenHistoryAtBottom = useCallback((includePrimed = false) => {
     const term = xtermRef.current
     if (!term || terminalDisposedRef.current) return false
+    if (historySearchBottomResumeSuppressedRef.current && !includePrimed) return false
     const busy = historyLoadingRef.current ||
       historyApplyingRef.current ||
       pendingHistoryApplyRef.current !== null ||
@@ -709,6 +787,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     historyLoadedRowsAppliedRef.current = 0
     historyLoadedRowsRequestedRef.current = 0
     historyHasMoreRef.current = true
+    historySearchBottomResumeSuppressedRef.current = false
     historyRequestColsRef.current = 0
     pendingHistoryViewportRef.current = null
     pullingHistoryRef.current = false
@@ -841,6 +920,28 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       term.select(0, startRow, term.cols * term.rows)
     },
     getSelection: () => terminalDisposedRef.current ? '' : xtermRef.current?.getSelection() ?? '',
+    getSelectionForClipboard: async () => {
+      if (terminalDisposedRef.current) return ''
+      const term = xtermRef.current
+      if (!term) return ''
+      const localSelection = term.getSelection()
+      const history = historyMetadataRef.current
+      const selection = term.getSelectionPosition()
+      if (!localSelection || !history || !selection) return localSelection
+      const startRow = selection.start.y
+      const endRow = selection.end.y
+      const startLineId = history.rowLogicalLineIds?.[startRow]
+      const endLineId = history.rowLogicalLineIds?.[endRow]
+      const startLogicalCol = history.rowLogicalStartCols?.[startRow]
+      const endLogicalCol = history.rowLogicalStartCols?.[endRow]
+      if (!startLineId || !endLineId || startLogicalCol === undefined || endLogicalCol === undefined) return localSelection
+      return terminalSession.copyScrollback({
+        startLineId,
+        startCol: startLogicalCol + Math.max(0, selection.start.x),
+        endLineId,
+        endCol: endLogicalCol + Math.max(0, selection.end.x),
+      }, term.cols)
+    },
     hasSelection: () => terminalDisposedRef.current ? false : xtermRef.current?.hasSelection() ?? false,
     clearSelection: () => {
       if (terminalDisposedRef.current) return
@@ -889,7 +990,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
       fitAndMaybeSendResize()
     },
-  }), [currentTerminalSize, fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.reattach, terminalSession.releaseResizeOwner, terminalSession.requestResizeOwner, terminalSession.sendResize])
+  }), [currentTerminalSize, fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.copyScrollback, terminalSession.reattach, terminalSession.releaseResizeOwner, terminalSession.requestResizeOwner, terminalSession.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
@@ -1158,6 +1259,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const noteUserScrollActivity = () => {
       cancelBottomAnchor()
+      historySearchBottomResumeSuppressedRef.current = false
       noteHistoryScrollActivity()
     }
 
@@ -1264,6 +1366,30 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       scrollbarThumb.style.transform = `translateY(${thumbTop}px)`
     }
 
+    const updateHistoryStatus = () => {
+      const element = historyStatusRef.current
+      const text = historyStatusTextRef.current
+      if (!element || !text) return
+      const history = historyMetadataRef.current
+      if (!history || history.loadedRows <= 0) {
+        element.hidden = true
+        text.textContent = ''
+        setHistoryStatusVisible(false)
+        return
+      }
+      const total = Math.max(1, history.logicalTotalRows ?? history.committedTotalRows ?? 1)
+      const visibleBottom = Math.max(1, Math.min(history.loadedRows, term.buffer.active.viewportY + term.rows))
+      const logicalLineId = Number(history.rowLogicalLineIds?.[visibleBottom - 1])
+      const current = Number.isSafeInteger(logicalLineId) && logicalLineId > 0
+        ? Math.min(total, logicalLineId)
+        : total
+      const timestamp = history.rowTimestampsUnixMs?.[visibleBottom - 1]
+      text.textContent = formatHistoryStatusRef.current(current, total, timestamp)
+      element.hidden = false
+      setHistoryStatusVisible(true)
+    }
+    updateHistoryStatusRef.current = updateHistoryStatus
+
     const historyLoadedRowsLimit = () => terminalHistoryLoadedRowsLimit(settingsRef.current)
 
     const scrollbackLoadBlockedReason = () => {
@@ -1326,6 +1452,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       pendingHistoryViewportRef.current = restoreViewport ? term.buffer.active.viewportY : null
       let keepVisibleForApply = false
       let loadFailed = false
+      let loadCancelled = false
       try {
         const result = await loadScrollbackRef.current(requestRows, alternate, term.cols)
         setHistoryLoadFailure('none')
@@ -1350,6 +1477,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
         return result
       } catch (error) {
+        if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') {
+          loadCancelled = true
+          pendingHistoryViewportRef.current = null
+          pullingHistoryRef.current = false
+          return emptyResult()
+        }
         loadFailed = true
         const historyError = error as Error & { code?: string, retryable?: boolean }
         const lineTooLarge = historyError instanceof Error
@@ -1374,7 +1507,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         if (!keepVisibleForApply) {
           pullingHistoryRef.current = false
           hideHistoryLoading()
-          resumeFrozenHistoryAtBottomRef.current(true)
+          if (!loadCancelled) resumeFrozenHistoryAtBottomRef.current(true)
           if (loadFailed) {
             historyHasMoreRef.current = false
             historyLoadArmedByUserRef.current = false
@@ -1474,7 +1607,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const currentViewportY = term.buffer.active.viewportY
         const shouldKeepBottom = pending.restoreViewportY === null &&
           !pullingHistoryRef.current &&
-          (Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term))
+          isScrolledToBottom(term)
         if (typeof term.options.scrollback === 'number' && rowsAddedSinceLastApply > 0) {
           term.options.scrollback = Math.max(
             term.options.scrollback,
@@ -1497,9 +1630,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           const bufferLengthAfterApply = term.buffer.active.length
           const actualPrependedRows = Math.max(0, bufferLengthAfterApply - bufferLengthBeforeApply)
           const viewportOffsetRows = actualPrependedRows > 0 ? actualPrependedRows : pending.prependedRows
-          if (pending.restoreViewportY !== null || pullingHistoryRef.current) {
+          if (pending.absoluteViewportY !== undefined || pending.restoreViewportY !== null || pullingHistoryRef.current) {
             cancelBottomAnchor()
-            term.scrollToLine(historyViewportAfterApply({
+            term.scrollToLine(pending.absoluteViewportY ?? historyViewportAfterApply({
               operation: pending.operation,
               previouslyAppliedRows,
               restoreViewportY: pending.restoreViewportY ?? currentViewportY,
@@ -1615,6 +1748,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     resetTransientViewportOffsetRef.current = resetTransientViewportOffset
 
     const scrollPixels = (px: number): boolean => {
+      if (px > 0) noteUserScrollActivity()
       totalPxOffset += px
       const desiredViewportY = baseViewportY + Math.trunc(totalPxOffset / lineHeightPx)
       const currentViewportY = term.buffer.active.viewportY
@@ -1623,8 +1757,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (lineDelta !== 0) {
         if (px < 0) {
           armHistoryScrollbackLoad()
-        } else {
-          noteUserScrollActivity()
         }
         term.scrollLines(lineDelta)
         if (historyViewportControllerRef.current.confirmHistoryMovement(isScrolledToBottom(term))) {
@@ -1640,7 +1772,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
       }
       syncTransform()
-      return clamped
+      const resumedLive = px > 0 && resumeFrozenHistoryAtBottomRef.current()
+      return clamped || resumedLive
     }
 
     const sendScrollInput = (down: boolean) => {
@@ -2112,6 +2245,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           }
           noteHistoryScrollActivity()
           resumeFrozenHistoryAtBottomRef.current()
+          updateHistoryStatus()
           showScrollbar()
           hideScrollbarDelayed()
         }
@@ -2145,6 +2279,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
       } else if (event.deltaY !== 0) {
         noteUserScrollActivity()
+        resumeFrozenHistoryAtBottomRef.current()
       }
     }
     scrollTouchTarget.addEventListener('wheel', handleWheel, { passive: true })
@@ -2366,6 +2501,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastWrittenTextRef.current = ''
       lastSentResizeRef.current = null
       isOpenRef.current = false
+      updateHistoryStatusRef.current = () => {}
+      if (historyStatusRef.current) {
+        historyStatusRef.current.hidden = true
+        if (historyStatusTextRef.current) historyStatusTextRef.current.textContent = ''
+      }
     }
   }, [cancelBottomAnchor, clearLiveOutputWatchdog, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, markSurfaceReady, reloadHistoryProjectionWhenIdle, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
 
@@ -2441,8 +2581,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     if (shouldReplaySnapshot) {
       resetTransientViewportOffsetRef.current()
-      const screen = containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null
-      const heldFrame = containerRef.current && screen ? holdTerminalFrame(containerRef.current, screen) : null
+      const replacesLiveFrame = !liveSnapshotCandidate || snapshot!.liveFullReplace
+      const screen = replacesLiveFrame
+        ? containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null
+        : null
+      const heldFrame = replacesLiveFrame && containerRef.current && screen
+        ? holdTerminalFrame(containerRef.current, screen)
+        : null
       try {
         clearLiveOutputWatchdog()
         liveOutputInFlightRef.current = false
@@ -2451,7 +2596,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         liveOutputDroppedCharsRef.current = 0
         liveOutputSyncLostRef.current = false
         const liveReplay = liveSnapshotCandidate ? snapshot!.liveReplay! : terminalSession.terminalText
-        if (!liveSnapshotCandidate || snapshot!.liveFullReplace) term.reset()
+        if (replacesLiveFrame) term.reset()
         if (liveRevision !== undefined) {
           lastLiveScreenSubmittedRevisionRef.current = liveRevision
           terminalSession.markLiveScreenSubmitted(liveRevision)
@@ -2507,7 +2652,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         operation: replacesHistory ? 'replace' : 'prepend',
         restoreViewportY: restoreViewportY ?? previousPending?.restoreViewportY ?? null,
         viewportTop: history.viewportTop ?? previousPending?.viewportTop,
+        absoluteViewportY: history.searchMatchRow ?? previousPending?.absoluteViewportY,
         text: terminalSession.terminalText,
+      }
+      if (history.searchMatchRow !== undefined) {
+        historySearchBottomResumeSuppressedRef.current = true
       }
       historyLoadedRowsRequestedRef.current = replacesHistory
         ? history.loadedRows
@@ -2530,7 +2679,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   return (
     <section
-      className={`relative flex h-full min-h-0 w-full flex-col overflow-hidden ${className || ''}`}
+      className={`relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden ${className || ''}`}
       data-machine-id={machineId}
       data-terminal-id={terminalId}
       data-phase={terminalSession.snapshot.phase}
@@ -2582,6 +2731,63 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           </div>
         </div>
       ) : null}
+      <div
+        ref={historyStatusRef}
+        className="absolute z-[55] flex min-h-11 max-w-[calc(100%_-_2rem)] items-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)]/90 pl-2 font-mono text-[11px] tabular-nums text-[var(--anytty-muted)] backdrop-blur"
+        data-testid="anytty-history-position"
+        hidden={!historyStatusVisible}
+        style={{
+          bottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+          right: 'max(1rem, env(safe-area-inset-right))',
+        }}
+      >
+        <span ref={historyStatusTextRef} className="truncate" />
+        <button
+          type="button"
+          aria-label={t('terminal.tools.searchHistory')}
+          className="ml-1 grid h-11 w-11 shrink-0 place-items-center text-[var(--anytty-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px]"
+          onClick={() => setHistorySearchOpen(true)}
+        >
+          <Search className="h-4 w-4" />
+        </button>
+      </div>
+      {historySearchOpen ? (
+        <form
+          aria-busy={historySearchBusy}
+          className="absolute z-[60] border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] p-2 text-[var(--anytty-text)] shadow-lg"
+          data-testid="anytty-history-search"
+          onSubmit={(event) => { event.preventDefault(); void runHistorySearch('forward') }}
+          style={{
+            bottom: 'max(4rem, calc(env(safe-area-inset-bottom) + 3.25rem))',
+            left: 'max(0.5rem, env(safe-area-inset-left))',
+            right: 'max(0.5rem, env(safe-area-inset-right))',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Search className="ml-1 h-4 w-4 shrink-0 text-[var(--anytty-muted)]" aria-hidden="true" />
+            <input
+              autoFocus
+              aria-label={t('terminal.tools.searchHistory')}
+              className="h-11 min-w-0 flex-1 border border-[var(--anytty-border-subtle)] bg-[var(--anytty-bg)] px-3 text-sm outline-none focus-visible:border-[var(--anytty-accent)]"
+              value={historySearchQuery}
+              onChange={(event) => { setHistorySearchQuery(event.target.value); setHistorySearchMessage('') }}
+            />
+            <button type="button" aria-label={t('terminal.tools.searchPrevious')} className="grid h-11 w-11 shrink-0 place-items-center border border-[var(--anytty-border-subtle)]" disabled={historySearchBusy || !historySearchQuery.trim()} onClick={() => { void runHistorySearch('backward') }}>
+              <ArrowUp className="h-4 w-4" />
+            </button>
+            <button type="submit" aria-label={t('terminal.tools.searchNext')} className="grid h-11 w-11 shrink-0 place-items-center border border-[var(--anytty-border-subtle)]" disabled={historySearchBusy || !historySearchQuery.trim()}>
+              {historySearchBusy ? <span className="anytty-square-spinner h-4 w-4" aria-hidden="true" /> : <ArrowDown className="h-4 w-4" />}
+            </button>
+            <button type="button" aria-label={t('common.close')} className="grid h-11 w-11 shrink-0 place-items-center" onClick={() => {
+              terminalSession.cancelHistorySearch()
+              setHistorySearchOpen(false)
+            }}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {historySearchMessage ? <p className="mt-1 px-1 text-xs text-[var(--anytty-muted)]" role="status">{historySearchMessage}</p> : null}
+        </form>
+      ) : null}
       {historyLoadFailure !== 'none' && !showConnectingOverlay ? (
         <div
           className={`absolute inset-x-2 z-[60] flex min-h-11 items-center justify-between gap-3 border border-amber-500/40 bg-[var(--anytty-surface)] px-3 py-2 text-sm text-[var(--anytty-text)] ${inputFailureVisible ? 'top-14' : 'top-3'}`}
@@ -2603,3 +2809,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     </section>
   )
 })
+
+function formatHistoryTimestamp(timestampUnixMs: number): string {
+  return new Date(timestampUnixMs).toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}

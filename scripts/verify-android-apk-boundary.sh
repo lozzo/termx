@@ -40,8 +40,9 @@ resolve_aapt2() {
     printf '%s\n' "$ANYTTY_AAPT2"
     return
   fi
-  if [[ -n "${ANDROID_HOME:-}" && -x "$ANDROID_HOME/build-tools/36.0.0/aapt2" ]]; then
-    printf '%s\n' "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+  local android_sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+  if [[ -x "$android_sdk_root/build-tools/36.0.0/aapt2" ]]; then
+    printf '%s\n' "$android_sdk_root/build-tools/36.0.0/aapt2"
     return
   fi
   command -v aapt2 2>/dev/null || fail 'aapt2 is unavailable'

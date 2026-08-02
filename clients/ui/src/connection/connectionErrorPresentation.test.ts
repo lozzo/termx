@@ -62,12 +62,12 @@ describe('connection error presentation', () => {
   })
 
   it.each([
-    { code: 'daemon_blocked', reason: 'daemon_blocked', retryable: true },
-    { code: 'daemon_deleted', reason: 'daemon_deleted', retryable: false },
-  ] as const)('presents $code without starting authorization pairing', ({ code, reason, retryable }) => {
+    { code: 'daemon_blocked', reason: 'daemon_blocked', retryable: true, requiresPairing: false },
+    { code: 'daemon_deleted', reason: 'daemon_deleted', retryable: true, requiresPairing: true },
+  ] as const)('presents $code lifecycle recovery', ({ code, reason, retryable, requiresPairing }) => {
     const source = Object.assign(new Error('Cloud lifecycle state'), { code })
     const result = connectionFailurePresentation(source, anyttyI18n.t)
-    expect(result).toMatchObject({ reason, retryable, requiresPairing: false })
+    expect(result).toMatchObject({ reason, retryable, requiresPairing })
     expect(isAuthorizationConnectionError(source)).toBe(false)
   })
 })

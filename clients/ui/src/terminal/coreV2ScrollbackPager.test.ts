@@ -5,6 +5,8 @@ import type { CoreV2HistorySource } from './coreV2HistorySource'
 import { CoreV2ScrollbackPager } from './coreV2ScrollbackPager'
 import type {
   CoreV2HistoryCopyRequest,
+  CoreV2HistorySearchRequest,
+  CoreV2HistorySearchResult,
   CoreV2HistoryWindow,
   CoreV2HistoryWindowRequest,
 } from './coreV2TerminalProtocol'
@@ -116,6 +118,25 @@ describe('CoreV2ScrollbackPager', () => {
     terminal.dispose()
   })
 
+  it('tracks the exact logical column after an early wide-character wrap', () => {
+    const rows = coreV2ReflowHistoryRows([{
+      index: 0,
+      logicalLineId: '1',
+      rowInLine: 0,
+      cells: [
+        { text: 'a', width: 1 },
+        { text: 'b', width: 1 },
+        { text: 'c', width: 1 },
+        { text: 'd', width: 1 },
+        { text: '中', width: 2 },
+        { text: 'e', width: 1 },
+      ],
+    }], 5)
+
+    expect(rows.map((row) => row.cells.map((cell) => cell.text).join(''))).toEqual(['abcd', '中e'])
+    expect(rows.map((row) => row.logicalStartCol)).toEqual([0, 4])
+  })
+
   it('crops a fixed grid row to one local xterm row', async () => {
     const rows = coreV2ReflowHistoryRows([{
       index: 0,
@@ -177,13 +198,65 @@ describe('CoreV2ScrollbackPager', () => {
     expect(latest.loadedRows).toBe(3)
     expect(latest.viewportTop).toBe(1)
   })
+
+  it('searches the current frozen generation and replaces the paging anchor with the match window', async () => {
+    const matchWindow = window({ lineId: '20', token: 'token-1', generation: '7', hasMore: true })
+    matchWindow.renderRows = [historyRow('20', 0, 'abcdefghijkl', 12)]
+    const source = new MockSource(
+      [window({ lineId: '42', token: 'token-1', generation: '7', hasMore: true })],
+      { found: true, wrapped: false, match: { startLineId: '20', startCol: 7, endLineId: '20', endCol: 10 }, window: matchWindow },
+    )
+    const pager = new CoreV2ScrollbackPager(source)
+    await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 1, cols: 5 })
+
+    const result = await pager.search({ terminalId: 'terminal-1', query: 'hij', direction: 'backward', cols: 5, limit: 100 })
+
+    expect(result).toMatchObject({ found: true, wrapped: false, matchRow: 1 })
+    expect(result.page?.rows[0]?.logicalLineId).toBe('20')
+    expect(source.searchRequests[0]).toMatchObject({ token: 'token-1', generation: '7', query: 'hij', direction: 'backward' })
+  })
+
+  it('releases an expired frozen token after search fails', async () => {
+    const stale = Object.assign(new Error('history expired'), { code: 'stale_resource' })
+    const source = new MockSource(
+      [window({ lineId: '42', token: 'token-1', generation: '7', hasMore: true })],
+      stale,
+    )
+    const pager = new CoreV2ScrollbackPager(source)
+    await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 1, cols: 80 })
+
+    await expect(pager.search({ terminalId: 'terminal-1', query: 'needle', direction: 'forward', cols: 80, limit: 100 })).rejects.toBe(stale)
+
+    expect(source.releases).toEqual([{ terminalId: 'terminal-1', token: 'token-1', generation: '7' }])
+    await expect(pager.copy('terminal-1', 80, { startLineId: '42', startCol: 0, endLineId: '42', endCol: 1 })).rejects.toThrow('loaded frozen window')
+  })
+
+  it('copies a logical range from the current frozen generation', async () => {
+    const source = new MockSource([window({ lineId: '42', token: 'token-1', generation: '7', hasMore: true })], undefined, 'selected')
+    const pager = new CoreV2ScrollbackPager(source)
+    await pager.load({ terminalId: 'terminal-1', offset: 0, limit: 1, cols: 80 })
+
+    await expect(pager.copy('terminal-1', 80, { startLineId: '42', startCol: 1, endLineId: '42', endCol: 4 })).resolves.toBe('selected')
+    expect(source.copyRequests[0]).toMatchObject({
+      token: 'token-1',
+      generation: '7',
+      boundaryFirstLineId: '42',
+      boundaryLastLineId: '42',
+    })
+  })
 })
 
 class MockSource implements CoreV2HistorySource {
   readonly requests: CoreV2HistoryWindowRequest[] = []
+  readonly copyRequests: CoreV2HistoryCopyRequest[] = []
+  readonly searchRequests: CoreV2HistorySearchRequest[] = []
   readonly releases: Array<{ terminalId: string; token: string; generation?: string | number | bigint }> = []
 
-  constructor(private readonly windows: Array<CoreV2HistoryWindow | Error>) {}
+  constructor(
+    private readonly windows: Array<CoreV2HistoryWindow | Error>,
+    private readonly searchResult?: CoreV2HistorySearchResult | Error,
+    private readonly copyText = '',
+  ) {}
 
   async window(request: CoreV2HistoryWindowRequest): Promise<CoreV2HistoryWindow> {
     this.requests.push({ ...request })
@@ -193,8 +266,16 @@ class MockSource implements CoreV2HistorySource {
     return result
   }
 
-  async copy(_request: CoreV2HistoryCopyRequest): Promise<string> {
-    throw new Error('not used')
+  async copy(request: CoreV2HistoryCopyRequest): Promise<string> {
+    this.copyRequests.push(request)
+    return this.copyText
+  }
+
+  async search(request: CoreV2HistorySearchRequest): Promise<CoreV2HistorySearchResult> {
+    this.searchRequests.push(request)
+    if (!this.searchResult) throw new Error('not used')
+    if (this.searchResult instanceof Error) throw this.searchResult
+    return this.searchResult
   }
 
   async release(request: { terminalId: string; token: string; generation?: string | number | bigint }): Promise<void> {

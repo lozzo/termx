@@ -6,21 +6,31 @@ import {
   HistoryCursorSchema,
   HistoryReleaseCommandSchema,
   HistoryRangeSchema,
+  HistorySearchCommandSchema,
+  HistorySearchDirection,
+  HistoryTextPositionSchema,
   HistoryWindowCommandSchema,
   HistoryWindowMode,
 } from '../generated/apipb/history_pb'
 import { TerminalRefSchema } from '../generated/apipb/terminal_pb'
 import {
   coreV2HistoryWindowFromAPI,
+  coreV2HistorySearchFromAPI,
   type CoreV2HistoryCopyRequest,
   type CoreV2HistoryReleaseRequest,
+  type CoreV2HistorySearchRequest,
+  type CoreV2HistorySearchResult,
   type CoreV2HistoryWindow,
   type CoreV2HistoryWindowRequest,
 } from './coreV2TerminalProtocol'
 
+const HISTORY_COPY_CHUNK_LINES = 8192
+const HISTORY_COPY_CHUNK_BYTES = 512 * 1024
+
 export interface CoreV2HistorySource {
   window(request: CoreV2HistoryWindowRequest, options?: { signal?: AbortSignal }): Promise<CoreV2HistoryWindow>
   copy(request: CoreV2HistoryCopyRequest, options?: { signal?: AbortSignal }): Promise<string>
+  search(request: CoreV2HistorySearchRequest, options?: { signal?: AbortSignal }): Promise<CoreV2HistorySearchResult>
   release?(
     request: CoreV2HistoryReleaseRequest & { generation?: string | number | bigint | undefined },
     options?: { signal?: AbortSignal },
@@ -66,16 +76,48 @@ function createProtoHistorySource(session: ProtoClientSession, machineId: string
       return coreV2HistoryWindowFromAPI(result.result.value)
     },
     async copy(request, options) {
-      const command = create(HistoryCopyCommandSchema, {
+      const chunks: string[] = []
+      let range = request.range
+      for (;;) {
+        const command = create(HistoryCopyCommandSchema, {
+          terminal: terminal(request.terminalId),
+          window: windowCommand({ ...request, mode: 'range', limit: 1, range }),
+          maxLines: HISTORY_COPY_CHUNK_LINES,
+          maxBytes: HISTORY_COPY_CHUNK_BYTES,
+        })
+        const result = await session.execute(
+          create(CommandEnvelopeSchema, { command: { case: 'historyCopy', value: command } }),
+          options,
+        )
+        if (result.result.case !== 'historyCopy') throw new Error('history copy returned no result')
+        chunks.push(result.result.value.text)
+        if (result.result.value.done) return chunks.join('\n')
+        const next = result.result.value.next
+        if (!next || next.lineId === 0n) throw new Error('history copy returned no continuation')
+        const nextStart = { lineId: next.lineId.toString(), col: next.col }
+        if (nextStart.lineId === range.startLineId && nextStart.col === range.startCol) {
+          throw new Error('history copy continuation did not advance')
+        }
+        range = { ...request.range, startLineId: nextStart.lineId, startCol: nextStart.col }
+      }
+    },
+    async search(request, options) {
+      const command = create(HistorySearchCommandSchema, {
         terminal: terminal(request.terminalId),
-        window: windowCommand({ ...request, mode: 'range', limit: 1 }),
+        token: request.token,
+        historyGeneration: BigInt(request.generation ?? 0),
+        query: request.query,
+        direction: request.direction === 'backward' ? HistorySearchDirection.BACKWARD : HistorySearchDirection.FORWARD,
+        cols: request.cols,
+        limit: request.limit,
+        start: request.start ? create(HistoryTextPositionSchema, { lineId: BigInt(request.start.lineId), col: request.start.col }) : undefined,
       })
       const result = await session.execute(
-        create(CommandEnvelopeSchema, { command: { case: 'historyCopy', value: command } }),
+        create(CommandEnvelopeSchema, { command: { case: 'historySearch', value: command } }),
         options,
       )
-      if (result.result.case !== 'historyCopy') throw new Error('history copy returned no result')
-      return result.result.value.text
+      if (result.result.case !== 'historySearch') throw new Error('history search returned no result')
+      return coreV2HistorySearchFromAPI(result.result.value)
     },
     async release(request, options) {
       await session.execute(
