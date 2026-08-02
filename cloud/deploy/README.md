@@ -97,6 +97,8 @@ psql -c "SELECT
 2. 有数据时停止升级，先编写并用生产快照验证明确的数据转换或归档方案；不能直接运行 `--migrate`。
 3. 确认旧数据可放弃时也要记录批准和归档结果，再显式清空三张旧表；否则 migration runner 仍会拒绝版本 7。
 
+`0009_edge_deletion.sql` 不删除 Relay 历史，只解除历史记录对 Edge deployment 的外键占用。新 Relay reservation 仍会先锁定并校验有效 Edge；删除旧 Edge 后，历史记录继续保留原 Edge UUID 用于归因。
+
 ## 私密备份
 
 以下示例必须在 Bash 中运行。它使用 `pipefail` 保留 `pg_dump`/`tar` 的失败状态，并用 `age` 直接加密输出，不在当前目录落明文 dump 或私钥包：
@@ -238,6 +240,16 @@ journalctl -u anytty-cloud-edge --since -10min
 5. 重启 Edge 后再次核对 applied revision 和公网证书，确认没有回退到 bootstrap 证书。
 
 严禁删除 `managed-certificate.pb` 或 bootstrap `public-cert.pem`。Edge 启动时先载入 bootstrap 证书，再由 managed state 覆盖；managed state 丢失会使进程继续使用 bootstrap 证书。需要清除旧 bootstrap SAN 时，必须先用同一 Edge 私钥重签并原子替换 `public-cert.pem`，随后重启和复验，不能通过删文件实现。
+
+### 5. Edge 生命周期
+
+在运营控制台的 Edge“配置与审计”页执行生命周期操作：
+
+1. 停用 Edge。Controller 会撤销当前控制连接，之后的重连会在准入阶段被拒绝。
+2. 需要重新使用时选择恢复，Edge 可以继续使用原有身份和配置重连。
+3. 永久退役时等待状态变为“已停用、离线”，再填写原因并删除。删除会清理 deployment、配置版本、未消费安装凭据和证书绑定；以后必须创建新的 Edge 并重新 bootstrap。
+
+不要把停用当成远程关闭 systemd 服务。停用控制 Cloud 准入；退役主机时仍应在目标服务器停止并移除 `anytty-cloud-edge` 服务。
 
 ## 验收
 

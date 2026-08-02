@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/anytty/anytty/cloud/controller/certificate"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -90,6 +90,37 @@ func (database *Database) UpdateEdge(ctx context.Context, input edgeconfig.Updat
 		return edgeconfig.ErrRevisionConflict
 	}
 	if err := insertConfigVersion(ctx, tx, updated); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// DeleteEdge 原子校验 revision/停用状态、删除 deployment，并保留独立审计记录。
+func (database *Database) DeleteEdge(ctx context.Context, input edgeconfig.DeleteInput) error {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var enabled bool
+	var revision uint64
+	err = tx.QueryRow(ctx, `SELECT enabled,revision FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, input.EdgeID).Scan(&enabled, &revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return edgeconfig.ErrEdgeNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if revision != input.ExpectedRevision {
+		return edgeconfig.ErrRevisionConflict
+	}
+	if enabled {
+		return edgeconfig.ErrEdgeEnabled
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM edge_deployments WHERE edge_id=$1`, input.EdgeID); err != nil {
+		return err
+	}
+	if err := insertOperatorAudit(ctx, tx, input.ActorID, "edge.delete", "edge", input.EdgeID, input.Reason, "applied", input.DeletedAt); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

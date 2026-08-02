@@ -125,6 +125,9 @@ func (*registerEdgeStore) CreateEdge(context.Context, edgeconfig.Edge, []byte, t
 func (*registerEdgeStore) UpdateEdge(context.Context, edgeconfig.UpdateInput, edgeconfig.Edge) error {
 	return errors.New("unused")
 }
+func (*registerEdgeStore) DeleteEdge(context.Context, edgeconfig.DeleteInput) error {
+	return errors.New("unused")
+}
 func (store *registerEdgeStore) ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (edgeconfig.Edge, error) {
 	return store.edge, errors.New("unused")
 }

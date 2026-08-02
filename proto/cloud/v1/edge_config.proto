@@ -75,6 +75,14 @@ message UpdateEdgeRequest {
 
 message UpdateEdgeResponse { ManagedEdge edge = 1; }
 
+message DeleteEdgeRequest {
+  string edge_id = 1;
+  uint64 expected_revision = 2;
+  string reason = 3;
+}
+
+message DeleteEdgeResponse {}
+
 // RegisterEdgeRequest 由安装后的 Edge 发送；两个私钥都不会离开 Edge。
 message RegisterEdgeRequest {
   string edge_id = 1;

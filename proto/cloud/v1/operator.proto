@@ -5,6 +5,7 @@ package anytty.cloud.v1;
 import "cloud/v1/account.proto";
 import "cloud/v1/certificate.proto";
 import "cloud/v1/commerce.proto";
+import "cloud/v1/edge_config.proto";
 import "cloud/v1/runtime.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -186,6 +187,7 @@ service OperatorService {
   rpc SetAccountRole(SetAccountRoleRequest) returns (SetAccountRoleResponse);
   rpc DisconnectDaemon(DisconnectDaemonRequest) returns (DisconnectDaemonResponse);
   rpc DisconnectSession(DisconnectSessionRequest) returns (DisconnectSessionResponse);
+  rpc DeleteEdge(DeleteEdgeRequest) returns (DeleteEdgeResponse);
   rpc ListCertificateProfiles(ListCertificateProfilesRequest) returns (ListCertificateProfilesResponse);
   rpc UploadCertificateProfile(UploadCertificateProfileRequest) returns (UploadCertificateProfileResponse);
   rpc BindCertificateProfile(BindCertificateProfileRequest) returns (BindCertificateProfileResponse);

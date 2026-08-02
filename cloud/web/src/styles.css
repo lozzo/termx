@@ -355,6 +355,8 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .table-frame td:has(> :is(.table-link, .table-button, .table-select)) { padding-block: 8px; }
 .table-frame td .button { white-space: nowrap; }
 .daemon-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.edge-settings { display: grid; gap: 18px; }
+.edge-lifecycle-actions { min-height: 66px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 11px 17px; }
 .empty-state, .empty-inline { padding: 46px 20px; color: var(--muted); text-align: center; line-height: 1.6; }
 .empty-inline { padding: 28px 17px; text-align: left; }
 .empty-inline p { color: var(--muted); }

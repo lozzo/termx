@@ -17,6 +17,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+var ErrEdgeOnline = errors.New("Edge must be offline before deletion")
+
 // Store 是运营持久查询和审计 mutation 的事务边界。
 type Store interface {
 	ListOperatorAccounts(context.Context, *cloudv1.PageRequest, time.Time) ([]*cloudv1.AccountSummary, string, error)
@@ -68,6 +70,30 @@ func (service *Service) ProvisionAccount(ctx context.Context, request *cloudv1.P
 // ResetAccountSetup 委托账号领域原子轮换 setup credential 并撤销旧 session。
 func (service *Service) ResetAccountSetup(ctx context.Context, request *cloudv1.ResetAccountSetupRequest) (*cloudv1.ResetAccountSetupResponse, error) {
 	return service.config.Accounts.ResetAccountSetup(ctx, request)
+}
+
+// DeleteEdge 要求管理员最近认证，并拒绝删除仍在线的 deployment。
+func (service *Service) DeleteEdge(ctx context.Context, request *cloudv1.DeleteEdgeRequest) (*cloudv1.DeleteEdgeResponse, error) {
+	actor, err := requireAdmin(ctx, true, service.config.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if request == nil || strings.TrimSpace(request.GetEdgeId()) == "" || request.GetExpectedRevision() == 0 || strings.TrimSpace(request.GetReason()) == "" {
+		return nil, account.ErrInvalidArgument
+	}
+	if _, online, err := service.config.Directory.Edge(ctx, strings.TrimSpace(request.GetEdgeId())); err != nil {
+		return nil, err
+	} else if online {
+		return nil, ErrEdgeOnline
+	}
+	err = service.config.Edges.DeleteEdge(ctx, edgeconfig.DeleteInput{
+		EdgeID: request.GetEdgeId(), ExpectedRevision: request.GetExpectedRevision(),
+		ActorID: actor.Account.GetAccountId(), Reason: request.GetReason(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.DeleteEdgeResponse{}, nil
 }
 
 // ListCertificateProfiles 返回当前档案、绑定和真实在线投影，不包含 PEM。

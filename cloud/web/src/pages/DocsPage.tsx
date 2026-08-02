@@ -118,6 +118,7 @@ export function DocsPage() {
             <p>Cloud 账号只管理 daemon 注册、Edge 路由、Relay、订阅与运营配置，不是 App 账号。登录 Cloud 控制台生成一次性 enrollment code 后，在目标电脑执行：</p>
             <Command>{`ENROLLMENT_CODE=REPLACE_WITH_ONE_TIME_CODE\n./.artifacts/bin/anytty cloud enroll --controller https://cloud.anytty.com "$ENROLLMENT_CODE"\n./.artifacts/bin/anytty daemon restart\n./.artifacts/bin/anytty pair create --route cloud --qr-file ./anytty-cloud-pair.png`}</Command>
             <p>Controller 保存账号、注册和策略真值；Edge 保存在线会话与策略的内存投影，并提供公网信令和 Relay；daemon 持有终端、文件、设备身份与客户端授权。阻断 daemon 会拒绝并关闭 Cloud 会话但允许恢复；删除会清除 Cloud enrollment，再次接入必须重新注册。</p>
+            <p>管理员停用 Edge 时，Controller 会断开它的控制连接并拒绝重连；恢复后可继续使用原身份。永久退役必须先停用并等待离线，再从 Edge 配置页删除，旧 Relay 历史仍保留 Edge ID 供审计。</p>
           </section>
 
           <section id="security">

@@ -698,6 +698,102 @@ func (x *UpdateEdgeResponse) GetEdge() *ManagedEdge {
 	return nil
 }
 
+type DeleteEdgeRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId           string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Reason           string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteEdgeRequest) Reset() {
+	*x = DeleteEdgeRequest{}
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEdgeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEdgeRequest) ProtoMessage() {}
+
+func (x *DeleteEdgeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEdgeRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEdgeRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DeleteEdgeRequest) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *DeleteEdgeRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *DeleteEdgeRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type DeleteEdgeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEdgeResponse) Reset() {
+	*x = DeleteEdgeResponse{}
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEdgeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEdgeResponse) ProtoMessage() {}
+
+func (x *DeleteEdgeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEdgeResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEdgeResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{11}
+}
+
 // RegisterEdgeRequest 由安装后的 Edge 发送；两个私钥都不会离开 Edge。
 type RegisterEdgeRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -711,7 +807,7 @@ type RegisterEdgeRequest struct {
 
 func (x *RegisterEdgeRequest) Reset() {
 	*x = RegisterEdgeRequest{}
-	mi := &file_cloud_v1_edge_config_proto_msgTypes[10]
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +819,7 @@ func (x *RegisterEdgeRequest) String() string {
 func (*RegisterEdgeRequest) ProtoMessage() {}
 
 func (x *RegisterEdgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_edge_config_proto_msgTypes[10]
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +832,7 @@ func (x *RegisterEdgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterEdgeRequest.ProtoReflect.Descriptor instead.
 func (*RegisterEdgeRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RegisterEdgeRequest) GetEdgeId() string {
@@ -786,7 +882,7 @@ type RegisterEdgeResponse struct {
 
 func (x *RegisterEdgeResponse) Reset() {
 	*x = RegisterEdgeResponse{}
-	mi := &file_cloud_v1_edge_config_proto_msgTypes[11]
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -798,7 +894,7 @@ func (x *RegisterEdgeResponse) String() string {
 func (*RegisterEdgeResponse) ProtoMessage() {}
 
 func (x *RegisterEdgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_edge_config_proto_msgTypes[11]
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -811,7 +907,7 @@ func (x *RegisterEdgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterEdgeResponse.ProtoReflect.Descriptor instead.
 func (*RegisterEdgeResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{11}
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RegisterEdgeResponse) GetEdgeId() string {
@@ -939,7 +1035,12 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x0fpublic_endpoint\x18\x06 \x01(\tR\x0epublicEndpoint\x12\x18\n" +
 	"\aenabled\x18\a \x01(\bR\aenabled\"F\n" +
 	"\x12UpdateEdgeResponse\x120\n" +
-	"\x04edge\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.ManagedEdgeR\x04edge\"\xa7\x01\n" +
+	"\x04edge\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.ManagedEdgeR\x04edge\"q\n" +
+	"\x11DeleteEdgeRequest\x12\x17\n" +
+	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x14\n" +
+	"\x12DeleteEdgeResponse\"\xa7\x01\n" +
 	"\x13RegisterEdgeRequest\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12'\n" +
 	"\x0fbootstrap_token\x18\x02 \x01(\tR\x0ebootstrapToken\x12(\n" +
@@ -970,7 +1071,7 @@ func file_cloud_v1_edge_config_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_edge_config_proto_rawDescData
 }
 
-var file_cloud_v1_edge_config_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_cloud_v1_edge_config_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_cloud_v1_edge_config_proto_goTypes = []any{
 	(*EdgeDesiredConfig)(nil),       // 0: anytty.cloud.v1.EdgeDesiredConfig
 	(*SignedEdgeDesiredConfig)(nil), // 1: anytty.cloud.v1.SignedEdgeDesiredConfig
@@ -982,20 +1083,22 @@ var file_cloud_v1_edge_config_proto_goTypes = []any{
 	(*CreateEdgeResponse)(nil),      // 7: anytty.cloud.v1.CreateEdgeResponse
 	(*UpdateEdgeRequest)(nil),       // 8: anytty.cloud.v1.UpdateEdgeRequest
 	(*UpdateEdgeResponse)(nil),      // 9: anytty.cloud.v1.UpdateEdgeResponse
-	(*RegisterEdgeRequest)(nil),     // 10: anytty.cloud.v1.RegisterEdgeRequest
-	(*RegisterEdgeResponse)(nil),    // 11: anytty.cloud.v1.RegisterEdgeResponse
-	(*timestamppb.Timestamp)(nil),   // 12: google.protobuf.Timestamp
-	(*CertificateBinding)(nil),      // 13: anytty.cloud.v1.CertificateBinding
+	(*DeleteEdgeRequest)(nil),       // 10: anytty.cloud.v1.DeleteEdgeRequest
+	(*DeleteEdgeResponse)(nil),      // 11: anytty.cloud.v1.DeleteEdgeResponse
+	(*RegisterEdgeRequest)(nil),     // 12: anytty.cloud.v1.RegisterEdgeRequest
+	(*RegisterEdgeResponse)(nil),    // 13: anytty.cloud.v1.RegisterEdgeResponse
+	(*timestamppb.Timestamp)(nil),   // 14: google.protobuf.Timestamp
+	(*CertificateBinding)(nil),      // 15: anytty.cloud.v1.CertificateBinding
 }
 var file_cloud_v1_edge_config_proto_depIdxs = []int32{
-	12, // 0: anytty.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
-	12, // 1: anytty.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
+	14, // 0: anytty.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
+	14, // 1: anytty.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
 	0,  // 2: anytty.cloud.v1.ManagedEdge.config:type_name -> anytty.cloud.v1.EdgeDesiredConfig
 	2,  // 3: anytty.cloud.v1.ManagedEdge.runtime:type_name -> anytty.cloud.v1.EdgeRuntimeProjection
-	13, // 4: anytty.cloud.v1.ManagedEdge.certificate:type_name -> anytty.cloud.v1.CertificateBinding
+	15, // 4: anytty.cloud.v1.ManagedEdge.certificate:type_name -> anytty.cloud.v1.CertificateBinding
 	3,  // 5: anytty.cloud.v1.ListEdgesResponse.edges:type_name -> anytty.cloud.v1.ManagedEdge
 	3,  // 6: anytty.cloud.v1.CreateEdgeResponse.edge:type_name -> anytty.cloud.v1.ManagedEdge
-	12, // 7: anytty.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
+	14, // 7: anytty.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
 	3,  // 8: anytty.cloud.v1.UpdateEdgeResponse.edge:type_name -> anytty.cloud.v1.ManagedEdge
 	1,  // 9: anytty.cloud.v1.RegisterEdgeResponse.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
 	10, // [10:10] is the sub-list for method output_type
@@ -1017,7 +1120,7 @@ func file_cloud_v1_edge_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_edge_config_proto_rawDesc), len(file_cloud_v1_edge_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

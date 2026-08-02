@@ -582,6 +582,9 @@ func (*r5EdgeStore) CreateEdge(context.Context, edgeconfig.Edge, []byte, time.Ti
 func (*r5EdgeStore) UpdateEdge(context.Context, edgeconfig.UpdateInput, edgeconfig.Edge) error {
 	return errors.New("not implemented by R5 Edge fixture")
 }
+func (*r5EdgeStore) DeleteEdge(context.Context, edgeconfig.DeleteInput) error {
+	return errors.New("not implemented by R5 Edge fixture")
+}
 func (*r5EdgeStore) ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (edgeconfig.Edge, error) {
 	return edgeconfig.Edge{}, errors.New("not implemented by R5 Edge fixture")
 }

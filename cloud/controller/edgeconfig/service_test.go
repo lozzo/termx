@@ -57,6 +57,24 @@ func TestServiceSignsVersionsAndConsumesTwoStageClaimOnce(t *testing.T) {
 	if _, err := service.UpdateEdge(context.Background(), edgeconfig.UpdateInput{EdgeID: edge.ID, ExpectedRevision: 1, Name: edge.Name, Region: "cn-north", Capacity: 1, PublicEndpoint: edge.PublicEndpoint, Enabled: true}); !errors.Is(err, edgeconfig.ErrRevisionConflict) {
 		t.Fatalf("stale update error=%v", err)
 	}
+	deleteInput := edgeconfig.DeleteInput{EdgeID: edge.ID, ExpectedRevision: updated.Revision, ActorID: "admin", Reason: "retire deployment"}
+	if err := service.DeleteEdge(context.Background(), deleteInput); !errors.Is(err, edgeconfig.ErrEdgeEnabled) {
+		t.Fatalf("enabled deletion error=%v", err)
+	}
+	disabled, err := service.UpdateEdge(context.Background(), edgeconfig.UpdateInput{EdgeID: edge.ID, ExpectedRevision: updated.Revision, Name: edge.Name, Region: updated.Region, Capacity: updated.Capacity, PublicEndpoint: edge.PublicEndpoint, Enabled: false})
+	if err != nil {
+		t.Fatalf("disable Edge: %v", err)
+	}
+	if err := service.DeleteEdge(context.Background(), deleteInput); !errors.Is(err, edgeconfig.ErrRevisionConflict) {
+		t.Fatalf("stale deletion error=%v", err)
+	}
+	deleteInput.ExpectedRevision = disabled.Revision
+	if err := service.DeleteEdge(context.Background(), deleteInput); err != nil {
+		t.Fatalf("delete disabled Edge: %v", err)
+	}
+	if values, err := service.ListEdges(context.Background()); err != nil || len(values) != 0 {
+		t.Fatalf("deleted Edge remains: values=%v err=%v", values, err)
+	}
 }
 
 func TestServiceAcceptsIPAddressPublicEndpoint(t *testing.T) {
@@ -119,6 +137,22 @@ func (store *memoryStore) UpdateEdge(_ context.Context, input edgeconfig.UpdateI
 		return edgeconfig.ErrRevisionConflict
 	}
 	store.edge = updated
+	return nil
+}
+
+func (store *memoryStore) DeleteEdge(_ context.Context, input edgeconfig.DeleteInput) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.edge.ID == "" {
+		return edgeconfig.ErrEdgeNotFound
+	}
+	if store.edge.Revision != input.ExpectedRevision {
+		return edgeconfig.ErrRevisionConflict
+	}
+	if store.edge.Enabled {
+		return edgeconfig.ErrEdgeEnabled
+	}
+	store.edge = edgeconfig.Edge{}
 	return nil
 }
 

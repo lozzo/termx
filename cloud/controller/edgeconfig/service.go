@@ -24,6 +24,10 @@ var (
 	ErrClaimInvalid = errors.New("Edge claim is invalid")
 	// ErrRevisionConflict 表示运营编辑基于过期的 config revision。
 	ErrRevisionConflict = errors.New("Edge config revision conflict")
+	// ErrEdgeNotFound 表示目标 Edge deployment 已不存在。
+	ErrEdgeNotFound = errors.New("Edge deployment does not exist")
+	// ErrEdgeEnabled 表示删除前尚未停用目标 Edge。
+	ErrEdgeEnabled = errors.New("Edge must be disabled before deletion")
 )
 
 // Edge 是持久 desired state；Runtime 在线字段由 Controller Directory 单独提供。
@@ -60,12 +64,22 @@ type UpdateInput struct {
 	Enabled          bool
 }
 
+// DeleteInput 固定删除的 CAS、审计操作者和原因。
+type DeleteInput struct {
+	EdgeID           string
+	ExpectedRevision uint64
+	ActorID          string
+	Reason           string
+	DeletedAt        time.Time
+}
+
 // Store 是 Edge 持久事务边界；实现必须把配置版本、claim 消费和对应变更原子提交。
 type Store interface {
 	ListEdges(context.Context) ([]Edge, error)
 	GetEdge(context.Context, string) (Edge, error)
 	CreateEdge(context.Context, Edge, []byte, time.Time) error
 	UpdateEdge(context.Context, UpdateInput, Edge) error
+	DeleteEdge(context.Context, DeleteInput) error
 	ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (Edge, error)
 	ConsumeBootstrapClaim(context.Context, []byte, string, []byte) (Edge, error)
 }
@@ -165,6 +179,25 @@ func (service *Service) ListEdges(ctx context.Context) ([]Edge, error) {
 // GetEdge 返回一个 Edge 的当前持久配置和签名版本。
 func (service *Service) GetEdge(ctx context.Context, edgeID string) (Edge, error) {
 	return service.store.GetEdge(ctx, strings.TrimSpace(edgeID))
+}
+
+// DeleteEdge 删除已停用 deployment；实时在线检查由持有 Directory 的调用方完成。
+func (service *Service) DeleteEdge(ctx context.Context, input DeleteInput) error {
+	input.EdgeID = strings.TrimSpace(input.EdgeID)
+	input.ActorID = strings.TrimSpace(input.ActorID)
+	input.Reason = strings.TrimSpace(input.Reason)
+	if _, err := uuid.Parse(input.EdgeID); err != nil || input.ExpectedRevision == 0 || input.ActorID == "" || input.Reason == "" {
+		return errors.New("valid Edge deletion revision, actor, and reason are required")
+	}
+	edge, err := service.store.GetEdge(ctx, input.EdgeID)
+	if err != nil {
+		return err
+	}
+	if edge.Enabled {
+		return ErrEdgeEnabled
+	}
+	input.DeletedAt = service.now()
+	return service.store.DeleteEdge(ctx, input)
 }
 
 // ConsumeInstallClaim 原子消费 URL claim 并生成脚本内使用的第二个一次性 bootstrap credential。

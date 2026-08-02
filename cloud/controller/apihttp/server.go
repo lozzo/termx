@@ -377,6 +377,10 @@ func (handler *handler) operator(writer http.ResponseWriter, request *http.Reque
 		handler.updateEdge(writer, request)
 		return
 	}
+	if request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/api/operator/edges/") {
+		handler.deleteEdge(writer, request)
+		return
+	}
 	writeError(writer, http.StatusNotFound, errors.New("operator endpoint was not found"))
 }
 
@@ -459,6 +463,21 @@ func (handler *handler) updateEdge(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	writeProto(writer, http.StatusOK, &cloudv1.UpdateEdgeResponse{Edge: projectEdge(edge, runtimeProjection, binding)})
+}
+
+func (handler *handler) deleteEdge(writer http.ResponseWriter, request *http.Request) {
+	input := &cloudv1.DeleteEdgeRequest{}
+	if err := readProto(request, input); err != nil {
+		writeError(writer, http.StatusBadRequest, err)
+		return
+	}
+	pathID := strings.TrimPrefix(request.URL.Path, "/api/operator/edges/")
+	if input.GetEdgeId() != pathID || strings.Contains(pathID, "/") {
+		writeError(writer, http.StatusBadRequest, errors.New("Edge path and request IDs differ"))
+		return
+	}
+	response, err := handler.config.Operator.DeleteEdge(request.Context(), input)
+	writeServiceResult(writer, response, err)
 }
 
 func (handler *handler) installScript(writer http.ResponseWriter, request *http.Request) {

@@ -33,6 +33,7 @@ const (
 	OperatorService_SetAccountRole_FullMethodName           = "/anytty.cloud.v1.OperatorService/SetAccountRole"
 	OperatorService_DisconnectDaemon_FullMethodName         = "/anytty.cloud.v1.OperatorService/DisconnectDaemon"
 	OperatorService_DisconnectSession_FullMethodName        = "/anytty.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_DeleteEdge_FullMethodName               = "/anytty.cloud.v1.OperatorService/DeleteEdge"
 	OperatorService_ListCertificateProfiles_FullMethodName  = "/anytty.cloud.v1.OperatorService/ListCertificateProfiles"
 	OperatorService_UploadCertificateProfile_FullMethodName = "/anytty.cloud.v1.OperatorService/UploadCertificateProfile"
 	OperatorService_BindCertificateProfile_FullMethodName   = "/anytty.cloud.v1.OperatorService/BindCertificateProfile"
@@ -58,6 +59,7 @@ type OperatorServiceClient interface {
 	SetAccountRole(ctx context.Context, in *SetAccountRoleRequest, opts ...grpc.CallOption) (*SetAccountRoleResponse, error)
 	DisconnectDaemon(ctx context.Context, in *DisconnectDaemonRequest, opts ...grpc.CallOption) (*DisconnectDaemonResponse, error)
 	DisconnectSession(ctx context.Context, in *DisconnectSessionRequest, opts ...grpc.CallOption) (*DisconnectSessionResponse, error)
+	DeleteEdge(ctx context.Context, in *DeleteEdgeRequest, opts ...grpc.CallOption) (*DeleteEdgeResponse, error)
 	ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error)
 	UploadCertificateProfile(ctx context.Context, in *UploadCertificateProfileRequest, opts ...grpc.CallOption) (*UploadCertificateProfileResponse, error)
 	BindCertificateProfile(ctx context.Context, in *BindCertificateProfileRequest, opts ...grpc.CallOption) (*BindCertificateProfileResponse, error)
@@ -211,6 +213,16 @@ func (c *operatorServiceClient) DisconnectSession(ctx context.Context, in *Disco
 	return out, nil
 }
 
+func (c *operatorServiceClient) DeleteEdge(ctx context.Context, in *DeleteEdgeRequest, opts ...grpc.CallOption) (*DeleteEdgeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEdgeResponse)
+	err := c.cc.Invoke(ctx, OperatorService_DeleteEdge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *operatorServiceClient) ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListCertificateProfilesResponse)
@@ -261,6 +273,7 @@ type OperatorServiceServer interface {
 	SetAccountRole(context.Context, *SetAccountRoleRequest) (*SetAccountRoleResponse, error)
 	DisconnectDaemon(context.Context, *DisconnectDaemonRequest) (*DisconnectDaemonResponse, error)
 	DisconnectSession(context.Context, *DisconnectSessionRequest) (*DisconnectSessionResponse, error)
+	DeleteEdge(context.Context, *DeleteEdgeRequest) (*DeleteEdgeResponse, error)
 	ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error)
 	UploadCertificateProfile(context.Context, *UploadCertificateProfileRequest) (*UploadCertificateProfileResponse, error)
 	BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error)
@@ -315,6 +328,9 @@ func (UnimplementedOperatorServiceServer) DisconnectDaemon(context.Context, *Dis
 }
 func (UnimplementedOperatorServiceServer) DisconnectSession(context.Context, *DisconnectSessionRequest) (*DisconnectSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DisconnectSession not implemented")
+}
+func (UnimplementedOperatorServiceServer) DeleteEdge(context.Context, *DeleteEdgeRequest) (*DeleteEdgeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteEdge not implemented")
 }
 func (UnimplementedOperatorServiceServer) ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListCertificateProfiles not implemented")
@@ -598,6 +614,24 @@ func _OperatorService_DisconnectSession_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OperatorService_DeleteEdge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEdgeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).DeleteEdge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_DeleteEdge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).DeleteEdge(ctx, req.(*DeleteEdgeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _OperatorService_ListCertificateProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListCertificateProfilesRequest)
 	if err := dec(in); err != nil {
@@ -714,6 +748,10 @@ var OperatorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DisconnectSession",
 			Handler:    _OperatorService_DisconnectSession_Handler,
+		},
+		{
+			MethodName: "DeleteEdge",
+			Handler:    _OperatorService_DeleteEdge_Handler,
 		},
 		{
 			MethodName: "ListCertificateProfiles",

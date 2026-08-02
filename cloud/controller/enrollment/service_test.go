@@ -226,6 +226,9 @@ func (refreshEdgeStore) CreateEdge(context.Context, edgeconfig.Edge, []byte, tim
 func (refreshEdgeStore) UpdateEdge(context.Context, edgeconfig.UpdateInput, edgeconfig.Edge) error {
 	return errors.New("unused")
 }
+func (refreshEdgeStore) DeleteEdge(context.Context, edgeconfig.DeleteInput) error {
+	return errors.New("unused")
+}
 func (refreshEdgeStore) ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (edgeconfig.Edge, error) {
 	return edgeconfig.Edge{}, errors.New("unused")
 }
@@ -431,6 +434,9 @@ func (preflightEdgeStore) CreateEdge(context.Context, edgeconfig.Edge, []byte, t
 	return errors.New("unused")
 }
 func (preflightEdgeStore) UpdateEdge(context.Context, edgeconfig.UpdateInput, edgeconfig.Edge) error {
+	return errors.New("unused")
+}
+func (preflightEdgeStore) DeleteEdge(context.Context, edgeconfig.DeleteInput) error {
 	return errors.New("unused")
 }
 func (store preflightEdgeStore) ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (edgeconfig.Edge, error) {
