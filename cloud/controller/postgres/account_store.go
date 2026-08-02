@@ -87,27 +87,27 @@ func accountRecordResult(record account.Record, err error) (account.Record, erro
 	return record, err
 }
 
-// CreateSession 在密码完成事务外校验后锁定并重检 credential，再创建 session。
-func (database *Database) CreateSession(ctx context.Context, expected account.Record, session account.Session, now time.Time) (account.Record, error) {
+// CreateRefreshToken 在密码完成事务外校验后锁定并重检 credential，再创建 Refresh token。
+func (database *Database) CreateRefreshToken(ctx context.Context, expected account.Record, refresh account.RefreshToken, now time.Time) (account.Record, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return account.Record{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	locked, err := lockAccountCredential(ctx, tx, session.AccountID)
+	locked, err := lockAccountCredential(ctx, tx, refresh.AccountID)
 	if err != nil {
 		return account.Record{}, err
 	}
 	if !activeCredentialMatches(locked, expected) {
 		return account.Record{}, account.ErrAccountConflict
 	}
-	if !now.Before(session.AccessExpiresAt) || !session.AccessExpiresAt.Before(session.RefreshExpiresAt) {
+	if !now.Before(refresh.ExpiresAt) {
 		return account.Record{}, account.ErrAccountConflict
 	}
-	if err := insertAccountSession(ctx, tx, session); err != nil {
+	if err := insertAccountRefreshToken(ctx, tx, refresh); err != nil {
 		return account.Record{}, err
 	}
-	roles, err := loadAccountRoles(ctx, tx, session.AccountID)
+	roles, err := loadAccountRoles(ctx, tx, refresh.AccountID)
 	if err != nil {
 		return account.Record{}, err
 	}
@@ -118,16 +118,12 @@ func (database *Database) CreateSession(ctx context.Context, expected account.Re
 	return locked, nil
 }
 
-func (database *Database) SessionByAccessDigest(ctx context.Context, digest [sha256.Size]byte) (account.Session, error) {
-	return scanAccountSession(database.pool.QueryRow(ctx, accountSessionSelect+` WHERE access_token_digest=$1`, digest[:]))
+func (database *Database) RefreshTokenByDigest(ctx context.Context, digest [sha256.Size]byte) (account.RefreshToken, error) {
+	return scanAccountRefreshToken(database.pool.QueryRow(ctx, accountRefreshTokenSelect+` WHERE token_digest=$1`, digest[:]))
 }
 
-func (database *Database) SessionByRefreshDigest(ctx context.Context, digest [sha256.Size]byte) (account.Session, error) {
-	return scanAccountSession(database.pool.QueryRow(ctx, accountSessionSelect+` WHERE refresh_token_digest=$1`, digest[:]))
-}
-
-// RotateSession 按 account -> credential -> session 顺序锁定并 fail closed 地轮换 refresh session。
-func (database *Database) RotateSession(ctx context.Context, previous, next account.Session, now time.Time) (account.Record, error) {
+// RotateRefreshToken 按 account -> credential -> token 顺序锁定并轮换 Refresh token。
+func (database *Database) RotateRefreshToken(ctx context.Context, previous, next account.RefreshToken, now time.Time) (account.Record, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return account.Record{}, err
@@ -140,24 +136,24 @@ func (database *Database) RotateSession(ctx context.Context, previous, next acco
 	if lockedAccount.Profile.GetState() != cloudv1.AccountState_ACCOUNT_STATE_ACTIVE || !validBcryptHash(lockedAccount.PasswordHash) {
 		return account.Record{}, account.ErrUnauthenticated
 	}
-	lockedSession, err := scanAccountSession(tx.QueryRow(ctx, accountSessionSelect+` WHERE session_id=$1 AND account_id=$2 FOR UPDATE`, previous.ID, previous.AccountID))
-	if err != nil || lockedSession.Revoked || !now.Before(lockedSession.RefreshExpiresAt) || lockedSession.Revision != previous.Revision || !bytes.Equal(lockedSession.RefreshDigest[:], previous.RefreshDigest[:]) {
+	lockedRefresh, err := scanAccountRefreshToken(tx.QueryRow(ctx, accountRefreshTokenSelect+` WHERE refresh_id=$1 AND account_id=$2 FOR UPDATE`, previous.ID, previous.AccountID))
+	if err != nil || lockedRefresh.Revoked || !now.Before(lockedRefresh.ExpiresAt) || lockedRefresh.Revision != previous.Revision || !bytes.Equal(lockedRefresh.TokenDigest[:], previous.TokenDigest[:]) {
 		return account.Record{}, account.ErrUnauthenticated
 	}
-	result, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE session_id=$2 AND revoked_at IS NULL`, now, lockedSession.ID)
+	result, err := tx.Exec(ctx, `UPDATE account_refresh_tokens SET revoked_at=$1,revision=revision+1 WHERE refresh_id=$2 AND revoked_at IS NULL`, now, lockedRefresh.ID)
 	if err != nil {
 		return account.Record{}, err
 	}
 	if result.RowsAffected() != 1 {
 		return account.Record{}, account.ErrAccountConflict
 	}
-	next.AccountID = lockedSession.AccountID
-	next.RecentAuthExpiresAt = lockedSession.RecentAuthExpiresAt
-	next.Revision = lockedSession.Revision + 1
-	if err := insertAccountSession(ctx, tx, next); err != nil {
+	next.AccountID = lockedRefresh.AccountID
+	next.RecentAuthExpiresAt = lockedRefresh.RecentAuthExpiresAt
+	next.Revision = lockedRefresh.Revision + 1
+	if err := insertAccountRefreshToken(ctx, tx, next); err != nil {
 		return account.Record{}, err
 	}
-	roles, err := loadAccountRoles(ctx, tx, lockedSession.AccountID)
+	roles, err := loadAccountRoles(ctx, tx, lockedRefresh.AccountID)
 	if err != nil {
 		return account.Record{}, err
 	}
@@ -168,11 +164,11 @@ func (database *Database) RotateSession(ctx context.Context, previous, next acco
 	return lockedAccount, nil
 }
 
-func (database *Database) RevokeSession(ctx context.Context, accountID, sessionID string, all bool) error {
-	query := `UPDATE account_sessions SET revoked_at=now(),revision=revision+1 WHERE account_id=$1 AND session_id=$2 AND revoked_at IS NULL`
-	arguments := []any{accountID, sessionID}
+func (database *Database) RevokeRefreshToken(ctx context.Context, accountID, refreshID string, all bool) error {
+	query := `UPDATE account_refresh_tokens SET revoked_at=now(),revision=revision+1 WHERE account_id=$1 AND refresh_id=$2 AND revoked_at IS NULL`
+	arguments := []any{accountID, refreshID}
 	if all {
-		query = `UPDATE account_sessions SET revoked_at=now(),revision=revision+1 WHERE account_id=$1 AND revoked_at IS NULL`
+		query = `UPDATE account_refresh_tokens SET revoked_at=now(),revision=revision+1 WHERE account_id=$1 AND revoked_at IS NULL`
 		arguments = []any{accountID}
 	}
 	result, err := database.pool.Exec(ctx, query, arguments...)
@@ -185,8 +181,8 @@ func (database *Database) RevokeSession(ctx context.Context, accountID, sessionI
 	return nil
 }
 
-// SetRecentAuthentication 在同一事务中重检账号、credential 和精确 session。
-func (database *Database) SetRecentAuthentication(ctx context.Context, accountID, sessionID string, expected account.Record, expiresAt, now time.Time) error {
+// SetRecentAuthentication 在同一事务中重检账号、credential 和精确 Refresh token。
+func (database *Database) SetRecentAuthentication(ctx context.Context, accountID, refreshID string, expected account.Record, expiresAt, now time.Time) error {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -196,11 +192,11 @@ func (database *Database) SetRecentAuthentication(ctx context.Context, accountID
 	if err != nil || !activeCredentialMatches(locked, expected) {
 		return account.ErrUnauthenticated
 	}
-	session, err := scanAccountSession(tx.QueryRow(ctx, accountSessionSelect+` WHERE session_id=$1 AND account_id=$2 FOR UPDATE`, sessionID, accountID))
-	if err != nil || session.Revoked || !now.Before(session.RefreshExpiresAt) {
+	refresh, err := scanAccountRefreshToken(tx.QueryRow(ctx, accountRefreshTokenSelect+` WHERE refresh_id=$1 AND account_id=$2 FOR UPDATE`, refreshID, accountID))
+	if err != nil || refresh.Revoked || !now.Before(refresh.ExpiresAt) {
 		return account.ErrUnauthenticated
 	}
-	result, err := tx.Exec(ctx, `UPDATE account_sessions SET recent_auth_expires_at=$1,revision=revision+1 WHERE session_id=$2 AND revoked_at IS NULL`, expiresAt, sessionID)
+	result, err := tx.Exec(ctx, `UPDATE account_refresh_tokens SET recent_auth_expires_at=$1,revision=revision+1 WHERE refresh_id=$2 AND revoked_at IS NULL`, expiresAt, refreshID)
 	if err != nil {
 		return err
 	}
@@ -210,25 +206,25 @@ func (database *Database) SetRecentAuthentication(ctx context.Context, accountID
 	return tx.Commit(ctx)
 }
 
-func (database *Database) ListAccountSessions(ctx context.Context, accountID string, now time.Time) ([]account.Session, error) {
-	rows, err := database.pool.Query(ctx, accountSessionSelect+` WHERE account_id=$1 AND revoked_at IS NULL AND refresh_expires_at>$2 ORDER BY created_at DESC,session_id`, accountID, now)
+func (database *Database) ListAccountRefreshTokens(ctx context.Context, accountID string, now time.Time) ([]account.RefreshToken, error) {
+	rows, err := database.pool.Query(ctx, accountRefreshTokenSelect+` WHERE account_id=$1 AND revoked_at IS NULL AND expires_at>$2 ORDER BY created_at DESC,refresh_id`, accountID, now)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := make([]account.Session, 0)
+	result := make([]account.RefreshToken, 0)
 	for rows.Next() {
-		session, err := scanAccountSession(rows)
+		refresh, err := scanAccountRefreshToken(rows)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, session)
+		result = append(result, refresh)
 	}
 	return result, rows.Err()
 }
 
-// UpdatePassword 锁定并重检旧 credential，替换密码后撤销全部旧 session。
-func (database *Database) UpdatePassword(ctx context.Context, accountID string, expected account.Record, passwordHash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
+// UpdatePassword 锁定并重检旧 credential，替换密码后撤销其它 Refresh token。
+func (database *Database) UpdatePassword(ctx context.Context, accountID, currentRefreshID string, expected account.Record, passwordHash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -247,7 +243,7 @@ func (database *Database) UpdatePassword(ctx context.Context, accountID string, 
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, accountID); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, accountID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE account_refresh_tokens SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND refresh_id<>$3 AND revoked_at IS NULL`, now, accountID, currentRefreshID); err != nil {
 		return nil, err
 	}
 	if err := insertOperatorAudit(ctx, tx, accountID, "account.password.change", "account", accountID, "user security action", "applied", now); err != nil {
@@ -264,7 +260,7 @@ func (database *Database) UpdatePassword(ctx context.Context, accountID string, 
 }
 
 // RedeemAccountSetup 原子消费 setup digest；过期、重放和并发失败使用同一错误。
-func (database *Database) RedeemAccountSetup(ctx context.Context, digest [sha256.Size]byte, passwordHash []byte, session account.Session, now time.Time) (account.Record, error) {
+func (database *Database) RedeemAccountSetup(ctx context.Context, digest [sha256.Size]byte, passwordHash []byte, refresh account.RefreshToken, now time.Time) (account.Record, error) {
 	var accountID string
 	if err := database.pool.QueryRow(ctx, `SELECT account_id::text FROM account_credentials WHERE setup_digest=$1`, digest[:]).Scan(&accountID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -287,14 +283,14 @@ func (database *Database) RedeemAccountSetup(ctx context.Context, digest [sha256
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET state='active',revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, accountID); err != nil {
 		return account.Record{}, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, accountID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE account_refresh_tokens SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, accountID); err != nil {
 		return account.Record{}, err
 	}
-	session.AccountID = accountID
-	if !now.Before(session.AccessExpiresAt) || !session.AccessExpiresAt.Before(session.RefreshExpiresAt) {
+	refresh.AccountID = accountID
+	if !now.Before(refresh.ExpiresAt) {
 		return account.Record{}, account.ErrSetupCredentialInvalid
 	}
-	if err := insertAccountSession(ctx, tx, session); err != nil {
+	if err := insertAccountRefreshToken(ctx, tx, refresh); err != nil {
 		return account.Record{}, err
 	}
 	roles, err := loadAccountRoles(ctx, tx, accountID)
@@ -314,7 +310,7 @@ func (database *Database) RedeemAccountSetup(ctx context.Context, digest [sha256
 	return account.Record{Profile: profile, PasswordHash: append([]byte(nil), passwordHash...), CredentialRevision: locked.CredentialRevision + 1, CredentialUpdatedAt: now, Roles: roles}, nil
 }
 
-// ResetAccountSetup 把目标账号置为 pending、轮换 setup digest、清除密码并撤销全部 session。
+// ResetAccountSetup 把目标账号置为 pending、轮换 setup digest、清除密码并撤销全部 Refresh token。
 func (database *Database) ResetAccountSetup(ctx context.Context, accountID, actorID, reason string, digest [sha256.Size]byte, expiresAt, now time.Time) (*cloudv1.AccountProfile, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
@@ -333,7 +329,7 @@ func (database *Database) ResetAccountSetup(ctx context.Context, accountID, acto
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET state='pending',revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, accountID); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, accountID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE account_refresh_tokens SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, accountID); err != nil {
 		return nil, err
 	}
 	if err := insertOperatorAudit(ctx, tx, actorID, "account.setup.reset", "account", accountID, reason, "applied", now); err != nil {
@@ -389,14 +385,14 @@ func insertStarterSubscription(ctx context.Context, tx pgx.Tx, accountID string,
 	return err
 }
 
-const accountSessionInsert = `INSERT INTO account_sessions(session_id,account_id,access_token_digest,refresh_token_digest,csrf_token_digest,access_expires_at,refresh_expires_at,recent_auth_expires_at,revision,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+const accountRefreshTokenInsert = `INSERT INTO account_refresh_tokens(refresh_id,account_id,token_digest,csrf_token_digest,expires_at,recent_auth_expires_at,revision,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`
 
-func insertAccountSession(ctx context.Context, tx pgx.Tx, session account.Session) error {
-	_, err := tx.Exec(ctx, accountSessionInsert, session.ID, session.AccountID, session.AccessDigest[:], session.RefreshDigest[:], session.CSRFDigest[:], session.AccessExpiresAt, session.RefreshExpiresAt, nullTime(session.RecentAuthExpiresAt), session.Revision, session.CreatedAt)
+func insertAccountRefreshToken(ctx context.Context, tx pgx.Tx, refresh account.RefreshToken) error {
+	_, err := tx.Exec(ctx, accountRefreshTokenInsert, refresh.ID, refresh.AccountID, refresh.TokenDigest[:], refresh.CSRFDigest[:], refresh.ExpiresAt, nullTime(refresh.RecentAuthExpiresAt), refresh.Revision, refresh.CreatedAt)
 	return err
 }
 
-const accountSessionSelect = `SELECT session_id::text,account_id::text,access_token_digest,refresh_token_digest,csrf_token_digest,created_at,access_expires_at,refresh_expires_at,recent_auth_expires_at,revision,revoked_at IS NOT NULL FROM account_sessions`
+const accountRefreshTokenSelect = `SELECT refresh_id::text,account_id::text,token_digest,csrf_token_digest,created_at,expires_at,recent_auth_expires_at,revision,revoked_at IS NOT NULL FROM account_refresh_tokens`
 
 func lockAccountCredential(ctx context.Context, tx pgx.Tx, accountID string) (account.Record, error) {
 	if err := lockAccountRows(ctx, tx, accountID); err != nil {
@@ -512,18 +508,17 @@ func parseAccountRoles(names []string) ([]cloudv1.AccountRole, error) {
 	return roles, nil
 }
 
-func scanAccountSession(row rowScanner) (account.Session, error) {
-	var result account.Session
-	var access, refresh, csrf []byte
+func scanAccountRefreshToken(row rowScanner) (account.RefreshToken, error) {
+	var result account.RefreshToken
+	var token, csrf []byte
 	var recentAuth *time.Time
-	if err := row.Scan(&result.ID, &result.AccountID, &access, &refresh, &csrf, &result.CreatedAt, &result.AccessExpiresAt, &result.RefreshExpiresAt, &recentAuth, &result.Revision, &result.Revoked); err != nil {
-		return account.Session{}, err
+	if err := row.Scan(&result.ID, &result.AccountID, &token, &csrf, &result.CreatedAt, &result.ExpiresAt, &recentAuth, &result.Revision, &result.Revoked); err != nil {
+		return account.RefreshToken{}, err
 	}
-	if len(access) != sha256.Size || len(refresh) != sha256.Size || len(csrf) != sha256.Size {
-		return account.Session{}, errors.New("invalid persisted account session digest")
+	if len(token) != sha256.Size || len(csrf) != sha256.Size {
+		return account.RefreshToken{}, errors.New("invalid persisted account refresh token digest")
 	}
-	copy(result.AccessDigest[:], access)
-	copy(result.RefreshDigest[:], refresh)
+	copy(result.TokenDigest[:], token)
 	copy(result.CSRFDigest[:], csrf)
 	if recentAuth != nil {
 		result.RecentAuthExpiresAt = recentAuth.UTC()

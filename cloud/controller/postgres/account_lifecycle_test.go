@@ -3,6 +3,7 @@ package postgres
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
 	"os"
@@ -92,15 +93,15 @@ func TestAccountLifecycleMigrationAndSetupCredential(t *testing.T) {
 	if succeeded != 1 {
 		t.Fatalf("successful concurrent redeems=%d, want 1", succeeded)
 	}
-	if redeemed.GetAccount().GetState() != cloudv1.AccountState_ACCOUNT_STATE_ACTIVE || len(redeemed.GetRoles()) != 1 || redeemed.GetSession().GetSessionId() == "" || len(redeemed.GetSession().GetAccessToken()) == 0 || len(redeemed.GetSession().GetRefreshToken()) == 0 || len(redeemed.GetSession().GetCsrfToken()) == 0 {
+	if redeemed.GetAccount().GetState() != cloudv1.AccountState_ACCOUNT_STATE_ACTIVE || len(redeemed.GetRoles()) != 1 || redeemed.GetCredential().GetRefreshId() == "" || redeemed.GetCredential().GetAccessToken() == "" || len(redeemed.GetCredential().GetRefreshToken()) == 0 || len(redeemed.GetCredential().GetCsrfToken()) == 0 {
 		t.Fatalf("successful redeem did not return login-equivalent identity: %v", redeemed)
 	}
-	var liveSessions int
-	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM account_sessions WHERE account_id=$1 AND revoked_at IS NULL`, provisioned.GetAccount().GetAccountId()).Scan(&liveSessions); err != nil {
+	var liveRefreshTokens int
+	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM account_refresh_tokens WHERE account_id=$1 AND revoked_at IS NULL`, provisioned.GetAccount().GetAccountId()).Scan(&liveRefreshTokens); err != nil {
 		t.Fatal(err)
 	}
-	if liveSessions != 1 {
-		t.Fatalf("live sessions after single redeem=%d", liveSessions)
+	if liveRefreshTokens != 1 {
+		t.Fatalf("live refresh tokens after single redeem=%d", liveRefreshTokens)
 	}
 	if _, err := service.RedeemAccountSetup(ctx, &cloudv1.RedeemAccountSetupRequest{SetupCredential: provisioned.GetSetupCredential(), NewPassword: testUserPassword}); !errors.Is(err, account.ErrSetupCredentialInvalid) {
 		t.Fatalf("replayed setup credential error=%v", err)
@@ -124,14 +125,14 @@ func TestAccountLifecycleMigrationAndSetupCredential(t *testing.T) {
 	if reset.GetAccount().GetState() != cloudv1.AccountState_ACCOUNT_STATE_PENDING || reset.GetSetupCredential() == provisioned.GetSetupCredential() || len(reset.GetSetupCredential()) != 43 {
 		t.Fatalf("reset response=%v", reset)
 	}
-	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM account_sessions WHERE account_id=$1 AND revoked_at IS NULL`, provisioned.GetAccount().GetAccountId()).Scan(&liveSessions); err != nil {
+	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM account_refresh_tokens WHERE account_id=$1 AND revoked_at IS NULL`, provisioned.GetAccount().GetAccountId()).Scan(&liveRefreshTokens); err != nil {
 		t.Fatal(err)
 	}
-	if liveSessions != 0 {
-		t.Fatalf("live sessions after reset=%d", liveSessions)
+	if liveRefreshTokens != 0 {
+		t.Fatalf("live refresh tokens after reset=%d", liveRefreshTokens)
 	}
-	if _, err := service.AuthenticateAccess(ctx, redeemed.GetSession().GetAccessToken()); !errors.Is(err, account.ErrUnauthenticated) {
-		t.Fatalf("old access token after reset error=%v", err)
+	if _, err := service.AuthenticateAccess(ctx, []byte(redeemed.GetCredential().GetAccessToken())); err != nil {
+		t.Fatalf("signed access token should remain valid until its short expiry: %v", err)
 	}
 	if _, err := service.Login(ctx, &cloudv1.LoginAccountRequest{Login: provisioned.GetAccount().GetEmail(), Password: testUserPassword}); !errors.Is(err, account.ErrUnauthenticated) {
 		t.Fatalf("old password after reset error=%v", err)
@@ -266,7 +267,7 @@ func TestLoginAndRefreshRaceAccountMutations(t *testing.T) {
 							_, authErr := service.Login(ctx, &cloudv1.LoginAccountRequest{Login: provisioned.GetAccount().GetEmail(), Password: testUserPassword})
 							return authErr
 						}
-						_, authErr := service.Refresh(ctx, &cloudv1.RefreshAccountSessionRequest{RefreshToken: redeemed.GetSession().GetRefreshToken()})
+						_, authErr := service.Refresh(ctx, &cloudv1.RefreshAccountTokenRequest{RefreshToken: redeemed.GetCredential().GetRefreshToken()})
 						return authErr
 					}
 					runMutation := func(store *Database, service *account.Service) error {
@@ -279,7 +280,7 @@ func TestLoginAndRefreshRaceAccountMutations(t *testing.T) {
 							_, mutationErr := store.SetAccountState(ctx, &cloudv1.SetAccountStateRequest{AccountId: provisioned.GetAccount().GetAccountId(), State: cloudv1.AccountState_ACCOUNT_STATE_DISABLED, ExpectedRevision: redeemed.GetAccount().GetRevision(), Reason: "race disable"}, admin.GetAccountId(), now)
 							return mutationErr
 						case "change-password":
-							identityContext := account.ContextWithIdentity(ctx, account.Identity{Account: redeemed.GetAccount(), Roles: redeemed.GetRoles(), SessionID: redeemed.GetSession().GetSessionId(), RecentAuthExpiresAt: now.Add(time.Hour)})
+							identityContext := account.ContextWithIdentity(ctx, account.Identity{Account: redeemed.GetAccount(), Roles: redeemed.GetRoles(), RefreshID: redeemed.GetCredential().GetRefreshId(), RecentAuthExpiresAt: now.Add(time.Hour)})
 							_, mutationErr := service.ChangePassword(identityContext, &cloudv1.ChangeAccountPasswordRequest{CurrentPassword: testUserPassword, NewPassword: "changed-user-password"})
 							return mutationErr
 						default:
@@ -312,17 +313,26 @@ func TestLoginAndRefreshRaceAccountMutations(t *testing.T) {
 							t.Fatalf("mutation before authentication: %v", err)
 						}
 						gate.release()
-						if err := waitForRaceResult(t, ctx, authResult); err == nil {
+						authErr := waitForRaceResult(t, ctx, authResult)
+						refreshPreserved := mutationKind == "change-password" && authKind == "refresh"
+						if refreshPreserved && authErr != nil {
+							t.Fatalf("current refresh token was not preserved after password change: %v", authErr)
+						}
+						if !refreshPreserved && authErr == nil {
 							t.Fatal("authentication committed after account mutation")
 						}
 					}
 
-					var liveSessions int
-					if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM account_sessions WHERE account_id=$1 AND revoked_at IS NULL`, provisioned.GetAccount().GetAccountId()).Scan(&liveSessions); err != nil {
+					var liveRefreshTokens int
+					if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM account_refresh_tokens WHERE account_id=$1 AND revoked_at IS NULL`, provisioned.GetAccount().GetAccountId()).Scan(&liveRefreshTokens); err != nil {
 						t.Fatal(err)
 					}
-					if liveSessions != 0 {
-						t.Fatalf("race left %d live sessions", liveSessions)
+					wantLiveRefreshTokens := 0
+					if mutationKind == "change-password" && !(authKind == "refresh" && order == "authentication-first") {
+						wantLiveRefreshTokens = 1
+					}
+					if liveRefreshTokens != wantLiveRefreshTokens {
+						t.Fatalf("race left %d live refresh tokens, want %d", liveRefreshTokens, wantLiveRefreshTokens)
 					}
 					assertRaceMutationState(t, ctx, database, provisioned.GetAccount().GetAccountId(), mutationKind)
 				})
@@ -401,12 +411,12 @@ func TestSetAccountStatePendingAndDisableInvariants(t *testing.T) {
 	var disabledState string
 	var disabledPassword, disabledDigest []byte
 	var disabledExpiry *time.Time
-	var liveSessions int
-	if err := database.pool.QueryRow(ctx, `SELECT a.state,c.password_hash,c.setup_digest,c.setup_expires_at,(SELECT count(*) FROM account_sessions s WHERE s.account_id=a.account_id AND s.revoked_at IS NULL) FROM accounts a JOIN account_credentials c USING(account_id) WHERE a.account_id=$1`, disabled.GetAccountId()).Scan(&disabledState, &disabledPassword, &disabledDigest, &disabledExpiry, &liveSessions); err != nil {
+	var liveRefreshTokens int
+	if err := database.pool.QueryRow(ctx, `SELECT a.state,c.password_hash,c.setup_digest,c.setup_expires_at,(SELECT count(*) FROM account_refresh_tokens r WHERE r.account_id=a.account_id AND r.revoked_at IS NULL) FROM accounts a JOIN account_credentials c USING(account_id) WHERE a.account_id=$1`, disabled.GetAccountId()).Scan(&disabledState, &disabledPassword, &disabledDigest, &disabledExpiry, &liveRefreshTokens); err != nil {
 		t.Fatal(err)
 	}
-	if disabledState != "disabled" || bcrypt.CompareHashAndPassword(disabledPassword, []byte(testUserPassword)) != nil || len(disabledDigest) != 0 || disabledExpiry != nil || liveSessions != 0 {
-		t.Fatalf("disabled invariant state=%q password=%d digest=%d expiry=%v live_sessions=%d", disabledState, len(disabledPassword), len(disabledDigest), disabledExpiry, liveSessions)
+	if disabledState != "disabled" || bcrypt.CompareHashAndPassword(disabledPassword, []byte(testUserPassword)) != nil || len(disabledDigest) != 0 || disabledExpiry != nil || liveRefreshTokens != 0 {
+		t.Fatalf("disabled invariant state=%q password=%d digest=%d expiry=%v live_refresh_tokens=%d", disabledState, len(disabledPassword), len(disabledDigest), disabledExpiry, liveRefreshTokens)
 	}
 	if _, err := database.AccountByID(ctx, disabled.GetAccountId()); err != nil {
 		t.Fatalf("disabled persisted record violates credential invariant: %v", err)
@@ -441,12 +451,11 @@ func TestLoginAccountRevisionRejectsDisableRestoreABA(t *testing.T) {
 	if _, err := database.pool.Exec(ctx, `UPDATE account_credentials SET revision=$1,updated_at=$2 WHERE account_id=$3`, expected.CredentialRevision, expected.CredentialUpdatedAt, expected.Profile.GetAccountId()); err != nil {
 		t.Fatal(err)
 	}
-	session := account.Session{
+	refresh := account.RefreshToken{
 		ID: uuid.NewString(), AccountID: expected.Profile.GetAccountId(), Revision: 1, CreatedAt: now,
-		AccessDigest: sha256.Sum256([]byte("aba-access")), RefreshDigest: sha256.Sum256([]byte("aba-refresh")), CSRFDigest: sha256.Sum256([]byte("aba-csrf")),
-		AccessExpiresAt: now.Add(15 * time.Minute), RefreshExpiresAt: now.Add(time.Hour),
+		TokenDigest: sha256.Sum256([]byte("aba-refresh")), CSRFDigest: sha256.Sum256([]byte("aba-csrf")), ExpiresAt: now.Add(time.Hour),
 	}
-	if _, err := database.CreateSession(ctx, expected, session, now); !errors.Is(err, account.ErrAccountConflict) {
+	if _, err := database.CreateRefreshToken(ctx, expected, refresh, now); !errors.Is(err, account.ErrAccountConflict) {
 		t.Fatalf("stale pre-disable login snapshot error=%v", err)
 	}
 }
@@ -572,6 +581,8 @@ func accountLifecycleService(t *testing.T, database *Database, now time.Time) *a
 	service, err := account.New(account.Config{
 		Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour,
+		AccessSigningKey: ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)), AccessSigningKeyID: "account-postgres-test-key",
+		AccessIssuer: "https://cloud.example.test", AccessAudience: "anytty-cloud-web",
 		BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now },
 	})
 	if err != nil {
@@ -590,7 +601,7 @@ func bootstrapAccount(t *testing.T, ctx context.Context, service *account.Servic
 }
 
 func recentAdminContext(ctx context.Context, profile *cloudv1.AccountProfile, now time.Time) context.Context {
-	return account.ContextWithIdentity(ctx, account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN}, SessionID: "admin-test-session", RecentAuthExpiresAt: now.Add(time.Hour)})
+	return account.ContextWithIdentity(ctx, account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN}, RefreshID: "admin-test-refresh", RecentAuthExpiresAt: now.Add(time.Hour)})
 }
 
 func insertActiveAccount(t *testing.T, ctx context.Context, database *Database, email string, admin bool, now time.Time) *cloudv1.AccountProfile {

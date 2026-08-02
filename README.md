@@ -206,6 +206,8 @@ Cloud daemon 生命周期：
 
 稳定状态机见 [docs/CLOUD_DAEMON_LIFECYCLE.md](docs/CLOUD_DAEMON_LIFECYCLE.md)，生产部署见 [cloud/deploy/README.md](cloud/deploy/README.md)。
 
+Cloud 控制台使用 15 分钟 Access JWT 和数据库持久化、单次轮换的 30 天 Refresh Token。普通 API 请求只做本地 JWT 验签，不查询登录记录；完整边界见 [docs/CLOUD_ACCOUNT_AUTH.md](docs/CLOUD_ACCOUNT_AUTH.md)。
+
 ## 配置与数据路径
 
 运行时会解析平台目录；不要在文档中硬编码用户主目录：

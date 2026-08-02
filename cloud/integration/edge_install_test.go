@@ -92,7 +92,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer directoryState.Close()
-	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4})
+	accounts, err := newIntegrationAccountService(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +404,7 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4})
+	accounts, err := newIntegrationAccountService(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminIdentity, err := accounts.AuthenticateAccess(ctx, adminSession.GetSession().GetAccessToken())
+	adminIdentity, err := accounts.AuthenticateAccess(ctx, []byte(adminSession.GetCredential().GetAccessToken()))
 	if err != nil {
 		t.Fatal(err)
 	}

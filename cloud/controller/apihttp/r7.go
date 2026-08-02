@@ -47,8 +47,8 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 			writeError(writer, status, err)
 			return
 		}
-		handler.setSessionCookies(writer, response.GetSession())
-		response.Session = redactedSession(response.GetSession())
+		handler.setTokenCookies(writer, response.GetCredential())
+		response.Credential = redactedCredential(response.GetCredential())
 		writeProto(writer, http.StatusOK, response)
 	case "/api/account/refresh":
 		if request.Method != http.MethodPost {
@@ -65,13 +65,13 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 			writeError(writer, http.StatusUnauthorized, account.ErrUnauthenticated)
 			return
 		}
-		response, err := handler.config.Accounts.Refresh(request.Context(), &cloudv1.RefreshAccountSessionRequest{RefreshToken: token})
+		response, err := handler.config.Accounts.Refresh(request.Context(), &cloudv1.RefreshAccountTokenRequest{RefreshToken: token})
 		if err != nil {
 			writeError(writer, http.StatusUnauthorized, err)
 			return
 		}
-		handler.setSessionCookies(writer, response.GetSession())
-		response.Session = redactedSession(response.GetSession())
+		handler.setTokenCookies(writer, response.GetCredential())
+		response.Credential = redactedCredential(response.GetCredential())
 		writeProto(writer, http.StatusOK, response)
 	case "/api/account/setup/redeem":
 		if request.Method != http.MethodPost {
@@ -93,8 +93,8 @@ func (handler *handler) accountPublic(writer http.ResponseWriter, request *http.
 			writeError(writer, serviceHTTPStatus(err), err)
 			return
 		}
-		handler.setSessionCookies(writer, response.GetSession())
-		response.Session = redactedSession(response.GetSession())
+		handler.setTokenCookies(writer, response.GetCredential())
+		response.Credential = redactedCredential(response.GetCredential())
 		writeProto(writer, http.StatusOK, response)
 	default:
 		writeError(writer, http.StatusNotFound, errors.New("account endpoint was not found"))
@@ -121,35 +121,45 @@ func (handler *handler) accountPrivate(writer http.ResponseWriter, request *http
 			return
 		}
 		response, err := handler.config.Accounts.VerifyRecentAuthentication(request.Context(), input)
-		writeServiceResult(writer, response, err)
+		if err != nil {
+			writeError(writer, serviceHTTPStatus(err), err)
+			return
+		}
+		handler.setAccessCookie(writer, response.GetCredential())
+		response.Credential = redactedCredential(response.GetCredential())
+		writeProto(writer, http.StatusOK, response)
 	case "/api/account/logout":
 		if request.Method != http.MethodPost {
 			writeError(writer, http.StatusMethodNotAllowed, errors.New("logout requires POST"))
 			return
 		}
-		identity, _ := account.IdentityFromContext(request.Context())
-		response, err := handler.config.Accounts.Logout(request.Context(), &cloudv1.LogoutAccountSessionRequest{SessionId: identity.SessionID})
+		input := &cloudv1.LogoutAccountRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		response, err := handler.config.Accounts.Logout(request.Context(), input)
 		if err != nil {
 			writeError(writer, http.StatusConflict, err)
 			return
 		}
-		handler.clearSessionCookies(writer)
+		handler.clearTokenCookies(writer)
 		writeProto(writer, http.StatusOK, response)
-	case "/api/account/sessions":
+	case "/api/account/refresh-tokens":
 		switch request.Method {
 		case http.MethodGet:
-			response, err := handler.config.Accounts.ListSessions(request.Context(), &cloudv1.ListAccountSessionsRequest{})
+			response, err := handler.config.Accounts.ListRefreshTokens(request.Context(), &cloudv1.ListAccountRefreshTokensRequest{})
 			writeServiceResult(writer, response, err)
 		case http.MethodDelete:
-			input := &cloudv1.RevokeAccountSessionRequest{}
+			input := &cloudv1.RevokeAccountRefreshTokenRequest{}
 			if err := readProto(request, input); err != nil {
 				writeError(writer, http.StatusBadRequest, err)
 				return
 			}
-			response, err := handler.config.Accounts.RevokeSession(request.Context(), input)
+			response, err := handler.config.Accounts.RevokeRefreshToken(request.Context(), input)
 			writeServiceResult(writer, response, err)
 		default:
-			writeError(writer, http.StatusMethodNotAllowed, errors.New("account sessions require GET or DELETE"))
+			writeError(writer, http.StatusMethodNotAllowed, errors.New("account refresh tokens require GET or DELETE"))
 		}
 	case "/api/account/password":
 		if request.Method != http.MethodPost {
@@ -498,20 +508,19 @@ func (handler *handler) operatorEvents(writer http.ResponseWriter, request *http
 }
 
 func (handler *handler) authenticate(writer http.ResponseWriter, request *http.Request) (account.Identity, bool) {
-	var encoded string
+	var token string
 	if cookie, err := request.Cookie(accessCookieName); err == nil {
-		encoded = cookie.Value
+		token = cookie.Value
 	} else if authorization := request.Header.Get("Authorization"); strings.HasPrefix(authorization, "Bearer ") {
-		encoded = strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+		token = strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
 	}
-	token, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil || len(token) == 0 {
+	if token == "" {
 		if writer != nil {
 			writeError(writer, http.StatusUnauthorized, account.ErrUnauthenticated)
 		}
 		return account.Identity{}, false
 	}
-	identity, err := handler.config.Accounts.AuthenticateAccess(request.Context(), token)
+	identity, err := handler.config.Accounts.AuthenticateAccess(request.Context(), []byte(token))
 	if err != nil {
 		if writer != nil {
 			writeError(writer, http.StatusUnauthorized, err)
@@ -520,15 +529,21 @@ func (handler *handler) authenticate(writer http.ResponseWriter, request *http.R
 	}
 	return identity, true
 }
-func (handler *handler) setSessionCookies(writer http.ResponseWriter, session *cloudv1.AccountSessionCredential) {
-	if session == nil {
+func (handler *handler) setTokenCookies(writer http.ResponseWriter, credential *cloudv1.AccountTokenCredential) {
+	if credential == nil {
 		return
 	}
-	http.SetCookie(writer, &http.Cookie{Name: accessCookieName, Value: base64.RawURLEncoding.EncodeToString(session.GetAccessToken()), Path: "/", Expires: session.GetAccessExpiresAt().AsTime(), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
-	http.SetCookie(writer, &http.Cookie{Name: refreshCookieName, Value: base64.RawURLEncoding.EncodeToString(session.GetRefreshToken()), Path: "/api/account/refresh", Expires: session.GetRefreshExpiresAt().AsTime(), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
-	http.SetCookie(writer, &http.Cookie{Name: csrfCookieName, Value: base64.RawURLEncoding.EncodeToString(session.GetCsrfToken()), Path: "/", Expires: session.GetRefreshExpiresAt().AsTime(), Secure: true, SameSite: http.SameSiteStrictMode})
+	handler.setAccessCookie(writer, credential)
+	http.SetCookie(writer, &http.Cookie{Name: refreshCookieName, Value: base64.RawURLEncoding.EncodeToString(credential.GetRefreshToken()), Path: "/api/account/refresh", Expires: credential.GetRefreshExpiresAt().AsTime(), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(writer, &http.Cookie{Name: csrfCookieName, Value: base64.RawURLEncoding.EncodeToString(credential.GetCsrfToken()), Path: "/", Expires: credential.GetRefreshExpiresAt().AsTime(), Secure: true, SameSite: http.SameSiteStrictMode})
 }
-func (handler *handler) clearSessionCookies(writer http.ResponseWriter) {
+func (handler *handler) setAccessCookie(writer http.ResponseWriter, credential *cloudv1.AccountTokenCredential) {
+	if credential == nil || credential.GetAccessToken() == "" || credential.GetAccessExpiresAt() == nil {
+		return
+	}
+	http.SetCookie(writer, &http.Cookie{Name: accessCookieName, Value: credential.GetAccessToken(), Path: "/", Expires: credential.GetAccessExpiresAt().AsTime(), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+}
+func (handler *handler) clearTokenCookies(writer http.ResponseWriter) {
 	for _, cookie := range []http.Cookie{{Name: accessCookieName, Path: "/", HttpOnly: true}, {Name: refreshCookieName, Path: "/api/account/refresh", HttpOnly: true}, {Name: csrfCookieName, Path: "/"}} {
 		cookie.Value = ""
 		cookie.MaxAge = -1
@@ -537,11 +552,11 @@ func (handler *handler) clearSessionCookies(writer http.ResponseWriter) {
 		http.SetCookie(writer, &cookie)
 	}
 }
-func redactedSession(value *cloudv1.AccountSessionCredential) *cloudv1.AccountSessionCredential {
+func redactedCredential(value *cloudv1.AccountTokenCredential) *cloudv1.AccountTokenCredential {
 	if value == nil {
 		return nil
 	}
-	return &cloudv1.AccountSessionCredential{SessionId: value.GetSessionId(), AccessExpiresAt: value.GetAccessExpiresAt(), RefreshExpiresAt: value.GetRefreshExpiresAt()}
+	return &cloudv1.AccountTokenCredential{RefreshId: value.GetRefreshId(), AccessExpiresAt: value.GetAccessExpiresAt(), RefreshExpiresAt: value.GetRefreshExpiresAt()}
 }
 func validateEncodedCSRF(identity account.Identity, value string) bool {
 	decoded, err := base64.RawURLEncoding.DecodeString(value)
@@ -551,7 +566,11 @@ func decodeBearer(value string) ([]byte, error) {
 	if !strings.HasPrefix(value, "Bearer ") {
 		return nil, errors.New("bearer token is required")
 	}
-	return base64.RawURLEncoding.DecodeString(strings.TrimSpace(strings.TrimPrefix(value, "Bearer ")))
+	token := strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
+	if token == "" {
+		return nil, errors.New("bearer token is required")
+	}
+	return []byte(token), nil
 }
 func pageRequest(request *http.Request) *cloudv1.PageRequest {
 	size := uint64(50)

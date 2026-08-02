@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -267,7 +268,7 @@ func TestLoginResponseAndLogContractRedactsCredentialAndStoreDetails(t *testing.
 	var authenticationLog map[string]any
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			accounts, err := account.New(account.Config{Store: test.store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
+			accounts, err := newHTTPTestAccountService(account.Config{Store: test.store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -345,7 +346,7 @@ func TestWriteErrorMapsOversizeTo413(t *testing.T) {
 
 func TestSlowRequestBodyReturnsStable408WithoutCallingService(t *testing.T) {
 	store := &loginContractStore{}
-	accounts, err := account.New(account.Config{
+	accounts, err := newHTTPTestAccountService(account.Config{
 		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
 	})
@@ -381,7 +382,7 @@ func TestSlowRequestBodyReturnsStable408WithoutCallingService(t *testing.T) {
 
 func TestSlowHTTP2RequestBodyTimesOutWithoutClosingConnection(t *testing.T) {
 	store := &loginContractStore{}
-	accounts, err := account.New(account.Config{
+	accounts, err := newHTTPTestAccountService(account.Config{
 		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
 	})
@@ -480,7 +481,7 @@ func TestSlowHTTP2RequestBodyTimesOutWithoutClosingConnection(t *testing.T) {
 
 func TestEarlyHTTPRejectionsBoundUnreadSlowBodies(t *testing.T) {
 	store := &loginContractStore{}
-	accounts, err := account.New(account.Config{
+	accounts, err := newHTTPTestAccountService(account.Config{
 		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
 	})
@@ -524,7 +525,7 @@ func TestEarlyHTTPRejectionsBoundUnreadSlowBodies(t *testing.T) {
 
 func TestBodyEOFDeadlineDoesNotCancelSlowService(t *testing.T) {
 	store := &delayedLoginStore{delay: 120 * time.Millisecond}
-	accounts, err := account.New(account.Config{
+	accounts, err := newHTTPTestAccountService(account.Config{
 		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
 	})
@@ -707,7 +708,7 @@ func TestGRPCAndGetRequestsAreNotDeadlineWrapped(t *testing.T) {
 
 func TestUnsupportedResponseWriterClosesSlowBodyConnectionWithoutDrain(t *testing.T) {
 	store := &loginContractStore{}
-	accounts, err := account.New(account.Config{
+	accounts, err := newHTTPTestAccountService(account.Config{
 		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
 	})
@@ -754,7 +755,7 @@ func TestUnsupportedResponseWriterClosesSlowBodyConnectionWithoutDrain(t *testin
 
 func TestReadDeadlineClearFailureAbortsBeforeServiceResponse(t *testing.T) {
 	store := &loginContractStore{}
-	accounts, err := account.New(account.Config{
+	accounts, err := newHTTPTestAccountService(account.Config{
 		Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost,
 	})
@@ -859,12 +860,12 @@ func TestRecentAuthenticationUsesStableProtocolCodeOnlyForThatError(t *testing.T
 	}
 }
 
-func TestRedeemSetupSetsCookiesAndRedactsSessionSecrets(t *testing.T) {
+func TestRedeemSetupSetsCookiesAndRedactsTokenSecrets(t *testing.T) {
 	store := &setupContractStore{record: account.Record{
 		Profile: &cloudv1.AccountProfile{AccountId: "account-setup", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 2},
 		Roles:   []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
 	}}
-	accounts, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
+	accounts, err := newHTTPTestAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -889,24 +890,37 @@ func TestRedeemSetupSetsCookiesAndRedactsSessionSecrets(t *testing.T) {
 		t.Fatalf("cookies=%v", cookies)
 	}
 	names := map[string]bool{}
+	var accessCookie *http.Cookie
 	for _, cookie := range cookies {
 		names[cookie.Name] = true
 		if !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Value == "" {
 			t.Fatalf("invalid setup cookie: %+v", cookie)
 		}
+		if cookie.Name == accessCookieName && strings.Count(cookie.Value, ".") != 2 {
+			t.Fatalf("access cookie is not a compact JWT: %q", cookie.Value)
+		}
+		if cookie.Name == accessCookieName {
+			accessCookie = cookie
+		}
 	}
 	if !names[accessCookieName] || !names[refreshCookieName] || !names[csrfCookieName] {
 		t.Fatalf("cookie names=%v", names)
+	}
+	authRequest := httptest.NewRequest(http.MethodGet, "https://cloud.example/api/account/current", nil)
+	authRequest.AddCookie(accessCookie)
+	identity, ok := handler.authenticate(nil, authRequest)
+	if !ok || identity.Account.GetAccountId() != "account-setup" {
+		t.Fatalf("JWT cookie identity=%+v ok=%v", identity, ok)
 	}
 	response := &cloudv1.RedeemAccountSetupResponse{}
 	if err := protojson.Unmarshal(recorder.Body.Bytes(), response); err != nil {
 		t.Fatal(err)
 	}
-	if response.GetAccount().GetAccountId() != "account-setup" || len(response.GetRoles()) != 1 || response.GetSession().GetSessionId() == "" || len(response.GetSession().GetAccessToken()) != 0 || len(response.GetSession().GetRefreshToken()) != 0 || len(response.GetSession().GetCsrfToken()) != 0 {
-		t.Fatalf("response leaks or omits setup session contract: %v", response)
+	if response.GetAccount().GetAccountId() != "account-setup" || len(response.GetRoles()) != 1 || response.GetCredential().GetRefreshId() == "" || response.GetCredential().GetAccessToken() != "" || len(response.GetCredential().GetRefreshToken()) != 0 || len(response.GetCredential().GetCsrfToken()) != 0 {
+		t.Fatalf("response leaks or omits setup token contract: %v", response)
 	}
-	if store.session.ID == "" || store.session.AccessDigest == ([sha256.Size]byte{}) || store.session.RefreshDigest == ([sha256.Size]byte{}) {
-		t.Fatalf("store did not receive session: %+v", store.session)
+	if store.refresh.ID == "" || store.refresh.TokenDigest == ([sha256.Size]byte{}) {
+		t.Fatalf("store did not receive refresh token: %+v", store.refresh)
 	}
 }
 
@@ -917,11 +931,11 @@ func TestChangePasswordValidationHTTPAndGRPCContract(t *testing.T) {
 	}
 	profile := &cloudv1.AccountProfile{AccountId: "account-change", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1}
 	store := &changePasswordContractStore{record: account.Record{Profile: profile, PasswordHash: hash, CredentialRevision: 1}}
-	accounts, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
+	accounts, err := newHTTPTestAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, SessionID: "session-change"}
+	identity := account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, RefreshID: "refresh-change"}
 	handler := &handler{config: Config{Accounts: accounts}}
 
 	for _, test := range []struct {
@@ -990,7 +1004,7 @@ type delayedLoginStore struct {
 type setupContractStore struct {
 	account.Store
 	record  account.Record
-	session account.Session
+	refresh account.RefreshToken
 }
 
 type changePasswordContractStore struct {
@@ -1027,13 +1041,13 @@ func (store *changePasswordContractStore) AccountByID(context.Context, string) (
 	return store.record, nil
 }
 
-func (store *changePasswordContractStore) UpdatePassword(_ context.Context, _ string, _ account.Record, _ []byte, _ time.Time) (*cloudv1.AccountProfile, error) {
+func (store *changePasswordContractStore) UpdatePassword(_ context.Context, _, _ string, _ account.Record, _ []byte, _ time.Time) (*cloudv1.AccountProfile, error) {
 	store.updated = true
 	return store.record.Profile, nil
 }
 
-func (store *setupContractStore) RedeemAccountSetup(_ context.Context, _ [sha256.Size]byte, _ []byte, session account.Session, _ time.Time) (account.Record, error) {
-	store.session = session
+func (store *setupContractStore) RedeemAccountSetup(_ context.Context, _ [sha256.Size]byte, _ []byte, refresh account.RefreshToken, _ time.Time) (account.Record, error) {
+	store.refresh = refresh
 	return store.record, nil
 }
 
@@ -1067,8 +1081,16 @@ func (store *delayedLoginStore) AccountByLogin(ctx context.Context, _ string) (a
 	}
 }
 
-func (store *loginContractStore) CreateSession(_ context.Context, record account.Record, _ account.Session, _ time.Time) (account.Record, error) {
+func (store *loginContractStore) CreateRefreshToken(_ context.Context, record account.Record, _ account.RefreshToken, _ time.Time) (account.Record, error) {
 	return record, nil
+}
+
+func newHTTPTestAccountService(config account.Config) (*account.Service, error) {
+	config.AccessSigningKey = ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	config.AccessSigningKeyID = "account-http-test-key"
+	config.AccessIssuer = "https://cloud.example.test"
+	config.AccessAudience = "anytty-cloud-web"
+	return account.New(config)
 }
 
 func cloneLogEvent(event map[string]any) map[string]any {

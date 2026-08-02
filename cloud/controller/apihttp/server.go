@@ -287,7 +287,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 			writeError(writer, http.StatusNotFound, errors.New("API endpoint was not found"))
 		}
 	default:
-		// SPA shell 与静态资源不包含业务数据；统一公开后，深链刷新也能先轮换 HttpOnly session，再由 API/RBAC 守住数据边界。
+		// SPA shell 与静态资源不包含业务数据；深链刷新后由 API 自动续期 Access JWT，再由 RBAC 守住数据边界。
 		handler.serveStatic(writer, request)
 	}
 }

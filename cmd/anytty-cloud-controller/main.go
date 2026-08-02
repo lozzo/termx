@@ -56,6 +56,8 @@ type options struct {
 	certificateSecretDir string
 	operatorUsername     string
 	operatorPasswordFile string
+	accountSigningKey    string
+	accountSigningKeyID  string
 	configSigningKey     string
 	configSigningKeyID   string
 	artifactFile         string
@@ -141,6 +143,10 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err := database.VerifySchema(ctx); err != nil {
 		return err
 	}
+	accountKey, err := keymaterial.LoadEd25519PrivateKey(config.accountSigningKey)
+	if err != nil {
+		return err
+	}
 	configKey, err := keymaterial.LoadEd25519PrivateKey(config.configSigningKey)
 	if err != nil {
 		return err
@@ -171,7 +177,10 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 			return fmt.Errorf("read operator password: %w", err)
 		}
 	}
-	accountService, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: 30 * 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: 24 * time.Hour})
+	accountService, err := account.New(account.Config{
+		Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: 30 * 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: 24 * time.Hour,
+		AccessSigningKey: accountKey, AccessSigningKeyID: strings.TrimSpace(config.accountSigningKeyID), AccessIssuer: strings.TrimRight(config.publicOrigin, "/"), AccessAudience: "anytty-cloud-web",
+	})
 	if err != nil {
 		return err
 	}
@@ -342,6 +351,8 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.certificateSecretDir, "certificate-secret-dir", "/var/lib/anytty-cloud-controller/certificates", "restricted Controller service directory for managed Edge certificate files")
 	flags.StringVar(&config.operatorUsername, "operator-username", "", "bootstrap administrator email")
 	flags.StringVar(&config.operatorPasswordFile, "operator-password-file", "", "bootstrap administrator password file")
+	flags.StringVar(&config.accountSigningKey, "account-token-signing-key", "", "account Access JWT Ed25519 private key")
+	flags.StringVar(&config.accountSigningKeyID, "account-token-signing-key-id", "", "account Access JWT signing key ID")
 	flags.StringVar(&config.configSigningKey, "config-signing-key", "", "Edge desired config Ed25519 private key")
 	flags.StringVar(&config.configSigningKeyID, "config-signing-key-id", "", "Edge desired config key ID")
 	flags.StringVar(&config.artifactFile, "edge-artifact", "", "signed linux/amd64 Edge artifact")

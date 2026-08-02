@@ -333,7 +333,7 @@ func decodeAuditCursor(value string) (time.Time, string, error) {
 	return at.UTC(), parts[1], nil
 }
 
-// SetAccountState CAS 更新账号；禁用时同事务撤销全部 session 并写审计。
+// SetAccountState CAS 更新账号；禁用时同事务撤销全部 Refresh token 并写审计。
 func (database *Database) SetAccountState(ctx context.Context, request *cloudv1.SetAccountStateRequest, actorID string, now time.Time) (*cloudv1.AccountProfile, error) {
 	if request.GetAccountId() == actorID && request.GetState() == cloudv1.AccountState_ACCOUNT_STATE_DISABLED {
 		return nil, account.ErrAccountConflict
@@ -370,7 +370,7 @@ func (database *Database) SetAccountState(ctx context.Context, request *cloudv1.
 		if _, err := tx.Exec(ctx, `UPDATE account_credentials SET setup_digest=NULL,setup_expires_at=NULL,revision=revision+1,updated_at=$1 WHERE account_id=$2`, now, request.GetAccountId()); err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, request.GetAccountId()); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE account_refresh_tokens SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND revoked_at IS NULL`, now, request.GetAccountId()); err != nil {
 			return nil, err
 		}
 	}

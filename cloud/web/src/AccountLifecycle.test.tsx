@@ -151,7 +151,7 @@ describe('account lifecycle UI', () => {
 		roots.push(rendered.root)
 		await waitForText(rendered.container, '重置凭据')
 		act(() => clickButton(rendered.container, '重置凭据'))
-		expect(rendered.container.textContent).toContain('旧密码和全部登录会话立即失效')
+		expect(rendered.container.textContent).toContain('旧密码和全部持久登录凭据立即失效')
 		act(() => setInput(input(rendered.container, '操作原因'), 'lost credential'))
 		await act(async () => clickButton(rendered.container, '重置凭据', true))
 		await waitForText(rendered.container, 'reset-once')

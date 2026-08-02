@@ -1,0 +1,17 @@
+ALTER TABLE account_sessions RENAME TO account_refresh_tokens;
+ALTER TABLE account_refresh_tokens RENAME COLUMN session_id TO refresh_id;
+ALTER TABLE account_refresh_tokens RENAME COLUMN refresh_token_digest TO token_digest;
+ALTER TABLE account_refresh_tokens RENAME COLUMN refresh_expires_at TO expires_at;
+
+ALTER TABLE account_refresh_tokens
+    DROP CONSTRAINT account_sessions_check,
+    DROP COLUMN access_token_digest,
+    DROP COLUMN access_expires_at;
+
+ALTER TABLE account_refresh_tokens RENAME CONSTRAINT account_sessions_pkey TO account_refresh_tokens_pkey;
+ALTER TABLE account_refresh_tokens RENAME CONSTRAINT account_sessions_account_id_fkey TO account_refresh_tokens_account_id_fkey;
+ALTER TABLE account_refresh_tokens RENAME CONSTRAINT account_sessions_refresh_token_digest_key TO account_refresh_tokens_token_digest_key;
+ALTER TABLE account_refresh_tokens RENAME CONSTRAINT account_sessions_refresh_token_digest_check TO account_refresh_tokens_token_digest_check;
+ALTER TABLE account_refresh_tokens RENAME CONSTRAINT account_sessions_csrf_token_digest_check TO account_refresh_tokens_csrf_token_digest_check;
+ALTER TABLE account_refresh_tokens RENAME CONSTRAINT account_sessions_revision_check TO account_refresh_tokens_revision_check;
+ALTER INDEX account_sessions_account_id_idx RENAME TO account_refresh_tokens_account_id_idx;

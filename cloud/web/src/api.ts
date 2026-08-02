@@ -23,23 +23,24 @@ function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
     && typeof candidate.request_id === 'string' && candidate.request_id.trim().length > 0
 }
 
-async function refreshSession(): Promise<boolean> {
+async function refreshAccessToken(): Promise<boolean> {
   const csrf = cookie('anytty_cloud_csrf')
   if (!csrf) return false
   if (!refreshInFlight) {
     refreshInFlight = fetch('/api/account/refresh', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'X-AnyTTY-CSRF': csrf },
+      headers: { 'Content-Type': 'application/json', 'X-AnyTTY-CSRF': csrf },
+      body: '{}',
     }).then((response) => response.ok).catch(() => false).finally(() => { refreshInFlight = undefined })
   }
   return refreshInFlight
 }
 
-async function fetchWithSession(path: string, init?: RequestInit): Promise<Response> {
+async function fetchWithAccessToken(path: string, init?: RequestInit): Promise<Response> {
   let response = await fetch(path, init)
-	const publicAccountPath = path === '/api/account/login' || path === '/api/account/refresh' || path === '/api/account/setup/redeem'
-  if (response.status === 401 && !publicAccountPath && await refreshSession()) {
+  const publicAccountPath = path === '/api/account/login' || path === '/api/account/refresh' || path === '/api/account/setup/redeem'
+  if (response.status === 401 && !publicAccountPath && await refreshAccessToken()) {
     response = await fetch(path, init)
   }
   return response
@@ -63,7 +64,7 @@ async function decode<Schema extends DescMessage>(response: Response, schema: Sc
 }
 
 export async function protoGet<Schema extends DescMessage>(path: string, schema: Schema): Promise<MessageShape<Schema>> {
-  return decode(await fetchWithSession(path, { credentials: 'same-origin', cache: 'no-store' }), schema)
+  return decode(await fetchWithAccessToken(path, { credentials: 'same-origin', cache: 'no-store' }), schema)
 }
 
 export async function protoSend<RequestSchema extends DescMessage, ResponseSchema extends DescMessage>(
@@ -76,7 +77,7 @@ export async function protoSend<RequestSchema extends DescMessage, ResponseSchem
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const csrf = cookie('anytty_cloud_csrf')
   if (csrf) headers['X-AnyTTY-CSRF'] = csrf
-  const response = await fetchWithSession(path, {
+  const response = await fetchWithAccessToken(path, {
     method,
     credentials: 'same-origin',
     headers,

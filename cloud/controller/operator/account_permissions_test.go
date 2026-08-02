@@ -72,7 +72,7 @@ func TestUnknownAccountMutationEnumsFailClosed(t *testing.T) {
 }
 
 func permissionContext(profile *cloudv1.AccountProfile, role cloudv1.AccountRole, recent time.Time) context.Context {
-	return account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{role}, SessionID: "session", RecentAuthExpiresAt: recent})
+	return account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{role}, RefreshID: "refresh", RecentAuthExpiresAt: recent})
 }
 
 type permissionStoreFake struct {

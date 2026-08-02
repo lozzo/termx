@@ -36,7 +36,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock := time.Now().UTC()
-	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4, Now: func() time.Time { return clock }})
+	accounts, err := newIntegrationAccountService(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 4, Now: func() time.Time { return clock }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminIdentity, err := accounts.AuthenticateAccess(ctx, adminLoginResponse.GetSession().GetAccessToken())
+	adminIdentity, err := accounts.AuthenticateAccess(ctx, []byte(adminLoginResponse.GetCredential().GetAccessToken()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userIdentity, err := accounts.AuthenticateAccess(ctx, userLogin.GetSession().GetAccessToken())
+	userIdentity, err := accounts.AuthenticateAccess(ctx, []byte(userLogin.GetCredential().GetAccessToken()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherIdentity, err := accounts.AuthenticateAccess(ctx, otherLogin.GetSession().GetAccessToken())
+	otherIdentity, err := accounts.AuthenticateAccess(ctx, []byte(otherLogin.GetCredential().GetAccessToken()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +248,11 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	}
 
 	clock = clock.Add(11 * time.Minute)
-	refreshed, err := accounts.Refresh(ctx, &cloudv1.RefreshAccountSessionRequest{RefreshToken: userLogin.GetSession().GetRefreshToken()})
+	refreshed, err := accounts.Refresh(ctx, &cloudv1.RefreshAccountTokenRequest{RefreshToken: userLogin.GetCredential().GetRefreshToken()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	refreshedIdentity, err := accounts.AuthenticateAccess(ctx, refreshed.GetSession().GetAccessToken())
+	refreshedIdentity, err := accounts.AuthenticateAccess(ctx, []byte(refreshed.GetCredential().GetAccessToken()))
 	if err != nil {
 		t.Fatal(err)
 	}

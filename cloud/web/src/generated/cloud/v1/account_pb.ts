@@ -12,10 +12,10 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/account.proto.
  */
 export const file_cloud_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChZjbG91ZC92MS9hY2NvdW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEi6QEKDkFjY291bnRQcm9maWxlEhIKCmFjY291bnRfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgFIAEoBBIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLeAQoYQWNjb3VudFNlc3Npb25DcmVkZW50aWFsEhIKCnNlc3Npb25faWQYASABKAkSFAoMYWNjZXNzX3Rva2VuGAIgASgMEhUKDXJlZnJlc2hfdG9rZW4YAyABKAwSNQoRYWNjZXNzX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKEnJlZnJlc2hfZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKY3NyZl90b2tlbhgGIAEoDCI2ChNMb2dpbkFjY291bnRSZXF1ZXN0Eg0KBWxvZ2luGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJIrEBChRMb2dpbkFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwuYW55dHR5LmNsb3VkLnYxLkFjY291bnRSb2xlEjoKB3Nlc3Npb24YAyABKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25DcmVkZW50aWFsIjUKHFJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoDCK6AQodUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI6CgdzZXNzaW9uGAMgASgLMikuYW55dHR5LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCJHChtMb2dvdXRBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIUCgxhbGxfc2Vzc2lvbnMYAiABKAgiHgocTG9nb3V0QWNjb3VudFNlc3Npb25SZXNwb25zZSIaChhHZXRDdXJyZW50QWNjb3VudFJlcXVlc3QitgEKGUdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFWZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlcXVlc3QSEAoIcGFzc3dvcmQYASABKAkiVAoiVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXNwb25zZRIuCgpleHBpcmVzX2F0GAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKsAgoYQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uEhIKCnNlc3Npb25faWQYASABKAkSDwoHY3VycmVudBgCIAEoCBIuCgpjcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1ChFhY2Nlc3NfZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNgoScmVmcmVzaF9leHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghyZXZpc2lvbhgHIAEoBCIcChpMaXN0QWNjb3VudFNlc3Npb25zUmVxdWVzdCJaChtMaXN0QWNjb3VudFNlc3Npb25zUmVzcG9uc2USOwoIc2Vzc2lvbnMYASADKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uIk4KHENoYW5nZUFjY291bnRQYXNzd29yZFJlcXVlc3QSGAoQY3VycmVudF9wYXNzd29yZBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiUQodQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZSJLChlSZWRlZW1BY2NvdW50U2V0dXBSZXF1ZXN0EhgKEHNldHVwX2NyZWRlbnRpYWwYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIrcBChpSZWRlZW1BY2NvdW50U2V0dXBSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwuYW55dHR5LmNsb3VkLnYxLkFjY291bnRSb2xlEjoKB3Nlc3Npb24YAyABKAsyKS5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFNlc3Npb25DcmVkZW50aWFsIjEKG1Jldm9rZUFjY291bnRTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIh4KHFJldm9rZUFjY291bnRTZXNzaW9uUmVzcG9uc2UqfgoMQWNjb3VudFN0YXRlEh0KGUFDQ09VTlRfU1RBVEVfVU5TUEVDSUZJRUQQABIZChVBQ0NPVU5UX1NUQVRFX1BFTkRJTkcQARIYChRBQ0NPVU5UX1NUQVRFX0FDVElWRRACEhoKFkFDQ09VTlRfU1RBVEVfRElTQUJMRUQQAyp1CgtBY2NvdW50Um9sZRIcChhBQ0NPVU5UX1JPTEVfVU5TUEVDSUZJRUQQABIVChFBQ0NPVU5UX1JPTEVfVVNFUhABEhkKFUFDQ09VTlRfUk9MRV9PUEVSQVRPUhACEhYKEkFDQ09VTlRfUk9MRV9BRE1JThADMt0HCg5BY2NvdW50U2VydmljZRJUCgVMb2dpbhIkLmFueXR0eS5jbG91ZC52MS5Mb2dpbkFjY291bnRSZXF1ZXN0GiUuYW55dHR5LmNsb3VkLnYxLkxvZ2luQWNjb3VudFJlc3BvbnNlEmgKB1JlZnJlc2gSLS5hbnl0dHkuY2xvdWQudjEuUmVmcmVzaEFjY291bnRTZXNzaW9uUmVxdWVzdBouLmFueXR0eS5jbG91ZC52MS5SZWZyZXNoQWNjb3VudFNlc3Npb25SZXNwb25zZRJlCgZMb2dvdXQSLC5hbnl0dHkuY2xvdWQudjEuTG9nb3V0QWNjb3VudFNlc3Npb25SZXF1ZXN0Gi0uYW55dHR5LmNsb3VkLnYxLkxvZ291dEFjY291bnRTZXNzaW9uUmVzcG9uc2USYwoKR2V0Q3VycmVudBIpLmFueXR0eS5jbG91ZC52MS5HZXRDdXJyZW50QWNjb3VudFJlcXVlc3QaKi5hbnl0dHkuY2xvdWQudjEuR2V0Q3VycmVudEFjY291bnRSZXNwb25zZRKFAQoaVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb24SMi5hbnl0dHkuY2xvdWQudjEuVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXF1ZXN0GjMuYW55dHR5LmNsb3VkLnYxLlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uUmVzcG9uc2USaQoMTGlzdFNlc3Npb25zEisuYW55dHR5LmNsb3VkLnYxLkxpc3RBY2NvdW50U2Vzc2lvbnNSZXF1ZXN0GiwuYW55dHR5LmNsb3VkLnYxLkxpc3RBY2NvdW50U2Vzc2lvbnNSZXNwb25zZRJvCg5DaGFuZ2VQYXNzd29yZBItLmFueXR0eS5jbG91ZC52MS5DaGFuZ2VBY2NvdW50UGFzc3dvcmRSZXF1ZXN0Gi4uYW55dHR5LmNsb3VkLnYxLkNoYW5nZUFjY291bnRQYXNzd29yZFJlc3BvbnNlEm0KElJlZGVlbUFjY291bnRTZXR1cBIqLmFueXR0eS5jbG91ZC52MS5SZWRlZW1BY2NvdW50U2V0dXBSZXF1ZXN0GisuYW55dHR5LmNsb3VkLnYxLlJlZGVlbUFjY291bnRTZXR1cFJlc3BvbnNlEmwKDVJldm9rZVNlc3Npb24SLC5hbnl0dHkuY2xvdWQudjEuUmV2b2tlQWNjb3VudFNlc3Npb25SZXF1ZXN0Gi0uYW55dHR5LmNsb3VkLnYxLlJldm9rZUFjY291bnRTZXNzaW9uUmVzcG9uc2VCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChZjbG91ZC92MS9hY2NvdW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEi6QEKDkFjY291bnRQcm9maWxlEhIKCmFjY291bnRfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uYW55dHR5LmNsb3VkLnYxLkFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgFIAEoBBIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLcAQoWQWNjb3VudFRva2VuQ3JlZGVudGlhbBISCgpyZWZyZXNoX2lkGAEgASgJEhQKDGFjY2Vzc190b2tlbhgCIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAMgASgMEjUKEWFjY2Vzc19leHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmNzcmZfdG9rZW4YBiABKAwiNgoTTG9naW5BY2NvdW50UmVxdWVzdBINCgVsb2dpbhgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSKyAQoUTG9naW5BY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLmFueXR0eS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLmFueXR0eS5jbG91ZC52MS5BY2NvdW50Um9sZRI7CgpjcmVkZW50aWFsGAMgASgLMicuYW55dHR5LmNsb3VkLnYxLkFjY291bnRUb2tlbkNyZWRlbnRpYWwiMwoaUmVmcmVzaEFjY291bnRUb2tlblJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoDCK5AQobUmVmcmVzaEFjY291bnRUb2tlblJlc3BvbnNlEjAKB2FjY291bnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFByb2ZpbGUSKwoFcm9sZXMYAiADKA4yHC5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJvbGUSOwoKY3JlZGVudGlhbBgDIAEoCzInLmFueXR0eS5jbG91ZC52MS5BY2NvdW50VG9rZW5DcmVkZW50aWFsIjIKFExvZ291dEFjY291bnRSZXF1ZXN0EhoKEmFsbF9yZWZyZXNoX3Rva2VucxgBIAEoCCIXChVMb2dvdXRBY2NvdW50UmVzcG9uc2UiGgoYR2V0Q3VycmVudEFjY291bnRSZXF1ZXN0IrYBChlHZXRDdXJyZW50QWNjb3VudFJlc3BvbnNlEjAKB2FjY291bnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFByb2ZpbGUSKwoFcm9sZXMYAiADKA4yHC5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJvbGUSOgoWcmVjZW50X2F1dGhfZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiNQohVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXF1ZXN0EhAKCHBhc3N3b3JkGAEgASgJIpEBCiJWZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlc3BvbnNlEi4KCmV4cGlyZXNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjsKCmNyZWRlbnRpYWwYAiABKAsyJy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFRva2VuQ3JlZGVudGlhbCLyAQodQWNjb3VudFJlZnJlc2hUb2tlblByb2plY3Rpb24SEgoKcmVmcmVzaF9pZBgBIAEoCRIPCgdjdXJyZW50GAIgASgIEi4KCmNyZWF0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjoKFnJlY2VudF9hdXRoX2V4cGlyZXNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCHJldmlzaW9uGAYgASgEIiEKH0xpc3RBY2NvdW50UmVmcmVzaFRva2Vuc1JlcXVlc3QiagogTGlzdEFjY291bnRSZWZyZXNoVG9rZW5zUmVzcG9uc2USRgoOcmVmcmVzaF90b2tlbnMYASADKAsyLi5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJlZnJlc2hUb2tlblByb2plY3Rpb24iTgocQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVxdWVzdBIYChBjdXJyZW50X3Bhc3N3b3JkGAEgASgJEhQKDG5ld19wYXNzd29yZBgCIAEoCSJRCh1DaGFuZ2VBY2NvdW50UGFzc3dvcmRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8uYW55dHR5LmNsb3VkLnYxLkFjY291bnRQcm9maWxlIksKGVJlZGVlbUFjY291bnRTZXR1cFJlcXVlc3QSGAoQc2V0dXBfY3JlZGVudGlhbBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiuAEKGlJlZGVlbUFjY291bnRTZXR1cFJlc3BvbnNlEjAKB2FjY291bnQYASABKAsyHy5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFByb2ZpbGUSKwoFcm9sZXMYAiADKA4yHC5hbnl0dHkuY2xvdWQudjEuQWNjb3VudFJvbGUSOwoKY3JlZGVudGlhbBgDIAEoCzInLmFueXR0eS5jbG91ZC52MS5BY2NvdW50VG9rZW5DcmVkZW50aWFsIjYKIFJldm9rZUFjY291bnRSZWZyZXNoVG9rZW5SZXF1ZXN0EhIKCnJlZnJlc2hfaWQYASABKAkiIwohUmV2b2tlQWNjb3VudFJlZnJlc2hUb2tlblJlc3BvbnNlKn4KDEFjY291bnRTdGF0ZRIdChlBQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVQUNDT1VOVF9TVEFURV9QRU5ESU5HEAESGAoUQUNDT1VOVF9TVEFURV9BQ1RJVkUQAhIaChZBQ0NPVU5UX1NUQVRFX0RJU0FCTEVEEAMqdQoLQWNjb3VudFJvbGUSHAoYQUNDT1VOVF9ST0xFX1VOU1BFQ0lGSUVEEAASFQoRQUNDT1VOVF9ST0xFX1VTRVIQARIZChVBQ0NPVU5UX1JPTEVfT1BFUkFUT1IQAhIWChJBQ0NPVU5UX1JPTEVfQURNSU4QAzLpBwoOQWNjb3VudFNlcnZpY2USVAoFTG9naW4SJC5hbnl0dHkuY2xvdWQudjEuTG9naW5BY2NvdW50UmVxdWVzdBolLmFueXR0eS5jbG91ZC52MS5Mb2dpbkFjY291bnRSZXNwb25zZRJkCgdSZWZyZXNoEisuYW55dHR5LmNsb3VkLnYxLlJlZnJlc2hBY2NvdW50VG9rZW5SZXF1ZXN0GiwuYW55dHR5LmNsb3VkLnYxLlJlZnJlc2hBY2NvdW50VG9rZW5SZXNwb25zZRJXCgZMb2dvdXQSJS5hbnl0dHkuY2xvdWQudjEuTG9nb3V0QWNjb3VudFJlcXVlc3QaJi5hbnl0dHkuY2xvdWQudjEuTG9nb3V0QWNjb3VudFJlc3BvbnNlEmMKCkdldEN1cnJlbnQSKS5hbnl0dHkuY2xvdWQudjEuR2V0Q3VycmVudEFjY291bnRSZXF1ZXN0GiouYW55dHR5LmNsb3VkLnYxLkdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2UShQEKGlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uEjIuYW55dHR5LmNsb3VkLnYxLlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uUmVxdWVzdBozLmFueXR0eS5jbG91ZC52MS5WZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlc3BvbnNlEngKEUxpc3RSZWZyZXNoVG9rZW5zEjAuYW55dHR5LmNsb3VkLnYxLkxpc3RBY2NvdW50UmVmcmVzaFRva2Vuc1JlcXVlc3QaMS5hbnl0dHkuY2xvdWQudjEuTGlzdEFjY291bnRSZWZyZXNoVG9rZW5zUmVzcG9uc2USbwoOQ2hhbmdlUGFzc3dvcmQSLS5hbnl0dHkuY2xvdWQudjEuQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVxdWVzdBouLmFueXR0eS5jbG91ZC52MS5DaGFuZ2VBY2NvdW50UGFzc3dvcmRSZXNwb25zZRJtChJSZWRlZW1BY2NvdW50U2V0dXASKi5hbnl0dHkuY2xvdWQudjEuUmVkZWVtQWNjb3VudFNldHVwUmVxdWVzdBorLmFueXR0eS5jbG91ZC52MS5SZWRlZW1BY2NvdW50U2V0dXBSZXNwb25zZRJ7ChJSZXZva2VSZWZyZXNoVG9rZW4SMS5hbnl0dHkuY2xvdWQudjEuUmV2b2tlQWNjb3VudFJlZnJlc2hUb2tlblJlcXVlc3QaMi5hbnl0dHkuY2xvdWQudjEuUmV2b2tlQWNjb3VudFJlZnJlc2hUb2tlblJlc3BvbnNlQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
- * AccountProfile 是账号持久投影，不包含密码 verifier 或 session secret。
+ * AccountProfile 是账号持久投影，不包含密码 verifier 或 token secret。
  *
  * @generated from message anytty.cloud.v1.AccountProfile
  */
@@ -64,20 +64,20 @@ export const AccountProfileSchema: GenMessage<AccountProfile> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 0);
 
 /**
- * AccountSessionCredential 只在创建或轮换 session 时返回原始 token。
+ * AccountTokenCredential 只在登录或轮换 refresh token 时返回原始 token。
  *
- * @generated from message anytty.cloud.v1.AccountSessionCredential
+ * @generated from message anytty.cloud.v1.AccountTokenCredential
  */
-export type AccountSessionCredential = Message<"anytty.cloud.v1.AccountSessionCredential"> & {
+export type AccountTokenCredential = Message<"anytty.cloud.v1.AccountTokenCredential"> & {
   /**
-   * @generated from field: string session_id = 1;
+   * @generated from field: string refresh_id = 1;
    */
-  sessionId: string;
+  refreshId: string;
 
   /**
-   * @generated from field: bytes access_token = 2;
+   * @generated from field: string access_token = 2;
    */
-  accessToken: Uint8Array;
+  accessToken: string;
 
   /**
    * @generated from field: bytes refresh_token = 3;
@@ -101,10 +101,10 @@ export type AccountSessionCredential = Message<"anytty.cloud.v1.AccountSessionCr
 };
 
 /**
- * Describes the message anytty.cloud.v1.AccountSessionCredential.
- * Use `create(AccountSessionCredentialSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.AccountTokenCredential.
+ * Use `create(AccountTokenCredentialSchema)` to create a new message.
  */
-export const AccountSessionCredentialSchema: GenMessage<AccountSessionCredential> = /*@__PURE__*/
+export const AccountTokenCredentialSchema: GenMessage<AccountTokenCredential> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 1);
 
 /**
@@ -144,9 +144,9 @@ export type LoginAccountResponse = Message<"anytty.cloud.v1.LoginAccountResponse
   roles: AccountRole[];
 
   /**
-   * @generated from field: anytty.cloud.v1.AccountSessionCredential session = 3;
+   * @generated from field: anytty.cloud.v1.AccountTokenCredential credential = 3;
    */
-  session?: AccountSessionCredential | undefined;
+  credential?: AccountTokenCredential | undefined;
 };
 
 /**
@@ -157,9 +157,9 @@ export const LoginAccountResponseSchema: GenMessage<LoginAccountResponse> = /*@_
   messageDesc(file_cloud_v1_account, 3);
 
 /**
- * @generated from message anytty.cloud.v1.RefreshAccountSessionRequest
+ * @generated from message anytty.cloud.v1.RefreshAccountTokenRequest
  */
-export type RefreshAccountSessionRequest = Message<"anytty.cloud.v1.RefreshAccountSessionRequest"> & {
+export type RefreshAccountTokenRequest = Message<"anytty.cloud.v1.RefreshAccountTokenRequest"> & {
   /**
    * @generated from field: bytes refresh_token = 1;
    */
@@ -167,16 +167,16 @@ export type RefreshAccountSessionRequest = Message<"anytty.cloud.v1.RefreshAccou
 };
 
 /**
- * Describes the message anytty.cloud.v1.RefreshAccountSessionRequest.
- * Use `create(RefreshAccountSessionRequestSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RefreshAccountTokenRequest.
+ * Use `create(RefreshAccountTokenRequestSchema)` to create a new message.
  */
-export const RefreshAccountSessionRequestSchema: GenMessage<RefreshAccountSessionRequest> = /*@__PURE__*/
+export const RefreshAccountTokenRequestSchema: GenMessage<RefreshAccountTokenRequest> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 4);
 
 /**
- * @generated from message anytty.cloud.v1.RefreshAccountSessionResponse
+ * @generated from message anytty.cloud.v1.RefreshAccountTokenResponse
  */
-export type RefreshAccountSessionResponse = Message<"anytty.cloud.v1.RefreshAccountSessionResponse"> & {
+export type RefreshAccountTokenResponse = Message<"anytty.cloud.v1.RefreshAccountTokenResponse"> & {
   /**
    * @generated from field: anytty.cloud.v1.AccountProfile account = 1;
    */
@@ -188,51 +188,46 @@ export type RefreshAccountSessionResponse = Message<"anytty.cloud.v1.RefreshAcco
   roles: AccountRole[];
 
   /**
-   * @generated from field: anytty.cloud.v1.AccountSessionCredential session = 3;
+   * @generated from field: anytty.cloud.v1.AccountTokenCredential credential = 3;
    */
-  session?: AccountSessionCredential | undefined;
+  credential?: AccountTokenCredential | undefined;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RefreshAccountSessionResponse.
- * Use `create(RefreshAccountSessionResponseSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RefreshAccountTokenResponse.
+ * Use `create(RefreshAccountTokenResponseSchema)` to create a new message.
  */
-export const RefreshAccountSessionResponseSchema: GenMessage<RefreshAccountSessionResponse> = /*@__PURE__*/
+export const RefreshAccountTokenResponseSchema: GenMessage<RefreshAccountTokenResponse> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 5);
 
 /**
- * @generated from message anytty.cloud.v1.LogoutAccountSessionRequest
+ * @generated from message anytty.cloud.v1.LogoutAccountRequest
  */
-export type LogoutAccountSessionRequest = Message<"anytty.cloud.v1.LogoutAccountSessionRequest"> & {
+export type LogoutAccountRequest = Message<"anytty.cloud.v1.LogoutAccountRequest"> & {
   /**
-   * @generated from field: string session_id = 1;
+   * @generated from field: bool all_refresh_tokens = 1;
    */
-  sessionId: string;
-
-  /**
-   * @generated from field: bool all_sessions = 2;
-   */
-  allSessions: boolean;
+  allRefreshTokens: boolean;
 };
 
 /**
- * Describes the message anytty.cloud.v1.LogoutAccountSessionRequest.
- * Use `create(LogoutAccountSessionRequestSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.LogoutAccountRequest.
+ * Use `create(LogoutAccountRequestSchema)` to create a new message.
  */
-export const LogoutAccountSessionRequestSchema: GenMessage<LogoutAccountSessionRequest> = /*@__PURE__*/
+export const LogoutAccountRequestSchema: GenMessage<LogoutAccountRequest> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 6);
 
 /**
- * @generated from message anytty.cloud.v1.LogoutAccountSessionResponse
+ * @generated from message anytty.cloud.v1.LogoutAccountResponse
  */
-export type LogoutAccountSessionResponse = Message<"anytty.cloud.v1.LogoutAccountSessionResponse"> & {
+export type LogoutAccountResponse = Message<"anytty.cloud.v1.LogoutAccountResponse"> & {
 };
 
 /**
- * Describes the message anytty.cloud.v1.LogoutAccountSessionResponse.
- * Use `create(LogoutAccountSessionResponseSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.LogoutAccountResponse.
+ * Use `create(LogoutAccountResponseSchema)` to create a new message.
  */
-export const LogoutAccountSessionResponseSchema: GenMessage<LogoutAccountSessionResponse> = /*@__PURE__*/
+export const LogoutAccountResponseSchema: GenMessage<LogoutAccountResponse> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 7);
 
 /**
@@ -300,6 +295,11 @@ export type VerifyRecentAuthenticationResponse = Message<"anytty.cloud.v1.Verify
    * @generated from field: google.protobuf.Timestamp expires_at = 1;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.AccountTokenCredential credential = 2;
+   */
+  credential?: AccountTokenCredential | undefined;
 };
 
 /**
@@ -310,15 +310,15 @@ export const VerifyRecentAuthenticationResponseSchema: GenMessage<VerifyRecentAu
   messageDesc(file_cloud_v1_account, 11);
 
 /**
- * AccountSessionProjection 是用户可见的 session 元数据，不包含任何 token 摘要或原始 credential。
+ * AccountRefreshTokenProjection 是用户可见的持久登录凭据元数据，不包含 token 摘要或原始值。
  *
- * @generated from message anytty.cloud.v1.AccountSessionProjection
+ * @generated from message anytty.cloud.v1.AccountRefreshTokenProjection
  */
-export type AccountSessionProjection = Message<"anytty.cloud.v1.AccountSessionProjection"> & {
+export type AccountRefreshTokenProjection = Message<"anytty.cloud.v1.AccountRefreshTokenProjection"> & {
   /**
-   * @generated from field: string session_id = 1;
+   * @generated from field: string refresh_id = 1;
    */
-  sessionId: string;
+  refreshId: string;
 
   /**
    * @generated from field: bool current = 2;
@@ -331,61 +331,56 @@ export type AccountSessionProjection = Message<"anytty.cloud.v1.AccountSessionPr
   createdAt?: Timestamp | undefined;
 
   /**
-   * @generated from field: google.protobuf.Timestamp access_expires_at = 4;
+   * @generated from field: google.protobuf.Timestamp expires_at = 4;
    */
-  accessExpiresAt?: Timestamp | undefined;
+  expiresAt?: Timestamp | undefined;
 
   /**
-   * @generated from field: google.protobuf.Timestamp refresh_expires_at = 5;
-   */
-  refreshExpiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp recent_auth_expires_at = 6;
+   * @generated from field: google.protobuf.Timestamp recent_auth_expires_at = 5;
    */
   recentAuthExpiresAt?: Timestamp | undefined;
 
   /**
-   * @generated from field: uint64 revision = 7;
+   * @generated from field: uint64 revision = 6;
    */
   revision: bigint;
 };
 
 /**
- * Describes the message anytty.cloud.v1.AccountSessionProjection.
- * Use `create(AccountSessionProjectionSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.AccountRefreshTokenProjection.
+ * Use `create(AccountRefreshTokenProjectionSchema)` to create a new message.
  */
-export const AccountSessionProjectionSchema: GenMessage<AccountSessionProjection> = /*@__PURE__*/
+export const AccountRefreshTokenProjectionSchema: GenMessage<AccountRefreshTokenProjection> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 12);
 
 /**
- * @generated from message anytty.cloud.v1.ListAccountSessionsRequest
+ * @generated from message anytty.cloud.v1.ListAccountRefreshTokensRequest
  */
-export type ListAccountSessionsRequest = Message<"anytty.cloud.v1.ListAccountSessionsRequest"> & {
+export type ListAccountRefreshTokensRequest = Message<"anytty.cloud.v1.ListAccountRefreshTokensRequest"> & {
 };
 
 /**
- * Describes the message anytty.cloud.v1.ListAccountSessionsRequest.
- * Use `create(ListAccountSessionsRequestSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.ListAccountRefreshTokensRequest.
+ * Use `create(ListAccountRefreshTokensRequestSchema)` to create a new message.
  */
-export const ListAccountSessionsRequestSchema: GenMessage<ListAccountSessionsRequest> = /*@__PURE__*/
+export const ListAccountRefreshTokensRequestSchema: GenMessage<ListAccountRefreshTokensRequest> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 13);
 
 /**
- * @generated from message anytty.cloud.v1.ListAccountSessionsResponse
+ * @generated from message anytty.cloud.v1.ListAccountRefreshTokensResponse
  */
-export type ListAccountSessionsResponse = Message<"anytty.cloud.v1.ListAccountSessionsResponse"> & {
+export type ListAccountRefreshTokensResponse = Message<"anytty.cloud.v1.ListAccountRefreshTokensResponse"> & {
   /**
-   * @generated from field: repeated anytty.cloud.v1.AccountSessionProjection sessions = 1;
+   * @generated from field: repeated anytty.cloud.v1.AccountRefreshTokenProjection refresh_tokens = 1;
    */
-  sessions: AccountSessionProjection[];
+  refreshTokens: AccountRefreshTokenProjection[];
 };
 
 /**
- * Describes the message anytty.cloud.v1.ListAccountSessionsResponse.
- * Use `create(ListAccountSessionsResponseSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.ListAccountRefreshTokensResponse.
+ * Use `create(ListAccountRefreshTokensResponseSchema)` to create a new message.
  */
-export const ListAccountSessionsResponseSchema: GenMessage<ListAccountSessionsResponse> = /*@__PURE__*/
+export const ListAccountRefreshTokensResponseSchema: GenMessage<ListAccountRefreshTokensResponse> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 14);
 
 /**
@@ -464,9 +459,9 @@ export type RedeemAccountSetupResponse = Message<"anytty.cloud.v1.RedeemAccountS
   roles: AccountRole[];
 
   /**
-   * @generated from field: anytty.cloud.v1.AccountSessionCredential session = 3;
+   * @generated from field: anytty.cloud.v1.AccountTokenCredential credential = 3;
    */
-  session?: AccountSessionCredential | undefined;
+  credential?: AccountTokenCredential | undefined;
 };
 
 /**
@@ -477,37 +472,37 @@ export const RedeemAccountSetupResponseSchema: GenMessage<RedeemAccountSetupResp
   messageDesc(file_cloud_v1_account, 18);
 
 /**
- * @generated from message anytty.cloud.v1.RevokeAccountSessionRequest
+ * @generated from message anytty.cloud.v1.RevokeAccountRefreshTokenRequest
  */
-export type RevokeAccountSessionRequest = Message<"anytty.cloud.v1.RevokeAccountSessionRequest"> & {
+export type RevokeAccountRefreshTokenRequest = Message<"anytty.cloud.v1.RevokeAccountRefreshTokenRequest"> & {
   /**
-   * @generated from field: string session_id = 1;
+   * @generated from field: string refresh_id = 1;
    */
-  sessionId: string;
+  refreshId: string;
 };
 
 /**
- * Describes the message anytty.cloud.v1.RevokeAccountSessionRequest.
- * Use `create(RevokeAccountSessionRequestSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RevokeAccountRefreshTokenRequest.
+ * Use `create(RevokeAccountRefreshTokenRequestSchema)` to create a new message.
  */
-export const RevokeAccountSessionRequestSchema: GenMessage<RevokeAccountSessionRequest> = /*@__PURE__*/
+export const RevokeAccountRefreshTokenRequestSchema: GenMessage<RevokeAccountRefreshTokenRequest> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 19);
 
 /**
- * @generated from message anytty.cloud.v1.RevokeAccountSessionResponse
+ * @generated from message anytty.cloud.v1.RevokeAccountRefreshTokenResponse
  */
-export type RevokeAccountSessionResponse = Message<"anytty.cloud.v1.RevokeAccountSessionResponse"> & {
+export type RevokeAccountRefreshTokenResponse = Message<"anytty.cloud.v1.RevokeAccountRefreshTokenResponse"> & {
 };
 
 /**
- * Describes the message anytty.cloud.v1.RevokeAccountSessionResponse.
- * Use `create(RevokeAccountSessionResponseSchema)` to create a new message.
+ * Describes the message anytty.cloud.v1.RevokeAccountRefreshTokenResponse.
+ * Use `create(RevokeAccountRefreshTokenResponseSchema)` to create a new message.
  */
-export const RevokeAccountSessionResponseSchema: GenMessage<RevokeAccountSessionResponse> = /*@__PURE__*/
+export const RevokeAccountRefreshTokenResponseSchema: GenMessage<RevokeAccountRefreshTokenResponse> = /*@__PURE__*/
   messageDesc(file_cloud_v1_account, 20);
 
 /**
- * AccountState 是账号持久状态；只有 active 账号可以登录或持有 session。
+ * AccountState 是账号持久状态；只有 active 账号可以登录或持有 refresh token。
  *
  * @generated from enum anytty.cloud.v1.AccountState
  */
@@ -573,7 +568,7 @@ export const AccountRoleSchema: GenEnum<AccountRole> = /*@__PURE__*/
   enumDesc(file_cloud_v1_account, 1);
 
 /**
- * AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
+ * AccountService 是账号、credential、Access JWT 和 Refresh token 的唯一公共应用 API。
  *
  * @generated from service anytty.cloud.v1.AccountService
  */
@@ -591,16 +586,16 @@ export const AccountService: GenService<{
    */
   refresh: {
     methodKind: "unary";
-    input: typeof RefreshAccountSessionRequestSchema;
-    output: typeof RefreshAccountSessionResponseSchema;
+    input: typeof RefreshAccountTokenRequestSchema;
+    output: typeof RefreshAccountTokenResponseSchema;
   },
   /**
    * @generated from rpc anytty.cloud.v1.AccountService.Logout
    */
   logout: {
     methodKind: "unary";
-    input: typeof LogoutAccountSessionRequestSchema;
-    output: typeof LogoutAccountSessionResponseSchema;
+    input: typeof LogoutAccountRequestSchema;
+    output: typeof LogoutAccountResponseSchema;
   },
   /**
    * @generated from rpc anytty.cloud.v1.AccountService.GetCurrent
@@ -619,12 +614,12 @@ export const AccountService: GenService<{
     output: typeof VerifyRecentAuthenticationResponseSchema;
   },
   /**
-   * @generated from rpc anytty.cloud.v1.AccountService.ListSessions
+   * @generated from rpc anytty.cloud.v1.AccountService.ListRefreshTokens
    */
-  listSessions: {
+  listRefreshTokens: {
     methodKind: "unary";
-    input: typeof ListAccountSessionsRequestSchema;
-    output: typeof ListAccountSessionsResponseSchema;
+    input: typeof ListAccountRefreshTokensRequestSchema;
+    output: typeof ListAccountRefreshTokensResponseSchema;
   },
   /**
    * @generated from rpc anytty.cloud.v1.AccountService.ChangePassword
@@ -643,12 +638,12 @@ export const AccountService: GenService<{
     output: typeof RedeemAccountSetupResponseSchema;
   },
   /**
-   * @generated from rpc anytty.cloud.v1.AccountService.RevokeSession
+   * @generated from rpc anytty.cloud.v1.AccountService.RevokeRefreshToken
    */
-  revokeSession: {
+  revokeRefreshToken: {
     methodKind: "unary";
-    input: typeof RevokeAccountSessionRequestSchema;
-    output: typeof RevokeAccountSessionResponseSchema;
+    input: typeof RevokeAccountRefreshTokenRequestSchema;
+    output: typeof RevokeAccountRefreshTokenResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cloud_v1_account, 0);

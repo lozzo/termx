@@ -4,17 +4,19 @@ import { protoGet } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('账号 session 轮换', () => {
+describe('账号 token 轮换', () => {
   it('并发 401 只执行一次 refresh 并重试原请求', async () => {
     vi.stubGlobal('document', { cookie: 'anytty_cloud_csrf=csrf-proof' })
     let resourceCalls = 0
     let refreshCalls = 0
     let refreshHeader = ''
+    let refreshContentType = ''
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (path === '/api/account/refresh') {
         refreshCalls++
         refreshHeader = new Headers(init?.headers).get('X-AnyTTY-CSRF') ?? ''
+        refreshContentType = new Headers(init?.headers).get('Content-Type') ?? ''
         await Promise.resolve()
         return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
@@ -30,6 +32,7 @@ describe('账号 session 轮换', () => {
     expect(refreshCalls).toBe(1)
     expect(resourceCalls).toBe(4)
     expect(refreshHeader).toBe('csrf-proof')
+    expect(refreshContentType).toBe('application/json')
   })
 
   it('preserves the stable code and request ID on API failures', async () => {

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Navigate, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router'
 import logo from '../../../../clients/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png'
 import { APIError, protoSend } from '../api'
-import { AccountRole, GetCurrentAccountResponseSchema, LogoutAccountSessionRequestSchema, LogoutAccountSessionResponseSchema, type GetCurrentAccountResponse } from '../generated/cloud/v1/account_pb'
+import { AccountRole, GetCurrentAccountResponseSchema, LogoutAccountRequestSchema, LogoutAccountResponseSchema, type GetCurrentAccountResponse } from '../generated/cloud/v1/account_pb'
 import { useProtoQuery } from '../query'
 import { Button, Dialog, ErrorState, IconButton, Notice, Skeleton } from '../ui'
 
@@ -79,7 +79,7 @@ export function CloudShell() {
   }, [isOperator, queryClient])
 
   const logout = useMutation({
-    mutationFn: () => protoSend('/api/account/logout', LogoutAccountSessionRequestSchema, create(LogoutAccountSessionRequestSchema), LogoutAccountSessionResponseSchema),
+    mutationFn: () => protoSend('/api/account/logout', LogoutAccountRequestSchema, create(LogoutAccountRequestSchema), LogoutAccountResponseSchema),
     onError: () => setLogoutRecoveryOpen(true),
     onSuccess: () => { setLogoutRecoveryOpen(false); queryClient.clear(); navigate('/login', { replace: true }) },
   })

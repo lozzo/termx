@@ -24,27 +24,27 @@ const (
 	AccountService_Logout_FullMethodName                     = "/anytty.cloud.v1.AccountService/Logout"
 	AccountService_GetCurrent_FullMethodName                 = "/anytty.cloud.v1.AccountService/GetCurrent"
 	AccountService_VerifyRecentAuthentication_FullMethodName = "/anytty.cloud.v1.AccountService/VerifyRecentAuthentication"
-	AccountService_ListSessions_FullMethodName               = "/anytty.cloud.v1.AccountService/ListSessions"
+	AccountService_ListRefreshTokens_FullMethodName          = "/anytty.cloud.v1.AccountService/ListRefreshTokens"
 	AccountService_ChangePassword_FullMethodName             = "/anytty.cloud.v1.AccountService/ChangePassword"
 	AccountService_RedeemAccountSetup_FullMethodName         = "/anytty.cloud.v1.AccountService/RedeemAccountSetup"
-	AccountService_RevokeSession_FullMethodName              = "/anytty.cloud.v1.AccountService/RevokeSession"
+	AccountService_RevokeRefreshToken_FullMethodName         = "/anytty.cloud.v1.AccountService/RevokeRefreshToken"
 )
 
 // AccountServiceClient is the client API for AccountService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
+// AccountService 是账号、credential、Access JWT 和 Refresh token 的唯一公共应用 API。
 type AccountServiceClient interface {
 	Login(ctx context.Context, in *LoginAccountRequest, opts ...grpc.CallOption) (*LoginAccountResponse, error)
-	Refresh(ctx context.Context, in *RefreshAccountSessionRequest, opts ...grpc.CallOption) (*RefreshAccountSessionResponse, error)
-	Logout(ctx context.Context, in *LogoutAccountSessionRequest, opts ...grpc.CallOption) (*LogoutAccountSessionResponse, error)
+	Refresh(ctx context.Context, in *RefreshAccountTokenRequest, opts ...grpc.CallOption) (*RefreshAccountTokenResponse, error)
+	Logout(ctx context.Context, in *LogoutAccountRequest, opts ...grpc.CallOption) (*LogoutAccountResponse, error)
 	GetCurrent(ctx context.Context, in *GetCurrentAccountRequest, opts ...grpc.CallOption) (*GetCurrentAccountResponse, error)
 	VerifyRecentAuthentication(ctx context.Context, in *VerifyRecentAuthenticationRequest, opts ...grpc.CallOption) (*VerifyRecentAuthenticationResponse, error)
-	ListSessions(ctx context.Context, in *ListAccountSessionsRequest, opts ...grpc.CallOption) (*ListAccountSessionsResponse, error)
+	ListRefreshTokens(ctx context.Context, in *ListAccountRefreshTokensRequest, opts ...grpc.CallOption) (*ListAccountRefreshTokensResponse, error)
 	ChangePassword(ctx context.Context, in *ChangeAccountPasswordRequest, opts ...grpc.CallOption) (*ChangeAccountPasswordResponse, error)
 	RedeemAccountSetup(ctx context.Context, in *RedeemAccountSetupRequest, opts ...grpc.CallOption) (*RedeemAccountSetupResponse, error)
-	RevokeSession(ctx context.Context, in *RevokeAccountSessionRequest, opts ...grpc.CallOption) (*RevokeAccountSessionResponse, error)
+	RevokeRefreshToken(ctx context.Context, in *RevokeAccountRefreshTokenRequest, opts ...grpc.CallOption) (*RevokeAccountRefreshTokenResponse, error)
 }
 
 type accountServiceClient struct {
@@ -65,9 +65,9 @@ func (c *accountServiceClient) Login(ctx context.Context, in *LoginAccountReques
 	return out, nil
 }
 
-func (c *accountServiceClient) Refresh(ctx context.Context, in *RefreshAccountSessionRequest, opts ...grpc.CallOption) (*RefreshAccountSessionResponse, error) {
+func (c *accountServiceClient) Refresh(ctx context.Context, in *RefreshAccountTokenRequest, opts ...grpc.CallOption) (*RefreshAccountTokenResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RefreshAccountSessionResponse)
+	out := new(RefreshAccountTokenResponse)
 	err := c.cc.Invoke(ctx, AccountService_Refresh_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -75,9 +75,9 @@ func (c *accountServiceClient) Refresh(ctx context.Context, in *RefreshAccountSe
 	return out, nil
 }
 
-func (c *accountServiceClient) Logout(ctx context.Context, in *LogoutAccountSessionRequest, opts ...grpc.CallOption) (*LogoutAccountSessionResponse, error) {
+func (c *accountServiceClient) Logout(ctx context.Context, in *LogoutAccountRequest, opts ...grpc.CallOption) (*LogoutAccountResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(LogoutAccountSessionResponse)
+	out := new(LogoutAccountResponse)
 	err := c.cc.Invoke(ctx, AccountService_Logout_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -105,10 +105,10 @@ func (c *accountServiceClient) VerifyRecentAuthentication(ctx context.Context, i
 	return out, nil
 }
 
-func (c *accountServiceClient) ListSessions(ctx context.Context, in *ListAccountSessionsRequest, opts ...grpc.CallOption) (*ListAccountSessionsResponse, error) {
+func (c *accountServiceClient) ListRefreshTokens(ctx context.Context, in *ListAccountRefreshTokensRequest, opts ...grpc.CallOption) (*ListAccountRefreshTokensResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListAccountSessionsResponse)
-	err := c.cc.Invoke(ctx, AccountService_ListSessions_FullMethodName, in, out, cOpts...)
+	out := new(ListAccountRefreshTokensResponse)
+	err := c.cc.Invoke(ctx, AccountService_ListRefreshTokens_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -135,10 +135,10 @@ func (c *accountServiceClient) RedeemAccountSetup(ctx context.Context, in *Redee
 	return out, nil
 }
 
-func (c *accountServiceClient) RevokeSession(ctx context.Context, in *RevokeAccountSessionRequest, opts ...grpc.CallOption) (*RevokeAccountSessionResponse, error) {
+func (c *accountServiceClient) RevokeRefreshToken(ctx context.Context, in *RevokeAccountRefreshTokenRequest, opts ...grpc.CallOption) (*RevokeAccountRefreshTokenResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RevokeAccountSessionResponse)
-	err := c.cc.Invoke(ctx, AccountService_RevokeSession_FullMethodName, in, out, cOpts...)
+	out := new(RevokeAccountRefreshTokenResponse)
+	err := c.cc.Invoke(ctx, AccountService_RevokeRefreshToken_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -149,17 +149,17 @@ func (c *accountServiceClient) RevokeSession(ctx context.Context, in *RevokeAcco
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
 //
-// AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
+// AccountService 是账号、credential、Access JWT 和 Refresh token 的唯一公共应用 API。
 type AccountServiceServer interface {
 	Login(context.Context, *LoginAccountRequest) (*LoginAccountResponse, error)
-	Refresh(context.Context, *RefreshAccountSessionRequest) (*RefreshAccountSessionResponse, error)
-	Logout(context.Context, *LogoutAccountSessionRequest) (*LogoutAccountSessionResponse, error)
+	Refresh(context.Context, *RefreshAccountTokenRequest) (*RefreshAccountTokenResponse, error)
+	Logout(context.Context, *LogoutAccountRequest) (*LogoutAccountResponse, error)
 	GetCurrent(context.Context, *GetCurrentAccountRequest) (*GetCurrentAccountResponse, error)
 	VerifyRecentAuthentication(context.Context, *VerifyRecentAuthenticationRequest) (*VerifyRecentAuthenticationResponse, error)
-	ListSessions(context.Context, *ListAccountSessionsRequest) (*ListAccountSessionsResponse, error)
+	ListRefreshTokens(context.Context, *ListAccountRefreshTokensRequest) (*ListAccountRefreshTokensResponse, error)
 	ChangePassword(context.Context, *ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error)
 	RedeemAccountSetup(context.Context, *RedeemAccountSetupRequest) (*RedeemAccountSetupResponse, error)
-	RevokeSession(context.Context, *RevokeAccountSessionRequest) (*RevokeAccountSessionResponse, error)
+	RevokeRefreshToken(context.Context, *RevokeAccountRefreshTokenRequest) (*RevokeAccountRefreshTokenResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -173,10 +173,10 @@ type UnimplementedAccountServiceServer struct{}
 func (UnimplementedAccountServiceServer) Login(context.Context, *LoginAccountRequest) (*LoginAccountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Login not implemented")
 }
-func (UnimplementedAccountServiceServer) Refresh(context.Context, *RefreshAccountSessionRequest) (*RefreshAccountSessionResponse, error) {
+func (UnimplementedAccountServiceServer) Refresh(context.Context, *RefreshAccountTokenRequest) (*RefreshAccountTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Refresh not implemented")
 }
-func (UnimplementedAccountServiceServer) Logout(context.Context, *LogoutAccountSessionRequest) (*LogoutAccountSessionResponse, error) {
+func (UnimplementedAccountServiceServer) Logout(context.Context, *LogoutAccountRequest) (*LogoutAccountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Logout not implemented")
 }
 func (UnimplementedAccountServiceServer) GetCurrent(context.Context, *GetCurrentAccountRequest) (*GetCurrentAccountResponse, error) {
@@ -185,8 +185,8 @@ func (UnimplementedAccountServiceServer) GetCurrent(context.Context, *GetCurrent
 func (UnimplementedAccountServiceServer) VerifyRecentAuthentication(context.Context, *VerifyRecentAuthenticationRequest) (*VerifyRecentAuthenticationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyRecentAuthentication not implemented")
 }
-func (UnimplementedAccountServiceServer) ListSessions(context.Context, *ListAccountSessionsRequest) (*ListAccountSessionsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+func (UnimplementedAccountServiceServer) ListRefreshTokens(context.Context, *ListAccountRefreshTokensRequest) (*ListAccountRefreshTokensResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRefreshTokens not implemented")
 }
 func (UnimplementedAccountServiceServer) ChangePassword(context.Context, *ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChangePassword not implemented")
@@ -194,8 +194,8 @@ func (UnimplementedAccountServiceServer) ChangePassword(context.Context, *Change
 func (UnimplementedAccountServiceServer) RedeemAccountSetup(context.Context, *RedeemAccountSetupRequest) (*RedeemAccountSetupResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RedeemAccountSetup not implemented")
 }
-func (UnimplementedAccountServiceServer) RevokeSession(context.Context, *RevokeAccountSessionRequest) (*RevokeAccountSessionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RevokeSession not implemented")
+func (UnimplementedAccountServiceServer) RevokeRefreshToken(context.Context, *RevokeAccountRefreshTokenRequest) (*RevokeAccountRefreshTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeRefreshToken not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -237,7 +237,7 @@ func _AccountService_Login_Handler(srv interface{}, ctx context.Context, dec fun
 }
 
 func _AccountService_Refresh_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RefreshAccountSessionRequest)
+	in := new(RefreshAccountTokenRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -249,13 +249,13 @@ func _AccountService_Refresh_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: AccountService_Refresh_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).Refresh(ctx, req.(*RefreshAccountSessionRequest))
+		return srv.(AccountServiceServer).Refresh(ctx, req.(*RefreshAccountTokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _AccountService_Logout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LogoutAccountSessionRequest)
+	in := new(LogoutAccountRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func _AccountService_Logout_Handler(srv interface{}, ctx context.Context, dec fu
 		FullMethod: AccountService_Logout_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).Logout(ctx, req.(*LogoutAccountSessionRequest))
+		return srv.(AccountServiceServer).Logout(ctx, req.(*LogoutAccountRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -308,20 +308,20 @@ func _AccountService_VerifyRecentAuthentication_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AccountService_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListAccountSessionsRequest)
+func _AccountService_ListRefreshTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAccountRefreshTokensRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AccountServiceServer).ListSessions(ctx, in)
+		return srv.(AccountServiceServer).ListRefreshTokens(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AccountService_ListSessions_FullMethodName,
+		FullMethod: AccountService_ListRefreshTokens_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).ListSessions(ctx, req.(*ListAccountSessionsRequest))
+		return srv.(AccountServiceServer).ListRefreshTokens(ctx, req.(*ListAccountRefreshTokensRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -362,20 +362,20 @@ func _AccountService_RedeemAccountSetup_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AccountService_RevokeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RevokeAccountSessionRequest)
+func _AccountService_RevokeRefreshToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeAccountRefreshTokenRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AccountServiceServer).RevokeSession(ctx, in)
+		return srv.(AccountServiceServer).RevokeRefreshToken(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AccountService_RevokeSession_FullMethodName,
+		FullMethod: AccountService_RevokeRefreshToken_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).RevokeSession(ctx, req.(*RevokeAccountSessionRequest))
+		return srv.(AccountServiceServer).RevokeRefreshToken(ctx, req.(*RevokeAccountRefreshTokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -408,8 +408,8 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AccountService_VerifyRecentAuthentication_Handler,
 		},
 		{
-			MethodName: "ListSessions",
-			Handler:    _AccountService_ListSessions_Handler,
+			MethodName: "ListRefreshTokens",
+			Handler:    _AccountService_ListRefreshTokens_Handler,
 		},
 		{
 			MethodName: "ChangePassword",
@@ -420,8 +420,8 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AccountService_RedeemAccountSetup_Handler,
 		},
 		{
-			MethodName: "RevokeSession",
-			Handler:    _AccountService_RevokeSession_Handler,
+			MethodName: "RevokeRefreshToken",
+			Handler:    _AccountService_RevokeRefreshToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

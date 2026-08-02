@@ -6,7 +6,7 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
 
-// AccountState 是账号持久状态；只有 active 账号可以登录或持有 session。
+// AccountState 是账号持久状态；只有 active 账号可以登录或持有 refresh token。
 enum AccountState {
   ACCOUNT_STATE_UNSPECIFIED = 0;
   ACCOUNT_STATE_PENDING = 1;
@@ -22,7 +22,7 @@ enum AccountRole {
   ACCOUNT_ROLE_ADMIN = 3;
 }
 
-// AccountProfile 是账号持久投影，不包含密码 verifier 或 session secret。
+// AccountProfile 是账号持久投影，不包含密码 verifier 或 token secret。
 message AccountProfile {
   string account_id = 1;
   string email = 2;
@@ -33,10 +33,10 @@ message AccountProfile {
   google.protobuf.Timestamp updated_at = 7;
 }
 
-// AccountSessionCredential 只在创建或轮换 session 时返回原始 token。
-message AccountSessionCredential {
-  string session_id = 1;
-  bytes access_token = 2;
+// AccountTokenCredential 只在登录或轮换 refresh token 时返回原始 token。
+message AccountTokenCredential {
+  string refresh_id = 1;
+  string access_token = 2;
   bytes refresh_token = 3;
   google.protobuf.Timestamp access_expires_at = 4;
   google.protobuf.Timestamp refresh_expires_at = 5;
@@ -51,23 +51,20 @@ message LoginAccountRequest {
 message LoginAccountResponse {
   AccountProfile account = 1;
   repeated AccountRole roles = 2;
-  AccountSessionCredential session = 3;
+  AccountTokenCredential credential = 3;
 }
 
-message RefreshAccountSessionRequest { bytes refresh_token = 1; }
+message RefreshAccountTokenRequest { bytes refresh_token = 1; }
 
-message RefreshAccountSessionResponse {
+message RefreshAccountTokenResponse {
   AccountProfile account = 1;
   repeated AccountRole roles = 2;
-  AccountSessionCredential session = 3;
+  AccountTokenCredential credential = 3;
 }
 
-message LogoutAccountSessionRequest {
-  string session_id = 1;
-  bool all_sessions = 2;
-}
+message LogoutAccountRequest { bool all_refresh_tokens = 1; }
 
-message LogoutAccountSessionResponse {}
+message LogoutAccountResponse {}
 
 message GetCurrentAccountRequest {}
 
@@ -81,21 +78,21 @@ message VerifyRecentAuthenticationRequest { string password = 1; }
 
 message VerifyRecentAuthenticationResponse {
   google.protobuf.Timestamp expires_at = 1;
+  AccountTokenCredential credential = 2;
 }
 
-// AccountSessionProjection 是用户可见的 session 元数据，不包含任何 token 摘要或原始 credential。
-message AccountSessionProjection {
-  string session_id = 1;
+// AccountRefreshTokenProjection 是用户可见的持久登录凭据元数据，不包含 token 摘要或原始值。
+message AccountRefreshTokenProjection {
+  string refresh_id = 1;
   bool current = 2;
   google.protobuf.Timestamp created_at = 3;
-  google.protobuf.Timestamp access_expires_at = 4;
-  google.protobuf.Timestamp refresh_expires_at = 5;
-  google.protobuf.Timestamp recent_auth_expires_at = 6;
-  uint64 revision = 7;
+  google.protobuf.Timestamp expires_at = 4;
+  google.protobuf.Timestamp recent_auth_expires_at = 5;
+  uint64 revision = 6;
 }
 
-message ListAccountSessionsRequest {}
-message ListAccountSessionsResponse { repeated AccountSessionProjection sessions = 1; }
+message ListAccountRefreshTokensRequest {}
+message ListAccountRefreshTokensResponse { repeated AccountRefreshTokenProjection refresh_tokens = 1; }
 
 message ChangeAccountPasswordRequest {
   string current_password = 1;
@@ -110,21 +107,21 @@ message RedeemAccountSetupRequest {
 message RedeemAccountSetupResponse {
   AccountProfile account = 1;
   repeated AccountRole roles = 2;
-  AccountSessionCredential session = 3;
+  AccountTokenCredential credential = 3;
 }
 
-message RevokeAccountSessionRequest { string session_id = 1; }
-message RevokeAccountSessionResponse {}
+message RevokeAccountRefreshTokenRequest { string refresh_id = 1; }
+message RevokeAccountRefreshTokenResponse {}
 
-// AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
+// AccountService 是账号、credential、Access JWT 和 Refresh token 的唯一公共应用 API。
 service AccountService {
   rpc Login(LoginAccountRequest) returns (LoginAccountResponse);
-  rpc Refresh(RefreshAccountSessionRequest) returns (RefreshAccountSessionResponse);
-  rpc Logout(LogoutAccountSessionRequest) returns (LogoutAccountSessionResponse);
+  rpc Refresh(RefreshAccountTokenRequest) returns (RefreshAccountTokenResponse);
+  rpc Logout(LogoutAccountRequest) returns (LogoutAccountResponse);
   rpc GetCurrent(GetCurrentAccountRequest) returns (GetCurrentAccountResponse);
   rpc VerifyRecentAuthentication(VerifyRecentAuthenticationRequest) returns (VerifyRecentAuthenticationResponse);
-  rpc ListSessions(ListAccountSessionsRequest) returns (ListAccountSessionsResponse);
+  rpc ListRefreshTokens(ListAccountRefreshTokensRequest) returns (ListAccountRefreshTokensResponse);
   rpc ChangePassword(ChangeAccountPasswordRequest) returns (ChangeAccountPasswordResponse);
   rpc RedeemAccountSetup(RedeemAccountSetupRequest) returns (RedeemAccountSetupResponse);
-  rpc RevokeSession(RevokeAccountSessionRequest) returns (RevokeAccountSessionResponse);
+  rpc RevokeRefreshToken(RevokeAccountRefreshTokenRequest) returns (RevokeAccountRefreshTokenResponse);
 }

@@ -10,11 +10,11 @@ import (
 
 type identityContextKey struct{}
 
-// Identity 是 transport 校验 session 后注入 context 的账号身份。
+// Identity 是 transport 验证 Access JWT 后注入 context 的账号身份。
 type Identity struct {
 	Account             *cloudv1.AccountProfile
 	Roles               []cloudv1.AccountRole
-	SessionID           string
+	RefreshID           string
 	RecentAuthExpiresAt time.Time
 	CSRFDigest          [sha256.Size]byte
 }
@@ -37,5 +37,5 @@ func ContextWithIdentity(ctx context.Context, identity Identity) context.Context
 // IdentityFromContext 返回 transport 已验证的身份；缺失时调用方必须拒绝请求。
 func IdentityFromContext(ctx context.Context) (Identity, bool) {
 	identity, ok := ctx.Value(identityContextKey{}).(Identity)
-	return identity, ok && identity.Account != nil && identity.SessionID != ""
+	return identity, ok && identity.Account != nil && identity.RefreshID != ""
 }

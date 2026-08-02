@@ -56,7 +56,7 @@ SHA256SUMS
 ## 首次安装
 
 1. 创建专用 `anytty` 和 `anytty-edge` 服务账号。
-2. 创建 PostgreSQL 数据库、TLS/CA、三个 Ed25519 签名密钥和 operator password file。
+2. 创建 PostgreSQL 数据库、TLS/CA、四个独立用途的 Ed25519 签名密钥和 operator password file。账号 JWT 私钥保存为 `/etc/anytty/cloud/pki/account-token-signing-key.pem`，不得复用 config、artifact 或 binding 密钥。
 3. 从 `controller.env.example` 创建 `/etc/anytty/cloud/controller.env`，权限设为 `0600`。
 4. 安装 systemd 与 Nginx 模板，按实际域名调整证书路径。
 5. 运行数据库 migration，再启动 Controller。
@@ -98,6 +98,8 @@ psql -c "SELECT
 3. 确认旧数据可放弃时也要记录批准和归档结果，再显式清空三张旧表；否则 migration runner 仍会拒绝版本 7。
 
 `0009_edge_deletion.sql` 不删除 Relay 历史，只解除历史记录对 Edge deployment 的外键占用。新 Relay reservation 仍会先锁定并校验有效 Edge；删除旧 Edge 后，历史记录继续保留原 Edge UUID 用于归因。
+
+`0010_account_refresh_tokens.sql` 把账号登录表缩减为 Refresh Token 持久记录并删除 Access Token 摘要。现有 Refresh Token 摘要会保留，Web 在旧 Access Cookie 收到 401 后可轮换得到 JWT。执行迁移前必须已经创建账号 JWT 私钥、配置 `ANYTTY_CLOUD_ACCOUNT_TOKEN_KEY_ID`，并安装包含 `--account-token-signing-key` 参数的新 systemd 模板。
 
 ## 私密备份
 

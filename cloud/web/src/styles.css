@@ -434,7 +434,7 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .detail-list div:last-child { border-bottom: 0; }
 .detail-list dd { margin: 0; overflow-wrap: anywhere; }
 .security-grid > .plain-section:nth-child(2) form { padding: 17px; }
-.sessions-section { margin-top: 18px; }
+.credentials-section { margin-top: 18px; }
 .state-page { min-height: 55vh; display: grid; place-items: center; align-content: center; gap: 12px; text-align: center; }
 .state-page svg { color: var(--accent); }
 .state-page p { color: var(--muted); }

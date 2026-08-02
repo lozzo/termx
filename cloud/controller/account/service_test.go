@@ -2,6 +2,7 @@ package account_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
 	"strings"
@@ -15,7 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestAccountSelfServiceUsesAuthenticatedAccountAndCurrentSession(t *testing.T) {
+func TestAccountSelfServiceUsesAuthenticatedAccountAndCurrentRefreshToken(t *testing.T) {
 	now := time.Unix(1_000, 0).UTC()
 	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
 	if err != nil {
@@ -24,37 +25,37 @@ func TestAccountSelfServiceUsesAuthenticatedAccountAndCurrentSession(t *testing.
 	profile := &cloudv1.AccountProfile{AccountId: "account-a", Email: "a@example.com", DisplayName: "账号 A", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1, UpdatedAt: timestamppb.New(now)}
 	store := &accountStoreFake{
 		records: map[string]account.Record{"account-a": {Profile: profile, PasswordHash: hash, CredentialRevision: 1, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}}},
-		sessions: []account.Session{
-			{ID: "session-current", AccountID: "account-a", CreatedAt: now, AccessExpiresAt: now.Add(time.Hour), RefreshExpiresAt: now.Add(24 * time.Hour), RecentAuthExpiresAt: now.Add(10 * time.Minute), Revision: 1},
-			{ID: "session-other", AccountID: "account-a", CreatedAt: now, AccessExpiresAt: now.Add(time.Hour), RefreshExpiresAt: now.Add(24 * time.Hour), Revision: 2},
-			{ID: "session-b", AccountID: "account-b", CreatedAt: now, AccessExpiresAt: now.Add(time.Hour), RefreshExpiresAt: now.Add(24 * time.Hour), Revision: 1},
+		refreshTokens: []account.RefreshToken{
+			{ID: "refresh-current", AccountID: "account-a", CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), RecentAuthExpiresAt: now.Add(10 * time.Minute), Revision: 1},
+			{ID: "refresh-other", AccountID: "account-a", CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), Revision: 2},
+			{ID: "refresh-b", AccountID: "account-b", CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), Revision: 1},
 		},
 	}
-	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+	service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, SessionID: "session-current", RecentAuthExpiresAt: now.Add(time.Minute)})
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, RefreshID: "refresh-current", RecentAuthExpiresAt: now.Add(time.Minute)})
 
-	listed, err := service.ListSessions(ctx, &cloudv1.ListAccountSessionsRequest{})
+	listed, err := service.ListRefreshTokens(ctx, &cloudv1.ListAccountRefreshTokensRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.GetSessions()) != 2 || listed.GetSessions()[0].GetSessionId() != "session-current" || !listed.GetSessions()[0].GetCurrent() {
-		t.Fatalf("unexpected session projection: %+v", listed.GetSessions())
+	if len(listed.GetRefreshTokens()) != 2 || listed.GetRefreshTokens()[0].GetRefreshId() != "refresh-current" || !listed.GetRefreshTokens()[0].GetCurrent() {
+		t.Fatalf("unexpected refresh token projection: %+v", listed.GetRefreshTokens())
 	}
 	if store.listedAccountID != "account-a" {
-		t.Fatalf("session list used account %q", store.listedAccountID)
+		t.Fatalf("refresh token list used account %q", store.listedAccountID)
 	}
 
-	if _, err := service.RevokeSession(ctx, &cloudv1.RevokeAccountSessionRequest{SessionId: "session-other"}); err != nil {
+	if _, err := service.RevokeRefreshToken(ctx, &cloudv1.RevokeAccountRefreshTokenRequest{RefreshId: "refresh-other"}); err != nil {
 		t.Fatal(err)
 	}
-	if store.revokedAccountID != "account-a" || store.revokedSessionID != "session-other" {
-		t.Fatalf("revoke scope account=%q session=%q", store.revokedAccountID, store.revokedSessionID)
+	if store.revokedAccountID != "account-a" || store.revokedRefreshID != "refresh-other" {
+		t.Fatalf("revoke scope account=%q refresh=%q", store.revokedAccountID, store.revokedRefreshID)
 	}
-	if _, err := service.RevokeSession(ctx, &cloudv1.RevokeAccountSessionRequest{SessionId: "session-current"}); !errors.Is(err, account.ErrUnauthenticated) {
-		t.Fatalf("current session revoke error=%v", err)
+	if _, err := service.RevokeRefreshToken(ctx, &cloudv1.RevokeAccountRefreshTokenRequest{RefreshId: "refresh-current"}); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("current refresh token revoke error=%v", err)
 	}
 
 	changed, err := service.ChangePassword(ctx, &cloudv1.ChangeAccountPasswordRequest{CurrentPassword: "current-password", NewPassword: "new-password"})
@@ -66,6 +67,77 @@ func TestAccountSelfServiceUsesAuthenticatedAccountAndCurrentSession(t *testing.
 	}
 	if bcrypt.CompareHashAndPassword(store.passwordHash, []byte("new-password")) != nil {
 		t.Fatal("new password hash does not verify")
+	}
+}
+
+func TestAccessJWTAndRefreshTokenLifecycle(t *testing.T) {
+	now := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
+	clock := now
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &cloudv1.AccountProfile{AccountId: "account-jwt", Email: "jwt@example.com", DisplayName: "JWT User", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 7}
+	record := account.Record{Profile: profile, PasswordHash: hash, CredentialRevision: 1, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}}
+	store := &accountStoreFake{records: map[string]account.Record{profile.GetAccountId(): record}, loginRecords: map[string]account.Record{profile.GetEmail(): record}}
+	service, err := newAccountService(account.Config{Store: store, AccessTTL: 15 * time.Minute, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return clock }})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	login, err := service.Login(context.Background(), &cloudv1.LoginAccountRequest{Login: profile.GetEmail(), Password: "current-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := login.GetCredential()
+	if credential.GetAccessToken() == "" || len(credential.GetRefreshToken()) == 0 || len(store.refreshTokens) != 1 {
+		t.Fatalf("login credential=%v stored=%d", credential, len(store.refreshTokens))
+	}
+	identity, err := service.AuthenticateAccess(context.Background(), []byte(credential.GetAccessToken()))
+	if err != nil || identity.Account.GetAccountId() != profile.GetAccountId() || identity.RefreshID != credential.GetRefreshId() {
+		t.Fatalf("identity=%+v err=%v", identity, err)
+	}
+
+	tampered := []byte(credential.GetAccessToken())
+	signatureStart := strings.LastIndexByte(string(tampered), '.') + 1
+	if tampered[signatureStart] == 'A' {
+		tampered[signatureStart] = 'B'
+	} else {
+		tampered[signatureStart] = 'A'
+	}
+	if _, err := service.AuthenticateAccess(context.Background(), tampered); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("tampered JWT error=%v", err)
+	}
+
+	refreshed, err := service.Refresh(context.Background(), &cloudv1.RefreshAccountTokenRequest{RefreshToken: credential.GetRefreshToken()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.GetCredential().GetRefreshId() == credential.GetRefreshId() || refreshed.GetCredential().GetAccessToken() == credential.GetAccessToken() {
+		t.Fatal("refresh did not rotate both credentials")
+	}
+	if _, err := service.Refresh(context.Background(), &cloudv1.RefreshAccountTokenRequest{RefreshToken: credential.GetRefreshToken()}); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("reused refresh token error=%v", err)
+	}
+
+	refreshedIdentity, err := service.AuthenticateAccess(context.Background(), []byte(refreshed.GetCredential().GetAccessToken()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logoutContext := account.ContextWithIdentity(context.Background(), refreshedIdentity)
+	if _, err := service.Logout(logoutContext, &cloudv1.LogoutAccountRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Refresh(context.Background(), &cloudv1.RefreshAccountTokenRequest{RefreshToken: refreshed.GetCredential().GetRefreshToken()}); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("refresh after logout error=%v", err)
+	}
+	if _, err := service.AuthenticateAccess(context.Background(), []byte(refreshed.GetCredential().GetAccessToken())); err != nil {
+		t.Fatalf("logout must not require a per-request JWT database lookup: %v", err)
+	}
+
+	clock = now.Add(16 * time.Minute)
+	if _, err := service.AuthenticateAccess(context.Background(), []byte(refreshed.GetCredential().GetAccessToken())); !errors.Is(err, account.ErrUnauthenticated) {
+		t.Fatalf("expired JWT error=%v", err)
 	}
 }
 
@@ -89,11 +161,11 @@ func TestChangePasswordDistinguishesAuthenticationFromNewPasswordValidation(t *t
 	for _, test := range newPasswordTests {
 		t.Run(test.name, func(t *testing.T) {
 			store := &accountStoreFake{records: map[string]account.Record{"account-change": {Profile: profile, PasswordHash: currentHash, CredentialRevision: 1}}}
-			service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+			service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, SessionID: "session-change"})
+			ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, RefreshID: "refresh-change"})
 			if _, err := service.ChangePassword(ctx, &cloudv1.ChangeAccountPasswordRequest{CurrentPassword: "current-password", NewPassword: test.password}); !errors.Is(err, account.ErrInvalidArgument) {
 				t.Fatalf("new password validation error=%v", err)
 			}
@@ -104,11 +176,11 @@ func TestChangePasswordDistinguishesAuthenticationFromNewPasswordValidation(t *t
 	}
 
 	store := &accountStoreFake{records: map[string]account.Record{"account-change": {Profile: profile, PasswordHash: currentHash, CredentialRevision: 1}}}
-	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+	service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, SessionID: "session-change"})
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, RefreshID: "refresh-change"})
 	if _, err := service.ChangePassword(ctx, &cloudv1.ChangeAccountPasswordRequest{CurrentPassword: "wrong-password", NewPassword: strings.Repeat("a", 7)}); !errors.Is(err, account.ErrUnauthenticated) {
 		t.Fatalf("wrong current password with malformed new password error=%v", err)
 	}
@@ -123,7 +195,7 @@ func TestUnknownLoginPerformsDummyBcryptTimingContract(t *testing.T) {
 	store := &accountStoreFake{loginRecords: map[string]account.Record{
 		"known@example.com": {Profile: &cloudv1.AccountProfile{AccountId: "known", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE}, PasswordHash: hash, CredentialRevision: 1},
 	}}
-	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 6, Now: func() time.Time { return now }})
+	service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: 6, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +246,12 @@ func TestPasswordContractUsesUTF8Bytes(t *testing.T) {
 				Profile:      &cloudv1.AccountProfile{AccountId: "account-password", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE, Revision: 1},
 				PasswordHash: hash, CredentialRevision: 1, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER},
 			}}}
-			service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
+			service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
 			if err != nil {
 				t.Fatal(err)
 			}
 			response, err := service.Login(context.Background(), &cloudv1.LoginAccountRequest{Login: "user@example.com", Password: test.password})
-			if test.valid && (err != nil || response.GetSession() == nil) {
+			if test.valid && (err != nil || response.GetCredential() == nil) {
 				t.Fatalf("valid password rejected: response=%v err=%v", response, err)
 			}
 			if !test.valid && !errors.Is(err, account.ErrUnauthenticated) {
@@ -192,17 +264,17 @@ func TestPasswordContractUsesUTF8Bytes(t *testing.T) {
 func TestProvisionAccountRequiresRecentAdmin(t *testing.T) {
 	now := time.Unix(3_000, 0).UTC()
 	store := &accountStoreFake{}
-	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+	service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	profile := &cloudv1.AccountProfile{AccountId: "admin"}
 	request := &cloudv1.ProvisionAccountRequest{Email: " User@Example.com ", DisplayName: " New User ", Reason: " approved request "}
-	userContext := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, SessionID: "session", RecentAuthExpiresAt: now.Add(time.Minute)})
+	userContext := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, RefreshID: "refresh", RecentAuthExpiresAt: now.Add(time.Minute)})
 	if _, err := service.ProvisionAccount(userContext, request); !errors.Is(err, account.ErrForbidden) {
 		t.Fatalf("non-admin provision error = %v", err)
 	}
-	adminContext := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN}, SessionID: "session", RecentAuthExpiresAt: now.Add(time.Minute)})
+	adminContext := account.ContextWithIdentity(context.Background(), account.Identity{Account: profile, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN}, RefreshID: "refresh", RecentAuthExpiresAt: now.Add(time.Minute)})
 	response, err := service.ProvisionAccount(adminContext, request)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +295,7 @@ func TestBootstrapCreatesOnceAndValidatesExistingWithoutUsingCandidatePassword(t
 	}
 	valid := account.Record{Profile: &cloudv1.AccountProfile{AccountId: "admin", Email: "admin@example.com", State: cloudv1.AccountState_ACCOUNT_STATE_ACTIVE}, PasswordHash: hash, CredentialRevision: 1, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER, cloudv1.AccountRole_ACCOUNT_ROLE_ADMIN}}
 	store := &accountStoreFake{loginRecords: map[string]account.Record{"admin@example.com": valid}}
-	service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
+	service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +327,7 @@ func TestBootstrapRejectsInvalidExistingAccountBranches(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			store := &accountStoreFake{loginRecords: map[string]account.Record{"admin@example.com": test.record}}
-			service, err := account.New(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
+			service, err := newAccountService(account.Config{Store: store, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute, SetupTTL: time.Hour, BcryptCost: bcrypt.MinCost})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -268,9 +340,9 @@ func TestBootstrapRejectsInvalidExistingAccountBranches(t *testing.T) {
 
 type accountStoreFake struct {
 	records                            map[string]account.Record
-	sessions                           []account.Session
+	refreshTokens                      []account.RefreshToken
 	listedAccountID                    string
-	revokedAccountID, revokedSessionID string
+	revokedAccountID, revokedRefreshID string
 	passwordAccountID                  string
 	passwordHash                       []byte
 	loginRecords                       map[string]account.Record
@@ -313,43 +385,66 @@ func (store *accountStoreFake) AccountByID(_ context.Context, accountID string) 
 	}
 	return record, nil
 }
-func (store *accountStoreFake) CreateSession(_ context.Context, record account.Record, _ account.Session, _ time.Time) (account.Record, error) {
+
+func newAccountService(config account.Config) (*account.Service, error) {
+	config.AccessSigningKey = ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	config.AccessSigningKeyID = "account-test-key"
+	config.AccessIssuer = "https://cloud.example.test"
+	config.AccessAudience = "anytty-cloud-web"
+	return account.New(config)
+}
+
+func (store *accountStoreFake) CreateRefreshToken(_ context.Context, record account.Record, refresh account.RefreshToken, _ time.Time) (account.Record, error) {
+	store.refreshTokens = append(store.refreshTokens, refresh)
 	return record, nil
 }
-func (store *accountStoreFake) SessionByAccessDigest(context.Context, [sha256.Size]byte) (account.Session, error) {
-	return account.Session{}, errors.New("not found")
+func (store *accountStoreFake) RefreshTokenByDigest(_ context.Context, digest [sha256.Size]byte) (account.RefreshToken, error) {
+	for _, refresh := range store.refreshTokens {
+		if refresh.TokenDigest == digest {
+			return refresh, nil
+		}
+	}
+	return account.RefreshToken{}, errors.New("not found")
 }
-func (store *accountStoreFake) SessionByRefreshDigest(context.Context, [sha256.Size]byte) (account.Session, error) {
-	return account.Session{}, errors.New("not found")
+func (store *accountStoreFake) RotateRefreshToken(_ context.Context, previous, next account.RefreshToken, _ time.Time) (account.Record, error) {
+	for index := range store.refreshTokens {
+		if store.refreshTokens[index].ID == previous.ID {
+			store.refreshTokens[index].Revoked = true
+		}
+	}
+	store.refreshTokens = append(store.refreshTokens, next)
+	return store.records[previous.AccountID], nil
 }
-func (store *accountStoreFake) RotateSession(context.Context, account.Session, account.Session, time.Time) (account.Record, error) {
-	return account.Record{}, nil
-}
-func (store *accountStoreFake) RevokeSession(_ context.Context, accountID, sessionID string, _ bool) error {
-	store.revokedAccountID, store.revokedSessionID = accountID, sessionID
+func (store *accountStoreFake) RevokeRefreshToken(_ context.Context, accountID, refreshID string, all bool) error {
+	store.revokedAccountID, store.revokedRefreshID = accountID, refreshID
+	for index := range store.refreshTokens {
+		if store.refreshTokens[index].AccountID == accountID && (all || store.refreshTokens[index].ID == refreshID) {
+			store.refreshTokens[index].Revoked = true
+		}
+	}
 	return nil
 }
 func (store *accountStoreFake) SetRecentAuthentication(context.Context, string, string, account.Record, time.Time, time.Time) error {
 	return nil
 }
-func (store *accountStoreFake) ListAccountSessions(_ context.Context, accountID string, now time.Time) ([]account.Session, error) {
+func (store *accountStoreFake) ListAccountRefreshTokens(_ context.Context, accountID string, now time.Time) ([]account.RefreshToken, error) {
 	store.listedAccountID = accountID
-	var result []account.Session
-	for _, session := range store.sessions {
-		if session.AccountID == accountID && !session.Revoked && now.Before(session.RefreshExpiresAt) {
-			result = append(result, session)
+	var result []account.RefreshToken
+	for _, refresh := range store.refreshTokens {
+		if refresh.AccountID == accountID && !refresh.Revoked && now.Before(refresh.ExpiresAt) {
+			result = append(result, refresh)
 		}
 	}
 	return result, nil
 }
-func (store *accountStoreFake) UpdatePassword(_ context.Context, accountID string, _ account.Record, hash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
+func (store *accountStoreFake) UpdatePassword(_ context.Context, accountID, _ string, _ account.Record, hash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
 	store.passwordAccountID, store.passwordHash = accountID, append([]byte(nil), hash...)
 	profile := proto.Clone(store.records[accountID].Profile).(*cloudv1.AccountProfile)
 	profile.Revision++
 	profile.UpdatedAt = timestamppb.New(now)
 	return profile, nil
 }
-func (store *accountStoreFake) RedeemAccountSetup(context.Context, [sha256.Size]byte, []byte, account.Session, time.Time) (account.Record, error) {
+func (store *accountStoreFake) RedeemAccountSetup(context.Context, [sha256.Size]byte, []byte, account.RefreshToken, time.Time) (account.Record, error) {
 	return account.Record{}, account.ErrSetupCredentialInvalid
 }
 func (store *accountStoreFake) ResetAccountSetup(context.Context, string, string, string, [sha256.Size]byte, time.Time, time.Time) (*cloudv1.AccountProfile, error) {

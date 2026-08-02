@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/exp/ordered v0.1.0
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/klauspost/compress v1.18.7

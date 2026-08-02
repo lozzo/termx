@@ -128,6 +128,7 @@ export function DocsPage() {
               <li><ShieldCheck size={18} />Controller 不转发 terminal、file、SDP、ICE 或 CapabilityGrant 数据。</li>
               <li><ShieldCheck size={18} />Edge 负责准入和转发，不能提升客户端权限，也不能读取端到端终端内容。</li>
               <li><ShieldCheck size={18} />AgentGateway 与 ClientGateway 都使用 Edge 先发 challenge，握手 proof 绑定连接上下文。</li>
+              <li><ShieldCheck size={18} />Cloud 控制台使用 15 分钟 Access JWT 本地验签，Refresh Token 轮换并只以摘要持久化。</li>
               <li><ShieldCheck size={18} />私钥、完整凭据、配对 claim 和终端内容不得进入日志。</li>
             </ul>
           </section>

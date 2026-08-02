@@ -21,7 +21,7 @@ func TestCommerceSelfServiceDerivesAccountAndDevelopmentProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "account-a"}, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, SessionID: "session-a"})
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "account-a"}, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_USER}, RefreshID: "refresh-a"})
 
 	_, err = service.CreateMyOrder(ctx, &cloudv1.CreateMyOrderRequest{PlanId: "pro", PlanVersion: 2, IdempotencyKey: "idem-a", RequestedTransition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_ACTIVATE})
 	if err != nil {
@@ -79,7 +79,7 @@ func TestDevelopmentPaymentIsExplicitlyDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "account-a"}, SessionID: "session-a"})
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "account-a"}, RefreshID: "refresh-a"})
 	if _, err := service.CreateMyOrder(ctx, &cloudv1.CreateMyOrderRequest{}); !errors.Is(err, commerce.ErrInvalidTransition) {
 		t.Fatalf("disabled development order error=%v", err)
 	}

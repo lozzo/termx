@@ -30,7 +30,7 @@ func TestDaemonManagementDerivesAccountForEnrollmentAndStateChange(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "11111111-1111-1111-1111-111111111111", DisplayName: "账号 A"}, SessionID: "session-a"})
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "11111111-1111-1111-1111-111111111111", DisplayName: "账号 A"}, RefreshID: "refresh-a"})
 
 	created, err := service.CreateMyEnrollment(ctx, &cloudv1.CreateMyDaemonEnrollmentRequest{DaemonName: "  开发 Mac  "})
 	if err != nil {
@@ -51,7 +51,7 @@ func TestDaemonManagementDerivesAccountForEnrollmentAndStateChange(t *testing.T)
 		t.Fatalf("change account=%q reason=%q response=%+v", persistent.accountID, persistent.reason, changed)
 	}
 
-	other := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "22222222-2222-2222-2222-222222222222"}, SessionID: "session-b"})
+	other := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "22222222-2222-2222-2222-222222222222"}, RefreshID: "refresh-b"})
 	if _, err := service.ChangeMyDaemonState(other, &cloudv1.ChangeMyDaemonStateRequest{DaemonId: "daemon-a", TargetState: cloudv1.DaemonState_DAEMON_STATE_DELETED, ExpectedStateRevision: 5, Reason: "越权"}); !errors.Is(err, errManagementOwnership) {
 		t.Fatalf("cross-account change error=%v", err)
 	}

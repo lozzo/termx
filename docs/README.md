@@ -15,6 +15,7 @@
 - [终端实时画面与历史](TERMINAL_DELIVERY.md)
 - [扫码配对](PAIRING_PROTOCOL.md)
 - [Cloud daemon 生命周期](CLOUD_DAEMON_LIFECYCLE.md)
+- [Cloud 账号认证](CLOUD_ACCOUNT_AUTH.md)
 - [TUI 完整配置模板](../tui/docs/tui-v3.example.yaml)
 
 ## 运维
