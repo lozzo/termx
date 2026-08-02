@@ -16,6 +16,8 @@ export default defineConfig([
     '.artifacts/**',
     'cloud/controller/apihttp/web/**',
     'clients/mobile/android/**',
+    'clients/mobile/ios/App/App/public/**',
+    'clients/mobile/ios/DerivedData*/**',
     'clients/mobile/public/third-party/**',
     'clients/ui/public/*-wasm/**',
   ]),

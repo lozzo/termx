@@ -44,7 +44,7 @@ describe('RemoteControlApp reauthorization', () => {
       />,
     )
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Scan service QR' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add device' }))
     const initialSheet = screen.getByTestId('anytty-pair-sheet')
     await userEvent.click(within(initialSheet).getByRole('button', { name: 'Scan QR with camera' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Simulate authorization failure' }))
