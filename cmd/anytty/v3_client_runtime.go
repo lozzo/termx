@@ -216,6 +216,20 @@ func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint
 }
 
 func cliCloudClientFromEnvironment(bootID string) (*cloudclient.Client, error) {
+	endpoint, err := cliCloudControllerEndpointFromEnvironment()
+	if err != nil {
+		return nil, err
+	}
+	return cloudclient.NewClient(cloudclient.Config{ControllerAddress: endpoint.address, ControllerServerName: endpoint.serverName, ControllerCAPEM: endpoint.caPEM, BootID: bootID})
+}
+
+type cliCloudControllerEndpoint struct {
+	address    string
+	serverName string
+	caPEM      []byte
+}
+
+func cliCloudControllerEndpointFromEnvironment() (cliCloudControllerEndpoint, error) {
 	address := strings.TrimSpace(os.Getenv("ANYTTY_CLOUD_CONTROLLER_ADDRESS"))
 	serverName := strings.TrimSpace(os.Getenv("ANYTTY_CLOUD_CONTROLLER_SERVER_NAME"))
 	caFile := strings.TrimSpace(os.Getenv("ANYTTY_CLOUD_CONTROLLER_CA"))
@@ -224,17 +238,17 @@ func cliCloudClientFromEnvironment(bootID string) (*cloudclient.Client, error) {
 		serverName = defaultCloudControllerServerName
 	}
 	if address == "" || serverName == "" {
-		return nil, fmt.Errorf("ANYTTY_CLOUD_CONTROLLER_ADDRESS and ANYTTY_CLOUD_CONTROLLER_SERVER_NAME must be configured together")
+		return cliCloudControllerEndpoint{}, fmt.Errorf("ANYTTY_CLOUD_CONTROLLER_ADDRESS and ANYTTY_CLOUD_CONTROLLER_SERVER_NAME must be configured together")
 	}
 	var caPEM []byte
 	if caFile != "" {
 		var err error
 		caPEM, err = os.ReadFile(caFile)
 		if err != nil {
-			return nil, fmt.Errorf("read AnyTTY Cloud Controller CA: %w", err)
+			return cliCloudControllerEndpoint{}, fmt.Errorf("read AnyTTY Cloud Controller CA: %w", err)
 		}
 	}
-	return cloudclient.NewClient(cloudclient.Config{ControllerAddress: address, ControllerServerName: serverName, ControllerCAPEM: caPEM, BootID: bootID})
+	return cliCloudControllerEndpoint{address: address, serverName: serverName, caPEM: caPEM}, nil
 }
 
 type v3PairingRaceResult struct {

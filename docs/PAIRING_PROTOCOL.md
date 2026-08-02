@@ -32,7 +32,7 @@ offer 不包含 daemon 私钥、ClientAccessIdentity 私钥、长期 CapabilityG
 anytty pair create --qr-file ./anytty-pair.png
 ```
 
-默认二维码携带 Direct route。daemon 已注册 Cloud 时，Cloud 配对必须显式指定 route：
+默认二维码携带 Direct route。Cloud 配对必须显式指定 route，并且 daemon 当前已连接 Edge、完成 `ACTIVE` 生命周期确认：
 
 ```sh
 anytty pair create --route cloud --qr-file ./anytty-cloud-pair.png
@@ -95,6 +95,7 @@ daemon 保存：
 | claim 过期，或被其他客户端身份消费 | 拒绝，要求目标服务重新生成 |
 | 同一客户端未收到兑换响应 | 24 小时 delivery grace 内返回原结果；超时后拒绝 |
 | route 不可达 | 保留当前设备列表，可重试仍有效的 offer |
+| daemon 未连接 Edge，或 Cloud 状态不是 `ACTIVE` | 拒绝生成含 Cloud route 的 offer；Direct/SSH 配对不受影响 |
 | SSH host key / daemon identity 不匹配 | 拒绝，不 fallback 到较弱校验 |
 | Edge/Controller 不可达 | Cloud route 失败；不能公开按 daemon ID 猜测位置 |
 | credential 写入失败 | 关闭新 session，不留下半个 endpoint |

@@ -2,6 +2,7 @@
 package enrollment
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -75,6 +76,7 @@ type challengeKind uint8
 
 const (
 	challengeEnrollment challengeKind = iota + 1
+	challengeBindingRefresh
 )
 
 type challengeState struct {
@@ -82,6 +84,7 @@ type challengeState struct {
 	value                 []byte
 	expires               time.Time
 	tokenDigest           []byte
+	daemonID              string
 	deviceID, fingerprint string
 	publicKey             ed25519.PublicKey
 }
@@ -216,8 +219,7 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	claims := &cloudv1.DaemonBindingClaims{BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edge.ID, DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...), Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING}, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), EdgeLocatorSha256: locatorDigest[:]}
-	signed, err := ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
+	signed, err := service.signDaemonBinding(daemon, edge.ID, locatorDigest, now)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -225,6 +227,82 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 		service.config.StateChanged(&cloudv1.DaemonStateRecord{DaemonId: daemon.ID, State: daemon.State, StateRevision: daemon.StateRevision})
 	}
 	return &cloudv1.CompleteDaemonEnrollmentResponse{Daemon: projectDaemon(daemon), DaemonBinding: signed, EdgeLocator: locator}, nil
+}
+
+// BeginDaemonBindingRefresh authenticates an existing daemon from the persistent identity,
+// rather than accepting identity or account material supplied by the caller.
+func (service *Service) BeginDaemonBindingRefresh(ctx context.Context, request *cloudv1.BeginDaemonBindingRefreshRequest) (*cloudv1.IdentityChallenge, error) {
+	if request == nil {
+		return nil, status.Error(codes.InvalidArgument, "daemon binding refresh is incomplete")
+	}
+	daemonID := strings.TrimSpace(request.GetDaemonId())
+	if _, err := uuid.Parse(daemonID); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "daemon ID must be UUID")
+	}
+	daemon, err := service.config.Store.GetDaemon(ctx, daemonID)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, ErrDaemonUnavailable.Error())
+	}
+	return service.newChallenge(challengeState{
+		kind: challengeBindingRefresh, daemonID: daemon.ID,
+		deviceID: daemon.DeviceID, fingerprint: daemon.DeviceFingerprint, publicKey: append(ed25519.PublicKey(nil), daemon.DevicePublicKey...),
+	})
+}
+
+// CompleteDaemonBindingRefresh re-reads lifecycle and identity after proof verification.
+// ACTIVE and BLOCKED keep a control connection; DELETED receives no new route material.
+func (service *Service) CompleteDaemonBindingRefresh(ctx context.Context, request *cloudv1.CompleteDaemonBindingRefreshRequest) (*cloudv1.RefreshDaemonBindingResponse, error) {
+	if request == nil {
+		return nil, status.Error(codes.InvalidArgument, "daemon binding refresh is incomplete")
+	}
+	state, err := service.takeChallenge(request.GetChallengeId(), challengeBindingRefresh)
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err := remoteauth.VerifyDeviceIdentityProof(state.value, state.deviceID, state.fingerprint, state.publicKey, request.GetDeviceProof()); err != nil {
+		return nil, status.Error(codes.Unauthenticated, err.Error())
+	}
+	daemon, err := service.config.Store.GetDaemon(ctx, state.daemonID)
+	if err != nil || daemon.DeviceID != state.deviceID || daemon.DeviceFingerprint != state.fingerprint || !bytes.Equal(daemon.DevicePublicKey, state.publicKey) {
+		return nil, status.Error(codes.NotFound, ErrDaemonUnavailable.Error())
+	}
+	response := &cloudv1.RefreshDaemonBindingResponse{Daemon: projectDaemon(daemon)}
+	if daemon.State == cloudv1.DaemonState_DAEMON_STATE_DELETED {
+		return response, nil
+	}
+	if daemon.State != cloudv1.DaemonState_DAEMON_STATE_ACTIVE && daemon.State != cloudv1.DaemonState_DAEMON_STATE_BLOCKED {
+		return nil, status.Error(codes.FailedPrecondition, ErrDaemonUnavailable.Error())
+	}
+	edge, err := service.selectEdge(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	locator, err := service.projectLocator(ctx, edge)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(locator)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	locatorDigest := sha256.Sum256(locatorPayload)
+	signed, err := service.signDaemonBinding(daemon, edge.ID, locatorDigest, service.now())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	response.DaemonBinding = signed
+	response.EdgeLocator = locator
+	return response, nil
+}
+
+func (service *Service) signDaemonBinding(daemon Daemon, edgeID string, locatorDigest [sha256.Size]byte, now time.Time) (*cloudv1.SignedEnvelope, error) {
+	claims := &cloudv1.DaemonBindingClaims{
+		BindingId: uuid.NewString(), DaemonId: daemon.ID, AccountId: daemon.AccountID, EdgeId: edgeID,
+		DeviceId: daemon.DeviceID, DevicePublicKey: append([]byte(nil), daemon.DevicePublicKey...),
+		Capabilities: []cloudv1.DaemonCapability{cloudv1.DaemonCapability_DAEMON_CAPABILITY_SIGNALING},
+		IssuedAt:     timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.BindingTTL)), EdgeLocatorSha256: locatorDigest[:],
+	}
+	return ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
 }
 
 func (service *Service) selectEdge(ctx context.Context) (edgeconfig.Edge, error) {

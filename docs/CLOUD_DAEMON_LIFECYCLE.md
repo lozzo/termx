@@ -36,7 +36,7 @@ Edge 内存保存 `daemon_id -> DaemonStateRecord`：
 - EdgeControl 断开会清空状态表、关闭 Agent，并排空 Edge 仍跟踪的 Cloud session；不会把旧策略留作离线准入。
 - Edge 重启不从本地数据库恢复 policy，必须重连 Controller 获取 snapshot。
 
-Controller 不持久化在线 Agent connection 或当前连接归属。binding 自身指定允许连接的 Edge；Agent connection ownership 是该 Edge 的内存事实。
+Controller 不持久化在线 Agent connection 或当前连接归属。binding 自身指定允许连接的 Edge；Agent connection ownership 是该 Edge 的内存事实。daemon 本地保存当前 binding 和 locator；Edge 位置失效时，用 DeviceIdentity 向 Controller 换取重新签名的完整 binding 和当前 locator。
 
 ## 4. BLOCKED 与恢复
 
@@ -58,7 +58,7 @@ Edge 收到 `DELETED` 时：
 3. daemon 原子删除 Cloud enrollment record 和 Cloud issuer material。
 4. daemon ACK 后停止 Cloud reconnect，Edge 关闭 AgentGateway。
 
-如果 daemon 删除时离线，绑定 Edge 仍按 policy 拒绝旧 credential。daemon 后续使用旧 binding 重连该 Edge 时，只能完成 cleanup，不能发布业务 Presence；绑定不匹配的其他 Edge 会在身份准入阶段直接拒绝。
+如果 daemon 删除时离线，绑定 Edge 仍按 policy 拒绝旧 credential。daemon 后续能到达原 Edge时只执行 cleanup；原 locator 已失效时，daemon 向 Controller 证明 DeviceIdentity 并读取最新 `DELETED` 状态，不取得新路由材料，随后删除本机 Cloud enrollment。
 
 ## 6. 重连与 ready
 
@@ -79,6 +79,16 @@ Edge 收到 `DELETED` 时：
 4. `BLOCKED` 保留控制连接但不发布业务 Presence。
 5. `DELETED` 只执行 cleanup，完成后断开。
 
+### binding 与 locator 刷新
+
+1. daemon 启动时先使用稳定的 Controller 地址对账；后续当前 Edge 连接失败时再次发起一次性 challenge。
+2. daemon 用本机 DeviceIdentity 私钥签名 challenge；Controller 从 PostgreSQL 读取身份和最新生命周期，不接受客户端提交账号或公钥。
+3. `ACTIVE`/`BLOCKED` 返回 Controller 按当前在线负载选择的 Edge locator，以及绑定该 locator 摘要的新 binding。
+4. daemon 校验响应身份和 binding/locator 一致性，先原子保存 enrollment record，再切换运行时路由并重连。
+5. `DELETED` 只返回终态，不返回 binding 或 locator。
+
+刷新不恢复旧 DNS、旧证书或旧地址，也不在 Controller 持久化 daemon 当前归属 Edge。
+
 ## 7. Web 状态
 
 当前 Cloud Web 展示业务状态和 daemon 是否在线：
@@ -96,6 +106,7 @@ Edge 收到 `DELETED` 时：
 - admission mutation、closer 注册和 session 清理在同一 Edge actor 线性化。
 - 先关闭准入，再关闭已有连接；不能出现 Blocked 后加入的新 session。
 - 旧连接、迟到 command/ACK 和重复 cleanup 不能影响新 generation。
+- daemon 只有在当前 AgentGateway 已 ready、状态为 `ACTIVE` 且 lifecycle ACK 已成功发送后，才可生成含 Cloud route 的二维码或 grant。
 - state payload 不包含 terminal 权限、ClientAccess 私钥或 terminal 内容。
 
 ## 9. 验收场景

@@ -21,9 +21,12 @@ func TestApplyBlockedDrainsCloudSessionsBeforeReturning(t *testing.T) {
 		close(session.done)
 	}()
 	runtime := &Runtime{
-		config:        Config{Record: EnrollmentRecord{DaemonID: "daemon"}},
-		daemonState:   daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_ACTIVE, 1),
-		cloudSessions: map[string]*cloudSession{"session": session},
+		config:            Config{Record: EnrollmentRecord{DaemonID: "daemon"}},
+		record:            EnrollmentRecord{DaemonID: "daemon"},
+		daemonState:       daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_ACTIVE, 1),
+		readyConnectionID: "connection",
+		lifecycleAck:      1,
+		cloudSessions:     map[string]*cloudSession{"session": session},
 	}
 
 	if err := runtime.applyDaemonState(context.Background(), daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_BLOCKED, 2)); err != nil {
@@ -70,6 +73,7 @@ func TestApplyDeletedRemovesOnlyCloudEnrollmentRecord(t *testing.T) {
 	}
 	runtime := &Runtime{
 		config:        Config{Record: EnrollmentRecord{DaemonID: "daemon"}, RecordPath: recordPath, AccessStore: accessStore},
+		record:        EnrollmentRecord{DaemonID: "daemon"},
 		daemonState:   daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_BLOCKED, 2),
 		cloudSessions: make(map[string]*cloudSession),
 	}
@@ -91,6 +95,54 @@ func TestApplyDeletedRemovesOnlyCloudEnrollmentRecord(t *testing.T) {
 	}
 	if payload, err := os.ReadFile(identityPath); err != nil || string(payload) != "identity" {
 		t.Fatalf("device identity changed: payload=%q err=%v", payload, err)
+	}
+}
+
+func TestCloudActiveRequiresCurrentConnectionLifecycleAcknowledgement(t *testing.T) {
+	runtime := &Runtime{
+		record:        EnrollmentRecord{DaemonID: "daemon"},
+		daemonState:   daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_ACTIVE, 4),
+		cloudSessions: make(map[string]*cloudSession),
+	}
+	if runtime.cloudActive() {
+		t.Fatal("disconnected daemon reported Cloud active")
+	}
+	runtime.markAgentReady("connection-new")
+	if runtime.cloudActive() {
+		t.Fatal("unacknowledged lifecycle reported Cloud active")
+	}
+	runtime.markLifecycleAcknowledged("connection-old", 4)
+	if runtime.cloudActive() {
+		t.Fatal("stale connection acknowledgement reported Cloud active")
+	}
+	runtime.markLifecycleAcknowledged("connection-new", 4)
+	if !runtime.cloudActive() {
+		t.Fatal("ready connection with acknowledged ACTIVE lifecycle did not report Cloud active")
+	}
+	if err := runtime.applyDaemonState(context.Background(), daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_BLOCKED, 5)); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.cloudActive() {
+		t.Fatal("BLOCKED lifecycle remained Cloud active")
+	}
+	if err := runtime.applyDaemonState(context.Background(), daemonLifecycleState("daemon", cloudv1.DaemonState_DAEMON_STATE_ACTIVE, 6)); err != nil {
+		t.Fatal(err)
+	}
+	runtime.markLifecycleAcknowledged("connection-new", 5)
+	if runtime.cloudActive() {
+		t.Fatal("restored ACTIVE lifecycle accepted stale acknowledgement")
+	}
+	runtime.markLifecycleAcknowledged("connection-new", 6)
+	if !runtime.cloudActive() {
+		t.Fatal("restored ACTIVE lifecycle did not accept its current acknowledgement")
+	}
+	runtime.clearAgentReady("connection-old")
+	if !runtime.cloudActive() {
+		t.Fatal("stale connection cleanup cleared the current connection")
+	}
+	runtime.clearAgentReady("connection-new")
+	if runtime.cloudActive() {
+		t.Fatal("disconnected current connection remained Cloud active")
 	}
 }
 

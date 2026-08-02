@@ -227,6 +227,18 @@ journalctl -u anytty-cloud-edge --since -10min
 
 国内 Edge 额外确认 `cn1.anytty-edge.omscd.com` 解析到实际主机、证书 SAN 匹配域名，并从中国大陆网络测试 TCP/UDP Relay 端口。
 
+### 4. 托管证书轮换
+
+域名或证书内容变化时，在运营控制台替换当前 certificate profile；不要重新 bootstrap Edge。新证书的 SAN 只保留当前实际入口，不能为已废弃域名保留兼容 SAN。
+
+1. 上传新证书链和匹配私钥，使用当前 profile revision 执行替换。
+2. 等待目标 Edge 的 `desired_revision` 与 `applied_revision` 一致且结果成功。
+3. 核对 `/var/lib/anytty-cloud-edge/managed-certificate.pb` 存在、权限正确并已更新。
+4. 从公网读取握手证书，核对 SHA-256 指纹、有效期和完整 SAN；仅 `/readyz` 成功不能证明证书正确。
+5. 重启 Edge 后再次核对 applied revision 和公网证书，确认没有回退到 bootstrap 证书。
+
+严禁删除 `managed-certificate.pb` 或 bootstrap `public-cert.pem`。Edge 启动时先载入 bootstrap 证书，再由 managed state 覆盖；managed state 丢失会使进程继续使用 bootstrap 证书。需要清除旧 bootstrap SAN 时，必须先用同一 Edge 私钥重签并原子替换 `public-cert.pem`，随后重启和复验，不能通过删文件实现。
+
 ## 验收
 
 - Controller `/healthz` 和 `/readyz` 均为 200。

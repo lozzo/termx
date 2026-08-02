@@ -118,10 +118,30 @@ message CompleteDaemonEnrollmentResponse {
   EdgeLocator edge_locator = 3;
 }
 
-// EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
+// BeginDaemonBindingRefreshRequest 只标识现有 daemon；身份和 Edge 选择都由 Controller 的当前真值决定。
+message BeginDaemonBindingRefreshRequest {
+  string daemon_id = 1;
+}
+
+message CompleteDaemonBindingRefreshRequest {
+  string challenge_id = 1;
+  bytes device_proof = 2;
+}
+
+// RefreshDaemonBindingResponse 对 ACTIVE/BLOCKED daemon 返回新的 binding 和 locator。
+// DELETED 只返回 daemon 状态，使离线 daemon 能清理本地 enrollment。
+message RefreshDaemonBindingResponse {
+  DaemonRecord daemon = 1;
+  SignedEnvelope daemon_binding = 2;
+  EdgeLocator edge_locator = 3;
+}
+
+// EnrollmentService 负责一次性注册，以及现有 DeviceIdentity 在 Edge 位置失效后的 binding 刷新。
 service EnrollmentService {
   rpc BeginDaemonEnrollment(BeginDaemonEnrollmentRequest) returns (IdentityChallenge);
   rpc CompleteDaemonEnrollment(CompleteDaemonEnrollmentRequest) returns (CompleteDaemonEnrollmentResponse);
+  rpc BeginDaemonBindingRefresh(BeginDaemonBindingRefreshRequest) returns (IdentityChallenge);
+  rpc CompleteDaemonBindingRefresh(CompleteDaemonBindingRefreshRequest) returns (RefreshDaemonBindingResponse);
 }
 
 // DaemonManagementService 是登录用户管理自己 daemon 的 API；实现必须从 session 推导账号。

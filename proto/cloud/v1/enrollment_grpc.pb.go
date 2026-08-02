@@ -19,18 +19,22 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EnrollmentService_BeginDaemonEnrollment_FullMethodName    = "/anytty.cloud.v1.EnrollmentService/BeginDaemonEnrollment"
-	EnrollmentService_CompleteDaemonEnrollment_FullMethodName = "/anytty.cloud.v1.EnrollmentService/CompleteDaemonEnrollment"
+	EnrollmentService_BeginDaemonEnrollment_FullMethodName        = "/anytty.cloud.v1.EnrollmentService/BeginDaemonEnrollment"
+	EnrollmentService_CompleteDaemonEnrollment_FullMethodName     = "/anytty.cloud.v1.EnrollmentService/CompleteDaemonEnrollment"
+	EnrollmentService_BeginDaemonBindingRefresh_FullMethodName    = "/anytty.cloud.v1.EnrollmentService/BeginDaemonBindingRefresh"
+	EnrollmentService_CompleteDaemonBindingRefresh_FullMethodName = "/anytty.cloud.v1.EnrollmentService/CompleteDaemonBindingRefresh"
 )
 
 // EnrollmentServiceClient is the client API for EnrollmentService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
+// EnrollmentService 负责一次性注册，以及现有 DeviceIdentity 在 Edge 位置失效后的 binding 刷新。
 type EnrollmentServiceClient interface {
 	BeginDaemonEnrollment(ctx context.Context, in *BeginDaemonEnrollmentRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
 	CompleteDaemonEnrollment(ctx context.Context, in *CompleteDaemonEnrollmentRequest, opts ...grpc.CallOption) (*CompleteDaemonEnrollmentResponse, error)
+	BeginDaemonBindingRefresh(ctx context.Context, in *BeginDaemonBindingRefreshRequest, opts ...grpc.CallOption) (*IdentityChallenge, error)
+	CompleteDaemonBindingRefresh(ctx context.Context, in *CompleteDaemonBindingRefreshRequest, opts ...grpc.CallOption) (*RefreshDaemonBindingResponse, error)
 }
 
 type enrollmentServiceClient struct {
@@ -61,14 +65,36 @@ func (c *enrollmentServiceClient) CompleteDaemonEnrollment(ctx context.Context, 
 	return out, nil
 }
 
+func (c *enrollmentServiceClient) BeginDaemonBindingRefresh(ctx context.Context, in *BeginDaemonBindingRefreshRequest, opts ...grpc.CallOption) (*IdentityChallenge, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IdentityChallenge)
+	err := c.cc.Invoke(ctx, EnrollmentService_BeginDaemonBindingRefresh_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *enrollmentServiceClient) CompleteDaemonBindingRefresh(ctx context.Context, in *CompleteDaemonBindingRefreshRequest, opts ...grpc.CallOption) (*RefreshDaemonBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RefreshDaemonBindingResponse)
+	err := c.cc.Invoke(ctx, EnrollmentService_CompleteDaemonBindingRefresh_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EnrollmentServiceServer is the server API for EnrollmentService service.
 // All implementations must embed UnimplementedEnrollmentServiceServer
 // for forward compatibility.
 //
-// EnrollmentService 只参与 daemon 的一次性注册。运行时连接不再回源此服务。
+// EnrollmentService 负责一次性注册，以及现有 DeviceIdentity 在 Edge 位置失效后的 binding 刷新。
 type EnrollmentServiceServer interface {
 	BeginDaemonEnrollment(context.Context, *BeginDaemonEnrollmentRequest) (*IdentityChallenge, error)
 	CompleteDaemonEnrollment(context.Context, *CompleteDaemonEnrollmentRequest) (*CompleteDaemonEnrollmentResponse, error)
+	BeginDaemonBindingRefresh(context.Context, *BeginDaemonBindingRefreshRequest) (*IdentityChallenge, error)
+	CompleteDaemonBindingRefresh(context.Context, *CompleteDaemonBindingRefreshRequest) (*RefreshDaemonBindingResponse, error)
 	mustEmbedUnimplementedEnrollmentServiceServer()
 }
 
@@ -84,6 +110,12 @@ func (UnimplementedEnrollmentServiceServer) BeginDaemonEnrollment(context.Contex
 }
 func (UnimplementedEnrollmentServiceServer) CompleteDaemonEnrollment(context.Context, *CompleteDaemonEnrollmentRequest) (*CompleteDaemonEnrollmentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CompleteDaemonEnrollment not implemented")
+}
+func (UnimplementedEnrollmentServiceServer) BeginDaemonBindingRefresh(context.Context, *BeginDaemonBindingRefreshRequest) (*IdentityChallenge, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginDaemonBindingRefresh not implemented")
+}
+func (UnimplementedEnrollmentServiceServer) CompleteDaemonBindingRefresh(context.Context, *CompleteDaemonBindingRefreshRequest) (*RefreshDaemonBindingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteDaemonBindingRefresh not implemented")
 }
 func (UnimplementedEnrollmentServiceServer) mustEmbedUnimplementedEnrollmentServiceServer() {}
 func (UnimplementedEnrollmentServiceServer) testEmbeddedByValue()                           {}
@@ -142,6 +174,42 @@ func _EnrollmentService_CompleteDaemonEnrollment_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EnrollmentService_BeginDaemonBindingRefresh_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginDaemonBindingRefreshRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EnrollmentServiceServer).BeginDaemonBindingRefresh(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EnrollmentService_BeginDaemonBindingRefresh_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EnrollmentServiceServer).BeginDaemonBindingRefresh(ctx, req.(*BeginDaemonBindingRefreshRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EnrollmentService_CompleteDaemonBindingRefresh_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteDaemonBindingRefreshRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EnrollmentServiceServer).CompleteDaemonBindingRefresh(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EnrollmentService_CompleteDaemonBindingRefresh_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EnrollmentServiceServer).CompleteDaemonBindingRefresh(ctx, req.(*CompleteDaemonBindingRefreshRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EnrollmentService_ServiceDesc is the grpc.ServiceDesc for EnrollmentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -156,6 +224,14 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompleteDaemonEnrollment",
 			Handler:    _EnrollmentService_CompleteDaemonEnrollment_Handler,
+		},
+		{
+			MethodName: "BeginDaemonBindingRefresh",
+			Handler:    _EnrollmentService_BeginDaemonBindingRefresh_Handler,
+		},
+		{
+			MethodName: "CompleteDaemonBindingRefresh",
+			Handler:    _EnrollmentService_CompleteDaemonBindingRefresh_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

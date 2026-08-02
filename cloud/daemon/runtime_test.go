@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -15,6 +16,8 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,15 +26,233 @@ import (
 	"github.com/anytty/anytty/cloud/edge/agentgateway"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/remote/webrtc"
 	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/anytty/anytty/shared/transport"
 	pion "github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestManagedPairingClaimRequiresReadyEdge(t *testing.T) {
+	identity, err := remoteauth.NewIdentity("daemon-online-gate", ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x21}, ed25519.SeedSize)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	locator := startDaemonTestAgentGateway(t, &daemonTestAgentGateway{})
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{
+		config:        Config{Identity: identity, AccessStore: store},
+		record:        EnrollmentRecord{DaemonID: "daemon-online-gate", EdgeLocator: locatorPayload},
+		daemonState:   &cloudv1.DaemonStateRecord{DaemonId: "daemon-online-gate", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1},
+		cloudSessions: make(map[string]*cloudSession),
+	}
+	if err := store.ConfigureManagedPairingBootstrapIssuer(runtime.managedPairingBootstrap); err != nil {
+		t.Fatal(err)
+	}
+	options := remoteauth.PairingIssueOptions{
+		Scope: remoteauth.FullDaemonScope(), TicketTTL: time.Minute,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{
+			SchemaVersion: 1, RouteId: "cloud", Enabled: true,
+			Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{TargetDeviceId: identity.DeviceID}},
+		}},
+	}
+	direct := options
+	direct.Routes = []*remoteauthpb.EndpointRouteConfigV1{{
+		SchemaVersion: 1, RouteId: "direct", Enabled: true,
+		Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{SignalingAddresses: []string{"127.0.0.1:41120"}, IceTcpAddresses: []string{"127.0.0.1:41121"}}},
+	}}
+	if _, err := store.IssuePairingClaim(direct); err != nil {
+		t.Fatalf("offline Cloud state affected Direct pairing: %v", err)
+	}
+	if _, err := store.IssuePairingClaim(options); err == nil || !strings.Contains(err.Error(), "active Edge connection") {
+		t.Fatalf("offline Cloud pairing error = %v", err)
+	}
+	runtime.markAgentReady("connection")
+	runtime.markLifecycleAcknowledged("connection", 1)
+	issued, err := store.IssuePairingClaim(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := issued.Offer.GetRoutes()[0].GetManagedWebrtc().GetPublicEndpoint(); got != locator.GetPublicEndpoint() {
+		t.Fatalf("pairing locator = %q, want %q", got, locator.GetPublicEndpoint())
+	}
+	runtime.clearAgentReady("connection")
+	if _, err := store.IssuePairingClaim(options); err == nil || !strings.Contains(err.Error(), "active Edge connection") {
+		t.Fatalf("disconnected Cloud pairing error = %v", err)
+	}
+}
+
+func TestRefreshBindingReplacesStaleLocatorBeforePairing(t *testing.T) {
+	identity, err := remoteauth.NewIdentity("device-binding-refresh", ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x22}, ed25519.SeedSize)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &daemonTestEnrollmentService{identity: identity, challenge: bytes.Repeat([]byte{0x61}, remoteauth.DeviceIdentityChallengeBytes)}
+	controller := startDaemonTestEnrollmentService(t, service)
+	newLocator := proto.Clone(controller).(*cloudv1.EdgeLocator)
+	newLocator.Revision = 2
+	staleLocator := proto.Clone(newLocator).(*cloudv1.EdgeLocator)
+	staleLocator.PublicEndpoint = "stale-edge.invalid:41102"
+	staleLocator.ServerName = "stale-edge.invalid"
+	staleLocator.Revision = 1
+	const daemonID = "11111111-1111-1111-1111-111111111111"
+	const accountID = "22222222-2222-2222-2222-222222222222"
+	service.response = daemonRefreshResponse(t, daemonID, accountID, identity, newLocator, cloudv1.DaemonState_DAEMON_STATE_ACTIVE, 2)
+	record := daemonEnrollmentRecord(t, daemonID, accountID, identity, staleLocator)
+	recordPath := t.TempDir() + "/cloud.json"
+	if err := SaveRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{
+		config: Config{
+			Identity: identity, RecordPath: recordPath, ControllerAddress: controller.GetPublicEndpoint(),
+			ControllerServerName: controller.GetServerName(), ControllerCAPEM: controller.GetCaCertificatePem(),
+		},
+		record: record, cloudSessions: make(map[string]*cloudSession),
+	}
+	if err := runtime.refreshBinding(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !service.proofVerified {
+		t.Fatal("Controller refresh did not verify DeviceIdentity proof")
+	}
+	loaded, err := LoadRecord(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadedLocator := &cloudv1.EdgeLocator{}
+	if err := proto.Unmarshal(loaded.EdgeLocator, loadedLocator); err != nil {
+		t.Fatal(err)
+	}
+	if loadedLocator.GetPublicEndpoint() != newLocator.GetPublicEndpoint() || loadedLocator.GetRevision() != 2 {
+		t.Fatalf("refreshed locator = %#v", loadedLocator)
+	}
+	runtime.markAgentReady("refreshed-connection")
+	runtime.markLifecycleAcknowledged("refreshed-connection", 2)
+	seed, err := runtime.managedPairingBootstrap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seed.GetPublicEndpoint() != newLocator.GetPublicEndpoint() || seed.GetServerName() != newLocator.GetServerName() {
+		t.Fatalf("pairing bootstrap retained stale locator: %#v", seed)
+	}
+}
+
+func TestRunRefreshesLifecycleBeforeUsingSavedEdge(t *testing.T) {
+	identity, err := remoteauth.NewIdentity("device-startup-refresh", ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x23}, ed25519.SeedSize)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &daemonTestEnrollmentService{identity: identity, challenge: bytes.Repeat([]byte{0x62}, remoteauth.DeviceIdentityChallengeBytes)}
+	controller := startDaemonTestEnrollmentService(t, service)
+	const daemonID = "33333333-3333-3333-3333-333333333333"
+	const accountID = "44444444-4444-4444-4444-444444444444"
+	service.response = &cloudv1.RefreshDaemonBindingResponse{Daemon: &cloudv1.DaemonRecord{
+		DaemonId: daemonID, AccountId: accountID, DeviceId: identity.DeviceID, DeviceFingerprint: identity.Fingerprint,
+		State: cloudv1.DaemonState_DAEMON_STATE_DELETED, StateRevision: 3,
+	}}
+	record := daemonEnrollmentRecord(t, daemonID, accountID, identity, controller)
+	recordPath := t.TempDir() + "/cloud.json"
+	if err := SaveRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{
+		config: Config{
+			Identity: identity, AccessStore: store, RecordPath: recordPath,
+			ControllerAddress: controller.GetPublicEndpoint(), ControllerServerName: controller.GetServerName(), ControllerCAPEM: controller.GetCaCertificatePem(),
+			RetryMinimum: time.Millisecond, RetryMaximum: time.Millisecond, BindingRefreshMinimum: time.Minute,
+		},
+		record: record, cloudSessions: make(map[string]*cloudSession),
+	}
+	if err := runtime.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !service.proofVerified || !runtime.daemonDeleted() {
+		t.Fatal("startup refresh did not apply Controller terminal lifecycle")
+	}
+	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
+		t.Fatalf("deleted startup refresh retained enrollment: %v", err)
+	}
+}
+
+type daemonTestEnrollmentService struct {
+	cloudv1.UnimplementedEnrollmentServiceServer
+	identity      remoteauth.Identity
+	challenge     []byte
+	response      *cloudv1.RefreshDaemonBindingResponse
+	proofVerified bool
+}
+
+func (service *daemonTestEnrollmentService) BeginDaemonBindingRefresh(context.Context, *cloudv1.BeginDaemonBindingRefreshRequest) (*cloudv1.IdentityChallenge, error) {
+	return &cloudv1.IdentityChallenge{ChallengeId: "refresh-challenge", Challenge: append([]byte(nil), service.challenge...), ExpiresAt: timestamppb.New(time.Now().Add(time.Minute))}, nil
+}
+
+func (service *daemonTestEnrollmentService) CompleteDaemonBindingRefresh(_ context.Context, request *cloudv1.CompleteDaemonBindingRefreshRequest) (*cloudv1.RefreshDaemonBindingResponse, error) {
+	if request.GetChallengeId() != "refresh-challenge" || remoteauth.VerifyDeviceIdentityProof(service.challenge, service.identity.DeviceID, service.identity.Fingerprint, service.identity.PublicKey, request.GetDeviceProof()) != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid DeviceIdentity proof")
+	}
+	service.proofVerified = true
+	return proto.Clone(service.response).(*cloudv1.RefreshDaemonBindingResponse), nil
+}
+
+func daemonRefreshResponse(t *testing.T, daemonID, accountID string, identity remoteauth.Identity, locator *cloudv1.EdgeLocator, state cloudv1.DaemonState, revision uint64) *cloudv1.RefreshDaemonBindingResponse {
+	t.Helper()
+	binding := daemonBindingEnvelope(t, daemonID, accountID, identity, locator)
+	return &cloudv1.RefreshDaemonBindingResponse{
+		Daemon:        &cloudv1.DaemonRecord{DaemonId: daemonID, AccountId: accountID, DeviceId: identity.DeviceID, DeviceFingerprint: identity.Fingerprint, State: state, StateRevision: revision},
+		DaemonBinding: binding, EdgeLocator: proto.Clone(locator).(*cloudv1.EdgeLocator),
+	}
+}
+
+func daemonEnrollmentRecord(t *testing.T, daemonID, accountID string, identity remoteauth.Identity, locator *cloudv1.EdgeLocator) EnrollmentRecord {
+	t.Helper()
+	bindingPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(daemonBindingEnvelope(t, daemonID, accountID, identity, locator))
+	if err != nil {
+		t.Fatal(err)
+	}
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return EnrollmentRecord{Version: recordVersion, DaemonID: daemonID, AccountID: accountID, DaemonBinding: bindingPayload, EdgeLocator: locatorPayload, EnrolledAt: time.Now().UTC()}
+}
+
+func daemonBindingEnvelope(t *testing.T, daemonID, accountID string, identity remoteauth.Identity, locator *cloudv1.EdgeLocator) *cloudv1.SignedEnvelope {
+	t.Helper()
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(locatorPayload)
+	claims, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.DaemonBindingClaims{
+		BindingId: "binding-test", DaemonId: daemonID, AccountId: accountID, EdgeId: locator.GetEdgeId(),
+		DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), EdgeLocatorSha256: digest[:],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &cloudv1.SignedEnvelope{KeyId: "test", Payload: claims, Signature: []byte("test")}
+}
 
 func TestConnectEdgeJoinsSuccessfulPeerAfterParentCancel(t *testing.T) {
 	api := daemonLoopbackWebRTCAPI()
@@ -52,7 +273,7 @@ func TestConnectEdgeJoinsSuccessfulPeerAfterParentCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- runtime.connectEdge(ctx, &cloudv1.SignedEnvelope{KeyId: "test-binding"}, locator)
+		done <- runtime.connectEdge(ctx, runtime.currentRecord().DaemonID, &cloudv1.SignedEnvelope{KeyId: "test-binding"}, locator)
 	}()
 	waitDaemonAnswer(t, gateway.answer)
 	cancel()
@@ -89,7 +310,7 @@ func TestConnectEdgeWaitsForClaimedDataChannelHandler(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- runtime.connectEdge(ctx, &cloudv1.SignedEnvelope{KeyId: "test-binding"}, locator)
+		done <- runtime.connectEdge(ctx, runtime.currentRecord().DaemonID, &cloudv1.SignedEnvelope{KeyId: "test-binding"}, locator)
 	}()
 	answer := waitDaemonAnswer(t, gateway.answer)
 	applyDaemonAnswer(t, clientPeer, answer)
@@ -248,9 +469,12 @@ func daemonRuntimeFixture(t *testing.T, answerer webrtc.Answerer) (*Runtime, ed2
 			Record: EnrollmentRecord{DaemonID: "daemon-runtime-test"}, Identity: identity, Answerer: answerer,
 			AccessStore: store, SoftwareVersion: "runtime-test",
 		},
-		bootID:        "daemon-runtime-boot",
-		daemonState:   &cloudv1.DaemonStateRecord{DaemonId: "daemon-runtime-test", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE},
-		cloudSessions: make(map[string]*cloudSession),
+		bootID:            "daemon-runtime-boot",
+		record:            EnrollmentRecord{DaemonID: "daemon-runtime-test"},
+		daemonState:       &cloudv1.DaemonStateRecord{DaemonId: "daemon-runtime-test", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1},
+		readyConnectionID: "fixture-connection",
+		lifecycleAck:      1,
+		cloudSessions:     make(map[string]*cloudSession),
 	}, append(ed25519.PublicKey(nil), client.PublicKey...)
 }
 
@@ -377,13 +601,19 @@ func (gateway *daemonTestAgentGateway) Connect(stream cloudv1.AgentGateway_Conne
 	}); err != nil {
 		return err
 	}
-	if err := stream.Send(&cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Offer{Offer: gateway.offer}}); err != nil {
-		return err
-	}
 	for {
 		event, err := stream.Recv()
 		if err != nil {
 			return err
+		}
+		if result := event.GetLifecycleResult(); result != nil {
+			if !result.GetApplied() || result.GetDaemonState().GetStateRevision() != 1 {
+				return errors.New("daemon rejected initial lifecycle")
+			}
+			if err := stream.Send(&cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Offer{Offer: gateway.offer}}); err != nil {
+				return err
+			}
+			continue
 		}
 		if answer := event.GetAnswer(); answer != nil {
 			gateway.answer <- answer
@@ -397,6 +627,18 @@ func (gateway *daemonTestAgentGateway) Connect(stream cloudv1.AgentGateway_Conne
 }
 
 func startDaemonTestAgentGateway(t *testing.T, gateway cloudv1.AgentGatewayServer) *cloudv1.EdgeLocator {
+	return startDaemonTestTLSServer(t, func(server *grpc.Server) {
+		cloudv1.RegisterAgentGatewayServer(server, gateway)
+	})
+}
+
+func startDaemonTestEnrollmentService(t *testing.T, service cloudv1.EnrollmentServiceServer) *cloudv1.EdgeLocator {
+	return startDaemonTestTLSServer(t, func(server *grpc.Server) {
+		cloudv1.RegisterEnrollmentServiceServer(server, service)
+	})
+}
+
+func startDaemonTestTLSServer(t *testing.T, register func(*grpc.Server)) *cloudv1.EdgeLocator {
 	t.Helper()
 	const serverName = "edge-runtime.test"
 	rootKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -448,7 +690,7 @@ func startDaemonTestAgentGateway(t *testing.T, gateway cloudv1.AgentGatewayServe
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
 		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate},
 	})))
-	cloudv1.RegisterAgentGatewayServer(server, gateway)
+	register(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()

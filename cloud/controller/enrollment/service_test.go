@@ -13,12 +13,225 @@ import (
 	"github.com/anytty/anytty/cloud/controller/directory"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	"github.com/anytty/anytty/cloud/runtimesnapshot"
+	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestCompleteDaemonBindingRefreshReturnsBindingForOnlineEdge(t *testing.T) {
+	fixture := newBindingRefreshFixture(t)
+	response, err := fixture.refresh(fixture.identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetDaemon().GetDaemonId() != fixture.store.daemon.ID || response.GetDaemon().GetState() != cloudv1.DaemonState_DAEMON_STATE_ACTIVE {
+		t.Fatalf("refreshed daemon = %+v", response.GetDaemon())
+	}
+	if response.GetEdgeLocator().GetEdgeId() != fixture.edge.ID || response.GetEdgeLocator().GetPublicEndpoint() != fixture.edge.PublicEndpoint {
+		t.Fatalf("selected Edge = %+v want=%+v", response.GetEdgeLocator(), fixture.edge)
+	}
+	claims, err := ticket.VerifyDaemonBinding(response.GetDaemonBinding(), ticket.KeySet{fixture.bindingKeyID: fixture.bindingPublicKey}, fixture.edge.ID, fixture.now, 0)
+	if err != nil {
+		t.Fatalf("verify refreshed binding: %v", err)
+	}
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(response.GetEdgeLocator())
+	if err != nil {
+		t.Fatal(err)
+	}
+	locatorDigest := sha256.Sum256(locatorPayload)
+	if claims.GetDaemonId() != fixture.store.daemon.ID || claims.GetAccountId() != fixture.store.daemon.AccountID ||
+		claims.GetDeviceId() != fixture.identity.DeviceID || !bytes.Equal(claims.GetDevicePublicKey(), fixture.identity.PublicKey) ||
+		!bytes.Equal(claims.GetEdgeLocatorSha256(), locatorDigest[:]) {
+		t.Fatalf("refreshed binding claims = %+v", claims)
+	}
+}
+
+func TestCompleteDaemonBindingRefreshRejectsWrongProofAndReplay(t *testing.T) {
+	fixture := newBindingRefreshFixture(t)
+	challenge := fixture.beginRefresh(t)
+	_, otherPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherIdentity, err := remoteauth.NewIdentity("other-device", otherPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongProof, err := remoteauth.SignDeviceIdentityProof(otherIdentity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: wrongProof}
+	if _, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), request); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("wrong proof code=%v err=%v", status.Code(err), err)
+	}
+	validProof, err := remoteauth.SignDeviceIdentityProof(fixture.identity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.DeviceProof = validProof
+	if _, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("burned challenge reuse code=%v err=%v", status.Code(err), err)
+	}
+
+	challenge = fixture.beginRefresh(t)
+	validProof, err = remoteauth.SignDeviceIdentityProof(fixture.identity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: validProof}
+	if _, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), request); err != nil {
+		t.Fatalf("complete fresh challenge: %v", err)
+	}
+	if _, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("completed challenge replay code=%v err=%v", status.Code(err), err)
+	}
+}
+
+func TestCompleteDaemonBindingRefreshUsesLatestLifecycleState(t *testing.T) {
+	tests := []struct {
+		name         string
+		state        cloudv1.DaemonState
+		wantMaterial bool
+	}{
+		{name: "blocked keeps control route", state: cloudv1.DaemonState_DAEMON_STATE_BLOCKED, wantMaterial: true},
+		{name: "deleted is terminal", state: cloudv1.DaemonState_DAEMON_STATE_DELETED, wantMaterial: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newBindingRefreshFixture(t)
+			challenge := fixture.beginRefresh(t)
+			fixture.store.daemon.State = test.state
+			fixture.store.daemon.StateRevision++
+			proof, err := remoteauth.SignDeviceIdentityProof(fixture.identity, challenge.GetChallenge())
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.GetDaemon().GetState() != test.state || response.GetDaemon().GetStateRevision() != fixture.store.daemon.StateRevision {
+				t.Fatalf("refresh lifecycle = %+v", response.GetDaemon())
+			}
+			hasMaterial := response.GetDaemonBinding() != nil && response.GetEdgeLocator() != nil
+			if hasMaterial != test.wantMaterial {
+				t.Fatalf("route material present=%v response=%+v", hasMaterial, response)
+			}
+			if !test.wantMaterial && (response.GetDaemonBinding() != nil || response.GetEdgeLocator() != nil) {
+				t.Fatalf("deleted daemon received route material: %+v", response)
+			}
+		})
+	}
+}
+
+type bindingRefreshFixture struct {
+	service          *Service
+	store            *preflightEnrollmentStore
+	identity         remoteauth.Identity
+	now              time.Time
+	edge             edgeconfig.Edge
+	bindingKeyID     string
+	bindingPublicKey ed25519.PublicKey
+}
+
+func newBindingRefreshFixture(t *testing.T) bindingRefreshFixture {
+	t.Helper()
+	now := time.Unix(30_000, 0).UTC()
+	_, identityPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := remoteauth.NewIdentity("refresh-device", identityPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &preflightEnrollmentStore{daemon: Daemon{
+		ID: uuid.NewString(), AccountID: uuid.NewString(), AccountName: "Refresh account", DisplayName: "Refresh daemon",
+		DeviceID: identity.DeviceID, DeviceFingerprint: identity.Fingerprint, DevicePublicKey: append(ed25519.PublicKey(nil), identity.PublicKey...),
+		State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1, CreatedAt: now, UpdatedAt: now,
+	}}
+	edge := edgeconfig.Edge{ID: uuid.NewString(), Name: "Refresh Edge", Region: "refresh", Capacity: 10, PublicEndpoint: "refresh.test.example:41102", Enabled: true, ConfigVersion: 2, Revision: 2}
+	_, edgeSigningKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges, err := edgeconfig.NewService(edgeconfig.Config{Store: refreshEdgeStore{edges: []edgeconfig.Edge{edge}}, SigningKey: edgeSigningKey, SigningKeyID: "edge-refresh-key", ClaimTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeDirectory, err := directory.New(directory.Config{MailboxSize: 16, GracePeriod: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtimeDirectory.Close)
+	publishEnrollmentTestEdge(t, runtimeDirectory, edge.ID)
+	bindingPublicKey, bindingPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bindingKeyID = "binding-refresh-key"
+	service, err := NewService(Config{
+		Store: store, Edges: edges, Directory: runtimeDirectory, Entitlement: &preflightEntitlement{active: true},
+		BindingSigningKey: bindingPrivateKey, BindingSigningKeyID: bindingKeyID, EdgeCACertificate: []byte("refresh-test-ca"),
+		EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, BindingTTL: time.Hour, Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bindingRefreshFixture{service: service, store: store, identity: identity, now: now, edge: edge, bindingKeyID: bindingKeyID, bindingPublicKey: bindingPublicKey}
+}
+
+func (fixture bindingRefreshFixture) beginRefresh(t *testing.T) *cloudv1.IdentityChallenge {
+	t.Helper()
+	challenge, err := fixture.service.BeginDaemonBindingRefresh(context.Background(), &cloudv1.BeginDaemonBindingRefreshRequest{DaemonId: fixture.store.daemon.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return challenge
+}
+
+func (fixture bindingRefreshFixture) refresh(identity remoteauth.Identity) (*cloudv1.RefreshDaemonBindingResponse, error) {
+	challenge, err := fixture.service.BeginDaemonBindingRefresh(context.Background(), &cloudv1.BeginDaemonBindingRefreshRequest{DaemonId: fixture.store.daemon.ID})
+	if err != nil {
+		return nil, err
+	}
+	proof, err := remoteauth.SignDeviceIdentityProof(identity, challenge.GetChallenge())
+	if err != nil {
+		return nil, err
+	}
+	return fixture.service.CompleteDaemonBindingRefresh(context.Background(), &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+}
+
+type refreshEdgeStore struct{ edges []edgeconfig.Edge }
+
+func (store refreshEdgeStore) ListEdges(context.Context) ([]edgeconfig.Edge, error) {
+	return append([]edgeconfig.Edge(nil), store.edges...), nil
+}
+func (store refreshEdgeStore) GetEdge(_ context.Context, edgeID string) (edgeconfig.Edge, error) {
+	for _, edge := range store.edges {
+		if edge.ID == edgeID {
+			return edge, nil
+		}
+	}
+	return edgeconfig.Edge{}, errors.New("not found")
+}
+func (refreshEdgeStore) CreateEdge(context.Context, edgeconfig.Edge, []byte, time.Time) error {
+	return errors.New("unused")
+}
+func (refreshEdgeStore) UpdateEdge(context.Context, edgeconfig.UpdateInput, edgeconfig.Edge) error {
+	return errors.New("unused")
+}
+func (refreshEdgeStore) ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (edgeconfig.Edge, error) {
+	return edgeconfig.Edge{}, errors.New("unused")
+}
+func (refreshEdgeStore) ConsumeBootstrapClaim(context.Context, []byte, string, []byte) (edgeconfig.Edge, error) {
+	return edgeconfig.Edge{}, errors.New("unused")
+}
 
 func TestCompleteDaemonEnrollmentPrecheckFailureLeavesTokenRetryable(t *testing.T) {
 	tests := []struct {

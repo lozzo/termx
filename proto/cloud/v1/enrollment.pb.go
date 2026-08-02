@@ -1184,6 +1184,165 @@ func (x *CompleteDaemonEnrollmentResponse) GetEdgeLocator() *EdgeLocator {
 	return nil
 }
 
+// BeginDaemonBindingRefreshRequest 只标识现有 daemon；身份和 Edge 选择都由 Controller 的当前真值决定。
+type BeginDaemonBindingRefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId      string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginDaemonBindingRefreshRequest) Reset() {
+	*x = BeginDaemonBindingRefreshRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginDaemonBindingRefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginDaemonBindingRefreshRequest) ProtoMessage() {}
+
+func (x *BeginDaemonBindingRefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginDaemonBindingRefreshRequest.ProtoReflect.Descriptor instead.
+func (*BeginDaemonBindingRefreshRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *BeginDaemonBindingRefreshRequest) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+type CompleteDaemonBindingRefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChallengeId   string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
+	DeviceProof   []byte                 `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) Reset() {
+	*x = CompleteDaemonBindingRefreshRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteDaemonBindingRefreshRequest) ProtoMessage() {}
+
+func (x *CompleteDaemonBindingRefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteDaemonBindingRefreshRequest.ProtoReflect.Descriptor instead.
+func (*CompleteDaemonBindingRefreshRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) GetChallengeId() string {
+	if x != nil {
+		return x.ChallengeId
+	}
+	return ""
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) GetDeviceProof() []byte {
+	if x != nil {
+		return x.DeviceProof
+	}
+	return nil
+}
+
+// RefreshDaemonBindingResponse 对 ACTIVE/BLOCKED daemon 返回新的 binding 和 locator。
+// DELETED 只返回 daemon 状态，使离线 daemon 能清理本地 enrollment。
+type RefreshDaemonBindingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Daemon        *DaemonRecord          `protobuf:"bytes,1,opt,name=daemon,proto3" json:"daemon,omitempty"`
+	DaemonBinding *SignedEnvelope        `protobuf:"bytes,2,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
+	EdgeLocator   *EdgeLocator           `protobuf:"bytes,3,opt,name=edge_locator,json=edgeLocator,proto3" json:"edge_locator,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshDaemonBindingResponse) Reset() {
+	*x = RefreshDaemonBindingResponse{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshDaemonBindingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshDaemonBindingResponse) ProtoMessage() {}
+
+func (x *RefreshDaemonBindingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshDaemonBindingResponse.ProtoReflect.Descriptor instead.
+func (*RefreshDaemonBindingResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RefreshDaemonBindingResponse) GetDaemon() *DaemonRecord {
+	if x != nil {
+		return x.Daemon
+	}
+	return nil
+}
+
+func (x *RefreshDaemonBindingResponse) GetDaemonBinding() *SignedEnvelope {
+	if x != nil {
+		return x.DaemonBinding
+	}
+	return nil
+}
+
+func (x *RefreshDaemonBindingResponse) GetEdgeLocator() *EdgeLocator {
+	if x != nil {
+		return x.EdgeLocator
+	}
+	return nil
+}
+
 var File_cloud_v1_enrollment_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_enrollment_proto_rawDesc = "" +
@@ -1277,15 +1436,26 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	" CompleteDaemonEnrollmentResponse\x125\n" +
 	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12F\n" +
 	"\x0edaemon_binding\x18\x02 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12?\n" +
+	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator\"?\n" +
+	" BeginDaemonBindingRefreshRequest\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"k\n" +
+	"#CompleteDaemonBindingRefreshRequest\x12!\n" +
+	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12!\n" +
+	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"\xde\x01\n" +
+	"\x1cRefreshDaemonBindingResponse\x125\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12F\n" +
+	"\x0edaemon_binding\x18\x02 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12?\n" +
 	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator*x\n" +
 	"\vDaemonState\x12\x1c\n" +
 	"\x18DAEMON_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DAEMON_STATE_ACTIVE\x10\x01\x12\x18\n" +
 	"\x14DAEMON_STATE_BLOCKED\x10\x02\x12\x18\n" +
-	"\x14DAEMON_STATE_DELETED\x10\x032\x80\x02\n" +
+	"\x14DAEMON_STATE_DELETED\x10\x032\xfa\x03\n" +
 	"\x11EnrollmentService\x12j\n" +
 	"\x15BeginDaemonEnrollment\x12-.anytty.cloud.v1.BeginDaemonEnrollmentRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12\x7f\n" +
-	"\x18CompleteDaemonEnrollment\x120.anytty.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.anytty.cloud.v1.CompleteDaemonEnrollmentResponse2\xe4\x02\n" +
+	"\x18CompleteDaemonEnrollment\x120.anytty.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.anytty.cloud.v1.CompleteDaemonEnrollmentResponse\x12r\n" +
+	"\x19BeginDaemonBindingRefresh\x121.anytty.cloud.v1.BeginDaemonBindingRefreshRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12\x83\x01\n" +
+	"\x1cCompleteDaemonBindingRefresh\x124.anytty.cloud.v1.CompleteDaemonBindingRefreshRequest\x1a-.anytty.cloud.v1.RefreshDaemonBindingResponse2\xe4\x02\n" +
 	"\x17DaemonManagementService\x12w\n" +
 	"\x12CreateMyEnrollment\x120.anytty.cloud.v1.CreateMyDaemonEnrollmentRequest\x1a/.anytty.cloud.v1.CreateDaemonEnrollmentResponse\x12^\n" +
 	"\rListMyDaemons\x12%.anytty.cloud.v1.ListMyDaemonsRequest\x1a&.anytty.cloud.v1.ListMyDaemonsResponse\x12p\n" +
@@ -1304,61 +1474,71 @@ func file_cloud_v1_enrollment_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_enrollment_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_cloud_v1_enrollment_proto_goTypes = []any{
-	(DaemonState)(0),                         // 0: anytty.cloud.v1.DaemonState
-	(*DaemonRecord)(nil),                     // 1: anytty.cloud.v1.DaemonRecord
-	(*DaemonStateRecord)(nil),                // 2: anytty.cloud.v1.DaemonStateRecord
-	(*DaemonRuntimeProjection)(nil),          // 3: anytty.cloud.v1.DaemonRuntimeProjection
-	(*ManagedDaemon)(nil),                    // 4: anytty.cloud.v1.ManagedDaemon
-	(*CreateDaemonEnrollmentRequest)(nil),    // 5: anytty.cloud.v1.CreateDaemonEnrollmentRequest
-	(*CreateDaemonEnrollmentResponse)(nil),   // 6: anytty.cloud.v1.CreateDaemonEnrollmentResponse
-	(*ListDaemonsRequest)(nil),               // 7: anytty.cloud.v1.ListDaemonsRequest
-	(*ListDaemonsResponse)(nil),              // 8: anytty.cloud.v1.ListDaemonsResponse
-	(*CreateMyDaemonEnrollmentRequest)(nil),  // 9: anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
-	(*ListMyDaemonsRequest)(nil),             // 10: anytty.cloud.v1.ListMyDaemonsRequest
-	(*ListMyDaemonsResponse)(nil),            // 11: anytty.cloud.v1.ListMyDaemonsResponse
-	(*ChangeMyDaemonStateRequest)(nil),       // 12: anytty.cloud.v1.ChangeMyDaemonStateRequest
-	(*ChangeMyDaemonStateResponse)(nil),      // 13: anytty.cloud.v1.ChangeMyDaemonStateResponse
-	(*BeginDaemonEnrollmentRequest)(nil),     // 14: anytty.cloud.v1.BeginDaemonEnrollmentRequest
-	(*IdentityChallenge)(nil),                // 15: anytty.cloud.v1.IdentityChallenge
-	(*CompleteDaemonEnrollmentRequest)(nil),  // 16: anytty.cloud.v1.CompleteDaemonEnrollmentRequest
-	(*EdgeLocator)(nil),                      // 17: anytty.cloud.v1.EdgeLocator
-	(*CompleteDaemonEnrollmentResponse)(nil), // 18: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
-	(*timestamppb.Timestamp)(nil),            // 19: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),                   // 20: anytty.cloud.v1.SignedEnvelope
+	(DaemonState)(0),                            // 0: anytty.cloud.v1.DaemonState
+	(*DaemonRecord)(nil),                        // 1: anytty.cloud.v1.DaemonRecord
+	(*DaemonStateRecord)(nil),                   // 2: anytty.cloud.v1.DaemonStateRecord
+	(*DaemonRuntimeProjection)(nil),             // 3: anytty.cloud.v1.DaemonRuntimeProjection
+	(*ManagedDaemon)(nil),                       // 4: anytty.cloud.v1.ManagedDaemon
+	(*CreateDaemonEnrollmentRequest)(nil),       // 5: anytty.cloud.v1.CreateDaemonEnrollmentRequest
+	(*CreateDaemonEnrollmentResponse)(nil),      // 6: anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	(*ListDaemonsRequest)(nil),                  // 7: anytty.cloud.v1.ListDaemonsRequest
+	(*ListDaemonsResponse)(nil),                 // 8: anytty.cloud.v1.ListDaemonsResponse
+	(*CreateMyDaemonEnrollmentRequest)(nil),     // 9: anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	(*ListMyDaemonsRequest)(nil),                // 10: anytty.cloud.v1.ListMyDaemonsRequest
+	(*ListMyDaemonsResponse)(nil),               // 11: anytty.cloud.v1.ListMyDaemonsResponse
+	(*ChangeMyDaemonStateRequest)(nil),          // 12: anytty.cloud.v1.ChangeMyDaemonStateRequest
+	(*ChangeMyDaemonStateResponse)(nil),         // 13: anytty.cloud.v1.ChangeMyDaemonStateResponse
+	(*BeginDaemonEnrollmentRequest)(nil),        // 14: anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	(*IdentityChallenge)(nil),                   // 15: anytty.cloud.v1.IdentityChallenge
+	(*CompleteDaemonEnrollmentRequest)(nil),     // 16: anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	(*EdgeLocator)(nil),                         // 17: anytty.cloud.v1.EdgeLocator
+	(*CompleteDaemonEnrollmentResponse)(nil),    // 18: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	(*BeginDaemonBindingRefreshRequest)(nil),    // 19: anytty.cloud.v1.BeginDaemonBindingRefreshRequest
+	(*CompleteDaemonBindingRefreshRequest)(nil), // 20: anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
+	(*RefreshDaemonBindingResponse)(nil),        // 21: anytty.cloud.v1.RefreshDaemonBindingResponse
+	(*timestamppb.Timestamp)(nil),               // 22: google.protobuf.Timestamp
+	(*SignedEnvelope)(nil),                      // 23: anytty.cloud.v1.SignedEnvelope
 }
 var file_cloud_v1_enrollment_proto_depIdxs = []int32{
 	0,  // 0: anytty.cloud.v1.DaemonRecord.state:type_name -> anytty.cloud.v1.DaemonState
-	19, // 1: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
-	19, // 2: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
+	22, // 1: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
+	22, // 2: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: anytty.cloud.v1.DaemonStateRecord.state:type_name -> anytty.cloud.v1.DaemonState
 	1,  // 4: anytty.cloud.v1.ManagedDaemon.daemon:type_name -> anytty.cloud.v1.DaemonRecord
 	3,  // 5: anytty.cloud.v1.ManagedDaemon.runtime:type_name -> anytty.cloud.v1.DaemonRuntimeProjection
-	19, // 6: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	22, // 6: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
 	4,  // 7: anytty.cloud.v1.ListDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
 	4,  // 8: anytty.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
 	0,  // 9: anytty.cloud.v1.ChangeMyDaemonStateRequest.target_state:type_name -> anytty.cloud.v1.DaemonState
 	1,  // 10: anytty.cloud.v1.ChangeMyDaemonStateResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	19, // 11: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	22, // 11: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 12: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	20, // 13: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
+	23, // 13: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
 	17, // 14: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
-	14, // 15: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
-	16, // 16: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
-	9,  // 17: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
-	10, // 18: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
-	12, // 19: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:input_type -> anytty.cloud.v1.ChangeMyDaemonStateRequest
-	15, // 20: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
-	18, // 21: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
-	6,  // 22: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
-	11, // 23: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
-	13, // 24: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:output_type -> anytty.cloud.v1.ChangeMyDaemonStateResponse
-	20, // [20:25] is the sub-list for method output_type
-	15, // [15:20] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	1,  // 15: anytty.cloud.v1.RefreshDaemonBindingResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	23, // 16: anytty.cloud.v1.RefreshDaemonBindingResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
+	17, // 17: anytty.cloud.v1.RefreshDaemonBindingResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
+	14, // 18: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	16, // 19: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	19, // 20: anytty.cloud.v1.EnrollmentService.BeginDaemonBindingRefresh:input_type -> anytty.cloud.v1.BeginDaemonBindingRefreshRequest
+	20, // 21: anytty.cloud.v1.EnrollmentService.CompleteDaemonBindingRefresh:input_type -> anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
+	9,  // 22: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	10, // 23: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
+	12, // 24: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:input_type -> anytty.cloud.v1.ChangeMyDaemonStateRequest
+	15, // 25: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
+	18, // 26: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	15, // 27: anytty.cloud.v1.EnrollmentService.BeginDaemonBindingRefresh:output_type -> anytty.cloud.v1.IdentityChallenge
+	21, // 28: anytty.cloud.v1.EnrollmentService.CompleteDaemonBindingRefresh:output_type -> anytty.cloud.v1.RefreshDaemonBindingResponse
+	6,  // 29: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	11, // 30: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
+	13, // 31: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:output_type -> anytty.cloud.v1.ChangeMyDaemonStateResponse
+	25, // [25:32] is the sub-list for method output_type
+	18, // [18:25] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_enrollment_proto_init() }
@@ -1373,7 +1553,7 @@ func file_cloud_v1_enrollment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_enrollment_proto_rawDesc), len(file_cloud_v1_enrollment_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   18,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

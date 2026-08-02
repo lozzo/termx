@@ -221,7 +221,9 @@ func TestDurableRelayReservationContracts(t *testing.T) {
 
 func TestEnrollmentAndDirectoryExcludeRemovedHotPathRPCs(t *testing.T) {
 	enrollment := File_cloud_v1_enrollment_proto.Services().ByName("EnrollmentService")
-	if enrollment == nil || enrollment.Methods().Len() != 2 || enrollment.Methods().ByName("BeginDaemonEnrollment") == nil || enrollment.Methods().ByName("CompleteDaemonEnrollment") == nil {
+	if enrollment == nil || enrollment.Methods().Len() != 4 ||
+		enrollment.Methods().ByName("BeginDaemonEnrollment") == nil || enrollment.Methods().ByName("CompleteDaemonEnrollment") == nil ||
+		enrollment.Methods().ByName("BeginDaemonBindingRefresh") == nil || enrollment.Methods().ByName("CompleteDaemonBindingRefresh") == nil {
 		t.Fatalf("EnrollmentService methods = %v", enrollment)
 	}
 	directory := File_cloud_v1_directory_proto.Services().ByName("DirectoryService")

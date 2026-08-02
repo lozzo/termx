@@ -66,6 +66,10 @@ func startV3CloudDaemon(ctx context.Context, core v3RemoteDaemonCore, clientAcce
 }
 
 func newV3CloudRuntime(record clouddaemon.EnrollmentRecord, recordPath string, core v3RemoteDaemonCore, clientAccess v3ClientAccessRuntime, logger *slog.Logger) (*clouddaemon.Runtime, error) {
+	controller, err := cliCloudControllerEndpointFromEnvironment()
+	if err != nil {
+		return nil, err
+	}
 	return clouddaemon.NewAuthorizedRuntime(
 		record, clientAccess.Identity, clientAccess.Store, core, "development",
 		func() {
@@ -79,6 +83,7 @@ func newV3CloudRuntime(record clouddaemon.EnrollmentRecord, recordPath string, c
 		},
 		clouddaemon.WithPionLogger(logger),
 		clouddaemon.WithEnrollmentRecordPath(recordPath),
+		clouddaemon.WithControllerEndpoint(controller.address, controller.serverName, controller.caPEM),
 	)
 }
 

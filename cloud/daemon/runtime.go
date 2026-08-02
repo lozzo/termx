@@ -30,30 +30,41 @@ import (
 
 // Config 是 daemon Cloud owner 的稳定 identity、发现记录和真实 P2P answerer 装配。
 type Config struct {
-	Record          EnrollmentRecord
-	RecordPath      string
-	Identity        remoteauth.Identity
-	Answerer        webrtc.Answerer
-	AccessStore     *remoteauth.AccessStore
-	SoftwareVersion string
-	RetryMinimum    time.Duration
-	RetryMaximum    time.Duration
+	Record                EnrollmentRecord
+	RecordPath            string
+	Identity              remoteauth.Identity
+	Answerer              webrtc.Answerer
+	AccessStore           *remoteauth.AccessStore
+	SoftwareVersion       string
+	ControllerAddress     string
+	ControllerServerName  string
+	ControllerCAPEM       []byte
+	RetryMinimum          time.Duration
+	RetryMaximum          time.Duration
+	BindingRefreshMinimum time.Duration
 }
 
-// Runtime 只使用 enrollment 持久化的 binding 和 locator 维持 AgentGateway generation。
+// Runtime 持有可刷新的 enrollment 路由材料和当前 AgentGateway 在线状态。
 type Runtime struct {
 	config            Config
 	bootID            string
 	attemptGeneration atomic.Uint64
+	recordMu          sync.RWMutex
+	record            EnrollmentRecord
 	lifecycleMu       sync.Mutex
 	daemonState       *cloudv1.DaemonStateRecord
+	readyConnectionID string
+	lifecycleAck      uint64
 	cloudSessions     map[string]*cloudSession
 	enrollmentDeleted bool
 }
 
 type authorizedRuntimeOptions struct {
-	pionLogger *slog.Logger
-	recordPath string
+	pionLogger           *slog.Logger
+	recordPath           string
+	controllerAddress    string
+	controllerServerName string
+	controllerCAPEM      []byte
 }
 
 type cloudSession struct {
@@ -79,6 +90,15 @@ func WithEnrollmentRecordPath(path string) AuthorizedRuntimeOption {
 	}
 }
 
+// WithControllerEndpoint configures the stable Controller used to refresh a stale Edge binding.
+func WithControllerEndpoint(address, serverName string, caPEM []byte) AuthorizedRuntimeOption {
+	return func(options *authorizedRuntimeOptions) {
+		options.controllerAddress = strings.TrimSpace(address)
+		options.controllerServerName = strings.TrimSpace(serverName)
+		options.controllerCAPEM = append([]byte(nil), caPEM...)
+	}
+}
+
 // NewAuthorizedRuntime 把现有 daemon Core/DeviceIdentity/AccessStore 接到真实 WebRTC Answerer。
 // cmd composition root 只传 owner 和只读 session 观测回调，不需要依赖 Cloud 内部的 Pion 装配类型；
 // 回调不能修改授权、PeerSession 或 Cloud generation 真值。
@@ -92,44 +112,26 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 			apply(&options)
 		}
 	}
-	locator := &cloudv1.EdgeLocator{}
-	if err := proto.Unmarshal(record.EdgeLocator, locator); err != nil {
-		return nil, errors.New("daemon Cloud runtime Edge locator is invalid")
-	}
-	caFingerprint, err := securetransport.EdgeCACertificateDERFingerprint(locator.GetCaCertificatePem())
-	if err != nil {
-		return nil, err
-	}
-	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, []byte, error) {
-		clientProduct := cloudv1.ClientProduct(product)
-		if clientProduct == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || clientProduct > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
-			return nil, nil, errors.New("CloudRouteGrant client product is invalid")
-		}
-		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: record.DaemonID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: clientProduct, IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC())}
-		envelope, err := ticket.SignCloudRouteGrant(identity, claims)
-		if err != nil {
-			return nil, nil, err
-		}
-		grant, err := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
-		return grant, append([]byte(nil), record.EdgeLocator...), err
-	}); err != nil {
-		return nil, err
-	}
-	if err := accessStore.ConfigureManagedPairingBootstrapIssuer(func() (*remoteauthpb.PairingManagedRouteSeed, error) {
-		return &remoteauthpb.PairingManagedRouteSeed{
-			DaemonId: record.DaemonID, EdgeId: locator.GetEdgeId(), PublicEndpoint: locator.GetPublicEndpoint(), ServerName: locator.GetServerName(),
-			CaCertificateDerSha256: append([]byte(nil), caFingerprint...),
-		}, nil
-	}); err != nil {
-		return nil, err
-	}
 	answerer := webrtc.Answerer{
 		Handler:        remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore},
 		PionLogger:     options.pionLogger,
 		OnSessionStart: onSessionStart,
 		OnSessionError: onSessionError,
 	}
-	return NewRuntime(Config{Record: record, RecordPath: options.recordPath, Identity: identity, Answerer: answerer, AccessStore: accessStore, SoftwareVersion: softwareVersion})
+	runtime, err := NewRuntime(Config{
+		Record: record, RecordPath: options.recordPath, Identity: identity, Answerer: answerer, AccessStore: accessStore, SoftwareVersion: softwareVersion,
+		ControllerAddress: options.controllerAddress, ControllerServerName: options.controllerServerName, ControllerCAPEM: options.controllerCAPEM,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(runtime.issueCloudRouteGrant); err != nil {
+		return nil, err
+	}
+	if err := accessStore.ConfigureManagedPairingBootstrapIssuer(runtime.managedPairingBootstrap); err != nil {
+		return nil, err
+	}
+	return runtime, nil
 }
 
 // NewRuntime 验证 Cloud owner 与 DataChannel 端到端授权 handler 已真实接线。
@@ -150,9 +152,17 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if config.RetryMaximum < config.RetryMinimum {
 		config.RetryMaximum = 5 * time.Second
 	}
+	config.ControllerAddress = strings.TrimSpace(config.ControllerAddress)
+	config.ControllerServerName = strings.TrimSpace(config.ControllerServerName)
+	if (config.ControllerAddress == "") != (config.ControllerServerName == "") {
+		return nil, errors.New("Controller address and server name must be configured together")
+	}
+	if config.BindingRefreshMinimum <= 0 {
+		config.BindingRefreshMinimum = 30 * time.Second
+	}
 	return &Runtime{
 		config: config, bootID: uuid.NewString(),
-		daemonState:   &cloudv1.DaemonStateRecord{DaemonId: config.Record.DaemonID, State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE},
+		record:        cloneEnrollmentRecord(config.Record),
 		cloudSessions: make(map[string]*cloudSession),
 	}, nil
 }
@@ -160,6 +170,13 @@ func NewRuntime(config Config) (*Runtime, error) {
 // Run 维持 AgentGateway 长连接；Controller/Edge 失败只撤销 Presence 并有界重新解析。
 func (runtime *Runtime) Run(ctx context.Context) error {
 	delay := runtime.config.RetryMinimum
+	var lastRefresh time.Time
+	if runtime.config.ControllerAddress != "" {
+		lastRefresh = time.Now()
+		if err := runtime.refreshBinding(ctx); err == nil && runtime.daemonDeleted() {
+			return nil
+		}
+	}
 	for ctx.Err() == nil {
 		err := runtime.connectOnce(ctx)
 		if ctx.Err() != nil {
@@ -167,6 +184,19 @@ func (runtime *Runtime) Run(ctx context.Context) error {
 		}
 		if runtime.daemonDeleted() {
 			return nil
+		}
+		if err != nil && runtime.config.ControllerAddress != "" && (lastRefresh.IsZero() || time.Since(lastRefresh) >= runtime.config.BindingRefreshMinimum) {
+			lastRefresh = time.Now()
+			if refreshErr := runtime.refreshBinding(ctx); refreshErr == nil {
+				if runtime.daemonDeleted() {
+					return nil
+				}
+				delay = runtime.config.RetryMinimum
+				continue
+			}
+			if runtime.daemonDeleted() {
+				return nil
+			}
 		}
 		if err == nil {
 			delay = runtime.config.RetryMinimum
@@ -189,15 +219,16 @@ func (runtime *Runtime) Run(ctx context.Context) error {
 }
 
 func (runtime *Runtime) connectOnce(ctx context.Context) error {
+	record := runtime.currentRecord()
 	binding := &cloudv1.SignedEnvelope{}
 	locator := &cloudv1.EdgeLocator{}
-	if proto.Unmarshal(runtime.config.Record.DaemonBinding, binding) != nil || proto.Unmarshal(runtime.config.Record.EdgeLocator, locator) != nil {
+	if proto.Unmarshal(record.DaemonBinding, binding) != nil || proto.Unmarshal(record.EdgeLocator, locator) != nil {
 		return errors.New("Cloud enrollment binding or Edge locator is invalid")
 	}
-	return runtime.connectEdge(ctx, binding, locator)
+	return runtime.connectEdge(ctx, record.DaemonID, binding, locator)
 }
 
-func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.SignedEnvelope, locator *cloudv1.EdgeLocator) error {
+func (runtime *Runtime) connectEdge(ctx context.Context, daemonID string, binding *cloudv1.SignedEnvelope, locator *cloudv1.EdgeLocator) error {
 	if binding == nil || locator == nil {
 		return errors.New("daemon binding or Edge locator is incomplete")
 	}
@@ -233,7 +264,7 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 	}
 	connectionID := uuid.NewString()
 	attemptGeneration := runtime.attemptGeneration.Add(1)
-	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: runtime.bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: binding, SoftwareVersion: runtime.config.SoftwareVersion, AttemptGeneration: attemptGeneration}}}
+	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: daemonID, BootId: runtime.bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{DaemonBinding: binding, SoftwareVersion: runtime.config.SoftwareVersion, AttemptGeneration: attemptGeneration}}}
 	proof, err := ticket.SignAgentHelloProof(runtime.config.Identity, challenge, hello, time.Now().UTC())
 	if err != nil {
 		return err
@@ -251,19 +282,21 @@ func (runtime *Runtime) connectEdge(ctx context.Context, binding *cloudv1.Signed
 	}
 	interval := command.GetReady().GetHeartbeat().GetInterval().AsDuration()
 	daemonState := command.GetReady().GetDaemonState()
-	if interval <= 0 || validateDaemonState(daemonState, runtime.config.Record.DaemonID) != nil {
+	if interval <= 0 || validateDaemonState(daemonState, daemonID) != nil {
 		return errors.New("AgentReady heartbeat is invalid")
 	}
 	if err := runtime.applyDaemonState(attemptCtx, daemonState); err != nil {
 		return err
 	}
+	runtime.markAgentReady(connectionID)
+	defer runtime.clearAgentReady(connectionID)
 	outbound := make(chan *cloudv1.AgentEvent, 32)
 	writerErrors := make(chan error, 1)
 	receive := make(chan error, 1)
 	workers.Add(2)
 	go func() {
 		defer workers.Done()
-		runtime.runAgentWriter(attemptCtx, stream, runtime.bootID, connectionID, 1, outbound, writerErrors)
+		runtime.runAgentWriter(attemptCtx, stream, daemonID, runtime.bootID, connectionID, 1, outbound, writerErrors)
 	}()
 	go func() {
 		defer workers.Done()
@@ -310,7 +343,7 @@ func validateAgentGatewayChallenge(command *cloudv1.EdgeCommand, expectedEdgeID 
 	return proto.Clone(challenge).(*cloudv1.EdgeChallenge), nil
 }
 
-func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, bootID, connectionID string, sequence uint64, outbound <-chan *cloudv1.AgentEvent, failures chan<- error) {
+func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, daemonID, bootID, connectionID string, sequence uint64, outbound <-chan *cloudv1.AgentEvent, failures chan<- error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -319,7 +352,7 @@ func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.Agent
 			sequence++
 			event.ProtocolVersion = agentgateway.ProtocolVersion
 			event.MessageId = uuid.NewString()
-			event.SenderId = runtime.config.Record.DaemonID
+			event.SenderId = daemonID
 			event.BootId = bootID
 			event.ConnectionId = connectionID
 			event.StreamSeq = sequence
@@ -330,6 +363,9 @@ func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.Agent
 				default:
 				}
 				return
+			}
+			if result := event.GetLifecycleResult(); result != nil && result.GetApplied() {
+				runtime.markLifecycleAcknowledged(connectionID, result.GetDaemonState().GetStateRevision())
 			}
 		}
 	}
@@ -365,7 +401,7 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 			response = runtime.answerOffer(ctx, offer, peers)
 		case command.GetLifecycle() != nil:
 			lifecycle := command.GetLifecycle()
-			if lifecycle.GetAgentGeneration() != generation || validateDaemonState(lifecycle.GetDaemonState(), runtime.config.Record.DaemonID) != nil {
+			if lifecycle.GetAgentGeneration() != generation || validateDaemonState(lifecycle.GetDaemonState(), runtime.currentRecord().DaemonID) != nil {
 				failures <- errors.New("Edge daemon lifecycle command is invalid")
 				return
 			}
@@ -452,7 +488,7 @@ func lifecycleResult(generation uint64, state *cloudv1.DaemonStateRecord, applyE
 }
 
 func (runtime *Runtime) applyDaemonState(ctx context.Context, state *cloudv1.DaemonStateRecord) error {
-	if err := validateDaemonState(state, runtime.config.Record.DaemonID); err != nil {
+	if err := validateDaemonState(state, runtime.currentRecord().DaemonID); err != nil {
 		return err
 	}
 	clone := proto.Clone(state).(*cloudv1.DaemonStateRecord)
@@ -469,6 +505,9 @@ func (runtime *Runtime) applyDaemonState(ctx context.Context, state *cloudv1.Dae
 	if current != nil && current.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED && !proto.Equal(current, clone) {
 		runtime.lifecycleMu.Unlock()
 		return errors.New("deleted daemon lifecycle state is terminal")
+	}
+	if current == nil || current.GetStateRevision() != clone.GetStateRevision() {
+		runtime.lifecycleAck = 0
 	}
 	runtime.daemonState = clone
 	sessions := make([]*cloudSession, 0, len(runtime.cloudSessions))
@@ -512,7 +551,7 @@ func (runtime *Runtime) applyDaemonState(ctx context.Context, state *cloudv1.Dae
 func (runtime *Runtime) beginCloudSession(parent context.Context, sessionID string, peers *sync.WaitGroup) (context.Context, *cloudSession, bool) {
 	runtime.lifecycleMu.Lock()
 	defer runtime.lifecycleMu.Unlock()
-	if runtime.daemonState == nil || runtime.daemonState.GetState() != cloudv1.DaemonState_DAEMON_STATE_ACTIVE || runtime.cloudSessions[sessionID] != nil {
+	if !runtime.cloudActiveLocked() || runtime.cloudSessions[sessionID] != nil {
 		return nil, nil, false
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -541,7 +580,37 @@ func (runtime *Runtime) finishCloudSession(sessionID string, session *cloudSessi
 func (runtime *Runtime) cloudActive() bool {
 	runtime.lifecycleMu.Lock()
 	defer runtime.lifecycleMu.Unlock()
-	return runtime.daemonState != nil && runtime.daemonState.GetState() == cloudv1.DaemonState_DAEMON_STATE_ACTIVE
+	return runtime.cloudActiveLocked()
+}
+
+func (runtime *Runtime) cloudActiveLocked() bool {
+	return runtime.readyConnectionID != "" && runtime.daemonState != nil &&
+		runtime.daemonState.GetState() == cloudv1.DaemonState_DAEMON_STATE_ACTIVE &&
+		runtime.lifecycleAck == runtime.daemonState.GetStateRevision()
+}
+
+func (runtime *Runtime) markAgentReady(connectionID string) {
+	runtime.lifecycleMu.Lock()
+	runtime.readyConnectionID = connectionID
+	runtime.lifecycleAck = 0
+	runtime.lifecycleMu.Unlock()
+}
+
+func (runtime *Runtime) clearAgentReady(connectionID string) {
+	runtime.lifecycleMu.Lock()
+	if runtime.readyConnectionID == connectionID {
+		runtime.readyConnectionID = ""
+		runtime.lifecycleAck = 0
+	}
+	runtime.lifecycleMu.Unlock()
+}
+
+func (runtime *Runtime) markLifecycleAcknowledged(connectionID string, revision uint64) {
+	runtime.lifecycleMu.Lock()
+	if runtime.readyConnectionID == connectionID && runtime.daemonState != nil && runtime.daemonState.GetStateRevision() == revision {
+		runtime.lifecycleAck = revision
+	}
+	runtime.lifecycleMu.Unlock()
 }
 
 func (runtime *Runtime) daemonDeleted() bool {
@@ -570,6 +639,140 @@ func cloudAccessRejection(mode cloudv1.CloudClientAccessMode) (string, string) {
 		return "CLIENT_REVOKED", "client access is not active"
 	}
 	return "PAIRING_CLAIM_INVALID", "pairing claim is not active"
+}
+
+func cloneEnrollmentRecord(record EnrollmentRecord) EnrollmentRecord {
+	record.DaemonBinding = append([]byte(nil), record.DaemonBinding...)
+	record.EdgeLocator = append([]byte(nil), record.EdgeLocator...)
+	return record
+}
+
+func (runtime *Runtime) currentRecord() EnrollmentRecord {
+	runtime.recordMu.RLock()
+	defer runtime.recordMu.RUnlock()
+	return cloneEnrollmentRecord(runtime.record)
+}
+
+func (runtime *Runtime) replaceRecord(record EnrollmentRecord) {
+	runtime.recordMu.Lock()
+	runtime.record = cloneEnrollmentRecord(record)
+	runtime.recordMu.Unlock()
+}
+
+func (runtime *Runtime) activeRecord() (EnrollmentRecord, error) {
+	runtime.lifecycleMu.Lock()
+	defer runtime.lifecycleMu.Unlock()
+	if !runtime.cloudActiveLocked() {
+		return EnrollmentRecord{}, errors.New("Cloud pairing requires an active Edge connection")
+	}
+	return runtime.currentRecord(), nil
+}
+
+func (runtime *Runtime) issueCloudRouteGrant(clientPublicKey ed25519.PublicKey, product uint32, issuedAt, expiresAt time.Time) ([]byte, []byte, error) {
+	record, err := runtime.activeRecord()
+	if err != nil {
+		return nil, nil, err
+	}
+	clientProduct := cloudv1.ClientProduct(product)
+	if clientProduct == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || clientProduct > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+		return nil, nil, errors.New("CloudRouteGrant client product is invalid")
+	}
+	claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: record.DaemonID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: clientProduct, IssuedAt: timestamppb.New(issuedAt.UTC()), ExpiresAt: timestamppb.New(expiresAt.UTC())}
+	envelope, err := ticket.SignCloudRouteGrant(runtime.config.Identity, claims)
+	if err != nil {
+		return nil, nil, err
+	}
+	grant, err := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+	return grant, record.EdgeLocator, err
+}
+
+func (runtime *Runtime) managedPairingBootstrap() (*remoteauthpb.PairingManagedRouteSeed, error) {
+	record, err := runtime.activeRecord()
+	if err != nil {
+		return nil, err
+	}
+	locator := &cloudv1.EdgeLocator{}
+	if err := proto.Unmarshal(record.EdgeLocator, locator); err != nil {
+		return nil, errors.New("daemon Cloud runtime Edge locator is invalid")
+	}
+	caFingerprint, err := securetransport.EdgeCACertificateDERFingerprint(locator.GetCaCertificatePem())
+	if err != nil {
+		return nil, err
+	}
+	return &remoteauthpb.PairingManagedRouteSeed{
+		DaemonId: record.DaemonID, EdgeId: locator.GetEdgeId(), PublicEndpoint: locator.GetPublicEndpoint(), ServerName: locator.GetServerName(),
+		CaCertificateDerSha256: caFingerprint,
+	}, nil
+}
+
+func (runtime *Runtime) refreshBinding(ctx context.Context) error {
+	record := runtime.currentRecord()
+	var roots *x509.CertPool
+	if len(runtime.config.ControllerCAPEM) != 0 {
+		roots = x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(runtime.config.ControllerCAPEM) {
+			return errors.New("Cloud Controller CA certificate is invalid")
+		}
+	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, ServerName: runtime.config.ControllerServerName, RootCAs: roots}
+	connection, err := grpc.NewClient(runtime.config.ControllerAddress, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	client := cloudv1.NewEnrollmentServiceClient(connection)
+	challenge, err := client.BeginDaemonBindingRefresh(ctx, &cloudv1.BeginDaemonBindingRefreshRequest{DaemonId: record.DaemonID})
+	if err != nil {
+		return err
+	}
+	proof, err := remoteauth.SignDeviceIdentityProof(runtime.config.Identity, challenge.GetChallenge())
+	if err != nil {
+		return err
+	}
+	completed, err := client.CompleteDaemonBindingRefresh(ctx, &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+	if err != nil {
+		return err
+	}
+	daemon := completed.GetDaemon()
+	if daemon == nil || daemon.GetDaemonId() != record.DaemonID || daemon.GetAccountId() != record.AccountID ||
+		daemon.GetDeviceId() != runtime.config.Identity.DeviceID || daemon.GetDeviceFingerprint() != runtime.config.Identity.Fingerprint {
+		return errors.New("daemon binding refresh identity is invalid")
+	}
+	state := &cloudv1.DaemonStateRecord{DaemonId: daemon.GetDaemonId(), State: daemon.GetState(), StateRevision: daemon.GetStateRevision()}
+	if daemon.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED {
+		if completed.GetDaemonBinding() != nil || completed.GetEdgeLocator() != nil {
+			return errors.New("deleted daemon binding refresh returned route material")
+		}
+		return runtime.applyDaemonState(ctx, state)
+	}
+	if completed.GetDaemonBinding() == nil || completed.GetEdgeLocator() == nil {
+		return errors.New("daemon binding refresh response is incomplete")
+	}
+	bindingClaims := &cloudv1.DaemonBindingClaims{}
+	if err := proto.Unmarshal(completed.GetDaemonBinding().GetPayload(), bindingClaims); err != nil ||
+		bindingClaims.GetDeviceId() != runtime.config.Identity.DeviceID || !ed25519.PublicKey(bindingClaims.GetDevicePublicKey()).Equal(runtime.config.Identity.PublicKey) {
+		return errors.New("daemon binding refresh identity is invalid")
+	}
+	binding, err := proto.MarshalOptions{Deterministic: true}.Marshal(completed.GetDaemonBinding())
+	if err != nil {
+		return err
+	}
+	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(completed.GetEdgeLocator())
+	if err != nil {
+		return err
+	}
+	updated := EnrollmentRecord{Version: recordVersion, DaemonID: record.DaemonID, AccountID: record.AccountID, DaemonBinding: binding, EdgeLocator: locatorPayload, EnrolledAt: record.EnrolledAt}
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	if runtime.config.RecordPath == "" {
+		return errors.New("Cloud enrollment record path is unavailable")
+	}
+	if err := SaveRecord(runtime.config.RecordPath, updated); err != nil {
+		return err
+	}
+	runtime.replaceRecord(updated)
+	return runtime.applyDaemonState(ctx, state)
 }
 
 // Enroll 使用一次性 code 和现有 DeviceIdentity 完成 challenge，并返回可持久化最小记录。
