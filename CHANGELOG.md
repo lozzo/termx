@@ -10,6 +10,7 @@
 - 增加一次性二维码配对；Android App 只通过扫码添加设备，不登录也不自动发现设备。
 - 增加客户端基线驱动的终端 Full/Delta 拉取、历史分页、搜索、范围复制和 Live/History 连续切换。
 - 增加 Cloud daemon `ACTIVE`、`BLOCKED`、`DELETED` 生命周期及 EdgeControl v6 收敛协议。
+- 增加 Cloud Edge 候选测速、软偏好、网页/CLI 管理和无需重启 daemon 的在线重选；协议升级为 EdgeControl v7 与 AgentGateway v4。
 - 增加 Cloud 公开文档页面、可搜索主题、响应式目录和真实产品说明。
 - 增加完整项目 README、稳定专题文档、Cloud 部署模板和仓库文档索引。
 

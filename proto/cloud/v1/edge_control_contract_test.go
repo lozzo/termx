@@ -58,7 +58,7 @@ func TestS2GatewayContracts(t *testing.T) {
 	assertEnvelopeFields(t, (&ClientSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "offer": 21})
 	assertEnvelopeFields(t, (&EdgeSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "answer": 21, "rejected": 22, "challenge": 23})
 	assertEnvelopeFields(t, (&AgentEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "heartbeat": 21, "answer": 22, "rejected": 23, "authorization": 24, "lifecycle_result": 25})
-	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21, "authorize": 22, "challenge": 23, "lifecycle": 24})
+	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21, "authorize": 22, "challenge": 23, "lifecycle": 24, "edge_reselect": 25})
 	challenge := (&EdgeChallenge{}).ProtoReflect().Descriptor()
 	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"nonce": 1, "edge_id": 2, "edge_boot_id": 3, "stream_id": 4, "issued_at": 5, "expires_at": 6, "target": 7} {
 		field := challenge.Fields().ByName(name)
@@ -125,7 +125,7 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_reserve": 28, "command_result": 29, "certificate_applied": 30, "relay_renew": 31, "relay_settle": 32, "relay_query": 33, "daemon_state_query": 34,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31, "daemon_state_delta": 32, "daemon_state_query_result": 33,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31, "daemon_state_delta": 32, "daemon_state_query_result": 33, "reselect_daemon_edge": 34,
 	})
 }
 
@@ -156,8 +156,14 @@ func TestDaemonLifecycleProtocol(t *testing.T) {
 		}
 	}
 	management := File_cloud_v1_enrollment_proto.Services().ByName("DaemonManagementService")
-	if management == nil || management.Methods().Len() != 3 || management.Methods().ByName("ChangeMyDaemonState") == nil || management.Methods().ByName("RevokeMyDaemon") != nil {
+	if management == nil || management.Methods().Len() != 6 || management.Methods().ByName("ChangeMyDaemonState") == nil || management.Methods().ByName("ListMyDaemonEdges") == nil || management.Methods().ByName("ChangeMyDaemonEdgePreference") == nil || management.Methods().ByName("ReselectMyDaemonEdge") == nil || management.Methods().ByName("RevokeMyDaemon") != nil {
 		t.Fatalf("DaemonManagementService methods = %v", management)
+	}
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"preferred_edge_id": 11, "edge_preference_revision": 12, "edge_preference_updated_at": 13} {
+		field := record.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("DaemonRecord.%s = %v, want %d", name, field, number)
+		}
 	}
 	claims := (&DaemonBindingClaims{}).ProtoReflect().Descriptor()
 	if claims.Fields().ByName("edge_id") == nil || claims.Fields().ByName("revision") != nil || claims.Fields().ByName("state_revision") != nil {

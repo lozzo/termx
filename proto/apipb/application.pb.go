@@ -162,6 +162,9 @@ type CommandEnvelope struct {
 	//	*CommandEnvelope_RemoteLocalEnable
 	//	*CommandEnvelope_RemoteLocalStatus
 	//	*CommandEnvelope_RemoteLocalDisable
+	//	*CommandEnvelope_RemoteCloudEdges
+	//	*CommandEnvelope_RemoteCloudPreferEdge
+	//	*CommandEnvelope_RemoteCloudReselectEdge
 	Command       isCommandEnvelope_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -643,6 +646,33 @@ func (x *CommandEnvelope) GetRemoteLocalDisable() *RemoteLocalDisableCommand {
 	return nil
 }
 
+func (x *CommandEnvelope) GetRemoteCloudEdges() *RemoteCloudEdgesCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteCloudEdges); ok {
+			return x.RemoteCloudEdges
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemoteCloudPreferEdge() *RemoteCloudPreferEdgeCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteCloudPreferEdge); ok {
+			return x.RemoteCloudPreferEdge
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemoteCloudReselectEdge() *RemoteCloudReselectEdgeCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteCloudReselectEdge); ok {
+			return x.RemoteCloudReselectEdge
+		}
+	}
+	return nil
+}
+
 type isCommandEnvelope_Command interface {
 	isCommandEnvelope_Command()
 }
@@ -839,6 +869,18 @@ type CommandEnvelope_RemoteLocalDisable struct {
 	RemoteLocalDisable *RemoteLocalDisableCommand `protobuf:"bytes,114,opt,name=remote_local_disable,json=remoteLocalDisable,proto3,oneof"`
 }
 
+type CommandEnvelope_RemoteCloudEdges struct {
+	RemoteCloudEdges *RemoteCloudEdgesCommand `protobuf:"bytes,115,opt,name=remote_cloud_edges,json=remoteCloudEdges,proto3,oneof"`
+}
+
+type CommandEnvelope_RemoteCloudPreferEdge struct {
+	RemoteCloudPreferEdge *RemoteCloudPreferEdgeCommand `protobuf:"bytes,116,opt,name=remote_cloud_prefer_edge,json=remoteCloudPreferEdge,proto3,oneof"`
+}
+
+type CommandEnvelope_RemoteCloudReselectEdge struct {
+	RemoteCloudReselectEdge *RemoteCloudReselectEdgeCommand `protobuf:"bytes,117,opt,name=remote_cloud_reselect_edge,json=remoteCloudReselectEdge,proto3,oneof"`
+}
+
 func (*CommandEnvelope_CancelOperation) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_ReleaseResource) isCommandEnvelope_Command() {}
@@ -935,6 +977,12 @@ func (*CommandEnvelope_RemoteLocalStatus) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_RemoteLocalDisable) isCommandEnvelope_Command() {}
 
+func (*CommandEnvelope_RemoteCloudEdges) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemoteCloudPreferEdge) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemoteCloudReselectEdge) isCommandEnvelope_Command() {}
+
 type AcknowledgeResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1010,6 +1058,7 @@ type ResultEnvelope struct {
 	//	*ResultEnvelope_RemoteStatus
 	//	*ResultEnvelope_RemotePairStart
 	//	*ResultEnvelope_RemoteLocalStatus
+	//	*ResultEnvelope_RemoteCloudEdges
 	Result        isResultEnvelope_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1363,6 +1412,15 @@ func (x *ResultEnvelope) GetRemoteLocalStatus() *RemoteLocalStatusResult {
 	return nil
 }
 
+func (x *ResultEnvelope) GetRemoteCloudEdges() *RemoteCloudEdgesResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_RemoteCloudEdges); ok {
+			return x.RemoteCloudEdges
+		}
+	}
+	return nil
+}
+
 type isResultEnvelope_Result interface {
 	isResultEnvelope_Result()
 }
@@ -1499,6 +1557,10 @@ type ResultEnvelope_RemoteLocalStatus struct {
 	RemoteLocalStatus *RemoteLocalStatusResult `protobuf:"bytes,112,opt,name=remote_local_status,json=remoteLocalStatus,proto3,oneof"`
 }
 
+type ResultEnvelope_RemoteCloudEdges struct {
+	RemoteCloudEdges *RemoteCloudEdgesResult `protobuf:"bytes,113,opt,name=remote_cloud_edges,json=remoteCloudEdges,proto3,oneof"`
+}
+
 func (*ResultEnvelope_Acknowledge) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_Error) isResultEnvelope_Result() {}
@@ -1564,6 +1626,8 @@ func (*ResultEnvelope_RemoteStatus) isResultEnvelope_Result() {}
 func (*ResultEnvelope_RemotePairStart) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_RemoteLocalStatus) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_RemoteCloudEdges) isResultEnvelope_Result() {}
 
 type OperationCancelledEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1831,7 +1895,7 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x16CancelOperationCommand\x12;\n" +
 	"\toperation\x18\x02 \x01(\v2\x1d.anytty.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"Y\n" +
 	"\x16ReleaseResourceCommand\x129\n" +
-	"\bresource\x18\x02 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\x91\x1f\n" +
+	"\bresource\x18\x02 \x01(\v2\x1d.anytty.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xbf!\n" +
 	"\x0fCommandEnvelope\x127\n" +
 	"\acontext\x18\x01 \x01(\v2\x1d.anytty.api.v1.RequestContextR\acontext\x12R\n" +
 	"\x10cancel_operation\x18\n" +
@@ -1887,9 +1951,12 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x11remote_pair_start\x18o \x01(\v2%.anytty.api.v1.RemotePairStartCommandH\x00R\x0fremotePairStart\x12Y\n" +
 	"\x13remote_local_enable\x18p \x01(\v2'.anytty.api.v1.RemoteLocalEnableCommandH\x00R\x11remoteLocalEnable\x12Y\n" +
 	"\x13remote_local_status\x18q \x01(\v2'.anytty.api.v1.RemoteLocalStatusCommandH\x00R\x11remoteLocalStatus\x12\\\n" +
-	"\x14remote_local_disable\x18r \x01(\v2(.anytty.api.v1.RemoteLocalDisableCommandH\x00R\x12remoteLocalDisableB\t\n" +
+	"\x14remote_local_disable\x18r \x01(\v2(.anytty.api.v1.RemoteLocalDisableCommandH\x00R\x12remoteLocalDisable\x12V\n" +
+	"\x12remote_cloud_edges\x18s \x01(\v2&.anytty.api.v1.RemoteCloudEdgesCommandH\x00R\x10remoteCloudEdges\x12f\n" +
+	"\x18remote_cloud_prefer_edge\x18t \x01(\v2+.anytty.api.v1.RemoteCloudPreferEdgeCommandH\x00R\x15remoteCloudPreferEdge\x12l\n" +
+	"\x1aremote_cloud_reselect_edge\x18u \x01(\v2-.anytty.api.v1.RemoteCloudReselectEdgeCommandH\x00R\x17remoteCloudReselectEdgeB\t\n" +
 	"\acommand\"\x13\n" +
-	"\x11AcknowledgeResult\"\xb6\x15\n" +
+	"\x11AcknowledgeResult\"\x8d\x16\n" +
 	"\x0eResultEnvelope\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12J\n" +
@@ -1931,7 +1998,8 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x14client_access_revoke\x18g \x01(\v2'.anytty.api.v1.ClientAccessRevokeResultH\x00R\x12clientAccessRevoke\x12H\n" +
 	"\rremote_status\x18n \x01(\v2!.anytty.api.v1.RemoteStatusResultH\x00R\fremoteStatus\x12R\n" +
 	"\x11remote_pair_start\x18o \x01(\v2$.anytty.api.v1.RemotePairStartResultH\x00R\x0fremotePairStart\x12X\n" +
-	"\x13remote_local_status\x18p \x01(\v2&.anytty.api.v1.RemoteLocalStatusResultH\x00R\x11remoteLocalStatusB\b\n" +
+	"\x13remote_local_status\x18p \x01(\v2&.anytty.api.v1.RemoteLocalStatusResultH\x00R\x11remoteLocalStatus\x12U\n" +
+	"\x12remote_cloud_edges\x18q \x01(\v2%.anytty.api.v1.RemoteCloudEdgesResultH\x00R\x10remoteCloudEdgesB\b\n" +
 	"\x06result\"V\n" +
 	"\x17OperationCancelledEvent\x12;\n" +
 	"\toperation\x18\x01 \x01(\v2\x1d.anytty.api.v1.OperationStampR\toperation\"R\n" +
@@ -2023,43 +2091,47 @@ var file_apipb_application_proto_goTypes = []any{
 	(*RemoteLocalEnableCommand)(nil),        // 54: anytty.api.v1.RemoteLocalEnableCommand
 	(*RemoteLocalStatusCommand)(nil),        // 55: anytty.api.v1.RemoteLocalStatusCommand
 	(*RemoteLocalDisableCommand)(nil),       // 56: anytty.api.v1.RemoteLocalDisableCommand
-	(*EndpointSessionStamp)(nil),            // 57: anytty.api.v1.EndpointSessionStamp
-	(*ApiError)(nil),                        // 58: anytty.api.v1.ApiError
-	(*TerminalDefaultsResult)(nil),          // 59: anytty.api.v1.TerminalDefaultsResult
-	(*TerminalCreateResult)(nil),            // 60: anytty.api.v1.TerminalCreateResult
-	(*TerminalListResult)(nil),              // 61: anytty.api.v1.TerminalListResult
-	(*TerminalGetResult)(nil),               // 62: anytty.api.v1.TerminalGetResult
-	(*TerminalAttachResult)(nil),            // 63: anytty.api.v1.TerminalAttachResult
-	(*TerminalResizeResult)(nil),            // 64: anytty.api.v1.TerminalResizeResult
-	(*PathListDirectoriesResult)(nil),       // 65: anytty.api.v1.PathListDirectoriesResult
-	(*HistoryWindowResult)(nil),             // 66: anytty.api.v1.HistoryWindowResult
-	(*HistoryCopyResult)(nil),               // 67: anytty.api.v1.HistoryCopyResult
-	(*HistoryBacklogStatusResult)(nil),      // 68: anytty.api.v1.HistoryBacklogStatusResult
-	(*NativeScreenResult)(nil),              // 69: anytty.api.v1.NativeScreenResult
-	(*HistorySearchResult)(nil),             // 70: anytty.api.v1.HistorySearchResult
-	(*EventSubscriptionResult)(nil),         // 71: anytty.api.v1.EventSubscriptionResult
-	(*FileListResult)(nil),                  // 72: anytty.api.v1.FileListResult
-	(*FileStatResult)(nil),                  // 73: anytty.api.v1.FileStatResult
-	(*FilePreviewResult)(nil),               // 74: anytty.api.v1.FilePreviewResult
-	(*FileOperationResult)(nil),             // 75: anytty.api.v1.FileOperationResult
-	(*FileBatchResult)(nil),                 // 76: anytty.api.v1.FileBatchResult
-	(*FileTransferOpenResult)(nil),          // 77: anytty.api.v1.FileTransferOpenResult
-	(*FileTransferCancelResult)(nil),        // 78: anytty.api.v1.FileTransferCancelResult
-	(*StorageGetResult)(nil),                // 79: anytty.api.v1.StorageGetResult
-	(*StoragePutResult)(nil),                // 80: anytty.api.v1.StoragePutResult
-	(*StorageDeleteResult)(nil),             // 81: anytty.api.v1.StorageDeleteResult
-	(*StorageListResult)(nil),               // 82: anytty.api.v1.StorageListResult
-	(*ClientAccessIdentityResult)(nil),      // 83: anytty.api.v1.ClientAccessIdentityResult
-	(*ClientAccessListResult)(nil),          // 84: anytty.api.v1.ClientAccessListResult
-	(*ClientAccessTicketCreateResult)(nil),  // 85: anytty.api.v1.ClientAccessTicketCreateResult
-	(*ClientAccessRevokeResult)(nil),        // 86: anytty.api.v1.ClientAccessRevokeResult
-	(*RemoteStatusResult)(nil),              // 87: anytty.api.v1.RemoteStatusResult
-	(*RemotePairStartResult)(nil),           // 88: anytty.api.v1.RemotePairStartResult
-	(*RemoteLocalStatusResult)(nil),         // 89: anytty.api.v1.RemoteLocalStatusResult
-	(*ApiVersion)(nil),                      // 90: anytty.api.v1.ApiVersion
-	(*TerminalLifecycleEvent)(nil),          // 91: anytty.api.v1.TerminalLifecycleEvent
-	(*StorageChangedEvent)(nil),             // 92: anytty.api.v1.StorageChangedEvent
-	(*FileTransferCompletedEvent)(nil),      // 93: anytty.api.v1.FileTransferCompletedEvent
+	(*RemoteCloudEdgesCommand)(nil),         // 57: anytty.api.v1.RemoteCloudEdgesCommand
+	(*RemoteCloudPreferEdgeCommand)(nil),    // 58: anytty.api.v1.RemoteCloudPreferEdgeCommand
+	(*RemoteCloudReselectEdgeCommand)(nil),  // 59: anytty.api.v1.RemoteCloudReselectEdgeCommand
+	(*EndpointSessionStamp)(nil),            // 60: anytty.api.v1.EndpointSessionStamp
+	(*ApiError)(nil),                        // 61: anytty.api.v1.ApiError
+	(*TerminalDefaultsResult)(nil),          // 62: anytty.api.v1.TerminalDefaultsResult
+	(*TerminalCreateResult)(nil),            // 63: anytty.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),              // 64: anytty.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),               // 65: anytty.api.v1.TerminalGetResult
+	(*TerminalAttachResult)(nil),            // 66: anytty.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),            // 67: anytty.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),       // 68: anytty.api.v1.PathListDirectoriesResult
+	(*HistoryWindowResult)(nil),             // 69: anytty.api.v1.HistoryWindowResult
+	(*HistoryCopyResult)(nil),               // 70: anytty.api.v1.HistoryCopyResult
+	(*HistoryBacklogStatusResult)(nil),      // 71: anytty.api.v1.HistoryBacklogStatusResult
+	(*NativeScreenResult)(nil),              // 72: anytty.api.v1.NativeScreenResult
+	(*HistorySearchResult)(nil),             // 73: anytty.api.v1.HistorySearchResult
+	(*EventSubscriptionResult)(nil),         // 74: anytty.api.v1.EventSubscriptionResult
+	(*FileListResult)(nil),                  // 75: anytty.api.v1.FileListResult
+	(*FileStatResult)(nil),                  // 76: anytty.api.v1.FileStatResult
+	(*FilePreviewResult)(nil),               // 77: anytty.api.v1.FilePreviewResult
+	(*FileOperationResult)(nil),             // 78: anytty.api.v1.FileOperationResult
+	(*FileBatchResult)(nil),                 // 79: anytty.api.v1.FileBatchResult
+	(*FileTransferOpenResult)(nil),          // 80: anytty.api.v1.FileTransferOpenResult
+	(*FileTransferCancelResult)(nil),        // 81: anytty.api.v1.FileTransferCancelResult
+	(*StorageGetResult)(nil),                // 82: anytty.api.v1.StorageGetResult
+	(*StoragePutResult)(nil),                // 83: anytty.api.v1.StoragePutResult
+	(*StorageDeleteResult)(nil),             // 84: anytty.api.v1.StorageDeleteResult
+	(*StorageListResult)(nil),               // 85: anytty.api.v1.StorageListResult
+	(*ClientAccessIdentityResult)(nil),      // 86: anytty.api.v1.ClientAccessIdentityResult
+	(*ClientAccessListResult)(nil),          // 87: anytty.api.v1.ClientAccessListResult
+	(*ClientAccessTicketCreateResult)(nil),  // 88: anytty.api.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeResult)(nil),        // 89: anytty.api.v1.ClientAccessRevokeResult
+	(*RemoteStatusResult)(nil),              // 90: anytty.api.v1.RemoteStatusResult
+	(*RemotePairStartResult)(nil),           // 91: anytty.api.v1.RemotePairStartResult
+	(*RemoteLocalStatusResult)(nil),         // 92: anytty.api.v1.RemoteLocalStatusResult
+	(*RemoteCloudEdgesResult)(nil),          // 93: anytty.api.v1.RemoteCloudEdgesResult
+	(*ApiVersion)(nil),                      // 94: anytty.api.v1.ApiVersion
+	(*TerminalLifecycleEvent)(nil),          // 95: anytty.api.v1.TerminalLifecycleEvent
+	(*StorageChangedEvent)(nil),             // 96: anytty.api.v1.StorageChangedEvent
+	(*FileTransferCompletedEvent)(nil),      // 97: anytty.api.v1.FileTransferCompletedEvent
 }
 var file_apipb_application_proto_depIdxs = []int32{
 	8,  // 0: anytty.api.v1.CancelOperationCommand.operation:type_name -> anytty.api.v1.OperationStamp
@@ -2113,55 +2185,59 @@ var file_apipb_application_proto_depIdxs = []int32{
 	54, // 48: anytty.api.v1.CommandEnvelope.remote_local_enable:type_name -> anytty.api.v1.RemoteLocalEnableCommand
 	55, // 49: anytty.api.v1.CommandEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusCommand
 	56, // 50: anytty.api.v1.CommandEnvelope.remote_local_disable:type_name -> anytty.api.v1.RemoteLocalDisableCommand
-	57, // 51: anytty.api.v1.ResultEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
-	3,  // 52: anytty.api.v1.ResultEnvelope.acknowledge:type_name -> anytty.api.v1.AcknowledgeResult
-	58, // 53: anytty.api.v1.ResultEnvelope.error:type_name -> anytty.api.v1.ApiError
-	59, // 54: anytty.api.v1.ResultEnvelope.terminal_defaults:type_name -> anytty.api.v1.TerminalDefaultsResult
-	60, // 55: anytty.api.v1.ResultEnvelope.terminal_create:type_name -> anytty.api.v1.TerminalCreateResult
-	61, // 56: anytty.api.v1.ResultEnvelope.terminal_list:type_name -> anytty.api.v1.TerminalListResult
-	62, // 57: anytty.api.v1.ResultEnvelope.terminal_get:type_name -> anytty.api.v1.TerminalGetResult
-	63, // 58: anytty.api.v1.ResultEnvelope.terminal_attach:type_name -> anytty.api.v1.TerminalAttachResult
-	64, // 59: anytty.api.v1.ResultEnvelope.terminal_resize:type_name -> anytty.api.v1.TerminalResizeResult
-	65, // 60: anytty.api.v1.ResultEnvelope.path_list_directories:type_name -> anytty.api.v1.PathListDirectoriesResult
-	66, // 61: anytty.api.v1.ResultEnvelope.history_window:type_name -> anytty.api.v1.HistoryWindowResult
-	67, // 62: anytty.api.v1.ResultEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyResult
-	68, // 63: anytty.api.v1.ResultEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusResult
-	69, // 64: anytty.api.v1.ResultEnvelope.live_screen:type_name -> anytty.api.v1.NativeScreenResult
-	70, // 65: anytty.api.v1.ResultEnvelope.history_search:type_name -> anytty.api.v1.HistorySearchResult
-	71, // 66: anytty.api.v1.ResultEnvelope.event_subscription:type_name -> anytty.api.v1.EventSubscriptionResult
-	72, // 67: anytty.api.v1.ResultEnvelope.file_list:type_name -> anytty.api.v1.FileListResult
-	73, // 68: anytty.api.v1.ResultEnvelope.file_stat:type_name -> anytty.api.v1.FileStatResult
-	74, // 69: anytty.api.v1.ResultEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewResult
-	75, // 70: anytty.api.v1.ResultEnvelope.file_operation:type_name -> anytty.api.v1.FileOperationResult
-	76, // 71: anytty.api.v1.ResultEnvelope.file_batch:type_name -> anytty.api.v1.FileBatchResult
-	77, // 72: anytty.api.v1.ResultEnvelope.file_transfer_open:type_name -> anytty.api.v1.FileTransferOpenResult
-	78, // 73: anytty.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelResult
-	79, // 74: anytty.api.v1.ResultEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetResult
-	80, // 75: anytty.api.v1.ResultEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutResult
-	81, // 76: anytty.api.v1.ResultEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteResult
-	82, // 77: anytty.api.v1.ResultEnvelope.storage_list:type_name -> anytty.api.v1.StorageListResult
-	83, // 78: anytty.api.v1.ResultEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityResult
-	84, // 79: anytty.api.v1.ResultEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListResult
-	85, // 80: anytty.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateResult
-	86, // 81: anytty.api.v1.ResultEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeResult
-	87, // 82: anytty.api.v1.ResultEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusResult
-	88, // 83: anytty.api.v1.ResultEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartResult
-	89, // 84: anytty.api.v1.ResultEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusResult
-	8,  // 85: anytty.api.v1.OperationCancelledEvent.operation:type_name -> anytty.api.v1.OperationStamp
-	9,  // 86: anytty.api.v1.ResourceReleasedEvent.resource:type_name -> anytty.api.v1.ResourceHandle
-	90, // 87: anytty.api.v1.EventEnvelope.api_version:type_name -> anytty.api.v1.ApiVersion
-	57, // 88: anytty.api.v1.EventEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
-	9,  // 89: anytty.api.v1.EventEnvelope.subscription:type_name -> anytty.api.v1.ResourceHandle
-	5,  // 90: anytty.api.v1.EventEnvelope.operation_cancelled:type_name -> anytty.api.v1.OperationCancelledEvent
-	6,  // 91: anytty.api.v1.EventEnvelope.resource_released:type_name -> anytty.api.v1.ResourceReleasedEvent
-	91, // 92: anytty.api.v1.EventEnvelope.terminal_lifecycle:type_name -> anytty.api.v1.TerminalLifecycleEvent
-	92, // 93: anytty.api.v1.EventEnvelope.storage_changed:type_name -> anytty.api.v1.StorageChangedEvent
-	93, // 94: anytty.api.v1.EventEnvelope.file_transfer_completed:type_name -> anytty.api.v1.FileTransferCompletedEvent
-	95, // [95:95] is the sub-list for method output_type
-	95, // [95:95] is the sub-list for method input_type
-	95, // [95:95] is the sub-list for extension type_name
-	95, // [95:95] is the sub-list for extension extendee
-	0,  // [0:95] is the sub-list for field type_name
+	57, // 51: anytty.api.v1.CommandEnvelope.remote_cloud_edges:type_name -> anytty.api.v1.RemoteCloudEdgesCommand
+	58, // 52: anytty.api.v1.CommandEnvelope.remote_cloud_prefer_edge:type_name -> anytty.api.v1.RemoteCloudPreferEdgeCommand
+	59, // 53: anytty.api.v1.CommandEnvelope.remote_cloud_reselect_edge:type_name -> anytty.api.v1.RemoteCloudReselectEdgeCommand
+	60, // 54: anytty.api.v1.ResultEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
+	3,  // 55: anytty.api.v1.ResultEnvelope.acknowledge:type_name -> anytty.api.v1.AcknowledgeResult
+	61, // 56: anytty.api.v1.ResultEnvelope.error:type_name -> anytty.api.v1.ApiError
+	62, // 57: anytty.api.v1.ResultEnvelope.terminal_defaults:type_name -> anytty.api.v1.TerminalDefaultsResult
+	63, // 58: anytty.api.v1.ResultEnvelope.terminal_create:type_name -> anytty.api.v1.TerminalCreateResult
+	64, // 59: anytty.api.v1.ResultEnvelope.terminal_list:type_name -> anytty.api.v1.TerminalListResult
+	65, // 60: anytty.api.v1.ResultEnvelope.terminal_get:type_name -> anytty.api.v1.TerminalGetResult
+	66, // 61: anytty.api.v1.ResultEnvelope.terminal_attach:type_name -> anytty.api.v1.TerminalAttachResult
+	67, // 62: anytty.api.v1.ResultEnvelope.terminal_resize:type_name -> anytty.api.v1.TerminalResizeResult
+	68, // 63: anytty.api.v1.ResultEnvelope.path_list_directories:type_name -> anytty.api.v1.PathListDirectoriesResult
+	69, // 64: anytty.api.v1.ResultEnvelope.history_window:type_name -> anytty.api.v1.HistoryWindowResult
+	70, // 65: anytty.api.v1.ResultEnvelope.history_copy:type_name -> anytty.api.v1.HistoryCopyResult
+	71, // 66: anytty.api.v1.ResultEnvelope.history_backlog_status:type_name -> anytty.api.v1.HistoryBacklogStatusResult
+	72, // 67: anytty.api.v1.ResultEnvelope.live_screen:type_name -> anytty.api.v1.NativeScreenResult
+	73, // 68: anytty.api.v1.ResultEnvelope.history_search:type_name -> anytty.api.v1.HistorySearchResult
+	74, // 69: anytty.api.v1.ResultEnvelope.event_subscription:type_name -> anytty.api.v1.EventSubscriptionResult
+	75, // 70: anytty.api.v1.ResultEnvelope.file_list:type_name -> anytty.api.v1.FileListResult
+	76, // 71: anytty.api.v1.ResultEnvelope.file_stat:type_name -> anytty.api.v1.FileStatResult
+	77, // 72: anytty.api.v1.ResultEnvelope.file_preview:type_name -> anytty.api.v1.FilePreviewResult
+	78, // 73: anytty.api.v1.ResultEnvelope.file_operation:type_name -> anytty.api.v1.FileOperationResult
+	79, // 74: anytty.api.v1.ResultEnvelope.file_batch:type_name -> anytty.api.v1.FileBatchResult
+	80, // 75: anytty.api.v1.ResultEnvelope.file_transfer_open:type_name -> anytty.api.v1.FileTransferOpenResult
+	81, // 76: anytty.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> anytty.api.v1.FileTransferCancelResult
+	82, // 77: anytty.api.v1.ResultEnvelope.storage_get:type_name -> anytty.api.v1.StorageGetResult
+	83, // 78: anytty.api.v1.ResultEnvelope.storage_put:type_name -> anytty.api.v1.StoragePutResult
+	84, // 79: anytty.api.v1.ResultEnvelope.storage_delete:type_name -> anytty.api.v1.StorageDeleteResult
+	85, // 80: anytty.api.v1.ResultEnvelope.storage_list:type_name -> anytty.api.v1.StorageListResult
+	86, // 81: anytty.api.v1.ResultEnvelope.client_access_identity:type_name -> anytty.api.v1.ClientAccessIdentityResult
+	87, // 82: anytty.api.v1.ResultEnvelope.client_access_list:type_name -> anytty.api.v1.ClientAccessListResult
+	88, // 83: anytty.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> anytty.api.v1.ClientAccessTicketCreateResult
+	89, // 84: anytty.api.v1.ResultEnvelope.client_access_revoke:type_name -> anytty.api.v1.ClientAccessRevokeResult
+	90, // 85: anytty.api.v1.ResultEnvelope.remote_status:type_name -> anytty.api.v1.RemoteStatusResult
+	91, // 86: anytty.api.v1.ResultEnvelope.remote_pair_start:type_name -> anytty.api.v1.RemotePairStartResult
+	92, // 87: anytty.api.v1.ResultEnvelope.remote_local_status:type_name -> anytty.api.v1.RemoteLocalStatusResult
+	93, // 88: anytty.api.v1.ResultEnvelope.remote_cloud_edges:type_name -> anytty.api.v1.RemoteCloudEdgesResult
+	8,  // 89: anytty.api.v1.OperationCancelledEvent.operation:type_name -> anytty.api.v1.OperationStamp
+	9,  // 90: anytty.api.v1.ResourceReleasedEvent.resource:type_name -> anytty.api.v1.ResourceHandle
+	94, // 91: anytty.api.v1.EventEnvelope.api_version:type_name -> anytty.api.v1.ApiVersion
+	60, // 92: anytty.api.v1.EventEnvelope.origin_session:type_name -> anytty.api.v1.EndpointSessionStamp
+	9,  // 93: anytty.api.v1.EventEnvelope.subscription:type_name -> anytty.api.v1.ResourceHandle
+	5,  // 94: anytty.api.v1.EventEnvelope.operation_cancelled:type_name -> anytty.api.v1.OperationCancelledEvent
+	6,  // 95: anytty.api.v1.EventEnvelope.resource_released:type_name -> anytty.api.v1.ResourceReleasedEvent
+	95, // 96: anytty.api.v1.EventEnvelope.terminal_lifecycle:type_name -> anytty.api.v1.TerminalLifecycleEvent
+	96, // 97: anytty.api.v1.EventEnvelope.storage_changed:type_name -> anytty.api.v1.StorageChangedEvent
+	97, // 98: anytty.api.v1.EventEnvelope.file_transfer_completed:type_name -> anytty.api.v1.FileTransferCompletedEvent
+	99, // [99:99] is the sub-list for method output_type
+	99, // [99:99] is the sub-list for method input_type
+	99, // [99:99] is the sub-list for extension type_name
+	99, // [99:99] is the sub-list for extension extendee
+	0,  // [0:99] is the sub-list for field type_name
 }
 
 func init() { file_apipb_application_proto_init() }
@@ -2225,6 +2301,9 @@ func file_apipb_application_proto_init() {
 		(*CommandEnvelope_RemoteLocalEnable)(nil),
 		(*CommandEnvelope_RemoteLocalStatus)(nil),
 		(*CommandEnvelope_RemoteLocalDisable)(nil),
+		(*CommandEnvelope_RemoteCloudEdges)(nil),
+		(*CommandEnvelope_RemoteCloudPreferEdge)(nil),
+		(*CommandEnvelope_RemoteCloudReselectEdge)(nil),
 	}
 	file_apipb_application_proto_msgTypes[4].OneofWrappers = []any{
 		(*ResultEnvelope_Acknowledge)(nil),
@@ -2260,6 +2339,7 @@ func file_apipb_application_proto_init() {
 		(*ResultEnvelope_RemoteStatus)(nil),
 		(*ResultEnvelope_RemotePairStart)(nil),
 		(*ResultEnvelope_RemoteLocalStatus)(nil),
+		(*ResultEnvelope_RemoteCloudEdges)(nil),
 	}
 	file_apipb_application_proto_msgTypes[7].OneofWrappers = []any{
 		(*EventEnvelope_OperationCancelled)(nil),

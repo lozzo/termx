@@ -297,6 +297,9 @@ type ApplicationSessionPort interface {
 	ApplicationRemoteLocalStatus(context.Context) (RemoteLocalStatus, error)
 	// ApplicationRemoteLocalDisable 关闭 local remote runtime。
 	ApplicationRemoteLocalDisable(context.Context) (RemoteLocalStatus, error)
+	ApplicationRemoteCloudEdges(context.Context) (RemoteCloudEdgeSelection, error)
+	ApplicationRemoteCloudPreferEdge(context.Context, string, uint64) (RemoteCloudEdgeSelection, error)
+	ApplicationRemoteCloudReselectEdge(context.Context) (RemoteCloudEdgeSelection, error)
 }
 
 // ApplicationExecutor 执行 framing 已解码的公共 Proto command。

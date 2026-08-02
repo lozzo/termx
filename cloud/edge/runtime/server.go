@@ -744,7 +744,7 @@ func (runtime *Runtime) runControllerLink() {
 		if len(runtime.configPublicKey) != 0 {
 			applyDesiredConfig = runtime.applyDesiredConfig
 		}
-		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY}
+		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION}
 		capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD)
 		if runtime.relayServer != nil && runtime.relayJournal != nil && !runtime.RelayDegraded() {
 			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_RESERVATION_JOURNAL)
@@ -773,6 +773,9 @@ func (runtime *Runtime) runControllerLink() {
 			ApplyCertificate:         runtime.certificateManager.Apply,
 			CloseDaemon:              runtime.state.CloseAgentConnection,
 			CloseSession:             runtime.state.CloseSession,
+			ReselectDaemonEdge: func(ctx context.Context, daemonID string, generation, preferenceRevision uint64) error {
+				return runtime.state.SendAgentCommand(ctx, daemonID, generation, &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_EdgeReselect{EdgeReselect: &cloudv1.DaemonEdgeReselectCommand{AgentGeneration: generation, PreferenceRevision: preferenceRevision}}})
+			},
 		})
 		if err == nil {
 			if runtime.ctx.Err() != nil {

@@ -729,6 +729,59 @@ func (x *DaemonLifecycleResult) GetErrorMessage() string {
 	return ""
 }
 
+// DaemonEdgeReselectCommand 让 daemon 立即测速并刷新 binding；不会重启 daemon 进程。
+type DaemonEdgeReselectCommand struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	AgentGeneration    uint64                 `protobuf:"varint,1,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
+	PreferenceRevision uint64                 `protobuf:"varint,2,opt,name=preference_revision,json=preferenceRevision,proto3" json:"preference_revision,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *DaemonEdgeReselectCommand) Reset() {
+	*x = DaemonEdgeReselectCommand{}
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DaemonEdgeReselectCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DaemonEdgeReselectCommand) ProtoMessage() {}
+
+func (x *DaemonEdgeReselectCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DaemonEdgeReselectCommand.ProtoReflect.Descriptor instead.
+func (*DaemonEdgeReselectCommand) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DaemonEdgeReselectCommand) GetAgentGeneration() uint64 {
+	if x != nil {
+		return x.AgentGeneration
+	}
+	return 0
+}
+
+func (x *DaemonEdgeReselectCommand) GetPreferenceRevision() uint64 {
+	if x != nil {
+		return x.PreferenceRevision
+	}
+	return 0
+}
+
 type AgentEvent struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProtocolVersion uint32                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
@@ -753,7 +806,7 @@ type AgentEvent struct {
 
 func (x *AgentEvent) Reset() {
 	*x = AgentEvent{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[10]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +818,7 @@ func (x *AgentEvent) String() string {
 func (*AgentEvent) ProtoMessage() {}
 
 func (x *AgentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[10]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +831,7 @@ func (x *AgentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentEvent.ProtoReflect.Descriptor instead.
 func (*AgentEvent) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AgentEvent) GetProtocolVersion() uint32 {
@@ -947,6 +1000,7 @@ type EdgeCommand struct {
 	//	*EdgeCommand_Authorize
 	//	*EdgeCommand_Challenge
 	//	*EdgeCommand_Lifecycle
+	//	*EdgeCommand_EdgeReselect
 	Payload       isEdgeCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -954,7 +1008,7 @@ type EdgeCommand struct {
 
 func (x *EdgeCommand) Reset() {
 	*x = EdgeCommand{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[11]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -966,7 +1020,7 @@ func (x *EdgeCommand) String() string {
 func (*EdgeCommand) ProtoMessage() {}
 
 func (x *EdgeCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[11]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -979,7 +1033,7 @@ func (x *EdgeCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeCommand.ProtoReflect.Descriptor instead.
 func (*EdgeCommand) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{11}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *EdgeCommand) GetProtocolVersion() uint32 {
@@ -1083,6 +1137,15 @@ func (x *EdgeCommand) GetLifecycle() *DaemonLifecycleCommand {
 	return nil
 }
 
+func (x *EdgeCommand) GetEdgeReselect() *DaemonEdgeReselectCommand {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeCommand_EdgeReselect); ok {
+			return x.EdgeReselect
+		}
+	}
+	return nil
+}
+
 type isEdgeCommand_Payload interface {
 	isEdgeCommand_Payload()
 }
@@ -1107,6 +1170,10 @@ type EdgeCommand_Lifecycle struct {
 	Lifecycle *DaemonLifecycleCommand `protobuf:"bytes,24,opt,name=lifecycle,proto3,oneof"`
 }
 
+type EdgeCommand_EdgeReselect struct {
+	EdgeReselect *DaemonEdgeReselectCommand `protobuf:"bytes,25,opt,name=edge_reselect,json=edgeReselect,proto3,oneof"`
+}
+
 func (*EdgeCommand_Ready) isEdgeCommand_Payload() {}
 
 func (*EdgeCommand_Offer) isEdgeCommand_Payload() {}
@@ -1116,6 +1183,8 @@ func (*EdgeCommand_Authorize) isEdgeCommand_Payload() {}
 func (*EdgeCommand_Challenge) isEdgeCommand_Payload() {}
 
 func (*EdgeCommand_Lifecycle) isEdgeCommand_Payload() {}
+
+func (*EdgeCommand_EdgeReselect) isEdgeCommand_Payload() {}
 
 var File_cloud_v1_agent_gateway_proto protoreflect.FileDescriptor
 
@@ -1195,7 +1264,10 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\fdaemon_state\x18\x01 \x01(\v2\".anytty.cloud.v1.DaemonStateRecordR\vdaemonState\x12)\n" +
 	"\x10agent_generation\x18\x02 \x01(\x04R\x0fagentGeneration\x12\x18\n" +
 	"\aapplied\x18\x03 \x01(\bR\aapplied\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\xaa\x05\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"w\n" +
+	"\x19DaemonEdgeReselectCommand\x12)\n" +
+	"\x10agent_generation\x18\x01 \x01(\x04R\x0fagentGeneration\x12/\n" +
+	"\x13preference_revision\x18\x02 \x01(\x04R\x12preferenceRevision\"\xaa\x05\n" +
 	"\n" +
 	"AgentEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
@@ -1213,7 +1285,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\brejected\x18\x17 \x01(\v2$.anytty.cloud.v1.AgentSignalRejectedH\x00R\brejected\x12Q\n" +
 	"\rauthorization\x18\x18 \x01(\v2).anytty.cloud.v1.AgentAuthorizationResultH\x00R\rauthorization\x12S\n" +
 	"\x10lifecycle_result\x18\x19 \x01(\v2&.anytty.cloud.v1.DaemonLifecycleResultH\x00R\x0flifecycleResultB\t\n" +
-	"\apayload\"\xc5\x04\n" +
+	"\apayload\"\x98\x05\n" +
 	"\vEdgeCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1228,7 +1300,8 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\x05offer\x18\x15 \x01(\v2\x1b.anytty.cloud.v1.AgentOfferH\x00R\x05offer\x12?\n" +
 	"\tauthorize\x18\x16 \x01(\v2\x1f.anytty.cloud.v1.AgentAuthorizeH\x00R\tauthorize\x12>\n" +
 	"\tchallenge\x18\x17 \x01(\v2\x1e.anytty.cloud.v1.EdgeChallengeH\x00R\tchallenge\x12G\n" +
-	"\tlifecycle\x18\x18 \x01(\v2'.anytty.cloud.v1.DaemonLifecycleCommandH\x00R\tlifecycleB\t\n" +
+	"\tlifecycle\x18\x18 \x01(\v2'.anytty.cloud.v1.DaemonLifecycleCommandH\x00R\tlifecycle\x12Q\n" +
+	"\redge_reselect\x18\x19 \x01(\v2*.anytty.cloud.v1.DaemonEdgeReselectCommandH\x00R\fedgeReselectB\t\n" +
 	"\apayload2X\n" +
 	"\fAgentGateway\x12H\n" +
 	"\aConnect\x12\x1b.anytty.cloud.v1.AgentEvent\x1a\x1c.anytty.cloud.v1.EdgeCommand(\x010\x01B1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
@@ -1245,62 +1318,64 @@ func file_cloud_v1_agent_gateway_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_agent_gateway_proto_rawDescData
 }
 
-var file_cloud_v1_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_cloud_v1_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_cloud_v1_agent_gateway_proto_goTypes = []any{
-	(*AgentHello)(nil),               // 0: anytty.cloud.v1.AgentHello
-	(*AgentHeartbeat)(nil),           // 1: anytty.cloud.v1.AgentHeartbeat
-	(*AgentOffer)(nil),               // 2: anytty.cloud.v1.AgentOffer
-	(*AgentAuthorize)(nil),           // 3: anytty.cloud.v1.AgentAuthorize
-	(*AgentAuthorizationResult)(nil), // 4: anytty.cloud.v1.AgentAuthorizationResult
-	(*AgentAnswer)(nil),              // 5: anytty.cloud.v1.AgentAnswer
-	(*AgentSignalRejected)(nil),      // 6: anytty.cloud.v1.AgentSignalRejected
-	(*AgentReady)(nil),               // 7: anytty.cloud.v1.AgentReady
-	(*DaemonLifecycleCommand)(nil),   // 8: anytty.cloud.v1.DaemonLifecycleCommand
-	(*DaemonLifecycleResult)(nil),    // 9: anytty.cloud.v1.DaemonLifecycleResult
-	(*AgentEvent)(nil),               // 10: anytty.cloud.v1.AgentEvent
-	(*EdgeCommand)(nil),              // 11: anytty.cloud.v1.EdgeCommand
-	(*SignedEnvelope)(nil),           // 12: anytty.cloud.v1.SignedEnvelope
-	(*CloudICECandidate)(nil),        // 13: anytty.cloud.v1.CloudICECandidate
-	(*RelayICEConfig)(nil),           // 14: anytty.cloud.v1.RelayICEConfig
-	(CloudClientAccessMode)(0),       // 15: anytty.cloud.v1.CloudClientAccessMode
-	(ClientProduct)(0),               // 16: anytty.cloud.v1.ClientProduct
-	(*HeartbeatPolicy)(nil),          // 17: anytty.cloud.v1.HeartbeatPolicy
-	(*DaemonStateRecord)(nil),        // 18: anytty.cloud.v1.DaemonStateRecord
-	(*timestamppb.Timestamp)(nil),    // 19: google.protobuf.Timestamp
-	(*EdgeChallenge)(nil),            // 20: anytty.cloud.v1.EdgeChallenge
+	(*AgentHello)(nil),                // 0: anytty.cloud.v1.AgentHello
+	(*AgentHeartbeat)(nil),            // 1: anytty.cloud.v1.AgentHeartbeat
+	(*AgentOffer)(nil),                // 2: anytty.cloud.v1.AgentOffer
+	(*AgentAuthorize)(nil),            // 3: anytty.cloud.v1.AgentAuthorize
+	(*AgentAuthorizationResult)(nil),  // 4: anytty.cloud.v1.AgentAuthorizationResult
+	(*AgentAnswer)(nil),               // 5: anytty.cloud.v1.AgentAnswer
+	(*AgentSignalRejected)(nil),       // 6: anytty.cloud.v1.AgentSignalRejected
+	(*AgentReady)(nil),                // 7: anytty.cloud.v1.AgentReady
+	(*DaemonLifecycleCommand)(nil),    // 8: anytty.cloud.v1.DaemonLifecycleCommand
+	(*DaemonLifecycleResult)(nil),     // 9: anytty.cloud.v1.DaemonLifecycleResult
+	(*DaemonEdgeReselectCommand)(nil), // 10: anytty.cloud.v1.DaemonEdgeReselectCommand
+	(*AgentEvent)(nil),                // 11: anytty.cloud.v1.AgentEvent
+	(*EdgeCommand)(nil),               // 12: anytty.cloud.v1.EdgeCommand
+	(*SignedEnvelope)(nil),            // 13: anytty.cloud.v1.SignedEnvelope
+	(*CloudICECandidate)(nil),         // 14: anytty.cloud.v1.CloudICECandidate
+	(*RelayICEConfig)(nil),            // 15: anytty.cloud.v1.RelayICEConfig
+	(CloudClientAccessMode)(0),        // 16: anytty.cloud.v1.CloudClientAccessMode
+	(ClientProduct)(0),                // 17: anytty.cloud.v1.ClientProduct
+	(*HeartbeatPolicy)(nil),           // 18: anytty.cloud.v1.HeartbeatPolicy
+	(*DaemonStateRecord)(nil),         // 19: anytty.cloud.v1.DaemonStateRecord
+	(*timestamppb.Timestamp)(nil),     // 20: google.protobuf.Timestamp
+	(*EdgeChallenge)(nil),             // 21: anytty.cloud.v1.EdgeChallenge
 }
 var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
-	12, // 0: anytty.cloud.v1.AgentHello.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
-	13, // 1: anytty.cloud.v1.AgentOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
-	14, // 2: anytty.cloud.v1.AgentOffer.relay:type_name -> anytty.cloud.v1.RelayICEConfig
-	15, // 3: anytty.cloud.v1.AgentOffer.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
-	16, // 4: anytty.cloud.v1.AgentAuthorize.product:type_name -> anytty.cloud.v1.ClientProduct
-	15, // 5: anytty.cloud.v1.AgentAuthorize.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
-	13, // 6: anytty.cloud.v1.AgentAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
-	17, // 7: anytty.cloud.v1.AgentReady.heartbeat:type_name -> anytty.cloud.v1.HeartbeatPolicy
-	18, // 8: anytty.cloud.v1.AgentReady.daemon_state:type_name -> anytty.cloud.v1.DaemonStateRecord
-	18, // 9: anytty.cloud.v1.DaemonLifecycleCommand.daemon_state:type_name -> anytty.cloud.v1.DaemonStateRecord
-	18, // 10: anytty.cloud.v1.DaemonLifecycleResult.daemon_state:type_name -> anytty.cloud.v1.DaemonStateRecord
-	19, // 11: anytty.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
+	13, // 0: anytty.cloud.v1.AgentHello.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
+	14, // 1: anytty.cloud.v1.AgentOffer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	15, // 2: anytty.cloud.v1.AgentOffer.relay:type_name -> anytty.cloud.v1.RelayICEConfig
+	16, // 3: anytty.cloud.v1.AgentOffer.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	17, // 4: anytty.cloud.v1.AgentAuthorize.product:type_name -> anytty.cloud.v1.ClientProduct
+	16, // 5: anytty.cloud.v1.AgentAuthorize.access_mode:type_name -> anytty.cloud.v1.CloudClientAccessMode
+	14, // 6: anytty.cloud.v1.AgentAnswer.candidates:type_name -> anytty.cloud.v1.CloudICECandidate
+	18, // 7: anytty.cloud.v1.AgentReady.heartbeat:type_name -> anytty.cloud.v1.HeartbeatPolicy
+	19, // 8: anytty.cloud.v1.AgentReady.daemon_state:type_name -> anytty.cloud.v1.DaemonStateRecord
+	19, // 9: anytty.cloud.v1.DaemonLifecycleCommand.daemon_state:type_name -> anytty.cloud.v1.DaemonStateRecord
+	19, // 10: anytty.cloud.v1.DaemonLifecycleResult.daemon_state:type_name -> anytty.cloud.v1.DaemonStateRecord
+	20, // 11: anytty.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
 	0,  // 12: anytty.cloud.v1.AgentEvent.hello:type_name -> anytty.cloud.v1.AgentHello
 	1,  // 13: anytty.cloud.v1.AgentEvent.heartbeat:type_name -> anytty.cloud.v1.AgentHeartbeat
 	5,  // 14: anytty.cloud.v1.AgentEvent.answer:type_name -> anytty.cloud.v1.AgentAnswer
 	6,  // 15: anytty.cloud.v1.AgentEvent.rejected:type_name -> anytty.cloud.v1.AgentSignalRejected
 	4,  // 16: anytty.cloud.v1.AgentEvent.authorization:type_name -> anytty.cloud.v1.AgentAuthorizationResult
 	9,  // 17: anytty.cloud.v1.AgentEvent.lifecycle_result:type_name -> anytty.cloud.v1.DaemonLifecycleResult
-	19, // 18: anytty.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
+	20, // 18: anytty.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
 	7,  // 19: anytty.cloud.v1.EdgeCommand.ready:type_name -> anytty.cloud.v1.AgentReady
 	2,  // 20: anytty.cloud.v1.EdgeCommand.offer:type_name -> anytty.cloud.v1.AgentOffer
 	3,  // 21: anytty.cloud.v1.EdgeCommand.authorize:type_name -> anytty.cloud.v1.AgentAuthorize
-	20, // 22: anytty.cloud.v1.EdgeCommand.challenge:type_name -> anytty.cloud.v1.EdgeChallenge
+	21, // 22: anytty.cloud.v1.EdgeCommand.challenge:type_name -> anytty.cloud.v1.EdgeChallenge
 	8,  // 23: anytty.cloud.v1.EdgeCommand.lifecycle:type_name -> anytty.cloud.v1.DaemonLifecycleCommand
-	10, // 24: anytty.cloud.v1.AgentGateway.Connect:input_type -> anytty.cloud.v1.AgentEvent
-	11, // 25: anytty.cloud.v1.AgentGateway.Connect:output_type -> anytty.cloud.v1.EdgeCommand
-	25, // [25:26] is the sub-list for method output_type
-	24, // [24:25] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	10, // 24: anytty.cloud.v1.EdgeCommand.edge_reselect:type_name -> anytty.cloud.v1.DaemonEdgeReselectCommand
+	11, // 25: anytty.cloud.v1.AgentGateway.Connect:input_type -> anytty.cloud.v1.AgentEvent
+	12, // 26: anytty.cloud.v1.AgentGateway.Connect:output_type -> anytty.cloud.v1.EdgeCommand
+	26, // [26:27] is the sub-list for method output_type
+	25, // [25:26] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_agent_gateway_proto_init() }
@@ -1313,7 +1388,7 @@ func file_cloud_v1_agent_gateway_proto_init() {
 	file_cloud_v1_enrollment_proto_init()
 	file_cloud_v1_runtime_proto_init()
 	file_cloud_v1_usage_proto_init()
-	file_cloud_v1_agent_gateway_proto_msgTypes[10].OneofWrappers = []any{
+	file_cloud_v1_agent_gateway_proto_msgTypes[11].OneofWrappers = []any{
 		(*AgentEvent_Hello)(nil),
 		(*AgentEvent_Heartbeat)(nil),
 		(*AgentEvent_Answer)(nil),
@@ -1321,12 +1396,13 @@ func file_cloud_v1_agent_gateway_proto_init() {
 		(*AgentEvent_Authorization)(nil),
 		(*AgentEvent_LifecycleResult)(nil),
 	}
-	file_cloud_v1_agent_gateway_proto_msgTypes[11].OneofWrappers = []any{
+	file_cloud_v1_agent_gateway_proto_msgTypes[12].OneofWrappers = []any{
 		(*EdgeCommand_Ready)(nil),
 		(*EdgeCommand_Offer)(nil),
 		(*EdgeCommand_Authorize)(nil),
 		(*EdgeCommand_Challenge)(nil),
 		(*EdgeCommand_Lifecycle)(nil),
+		(*EdgeCommand_EdgeReselect)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1334,7 +1410,7 @@ func file_cloud_v1_agent_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_agent_gateway_proto_rawDesc), len(file_cloud_v1_agent_gateway_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

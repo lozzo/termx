@@ -27,6 +27,9 @@ message DaemonRecord {
   uint64 state_revision = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+  string preferred_edge_id = 11;
+  uint64 edge_preference_revision = 12;
+  google.protobuf.Timestamp edge_preference_updated_at = 13;
 }
 
 // DaemonStateRecord 是 Controller 向 Edge 广播的最小持久状态。
@@ -51,6 +54,41 @@ message DaemonRuntimeProjection {
 message ManagedDaemon {
   DaemonRecord daemon = 1;
   DaemonRuntimeProjection runtime = 2;
+}
+
+// DaemonEdgeMeasurement 是 daemon 从自身网络位置测得的短期连接质量。
+// connection_failure_rate 是 TCP/TLS/gRPC 探测失败率，不表示 UDP 丢包率。
+message DaemonEdgeMeasurement {
+  string edge_id = 1;
+  bool reachable = 2;
+  uint32 connect_latency_ms = 3;
+  double connection_failure_rate = 4;
+  uint32 sample_count = 5;
+  google.protobuf.Timestamp measured_at = 6;
+}
+
+// DaemonEdgeCandidate 是面向 daemon owner 的安全 Edge 投影。
+message DaemonEdgeCandidate {
+  EdgeLocator locator = 1;
+  bool online = 2;
+  bool eligible = 3;
+  uint64 agent_count = 4;
+  uint64 capacity = 5;
+  bool preferred = 6;
+  bool current = 7;
+  DaemonEdgeMeasurement measurement = 8;
+  double score = 9;
+  string status = 10;
+}
+
+message DaemonEdgeSelection {
+  string daemon_id = 1;
+  string preferred_edge_id = 2;
+  uint64 preference_revision = 3;
+  string current_edge_id = 4;
+  string selected_edge_id = 5;
+  repeated DaemonEdgeCandidate candidates = 6;
+  google.protobuf.Timestamp evaluated_at = 7;
 }
 
 message CreateDaemonEnrollmentRequest {
@@ -82,6 +120,29 @@ message ChangeMyDaemonStateRequest {
 }
 
 message ChangeMyDaemonStateResponse { DaemonRecord daemon = 1; }
+
+message ListMyDaemonEdgesRequest { string daemon_id = 1; }
+message ListMyDaemonEdgesResponse { DaemonEdgeSelection selection = 1; }
+
+message ChangeMyDaemonEdgePreferenceRequest {
+  string daemon_id = 1;
+  string preferred_edge_id = 2;
+  uint64 expected_preference_revision = 3;
+  bool reselect_now = 4;
+}
+
+message ChangeMyDaemonEdgePreferenceResponse {
+  DaemonEdgeSelection selection = 1;
+  bool reselect_accepted = 2;
+  string message = 3;
+}
+
+message ReselectMyDaemonEdgeRequest { string daemon_id = 1; }
+message ReselectMyDaemonEdgeResponse {
+  DaemonEdgeSelection selection = 1;
+  bool reselect_accepted = 2;
+  string message = 3;
+}
 
 message BeginDaemonEnrollmentRequest {
   string enrollment_code = 1;
@@ -126,6 +187,10 @@ message BeginDaemonBindingRefreshRequest {
 message CompleteDaemonBindingRefreshRequest {
   string challenge_id = 1;
   bytes device_proof = 2;
+  repeated DaemonEdgeMeasurement edge_measurements = 3;
+  bool change_preference = 4;
+  string preferred_edge_id = 5;
+  uint64 expected_preference_revision = 6;
 }
 
 // RefreshDaemonBindingResponse 对 ACTIVE/BLOCKED daemon 返回新的 binding 和 locator。
@@ -134,6 +199,7 @@ message RefreshDaemonBindingResponse {
   DaemonRecord daemon = 1;
   SignedEnvelope daemon_binding = 2;
   EdgeLocator edge_locator = 3;
+  DaemonEdgeSelection edge_selection = 4;
 }
 
 // EnrollmentService 负责一次性注册，以及现有 DeviceIdentity 在 Edge 位置失效后的 binding 刷新。
@@ -149,4 +215,7 @@ service DaemonManagementService {
   rpc CreateMyEnrollment(CreateMyDaemonEnrollmentRequest) returns (CreateDaemonEnrollmentResponse);
   rpc ListMyDaemons(ListMyDaemonsRequest) returns (ListMyDaemonsResponse);
   rpc ChangeMyDaemonState(ChangeMyDaemonStateRequest) returns (ChangeMyDaemonStateResponse);
+  rpc ListMyDaemonEdges(ListMyDaemonEdgesRequest) returns (ListMyDaemonEdgesResponse);
+  rpc ChangeMyDaemonEdgePreference(ChangeMyDaemonEdgePreferenceRequest) returns (ChangeMyDaemonEdgePreferenceResponse);
+  rpc ReselectMyDaemonEdge(ReselectMyDaemonEdgeRequest) returns (ReselectMyDaemonEdgeResponse);
 }

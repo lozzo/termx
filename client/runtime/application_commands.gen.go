@@ -583,3 +583,39 @@ func (session *ApplicationSession) RemoteLocalDisable(ctx context.Context, comma
 	}
 	return result.GetRemoteLocalStatus(), nil
 }
+
+// RemoteCloudEdges executes the remote_cloud_edges application command.
+func (session *ApplicationSession) RemoteCloudEdges(ctx context.Context, command *apipb.RemoteCloudEdgesCommand) (*apipb.RemoteCloudEdgesResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteCloudEdges{RemoteCloudEdges: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetRemoteCloudEdges() == nil {
+		return nil, missingApplicationResult("remote_cloud_edges")
+	}
+	return result.GetRemoteCloudEdges(), nil
+}
+
+// RemoteCloudPreferEdge executes the remote_cloud_prefer_edge application command.
+func (session *ApplicationSession) RemoteCloudPreferEdge(ctx context.Context, command *apipb.RemoteCloudPreferEdgeCommand) (*apipb.RemoteCloudEdgesResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteCloudPreferEdge{RemoteCloudPreferEdge: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetRemoteCloudEdges() == nil {
+		return nil, missingApplicationResult("remote_cloud_edges")
+	}
+	return result.GetRemoteCloudEdges(), nil
+}
+
+// RemoteCloudReselectEdge executes the remote_cloud_reselect_edge application command.
+func (session *ApplicationSession) RemoteCloudReselectEdge(ctx context.Context, command *apipb.RemoteCloudReselectEdgeCommand) (*apipb.RemoteCloudEdgesResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteCloudReselectEdge{RemoteCloudReselectEdge: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetRemoteCloudEdges() == nil {
+		return nil, missingApplicationResult("remote_cloud_edges")
+	}
+	return result.GetRemoteCloudEdges(), nil
+}

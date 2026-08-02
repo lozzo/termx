@@ -63,6 +63,9 @@ type PlatformController interface {
 	RemoteLocalEnable(context.Context, *apipb.EndpointSessionStamp, *apipb.RemoteLocalEnableCommand) (*apipb.RemoteLocalStatusResult, error)
 	RemoteLocalStatus(context.Context, *apipb.EndpointSessionStamp, *apipb.RemoteLocalStatusCommand) (*apipb.RemoteLocalStatusResult, error)
 	RemoteLocalDisable(context.Context, *apipb.EndpointSessionStamp, *apipb.RemoteLocalDisableCommand) (*apipb.RemoteLocalStatusResult, error)
+	RemoteCloudEdges(context.Context, *apipb.EndpointSessionStamp, *apipb.RemoteCloudEdgesCommand) (*apipb.RemoteCloudEdgesResult, error)
+	RemoteCloudPreferEdge(context.Context, *apipb.EndpointSessionStamp, *apipb.RemoteCloudPreferEdgeCommand) (*apipb.RemoteCloudEdgesResult, error)
+	RemoteCloudReselectEdge(context.Context, *apipb.EndpointSessionStamp, *apipb.RemoteCloudReselectEdgeCommand) (*apipb.RemoteCloudEdgesResult, error)
 }
 
 func isTerminalCommand(command *apipb.CommandEnvelope) bool {
@@ -139,7 +142,10 @@ func validateApplicationCommand(command *apipb.CommandEnvelope) error {
 		*apipb.CommandEnvelope_RemotePairStart,
 		*apipb.CommandEnvelope_RemoteLocalEnable,
 		*apipb.CommandEnvelope_RemoteLocalStatus,
-		*apipb.CommandEnvelope_RemoteLocalDisable:
+		*apipb.CommandEnvelope_RemoteLocalDisable,
+		*apipb.CommandEnvelope_RemoteCloudEdges,
+		*apipb.CommandEnvelope_RemoteCloudPreferEdge,
+		*apipb.CommandEnvelope_RemoteCloudReselectEdge:
 		return apimapping.ValidateAccessRemoteCommand(command)
 	default:
 		return nil
@@ -428,6 +434,24 @@ func (service *Service) dispatchPlatformCommand(ctx context.Context, requestID s
 			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 		}
 		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteLocalStatus{RemoteLocalStatus: result}}
+	case *apipb.CommandEnvelope_RemoteCloudEdges:
+		result, err := service.platform.RemoteCloudEdges(ctx, session, value.RemoteCloudEdges)
+		if err != nil || result == nil {
+			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteCloudEdges{RemoteCloudEdges: result}}
+	case *apipb.CommandEnvelope_RemoteCloudPreferEdge:
+		result, err := service.platform.RemoteCloudPreferEdge(ctx, session, value.RemoteCloudPreferEdge)
+		if err != nil || result == nil {
+			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteCloudEdges{RemoteCloudEdges: result}}
+	case *apipb.CommandEnvelope_RemoteCloudReselectEdge:
+		result, err := service.platform.RemoteCloudReselectEdge(ctx, session, value.RemoteCloudReselectEdge)
+		if err != nil || result == nil {
+			return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_RemoteCloudEdges{RemoteCloudEdges: result}}
 	default:
 		return errorResult(requestID, session, apimapping.ErrorToProto(&apimapping.ValidationError{Field: "command", Reason: "unsupported platform command"}, false))
 	}

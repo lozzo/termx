@@ -150,13 +150,79 @@ func (database *Database) ChangeDaemonState(ctx context.Context, accountID, daem
 	return daemon, nil
 }
 
-const daemonSelect = `SELECT daemon.daemon_id::text,daemon.account_id::text,account.display_name,daemon.display_name,daemon.device_id,daemon.device_public_key,daemon.device_fingerprint,daemon.state,daemon.state_revision,daemon.created_at,daemon.updated_at FROM daemons daemon JOIN accounts account ON account.account_id=daemon.account_id`
+// ListDaemonEdgeMeasurements 返回 daemon 最近一次对各 Edge 的汇总探测。
+func (database *Database) ListDaemonEdgeMeasurements(ctx context.Context, daemonID string) ([]enrollment.EdgeMeasurement, error) {
+	rows, err := database.pool.Query(ctx, `SELECT edge_id::text,reachable,connect_latency_ms,connection_failure_rate,sample_count,measured_at FROM daemon_edge_measurements WHERE daemon_id=$1 ORDER BY edge_id`, daemonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]enrollment.EdgeMeasurement, 0)
+	for rows.Next() {
+		var value enrollment.EdgeMeasurement
+		if err := rows.Scan(&value.EdgeID, &value.Reachable, &value.ConnectLatencyMS, &value.ConnectionFailureRate, &value.SampleCount, &value.MeasuredAt); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+// UpsertDaemonEdgeMeasurements 只替换每个 Edge 的最新汇总，不修改 daemon 生命周期 revision。
+func (database *Database) UpsertDaemonEdgeMeasurements(ctx context.Context, daemonID string, measurements []enrollment.EdgeMeasurement) error {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, value := range measurements {
+		if _, err := tx.Exec(ctx, `INSERT INTO daemon_edge_measurements(daemon_id,edge_id,reachable,connect_latency_ms,connection_failure_rate,sample_count,measured_at)
+VALUES($1,$2,$3,$4,$5,$6,$7)
+ON CONFLICT(daemon_id,edge_id) DO UPDATE SET reachable=excluded.reachable,connect_latency_ms=excluded.connect_latency_ms,connection_failure_rate=excluded.connection_failure_rate,sample_count=excluded.sample_count,measured_at=excluded.measured_at`, daemonID, value.EdgeID, value.Reachable, value.ConnectLatencyMS, value.ConnectionFailureRate, value.SampleCount, value.MeasuredAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// ChangeDaemonEdgePreference 用 owner 和 preference revision CAS 更新软偏好；空 Edge 表示恢复自动选择。
+func (database *Database) ChangeDaemonEdgePreference(ctx context.Context, accountID, daemonID, preferredEdgeID string, expectedRevision uint64, now time.Time) (enrollment.Daemon, error) {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return enrollment.Daemon{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	current, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1 AND daemon.account_id=$2 FOR UPDATE OF daemon`, daemonID, accountID))
+	if err != nil || current.State == cloudv1.DaemonState_DAEMON_STATE_DELETED || current.EdgePreferenceRevision != expectedRevision {
+		return enrollment.Daemon{}, enrollment.ErrDaemonUnavailable
+	}
+	var preferred any
+	if preferredEdgeID != "" {
+		preferred = preferredEdgeID
+	}
+	if _, err := tx.Exec(ctx, `UPDATE daemons SET preferred_edge_id=$1,edge_preference_revision=edge_preference_revision+1,edge_preference_updated_at=$2 WHERE daemon_id=$3`, preferred, now, daemonID); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	if err := insertOperatorAudit(ctx, tx, accountID, "daemon.edge.preference", "daemon", daemonID, "user edge preference", "applied", now); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	updated, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, daemonID))
+	if err != nil {
+		return enrollment.Daemon{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	return updated, nil
+}
+
+const daemonSelect = `SELECT daemon.daemon_id::text,daemon.account_id::text,account.display_name,daemon.display_name,daemon.device_id,daemon.device_public_key,daemon.device_fingerprint,daemon.state,daemon.state_revision,daemon.created_at,daemon.updated_at,COALESCE(daemon.preferred_edge_id::text,''),daemon.edge_preference_revision,daemon.edge_preference_updated_at FROM daemons daemon JOIN accounts account ON account.account_id=daemon.account_id`
 
 func scanDaemon(row rowScanner) (enrollment.Daemon, error) {
 	var daemon enrollment.Daemon
 	var publicKey []byte
 	var state string
-	if err := row.Scan(&daemon.ID, &daemon.AccountID, &daemon.AccountName, &daemon.DisplayName, &daemon.DeviceID, &publicKey, &daemon.DeviceFingerprint, &state, &daemon.StateRevision, &daemon.CreatedAt, &daemon.UpdatedAt); err != nil {
+	if err := row.Scan(&daemon.ID, &daemon.AccountID, &daemon.AccountName, &daemon.DisplayName, &daemon.DeviceID, &publicKey, &daemon.DeviceFingerprint, &state, &daemon.StateRevision, &daemon.CreatedAt, &daemon.UpdatedAt, &daemon.PreferredEdgeID, &daemon.EdgePreferenceRevision, &daemon.EdgePreferenceUpdatedAt); err != nil {
 		return enrollment.Daemon{}, err
 	}
 	daemon.State = parseDaemonState(state)

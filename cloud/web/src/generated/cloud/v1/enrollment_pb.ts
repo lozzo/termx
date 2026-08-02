@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/enrollment.proto.
  */
 export const file_cloud_v1_enrollment: GenFile = /*@__PURE__*/
-  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEitQIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSKwoFc3RhdGUYByABKA4yHC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uU3RhdGUSFgoOc3RhdGVfcmV2aXNpb24YCCABKAQSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiawoRRGFlbW9uU3RhdGVSZWNvcmQSEQoJZGFlbW9uX2lkGAEgASgJEisKBXN0YXRlGAIgASgOMhwuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlEhYKDnN0YXRlX3JldmlzaW9uGAMgASgEIrwBChdEYWVtb25SdW50aW1lUHJvamVjdGlvbhIOCgZvbmxpbmUYASABKAgSDwoHZWRnZV9pZBgCIAEoCRIRCgllZGdlX25hbWUYAyABKAkSEwoLZWRnZV9yZWdpb24YBCABKAkSDwoHYm9vdF9pZBgFIAEoCRIVCg1jb25uZWN0aW9uX2lkGAYgASgJEhIKCmdlbmVyYXRpb24YByABKAQSHAoUZWRnZV9wdWJsaWNfZW5kcG9pbnQYCCABKAkieQoNTWFuYWdlZERhZW1vbhItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjkKB3J1bnRpbWUYAiABKAsyKC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUnVudGltZVByb2plY3Rpb24iXgodQ3JlYXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIUCgxhY2NvdW50X25hbWUYAiABKAkSEwoLZGFlbW9uX25hbWUYAyABKAkilQEKHkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRISCgphY2NvdW50X2lkGAEgASgJEhcKD2Vucm9sbG1lbnRfY29kZRgCIAEoCRIuCgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5lbnJvbGxfY29tbWFuZBgEIAEoCSIUChJMaXN0RGFlbW9uc1JlcXVlc3QiRgoTTGlzdERhZW1vbnNSZXNwb25zZRIvCgdkYWVtb25zGAEgAygLMh4uYW55dHR5LmNsb3VkLnYxLk1hbmFnZWREYWVtb24iNgofQ3JlYXRlTXlEYWVtb25FbnJvbGxtZW50UmVxdWVzdBITCgtkYWVtb25fbmFtZRgBIAEoCSIWChRMaXN0TXlEYWVtb25zUmVxdWVzdCJIChVMaXN0TXlEYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIpQBChpDaGFuZ2VNeURhZW1vblN0YXRlUmVxdWVzdBIRCglkYWVtb25faWQYASABKAkSMgoMdGFyZ2V0X3N0YXRlGAIgASgOMhwuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlEh8KF2V4cGVjdGVkX3N0YXRlX3JldmlzaW9uGAMgASgEEg4KBnJlYXNvbhgEIAEoCSJMChtDaGFuZ2VNeURhZW1vblN0YXRlUmVzcG9uc2USLQoGZGFlbW9uGAEgASgLMh0uYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlY29yZCKBAQocQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBIXCg9lbnJvbGxtZW50X2NvZGUYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgEIAEoDCJsChFJZGVudGl0eUNoYWxsZW5nZRIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KH0NvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCKYAQoLRWRnZUxvY2F0b3ISDwoHZWRnZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnJlZ2lvbhgDIAEoCRIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkSEwoLc2VydmVyX25hbWUYBSABKAkSGgoSY2FfY2VydGlmaWNhdGVfcGVtGAYgASgMEhAKCHJldmlzaW9uGAcgASgEIr4BCiBDb21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjcKDmRhZW1vbl9iaW5kaW5nGAIgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEjIKDGVkZ2VfbG9jYXRvchgDIAEoCzIcLmFueXR0eS5jbG91ZC52MS5FZGdlTG9jYXRvciI1CiBCZWdpbkRhZW1vbkJpbmRpbmdSZWZyZXNoUmVxdWVzdBIRCglkYWVtb25faWQYASABKAkiUQojQ29tcGxldGVEYWVtb25CaW5kaW5nUmVmcmVzaFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCK6AQocUmVmcmVzaERhZW1vbkJpbmRpbmdSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjcKDmRhZW1vbl9iaW5kaW5nGAIgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEjIKDGVkZ2VfbG9jYXRvchgDIAEoCzIcLmFueXR0eS5jbG91ZC52MS5FZGdlTG9jYXRvcip4CgtEYWVtb25TdGF0ZRIcChhEQUVNT05fU1RBVEVfVU5TUEVDSUZJRUQQABIXChNEQUVNT05fU1RBVEVfQUNUSVZFEAESGAoUREFFTU9OX1NUQVRFX0JMT0NLRUQQAhIYChREQUVNT05fU1RBVEVfREVMRVRFRBADMvoDChFFbnJvbGxtZW50U2VydmljZRJqChVCZWdpbkRhZW1vbkVucm9sbG1lbnQSLS5hbnl0dHkuY2xvdWQudjEuQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBoiLmFueXR0eS5jbG91ZC52MS5JZGVudGl0eUNoYWxsZW5nZRJ/ChhDb21wbGV0ZURhZW1vbkVucm9sbG1lbnQSMC5hbnl0dHkuY2xvdWQudjEuQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVxdWVzdBoxLmFueXR0eS5jbG91ZC52MS5Db21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRJyChlCZWdpbkRhZW1vbkJpbmRpbmdSZWZyZXNoEjEuYW55dHR5LmNsb3VkLnYxLkJlZ2luRGFlbW9uQmluZGluZ1JlZnJlc2hSZXF1ZXN0GiIuYW55dHR5LmNsb3VkLnYxLklkZW50aXR5Q2hhbGxlbmdlEoMBChxDb21wbGV0ZURhZW1vbkJpbmRpbmdSZWZyZXNoEjQuYW55dHR5LmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uQmluZGluZ1JlZnJlc2hSZXF1ZXN0Gi0uYW55dHR5LmNsb3VkLnYxLlJlZnJlc2hEYWVtb25CaW5kaW5nUmVzcG9uc2Uy5AIKF0RhZW1vbk1hbmFnZW1lbnRTZXJ2aWNlEncKEkNyZWF0ZU15RW5yb2xsbWVudBIwLmFueXR0eS5jbG91ZC52MS5DcmVhdGVNeURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0Gi8uYW55dHR5LmNsb3VkLnYxLkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRJeCg1MaXN0TXlEYWVtb25zEiUuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXF1ZXN0GiYuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXNwb25zZRJwChNDaGFuZ2VNeURhZW1vblN0YXRlEisuYW55dHR5LmNsb3VkLnYxLkNoYW5nZU15RGFlbW9uU3RhdGVSZXF1ZXN0GiwuYW55dHR5LmNsb3VkLnYxLkNoYW5nZU15RGFlbW9uU3RhdGVSZXNwb25zZUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9hbnl0dHkuY2xvdWQudjEisgMKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSKwoFc3RhdGUYByABKA4yHC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uU3RhdGUSFgoOc3RhdGVfcmV2aXNpb24YCCABKAQSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGQoRcHJlZmVycmVkX2VkZ2VfaWQYCyABKAkSIAoYZWRnZV9wcmVmZXJlbmNlX3JldmlzaW9uGAwgASgEEj4KGmVkZ2VfcHJlZmVyZW5jZV91cGRhdGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJrChFEYWVtb25TdGF0ZVJlY29yZBIRCglkYWVtb25faWQYASABKAkSKwoFc3RhdGUYAiABKA4yHC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uU3RhdGUSFgoOc3RhdGVfcmV2aXNpb24YAyABKAQivAEKF0RhZW1vblJ1bnRpbWVQcm9qZWN0aW9uEg4KBm9ubGluZRgBIAEoCBIPCgdlZGdlX2lkGAIgASgJEhEKCWVkZ2VfbmFtZRgDIAEoCRITCgtlZGdlX3JlZ2lvbhgEIAEoCRIPCgdib290X2lkGAUgASgJEhUKDWNvbm5lY3Rpb25faWQYBiABKAkSEgoKZ2VuZXJhdGlvbhgHIAEoBBIcChRlZGdlX3B1YmxpY19lbmRwb2ludBgIIAEoCSJ5Cg1NYW5hZ2VkRGFlbW9uEi0KBmRhZW1vbhgBIAEoCzIdLmFueXR0eS5jbG91ZC52MS5EYWVtb25SZWNvcmQSOQoHcnVudGltZRgCIAEoCzIoLmFueXR0eS5jbG91ZC52MS5EYWVtb25SdW50aW1lUHJvamVjdGlvbiK/AQoVRGFlbW9uRWRnZU1lYXN1cmVtZW50Eg8KB2VkZ2VfaWQYASABKAkSEQoJcmVhY2hhYmxlGAIgASgIEhoKEmNvbm5lY3RfbGF0ZW5jeV9tcxgDIAEoDRIfChdjb25uZWN0aW9uX2ZhaWx1cmVfcmF0ZRgEIAEoARIUCgxzYW1wbGVfY291bnQYBSABKA0SLwoLbWVhc3VyZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIo0CChNEYWVtb25FZGdlQ2FuZGlkYXRlEi0KB2xvY2F0b3IYASABKAsyHC5hbnl0dHkuY2xvdWQudjEuRWRnZUxvY2F0b3ISDgoGb25saW5lGAIgASgIEhAKCGVsaWdpYmxlGAMgASgIEhMKC2FnZW50X2NvdW50GAQgASgEEhAKCGNhcGFjaXR5GAUgASgEEhEKCXByZWZlcnJlZBgGIAEoCBIPCgdjdXJyZW50GAcgASgIEjsKC21lYXN1cmVtZW50GAggASgLMiYuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkVkZ2VNZWFzdXJlbWVudBINCgVzY29yZRgJIAEoARIOCgZzdGF0dXMYCiABKAki/wEKE0RhZW1vbkVkZ2VTZWxlY3Rpb24SEQoJZGFlbW9uX2lkGAEgASgJEhkKEXByZWZlcnJlZF9lZGdlX2lkGAIgASgJEhsKE3ByZWZlcmVuY2VfcmV2aXNpb24YAyABKAQSFwoPY3VycmVudF9lZGdlX2lkGAQgASgJEhgKEHNlbGVjdGVkX2VkZ2VfaWQYBSABKAkSOAoKY2FuZGlkYXRlcxgGIAMoCzIkLmFueXR0eS5jbG91ZC52MS5EYWVtb25FZGdlQ2FuZGlkYXRlEjAKDGV2YWx1YXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiXgodQ3JlYXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIUCgxhY2NvdW50X25hbWUYAiABKAkSEwoLZGFlbW9uX25hbWUYAyABKAkilQEKHkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRISCgphY2NvdW50X2lkGAEgASgJEhcKD2Vucm9sbG1lbnRfY29kZRgCIAEoCRIuCgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5lbnJvbGxfY29tbWFuZBgEIAEoCSIUChJMaXN0RGFlbW9uc1JlcXVlc3QiRgoTTGlzdERhZW1vbnNSZXNwb25zZRIvCgdkYWVtb25zGAEgAygLMh4uYW55dHR5LmNsb3VkLnYxLk1hbmFnZWREYWVtb24iNgofQ3JlYXRlTXlEYWVtb25FbnJvbGxtZW50UmVxdWVzdBITCgtkYWVtb25fbmFtZRgBIAEoCSIWChRMaXN0TXlEYWVtb25zUmVxdWVzdCJIChVMaXN0TXlEYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIpQBChpDaGFuZ2VNeURhZW1vblN0YXRlUmVxdWVzdBIRCglkYWVtb25faWQYASABKAkSMgoMdGFyZ2V0X3N0YXRlGAIgASgOMhwuYW55dHR5LmNsb3VkLnYxLkRhZW1vblN0YXRlEh8KF2V4cGVjdGVkX3N0YXRlX3JldmlzaW9uGAMgASgEEg4KBnJlYXNvbhgEIAEoCSJMChtDaGFuZ2VNeURhZW1vblN0YXRlUmVzcG9uc2USLQoGZGFlbW9uGAEgASgLMh0uYW55dHR5LmNsb3VkLnYxLkRhZW1vblJlY29yZCItChhMaXN0TXlEYWVtb25FZGdlc1JlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJIlQKGUxpc3RNeURhZW1vbkVkZ2VzUmVzcG9uc2USNwoJc2VsZWN0aW9uGAEgASgLMiQuYW55dHR5LmNsb3VkLnYxLkRhZW1vbkVkZ2VTZWxlY3Rpb24ijwEKI0NoYW5nZU15RGFlbW9uRWRnZVByZWZlcmVuY2VSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCRIZChFwcmVmZXJyZWRfZWRnZV9pZBgCIAEoCRIkChxleHBlY3RlZF9wcmVmZXJlbmNlX3JldmlzaW9uGAMgASgEEhQKDHJlc2VsZWN0X25vdxgEIAEoCCKLAQokQ2hhbmdlTXlEYWVtb25FZGdlUHJlZmVyZW5jZVJlc3BvbnNlEjcKCXNlbGVjdGlvbhgBIAEoCzIkLmFueXR0eS5jbG91ZC52MS5EYWVtb25FZGdlU2VsZWN0aW9uEhkKEXJlc2VsZWN0X2FjY2VwdGVkGAIgASgIEg8KB21lc3NhZ2UYAyABKAkiMAobUmVzZWxlY3RNeURhZW1vbkVkZ2VSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCSKDAQocUmVzZWxlY3RNeURhZW1vbkVkZ2VSZXNwb25zZRI3CglzZWxlY3Rpb24YASABKAsyJC5hbnl0dHkuY2xvdWQudjEuRGFlbW9uRWRnZVNlbGVjdGlvbhIZChFyZXNlbGVjdF9hY2NlcHRlZBgCIAEoCBIPCgdtZXNzYWdlGAMgASgJIoEBChxCZWdpbkRhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhcKD2Vucm9sbG1lbnRfY29kZRgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkSGgoSZGV2aWNlX2ZpbmdlcnByaW50GAMgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAQgASgMImwKEUlkZW50aXR5Q2hhbGxlbmdlEhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTQofQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVxdWVzdBIUCgxjaGFsbGVuZ2VfaWQYASABKAkSFAoMZGV2aWNlX3Byb29mGAIgASgMIpgBCgtFZGdlTG9jYXRvchIPCgdlZGdlX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGcmVnaW9uGAMgASgJEhcKD3B1YmxpY19lbmRwb2ludBgEIAEoCRITCgtzZXJ2ZXJfbmFtZRgFIAEoCRIaChJjYV9jZXJ0aWZpY2F0ZV9wZW0YBiABKAwSEAoIcmV2aXNpb24YByABKAQivgEKIENvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEi0KBmRhZW1vbhgBIAEoCzIdLmFueXR0eS5jbG91ZC52MS5EYWVtb25SZWNvcmQSNwoOZGFlbW9uX2JpbmRpbmcYAiABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmVkRW52ZWxvcGUSMgoMZWRnZV9sb2NhdG9yGAMgASgLMhwuYW55dHR5LmNsb3VkLnYxLkVkZ2VMb2NhdG9yIjUKIEJlZ2luRGFlbW9uQmluZGluZ1JlZnJlc2hSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCSLwAQojQ29tcGxldGVEYWVtb25CaW5kaW5nUmVmcmVzaFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDBJBChFlZGdlX21lYXN1cmVtZW50cxgDIAMoCzImLmFueXR0eS5jbG91ZC52MS5EYWVtb25FZGdlTWVhc3VyZW1lbnQSGQoRY2hhbmdlX3ByZWZlcmVuY2UYBCABKAgSGQoRcHJlZmVycmVkX2VkZ2VfaWQYBSABKAkSJAocZXhwZWN0ZWRfcHJlZmVyZW5jZV9yZXZpc2lvbhgGIAEoBCL4AQocUmVmcmVzaERhZW1vbkJpbmRpbmdSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5hbnl0dHkuY2xvdWQudjEuRGFlbW9uUmVjb3JkEjcKDmRhZW1vbl9iaW5kaW5nGAIgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEjIKDGVkZ2VfbG9jYXRvchgDIAEoCzIcLmFueXR0eS5jbG91ZC52MS5FZGdlTG9jYXRvchI8Cg5lZGdlX3NlbGVjdGlvbhgEIAEoCzIkLmFueXR0eS5jbG91ZC52MS5EYWVtb25FZGdlU2VsZWN0aW9uKngKC0RhZW1vblN0YXRlEhwKGERBRU1PTl9TVEFURV9VTlNQRUNJRklFRBAAEhcKE0RBRU1PTl9TVEFURV9BQ1RJVkUQARIYChREQUVNT05fU1RBVEVfQkxPQ0tFRBACEhgKFERBRU1PTl9TVEFURV9ERUxFVEVEEAMy+gMKEUVucm9sbG1lbnRTZXJ2aWNlEmoKFUJlZ2luRGFlbW9uRW5yb2xsbWVudBItLmFueXR0eS5jbG91ZC52MS5CZWdpbkRhZW1vbkVucm9sbG1lbnRSZXF1ZXN0GiIuYW55dHR5LmNsb3VkLnYxLklkZW50aXR5Q2hhbGxlbmdlEn8KGENvbXBsZXRlRGFlbW9uRW5yb2xsbWVudBIwLmFueXR0eS5jbG91ZC52MS5Db21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0GjEuYW55dHR5LmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEnIKGUJlZ2luRGFlbW9uQmluZGluZ1JlZnJlc2gSMS5hbnl0dHkuY2xvdWQudjEuQmVnaW5EYWVtb25CaW5kaW5nUmVmcmVzaFJlcXVlc3QaIi5hbnl0dHkuY2xvdWQudjEuSWRlbnRpdHlDaGFsbGVuZ2USgwEKHENvbXBsZXRlRGFlbW9uQmluZGluZ1JlZnJlc2gSNC5hbnl0dHkuY2xvdWQudjEuQ29tcGxldGVEYWVtb25CaW5kaW5nUmVmcmVzaFJlcXVlc3QaLS5hbnl0dHkuY2xvdWQudjEuUmVmcmVzaERhZW1vbkJpbmRpbmdSZXNwb25zZTLTBQoXRGFlbW9uTWFuYWdlbWVudFNlcnZpY2USdwoSQ3JlYXRlTXlFbnJvbGxtZW50EjAuYW55dHR5LmNsb3VkLnYxLkNyZWF0ZU15RGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaLy5hbnl0dHkuY2xvdWQudjEuQ3JlYXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEl4KDUxpc3RNeURhZW1vbnMSJS5hbnl0dHkuY2xvdWQudjEuTGlzdE15RGFlbW9uc1JlcXVlc3QaJi5hbnl0dHkuY2xvdWQudjEuTGlzdE15RGFlbW9uc1Jlc3BvbnNlEnAKE0NoYW5nZU15RGFlbW9uU3RhdGUSKy5hbnl0dHkuY2xvdWQudjEuQ2hhbmdlTXlEYWVtb25TdGF0ZVJlcXVlc3QaLC5hbnl0dHkuY2xvdWQudjEuQ2hhbmdlTXlEYWVtb25TdGF0ZVJlc3BvbnNlEmoKEUxpc3RNeURhZW1vbkVkZ2VzEikuYW55dHR5LmNsb3VkLnYxLkxpc3RNeURhZW1vbkVkZ2VzUmVxdWVzdBoqLmFueXR0eS5jbG91ZC52MS5MaXN0TXlEYWVtb25FZGdlc1Jlc3BvbnNlEosBChxDaGFuZ2VNeURhZW1vbkVkZ2VQcmVmZXJlbmNlEjQuYW55dHR5LmNsb3VkLnYxLkNoYW5nZU15RGFlbW9uRWRnZVByZWZlcmVuY2VSZXF1ZXN0GjUuYW55dHR5LmNsb3VkLnYxLkNoYW5nZU15RGFlbW9uRWRnZVByZWZlcmVuY2VSZXNwb25zZRJzChRSZXNlbGVjdE15RGFlbW9uRWRnZRIsLmFueXR0eS5jbG91ZC52MS5SZXNlbGVjdE15RGFlbW9uRWRnZVJlcXVlc3QaLS5hbnl0dHkuY2xvdWQudjEuUmVzZWxlY3RNeURhZW1vbkVkZ2VSZXNwb25zZUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
@@ -71,6 +71,21 @@ export type DaemonRecord = Message<"anytty.cloud.v1.DaemonRecord"> & {
    * @generated from field: google.protobuf.Timestamp updated_at = 10;
    */
   updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string preferred_edge_id = 11;
+   */
+  preferredEdgeId: string;
+
+  /**
+   * @generated from field: uint64 edge_preference_revision = 12;
+   */
+  edgePreferenceRevision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp edge_preference_updated_at = 13;
+   */
+  edgePreferenceUpdatedAt?: Timestamp | undefined;
 };
 
 /**
@@ -186,6 +201,162 @@ export const ManagedDaemonSchema: GenMessage<ManagedDaemon> = /*@__PURE__*/
   messageDesc(file_cloud_v1_enrollment, 3);
 
 /**
+ * DaemonEdgeMeasurement 是 daemon 从自身网络位置测得的短期连接质量。
+ * connection_failure_rate 是 TCP/TLS/gRPC 探测失败率，不表示 UDP 丢包率。
+ *
+ * @generated from message anytty.cloud.v1.DaemonEdgeMeasurement
+ */
+export type DaemonEdgeMeasurement = Message<"anytty.cloud.v1.DaemonEdgeMeasurement"> & {
+  /**
+   * @generated from field: string edge_id = 1;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: bool reachable = 2;
+   */
+  reachable: boolean;
+
+  /**
+   * @generated from field: uint32 connect_latency_ms = 3;
+   */
+  connectLatencyMs: number;
+
+  /**
+   * @generated from field: double connection_failure_rate = 4;
+   */
+  connectionFailureRate: number;
+
+  /**
+   * @generated from field: uint32 sample_count = 5;
+   */
+  sampleCount: number;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp measured_at = 6;
+   */
+  measuredAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonEdgeMeasurement.
+ * Use `create(DaemonEdgeMeasurementSchema)` to create a new message.
+ */
+export const DaemonEdgeMeasurementSchema: GenMessage<DaemonEdgeMeasurement> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 4);
+
+/**
+ * DaemonEdgeCandidate 是面向 daemon owner 的安全 Edge 投影。
+ *
+ * @generated from message anytty.cloud.v1.DaemonEdgeCandidate
+ */
+export type DaemonEdgeCandidate = Message<"anytty.cloud.v1.DaemonEdgeCandidate"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.EdgeLocator locator = 1;
+   */
+  locator?: EdgeLocator | undefined;
+
+  /**
+   * @generated from field: bool online = 2;
+   */
+  online: boolean;
+
+  /**
+   * @generated from field: bool eligible = 3;
+   */
+  eligible: boolean;
+
+  /**
+   * @generated from field: uint64 agent_count = 4;
+   */
+  agentCount: bigint;
+
+  /**
+   * @generated from field: uint64 capacity = 5;
+   */
+  capacity: bigint;
+
+  /**
+   * @generated from field: bool preferred = 6;
+   */
+  preferred: boolean;
+
+  /**
+   * @generated from field: bool current = 7;
+   */
+  current: boolean;
+
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonEdgeMeasurement measurement = 8;
+   */
+  measurement?: DaemonEdgeMeasurement | undefined;
+
+  /**
+   * @generated from field: double score = 9;
+   */
+  score: number;
+
+  /**
+   * @generated from field: string status = 10;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonEdgeCandidate.
+ * Use `create(DaemonEdgeCandidateSchema)` to create a new message.
+ */
+export const DaemonEdgeCandidateSchema: GenMessage<DaemonEdgeCandidate> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 5);
+
+/**
+ * @generated from message anytty.cloud.v1.DaemonEdgeSelection
+ */
+export type DaemonEdgeSelection = Message<"anytty.cloud.v1.DaemonEdgeSelection"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: string preferred_edge_id = 2;
+   */
+  preferredEdgeId: string;
+
+  /**
+   * @generated from field: uint64 preference_revision = 3;
+   */
+  preferenceRevision: bigint;
+
+  /**
+   * @generated from field: string current_edge_id = 4;
+   */
+  currentEdgeId: string;
+
+  /**
+   * @generated from field: string selected_edge_id = 5;
+   */
+  selectedEdgeId: string;
+
+  /**
+   * @generated from field: repeated anytty.cloud.v1.DaemonEdgeCandidate candidates = 6;
+   */
+  candidates: DaemonEdgeCandidate[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp evaluated_at = 7;
+   */
+  evaluatedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.DaemonEdgeSelection.
+ * Use `create(DaemonEdgeSelectionSchema)` to create a new message.
+ */
+export const DaemonEdgeSelectionSchema: GenMessage<DaemonEdgeSelection> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 6);
+
+/**
  * @generated from message anytty.cloud.v1.CreateDaemonEnrollmentRequest
  */
 export type CreateDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CreateDaemonEnrollmentRequest"> & {
@@ -210,7 +381,7 @@ export type CreateDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CreateDaemo
  * Use `create(CreateDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CreateDaemonEnrollmentRequestSchema: GenMessage<CreateDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 4);
+  messageDesc(file_cloud_v1_enrollment, 7);
 
 /**
  * @generated from message anytty.cloud.v1.CreateDaemonEnrollmentResponse
@@ -242,7 +413,7 @@ export type CreateDaemonEnrollmentResponse = Message<"anytty.cloud.v1.CreateDaem
  * Use `create(CreateDaemonEnrollmentResponseSchema)` to create a new message.
  */
 export const CreateDaemonEnrollmentResponseSchema: GenMessage<CreateDaemonEnrollmentResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 5);
+  messageDesc(file_cloud_v1_enrollment, 8);
 
 /**
  * @generated from message anytty.cloud.v1.ListDaemonsRequest
@@ -255,7 +426,7 @@ export type ListDaemonsRequest = Message<"anytty.cloud.v1.ListDaemonsRequest"> &
  * Use `create(ListDaemonsRequestSchema)` to create a new message.
  */
 export const ListDaemonsRequestSchema: GenMessage<ListDaemonsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 6);
+  messageDesc(file_cloud_v1_enrollment, 9);
 
 /**
  * @generated from message anytty.cloud.v1.ListDaemonsResponse
@@ -272,7 +443,7 @@ export type ListDaemonsResponse = Message<"anytty.cloud.v1.ListDaemonsResponse">
  * Use `create(ListDaemonsResponseSchema)` to create a new message.
  */
 export const ListDaemonsResponseSchema: GenMessage<ListDaemonsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 7);
+  messageDesc(file_cloud_v1_enrollment, 10);
 
 /**
  * CreateMyDaemonEnrollmentRequest 只允许用户命名 daemon；账号来自认证 session。
@@ -291,7 +462,7 @@ export type CreateMyDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CreateMyD
  * Use `create(CreateMyDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CreateMyDaemonEnrollmentRequestSchema: GenMessage<CreateMyDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 8);
+  messageDesc(file_cloud_v1_enrollment, 11);
 
 /**
  * @generated from message anytty.cloud.v1.ListMyDaemonsRequest
@@ -304,7 +475,7 @@ export type ListMyDaemonsRequest = Message<"anytty.cloud.v1.ListMyDaemonsRequest
  * Use `create(ListMyDaemonsRequestSchema)` to create a new message.
  */
 export const ListMyDaemonsRequestSchema: GenMessage<ListMyDaemonsRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 9);
+  messageDesc(file_cloud_v1_enrollment, 12);
 
 /**
  * @generated from message anytty.cloud.v1.ListMyDaemonsResponse
@@ -321,7 +492,7 @@ export type ListMyDaemonsResponse = Message<"anytty.cloud.v1.ListMyDaemonsRespon
  * Use `create(ListMyDaemonsResponseSchema)` to create a new message.
  */
 export const ListMyDaemonsResponseSchema: GenMessage<ListMyDaemonsResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 10);
+  messageDesc(file_cloud_v1_enrollment, 13);
 
 /**
  * @generated from message anytty.cloud.v1.ChangeMyDaemonStateRequest
@@ -353,7 +524,7 @@ export type ChangeMyDaemonStateRequest = Message<"anytty.cloud.v1.ChangeMyDaemon
  * Use `create(ChangeMyDaemonStateRequestSchema)` to create a new message.
  */
 export const ChangeMyDaemonStateRequestSchema: GenMessage<ChangeMyDaemonStateRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 11);
+  messageDesc(file_cloud_v1_enrollment, 14);
 
 /**
  * @generated from message anytty.cloud.v1.ChangeMyDaemonStateResponse
@@ -370,7 +541,144 @@ export type ChangeMyDaemonStateResponse = Message<"anytty.cloud.v1.ChangeMyDaemo
  * Use `create(ChangeMyDaemonStateResponseSchema)` to create a new message.
  */
 export const ChangeMyDaemonStateResponseSchema: GenMessage<ChangeMyDaemonStateResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 12);
+  messageDesc(file_cloud_v1_enrollment, 15);
+
+/**
+ * @generated from message anytty.cloud.v1.ListMyDaemonEdgesRequest
+ */
+export type ListMyDaemonEdgesRequest = Message<"anytty.cloud.v1.ListMyDaemonEdgesRequest"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ListMyDaemonEdgesRequest.
+ * Use `create(ListMyDaemonEdgesRequestSchema)` to create a new message.
+ */
+export const ListMyDaemonEdgesRequestSchema: GenMessage<ListMyDaemonEdgesRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 16);
+
+/**
+ * @generated from message anytty.cloud.v1.ListMyDaemonEdgesResponse
+ */
+export type ListMyDaemonEdgesResponse = Message<"anytty.cloud.v1.ListMyDaemonEdgesResponse"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonEdgeSelection selection = 1;
+   */
+  selection?: DaemonEdgeSelection | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ListMyDaemonEdgesResponse.
+ * Use `create(ListMyDaemonEdgesResponseSchema)` to create a new message.
+ */
+export const ListMyDaemonEdgesResponseSchema: GenMessage<ListMyDaemonEdgesResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 17);
+
+/**
+ * @generated from message anytty.cloud.v1.ChangeMyDaemonEdgePreferenceRequest
+ */
+export type ChangeMyDaemonEdgePreferenceRequest = Message<"anytty.cloud.v1.ChangeMyDaemonEdgePreferenceRequest"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: string preferred_edge_id = 2;
+   */
+  preferredEdgeId: string;
+
+  /**
+   * @generated from field: uint64 expected_preference_revision = 3;
+   */
+  expectedPreferenceRevision: bigint;
+
+  /**
+   * @generated from field: bool reselect_now = 4;
+   */
+  reselectNow: boolean;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ChangeMyDaemonEdgePreferenceRequest.
+ * Use `create(ChangeMyDaemonEdgePreferenceRequestSchema)` to create a new message.
+ */
+export const ChangeMyDaemonEdgePreferenceRequestSchema: GenMessage<ChangeMyDaemonEdgePreferenceRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 18);
+
+/**
+ * @generated from message anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse
+ */
+export type ChangeMyDaemonEdgePreferenceResponse = Message<"anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonEdgeSelection selection = 1;
+   */
+  selection?: DaemonEdgeSelection | undefined;
+
+  /**
+   * @generated from field: bool reselect_accepted = 2;
+   */
+  reselectAccepted: boolean;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse.
+ * Use `create(ChangeMyDaemonEdgePreferenceResponseSchema)` to create a new message.
+ */
+export const ChangeMyDaemonEdgePreferenceResponseSchema: GenMessage<ChangeMyDaemonEdgePreferenceResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 19);
+
+/**
+ * @generated from message anytty.cloud.v1.ReselectMyDaemonEdgeRequest
+ */
+export type ReselectMyDaemonEdgeRequest = Message<"anytty.cloud.v1.ReselectMyDaemonEdgeRequest"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ReselectMyDaemonEdgeRequest.
+ * Use `create(ReselectMyDaemonEdgeRequestSchema)` to create a new message.
+ */
+export const ReselectMyDaemonEdgeRequestSchema: GenMessage<ReselectMyDaemonEdgeRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 20);
+
+/**
+ * @generated from message anytty.cloud.v1.ReselectMyDaemonEdgeResponse
+ */
+export type ReselectMyDaemonEdgeResponse = Message<"anytty.cloud.v1.ReselectMyDaemonEdgeResponse"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonEdgeSelection selection = 1;
+   */
+  selection?: DaemonEdgeSelection | undefined;
+
+  /**
+   * @generated from field: bool reselect_accepted = 2;
+   */
+  reselectAccepted: boolean;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ReselectMyDaemonEdgeResponse.
+ * Use `create(ReselectMyDaemonEdgeResponseSchema)` to create a new message.
+ */
+export const ReselectMyDaemonEdgeResponseSchema: GenMessage<ReselectMyDaemonEdgeResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 21);
 
 /**
  * @generated from message anytty.cloud.v1.BeginDaemonEnrollmentRequest
@@ -402,7 +710,7 @@ export type BeginDaemonEnrollmentRequest = Message<"anytty.cloud.v1.BeginDaemonE
  * Use `create(BeginDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const BeginDaemonEnrollmentRequestSchema: GenMessage<BeginDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 13);
+  messageDesc(file_cloud_v1_enrollment, 22);
 
 /**
  * @generated from message anytty.cloud.v1.IdentityChallenge
@@ -429,7 +737,7 @@ export type IdentityChallenge = Message<"anytty.cloud.v1.IdentityChallenge"> & {
  * Use `create(IdentityChallengeSchema)` to create a new message.
  */
 export const IdentityChallengeSchema: GenMessage<IdentityChallenge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 14);
+  messageDesc(file_cloud_v1_enrollment, 23);
 
 /**
  * @generated from message anytty.cloud.v1.CompleteDaemonEnrollmentRequest
@@ -451,7 +759,7 @@ export type CompleteDaemonEnrollmentRequest = Message<"anytty.cloud.v1.CompleteD
  * Use `create(CompleteDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CompleteDaemonEnrollmentRequestSchema: GenMessage<CompleteDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 15);
+  messageDesc(file_cloud_v1_enrollment, 24);
 
 /**
  * EdgeLocator 是 daemon 和已授权客户端可持久化的公开连接位置，不包含授权秘密。
@@ -500,7 +808,7 @@ export type EdgeLocator = Message<"anytty.cloud.v1.EdgeLocator"> & {
  * Use `create(EdgeLocatorSchema)` to create a new message.
  */
 export const EdgeLocatorSchema: GenMessage<EdgeLocator> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 16);
+  messageDesc(file_cloud_v1_enrollment, 25);
 
 /**
  * @generated from message anytty.cloud.v1.CompleteDaemonEnrollmentResponse
@@ -527,7 +835,7 @@ export type CompleteDaemonEnrollmentResponse = Message<"anytty.cloud.v1.Complete
  * Use `create(CompleteDaemonEnrollmentResponseSchema)` to create a new message.
  */
 export const CompleteDaemonEnrollmentResponseSchema: GenMessage<CompleteDaemonEnrollmentResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 17);
+  messageDesc(file_cloud_v1_enrollment, 26);
 
 /**
  * BeginDaemonBindingRefreshRequest 只标识现有 daemon；身份和 Edge 选择都由 Controller 的当前真值决定。
@@ -546,7 +854,7 @@ export type BeginDaemonBindingRefreshRequest = Message<"anytty.cloud.v1.BeginDae
  * Use `create(BeginDaemonBindingRefreshRequestSchema)` to create a new message.
  */
 export const BeginDaemonBindingRefreshRequestSchema: GenMessage<BeginDaemonBindingRefreshRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 18);
+  messageDesc(file_cloud_v1_enrollment, 27);
 
 /**
  * @generated from message anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
@@ -561,6 +869,26 @@ export type CompleteDaemonBindingRefreshRequest = Message<"anytty.cloud.v1.Compl
    * @generated from field: bytes device_proof = 2;
    */
   deviceProof: Uint8Array;
+
+  /**
+   * @generated from field: repeated anytty.cloud.v1.DaemonEdgeMeasurement edge_measurements = 3;
+   */
+  edgeMeasurements: DaemonEdgeMeasurement[];
+
+  /**
+   * @generated from field: bool change_preference = 4;
+   */
+  changePreference: boolean;
+
+  /**
+   * @generated from field: string preferred_edge_id = 5;
+   */
+  preferredEdgeId: string;
+
+  /**
+   * @generated from field: uint64 expected_preference_revision = 6;
+   */
+  expectedPreferenceRevision: bigint;
 };
 
 /**
@@ -568,7 +896,7 @@ export type CompleteDaemonBindingRefreshRequest = Message<"anytty.cloud.v1.Compl
  * Use `create(CompleteDaemonBindingRefreshRequestSchema)` to create a new message.
  */
 export const CompleteDaemonBindingRefreshRequestSchema: GenMessage<CompleteDaemonBindingRefreshRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 19);
+  messageDesc(file_cloud_v1_enrollment, 28);
 
 /**
  * RefreshDaemonBindingResponse 对 ACTIVE/BLOCKED daemon 返回新的 binding 和 locator。
@@ -591,6 +919,11 @@ export type RefreshDaemonBindingResponse = Message<"anytty.cloud.v1.RefreshDaemo
    * @generated from field: anytty.cloud.v1.EdgeLocator edge_locator = 3;
    */
   edgeLocator?: EdgeLocator | undefined;
+
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonEdgeSelection edge_selection = 4;
+   */
+  edgeSelection?: DaemonEdgeSelection | undefined;
 };
 
 /**
@@ -598,7 +931,7 @@ export type RefreshDaemonBindingResponse = Message<"anytty.cloud.v1.RefreshDaemo
  * Use `create(RefreshDaemonBindingResponseSchema)` to create a new message.
  */
 export const RefreshDaemonBindingResponseSchema: GenMessage<RefreshDaemonBindingResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 20);
+  messageDesc(file_cloud_v1_enrollment, 29);
 
 /**
  * DaemonState 是 daemon identity 的持久生命周期。DELETED 是不可恢复的终态墓碑。
@@ -703,6 +1036,30 @@ export const DaemonManagementService: GenService<{
     methodKind: "unary";
     input: typeof ChangeMyDaemonStateRequestSchema;
     output: typeof ChangeMyDaemonStateResponseSchema;
+  },
+  /**
+   * @generated from rpc anytty.cloud.v1.DaemonManagementService.ListMyDaemonEdges
+   */
+  listMyDaemonEdges: {
+    methodKind: "unary";
+    input: typeof ListMyDaemonEdgesRequestSchema;
+    output: typeof ListMyDaemonEdgesResponseSchema;
+  },
+  /**
+   * @generated from rpc anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonEdgePreference
+   */
+  changeMyDaemonEdgePreference: {
+    methodKind: "unary";
+    input: typeof ChangeMyDaemonEdgePreferenceRequestSchema;
+    output: typeof ChangeMyDaemonEdgePreferenceResponseSchema;
+  },
+  /**
+   * @generated from rpc anytty.cloud.v1.DaemonManagementService.ReselectMyDaemonEdge
+   */
+  reselectMyDaemonEdge: {
+    methodKind: "unary";
+    input: typeof ReselectMyDaemonEdgeRequestSchema;
+    output: typeof ReselectMyDaemonEdgeResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cloud_v1_enrollment, 1);

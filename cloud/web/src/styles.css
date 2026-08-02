@@ -357,6 +357,15 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .daemon-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .edge-settings { display: grid; gap: 18px; }
 .edge-lifecycle-actions { min-height: 66px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 11px 17px; }
+.edge-choice-list { display: grid; border: 1px solid var(--line); background: var(--surface); }
+.edge-choice { min-width: 0; display: grid; grid-template-columns: 20px minmax(150px, 1fr) minmax(190px, .8fr); align-items: center; gap: 12px; padding: 13px 14px; cursor: pointer; }
+.edge-choice + .edge-choice { border-top: 1px solid var(--line-soft); }
+.edge-choice:hover { background: var(--hover); }
+.edge-choice.is-selected { background: var(--info-soft); box-shadow: inset 3px 0 var(--accent); }
+.edge-choice > input { width: 17px; height: 17px; accent-color: var(--accent); }
+.edge-choice-main, .edge-choice-metrics { min-width: 0; display: grid; gap: 4px; }
+.edge-choice small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.edge-choice-metrics { justify-items: start; }
 .empty-state, .empty-inline { padding: 46px 20px; color: var(--muted); text-align: center; line-height: 1.6; }
 .empty-inline { padding: 28px 17px; text-align: left; }
 .empty-inline p { color: var(--muted); }
@@ -599,6 +608,8 @@ td > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
   .user-data-table td[data-label=""]::before { display: none; }
   .user-data-table td[data-label=""] .button { width: 100%; }
   .user-data-table .daemon-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .edge-choice { grid-template-columns: 20px minmax(0, 1fr); }
+  .edge-choice-metrics { grid-column: 2; }
   .dialog-backdrop { align-items: end; padding: 0; }
 	.dialog { width: 100%; max-height: calc(92dvh - env(safe-area-inset-top)); border-radius: 4px 4px 0 0; border-inline: 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
 	.credential-value { grid-template-columns: 1fr; }

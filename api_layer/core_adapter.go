@@ -401,3 +401,27 @@ func (adapter *coreApplicationAdapter) RemoteLocalDisable(ctx context.Context, _
 	}
 	return apimapping.RemoteLocalStatusToProto(result), nil
 }
+
+func (adapter *coreApplicationAdapter) RemoteCloudEdges(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.RemoteCloudEdgesCommand) (*apipb.RemoteCloudEdgesResult, error) {
+	result, err := adapter.port.ApplicationRemoteCloudEdges(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteCloudEdgeSelectionToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) RemoteCloudPreferEdge(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.RemoteCloudPreferEdgeCommand) (*apipb.RemoteCloudEdgesResult, error) {
+	result, err := adapter.port.ApplicationRemoteCloudPreferEdge(ctx, command.GetEdgeId(), command.GetExpectedPreferenceRevision())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteCloudEdgeSelectionToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) RemoteCloudReselectEdge(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.RemoteCloudReselectEdgeCommand) (*apipb.RemoteCloudEdgesResult, error) {
+	result, err := adapter.port.ApplicationRemoteCloudReselectEdge(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteCloudEdgeSelectionToProto(result), nil
+}

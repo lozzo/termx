@@ -106,6 +106,12 @@ func RequiredCapabilityForCommand(command *apipb.CommandEnvelope) apipb.ApiCapab
 		return apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL
 	case *apipb.CommandEnvelope_RemoteLocalDisable:
 		return apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL
+	case *apipb.CommandEnvelope_RemoteCloudEdges:
+		return apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL
+	case *apipb.CommandEnvelope_RemoteCloudPreferEdge:
+		return apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL
+	case *apipb.CommandEnvelope_RemoteCloudReselectEdge:
+		return apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL
 	default:
 		return apipb.ApiCapability_API_CAPABILITY_UNSPECIFIED
 	}

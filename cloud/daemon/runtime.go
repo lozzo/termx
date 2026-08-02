@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -57,7 +59,13 @@ type Runtime struct {
 	lifecycleAck      uint64
 	cloudSessions     map[string]*cloudSession
 	enrollmentDeleted bool
+	operationMu       sync.Mutex
+	attemptMu         sync.Mutex
+	activeAttemptID   string
+	activeCancel      context.CancelFunc
 }
+
+var errEdgeReselected = errors.New("daemon Edge reselection requested")
 
 type authorizedRuntimeOptions struct {
 	pionLogger           *slog.Logger
@@ -182,6 +190,10 @@ func (runtime *Runtime) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if errors.Is(err, errEdgeReselected) {
+			delay = runtime.config.RetryMinimum
+			continue
+		}
 		if runtime.daemonDeleted() {
 			return nil
 		}
@@ -243,9 +255,12 @@ func (runtime *Runtime) connectEdge(ctx context.Context, daemonID string, bindin
 	}
 	defer connection.Close()
 	attemptCtx, cancelAttempt := context.WithCancel(ctx)
+	attemptID := uuid.NewString()
+	runtime.setActiveAttempt(attemptID, cancelAttempt)
 	var workers sync.WaitGroup
 	var peers sync.WaitGroup
 	defer func() {
+		runtime.clearActiveAttempt(attemptID)
 		cancelAttempt()
 		workers.Wait()
 		peers.Wait()
@@ -407,6 +422,18 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 			}
 			applyErr := runtime.applyDaemonState(ctx, lifecycle.GetDaemonState())
 			response = lifecycleResult(generation, lifecycle.GetDaemonState(), applyErr)
+		case command.GetEdgeReselect() != nil:
+			request := command.GetEdgeReselect()
+			if request.GetAgentGeneration() != generation {
+				failures <- errors.New("Edge reselection command generation is invalid")
+				return
+			}
+			if _, reselectErr := runtime.reselect(ctx, false, "", 0, true); reselectErr != nil {
+				failures <- reselectErr
+				return
+			}
+			failures <- errEdgeReselected
+			return
 		default:
 			failures <- errors.New("Edge command payload is unsupported")
 			return
@@ -706,73 +733,203 @@ func (runtime *Runtime) managedPairingBootstrap() (*remoteauthpb.PairingManagedR
 }
 
 func (runtime *Runtime) refreshBinding(ctx context.Context) error {
+	_, err := runtime.refreshBindingRequest(ctx, nil, false, "", 0, true)
+	return err
+}
+
+func (runtime *Runtime) refreshBindingRequest(ctx context.Context, measurements []*cloudv1.DaemonEdgeMeasurement, changePreference bool, preferredEdgeID string, expectedPreferenceRevision uint64, persistBinding bool) (*cloudv1.DaemonEdgeSelection, error) {
 	record := runtime.currentRecord()
 	var roots *x509.CertPool
 	if len(runtime.config.ControllerCAPEM) != 0 {
 		roots = x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(runtime.config.ControllerCAPEM) {
-			return errors.New("Cloud Controller CA certificate is invalid")
+			return nil, errors.New("Cloud Controller CA certificate is invalid")
 		}
 	}
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, ServerName: runtime.config.ControllerServerName, RootCAs: roots}
 	connection, err := grpc.NewClient(runtime.config.ControllerAddress, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer connection.Close()
 	client := cloudv1.NewEnrollmentServiceClient(connection)
 	challenge, err := client.BeginDaemonBindingRefresh(ctx, &cloudv1.BeginDaemonBindingRefreshRequest{DaemonId: record.DaemonID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	proof, err := remoteauth.SignDeviceIdentityProof(runtime.config.Identity, challenge.GetChallenge())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	completed, err := client.CompleteDaemonBindingRefresh(ctx, &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+	completed, err := client.CompleteDaemonBindingRefresh(ctx, &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof, EdgeMeasurements: measurements, ChangePreference: changePreference, PreferredEdgeId: strings.TrimSpace(preferredEdgeID), ExpectedPreferenceRevision: expectedPreferenceRevision})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	daemon := completed.GetDaemon()
 	if daemon == nil || daemon.GetDaemonId() != record.DaemonID || daemon.GetAccountId() != record.AccountID ||
 		daemon.GetDeviceId() != runtime.config.Identity.DeviceID || daemon.GetDeviceFingerprint() != runtime.config.Identity.Fingerprint {
-		return errors.New("daemon binding refresh identity is invalid")
+		return nil, errors.New("daemon binding refresh identity is invalid")
 	}
 	state := &cloudv1.DaemonStateRecord{DaemonId: daemon.GetDaemonId(), State: daemon.GetState(), StateRevision: daemon.GetStateRevision()}
 	if daemon.GetState() == cloudv1.DaemonState_DAEMON_STATE_DELETED {
 		if completed.GetDaemonBinding() != nil || completed.GetEdgeLocator() != nil {
-			return errors.New("deleted daemon binding refresh returned route material")
+			return nil, errors.New("deleted daemon binding refresh returned route material")
 		}
-		return runtime.applyDaemonState(ctx, state)
+		return completed.GetEdgeSelection(), runtime.applyDaemonState(ctx, state)
 	}
 	if completed.GetDaemonBinding() == nil || completed.GetEdgeLocator() == nil {
-		return errors.New("daemon binding refresh response is incomplete")
+		return nil, errors.New("daemon binding refresh response is incomplete")
 	}
 	bindingClaims := &cloudv1.DaemonBindingClaims{}
 	if err := proto.Unmarshal(completed.GetDaemonBinding().GetPayload(), bindingClaims); err != nil ||
 		bindingClaims.GetDeviceId() != runtime.config.Identity.DeviceID || !ed25519.PublicKey(bindingClaims.GetDevicePublicKey()).Equal(runtime.config.Identity.PublicKey) {
-		return errors.New("daemon binding refresh identity is invalid")
+		return nil, errors.New("daemon binding refresh identity is invalid")
+	}
+	if !persistBinding {
+		return completed.GetEdgeSelection(), runtime.applyDaemonState(ctx, state)
 	}
 	binding, err := proto.MarshalOptions{Deterministic: true}.Marshal(completed.GetDaemonBinding())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	locatorPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(completed.GetEdgeLocator())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	updated := EnrollmentRecord{Version: recordVersion, DaemonID: record.DaemonID, AccountID: record.AccountID, DaemonBinding: binding, EdgeLocator: locatorPayload, EnrolledAt: record.EnrolledAt}
 	if err := updated.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 	if runtime.config.RecordPath == "" {
-		return errors.New("Cloud enrollment record path is unavailable")
+		return nil, errors.New("Cloud enrollment record path is unavailable")
 	}
 	if err := SaveRecord(runtime.config.RecordPath, updated); err != nil {
-		return err
+		return nil, err
 	}
 	runtime.replaceRecord(updated)
-	return runtime.applyDaemonState(ctx, state)
+	return completed.GetEdgeSelection(), runtime.applyDaemonState(ctx, state)
+}
+
+// EdgeSelection probes every currently advertised Edge and returns the Controller's final ranking.
+func (runtime *Runtime) EdgeSelection(ctx context.Context) (*cloudv1.DaemonEdgeSelection, error) {
+	return runtime.reselect(ctx, false, "", 0, false)
+}
+
+// PreferEdge persists a soft preference, probes candidates, and reconnects the Cloud control stream.
+func (runtime *Runtime) PreferEdge(ctx context.Context, edgeID string, expectedRevision uint64) (*cloudv1.DaemonEdgeSelection, error) {
+	if expectedRevision == 0 {
+		return nil, errors.New("Edge preference revision is required")
+	}
+	return runtime.reselect(ctx, true, strings.TrimSpace(edgeID), expectedRevision, true)
+}
+
+// ReselectEdge keeps the current preference and immediately probes/reconnects without restarting the daemon.
+func (runtime *Runtime) ReselectEdge(ctx context.Context) (*cloudv1.DaemonEdgeSelection, error) {
+	return runtime.reselect(ctx, false, "", 0, true)
+}
+
+func (runtime *Runtime) reselect(ctx context.Context, changePreference bool, preferredEdgeID string, expectedRevision uint64, reconnect bool) (*cloudv1.DaemonEdgeSelection, error) {
+	runtime.operationMu.Lock()
+	defer runtime.operationMu.Unlock()
+	selection, err := runtime.refreshBindingRequest(ctx, nil, changePreference, preferredEdgeID, expectedRevision, false)
+	if err != nil {
+		return nil, err
+	}
+	measurements := runtime.probeEdges(ctx, selection.GetCandidates())
+	selection, err = runtime.refreshBindingRequest(ctx, measurements, false, "", 0, reconnect)
+	if err != nil {
+		return nil, err
+	}
+	if reconnect {
+		runtime.interruptActiveAttempt()
+	}
+	return proto.Clone(selection).(*cloudv1.DaemonEdgeSelection), nil
+}
+
+func (runtime *Runtime) probeEdges(ctx context.Context, candidates []*cloudv1.DaemonEdgeCandidate) []*cloudv1.DaemonEdgeMeasurement {
+	result := make([]*cloudv1.DaemonEdgeMeasurement, len(candidates))
+	var workers sync.WaitGroup
+	limit := make(chan struct{}, 4)
+	for index, candidate := range candidates {
+		index, locator := index, candidate.GetLocator()
+		if locator == nil {
+			continue
+		}
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			select {
+			case <-ctx.Done():
+				return
+			case limit <- struct{}{}:
+			}
+			defer func() { <-limit }()
+			result[index] = probeEdge(ctx, locator)
+		}()
+	}
+	workers.Wait()
+	compact := make([]*cloudv1.DaemonEdgeMeasurement, 0, len(result))
+	for _, value := range result {
+		if value != nil {
+			compact = append(compact, value)
+		}
+	}
+	return compact
+}
+
+func probeEdge(parent context.Context, locator *cloudv1.EdgeLocator) *cloudv1.DaemonEdgeMeasurement {
+	const samples = 3
+	var success int
+	var latency time.Duration
+	for range samples {
+		started := time.Now()
+		probeCtx, cancel := context.WithTimeout(parent, 2*time.Second)
+		roots := x509.NewCertPool()
+		validCA := roots.AppendCertsFromPEM(locator.GetCaCertificatePem())
+		if validCA {
+			connection, err := grpc.NewClient(locator.GetPublicEndpoint(), grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, ServerName: locator.GetServerName()})))
+			if err == nil {
+				_, err = grpc_health_v1.NewHealthClient(connection).Check(probeCtx, &grpc_health_v1.HealthCheckRequest{}, grpc.WaitForReady(true))
+				_ = connection.Close()
+			}
+			if err == nil {
+				success++
+				latency += time.Since(started)
+			}
+		}
+		cancel()
+		if parent.Err() != nil {
+			break
+		}
+	}
+	latencyMS := uint32(0)
+	if success > 0 {
+		latencyMS = uint32(math.Round(float64(latency/time.Duration(success)) / float64(time.Millisecond)))
+	}
+	return &cloudv1.DaemonEdgeMeasurement{EdgeId: locator.GetEdgeId(), Reachable: success > 0, ConnectLatencyMs: latencyMS, ConnectionFailureRate: float64(samples-success) / samples, SampleCount: samples, MeasuredAt: timestamppb.Now()}
+}
+
+func (runtime *Runtime) setActiveAttempt(id string, cancel context.CancelFunc) {
+	runtime.attemptMu.Lock()
+	runtime.activeAttemptID, runtime.activeCancel = id, cancel
+	runtime.attemptMu.Unlock()
+}
+
+func (runtime *Runtime) clearActiveAttempt(id string) {
+	runtime.attemptMu.Lock()
+	if runtime.activeAttemptID == id {
+		runtime.activeAttemptID, runtime.activeCancel = "", nil
+	}
+	runtime.attemptMu.Unlock()
+}
+
+func (runtime *Runtime) interruptActiveAttempt() {
+	runtime.attemptMu.Lock()
+	cancel := runtime.activeCancel
+	runtime.attemptMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // Enroll 使用一次性 code 和现有 DeviceIdentity 完成 challenge，并返回可持久化最小记录。

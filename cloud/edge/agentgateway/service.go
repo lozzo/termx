@@ -21,8 +21,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 是要求 Edge 先发 challenge 的 AgentGateway 协议版本。
-const ProtocolVersion uint32 = 3
+// ProtocolVersion 4 adds live daemon Edge reselection.
+const ProtocolVersion uint32 = 4
 
 // Runtime 是 Edge 唯一 State actor 暴露给 AgentGateway 的窄连接边界。
 type Runtime interface {

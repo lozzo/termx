@@ -51,6 +51,7 @@ type Config struct {
 	ApplyCertificate         func(context.Context, *cloudv1.EdgeCertificateBundle) error
 	CloseDaemon              func(context.Context, string, uint64) error
 	CloseSession             func(context.Context, string, uint64) error
+	ReselectDaemonEdge       func(context.Context, string, uint64, uint64) error
 	Capabilities             []cloudv1.EdgeCapability
 }
 
@@ -424,6 +425,17 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 						return errors.New("session close handler is unavailable")
 					}
 					return config.CloseSession(commandContext, payload.CloseSession.GetSessionId(), payload.CloseSession.GetGeneration())
+				})
+				if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_CommandResult{CommandResult: result}); err != nil {
+					session.finish(err)
+					return
+				}
+			case *cloudv1.ControllerCommand_ReselectDaemonEdge:
+				result := executeRuntimeCommand(ctx, payload.ReselectDaemonEdge.GetCommandId(), payload.ReselectDaemonEdge.GetCorrelationId(), payload.ReselectDaemonEdge.GetDeadline(), func(commandContext context.Context) error {
+					if config.ReselectDaemonEdge == nil {
+						return errors.New("daemon Edge reselection handler is unavailable")
+					}
+					return config.ReselectDaemonEdge(commandContext, payload.ReselectDaemonEdge.GetDaemonId(), payload.ReselectDaemonEdge.GetGeneration(), payload.ReselectDaemonEdge.GetPreferenceRevision())
 				})
 				if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_CommandResult{CommandResult: result}); err != nil {
 					session.finish(err)

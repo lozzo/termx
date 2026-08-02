@@ -85,6 +85,12 @@ message DaemonLifecycleResult {
   string error_message = 4;
 }
 
+// DaemonEdgeReselectCommand 让 daemon 立即测速并刷新 binding；不会重启 daemon 进程。
+message DaemonEdgeReselectCommand {
+  uint64 agent_generation = 1;
+  uint64 preference_revision = 2;
+}
+
 message AgentEvent {
   uint32 protocol_version = 1;
   string message_id = 2;
@@ -117,6 +123,7 @@ message EdgeCommand {
     AgentAuthorize authorize = 22;
     EdgeChallenge challenge = 23;
     DaemonLifecycleCommand lifecycle = 24;
+    DaemonEdgeReselectCommand edge_reselect = 25;
   }
 }
 

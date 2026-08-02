@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"sort"
 	"strings"
@@ -42,7 +43,27 @@ type Daemon struct {
 	DevicePublicKey                                                      ed25519.PublicKey
 	State                                                                cloudv1.DaemonState
 	StateRevision                                                        uint64
+	PreferredEdgeID                                                      string
+	EdgePreferenceRevision                                               uint64
+	EdgePreferenceUpdatedAt                                              time.Time
 	CreatedAt, UpdatedAt                                                 time.Time
+}
+
+// EdgeMeasurement 是 daemon 从自身网络位置测得的 TCP/TLS/gRPC 连接质量。
+type EdgeMeasurement struct {
+	EdgeID                string
+	Reachable             bool
+	ConnectLatencyMS      uint32
+	ConnectionFailureRate float64
+	SampleCount           uint32
+	MeasuredAt            time.Time
+}
+
+// EdgeSelectionStore 持久化 Edge 偏好和短期测量；它与 enrollment token 事务相互独立。
+type EdgeSelectionStore interface {
+	ListDaemonEdgeMeasurements(context.Context, string) ([]EdgeMeasurement, error)
+	UpsertDaemonEdgeMeasurements(context.Context, string, []EdgeMeasurement) error
+	ChangeDaemonEdgePreference(context.Context, string, string, string, uint64, time.Time) (Daemon, error)
 }
 
 // Store 是 daemon enrollment 的持久事务边界；Presence 不得实现该接口或写入数据库。
@@ -202,7 +223,7 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	if entitlementErr != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() {
 		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
 	}
-	edge, err := service.selectEdge(ctx)
+	edge, _, err := service.selectEdge(ctx, Daemon{}, "")
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
@@ -273,7 +294,50 @@ func (service *Service) CompleteDaemonBindingRefresh(ctx context.Context, reques
 	if daemon.State != cloudv1.DaemonState_DAEMON_STATE_ACTIVE && daemon.State != cloudv1.DaemonState_DAEMON_STATE_BLOCKED {
 		return nil, status.Error(codes.FailedPrecondition, ErrDaemonUnavailable.Error())
 	}
-	edge, err := service.selectEdge(ctx)
+	selectionStore, hasSelectionStore := service.config.Store.(EdgeSelectionStore)
+	if request.GetChangePreference() {
+		if !hasSelectionStore || request.GetExpectedPreferenceRevision() == 0 {
+			return nil, status.Error(codes.FailedPrecondition, "daemon Edge preference revision is required")
+		}
+		preferredEdgeID := strings.TrimSpace(request.GetPreferredEdgeId())
+		if preferredEdgeID != "" {
+			edges, listErr := service.config.Edges.ListEdges(ctx)
+			if listErr != nil {
+				return nil, status.Error(codes.Internal, listErr.Error())
+			}
+			found := false
+			for _, edge := range edges {
+				found = found || edge.ID == preferredEdgeID
+			}
+			if !found {
+				return nil, status.Error(codes.InvalidArgument, "preferred Edge does not exist")
+			}
+		}
+		daemon, err = selectionStore.ChangeDaemonEdgePreference(ctx, daemon.AccountID, daemon.ID, preferredEdgeID, request.GetExpectedPreferenceRevision(), service.now())
+		if err != nil {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		response.Daemon = projectDaemon(daemon)
+	}
+	if len(request.GetEdgeMeasurements()) > 0 {
+		if !hasSelectionStore {
+			return nil, status.Error(codes.Unimplemented, "daemon Edge measurements are unavailable")
+		}
+		measurements, validateErr := service.acceptMeasurements(ctx, request.GetEdgeMeasurements())
+		if validateErr != nil {
+			return nil, status.Error(codes.InvalidArgument, validateErr.Error())
+		}
+		if err := selectionStore.UpsertDaemonEdgeMeasurements(ctx, daemon.ID, measurements); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+	currentEdgeID := ""
+	if location, found, locateErr := service.config.Directory.LocateDaemon(ctx, daemon.ID); locateErr != nil {
+		return nil, status.Error(codes.Internal, locateErr.Error())
+	} else if found {
+		currentEdgeID = location.EdgeID
+	}
+	edge, selection, err := service.selectEdge(ctx, daemon, currentEdgeID)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
@@ -292,6 +356,7 @@ func (service *Service) CompleteDaemonBindingRefresh(ctx context.Context, reques
 	}
 	response.DaemonBinding = signed
 	response.EdgeLocator = locator
+	response.EdgeSelection = selection
 	return response, nil
 }
 
@@ -305,36 +370,127 @@ func (service *Service) signDaemonBinding(daemon Daemon, edgeID string, locatorD
 	return ticket.SignDaemonBinding(service.config.BindingSigningKeyID, service.config.BindingSigningKey, claims)
 }
 
-func (service *Service) selectEdge(ctx context.Context) (edgeconfig.Edge, error) {
+func (service *Service) selectEdge(ctx context.Context, daemon Daemon, currentEdgeID string) (edgeconfig.Edge, *cloudv1.DaemonEdgeSelection, error) {
 	edges, err := service.config.Edges.ListEdges(ctx)
 	if err != nil {
-		return edgeconfig.Edge{}, err
+		return edgeconfig.Edge{}, nil, err
 	}
+	measurements := make(map[string]EdgeMeasurement)
+	if daemon.ID != "" {
+		if store, ok := service.config.Store.(EdgeSelectionStore); ok {
+			values, listErr := store.ListDaemonEdgeMeasurements(ctx, daemon.ID)
+			if listErr != nil {
+				return edgeconfig.Edge{}, nil, listErr
+			}
+			for _, value := range values {
+				measurements[value.EdgeID] = value
+			}
+		}
+	}
+	now := service.now()
 	type scored struct {
-		edge edgeconfig.Edge
-		load float64
+		edge       edgeconfig.Edge
+		projection directory.EdgeProjection
+		score      float64
+		candidate  *cloudv1.DaemonEdgeCandidate
 	}
 	values := make([]scored, 0, len(edges))
+	candidates := make([]*cloudv1.DaemonEdgeCandidate, 0, len(edges))
 	for _, edge := range edges {
 		projection, found, locateErr := service.config.Directory.Edge(ctx, edge.ID)
 		if locateErr != nil {
-			return edgeconfig.Edge{}, locateErr
+			return edgeconfig.Edge{}, nil, locateErr
 		}
-		if !edge.Enabled || !found {
-			continue
+		load := 1.0
+		if edge.Capacity > 0 && found {
+			load = float64(projection.AgentCount) / float64(edge.Capacity)
 		}
-		values = append(values, scored{edge: edge, load: float64(projection.AgentCount) / float64(edge.Capacity)})
+		measurement, measured := measurements[edge.ID]
+		fresh := measured && now.Sub(measurement.MeasuredAt) <= 10*time.Minute && measurement.MeasuredAt.Sub(now) <= time.Minute
+		eligible := edge.Enabled && found && uint64(projection.AgentCount) < edge.Capacity && (!fresh || measurement.Reachable)
+		score := load * 200
+		statusText := "可用"
+		if fresh {
+			score += float64(measurement.ConnectLatencyMS) + measurement.ConnectionFailureRate*1000
+		}
+		if edge.ID == daemon.PreferredEdgeID {
+			score -= 75
+		}
+		if edge.ID == currentEdgeID {
+			score -= 15
+		}
+		switch {
+		case !edge.Enabled:
+			statusText = "已停用"
+		case !found:
+			statusText = "离线"
+		case uint64(projection.AgentCount) >= edge.Capacity:
+			statusText = "容量已满"
+		case fresh && !measurement.Reachable:
+			statusText = "当前网络不可达"
+		case !fresh:
+			statusText = "等待测速"
+		}
+		candidate := &cloudv1.DaemonEdgeCandidate{Locator: service.configuredLocator(edge), Online: found, Eligible: eligible, AgentCount: uint64(projection.AgentCount), Capacity: edge.Capacity, Preferred: edge.ID == daemon.PreferredEdgeID, Current: edge.ID == currentEdgeID, Score: score, Status: statusText}
+		if measured {
+			candidate.Measurement = projectEdgeMeasurement(measurement)
+		}
+		candidates = append(candidates, candidate)
+		if eligible {
+			values = append(values, scored{edge: edge, projection: projection, score: score, candidate: candidate})
+		}
 	}
 	sort.Slice(values, func(i, j int) bool {
-		if values[i].load != values[j].load {
-			return values[i].load < values[j].load
+		if values[i].score != values[j].score {
+			return values[i].score < values[j].score
 		}
 		return values[i].edge.ID < values[j].edge.ID
 	})
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].GetEligible() != candidates[j].GetEligible() {
+			return candidates[i].GetEligible()
+		}
+		if candidates[i].GetScore() != candidates[j].GetScore() {
+			return candidates[i].GetScore() < candidates[j].GetScore()
+		}
+		return candidates[i].GetLocator().GetEdgeId() < candidates[j].GetLocator().GetEdgeId()
+	})
+	selection := &cloudv1.DaemonEdgeSelection{DaemonId: daemon.ID, PreferredEdgeId: daemon.PreferredEdgeID, PreferenceRevision: daemon.EdgePreferenceRevision, CurrentEdgeId: currentEdgeID, Candidates: candidates, EvaluatedAt: timestamppb.New(now)}
 	if len(values) == 0 {
-		return edgeconfig.Edge{}, ErrDaemonUnavailable
+		return edgeconfig.Edge{}, selection, ErrDaemonUnavailable
 	}
-	return values[0].edge, nil
+	selection.SelectedEdgeId = values[0].edge.ID
+	return values[0].edge, selection, nil
+}
+
+func (service *Service) acceptMeasurements(ctx context.Context, values []*cloudv1.DaemonEdgeMeasurement) ([]EdgeMeasurement, error) {
+	edges, err := service.config.Edges.ListEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string]struct{}, len(edges))
+	for _, edge := range edges {
+		known[edge.ID] = struct{}{}
+	}
+	now := service.now()
+	result := make([]EdgeMeasurement, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		edgeID := strings.TrimSpace(value.GetEdgeId())
+		_, exists := known[edgeID]
+		_, duplicate := seen[edgeID]
+		failureRate := value.GetConnectionFailureRate()
+		if !exists || duplicate || value.GetSampleCount() == 0 || value.GetSampleCount() > 20 || value.GetConnectLatencyMs() > 60_000 || math.IsNaN(failureRate) || math.IsInf(failureRate, 0) || failureRate < 0 || failureRate > 1 {
+			return nil, errors.New("Edge measurement is invalid")
+		}
+		seen[edgeID] = struct{}{}
+		result = append(result, EdgeMeasurement{EdgeID: edgeID, Reachable: value.GetReachable(), ConnectLatencyMS: value.GetConnectLatencyMs(), ConnectionFailureRate: value.GetConnectionFailureRate(), SampleCount: value.GetSampleCount(), MeasuredAt: now})
+	}
+	return result, nil
+}
+
+func projectEdgeMeasurement(value EdgeMeasurement) *cloudv1.DaemonEdgeMeasurement {
+	return &cloudv1.DaemonEdgeMeasurement{EdgeId: value.EdgeID, Reachable: value.Reachable, ConnectLatencyMs: value.ConnectLatencyMS, ConnectionFailureRate: value.ConnectionFailureRate, SampleCount: value.SampleCount, MeasuredAt: timestamppb.New(value.MeasuredAt)}
 }
 
 func (service *Service) projectLocator(ctx context.Context, edge edgeconfig.Edge) (*cloudv1.EdgeLocator, error) {
@@ -345,11 +501,15 @@ func (service *Service) projectLocator(ctx context.Context, edge edgeconfig.Edge
 	if !found {
 		return nil, ErrDaemonUnavailable
 	}
+	return service.configuredLocator(edge), nil
+}
+
+func (service *Service) configuredLocator(edge edgeconfig.Edge) *cloudv1.EdgeLocator {
 	host := edge.PublicEndpoint
 	if parsed, _, splitErr := net.SplitHostPort(edge.PublicEndpoint); splitErr == nil {
 		host = parsed
 	}
-	return &cloudv1.EdgeLocator{EdgeId: edge.ID, Name: edge.Name, Region: edge.Region, PublicEndpoint: edge.PublicEndpoint, ServerName: strings.Trim(host, "[]"), CaCertificatePem: append([]byte(nil), service.config.EdgeCACertificate...), Revision: edge.Revision}, nil
+	return &cloudv1.EdgeLocator{EdgeId: edge.ID, Name: edge.Name, Region: edge.Region, PublicEndpoint: edge.PublicEndpoint, ServerName: strings.Trim(host, "[]"), CaCertificatePem: append([]byte(nil), service.config.EdgeCACertificate...), Revision: edge.Revision}
 }
 
 func (service *Service) newChallenge(state challengeState) (*cloudv1.IdentityChallenge, error) {
@@ -391,5 +551,9 @@ func (service *Service) compactLocked(now time.Time) {
 func (service *Service) now() time.Time { return service.config.Now().UTC() }
 
 func projectDaemon(daemon Daemon) *cloudv1.DaemonRecord {
-	return &cloudv1.DaemonRecord{DaemonId: daemon.ID, AccountId: daemon.AccountID, AccountName: daemon.AccountName, DisplayName: daemon.DisplayName, DeviceId: daemon.DeviceID, DeviceFingerprint: daemon.DeviceFingerprint, State: daemon.State, StateRevision: daemon.StateRevision, CreatedAt: timestamppb.New(daemon.CreatedAt), UpdatedAt: timestamppb.New(daemon.UpdatedAt)}
+	record := &cloudv1.DaemonRecord{DaemonId: daemon.ID, AccountId: daemon.AccountID, AccountName: daemon.AccountName, DisplayName: daemon.DisplayName, DeviceId: daemon.DeviceID, DeviceFingerprint: daemon.DeviceFingerprint, State: daemon.State, StateRevision: daemon.StateRevision, CreatedAt: timestamppb.New(daemon.CreatedAt), UpdatedAt: timestamppb.New(daemon.UpdatedAt), PreferredEdgeId: daemon.PreferredEdgeID, EdgePreferenceRevision: daemon.EdgePreferenceRevision}
+	if !daemon.EdgePreferenceUpdatedAt.IsZero() {
+		record.EdgePreferenceUpdatedAt = timestamppb.New(daemon.EdgePreferenceUpdatedAt)
+	}
+	return record
 }

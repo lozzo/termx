@@ -253,6 +253,24 @@ func (handler *handler) daemons(writer http.ResponseWriter, request *http.Reques
 		input.DaemonId = id
 		response, err := handler.config.DaemonManagement.ChangeMyDaemonState(request.Context(), input)
 		writeServiceResult(writer, response, err)
+	case strings.HasPrefix(request.URL.Path, "/api/daemons/") && strings.HasSuffix(request.URL.Path, "/edges") && request.Method == http.MethodGet:
+		id := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/daemons/"), "/edges")
+		response, err := handler.config.DaemonManagement.ListMyDaemonEdges(request.Context(), &cloudv1.ListMyDaemonEdgesRequest{DaemonId: id})
+		writeServiceResult(writer, response, err)
+	case strings.HasPrefix(request.URL.Path, "/api/daemons/") && strings.HasSuffix(request.URL.Path, "/edge-preference") && request.Method == http.MethodPost:
+		id := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/daemons/"), "/edge-preference")
+		input := &cloudv1.ChangeMyDaemonEdgePreferenceRequest{DaemonId: id}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		input.DaemonId = id
+		response, err := handler.config.DaemonManagement.ChangeMyDaemonEdgePreference(request.Context(), input)
+		writeServiceResult(writer, response, err)
+	case strings.HasPrefix(request.URL.Path, "/api/daemons/") && strings.HasSuffix(request.URL.Path, "/edge-reselect") && request.Method == http.MethodPost:
+		id := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/daemons/"), "/edge-reselect")
+		response, err := handler.config.DaemonManagement.ReselectMyDaemonEdge(request.Context(), &cloudv1.ReselectMyDaemonEdgeRequest{DaemonId: id})
+		writeServiceResult(writer, response, err)
 	default:
 		writeError(writer, http.StatusNotFound, errors.New("daemon endpoint was not found"))
 	}

@@ -37,7 +37,7 @@ AnyTTY 是一个正在开发、尚未公开发布的远程终端系统。它把�
                        enrollment / policy / directory
 daemon <-----------------------> Controller <-------> PostgreSQL
   ^                                   |
-  | AgentGateway                      | EdgeControl v6
+  | AgentGateway v4                   | EdgeControl v7
   |                                   v
 Client ----------------------------> Edge
    ClientGateway / signaling           |
@@ -185,7 +185,7 @@ Direct 和 Cloud route 的必填身份、地址与凭据由配对流程写入；
 
 1. 登录 Cloud 控制台创建 daemon enrollment code。
 2. 在目标电脑消费一次性 code。
-3. 重启 daemon 或等待当前 runtime 接入已绑定 Edge。
+3. 已运行的 daemon 会自动发现 enrollment 并接入 Edge，不需要重启。
 4. 使用显式 Cloud route 生成二维码，让每台 App 分别扫描。
 
 ```sh
@@ -194,9 +194,19 @@ ENROLLMENT_CODE=REPLACE_WITH_ONE_TIME_CODE
   --controller https://cloud.anytty.com \
   "$ENROLLMENT_CODE"
 
-./.artifacts/bin/anytty daemon restart
 ./.artifacts/bin/anytty pair create --route cloud --qr-file ./anytty-cloud-pair.png
 ```
+
+查看候选 Edge、设置软偏好或立即重选时，也不需要重启 daemon：
+
+```sh
+./.artifacts/bin/anytty cloud edge list
+./.artifacts/bin/anytty cloud edge prefer EDGE_ID_OR_NAME
+./.artifacts/bin/anytty cloud edge prefer auto
+./.artifacts/bin/anytty cloud edge reselect
+```
+
+`prefer` 不是强制绑定。daemon 会综合自身测得的 TLS/gRPC 连接耗时、连接失败率和 Controller 看到的节点负载；偏好节点离线、不可达或容量已满时会自动回退。这里的连接失败率不是 UDP 丢包率。重选只重建 Cloud 控制连接，不重启 daemon、terminal 或本地服务；正在进行的 Cloud 会话会断开并重新建立。
 
 Cloud daemon 生命周期：
 

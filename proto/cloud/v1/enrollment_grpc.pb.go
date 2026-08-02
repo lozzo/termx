@@ -239,9 +239,12 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	DaemonManagementService_CreateMyEnrollment_FullMethodName  = "/anytty.cloud.v1.DaemonManagementService/CreateMyEnrollment"
-	DaemonManagementService_ListMyDaemons_FullMethodName       = "/anytty.cloud.v1.DaemonManagementService/ListMyDaemons"
-	DaemonManagementService_ChangeMyDaemonState_FullMethodName = "/anytty.cloud.v1.DaemonManagementService/ChangeMyDaemonState"
+	DaemonManagementService_CreateMyEnrollment_FullMethodName           = "/anytty.cloud.v1.DaemonManagementService/CreateMyEnrollment"
+	DaemonManagementService_ListMyDaemons_FullMethodName                = "/anytty.cloud.v1.DaemonManagementService/ListMyDaemons"
+	DaemonManagementService_ChangeMyDaemonState_FullMethodName          = "/anytty.cloud.v1.DaemonManagementService/ChangeMyDaemonState"
+	DaemonManagementService_ListMyDaemonEdges_FullMethodName            = "/anytty.cloud.v1.DaemonManagementService/ListMyDaemonEdges"
+	DaemonManagementService_ChangeMyDaemonEdgePreference_FullMethodName = "/anytty.cloud.v1.DaemonManagementService/ChangeMyDaemonEdgePreference"
+	DaemonManagementService_ReselectMyDaemonEdge_FullMethodName         = "/anytty.cloud.v1.DaemonManagementService/ReselectMyDaemonEdge"
 )
 
 // DaemonManagementServiceClient is the client API for DaemonManagementService service.
@@ -253,6 +256,9 @@ type DaemonManagementServiceClient interface {
 	CreateMyEnrollment(ctx context.Context, in *CreateMyDaemonEnrollmentRequest, opts ...grpc.CallOption) (*CreateDaemonEnrollmentResponse, error)
 	ListMyDaemons(ctx context.Context, in *ListMyDaemonsRequest, opts ...grpc.CallOption) (*ListMyDaemonsResponse, error)
 	ChangeMyDaemonState(ctx context.Context, in *ChangeMyDaemonStateRequest, opts ...grpc.CallOption) (*ChangeMyDaemonStateResponse, error)
+	ListMyDaemonEdges(ctx context.Context, in *ListMyDaemonEdgesRequest, opts ...grpc.CallOption) (*ListMyDaemonEdgesResponse, error)
+	ChangeMyDaemonEdgePreference(ctx context.Context, in *ChangeMyDaemonEdgePreferenceRequest, opts ...grpc.CallOption) (*ChangeMyDaemonEdgePreferenceResponse, error)
+	ReselectMyDaemonEdge(ctx context.Context, in *ReselectMyDaemonEdgeRequest, opts ...grpc.CallOption) (*ReselectMyDaemonEdgeResponse, error)
 }
 
 type daemonManagementServiceClient struct {
@@ -293,6 +299,36 @@ func (c *daemonManagementServiceClient) ChangeMyDaemonState(ctx context.Context,
 	return out, nil
 }
 
+func (c *daemonManagementServiceClient) ListMyDaemonEdges(ctx context.Context, in *ListMyDaemonEdgesRequest, opts ...grpc.CallOption) (*ListMyDaemonEdgesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyDaemonEdgesResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_ListMyDaemonEdges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonManagementServiceClient) ChangeMyDaemonEdgePreference(ctx context.Context, in *ChangeMyDaemonEdgePreferenceRequest, opts ...grpc.CallOption) (*ChangeMyDaemonEdgePreferenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChangeMyDaemonEdgePreferenceResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_ChangeMyDaemonEdgePreference_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonManagementServiceClient) ReselectMyDaemonEdge(ctx context.Context, in *ReselectMyDaemonEdgeRequest, opts ...grpc.CallOption) (*ReselectMyDaemonEdgeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReselectMyDaemonEdgeResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_ReselectMyDaemonEdge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaemonManagementServiceServer is the server API for DaemonManagementService service.
 // All implementations must embed UnimplementedDaemonManagementServiceServer
 // for forward compatibility.
@@ -302,6 +338,9 @@ type DaemonManagementServiceServer interface {
 	CreateMyEnrollment(context.Context, *CreateMyDaemonEnrollmentRequest) (*CreateDaemonEnrollmentResponse, error)
 	ListMyDaemons(context.Context, *ListMyDaemonsRequest) (*ListMyDaemonsResponse, error)
 	ChangeMyDaemonState(context.Context, *ChangeMyDaemonStateRequest) (*ChangeMyDaemonStateResponse, error)
+	ListMyDaemonEdges(context.Context, *ListMyDaemonEdgesRequest) (*ListMyDaemonEdgesResponse, error)
+	ChangeMyDaemonEdgePreference(context.Context, *ChangeMyDaemonEdgePreferenceRequest) (*ChangeMyDaemonEdgePreferenceResponse, error)
+	ReselectMyDaemonEdge(context.Context, *ReselectMyDaemonEdgeRequest) (*ReselectMyDaemonEdgeResponse, error)
 	mustEmbedUnimplementedDaemonManagementServiceServer()
 }
 
@@ -320,6 +359,15 @@ func (UnimplementedDaemonManagementServiceServer) ListMyDaemons(context.Context,
 }
 func (UnimplementedDaemonManagementServiceServer) ChangeMyDaemonState(context.Context, *ChangeMyDaemonStateRequest) (*ChangeMyDaemonStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChangeMyDaemonState not implemented")
+}
+func (UnimplementedDaemonManagementServiceServer) ListMyDaemonEdges(context.Context, *ListMyDaemonEdgesRequest) (*ListMyDaemonEdgesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMyDaemonEdges not implemented")
+}
+func (UnimplementedDaemonManagementServiceServer) ChangeMyDaemonEdgePreference(context.Context, *ChangeMyDaemonEdgePreferenceRequest) (*ChangeMyDaemonEdgePreferenceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChangeMyDaemonEdgePreference not implemented")
+}
+func (UnimplementedDaemonManagementServiceServer) ReselectMyDaemonEdge(context.Context, *ReselectMyDaemonEdgeRequest) (*ReselectMyDaemonEdgeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReselectMyDaemonEdge not implemented")
 }
 func (UnimplementedDaemonManagementServiceServer) mustEmbedUnimplementedDaemonManagementServiceServer() {
 }
@@ -397,6 +445,60 @@ func _DaemonManagementService_ChangeMyDaemonState_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonManagementService_ListMyDaemonEdges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyDaemonEdgesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonManagementServiceServer).ListMyDaemonEdges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonManagementService_ListMyDaemonEdges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonManagementServiceServer).ListMyDaemonEdges(ctx, req.(*ListMyDaemonEdgesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonManagementService_ChangeMyDaemonEdgePreference_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangeMyDaemonEdgePreferenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonManagementServiceServer).ChangeMyDaemonEdgePreference(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonManagementService_ChangeMyDaemonEdgePreference_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonManagementServiceServer).ChangeMyDaemonEdgePreference(ctx, req.(*ChangeMyDaemonEdgePreferenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonManagementService_ReselectMyDaemonEdge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReselectMyDaemonEdgeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonManagementServiceServer).ReselectMyDaemonEdge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonManagementService_ReselectMyDaemonEdge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonManagementServiceServer).ReselectMyDaemonEdge(ctx, req.(*ReselectMyDaemonEdgeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DaemonManagementService_ServiceDesc is the grpc.ServiceDesc for DaemonManagementService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -415,6 +517,18 @@ var DaemonManagementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChangeMyDaemonState",
 			Handler:    _DaemonManagementService_ChangeMyDaemonState_Handler,
+		},
+		{
+			MethodName: "ListMyDaemonEdges",
+			Handler:    _DaemonManagementService_ListMyDaemonEdges_Handler,
+		},
+		{
+			MethodName: "ChangeMyDaemonEdgePreference",
+			Handler:    _DaemonManagementService_ChangeMyDaemonEdgePreference_Handler,
+		},
+		{
+			MethodName: "ReselectMyDaemonEdge",
+			Handler:    _DaemonManagementService_ReselectMyDaemonEdge_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

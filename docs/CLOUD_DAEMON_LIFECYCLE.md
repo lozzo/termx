@@ -1,6 +1,6 @@
 # Cloud daemon 生命周期
 
-本文描述当前 EdgeControl v6 的 daemon 状态协议。状态真值在 Controller PostgreSQL，Edge 只保存当前控制 generation 的内存投影。
+本文描述当前 EdgeControl v7 的 daemon 状态与 Edge 重选协议。状态真值在 Controller PostgreSQL，Edge 只保存当前控制 generation 的内存投影。
 
 ## 1. 状态
 
@@ -64,7 +64,7 @@ Edge 收到 `DELETED` 时：
 
 ### Edge 重连 Controller
 
-1. 完成 mTLS EdgeControl v6 handshake。
+1. 完成 mTLS EdgeControl v7 handshake。
 2. 接收并验证 KeyBundle、desired config 和完整 daemon state snapshot。
 3. 原子替换 policy table，并向当前 Agent 发送各自目标状态。
 4. Controller generation 已同步且持久 KeyBundle 当前可用时，Edge `/readyz` 返回成功。
@@ -83,19 +83,24 @@ Edge 收到 `DELETED` 时：
 
 1. daemon 启动时先使用稳定的 Controller 地址对账；后续当前 Edge 连接失败时再次发起一次性 challenge。
 2. daemon 用本机 DeviceIdentity 私钥签名 challenge；Controller 从 PostgreSQL 读取身份和最新生命周期，不接受客户端提交账号或公钥。
-3. `ACTIVE`/`BLOCKED` 返回 Controller 按当前在线负载选择的 Edge locator，以及绑定该 locator 摘要的新 binding。
-4. daemon 校验响应身份和 binding/locator 一致性，先原子保存 enrollment record，再切换运行时路由并重连。
-5. `DELETED` 只返回终态，不返回 binding 或 locator。
+3. daemon 可提交从自身网络位置测得的 TLS/gRPC 连接耗时和连接失败率；Controller 将新测量与在线状态、容量、负载和软偏好一起评分。
+4. `ACTIVE`/`BLOCKED` 返回当前最佳 Edge locator、完整候选投影，以及绑定该 locator 摘要的新 binding。偏好 Edge 不可用时自动回退。
+5. daemon 校验响应身份和 binding/locator 一致性，先原子保存 enrollment record，再切换运行时路由并重连。
+6. `DELETED` 只返回终态，不返回 binding 或 locator。
 
-刷新不恢复旧 DNS、旧证书或旧地址，也不在 Controller 持久化 daemon 当前归属 Edge。
+网页或本机 CLI 发起立即重选时，Controller 经当前 Edge 和精确 Agent generation 下发命令。daemon 完成测速和原子落盘后只重建 AgentGateway；daemon 进程、terminal 和本地服务不重启，当前 Cloud 会话会随旧连接关闭并重新建立。
+
+Controller 持久化软偏好和带时间戳的测量汇总，不持久化 daemon 当前归属 Edge。连接失败率来自 TCP/TLS/gRPC 健康探测，不等同于 UDP 丢包率。
 
 ## 7. Web 状态
 
-当前 Cloud Web 展示业务状态和 daemon 是否在线：
+当前 Cloud Web 展示业务状态、daemon 是否在线、当前 Edge 与软偏好，并允许查看候选和立即重选：
 
 - `ACTIVE` 可执行阻断。
 - `BLOCKED` 可恢复，也可删除。
 - `DELETED` 不出现在普通用户和运营 daemon 列表，数据库终态记录仍保留。
+- 候选列表展示 daemon 最近上报的连接耗时、连接失败率、节点负载和可用状态。
+- 偏好使用独立 revision 做并发更新；网页显示“命令已送达”不等于迁移已经完成，当前 Edge 仍以 Directory 在线投影为准。
 
 当前页面不展示 lifecycle command 的 pending/applied revision；不能把 Edge `/readyz` 当作每台 daemon 都已 ACK 的证明。
 

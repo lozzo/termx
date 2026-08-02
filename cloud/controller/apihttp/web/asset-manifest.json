@@ -3,15 +3,15 @@
     "file": "assets/ic_launcher-BnkRWd9r.png",
     "src": "../../clients/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
   },
-  "_enrollment_pb-DR0u-UIf.js": {
-    "file": "assets/enrollment_pb-DR0u-UIf.js",
+  "_enrollment_pb-CsxDmOKs.js": {
+    "file": "assets/enrollment_pb-CsxDmOKs.js",
     "name": "enrollment_pb",
     "imports": [
       "index.html"
     ]
   },
   "index.html": {
-    "file": "assets/index-DcA8Ta8d.js",
+    "file": "assets/index-D3pxnmhz.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -20,29 +20,29 @@
       "src/routes/AdminRouteGroup.ts"
     ],
     "css": [
-      "assets/index-DGB0cNMF.css"
+      "assets/index-C-XwqcPZ.css"
     ],
     "assets": [
       "assets/ic_launcher-BnkRWd9r.png"
     ]
   },
   "src/routes/AdminRouteGroup.ts": {
-    "file": "assets/AdminRouteGroup-DXJqALon.js",
+    "file": "assets/AdminRouteGroup-jc_tDrFy.js",
     "name": "AdminRouteGroup",
     "src": "src/routes/AdminRouteGroup.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_enrollment_pb-DR0u-UIf.js",
+      "_enrollment_pb-CsxDmOKs.js",
       "index.html"
     ]
   },
   "src/routes/UserRouteGroup.ts": {
-    "file": "assets/UserRouteGroup-Bix7rJA2.js",
+    "file": "assets/UserRouteGroup-CBQbrdWt.js",
     "name": "UserRouteGroup",
     "src": "src/routes/UserRouteGroup.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_enrollment_pb-DR0u-UIf.js",
+      "_enrollment_pb-CsxDmOKs.js",
       "index.html"
     ]
   }

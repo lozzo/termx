@@ -92,3 +92,122 @@ func (service *ManagementService) ChangeMyDaemonState(ctx context.Context, reque
 	service.config.Control.BroadcastDaemonState(record)
 	return &cloudv1.ChangeMyDaemonStateResponse{Daemon: projectDaemon(daemon)}, nil
 }
+
+// ListMyDaemonEdges 返回当前账号 daemon 的候选 Edge、软偏好和最近一次 daemon 侧测速。
+func (service *ManagementService) ListMyDaemonEdges(ctx context.Context, request *cloudv1.ListMyDaemonEdgesRequest) (*cloudv1.ListMyDaemonEdgesResponse, error) {
+	daemon, err := service.ownedDaemon(ctx, request.GetDaemonId())
+	if err != nil {
+		return nil, err
+	}
+	selection, err := service.edgeSelection(ctx, daemon)
+	if err != nil && selection == nil {
+		return nil, err
+	}
+	return &cloudv1.ListMyDaemonEdgesResponse{Selection: selection}, nil
+}
+
+// ChangeMyDaemonEdgePreference 保存软偏好，并可向当前在线 generation 发送立即重选命令。
+func (service *ManagementService) ChangeMyDaemonEdgePreference(ctx context.Context, request *cloudv1.ChangeMyDaemonEdgePreferenceRequest) (*cloudv1.ChangeMyDaemonEdgePreferenceResponse, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok {
+		return nil, account.ErrUnauthenticated
+	}
+	if request == nil || strings.TrimSpace(request.GetDaemonId()) == "" || request.GetExpectedPreferenceRevision() == 0 {
+		return nil, ErrDaemonUnavailable
+	}
+	preferredEdgeID := strings.TrimSpace(request.GetPreferredEdgeId())
+	current, err := service.ownedDaemon(ctx, request.GetDaemonId())
+	if err != nil {
+		return nil, err
+	}
+	selection, selectionErr := service.edgeSelection(ctx, current)
+	if selectionErr != nil && selection == nil {
+		return nil, selectionErr
+	}
+	if preferredEdgeID != "" {
+		found := false
+		for _, candidate := range selection.GetCandidates() {
+			found = found || candidate.GetLocator().GetEdgeId() == preferredEdgeID
+		}
+		if !found {
+			return nil, ErrDaemonUnavailable
+		}
+	}
+	store, ok := service.config.Store.(EdgeSelectionStore)
+	if !ok {
+		return nil, errors.New("daemon Edge preference store is unavailable")
+	}
+	updated, err := store.ChangeDaemonEdgePreference(ctx, identity.Account.GetAccountId(), current.ID, preferredEdgeID, request.GetExpectedPreferenceRevision(), service.config.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	selection, _ = service.edgeSelection(ctx, updated)
+	response := &cloudv1.ChangeMyDaemonEdgePreferenceResponse{Selection: selection, Message: "偏好已保存；daemon 下次连接时会使用新选择"}
+	if request.GetReselectNow() {
+		response.ReselectAccepted, response.Message = service.requestReselect(ctx, updated)
+	}
+	return response, nil
+}
+
+// ReselectMyDaemonEdge 不改偏好，只让在线 daemon 立即测速并刷新 binding。
+func (service *ManagementService) ReselectMyDaemonEdge(ctx context.Context, request *cloudv1.ReselectMyDaemonEdgeRequest) (*cloudv1.ReselectMyDaemonEdgeResponse, error) {
+	daemon, err := service.ownedDaemon(ctx, request.GetDaemonId())
+	if err != nil {
+		return nil, err
+	}
+	selection, selectionErr := service.edgeSelection(ctx, daemon)
+	if selectionErr != nil && selection == nil {
+		return nil, selectionErr
+	}
+	accepted, message := service.requestReselect(ctx, daemon)
+	return &cloudv1.ReselectMyDaemonEdgeResponse{Selection: selection, ReselectAccepted: accepted, Message: message}, nil
+}
+
+func (service *ManagementService) ownedDaemon(ctx context.Context, daemonID string) (Daemon, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok {
+		return Daemon{}, account.ErrUnauthenticated
+	}
+	daemonID = strings.TrimSpace(daemonID)
+	if daemonID == "" {
+		return Daemon{}, ErrDaemonUnavailable
+	}
+	daemons, err := service.config.Store.ListDaemonsByAccount(ctx, identity.Account.GetAccountId())
+	if err != nil {
+		return Daemon{}, err
+	}
+	for _, daemon := range daemons {
+		if daemon.ID == daemonID {
+			return daemon, nil
+		}
+	}
+	return Daemon{}, ErrDaemonUnavailable
+}
+
+func (service *ManagementService) edgeSelection(ctx context.Context, daemon Daemon) (*cloudv1.DaemonEdgeSelection, error) {
+	currentEdgeID := ""
+	if location, found, err := service.config.Directory.LocateDaemon(ctx, daemon.ID); err != nil {
+		return nil, err
+	} else if found {
+		currentEdgeID = location.EdgeID
+	}
+	_, selection, err := service.config.Enrollment.selectEdge(ctx, daemon, currentEdgeID)
+	return selection, err
+}
+
+func (service *ManagementService) requestReselect(ctx context.Context, daemon Daemon) (bool, string) {
+	if daemon.State != cloudv1.DaemonState_DAEMON_STATE_ACTIVE {
+		return false, "偏好已保存；daemon 当前未启用，将在恢复后生效"
+	}
+	location, found, err := service.config.Directory.LocateDaemon(ctx, daemon.ID)
+	if err != nil || !found {
+		return false, "偏好已保存；daemon 当前离线，将在下次连接时生效"
+	}
+	commandContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	result := service.config.Control.ReselectDaemonEdge(commandContext, daemon.ID, location.Generation, daemon.EdgePreferenceRevision)
+	if result == cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_APPLIED {
+		return true, "重选命令已送达；daemon 正在测速并切换"
+	}
+	return false, "偏好已保存，但当前连接未接受重选命令；daemon 会在下次连接时生效"
+}

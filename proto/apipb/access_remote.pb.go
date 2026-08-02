@@ -7,6 +7,7 @@
 package apipb
 
 import (
+	v1 "github.com/anytty/anytty/proto/cloud/v1"
 	remoteauthpb "github.com/anytty/anytty/proto/remoteauthpb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -634,6 +635,130 @@ func (*RemoteLocalDisableCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_access_remote_proto_rawDescGZIP(), []int{12}
 }
 
+type RemoteCloudEdgesCommand struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteCloudEdgesCommand) Reset() {
+	*x = RemoteCloudEdgesCommand{}
+	mi := &file_apipb_access_remote_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteCloudEdgesCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteCloudEdgesCommand) ProtoMessage() {}
+
+func (x *RemoteCloudEdgesCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_access_remote_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteCloudEdgesCommand.ProtoReflect.Descriptor instead.
+func (*RemoteCloudEdgesCommand) Descriptor() ([]byte, []int) {
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{13}
+}
+
+type RemoteCloudPreferEdgeCommand struct {
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId                     string                 `protobuf:"bytes,2,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	ExpectedPreferenceRevision uint64                 `protobuf:"varint,3,opt,name=expected_preference_revision,json=expectedPreferenceRevision,proto3" json:"expected_preference_revision,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *RemoteCloudPreferEdgeCommand) Reset() {
+	*x = RemoteCloudPreferEdgeCommand{}
+	mi := &file_apipb_access_remote_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteCloudPreferEdgeCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteCloudPreferEdgeCommand) ProtoMessage() {}
+
+func (x *RemoteCloudPreferEdgeCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_access_remote_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteCloudPreferEdgeCommand.ProtoReflect.Descriptor instead.
+func (*RemoteCloudPreferEdgeCommand) Descriptor() ([]byte, []int) {
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RemoteCloudPreferEdgeCommand) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *RemoteCloudPreferEdgeCommand) GetExpectedPreferenceRevision() uint64 {
+	if x != nil {
+		return x.ExpectedPreferenceRevision
+	}
+	return 0
+}
+
+type RemoteCloudReselectEdgeCommand struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteCloudReselectEdgeCommand) Reset() {
+	*x = RemoteCloudReselectEdgeCommand{}
+	mi := &file_apipb_access_remote_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteCloudReselectEdgeCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteCloudReselectEdgeCommand) ProtoMessage() {}
+
+func (x *RemoteCloudReselectEdgeCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_access_remote_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteCloudReselectEdgeCommand.ProtoReflect.Descriptor instead.
+func (*RemoteCloudReselectEdgeCommand) Descriptor() ([]byte, []int) {
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{15}
+}
+
 type RemoteStatusResult struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	State             string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
@@ -654,7 +779,7 @@ type RemoteStatusResult struct {
 
 func (x *RemoteStatusResult) Reset() {
 	*x = RemoteStatusResult{}
-	mi := &file_apipb_access_remote_proto_msgTypes[13]
+	mi := &file_apipb_access_remote_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -666,7 +791,7 @@ func (x *RemoteStatusResult) String() string {
 func (*RemoteStatusResult) ProtoMessage() {}
 
 func (x *RemoteStatusResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_access_remote_proto_msgTypes[13]
+	mi := &file_apipb_access_remote_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -679,7 +804,7 @@ func (x *RemoteStatusResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteStatusResult.ProtoReflect.Descriptor instead.
 func (*RemoteStatusResult) Descriptor() ([]byte, []int) {
-	return file_apipb_access_remote_proto_rawDescGZIP(), []int{13}
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RemoteStatusResult) GetState() string {
@@ -782,7 +907,7 @@ type RemotePairStartResult struct {
 
 func (x *RemotePairStartResult) Reset() {
 	*x = RemotePairStartResult{}
-	mi := &file_apipb_access_remote_proto_msgTypes[14]
+	mi := &file_apipb_access_remote_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +919,7 @@ func (x *RemotePairStartResult) String() string {
 func (*RemotePairStartResult) ProtoMessage() {}
 
 func (x *RemotePairStartResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_access_remote_proto_msgTypes[14]
+	mi := &file_apipb_access_remote_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +932,7 @@ func (x *RemotePairStartResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemotePairStartResult.ProtoReflect.Descriptor instead.
 func (*RemotePairStartResult) Descriptor() ([]byte, []int) {
-	return file_apipb_access_remote_proto_rawDescGZIP(), []int{14}
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RemotePairStartResult) GetType() string {
@@ -882,7 +1007,7 @@ type RemoteLocalStatusResult struct {
 
 func (x *RemoteLocalStatusResult) Reset() {
 	*x = RemoteLocalStatusResult{}
-	mi := &file_apipb_access_remote_proto_msgTypes[15]
+	mi := &file_apipb_access_remote_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -894,7 +1019,7 @@ func (x *RemoteLocalStatusResult) String() string {
 func (*RemoteLocalStatusResult) ProtoMessage() {}
 
 func (x *RemoteLocalStatusResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_access_remote_proto_msgTypes[15]
+	mi := &file_apipb_access_remote_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -907,7 +1032,7 @@ func (x *RemoteLocalStatusResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteLocalStatusResult.ProtoReflect.Descriptor instead.
 func (*RemoteLocalStatusResult) Descriptor() ([]byte, []int) {
-	return file_apipb_access_remote_proto_rawDescGZIP(), []int{15}
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RemoteLocalStatusResult) GetEnabled() bool {
@@ -966,11 +1091,55 @@ func (x *RemoteLocalStatusResult) GetUpdatedAtUnixNano() int64 {
 	return 0
 }
 
+type RemoteCloudEdgesResult struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Selection     *v1.DaemonEdgeSelection `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteCloudEdgesResult) Reset() {
+	*x = RemoteCloudEdgesResult{}
+	mi := &file_apipb_access_remote_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteCloudEdgesResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteCloudEdgesResult) ProtoMessage() {}
+
+func (x *RemoteCloudEdgesResult) ProtoReflect() protoreflect.Message {
+	mi := &file_apipb_access_remote_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteCloudEdgesResult.ProtoReflect.Descriptor instead.
+func (*RemoteCloudEdgesResult) Descriptor() ([]byte, []int) {
+	return file_apipb_access_remote_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RemoteCloudEdgesResult) GetSelection() *v1.DaemonEdgeSelection {
+	if x != nil {
+		return x.Selection
+	}
+	return nil
+}
+
 var File_apipb_access_remote_proto protoreflect.FileDescriptor
 
 const file_apipb_access_remote_proto_rawDesc = "" +
 	"\n" +
-	"\x19apipb/access_remote.proto\x12\ranytty.api.v1\x1a\x1eremoteauthpb/remote_auth.proto\"A\n" +
+	"\x19apipb/access_remote.proto\x12\ranytty.api.v1\x1a\x1eremoteauthpb/remote_auth.proto\x1a\x19cloud/v1/enrollment.proto\"A\n" +
 	"\x1bClientAccessIdentityCommand\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallengeJ\x04\b\x01\x10\x02\"\x1f\n" +
 	"\x17ClientAccessListCommandJ\x04\b\x01\x10\x02\"y\n" +
@@ -1003,7 +1172,12 @@ const file_apipb_access_remote_proto_rawDesc = "" +
 	"\faccess_token\x18\x06 \x01(\tR\vaccessToken\x12\x16\n" +
 	"\x06region\x18\a \x01(\tR\x06regionJ\x04\b\x01\x10\x02\" \n" +
 	"\x18RemoteLocalStatusCommandJ\x04\b\x01\x10\x02\"!\n" +
-	"\x19RemoteLocalDisableCommandJ\x04\b\x01\x10\x02\"\x85\x03\n" +
+	"\x19RemoteLocalDisableCommandJ\x04\b\x01\x10\x02\"\x1f\n" +
+	"\x17RemoteCloudEdgesCommandJ\x04\b\x01\x10\x02\"\x7f\n" +
+	"\x1cRemoteCloudPreferEdgeCommand\x12\x17\n" +
+	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12@\n" +
+	"\x1cexpected_preference_revision\x18\x03 \x01(\x04R\x1aexpectedPreferenceRevisionJ\x04\b\x01\x10\x02\"&\n" +
+	"\x1eRemoteCloudReselectEdgeCommandJ\x04\b\x01\x10\x02\"\x85\x03\n" +
 	"\x12RemoteStatusResult\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12\x1b\n" +
@@ -1040,7 +1214,9 @@ const file_apipb_access_remote_proto_rawDesc = "" +
 	"\x0fice_tcp_address\x18\x06 \x01(\tR\riceTcpAddress\x12 \n" +
 	"\fice_tcp_port\x18\a \x01(\x05R\n" +
 	"iceTcpPort\x12/\n" +
-	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNanoB&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
+	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano\"\\\n" +
+	"\x16RemoteCloudEdgesResult\x12B\n" +
+	"\tselection\x18\x01 \x01(\v2$.anytty.cloud.v1.DaemonEdgeSelectionR\tselectionB&Z$github.com/anytty/anytty/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_access_remote_proto_rawDescOnce sync.Once
@@ -1054,7 +1230,7 @@ func file_apipb_access_remote_proto_rawDescGZIP() []byte {
 	return file_apipb_access_remote_proto_rawDescData
 }
 
-var file_apipb_access_remote_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_apipb_access_remote_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_apipb_access_remote_proto_goTypes = []any{
 	(*ClientAccessIdentityCommand)(nil),                  // 0: anytty.api.v1.ClientAccessIdentityCommand
 	(*ClientAccessListCommand)(nil),                      // 1: anytty.api.v1.ClientAccessListCommand
@@ -1069,28 +1245,34 @@ var file_apipb_access_remote_proto_goTypes = []any{
 	(*RemoteLocalEnableCommand)(nil),                     // 10: anytty.api.v1.RemoteLocalEnableCommand
 	(*RemoteLocalStatusCommand)(nil),                     // 11: anytty.api.v1.RemoteLocalStatusCommand
 	(*RemoteLocalDisableCommand)(nil),                    // 12: anytty.api.v1.RemoteLocalDisableCommand
-	(*RemoteStatusResult)(nil),                           // 13: anytty.api.v1.RemoteStatusResult
-	(*RemotePairStartResult)(nil),                        // 14: anytty.api.v1.RemotePairStartResult
-	(*RemoteLocalStatusResult)(nil),                      // 15: anytty.api.v1.RemoteLocalStatusResult
-	(*remoteauthpb.ClientAccessTicketCreateRequest)(nil), // 16: anytty.remote.auth.v1.ClientAccessTicketCreateRequest
-	(*remoteauthpb.ClientAccessRevokeRequest)(nil),       // 17: anytty.remote.auth.v1.ClientAccessRevokeRequest
-	(*remoteauthpb.ClientAccessIdentityResult)(nil),      // 18: anytty.remote.auth.v1.ClientAccessIdentityResult
-	(*remoteauthpb.ClientAccessListResult)(nil),          // 19: anytty.remote.auth.v1.ClientAccessListResult
-	(*remoteauthpb.ClientAccessTicketCreateResult)(nil),  // 20: anytty.remote.auth.v1.ClientAccessTicketCreateResult
-	(*remoteauthpb.ClientAccessRecord)(nil),              // 21: anytty.remote.auth.v1.ClientAccessRecord
+	(*RemoteCloudEdgesCommand)(nil),                      // 13: anytty.api.v1.RemoteCloudEdgesCommand
+	(*RemoteCloudPreferEdgeCommand)(nil),                 // 14: anytty.api.v1.RemoteCloudPreferEdgeCommand
+	(*RemoteCloudReselectEdgeCommand)(nil),               // 15: anytty.api.v1.RemoteCloudReselectEdgeCommand
+	(*RemoteStatusResult)(nil),                           // 16: anytty.api.v1.RemoteStatusResult
+	(*RemotePairStartResult)(nil),                        // 17: anytty.api.v1.RemotePairStartResult
+	(*RemoteLocalStatusResult)(nil),                      // 18: anytty.api.v1.RemoteLocalStatusResult
+	(*RemoteCloudEdgesResult)(nil),                       // 19: anytty.api.v1.RemoteCloudEdgesResult
+	(*remoteauthpb.ClientAccessTicketCreateRequest)(nil), // 20: anytty.remote.auth.v1.ClientAccessTicketCreateRequest
+	(*remoteauthpb.ClientAccessRevokeRequest)(nil),       // 21: anytty.remote.auth.v1.ClientAccessRevokeRequest
+	(*remoteauthpb.ClientAccessIdentityResult)(nil),      // 22: anytty.remote.auth.v1.ClientAccessIdentityResult
+	(*remoteauthpb.ClientAccessListResult)(nil),          // 23: anytty.remote.auth.v1.ClientAccessListResult
+	(*remoteauthpb.ClientAccessTicketCreateResult)(nil),  // 24: anytty.remote.auth.v1.ClientAccessTicketCreateResult
+	(*remoteauthpb.ClientAccessRecord)(nil),              // 25: anytty.remote.auth.v1.ClientAccessRecord
+	(*v1.DaemonEdgeSelection)(nil),                       // 26: anytty.cloud.v1.DaemonEdgeSelection
 }
 var file_apipb_access_remote_proto_depIdxs = []int32{
-	16, // 0: anytty.api.v1.ClientAccessTicketCreateCommand.request:type_name -> anytty.remote.auth.v1.ClientAccessTicketCreateRequest
-	17, // 1: anytty.api.v1.ClientAccessRevokeCommand.request:type_name -> anytty.remote.auth.v1.ClientAccessRevokeRequest
-	18, // 2: anytty.api.v1.ClientAccessIdentityResult.identity:type_name -> anytty.remote.auth.v1.ClientAccessIdentityResult
-	19, // 3: anytty.api.v1.ClientAccessListResult.access:type_name -> anytty.remote.auth.v1.ClientAccessListResult
-	20, // 4: anytty.api.v1.ClientAccessTicketCreateResult.ticket:type_name -> anytty.remote.auth.v1.ClientAccessTicketCreateResult
-	21, // 5: anytty.api.v1.ClientAccessRevokeResult.record:type_name -> anytty.remote.auth.v1.ClientAccessRecord
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	20, // 0: anytty.api.v1.ClientAccessTicketCreateCommand.request:type_name -> anytty.remote.auth.v1.ClientAccessTicketCreateRequest
+	21, // 1: anytty.api.v1.ClientAccessRevokeCommand.request:type_name -> anytty.remote.auth.v1.ClientAccessRevokeRequest
+	22, // 2: anytty.api.v1.ClientAccessIdentityResult.identity:type_name -> anytty.remote.auth.v1.ClientAccessIdentityResult
+	23, // 3: anytty.api.v1.ClientAccessListResult.access:type_name -> anytty.remote.auth.v1.ClientAccessListResult
+	24, // 4: anytty.api.v1.ClientAccessTicketCreateResult.ticket:type_name -> anytty.remote.auth.v1.ClientAccessTicketCreateResult
+	25, // 5: anytty.api.v1.ClientAccessRevokeResult.record:type_name -> anytty.remote.auth.v1.ClientAccessRecord
+	26, // 6: anytty.api.v1.RemoteCloudEdgesResult.selection:type_name -> anytty.cloud.v1.DaemonEdgeSelection
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_apipb_access_remote_proto_init() }
@@ -1104,7 +1286,7 @@ func file_apipb_access_remote_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apipb_access_remote_proto_rawDesc), len(file_apipb_access_remote_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

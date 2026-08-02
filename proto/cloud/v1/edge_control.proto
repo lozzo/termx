@@ -20,6 +20,7 @@ enum EdgeCapability {
   EDGE_CAPABILITY_RESERVATION_JOURNAL = 3;
   EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
   EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY = 5;
+  EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION = 6;
 }
 
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -136,6 +137,15 @@ message CloseClientSession {
   string reason = 6;
 }
 
+message ReselectDaemonEdge {
+  string command_id = 1;
+  string correlation_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string daemon_id = 4;
+  uint64 generation = 5;
+  uint64 preference_revision = 6;
+}
+
 enum CommandResultCode {
   COMMAND_RESULT_CODE_UNSPECIFIED = 0;
   COMMAND_RESULT_CODE_APPLIED = 1;
@@ -204,6 +214,7 @@ message ControllerCommand {
     RelayQueryResponse relay_query = 31;
     DaemonStateDelta daemon_state_delta = 32;
     DaemonStateQueryResult daemon_state_query_result = 33;
+    ReselectDaemonEdge reselect_daemon_edge = 34;
   }
 }
 

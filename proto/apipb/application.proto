@@ -73,6 +73,9 @@ message CommandEnvelope {
     RemoteLocalEnableCommand remote_local_enable = 112;
     RemoteLocalStatusCommand remote_local_status = 113;
     RemoteLocalDisableCommand remote_local_disable = 114;
+    RemoteCloudEdgesCommand remote_cloud_edges = 115;
+    RemoteCloudPreferEdgeCommand remote_cloud_prefer_edge = 116;
+    RemoteCloudReselectEdgeCommand remote_cloud_reselect_edge = 117;
   }
 }
 
@@ -115,6 +118,7 @@ message ResultEnvelope {
     RemoteStatusResult remote_status = 110;
     RemotePairStartResult remote_pair_start = 111;
     RemoteLocalStatusResult remote_local_status = 112;
+    RemoteCloudEdgesResult remote_cloud_edges = 113;
   }
 }
 

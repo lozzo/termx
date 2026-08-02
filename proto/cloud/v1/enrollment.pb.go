@@ -77,19 +77,22 @@ func (DaemonState) EnumDescriptor() ([]byte, []int) {
 
 // DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
 type DaemonRecord struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	DaemonId          string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	AccountId         string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	AccountName       string                 `protobuf:"bytes,3,opt,name=account_name,json=accountName,proto3" json:"account_name,omitempty"`
-	DisplayName       string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	DeviceId          string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DeviceFingerprint string                 `protobuf:"bytes,6,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
-	State             DaemonState            `protobuf:"varint,7,opt,name=state,proto3,enum=anytty.cloud.v1.DaemonState" json:"state,omitempty"`
-	StateRevision     uint64                 `protobuf:"varint,8,opt,name=state_revision,json=stateRevision,proto3" json:"state_revision,omitempty"`
-	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId                string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	AccountId               string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	AccountName             string                 `protobuf:"bytes,3,opt,name=account_name,json=accountName,proto3" json:"account_name,omitempty"`
+	DisplayName             string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	DeviceId                string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DeviceFingerprint       string                 `protobuf:"bytes,6,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
+	State                   DaemonState            `protobuf:"varint,7,opt,name=state,proto3,enum=anytty.cloud.v1.DaemonState" json:"state,omitempty"`
+	StateRevision           uint64                 `protobuf:"varint,8,opt,name=state_revision,json=stateRevision,proto3" json:"state_revision,omitempty"`
+	CreatedAt               *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt               *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	PreferredEdgeId         string                 `protobuf:"bytes,11,opt,name=preferred_edge_id,json=preferredEdgeId,proto3" json:"preferred_edge_id,omitempty"`
+	EdgePreferenceRevision  uint64                 `protobuf:"varint,12,opt,name=edge_preference_revision,json=edgePreferenceRevision,proto3" json:"edge_preference_revision,omitempty"`
+	EdgePreferenceUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=edge_preference_updated_at,json=edgePreferenceUpdatedAt,proto3" json:"edge_preference_updated_at,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *DaemonRecord) Reset() {
@@ -188,6 +191,27 @@ func (x *DaemonRecord) GetCreatedAt() *timestamppb.Timestamp {
 func (x *DaemonRecord) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *DaemonRecord) GetPreferredEdgeId() string {
+	if x != nil {
+		return x.PreferredEdgeId
+	}
+	return ""
+}
+
+func (x *DaemonRecord) GetEdgePreferenceRevision() uint64 {
+	if x != nil {
+		return x.EdgePreferenceRevision
+	}
+	return 0
+}
+
+func (x *DaemonRecord) GetEdgePreferenceUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EdgePreferenceUpdatedAt
 	}
 	return nil
 }
@@ -406,6 +430,301 @@ func (x *ManagedDaemon) GetRuntime() *DaemonRuntimeProjection {
 	return nil
 }
 
+// DaemonEdgeMeasurement 是 daemon 从自身网络位置测得的短期连接质量。
+// connection_failure_rate 是 TCP/TLS/gRPC 探测失败率，不表示 UDP 丢包率。
+type DaemonEdgeMeasurement struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId                string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	Reachable             bool                   `protobuf:"varint,2,opt,name=reachable,proto3" json:"reachable,omitempty"`
+	ConnectLatencyMs      uint32                 `protobuf:"varint,3,opt,name=connect_latency_ms,json=connectLatencyMs,proto3" json:"connect_latency_ms,omitempty"`
+	ConnectionFailureRate float64                `protobuf:"fixed64,4,opt,name=connection_failure_rate,json=connectionFailureRate,proto3" json:"connection_failure_rate,omitempty"`
+	SampleCount           uint32                 `protobuf:"varint,5,opt,name=sample_count,json=sampleCount,proto3" json:"sample_count,omitempty"`
+	MeasuredAt            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=measured_at,json=measuredAt,proto3" json:"measured_at,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *DaemonEdgeMeasurement) Reset() {
+	*x = DaemonEdgeMeasurement{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DaemonEdgeMeasurement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DaemonEdgeMeasurement) ProtoMessage() {}
+
+func (x *DaemonEdgeMeasurement) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DaemonEdgeMeasurement.ProtoReflect.Descriptor instead.
+func (*DaemonEdgeMeasurement) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DaemonEdgeMeasurement) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *DaemonEdgeMeasurement) GetReachable() bool {
+	if x != nil {
+		return x.Reachable
+	}
+	return false
+}
+
+func (x *DaemonEdgeMeasurement) GetConnectLatencyMs() uint32 {
+	if x != nil {
+		return x.ConnectLatencyMs
+	}
+	return 0
+}
+
+func (x *DaemonEdgeMeasurement) GetConnectionFailureRate() float64 {
+	if x != nil {
+		return x.ConnectionFailureRate
+	}
+	return 0
+}
+
+func (x *DaemonEdgeMeasurement) GetSampleCount() uint32 {
+	if x != nil {
+		return x.SampleCount
+	}
+	return 0
+}
+
+func (x *DaemonEdgeMeasurement) GetMeasuredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.MeasuredAt
+	}
+	return nil
+}
+
+// DaemonEdgeCandidate 是面向 daemon owner 的安全 Edge 投影。
+type DaemonEdgeCandidate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Locator       *EdgeLocator           `protobuf:"bytes,1,opt,name=locator,proto3" json:"locator,omitempty"`
+	Online        bool                   `protobuf:"varint,2,opt,name=online,proto3" json:"online,omitempty"`
+	Eligible      bool                   `protobuf:"varint,3,opt,name=eligible,proto3" json:"eligible,omitempty"`
+	AgentCount    uint64                 `protobuf:"varint,4,opt,name=agent_count,json=agentCount,proto3" json:"agent_count,omitempty"`
+	Capacity      uint64                 `protobuf:"varint,5,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	Preferred     bool                   `protobuf:"varint,6,opt,name=preferred,proto3" json:"preferred,omitempty"`
+	Current       bool                   `protobuf:"varint,7,opt,name=current,proto3" json:"current,omitempty"`
+	Measurement   *DaemonEdgeMeasurement `protobuf:"bytes,8,opt,name=measurement,proto3" json:"measurement,omitempty"`
+	Score         float64                `protobuf:"fixed64,9,opt,name=score,proto3" json:"score,omitempty"`
+	Status        string                 `protobuf:"bytes,10,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DaemonEdgeCandidate) Reset() {
+	*x = DaemonEdgeCandidate{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DaemonEdgeCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DaemonEdgeCandidate) ProtoMessage() {}
+
+func (x *DaemonEdgeCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DaemonEdgeCandidate.ProtoReflect.Descriptor instead.
+func (*DaemonEdgeCandidate) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DaemonEdgeCandidate) GetLocator() *EdgeLocator {
+	if x != nil {
+		return x.Locator
+	}
+	return nil
+}
+
+func (x *DaemonEdgeCandidate) GetOnline() bool {
+	if x != nil {
+		return x.Online
+	}
+	return false
+}
+
+func (x *DaemonEdgeCandidate) GetEligible() bool {
+	if x != nil {
+		return x.Eligible
+	}
+	return false
+}
+
+func (x *DaemonEdgeCandidate) GetAgentCount() uint64 {
+	if x != nil {
+		return x.AgentCount
+	}
+	return 0
+}
+
+func (x *DaemonEdgeCandidate) GetCapacity() uint64 {
+	if x != nil {
+		return x.Capacity
+	}
+	return 0
+}
+
+func (x *DaemonEdgeCandidate) GetPreferred() bool {
+	if x != nil {
+		return x.Preferred
+	}
+	return false
+}
+
+func (x *DaemonEdgeCandidate) GetCurrent() bool {
+	if x != nil {
+		return x.Current
+	}
+	return false
+}
+
+func (x *DaemonEdgeCandidate) GetMeasurement() *DaemonEdgeMeasurement {
+	if x != nil {
+		return x.Measurement
+	}
+	return nil
+}
+
+func (x *DaemonEdgeCandidate) GetScore() float64 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+func (x *DaemonEdgeCandidate) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type DaemonEdgeSelection struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId           string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	PreferredEdgeId    string                 `protobuf:"bytes,2,opt,name=preferred_edge_id,json=preferredEdgeId,proto3" json:"preferred_edge_id,omitempty"`
+	PreferenceRevision uint64                 `protobuf:"varint,3,opt,name=preference_revision,json=preferenceRevision,proto3" json:"preference_revision,omitempty"`
+	CurrentEdgeId      string                 `protobuf:"bytes,4,opt,name=current_edge_id,json=currentEdgeId,proto3" json:"current_edge_id,omitempty"`
+	SelectedEdgeId     string                 `protobuf:"bytes,5,opt,name=selected_edge_id,json=selectedEdgeId,proto3" json:"selected_edge_id,omitempty"`
+	Candidates         []*DaemonEdgeCandidate `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
+	EvaluatedAt        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=evaluated_at,json=evaluatedAt,proto3" json:"evaluated_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *DaemonEdgeSelection) Reset() {
+	*x = DaemonEdgeSelection{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DaemonEdgeSelection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DaemonEdgeSelection) ProtoMessage() {}
+
+func (x *DaemonEdgeSelection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DaemonEdgeSelection.ProtoReflect.Descriptor instead.
+func (*DaemonEdgeSelection) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DaemonEdgeSelection) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *DaemonEdgeSelection) GetPreferredEdgeId() string {
+	if x != nil {
+		return x.PreferredEdgeId
+	}
+	return ""
+}
+
+func (x *DaemonEdgeSelection) GetPreferenceRevision() uint64 {
+	if x != nil {
+		return x.PreferenceRevision
+	}
+	return 0
+}
+
+func (x *DaemonEdgeSelection) GetCurrentEdgeId() string {
+	if x != nil {
+		return x.CurrentEdgeId
+	}
+	return ""
+}
+
+func (x *DaemonEdgeSelection) GetSelectedEdgeId() string {
+	if x != nil {
+		return x.SelectedEdgeId
+	}
+	return ""
+}
+
+func (x *DaemonEdgeSelection) GetCandidates() []*DaemonEdgeCandidate {
+	if x != nil {
+		return x.Candidates
+	}
+	return nil
+}
+
+func (x *DaemonEdgeSelection) GetEvaluatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EvaluatedAt
+	}
+	return nil
+}
+
 type CreateDaemonEnrollmentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AccountId     string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
@@ -417,7 +736,7 @@ type CreateDaemonEnrollmentRequest struct {
 
 func (x *CreateDaemonEnrollmentRequest) Reset() {
 	*x = CreateDaemonEnrollmentRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[4]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -429,7 +748,7 @@ func (x *CreateDaemonEnrollmentRequest) String() string {
 func (*CreateDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *CreateDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[4]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -442,7 +761,7 @@ func (x *CreateDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CreateDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateDaemonEnrollmentRequest) GetAccountId() string {
@@ -478,7 +797,7 @@ type CreateDaemonEnrollmentResponse struct {
 
 func (x *CreateDaemonEnrollmentResponse) Reset() {
 	*x = CreateDaemonEnrollmentResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[5]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -490,7 +809,7 @@ func (x *CreateDaemonEnrollmentResponse) String() string {
 func (*CreateDaemonEnrollmentResponse) ProtoMessage() {}
 
 func (x *CreateDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[5]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -503,7 +822,7 @@ func (x *CreateDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDaemonEnrollmentResponse.ProtoReflect.Descriptor instead.
 func (*CreateDaemonEnrollmentResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateDaemonEnrollmentResponse) GetAccountId() string {
@@ -542,7 +861,7 @@ type ListDaemonsRequest struct {
 
 func (x *ListDaemonsRequest) Reset() {
 	*x = ListDaemonsRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[6]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -554,7 +873,7 @@ func (x *ListDaemonsRequest) String() string {
 func (*ListDaemonsRequest) ProtoMessage() {}
 
 func (x *ListDaemonsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[6]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -567,7 +886,7 @@ func (x *ListDaemonsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDaemonsRequest.ProtoReflect.Descriptor instead.
 func (*ListDaemonsRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{9}
 }
 
 type ListDaemonsResponse struct {
@@ -579,7 +898,7 @@ type ListDaemonsResponse struct {
 
 func (x *ListDaemonsResponse) Reset() {
 	*x = ListDaemonsResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +910,7 @@ func (x *ListDaemonsResponse) String() string {
 func (*ListDaemonsResponse) ProtoMessage() {}
 
 func (x *ListDaemonsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +923,7 @@ func (x *ListDaemonsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDaemonsResponse.ProtoReflect.Descriptor instead.
 func (*ListDaemonsResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListDaemonsResponse) GetDaemons() []*ManagedDaemon {
@@ -624,7 +943,7 @@ type CreateMyDaemonEnrollmentRequest struct {
 
 func (x *CreateMyDaemonEnrollmentRequest) Reset() {
 	*x = CreateMyDaemonEnrollmentRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -636,7 +955,7 @@ func (x *CreateMyDaemonEnrollmentRequest) String() string {
 func (*CreateMyDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *CreateMyDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -649,7 +968,7 @@ func (x *CreateMyDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateMyDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CreateMyDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{8}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreateMyDaemonEnrollmentRequest) GetDaemonName() string {
@@ -667,7 +986,7 @@ type ListMyDaemonsRequest struct {
 
 func (x *ListMyDaemonsRequest) Reset() {
 	*x = ListMyDaemonsRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -679,7 +998,7 @@ func (x *ListMyDaemonsRequest) String() string {
 func (*ListMyDaemonsRequest) ProtoMessage() {}
 
 func (x *ListMyDaemonsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -692,7 +1011,7 @@ func (x *ListMyDaemonsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyDaemonsRequest.ProtoReflect.Descriptor instead.
 func (*ListMyDaemonsRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{9}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{12}
 }
 
 type ListMyDaemonsResponse struct {
@@ -704,7 +1023,7 @@ type ListMyDaemonsResponse struct {
 
 func (x *ListMyDaemonsResponse) Reset() {
 	*x = ListMyDaemonsResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +1035,7 @@ func (x *ListMyDaemonsResponse) String() string {
 func (*ListMyDaemonsResponse) ProtoMessage() {}
 
 func (x *ListMyDaemonsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +1048,7 @@ func (x *ListMyDaemonsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyDaemonsResponse.ProtoReflect.Descriptor instead.
 func (*ListMyDaemonsResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListMyDaemonsResponse) GetDaemons() []*ManagedDaemon {
@@ -751,7 +1070,7 @@ type ChangeMyDaemonStateRequest struct {
 
 func (x *ChangeMyDaemonStateRequest) Reset() {
 	*x = ChangeMyDaemonStateRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -763,7 +1082,7 @@ func (x *ChangeMyDaemonStateRequest) String() string {
 func (*ChangeMyDaemonStateRequest) ProtoMessage() {}
 
 func (x *ChangeMyDaemonStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -776,7 +1095,7 @@ func (x *ChangeMyDaemonStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeMyDaemonStateRequest.ProtoReflect.Descriptor instead.
 func (*ChangeMyDaemonStateRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{11}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ChangeMyDaemonStateRequest) GetDaemonId() string {
@@ -816,7 +1135,7 @@ type ChangeMyDaemonStateResponse struct {
 
 func (x *ChangeMyDaemonStateResponse) Reset() {
 	*x = ChangeMyDaemonStateResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -828,7 +1147,7 @@ func (x *ChangeMyDaemonStateResponse) String() string {
 func (*ChangeMyDaemonStateResponse) ProtoMessage() {}
 
 func (x *ChangeMyDaemonStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -841,7 +1160,7 @@ func (x *ChangeMyDaemonStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeMyDaemonStateResponse.ProtoReflect.Descriptor instead.
 func (*ChangeMyDaemonStateResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{12}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ChangeMyDaemonStateResponse) GetDaemon() *DaemonRecord {
@@ -849,6 +1168,326 @@ func (x *ChangeMyDaemonStateResponse) GetDaemon() *DaemonRecord {
 		return x.Daemon
 	}
 	return nil
+}
+
+type ListMyDaemonEdgesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId      string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyDaemonEdgesRequest) Reset() {
+	*x = ListMyDaemonEdgesRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyDaemonEdgesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyDaemonEdgesRequest) ProtoMessage() {}
+
+func (x *ListMyDaemonEdgesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyDaemonEdgesRequest.ProtoReflect.Descriptor instead.
+func (*ListMyDaemonEdgesRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListMyDaemonEdgesRequest) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+type ListMyDaemonEdgesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selection     *DaemonEdgeSelection   `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyDaemonEdgesResponse) Reset() {
+	*x = ListMyDaemonEdgesResponse{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyDaemonEdgesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyDaemonEdgesResponse) ProtoMessage() {}
+
+func (x *ListMyDaemonEdgesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyDaemonEdgesResponse.ProtoReflect.Descriptor instead.
+func (*ListMyDaemonEdgesResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListMyDaemonEdgesResponse) GetSelection() *DaemonEdgeSelection {
+	if x != nil {
+		return x.Selection
+	}
+	return nil
+}
+
+type ChangeMyDaemonEdgePreferenceRequest struct {
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId                   string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	PreferredEdgeId            string                 `protobuf:"bytes,2,opt,name=preferred_edge_id,json=preferredEdgeId,proto3" json:"preferred_edge_id,omitempty"`
+	ExpectedPreferenceRevision uint64                 `protobuf:"varint,3,opt,name=expected_preference_revision,json=expectedPreferenceRevision,proto3" json:"expected_preference_revision,omitempty"`
+	ReselectNow                bool                   `protobuf:"varint,4,opt,name=reselect_now,json=reselectNow,proto3" json:"reselect_now,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) Reset() {
+	*x = ChangeMyDaemonEdgePreferenceRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeMyDaemonEdgePreferenceRequest) ProtoMessage() {}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeMyDaemonEdgePreferenceRequest.ProtoReflect.Descriptor instead.
+func (*ChangeMyDaemonEdgePreferenceRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) GetPreferredEdgeId() string {
+	if x != nil {
+		return x.PreferredEdgeId
+	}
+	return ""
+}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) GetExpectedPreferenceRevision() uint64 {
+	if x != nil {
+		return x.ExpectedPreferenceRevision
+	}
+	return 0
+}
+
+func (x *ChangeMyDaemonEdgePreferenceRequest) GetReselectNow() bool {
+	if x != nil {
+		return x.ReselectNow
+	}
+	return false
+}
+
+type ChangeMyDaemonEdgePreferenceResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Selection        *DaemonEdgeSelection   `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
+	ReselectAccepted bool                   `protobuf:"varint,2,opt,name=reselect_accepted,json=reselectAccepted,proto3" json:"reselect_accepted,omitempty"`
+	Message          string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ChangeMyDaemonEdgePreferenceResponse) Reset() {
+	*x = ChangeMyDaemonEdgePreferenceResponse{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeMyDaemonEdgePreferenceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeMyDaemonEdgePreferenceResponse) ProtoMessage() {}
+
+func (x *ChangeMyDaemonEdgePreferenceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeMyDaemonEdgePreferenceResponse.ProtoReflect.Descriptor instead.
+func (*ChangeMyDaemonEdgePreferenceResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ChangeMyDaemonEdgePreferenceResponse) GetSelection() *DaemonEdgeSelection {
+	if x != nil {
+		return x.Selection
+	}
+	return nil
+}
+
+func (x *ChangeMyDaemonEdgePreferenceResponse) GetReselectAccepted() bool {
+	if x != nil {
+		return x.ReselectAccepted
+	}
+	return false
+}
+
+func (x *ChangeMyDaemonEdgePreferenceResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type ReselectMyDaemonEdgeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId      string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReselectMyDaemonEdgeRequest) Reset() {
+	*x = ReselectMyDaemonEdgeRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReselectMyDaemonEdgeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReselectMyDaemonEdgeRequest) ProtoMessage() {}
+
+func (x *ReselectMyDaemonEdgeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReselectMyDaemonEdgeRequest.ProtoReflect.Descriptor instead.
+func (*ReselectMyDaemonEdgeRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReselectMyDaemonEdgeRequest) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+type ReselectMyDaemonEdgeResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Selection        *DaemonEdgeSelection   `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
+	ReselectAccepted bool                   `protobuf:"varint,2,opt,name=reselect_accepted,json=reselectAccepted,proto3" json:"reselect_accepted,omitempty"`
+	Message          string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ReselectMyDaemonEdgeResponse) Reset() {
+	*x = ReselectMyDaemonEdgeResponse{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReselectMyDaemonEdgeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReselectMyDaemonEdgeResponse) ProtoMessage() {}
+
+func (x *ReselectMyDaemonEdgeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReselectMyDaemonEdgeResponse.ProtoReflect.Descriptor instead.
+func (*ReselectMyDaemonEdgeResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ReselectMyDaemonEdgeResponse) GetSelection() *DaemonEdgeSelection {
+	if x != nil {
+		return x.Selection
+	}
+	return nil
+}
+
+func (x *ReselectMyDaemonEdgeResponse) GetReselectAccepted() bool {
+	if x != nil {
+		return x.ReselectAccepted
+	}
+	return false
+}
+
+func (x *ReselectMyDaemonEdgeResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
 }
 
 type BeginDaemonEnrollmentRequest struct {
@@ -863,7 +1502,7 @@ type BeginDaemonEnrollmentRequest struct {
 
 func (x *BeginDaemonEnrollmentRequest) Reset() {
 	*x = BeginDaemonEnrollmentRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -875,7 +1514,7 @@ func (x *BeginDaemonEnrollmentRequest) String() string {
 func (*BeginDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -888,7 +1527,7 @@ func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*BeginDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{13}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *BeginDaemonEnrollmentRequest) GetEnrollmentCode() string {
@@ -930,7 +1569,7 @@ type IdentityChallenge struct {
 
 func (x *IdentityChallenge) Reset() {
 	*x = IdentityChallenge{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -942,7 +1581,7 @@ func (x *IdentityChallenge) String() string {
 func (*IdentityChallenge) ProtoMessage() {}
 
 func (x *IdentityChallenge) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -955,7 +1594,7 @@ func (x *IdentityChallenge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentityChallenge.ProtoReflect.Descriptor instead.
 func (*IdentityChallenge) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{14}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *IdentityChallenge) GetChallengeId() string {
@@ -989,7 +1628,7 @@ type CompleteDaemonEnrollmentRequest struct {
 
 func (x *CompleteDaemonEnrollmentRequest) Reset() {
 	*x = CompleteDaemonEnrollmentRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1001,7 +1640,7 @@ func (x *CompleteDaemonEnrollmentRequest) String() string {
 func (*CompleteDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1014,7 +1653,7 @@ func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{15}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CompleteDaemonEnrollmentRequest) GetChallengeId() string {
@@ -1047,7 +1686,7 @@ type EdgeLocator struct {
 
 func (x *EdgeLocator) Reset() {
 	*x = EdgeLocator{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1059,7 +1698,7 @@ func (x *EdgeLocator) String() string {
 func (*EdgeLocator) ProtoMessage() {}
 
 func (x *EdgeLocator) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1072,7 +1711,7 @@ func (x *EdgeLocator) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeLocator.ProtoReflect.Descriptor instead.
 func (*EdgeLocator) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{16}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *EdgeLocator) GetEdgeId() string {
@@ -1135,7 +1774,7 @@ type CompleteDaemonEnrollmentResponse struct {
 
 func (x *CompleteDaemonEnrollmentResponse) Reset() {
 	*x = CompleteDaemonEnrollmentResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1147,7 +1786,7 @@ func (x *CompleteDaemonEnrollmentResponse) String() string {
 func (*CompleteDaemonEnrollmentResponse) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1160,7 +1799,7 @@ func (x *CompleteDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentResponse.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{17}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CompleteDaemonEnrollmentResponse) GetDaemon() *DaemonRecord {
@@ -1194,7 +1833,7 @@ type BeginDaemonBindingRefreshRequest struct {
 
 func (x *BeginDaemonBindingRefreshRequest) Reset() {
 	*x = BeginDaemonBindingRefreshRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1206,7 +1845,7 @@ func (x *BeginDaemonBindingRefreshRequest) String() string {
 func (*BeginDaemonBindingRefreshRequest) ProtoMessage() {}
 
 func (x *BeginDaemonBindingRefreshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1219,7 +1858,7 @@ func (x *BeginDaemonBindingRefreshRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDaemonBindingRefreshRequest.ProtoReflect.Descriptor instead.
 func (*BeginDaemonBindingRefreshRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{18}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BeginDaemonBindingRefreshRequest) GetDaemonId() string {
@@ -1230,16 +1869,20 @@ func (x *BeginDaemonBindingRefreshRequest) GetDaemonId() string {
 }
 
 type CompleteDaemonBindingRefreshRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChallengeId   string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
-	DeviceProof   []byte                 `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                      protoimpl.MessageState   `protogen:"open.v1"`
+	ChallengeId                string                   `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
+	DeviceProof                []byte                   `protobuf:"bytes,2,opt,name=device_proof,json=deviceProof,proto3" json:"device_proof,omitempty"`
+	EdgeMeasurements           []*DaemonEdgeMeasurement `protobuf:"bytes,3,rep,name=edge_measurements,json=edgeMeasurements,proto3" json:"edge_measurements,omitempty"`
+	ChangePreference           bool                     `protobuf:"varint,4,opt,name=change_preference,json=changePreference,proto3" json:"change_preference,omitempty"`
+	PreferredEdgeId            string                   `protobuf:"bytes,5,opt,name=preferred_edge_id,json=preferredEdgeId,proto3" json:"preferred_edge_id,omitempty"`
+	ExpectedPreferenceRevision uint64                   `protobuf:"varint,6,opt,name=expected_preference_revision,json=expectedPreferenceRevision,proto3" json:"expected_preference_revision,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *CompleteDaemonBindingRefreshRequest) Reset() {
 	*x = CompleteDaemonBindingRefreshRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1894,7 @@ func (x *CompleteDaemonBindingRefreshRequest) String() string {
 func (*CompleteDaemonBindingRefreshRequest) ProtoMessage() {}
 
 func (x *CompleteDaemonBindingRefreshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1907,7 @@ func (x *CompleteDaemonBindingRefreshRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use CompleteDaemonBindingRefreshRequest.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonBindingRefreshRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{19}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CompleteDaemonBindingRefreshRequest) GetChallengeId() string {
@@ -1281,6 +1924,34 @@ func (x *CompleteDaemonBindingRefreshRequest) GetDeviceProof() []byte {
 	return nil
 }
 
+func (x *CompleteDaemonBindingRefreshRequest) GetEdgeMeasurements() []*DaemonEdgeMeasurement {
+	if x != nil {
+		return x.EdgeMeasurements
+	}
+	return nil
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) GetChangePreference() bool {
+	if x != nil {
+		return x.ChangePreference
+	}
+	return false
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) GetPreferredEdgeId() string {
+	if x != nil {
+		return x.PreferredEdgeId
+	}
+	return ""
+}
+
+func (x *CompleteDaemonBindingRefreshRequest) GetExpectedPreferenceRevision() uint64 {
+	if x != nil {
+		return x.ExpectedPreferenceRevision
+	}
+	return 0
+}
+
 // RefreshDaemonBindingResponse 对 ACTIVE/BLOCKED daemon 返回新的 binding 和 locator。
 // DELETED 只返回 daemon 状态，使离线 daemon 能清理本地 enrollment。
 type RefreshDaemonBindingResponse struct {
@@ -1288,13 +1959,14 @@ type RefreshDaemonBindingResponse struct {
 	Daemon        *DaemonRecord          `protobuf:"bytes,1,opt,name=daemon,proto3" json:"daemon,omitempty"`
 	DaemonBinding *SignedEnvelope        `protobuf:"bytes,2,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
 	EdgeLocator   *EdgeLocator           `protobuf:"bytes,3,opt,name=edge_locator,json=edgeLocator,proto3" json:"edge_locator,omitempty"`
+	EdgeSelection *DaemonEdgeSelection   `protobuf:"bytes,4,opt,name=edge_selection,json=edgeSelection,proto3" json:"edge_selection,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RefreshDaemonBindingResponse) Reset() {
 	*x = RefreshDaemonBindingResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1978,7 @@ func (x *RefreshDaemonBindingResponse) String() string {
 func (*RefreshDaemonBindingResponse) ProtoMessage() {}
 
 func (x *RefreshDaemonBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1991,7 @@ func (x *RefreshDaemonBindingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshDaemonBindingResponse.ProtoReflect.Descriptor instead.
 func (*RefreshDaemonBindingResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{20}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RefreshDaemonBindingResponse) GetDaemon() *DaemonRecord {
@@ -1343,11 +2015,18 @@ func (x *RefreshDaemonBindingResponse) GetEdgeLocator() *EdgeLocator {
 	return nil
 }
 
+func (x *RefreshDaemonBindingResponse) GetEdgeSelection() *DaemonEdgeSelection {
+	if x != nil {
+		return x.EdgeSelection
+	}
+	return nil
+}
+
 var File_cloud_v1_enrollment_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\n" +
-	"\x19cloud/v1/enrollment.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xad\x03\n" +
+	"\x19cloud/v1/enrollment.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xec\x04\n" +
 	"\fDaemonRecord\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1d\n" +
 	"\n" +
@@ -1362,7 +2041,10 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x8b\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12*\n" +
+	"\x11preferred_edge_id\x18\v \x01(\tR\x0fpreferredEdgeId\x128\n" +
+	"\x18edge_preference_revision\x18\f \x01(\x04R\x16edgePreferenceRevision\x12W\n" +
+	"\x1aedge_preference_updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\x17edgePreferenceUpdatedAt\"\x8b\x01\n" +
 	"\x11DaemonStateRecord\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x122\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x1c.anytty.cloud.v1.DaemonStateR\x05state\x12%\n" +
@@ -1381,7 +2063,38 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x14edge_public_endpoint\x18\b \x01(\tR\x12edgePublicEndpoint\"\x8a\x01\n" +
 	"\rManagedDaemon\x125\n" +
 	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12B\n" +
-	"\aruntime\x18\x02 \x01(\v2(.anytty.cloud.v1.DaemonRuntimeProjectionR\aruntime\"\x82\x01\n" +
+	"\aruntime\x18\x02 \x01(\v2(.anytty.cloud.v1.DaemonRuntimeProjectionR\aruntime\"\x94\x02\n" +
+	"\x15DaemonEdgeMeasurement\x12\x17\n" +
+	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x1c\n" +
+	"\treachable\x18\x02 \x01(\bR\treachable\x12,\n" +
+	"\x12connect_latency_ms\x18\x03 \x01(\rR\x10connectLatencyMs\x126\n" +
+	"\x17connection_failure_rate\x18\x04 \x01(\x01R\x15connectionFailureRate\x12!\n" +
+	"\fsample_count\x18\x05 \x01(\rR\vsampleCount\x12;\n" +
+	"\vmeasured_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"measuredAt\"\xee\x02\n" +
+	"\x13DaemonEdgeCandidate\x126\n" +
+	"\alocator\x18\x01 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\alocator\x12\x16\n" +
+	"\x06online\x18\x02 \x01(\bR\x06online\x12\x1a\n" +
+	"\beligible\x18\x03 \x01(\bR\beligible\x12\x1f\n" +
+	"\vagent_count\x18\x04 \x01(\x04R\n" +
+	"agentCount\x12\x1a\n" +
+	"\bcapacity\x18\x05 \x01(\x04R\bcapacity\x12\x1c\n" +
+	"\tpreferred\x18\x06 \x01(\bR\tpreferred\x12\x18\n" +
+	"\acurrent\x18\a \x01(\bR\acurrent\x12H\n" +
+	"\vmeasurement\x18\b \x01(\v2&.anytty.cloud.v1.DaemonEdgeMeasurementR\vmeasurement\x12\x14\n" +
+	"\x05score\x18\t \x01(\x01R\x05score\x12\x16\n" +
+	"\x06status\x18\n" +
+	" \x01(\tR\x06status\"\xe6\x02\n" +
+	"\x13DaemonEdgeSelection\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12*\n" +
+	"\x11preferred_edge_id\x18\x02 \x01(\tR\x0fpreferredEdgeId\x12/\n" +
+	"\x13preference_revision\x18\x03 \x01(\x04R\x12preferenceRevision\x12&\n" +
+	"\x0fcurrent_edge_id\x18\x04 \x01(\tR\rcurrentEdgeId\x12(\n" +
+	"\x10selected_edge_id\x18\x05 \x01(\tR\x0eselectedEdgeId\x12D\n" +
+	"\n" +
+	"candidates\x18\x06 \x03(\v2$.anytty.cloud.v1.DaemonEdgeCandidateR\n" +
+	"candidates\x12=\n" +
+	"\fevaluated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vevaluatedAt\"\x82\x01\n" +
 	"\x1dCreateDaemonEnrollmentRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12!\n" +
@@ -1410,7 +2123,26 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x17expected_state_revision\x18\x03 \x01(\x04R\x15expectedStateRevision\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\"T\n" +
 	"\x1bChangeMyDaemonStateResponse\x125\n" +
-	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\"\xbf\x01\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\"7\n" +
+	"\x18ListMyDaemonEdgesRequest\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"_\n" +
+	"\x19ListMyDaemonEdgesResponse\x12B\n" +
+	"\tselection\x18\x01 \x01(\v2$.anytty.cloud.v1.DaemonEdgeSelectionR\tselection\"\xd3\x01\n" +
+	"#ChangeMyDaemonEdgePreferenceRequest\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12*\n" +
+	"\x11preferred_edge_id\x18\x02 \x01(\tR\x0fpreferredEdgeId\x12@\n" +
+	"\x1cexpected_preference_revision\x18\x03 \x01(\x04R\x1aexpectedPreferenceRevision\x12!\n" +
+	"\freselect_now\x18\x04 \x01(\bR\vreselectNow\"\xb1\x01\n" +
+	"$ChangeMyDaemonEdgePreferenceResponse\x12B\n" +
+	"\tselection\x18\x01 \x01(\v2$.anytty.cloud.v1.DaemonEdgeSelectionR\tselection\x12+\n" +
+	"\x11reselect_accepted\x18\x02 \x01(\bR\x10reselectAccepted\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\":\n" +
+	"\x1bReselectMyDaemonEdgeRequest\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xa9\x01\n" +
+	"\x1cReselectMyDaemonEdgeResponse\x12B\n" +
+	"\tselection\x18\x01 \x01(\v2$.anytty.cloud.v1.DaemonEdgeSelectionR\tselection\x12+\n" +
+	"\x11reselect_accepted\x18\x02 \x01(\bR\x10reselectAccepted\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xbf\x01\n" +
 	"\x1cBeginDaemonEnrollmentRequest\x12'\n" +
 	"\x0fenrollment_code\x18\x01 \x01(\tR\x0eenrollmentCode\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12-\n" +
@@ -1438,14 +2170,19 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x0edaemon_binding\x18\x02 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12?\n" +
 	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator\"?\n" +
 	" BeginDaemonBindingRefreshRequest\x12\x1b\n" +
-	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"k\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xdb\x02\n" +
 	"#CompleteDaemonBindingRefreshRequest\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12!\n" +
-	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\"\xde\x01\n" +
+	"\fdevice_proof\x18\x02 \x01(\fR\vdeviceProof\x12S\n" +
+	"\x11edge_measurements\x18\x03 \x03(\v2&.anytty.cloud.v1.DaemonEdgeMeasurementR\x10edgeMeasurements\x12+\n" +
+	"\x11change_preference\x18\x04 \x01(\bR\x10changePreference\x12*\n" +
+	"\x11preferred_edge_id\x18\x05 \x01(\tR\x0fpreferredEdgeId\x12@\n" +
+	"\x1cexpected_preference_revision\x18\x06 \x01(\x04R\x1aexpectedPreferenceRevision\"\xab\x02\n" +
 	"\x1cRefreshDaemonBindingResponse\x125\n" +
 	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12F\n" +
 	"\x0edaemon_binding\x18\x02 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12?\n" +
-	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator*x\n" +
+	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator\x12K\n" +
+	"\x0eedge_selection\x18\x04 \x01(\v2$.anytty.cloud.v1.DaemonEdgeSelectionR\redgeSelection*x\n" +
 	"\vDaemonState\x12\x1c\n" +
 	"\x18DAEMON_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DAEMON_STATE_ACTIVE\x10\x01\x12\x18\n" +
@@ -1455,11 +2192,14 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x15BeginDaemonEnrollment\x12-.anytty.cloud.v1.BeginDaemonEnrollmentRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12\x7f\n" +
 	"\x18CompleteDaemonEnrollment\x120.anytty.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.anytty.cloud.v1.CompleteDaemonEnrollmentResponse\x12r\n" +
 	"\x19BeginDaemonBindingRefresh\x121.anytty.cloud.v1.BeginDaemonBindingRefreshRequest\x1a\".anytty.cloud.v1.IdentityChallenge\x12\x83\x01\n" +
-	"\x1cCompleteDaemonBindingRefresh\x124.anytty.cloud.v1.CompleteDaemonBindingRefreshRequest\x1a-.anytty.cloud.v1.RefreshDaemonBindingResponse2\xe4\x02\n" +
+	"\x1cCompleteDaemonBindingRefresh\x124.anytty.cloud.v1.CompleteDaemonBindingRefreshRequest\x1a-.anytty.cloud.v1.RefreshDaemonBindingResponse2\xd3\x05\n" +
 	"\x17DaemonManagementService\x12w\n" +
 	"\x12CreateMyEnrollment\x120.anytty.cloud.v1.CreateMyDaemonEnrollmentRequest\x1a/.anytty.cloud.v1.CreateDaemonEnrollmentResponse\x12^\n" +
 	"\rListMyDaemons\x12%.anytty.cloud.v1.ListMyDaemonsRequest\x1a&.anytty.cloud.v1.ListMyDaemonsResponse\x12p\n" +
-	"\x13ChangeMyDaemonState\x12+.anytty.cloud.v1.ChangeMyDaemonStateRequest\x1a,.anytty.cloud.v1.ChangeMyDaemonStateResponseB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x13ChangeMyDaemonState\x12+.anytty.cloud.v1.ChangeMyDaemonStateRequest\x1a,.anytty.cloud.v1.ChangeMyDaemonStateResponse\x12j\n" +
+	"\x11ListMyDaemonEdges\x12).anytty.cloud.v1.ListMyDaemonEdgesRequest\x1a*.anytty.cloud.v1.ListMyDaemonEdgesResponse\x12\x8b\x01\n" +
+	"\x1cChangeMyDaemonEdgePreference\x124.anytty.cloud.v1.ChangeMyDaemonEdgePreferenceRequest\x1a5.anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse\x12s\n" +
+	"\x14ReselectMyDaemonEdge\x12,.anytty.cloud.v1.ReselectMyDaemonEdgeRequest\x1a-.anytty.cloud.v1.ReselectMyDaemonEdgeResponseB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_enrollment_proto_rawDescOnce sync.Once
@@ -1474,71 +2214,97 @@ func file_cloud_v1_enrollment_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_enrollment_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_cloud_v1_enrollment_proto_goTypes = []any{
-	(DaemonState)(0),                            // 0: anytty.cloud.v1.DaemonState
-	(*DaemonRecord)(nil),                        // 1: anytty.cloud.v1.DaemonRecord
-	(*DaemonStateRecord)(nil),                   // 2: anytty.cloud.v1.DaemonStateRecord
-	(*DaemonRuntimeProjection)(nil),             // 3: anytty.cloud.v1.DaemonRuntimeProjection
-	(*ManagedDaemon)(nil),                       // 4: anytty.cloud.v1.ManagedDaemon
-	(*CreateDaemonEnrollmentRequest)(nil),       // 5: anytty.cloud.v1.CreateDaemonEnrollmentRequest
-	(*CreateDaemonEnrollmentResponse)(nil),      // 6: anytty.cloud.v1.CreateDaemonEnrollmentResponse
-	(*ListDaemonsRequest)(nil),                  // 7: anytty.cloud.v1.ListDaemonsRequest
-	(*ListDaemonsResponse)(nil),                 // 8: anytty.cloud.v1.ListDaemonsResponse
-	(*CreateMyDaemonEnrollmentRequest)(nil),     // 9: anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
-	(*ListMyDaemonsRequest)(nil),                // 10: anytty.cloud.v1.ListMyDaemonsRequest
-	(*ListMyDaemonsResponse)(nil),               // 11: anytty.cloud.v1.ListMyDaemonsResponse
-	(*ChangeMyDaemonStateRequest)(nil),          // 12: anytty.cloud.v1.ChangeMyDaemonStateRequest
-	(*ChangeMyDaemonStateResponse)(nil),         // 13: anytty.cloud.v1.ChangeMyDaemonStateResponse
-	(*BeginDaemonEnrollmentRequest)(nil),        // 14: anytty.cloud.v1.BeginDaemonEnrollmentRequest
-	(*IdentityChallenge)(nil),                   // 15: anytty.cloud.v1.IdentityChallenge
-	(*CompleteDaemonEnrollmentRequest)(nil),     // 16: anytty.cloud.v1.CompleteDaemonEnrollmentRequest
-	(*EdgeLocator)(nil),                         // 17: anytty.cloud.v1.EdgeLocator
-	(*CompleteDaemonEnrollmentResponse)(nil),    // 18: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
-	(*BeginDaemonBindingRefreshRequest)(nil),    // 19: anytty.cloud.v1.BeginDaemonBindingRefreshRequest
-	(*CompleteDaemonBindingRefreshRequest)(nil), // 20: anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
-	(*RefreshDaemonBindingResponse)(nil),        // 21: anytty.cloud.v1.RefreshDaemonBindingResponse
-	(*timestamppb.Timestamp)(nil),               // 22: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),                      // 23: anytty.cloud.v1.SignedEnvelope
+	(DaemonState)(0),                             // 0: anytty.cloud.v1.DaemonState
+	(*DaemonRecord)(nil),                         // 1: anytty.cloud.v1.DaemonRecord
+	(*DaemonStateRecord)(nil),                    // 2: anytty.cloud.v1.DaemonStateRecord
+	(*DaemonRuntimeProjection)(nil),              // 3: anytty.cloud.v1.DaemonRuntimeProjection
+	(*ManagedDaemon)(nil),                        // 4: anytty.cloud.v1.ManagedDaemon
+	(*DaemonEdgeMeasurement)(nil),                // 5: anytty.cloud.v1.DaemonEdgeMeasurement
+	(*DaemonEdgeCandidate)(nil),                  // 6: anytty.cloud.v1.DaemonEdgeCandidate
+	(*DaemonEdgeSelection)(nil),                  // 7: anytty.cloud.v1.DaemonEdgeSelection
+	(*CreateDaemonEnrollmentRequest)(nil),        // 8: anytty.cloud.v1.CreateDaemonEnrollmentRequest
+	(*CreateDaemonEnrollmentResponse)(nil),       // 9: anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	(*ListDaemonsRequest)(nil),                   // 10: anytty.cloud.v1.ListDaemonsRequest
+	(*ListDaemonsResponse)(nil),                  // 11: anytty.cloud.v1.ListDaemonsResponse
+	(*CreateMyDaemonEnrollmentRequest)(nil),      // 12: anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	(*ListMyDaemonsRequest)(nil),                 // 13: anytty.cloud.v1.ListMyDaemonsRequest
+	(*ListMyDaemonsResponse)(nil),                // 14: anytty.cloud.v1.ListMyDaemonsResponse
+	(*ChangeMyDaemonStateRequest)(nil),           // 15: anytty.cloud.v1.ChangeMyDaemonStateRequest
+	(*ChangeMyDaemonStateResponse)(nil),          // 16: anytty.cloud.v1.ChangeMyDaemonStateResponse
+	(*ListMyDaemonEdgesRequest)(nil),             // 17: anytty.cloud.v1.ListMyDaemonEdgesRequest
+	(*ListMyDaemonEdgesResponse)(nil),            // 18: anytty.cloud.v1.ListMyDaemonEdgesResponse
+	(*ChangeMyDaemonEdgePreferenceRequest)(nil),  // 19: anytty.cloud.v1.ChangeMyDaemonEdgePreferenceRequest
+	(*ChangeMyDaemonEdgePreferenceResponse)(nil), // 20: anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse
+	(*ReselectMyDaemonEdgeRequest)(nil),          // 21: anytty.cloud.v1.ReselectMyDaemonEdgeRequest
+	(*ReselectMyDaemonEdgeResponse)(nil),         // 22: anytty.cloud.v1.ReselectMyDaemonEdgeResponse
+	(*BeginDaemonEnrollmentRequest)(nil),         // 23: anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	(*IdentityChallenge)(nil),                    // 24: anytty.cloud.v1.IdentityChallenge
+	(*CompleteDaemonEnrollmentRequest)(nil),      // 25: anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	(*EdgeLocator)(nil),                          // 26: anytty.cloud.v1.EdgeLocator
+	(*CompleteDaemonEnrollmentResponse)(nil),     // 27: anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	(*BeginDaemonBindingRefreshRequest)(nil),     // 28: anytty.cloud.v1.BeginDaemonBindingRefreshRequest
+	(*CompleteDaemonBindingRefreshRequest)(nil),  // 29: anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
+	(*RefreshDaemonBindingResponse)(nil),         // 30: anytty.cloud.v1.RefreshDaemonBindingResponse
+	(*timestamppb.Timestamp)(nil),                // 31: google.protobuf.Timestamp
+	(*SignedEnvelope)(nil),                       // 32: anytty.cloud.v1.SignedEnvelope
 }
 var file_cloud_v1_enrollment_proto_depIdxs = []int32{
 	0,  // 0: anytty.cloud.v1.DaemonRecord.state:type_name -> anytty.cloud.v1.DaemonState
-	22, // 1: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
-	22, // 2: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 3: anytty.cloud.v1.DaemonStateRecord.state:type_name -> anytty.cloud.v1.DaemonState
-	1,  // 4: anytty.cloud.v1.ManagedDaemon.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	3,  // 5: anytty.cloud.v1.ManagedDaemon.runtime:type_name -> anytty.cloud.v1.DaemonRuntimeProjection
-	22, // 6: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 7: anytty.cloud.v1.ListDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
-	4,  // 8: anytty.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
-	0,  // 9: anytty.cloud.v1.ChangeMyDaemonStateRequest.target_state:type_name -> anytty.cloud.v1.DaemonState
-	1,  // 10: anytty.cloud.v1.ChangeMyDaemonStateResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	22, // 11: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 12: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	23, // 13: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
-	17, // 14: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
-	1,  // 15: anytty.cloud.v1.RefreshDaemonBindingResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
-	23, // 16: anytty.cloud.v1.RefreshDaemonBindingResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
-	17, // 17: anytty.cloud.v1.RefreshDaemonBindingResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
-	14, // 18: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
-	16, // 19: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
-	19, // 20: anytty.cloud.v1.EnrollmentService.BeginDaemonBindingRefresh:input_type -> anytty.cloud.v1.BeginDaemonBindingRefreshRequest
-	20, // 21: anytty.cloud.v1.EnrollmentService.CompleteDaemonBindingRefresh:input_type -> anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
-	9,  // 22: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
-	10, // 23: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
-	12, // 24: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:input_type -> anytty.cloud.v1.ChangeMyDaemonStateRequest
-	15, // 25: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
-	18, // 26: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
-	15, // 27: anytty.cloud.v1.EnrollmentService.BeginDaemonBindingRefresh:output_type -> anytty.cloud.v1.IdentityChallenge
-	21, // 28: anytty.cloud.v1.EnrollmentService.CompleteDaemonBindingRefresh:output_type -> anytty.cloud.v1.RefreshDaemonBindingResponse
-	6,  // 29: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
-	11, // 30: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
-	13, // 31: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:output_type -> anytty.cloud.v1.ChangeMyDaemonStateResponse
-	25, // [25:32] is the sub-list for method output_type
-	18, // [18:25] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	31, // 1: anytty.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
+	31, // 2: anytty.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 3: anytty.cloud.v1.DaemonRecord.edge_preference_updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 4: anytty.cloud.v1.DaemonStateRecord.state:type_name -> anytty.cloud.v1.DaemonState
+	1,  // 5: anytty.cloud.v1.ManagedDaemon.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	3,  // 6: anytty.cloud.v1.ManagedDaemon.runtime:type_name -> anytty.cloud.v1.DaemonRuntimeProjection
+	31, // 7: anytty.cloud.v1.DaemonEdgeMeasurement.measured_at:type_name -> google.protobuf.Timestamp
+	26, // 8: anytty.cloud.v1.DaemonEdgeCandidate.locator:type_name -> anytty.cloud.v1.EdgeLocator
+	5,  // 9: anytty.cloud.v1.DaemonEdgeCandidate.measurement:type_name -> anytty.cloud.v1.DaemonEdgeMeasurement
+	6,  // 10: anytty.cloud.v1.DaemonEdgeSelection.candidates:type_name -> anytty.cloud.v1.DaemonEdgeCandidate
+	31, // 11: anytty.cloud.v1.DaemonEdgeSelection.evaluated_at:type_name -> google.protobuf.Timestamp
+	31, // 12: anytty.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 13: anytty.cloud.v1.ListDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
+	4,  // 14: anytty.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> anytty.cloud.v1.ManagedDaemon
+	0,  // 15: anytty.cloud.v1.ChangeMyDaemonStateRequest.target_state:type_name -> anytty.cloud.v1.DaemonState
+	1,  // 16: anytty.cloud.v1.ChangeMyDaemonStateResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	7,  // 17: anytty.cloud.v1.ListMyDaemonEdgesResponse.selection:type_name -> anytty.cloud.v1.DaemonEdgeSelection
+	7,  // 18: anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse.selection:type_name -> anytty.cloud.v1.DaemonEdgeSelection
+	7,  // 19: anytty.cloud.v1.ReselectMyDaemonEdgeResponse.selection:type_name -> anytty.cloud.v1.DaemonEdgeSelection
+	31, // 20: anytty.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 21: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	32, // 22: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
+	26, // 23: anytty.cloud.v1.CompleteDaemonEnrollmentResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
+	5,  // 24: anytty.cloud.v1.CompleteDaemonBindingRefreshRequest.edge_measurements:type_name -> anytty.cloud.v1.DaemonEdgeMeasurement
+	1,  // 25: anytty.cloud.v1.RefreshDaemonBindingResponse.daemon:type_name -> anytty.cloud.v1.DaemonRecord
+	32, // 26: anytty.cloud.v1.RefreshDaemonBindingResponse.daemon_binding:type_name -> anytty.cloud.v1.SignedEnvelope
+	26, // 27: anytty.cloud.v1.RefreshDaemonBindingResponse.edge_locator:type_name -> anytty.cloud.v1.EdgeLocator
+	7,  // 28: anytty.cloud.v1.RefreshDaemonBindingResponse.edge_selection:type_name -> anytty.cloud.v1.DaemonEdgeSelection
+	23, // 29: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> anytty.cloud.v1.BeginDaemonEnrollmentRequest
+	25, // 30: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> anytty.cloud.v1.CompleteDaemonEnrollmentRequest
+	28, // 31: anytty.cloud.v1.EnrollmentService.BeginDaemonBindingRefresh:input_type -> anytty.cloud.v1.BeginDaemonBindingRefreshRequest
+	29, // 32: anytty.cloud.v1.EnrollmentService.CompleteDaemonBindingRefresh:input_type -> anytty.cloud.v1.CompleteDaemonBindingRefreshRequest
+	12, // 33: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> anytty.cloud.v1.CreateMyDaemonEnrollmentRequest
+	13, // 34: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> anytty.cloud.v1.ListMyDaemonsRequest
+	15, // 35: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:input_type -> anytty.cloud.v1.ChangeMyDaemonStateRequest
+	17, // 36: anytty.cloud.v1.DaemonManagementService.ListMyDaemonEdges:input_type -> anytty.cloud.v1.ListMyDaemonEdgesRequest
+	19, // 37: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonEdgePreference:input_type -> anytty.cloud.v1.ChangeMyDaemonEdgePreferenceRequest
+	21, // 38: anytty.cloud.v1.DaemonManagementService.ReselectMyDaemonEdge:input_type -> anytty.cloud.v1.ReselectMyDaemonEdgeRequest
+	24, // 39: anytty.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> anytty.cloud.v1.IdentityChallenge
+	27, // 40: anytty.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> anytty.cloud.v1.CompleteDaemonEnrollmentResponse
+	24, // 41: anytty.cloud.v1.EnrollmentService.BeginDaemonBindingRefresh:output_type -> anytty.cloud.v1.IdentityChallenge
+	30, // 42: anytty.cloud.v1.EnrollmentService.CompleteDaemonBindingRefresh:output_type -> anytty.cloud.v1.RefreshDaemonBindingResponse
+	9,  // 43: anytty.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> anytty.cloud.v1.CreateDaemonEnrollmentResponse
+	14, // 44: anytty.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> anytty.cloud.v1.ListMyDaemonsResponse
+	16, // 45: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonState:output_type -> anytty.cloud.v1.ChangeMyDaemonStateResponse
+	18, // 46: anytty.cloud.v1.DaemonManagementService.ListMyDaemonEdges:output_type -> anytty.cloud.v1.ListMyDaemonEdgesResponse
+	20, // 47: anytty.cloud.v1.DaemonManagementService.ChangeMyDaemonEdgePreference:output_type -> anytty.cloud.v1.ChangeMyDaemonEdgePreferenceResponse
+	22, // 48: anytty.cloud.v1.DaemonManagementService.ReselectMyDaemonEdge:output_type -> anytty.cloud.v1.ReselectMyDaemonEdgeResponse
+	39, // [39:49] is the sub-list for method output_type
+	29, // [29:39] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_enrollment_proto_init() }
@@ -1553,7 +2319,7 @@ func file_cloud_v1_enrollment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_enrollment_proto_rawDesc), len(file_cloud_v1_enrollment_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

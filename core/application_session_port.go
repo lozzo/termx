@@ -745,6 +745,30 @@ func (session *protocolSession) ApplicationRemoteLocalDisable(ctx context.Contex
 	return service.LocalDisable(ctx)
 }
 
+func (session *protocolSession) ApplicationRemoteCloudEdges(ctx context.Context) (RemoteCloudEdgeSelection, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteCloudEdgeSelection{}, err
+	}
+	return service.CloudEdges(ctx)
+}
+
+func (session *protocolSession) ApplicationRemoteCloudPreferEdge(ctx context.Context, edgeID string, expectedRevision uint64) (RemoteCloudEdgeSelection, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteCloudEdgeSelection{}, err
+	}
+	return service.CloudPreferEdge(ctx, edgeID, expectedRevision)
+}
+
+func (session *protocolSession) ApplicationRemoteCloudReselectEdge(ctx context.Context) (RemoteCloudEdgeSelection, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteCloudEdgeSelection{}, err
+	}
+	return service.CloudReselectEdge(ctx)
+}
+
 func applicationResizeControl(control *attachmentResizeControl) *TerminalResizeControl {
 	if control == nil {
 		return nil

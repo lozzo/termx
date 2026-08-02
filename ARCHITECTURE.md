@@ -143,7 +143,7 @@ pairing offer 可携带 Local 之外的 SSH、Direct 或 Cloud route hint。一�
                            account / enrollment / policy
 Client ----------------------------------------------------> Controller
    |                                                            ^
-   | cached locator, ClientGateway                               | mTLS EdgeControl v6
+   | cached locator, ClientGateway                               | mTLS EdgeControl v7
    v                                                            |
  Edge <----------------------------------------------------------+
    ^
@@ -160,7 +160,7 @@ Controller 使用 PostgreSQL 保存账号、daemon 状态、注册、套餐/用�
 
 - 一次性 daemon enrollment 与 Edge bootstrap。
 - Controller 签名的 binding、route grant 和 KeyBundle。
-- EdgeControl v6 全量 snapshot、增量、daemon lifecycle 和证书/config 控制。
+- EdgeControl v7 全量 snapshot、增量、daemon lifecycle、在线 Edge 重选和证书/config 控制。
 - 仅在客户端可信 locator 缺失或明确不可达时使用的 Directory fallback。
 - Relay reservation、renew 和 settlement 的商业真值。
 - Cloud Web 的公开页面、JSON API 和运营入口。

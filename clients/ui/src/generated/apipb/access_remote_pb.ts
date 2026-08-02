@@ -6,13 +6,15 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { ClientAccessIdentityResult as ClientAccessIdentityResult$1, ClientAccessListResult as ClientAccessListResult$1, ClientAccessRecord, ClientAccessRevokeRequest, ClientAccessTicketCreateRequest, ClientAccessTicketCreateResult as ClientAccessTicketCreateResult$1 } from "../remoteauthpb/remote_auth_pb";
 import { file_remoteauthpb_remote_auth } from "../remoteauthpb/remote_auth_pb";
+import type { DaemonEdgeSelection } from "../cloud/v1/enrollment_pb";
+import { file_cloud_v1_enrollment } from "../cloud/v1/enrollment_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file apipb/access_remote.proto.
  */
 export const file_apipb_access_remote: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGlwYi9hY2Nlc3NfcmVtb3RlLnByb3RvEg1hbnl0dHkuYXBpLnYxIjYKG0NsaWVudEFjY2Vzc0lkZW50aXR5Q29tbWFuZBIRCgljaGFsbGVuZ2UYAiABKAxKBAgBEAIiHwoXQ2xpZW50QWNjZXNzTGlzdENvbW1hbmRKBAgBEAIicAofQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlQ29tbWFuZBJHCgdyZXF1ZXN0GAIgASgLMjYuYW55dHR5LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1RpY2tldENyZWF0ZVJlcXVlc3RKBAgBEAIiZAoZQ2xpZW50QWNjZXNzUmV2b2tlQ29tbWFuZBJBCgdyZXF1ZXN0GAIgASgLMjAuYW55dHR5LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1Jldm9rZVJlcXVlc3RKBAgBEAIigwEKGkNsaWVudEFjY2Vzc0lkZW50aXR5UmVzdWx0EkMKCGlkZW50aXR5GAEgASgLMjEuYW55dHR5LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc0lkZW50aXR5UmVzdWx0EhEKCWNoYWxsZW5nZRgCIAEoDBINCgVwcm9vZhgDIAEoDCJXChZDbGllbnRBY2Nlc3NMaXN0UmVzdWx0Ej0KBmFjY2VzcxgBIAEoCzItLmFueXR0eS5yZW1vdGUuYXV0aC52MS5DbGllbnRBY2Nlc3NMaXN0UmVzdWx0ImcKHkNsaWVudEFjY2Vzc1RpY2tldENyZWF0ZVJlc3VsdBJFCgZ0aWNrZXQYASABKAsyNS5hbnl0dHkucmVtb3RlLmF1dGgudjEuQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlUmVzdWx0IlUKGENsaWVudEFjY2Vzc1Jldm9rZVJlc3VsdBI5CgZyZWNvcmQYASABKAsyKS5hbnl0dHkucmVtb3RlLmF1dGgudjEuQ2xpZW50QWNjZXNzUmVjb3JkIhsKE1JlbW90ZVN0YXR1c0NvbW1hbmRKBAgBEAIiZQoWUmVtb3RlUGFpclN0YXJ0Q29tbWFuZBIWCg5sb2NhbF9wYWlyX3VybBgCIAEoCRITCgt0dGxfc2Vjb25kcxgDIAEoBRIYChBhdXRoX3R0bF9zZWNvbmRzGAQgASgFSgQIARACIqEBChhSZW1vdGVMb2NhbEVuYWJsZUNvbW1hbmQSGQoRbG9jYWxfd2ViX2FkZHJlc3MYAiABKAkSFwoPaWNlX3RjcF9hZGRyZXNzGAMgASgJEhAKCGh1Yl91cmxzGAQgAygJEhMKC2NvbnRyb2xfdXJsGAUgASgJEhQKDGFjY2Vzc190b2tlbhgGIAEoCRIOCgZyZWdpb24YByABKAlKBAgBEAIiIAoYUmVtb3RlTG9jYWxTdGF0dXNDb21tYW5kSgQIARACIiEKGVJlbW90ZUxvY2FsRGlzYWJsZUNvbW1hbmRKBAgBEAIiggIKElJlbW90ZVN0YXR1c1Jlc3VsdBINCgVzdGF0ZRgBIAEoCRIOCgZkZXRhaWwYAiABKAkSEQoJZGV2aWNlX2lkGAMgASgJEhMKC2RldmljZV9uYW1lGAQgASgJEhMKC2NvbnRyb2xfdXJsGAUgASgJEg8KB2h1Yl91cmwYBiABKAkSEAoIaHViX3VybHMYByADKAkSFgoOZGF0YV9kaXJlY3RvcnkYCCABKAkSDAoEbW9kZRgJIAEoCRIRCglhbGxvd19sYW4YCiABKAgSFgoOdGVybWluYWxfY291bnQYCyABKAUSHAoUdXBkYXRlZF9hdF91bml4X25hbm8YDCABKAMi0AEKFVJlbW90ZVBhaXJTdGFydFJlc3VsdBIMCgR0eXBlGAEgASgJEhIKCm1hY2hpbmVfaWQYAiABKAkSFAoMbWFjaGluZV9uYW1lGAMgASgJEhYKDmxvY2FsX3BhaXJfdXJsGAQgASgJEhcKD3BhaXJfc2Vzc2lvbl9pZBgFIAEoCRITCgtwYWlyX3NlY3JldBgGIAEoCRIbChNhbnN3ZXJfcHJvb2Zfc2VjcmV0GAcgASgJEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAggASgDItUBChdSZW1vdGVMb2NhbFN0YXR1c1Jlc3VsdBIPCgdlbmFibGVkGAEgASgIEhAKCGh0dHBfdXJsGAIgASgJEhkKEWxvY2FsX3dlYl9hZGRyZXNzGAMgASgJEhYKDmxvY2FsX3BhaXJfdXJsGAQgASgJEhcKD2ljZV90Y3BfZW5hYmxlZBgFIAEoCBIXCg9pY2VfdGNwX2FkZHJlc3MYBiABKAkSFAoMaWNlX3RjcF9wb3J0GAcgASgFEhwKFHVwZGF0ZWRfYXRfdW5peF9uYW5vGAggASgDQiZaJGdpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9hcGlwYmIGcHJvdG8z", [file_remoteauthpb_remote_auth]);
+  fileDesc("ChlhcGlwYi9hY2Nlc3NfcmVtb3RlLnByb3RvEg1hbnl0dHkuYXBpLnYxIjYKG0NsaWVudEFjY2Vzc0lkZW50aXR5Q29tbWFuZBIRCgljaGFsbGVuZ2UYAiABKAxKBAgBEAIiHwoXQ2xpZW50QWNjZXNzTGlzdENvbW1hbmRKBAgBEAIicAofQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlQ29tbWFuZBJHCgdyZXF1ZXN0GAIgASgLMjYuYW55dHR5LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1RpY2tldENyZWF0ZVJlcXVlc3RKBAgBEAIiZAoZQ2xpZW50QWNjZXNzUmV2b2tlQ29tbWFuZBJBCgdyZXF1ZXN0GAIgASgLMjAuYW55dHR5LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1Jldm9rZVJlcXVlc3RKBAgBEAIigwEKGkNsaWVudEFjY2Vzc0lkZW50aXR5UmVzdWx0EkMKCGlkZW50aXR5GAEgASgLMjEuYW55dHR5LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc0lkZW50aXR5UmVzdWx0EhEKCWNoYWxsZW5nZRgCIAEoDBINCgVwcm9vZhgDIAEoDCJXChZDbGllbnRBY2Nlc3NMaXN0UmVzdWx0Ej0KBmFjY2VzcxgBIAEoCzItLmFueXR0eS5yZW1vdGUuYXV0aC52MS5DbGllbnRBY2Nlc3NMaXN0UmVzdWx0ImcKHkNsaWVudEFjY2Vzc1RpY2tldENyZWF0ZVJlc3VsdBJFCgZ0aWNrZXQYASABKAsyNS5hbnl0dHkucmVtb3RlLmF1dGgudjEuQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlUmVzdWx0IlUKGENsaWVudEFjY2Vzc1Jldm9rZVJlc3VsdBI5CgZyZWNvcmQYASABKAsyKS5hbnl0dHkucmVtb3RlLmF1dGgudjEuQ2xpZW50QWNjZXNzUmVjb3JkIhsKE1JlbW90ZVN0YXR1c0NvbW1hbmRKBAgBEAIiZQoWUmVtb3RlUGFpclN0YXJ0Q29tbWFuZBIWCg5sb2NhbF9wYWlyX3VybBgCIAEoCRITCgt0dGxfc2Vjb25kcxgDIAEoBRIYChBhdXRoX3R0bF9zZWNvbmRzGAQgASgFSgQIARACIqEBChhSZW1vdGVMb2NhbEVuYWJsZUNvbW1hbmQSGQoRbG9jYWxfd2ViX2FkZHJlc3MYAiABKAkSFwoPaWNlX3RjcF9hZGRyZXNzGAMgASgJEhAKCGh1Yl91cmxzGAQgAygJEhMKC2NvbnRyb2xfdXJsGAUgASgJEhQKDGFjY2Vzc190b2tlbhgGIAEoCRIOCgZyZWdpb24YByABKAlKBAgBEAIiIAoYUmVtb3RlTG9jYWxTdGF0dXNDb21tYW5kSgQIARACIiEKGVJlbW90ZUxvY2FsRGlzYWJsZUNvbW1hbmRKBAgBEAIiHwoXUmVtb3RlQ2xvdWRFZGdlc0NvbW1hbmRKBAgBEAIiWwocUmVtb3RlQ2xvdWRQcmVmZXJFZGdlQ29tbWFuZBIPCgdlZGdlX2lkGAIgASgJEiQKHGV4cGVjdGVkX3ByZWZlcmVuY2VfcmV2aXNpb24YAyABKARKBAgBEAIiJgoeUmVtb3RlQ2xvdWRSZXNlbGVjdEVkZ2VDb21tYW5kSgQIARACIoICChJSZW1vdGVTdGF0dXNSZXN1bHQSDQoFc3RhdGUYASABKAkSDgoGZGV0YWlsGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRITCgtkZXZpY2VfbmFtZRgEIAEoCRITCgtjb250cm9sX3VybBgFIAEoCRIPCgdodWJfdXJsGAYgASgJEhAKCGh1Yl91cmxzGAcgAygJEhYKDmRhdGFfZGlyZWN0b3J5GAggASgJEgwKBG1vZGUYCSABKAkSEQoJYWxsb3dfbGFuGAogASgIEhYKDnRlcm1pbmFsX2NvdW50GAsgASgFEhwKFHVwZGF0ZWRfYXRfdW5peF9uYW5vGAwgASgDItABChVSZW1vdGVQYWlyU3RhcnRSZXN1bHQSDAoEdHlwZRgBIAEoCRISCgptYWNoaW5lX2lkGAIgASgJEhQKDG1hY2hpbmVfbmFtZRgDIAEoCRIWCg5sb2NhbF9wYWlyX3VybBgEIAEoCRIXCg9wYWlyX3Nlc3Npb25faWQYBSABKAkSEwoLcGFpcl9zZWNyZXQYBiABKAkSGwoTYW5zd2VyX3Byb29mX3NlY3JldBgHIAEoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgIIAEoAyLVAQoXUmVtb3RlTG9jYWxTdGF0dXNSZXN1bHQSDwoHZW5hYmxlZBgBIAEoCBIQCghodHRwX3VybBgCIAEoCRIZChFsb2NhbF93ZWJfYWRkcmVzcxgDIAEoCRIWCg5sb2NhbF9wYWlyX3VybBgEIAEoCRIXCg9pY2VfdGNwX2VuYWJsZWQYBSABKAgSFwoPaWNlX3RjcF9hZGRyZXNzGAYgASgJEhQKDGljZV90Y3BfcG9ydBgHIAEoBRIcChR1cGRhdGVkX2F0X3VuaXhfbmFubxgIIAEoAyJRChZSZW1vdGVDbG91ZEVkZ2VzUmVzdWx0EjcKCXNlbGVjdGlvbhgBIAEoCzIkLmFueXR0eS5jbG91ZC52MS5EYWVtb25FZGdlU2VsZWN0aW9uQiZaJGdpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9hcGlwYmIGcHJvdG8z", [file_remoteauthpb_remote_auth, file_cloud_v1_enrollment]);
 
 /**
  * @generated from message anytty.api.v1.ClientAccessIdentityCommand
@@ -265,6 +267,54 @@ export const RemoteLocalDisableCommandSchema: GenMessage<RemoteLocalDisableComma
   messageDesc(file_apipb_access_remote, 12);
 
 /**
+ * @generated from message anytty.api.v1.RemoteCloudEdgesCommand
+ */
+export type RemoteCloudEdgesCommand = Message<"anytty.api.v1.RemoteCloudEdgesCommand"> & {
+};
+
+/**
+ * Describes the message anytty.api.v1.RemoteCloudEdgesCommand.
+ * Use `create(RemoteCloudEdgesCommandSchema)` to create a new message.
+ */
+export const RemoteCloudEdgesCommandSchema: GenMessage<RemoteCloudEdgesCommand> = /*@__PURE__*/
+  messageDesc(file_apipb_access_remote, 13);
+
+/**
+ * @generated from message anytty.api.v1.RemoteCloudPreferEdgeCommand
+ */
+export type RemoteCloudPreferEdgeCommand = Message<"anytty.api.v1.RemoteCloudPreferEdgeCommand"> & {
+  /**
+   * @generated from field: string edge_id = 2;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: uint64 expected_preference_revision = 3;
+   */
+  expectedPreferenceRevision: bigint;
+};
+
+/**
+ * Describes the message anytty.api.v1.RemoteCloudPreferEdgeCommand.
+ * Use `create(RemoteCloudPreferEdgeCommandSchema)` to create a new message.
+ */
+export const RemoteCloudPreferEdgeCommandSchema: GenMessage<RemoteCloudPreferEdgeCommand> = /*@__PURE__*/
+  messageDesc(file_apipb_access_remote, 14);
+
+/**
+ * @generated from message anytty.api.v1.RemoteCloudReselectEdgeCommand
+ */
+export type RemoteCloudReselectEdgeCommand = Message<"anytty.api.v1.RemoteCloudReselectEdgeCommand"> & {
+};
+
+/**
+ * Describes the message anytty.api.v1.RemoteCloudReselectEdgeCommand.
+ * Use `create(RemoteCloudReselectEdgeCommandSchema)` to create a new message.
+ */
+export const RemoteCloudReselectEdgeCommandSchema: GenMessage<RemoteCloudReselectEdgeCommand> = /*@__PURE__*/
+  messageDesc(file_apipb_access_remote, 15);
+
+/**
  * @generated from message anytty.api.v1.RemoteStatusResult
  */
 export type RemoteStatusResult = Message<"anytty.api.v1.RemoteStatusResult"> & {
@@ -334,7 +384,7 @@ export type RemoteStatusResult = Message<"anytty.api.v1.RemoteStatusResult"> & {
  * Use `create(RemoteStatusResultSchema)` to create a new message.
  */
 export const RemoteStatusResultSchema: GenMessage<RemoteStatusResult> = /*@__PURE__*/
-  messageDesc(file_apipb_access_remote, 13);
+  messageDesc(file_apipb_access_remote, 16);
 
 /**
  * @generated from message anytty.api.v1.RemotePairStartResult
@@ -386,7 +436,7 @@ export type RemotePairStartResult = Message<"anytty.api.v1.RemotePairStartResult
  * Use `create(RemotePairStartResultSchema)` to create a new message.
  */
 export const RemotePairStartResultSchema: GenMessage<RemotePairStartResult> = /*@__PURE__*/
-  messageDesc(file_apipb_access_remote, 14);
+  messageDesc(file_apipb_access_remote, 17);
 
 /**
  * @generated from message anytty.api.v1.RemoteLocalStatusResult
@@ -438,4 +488,21 @@ export type RemoteLocalStatusResult = Message<"anytty.api.v1.RemoteLocalStatusRe
  * Use `create(RemoteLocalStatusResultSchema)` to create a new message.
  */
 export const RemoteLocalStatusResultSchema: GenMessage<RemoteLocalStatusResult> = /*@__PURE__*/
-  messageDesc(file_apipb_access_remote, 15);
+  messageDesc(file_apipb_access_remote, 18);
+
+/**
+ * @generated from message anytty.api.v1.RemoteCloudEdgesResult
+ */
+export type RemoteCloudEdgesResult = Message<"anytty.api.v1.RemoteCloudEdgesResult"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.DaemonEdgeSelection selection = 1;
+   */
+  selection?: DaemonEdgeSelection | undefined;
+};
+
+/**
+ * Describes the message anytty.api.v1.RemoteCloudEdgesResult.
+ * Use `create(RemoteCloudEdgesResultSchema)` to create a new message.
+ */
+export const RemoteCloudEdgesResultSchema: GenMessage<RemoteCloudEdgesResult> = /*@__PURE__*/
+  messageDesc(file_apipb_access_remote, 19);

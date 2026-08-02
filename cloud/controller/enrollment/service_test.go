@@ -50,6 +50,64 @@ func TestCompleteDaemonBindingRefreshReturnsBindingForOnlineEdge(t *testing.T) {
 	}
 }
 
+func TestCompleteDaemonBindingRefreshPersistsPreferenceAndMeasurements(t *testing.T) {
+	fixture := newBindingRefreshFixture(t)
+	challenge := fixture.beginRefresh(t)
+	proof, err := remoteauth.SignDeviceIdentityProof(fixture.identity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), &cloudv1.CompleteDaemonBindingRefreshRequest{
+		ChallengeId: challenge.GetChallengeId(), DeviceProof: proof, ChangePreference: true,
+		PreferredEdgeId: fixture.edge.ID, ExpectedPreferenceRevision: 1,
+		EdgeMeasurements: []*cloudv1.DaemonEdgeMeasurement{{EdgeId: fixture.edge.ID, Reachable: true, ConnectLatencyMs: 23, ConnectionFailureRate: 0, SampleCount: 3}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetDaemon().GetPreferredEdgeId() != fixture.edge.ID || response.GetDaemon().GetEdgePreferenceRevision() != 2 {
+		t.Fatalf("preference response = %+v", response.GetDaemon())
+	}
+	candidates := response.GetEdgeSelection().GetCandidates()
+	if len(candidates) != 1 || !candidates[0].GetPreferred() || candidates[0].GetMeasurement().GetConnectLatencyMs() != 23 {
+		t.Fatalf("Edge selection = %+v", response.GetEdgeSelection())
+	}
+
+	challenge = fixture.beginRefresh(t)
+	proof, err = remoteauth.SignDeviceIdentityProof(fixture.identity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.service.CompleteDaemonBindingRefresh(context.Background(), &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof, ChangePreference: true, PreferredEdgeId: fixture.edge.ID, ExpectedPreferenceRevision: 1})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale preference revision code=%v err=%v", status.Code(err), err)
+	}
+}
+
+func TestCompleteDaemonBindingRefreshFallsBackFromUnreachablePreference(t *testing.T) {
+	fixture := newBindingRefreshFixture(t)
+	fallback := edgeconfig.Edge{ID: uuid.NewString(), Name: "Fallback Edge", Region: "fallback", Capacity: 10, PublicEndpoint: "fallback.test.example:41102", Enabled: true, ConfigVersion: 1, Revision: 1}
+	fixture.edgeStore.edges = append(fixture.edgeStore.edges, fallback)
+	publishEnrollmentTestEdge(t, fixture.directory, fallback.ID)
+	fixture.store.daemon.PreferredEdgeID = fixture.edge.ID
+
+	challenge := fixture.beginRefresh(t)
+	proof, err := remoteauth.SignDeviceIdentityProof(fixture.identity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := fixture.service.CompleteDaemonBindingRefresh(context.Background(), &cloudv1.CompleteDaemonBindingRefreshRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof, EdgeMeasurements: []*cloudv1.DaemonEdgeMeasurement{
+		{EdgeId: fixture.edge.ID, Reachable: false, ConnectionFailureRate: 1, SampleCount: 3},
+		{EdgeId: fallback.ID, Reachable: true, ConnectLatencyMs: 80, SampleCount: 3},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetEdgeLocator().GetEdgeId() != fallback.ID || response.GetEdgeSelection().GetPreferredEdgeId() != fixture.edge.ID {
+		t.Fatalf("fallback selection = %+v", response.GetEdgeSelection())
+	}
+}
+
 func TestCompleteDaemonBindingRefreshRejectsWrongProofAndReplay(t *testing.T) {
 	fixture := newBindingRefreshFixture(t)
 	challenge := fixture.beginRefresh(t)
@@ -135,6 +193,8 @@ type bindingRefreshFixture struct {
 	identity         remoteauth.Identity
 	now              time.Time
 	edge             edgeconfig.Edge
+	edgeStore        *refreshEdgeStore
+	directory        *directory.Directory
 	bindingKeyID     string
 	bindingPublicKey ed25519.PublicKey
 }
@@ -153,14 +213,15 @@ func newBindingRefreshFixture(t *testing.T) bindingRefreshFixture {
 	store := &preflightEnrollmentStore{daemon: Daemon{
 		ID: uuid.NewString(), AccountID: uuid.NewString(), AccountName: "Refresh account", DisplayName: "Refresh daemon",
 		DeviceID: identity.DeviceID, DeviceFingerprint: identity.Fingerprint, DevicePublicKey: append(ed25519.PublicKey(nil), identity.PublicKey...),
-		State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1, CreatedAt: now, UpdatedAt: now,
+		State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE, StateRevision: 1, EdgePreferenceRevision: 1, EdgePreferenceUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
 	}}
 	edge := edgeconfig.Edge{ID: uuid.NewString(), Name: "Refresh Edge", Region: "refresh", Capacity: 10, PublicEndpoint: "refresh.test.example:41102", Enabled: true, ConfigVersion: 2, Revision: 2}
 	_, edgeSigningKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	edges, err := edgeconfig.NewService(edgeconfig.Config{Store: refreshEdgeStore{edges: []edgeconfig.Edge{edge}}, SigningKey: edgeSigningKey, SigningKeyID: "edge-refresh-key", ClaimTTL: time.Minute})
+	edgeStore := &refreshEdgeStore{edges: []edgeconfig.Edge{edge}}
+	edges, err := edgeconfig.NewService(edgeconfig.Config{Store: edgeStore, SigningKey: edgeSigningKey, SigningKeyID: "edge-refresh-key", ClaimTTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +244,7 @@ func newBindingRefreshFixture(t *testing.T) bindingRefreshFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return bindingRefreshFixture{service: service, store: store, identity: identity, now: now, edge: edge, bindingKeyID: bindingKeyID, bindingPublicKey: bindingPublicKey}
+	return bindingRefreshFixture{service: service, store: store, identity: identity, now: now, edge: edge, edgeStore: edgeStore, directory: runtimeDirectory, bindingKeyID: bindingKeyID, bindingPublicKey: bindingPublicKey}
 }
 
 func (fixture bindingRefreshFixture) beginRefresh(t *testing.T) *cloudv1.IdentityChallenge {
@@ -377,6 +438,7 @@ type preflightEnrollmentStore struct {
 	daemon       Daemon
 	consumeCalls int
 	consumed     bool
+	measurements []EdgeMeasurement
 }
 
 func (*preflightEnrollmentStore) CreateDaemonEnrollment(context.Context, string, string, string, []byte, time.Time, time.Time) (string, error) {
@@ -407,6 +469,22 @@ func (store *preflightEnrollmentStore) GetDaemon(_ context.Context, daemonID str
 }
 func (store *preflightEnrollmentStore) ListDaemons(context.Context) ([]Daemon, error) {
 	return []Daemon{store.daemon}, nil
+}
+func (store *preflightEnrollmentStore) ListDaemonEdgeMeasurements(context.Context, string) ([]EdgeMeasurement, error) {
+	return append([]EdgeMeasurement(nil), store.measurements...), nil
+}
+func (store *preflightEnrollmentStore) UpsertDaemonEdgeMeasurements(_ context.Context, _ string, measurements []EdgeMeasurement) error {
+	store.measurements = append([]EdgeMeasurement(nil), measurements...)
+	return nil
+}
+func (store *preflightEnrollmentStore) ChangeDaemonEdgePreference(_ context.Context, accountID, daemonID, edgeID string, expectedRevision uint64, now time.Time) (Daemon, error) {
+	if accountID != store.daemon.AccountID || daemonID != store.daemon.ID || expectedRevision != store.daemon.EdgePreferenceRevision {
+		return Daemon{}, ErrDaemonUnavailable
+	}
+	store.daemon.PreferredEdgeID = edgeID
+	store.daemon.EdgePreferenceRevision++
+	store.daemon.EdgePreferenceUpdatedAt = now
+	return store.daemon, nil
 }
 
 type preflightEntitlement struct{ active bool }

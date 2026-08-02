@@ -25,8 +25,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 6 adds daemon lifecycle state synchronization.
-const ProtocolVersion uint32 = 6
+// ProtocolVersion 7 adds live daemon Edge reselection.
+const ProtocolVersion uint32 = 7
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
@@ -434,10 +434,31 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_DaemonStateQueryResult:
 		command.Payload = typed
+	case *cloudv1.ControllerCommand_ReselectDaemonEdge:
+		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
 	}
 	return command
+}
+
+// ReselectDaemonEdge asks the exact online daemon generation to probe and refresh its Edge binding.
+func (service *Service) ReselectDaemonEdge(ctx context.Context, daemonID string, generation, preferenceRevision uint64) cloudv1.RuntimeCommandResult {
+	commandID, correlationID := uuid.NewString(), uuid.NewString()
+	location, waiter, err := service.config.Directory.BeginCommand(ctx, correlationID, daemonID, generation, true)
+	if err != nil {
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_STALE
+	}
+	defer service.config.Directory.CancelCommand(correlationID)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().UTC().Add(10 * time.Second)
+	}
+	payload := &cloudv1.ControllerCommand_ReselectDaemonEdge{ReselectDaemonEdge: &cloudv1.ReselectDaemonEdge{CommandId: commandID, CorrelationId: correlationID, Deadline: timestamppb.New(deadline), DaemonId: daemonID, Generation: generation, PreferenceRevision: preferenceRevision}}
+	if err := service.sendExternal(ctx, location.ConnectionID, payload); err != nil {
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_UNAVAILABLE
+	}
+	return waitRuntimeCommand(ctx, waiter)
 }
 
 // DisconnectDaemon 发送精确 generation 实时命令并等待 Edge 结果；命令不写数据库。

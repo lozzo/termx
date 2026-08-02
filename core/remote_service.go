@@ -46,6 +46,29 @@ type RemoteLocalStatus struct {
 	UpdatedAt                              time.Time
 }
 
+type RemoteCloudEdgeMeasurement struct {
+	Reachable             bool
+	ConnectLatencyMS      uint32
+	ConnectionFailureRate float64
+	SampleCount           uint32
+	MeasuredAt            time.Time
+}
+
+type RemoteCloudEdgeCandidate struct {
+	EdgeID, Name, Region, PublicEndpoint, Status string
+	Online, Eligible, Preferred, Current         bool
+	AgentCount, Capacity                         uint64
+	Score                                        float64
+	Measurement                                  *RemoteCloudEdgeMeasurement
+}
+
+type RemoteCloudEdgeSelection struct {
+	DaemonID, PreferredEdgeID, CurrentEdgeID, SelectedEdgeID string
+	PreferenceRevision                                       uint64
+	Candidates                                               []RemoteCloudEdgeCandidate
+	EvaluatedAt                                              time.Time
+}
+
 // RemoteService 是 core-v2 daemon 对 remote runtime 的 typed hook。
 // 它只接受 core-native 类型，不承接 protocol/application DTO。
 type RemoteService interface {
@@ -54,4 +77,7 @@ type RemoteService interface {
 	LocalEnable(ctx context.Context, request RemoteLocalEnableRequest) (RemoteLocalStatus, error)
 	LocalStatus(ctx context.Context) (RemoteLocalStatus, error)
 	LocalDisable(ctx context.Context) (RemoteLocalStatus, error)
+	CloudEdges(ctx context.Context) (RemoteCloudEdgeSelection, error)
+	CloudPreferEdge(ctx context.Context, edgeID string, expectedRevision uint64) (RemoteCloudEdgeSelection, error)
+	CloudReselectEdge(ctx context.Context) (RemoteCloudEdgeSelection, error)
 }

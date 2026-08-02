@@ -68,9 +68,9 @@ SHA256SUMS
 
 ### 协议版本
 
-EdgeControl v6 不接受旧协议。先从当前日志、部署 commit 和运营控制台确认两台 Edge 是否已经运行 v6：
+EdgeControl v7 不接受旧协议。先从当前日志、部署 commit 和运营控制台确认两台 Edge 是否已经运行 v7：
 
-- 已经是 v6：可先升级 Controller，再逐台 Edge 验证。
+- 已经是 v7：可先升级 Controller，再逐台 Edge 验证。
 - 任一节点仍是旧协议：这不是无中断滚动升级。先把新二进制分发到三个节点，在维护窗口内快速切换 Controller 和两台 Edge；切换完成前旧 Edge 会离线。
 
 不要为了混合版本上线而增加协议兼容层。

@@ -48,6 +48,19 @@ func dialOrStartV3ClientContext(ctx context.Context, path, logFile string, logge
 	return connectLocalApplicationClient(ctx, path, logFile, "", logger)
 }
 
+func dialLocalApplicationSession(ctx context.Context, path, logFile string) (*clientruntime.ApplicationSession, *protocoladapter.ApplicationClient, error) {
+	client, err := dialOrStartV3ClientContext(ctx, path, logFile, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	application, err := newLocalApplicationSession(client)
+	if err != nil {
+		_ = client.Close()
+		return nil, nil, err
+	}
+	return application, client, nil
+}
+
 func connectLocalApplicationClient(ctx context.Context, path, logFile, configPath string, logger *slog.Logger) (*protocoladapter.ApplicationClient, error) {
 	registry := clientendpoint.DefaultRegistry()
 	target, _ := registry.DefaultEndpoint()

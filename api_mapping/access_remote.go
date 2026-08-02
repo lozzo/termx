@@ -5,8 +5,10 @@ import (
 
 	corev2 "github.com/anytty/anytty/core"
 	"github.com/anytty/anytty/proto/apipb"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -26,7 +28,8 @@ func ValidateAccessRemoteCommand(command *apipb.CommandEnvelope) error {
 		}
 	case *apipb.CommandEnvelope_ClientAccessList,
 		*apipb.CommandEnvelope_RemoteStatus, *apipb.CommandEnvelope_RemoteLocalStatus,
-		*apipb.CommandEnvelope_RemoteLocalDisable:
+		*apipb.CommandEnvelope_RemoteLocalDisable, *apipb.CommandEnvelope_RemoteCloudEdges,
+		*apipb.CommandEnvelope_RemoteCloudReselectEdge:
 		return nil
 	case *apipb.CommandEnvelope_ClientAccessTicketCreate:
 		request := value.ClientAccessTicketCreate.GetRequest()
@@ -48,10 +51,27 @@ func ValidateAccessRemoteCommand(command *apipb.CommandEnvelope) error {
 		if value.RemoteLocalEnable.GetLocalWebAddress() == "" {
 			return validation("remote_local_enable.local_web_address", "address is required")
 		}
+	case *apipb.CommandEnvelope_RemoteCloudPreferEdge:
+		if value.RemoteCloudPreferEdge.GetExpectedPreferenceRevision() == 0 {
+			return validation("remote_cloud_prefer_edge.expected_preference_revision", "preference revision is required")
+		}
 	default:
 		return validation("command", "access or remote command is required")
 	}
 	return nil
+}
+
+// RemoteCloudEdgeSelectionToProto maps the daemon-local Edge ranking without exposing CA material.
+func RemoteCloudEdgeSelectionToProto(selection corev2.RemoteCloudEdgeSelection) *apipb.RemoteCloudEdgesResult {
+	projected := &cloudv1.DaemonEdgeSelection{DaemonId: selection.DaemonID, PreferredEdgeId: selection.PreferredEdgeID, PreferenceRevision: selection.PreferenceRevision, CurrentEdgeId: selection.CurrentEdgeID, SelectedEdgeId: selection.SelectedEdgeID, EvaluatedAt: timestamppb.New(selection.EvaluatedAt), Candidates: make([]*cloudv1.DaemonEdgeCandidate, 0, len(selection.Candidates))}
+	for _, candidate := range selection.Candidates {
+		value := &cloudv1.DaemonEdgeCandidate{Locator: &cloudv1.EdgeLocator{EdgeId: candidate.EdgeID, Name: candidate.Name, Region: candidate.Region, PublicEndpoint: candidate.PublicEndpoint}, Online: candidate.Online, Eligible: candidate.Eligible, AgentCount: candidate.AgentCount, Capacity: candidate.Capacity, Preferred: candidate.Preferred, Current: candidate.Current, Score: candidate.Score, Status: candidate.Status}
+		if measurement := candidate.Measurement; measurement != nil {
+			value.Measurement = &cloudv1.DaemonEdgeMeasurement{EdgeId: candidate.EdgeID, Reachable: measurement.Reachable, ConnectLatencyMs: measurement.ConnectLatencyMS, ConnectionFailureRate: measurement.ConnectionFailureRate, SampleCount: measurement.SampleCount, MeasuredAt: timestamppb.New(measurement.MeasuredAt)}
+		}
+		projected.Candidates = append(projected.Candidates, value)
+	}
+	return &apipb.RemoteCloudEdgesResult{Selection: projected}
 }
 
 // ClientAccessTicketRequestFromProto 转为 core-native ticket request。
