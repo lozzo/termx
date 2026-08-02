@@ -242,6 +242,24 @@ func (session *Session) ResolveDaemonState(ctx context.Context, daemonID string)
 	return result.GetDaemon(), result.GetFound(), nil
 }
 
+func (session *Session) RenewIdentityCertificate(ctx context.Context, request *cloudv1.EdgeIdentityRenewRequest) (*cloudv1.EdgeIdentityRenewResponse, error) {
+	if request == nil || strings.TrimSpace(request.GetRequestId()) == "" || len(request.GetCsrPem()) == 0 {
+		return nil, errors.New("EdgeIdentity renewal request is required")
+	}
+	response, err := session.relayCall(ctx, waiterKey("identity-renew", request.GetRequestId()), &cloudv1.EdgeEvent_IdentityRenew{IdentityRenew: request})
+	if err != nil {
+		return nil, err
+	}
+	return response.(*cloudv1.EdgeIdentityRenewResponse), nil
+}
+
+func (session *Session) ReportIdentityCertificateApplied(ctx context.Context, applied *cloudv1.EdgeIdentityApplied) error {
+	if applied == nil || strings.TrimSpace(applied.GetRequestId()) == "" {
+		return errors.New("EdgeIdentity applied receipt is required")
+	}
+	return queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_IdentityApplied{IdentityApplied: applied})
+}
+
 func (session *Session) relayCall(ctx context.Context, key string, payload any) (any, error) {
 	if session == nil {
 		return nil, errors.New("EdgeControl generation is unavailable")
@@ -408,6 +426,13 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 			case *cloudv1.ControllerCommand_DaemonStateQueryResult:
 				result := payload.DaemonStateQueryResult
 				session.deliverRelayResponse(waiterKey("daemon-state", result.GetRequestId()), result)
+			case *cloudv1.ControllerCommand_IdentityRenew:
+				result := payload.IdentityRenew
+				if result == nil || strings.TrimSpace(result.GetRequestId()) == "" {
+					session.finish(errors.New("Controller returned an invalid EdgeIdentity renewal response"))
+					return
+				}
+				session.deliverRelayResponse(waiterKey("identity-renew", result.GetRequestId()), result)
 			case *cloudv1.ControllerCommand_CloseDaemon:
 				result := executeRuntimeCommand(ctx, payload.CloseDaemon.GetCommandId(), payload.CloseDaemon.GetCorrelationId(), payload.CloseDaemon.GetDeadline(), func(commandContext context.Context) error {
 					if config.CloseDaemon == nil {
@@ -616,6 +641,10 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_DaemonStateQuery:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_CertificateApplied:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_IdentityRenew:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_IdentityApplied:
 		event.Payload = typed
 	default:
 		panic("unsupported EdgeEvent payload")

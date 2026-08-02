@@ -84,6 +84,11 @@ type Store interface {
 	ConsumeBootstrapClaim(context.Context, []byte, string, []byte) (Edge, error)
 }
 
+type IdentityRecoveryStore interface {
+	CreateIdentityRecoveryClaim(context.Context, string, []byte, time.Time, string, string, time.Time) error
+	ConsumeIdentityRecoveryClaim(context.Context, []byte, string, []byte, time.Time) (Edge, error)
+}
+
 // Config 提供独立配置签名密钥和一次性 claim 生命周期。
 type Config struct {
 	Store        Store
@@ -220,6 +225,42 @@ func (service *Service) ConsumeBootstrapClaim(ctx context.Context, token, edgeID
 		return Edge{}, errors.New("identity CSR digest is required")
 	}
 	return service.store.ConsumeBootstrapClaim(ctx, tokenDigest(token), strings.TrimSpace(edgeID), csrDigest)
+}
+
+// CreateIdentityRecoveryClaim creates a separately audited, short-lived claim
+// for an Edge that can no longer authenticate with its expired certificate.
+func (service *Service) CreateIdentityRecoveryClaim(ctx context.Context, edgeID, actorID, reason string) (string, time.Time, error) {
+	edgeID = strings.TrimSpace(edgeID)
+	actorID = strings.TrimSpace(actorID)
+	reason = strings.TrimSpace(reason)
+	if edgeID == "" || actorID == "" || reason == "" {
+		return "", time.Time{}, errors.New("Edge identity recovery requires Edge, actor, and reason")
+	}
+	token, digest, err := newToken()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	now := service.now()
+	expiresAt := now.Add(service.claimTTL)
+	recoveryStore, ok := service.store.(IdentityRecoveryStore)
+	if !ok {
+		return "", time.Time{}, errors.New("Edge identity recovery store is unavailable")
+	}
+	if err := recoveryStore.CreateIdentityRecoveryClaim(ctx, edgeID, digest, expiresAt, actorID, reason, now); err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiresAt, nil
+}
+
+func (service *Service) ConsumeIdentityRecoveryClaim(ctx context.Context, token, edgeID string, csrDigest []byte) (Edge, error) {
+	if len(csrDigest) != sha256.Size {
+		return Edge{}, errors.New("identity recovery CSR digest is required")
+	}
+	recoveryStore, ok := service.store.(IdentityRecoveryStore)
+	if !ok {
+		return Edge{}, errors.New("Edge identity recovery store is unavailable")
+	}
+	return recoveryStore.ConsumeIdentityRecoveryClaim(ctx, tokenDigest(token), strings.TrimSpace(edgeID), csrDigest, service.now())
 }
 
 // SigningPublicKey 返回 Edge 安装后用于 desired config 验签的公开 key。

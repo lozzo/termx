@@ -1,11 +1,13 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -70,6 +72,61 @@ func TestRegisterValidatesIPAddressCSRBeforeConsumingBootstrapClaim(t *testing.T
 	}
 }
 
+func TestRecoverIdentityCertificateConsumesOneTimeClaimAndIssuesNinetyDays(t *testing.T) {
+	now := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	edge := edgeconfig.Edge{ID: "edge-recovery-test", Name: "Recovery Edge", Region: "test", Capacity: 10, PublicEndpoint: "edge.example.com:443", Enabled: true, ConfigVersion: 1, Revision: 1}
+	recoveryTokenDigest := sha256.Sum256([]byte("recovery-token"))
+	edgeStore := &registerEdgeStore{edge: edge, recoveryTokenDigest: recoveryTokenDigest[:]}
+	_, configSigningKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges, err := edgeconfig.NewService(edgeconfig.Config{Store: edgeStore, SigningKey: configSigningKey, SigningKeyID: "config-test-key", ClaimTTL: 10 * time.Minute, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCertificate, caKey := registerTestCA(t, now)
+	var auditStage string
+	service := &Service{
+		edges: edges, caCertificate: caCertificate, caCertificatePEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCertificate.Raw}), caKey: caKey,
+		identityCertificateValidity: 90 * 24 * time.Hour, now: func() time.Time { return now },
+		auditIdentityCertificate: func(_ context.Context, gotEdgeID, stage string, fingerprint []byte, notAfter, issuedAt time.Time) error {
+			if gotEdgeID != edge.ID || len(fingerprint) != sha256.Size || notAfter != now.Add(90*24*time.Hour) || issuedAt != now {
+				t.Fatalf("audit edge=%q fingerprint=%x notAfter=%v issuedAt=%v", gotEdgeID, fingerprint, notAfter, issuedAt)
+			}
+			auditStage = stage
+			return nil
+		},
+	}
+	identityURI, err := securetransport.EdgeIdentityURI(edge.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrPEM := registerTestCSR(t, pkix.Name{CommonName: edge.ID}, nil, nil, []*url.URL{identityURI})
+	request := &cloudv1.RecoverEdgeIdentityRequest{EdgeId: edge.ID, RecoveryToken: "recovery-token", IdentityCsrPem: csrPEM}
+	response, err := service.RecoverIdentityCertificate(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auditStage != "recovery_issued" || !edgeStore.recoveryConsumed {
+		t.Fatalf("audit stage=%q recovery consumed=%v", auditStage, edgeStore.recoveryConsumed)
+	}
+	block, trailing := pem.Decode(response.GetIdentityCertificatePem())
+	if block == nil || len(trailing) != 0 {
+		t.Fatal("invalid recovered certificate PEM")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if certificate.NotAfter != now.Add(90*24*time.Hour) || len(certificate.URIs) != 1 || certificate.URIs[0].String() != identityURI.String() {
+		t.Fatalf("recovered certificate notAfter=%v URIs=%v", certificate.NotAfter, certificate.URIs)
+	}
+	if _, err := service.RecoverIdentityCertificate(context.Background(), request); !errors.Is(err, edgeconfig.ErrClaimInvalid) {
+		t.Fatalf("reused recovery claim error = %v", err)
+	}
+}
+
 func registerTestCSR(t *testing.T, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, uris []*url.URL) []byte {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -105,9 +162,11 @@ func registerTestCA(t *testing.T, now time.Time) (*x509.Certificate, *ecdsa.Priv
 }
 
 type registerEdgeStore struct {
-	edge         edgeconfig.Edge
-	consumeCalls int
-	consumed     bool
+	edge                edgeconfig.Edge
+	consumeCalls        int
+	consumed            bool
+	recoveryTokenDigest []byte
+	recoveryConsumed    bool
 }
 
 func (store *registerEdgeStore) ListEdges(context.Context) ([]edgeconfig.Edge, error) {
@@ -137,5 +196,17 @@ func (store *registerEdgeStore) ConsumeBootstrapClaim(_ context.Context, _ []byt
 		return edgeconfig.Edge{}, edgeconfig.ErrClaimInvalid
 	}
 	store.consumed = true
+	return store.edge, nil
+}
+
+func (*registerEdgeStore) CreateIdentityRecoveryClaim(context.Context, string, []byte, time.Time, string, string, time.Time) error {
+	return errors.New("unused")
+}
+
+func (store *registerEdgeStore) ConsumeIdentityRecoveryClaim(_ context.Context, digest []byte, edgeID string, _ []byte, _ time.Time) (edgeconfig.Edge, error) {
+	if store.recoveryConsumed || edgeID != store.edge.ID || !bytes.Equal(digest, store.recoveryTokenDigest) {
+		return edgeconfig.Edge{}, edgeconfig.ErrClaimInvalid
+	}
+	store.recoveryConsumed = true
 	return store.edge, nil
 }

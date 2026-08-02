@@ -590,6 +590,7 @@ func newCertificateFiles(t *testing.T, edgeID string) certificateFiles {
 		commonName:  edgeID,
 		uris:        []*url.URL{edgeIdentityURI},
 		extendedUse: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		validity:    90 * 24 * time.Hour,
 	})
 	edgePublicCert, edgePublicKey := issueCertificate(t, caCertificate, caKey, certificateRequest{
 		commonName:  testEdgePublicServer,
@@ -616,6 +617,7 @@ type certificateRequest struct {
 	ipAddresses []net.IP
 	uris        []*url.URL
 	extendedUse []x509.ExtKeyUsage
+	validity    time.Duration
 }
 
 func newCertificateAuthority(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
@@ -625,7 +627,7 @@ func newCertificateAuthority(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey
 		SerialNumber:          newSerialNumber(t),
 		Subject:               pkix.Name{CommonName: "AnyTTY integration root"},
 		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -643,12 +645,15 @@ func newCertificateAuthority(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey
 
 func issueCertificate(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, request certificateRequest) ([]byte, []byte) {
 	t.Helper()
+	if request.validity <= 0 {
+		request.validity = 24 * time.Hour
+	}
 	key := newPrivateKey(t)
 	template := &x509.Certificate{
 		SerialNumber: newSerialNumber(t),
 		Subject:      pkix.Name{CommonName: request.commonName},
 		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
+		NotAfter:     time.Now().Add(request.validity),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  request.extendedUse,
 		DNSNames:     request.dnsNames,

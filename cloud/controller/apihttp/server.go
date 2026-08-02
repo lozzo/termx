@@ -252,6 +252,8 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		_, _ = writer.Write(handler.config.Install.Artifact())
 	case request.Method == http.MethodPost && request.URL.Path == "/api/install/register":
 		handler.register(writer, request)
+	case request.Method == http.MethodPost && request.URL.Path == "/api/install/recover-identity":
+		handler.recoverIdentity(writer, request)
 	case request.Method == http.MethodGet && request.URL.Path == "/api/commerce/plans":
 		// 已发布套餐是公开产品目录；未登录请求不能设置 include_unpublished。
 		response, err := handler.config.Commerce.ListPlans(request.Context(), &cloudv1.ListPlansRequest{})
@@ -501,6 +503,20 @@ func (handler *handler) register(writer http.ResponseWriter, request *http.Reque
 	response, err := handler.config.Install.Register(request.Context(), input)
 	if err != nil {
 		writeError(writer, http.StatusForbidden, err)
+		return
+	}
+	writeProto(writer, http.StatusOK, response)
+}
+
+func (handler *handler) recoverIdentity(writer http.ResponseWriter, request *http.Request) {
+	input := &cloudv1.RecoverEdgeIdentityRequest{}
+	if err := readProto(request, input); err != nil {
+		writeError(writer, http.StatusBadRequest, err)
+		return
+	}
+	response, err := handler.config.Install.RecoverIdentityCertificate(request.Context(), input)
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, err)
 		return
 	}
 	writeProto(writer, http.StatusOK, response)

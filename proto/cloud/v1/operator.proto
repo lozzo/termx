@@ -191,4 +191,5 @@ service OperatorService {
   rpc ListCertificateProfiles(ListCertificateProfilesRequest) returns (ListCertificateProfilesResponse);
   rpc UploadCertificateProfile(UploadCertificateProfileRequest) returns (UploadCertificateProfileResponse);
   rpc BindCertificateProfile(BindCertificateProfileRequest) returns (BindCertificateProfileResponse);
+  rpc CreateEdgeIdentityRecovery(CreateEdgeIdentityRecoveryRequest) returns (CreateEdgeIdentityRecoveryResponse);
 }

@@ -7,7 +7,7 @@ import { APIError, protoSend } from '../api'
 import { CertificateState } from './CertificatesPage'
 import { compactID, dateTime } from '../format'
 import { BindCertificateProfileRequestSchema, BindCertificateProfileResponseSchema, ListCertificateProfilesResponseSchema } from '../generated/cloud/v1/certificate_pb'
-import { CreateEdgeRequestSchema, CreateEdgeResponseSchema, DeleteEdgeRequestSchema, DeleteEdgeResponseSchema, ListEdgesResponseSchema, UpdateEdgeRequestSchema, UpdateEdgeResponseSchema, type ManagedEdge } from '../generated/cloud/v1/edge_config_pb'
+import { CreateEdgeIdentityRecoveryRequestSchema, CreateEdgeIdentityRecoveryResponseSchema, CreateEdgeRequestSchema, CreateEdgeResponseSchema, DeleteEdgeRequestSchema, DeleteEdgeResponseSchema, ListEdgesResponseSchema, UpdateEdgeRequestSchema, UpdateEdgeResponseSchema, type ManagedEdge } from '../generated/cloud/v1/edge_config_pb'
 import { ListDaemonsResponseSchema } from '../generated/cloud/v1/enrollment_pb'
 import { ListRuntimeSessionsResponseSchema } from '../generated/cloud/v1/operator_pb'
 import { useProtoQuery } from '../query'
@@ -126,10 +126,23 @@ function EdgeSettings({ edge }: { edge: ManagedEdge }) {
   const [editing, setEditing] = useState(false)
   const [lifecycleAction, setLifecycleAction] = useState<'disable' | 'enable' | 'delete'>()
   const [reason, setReason] = useState('')
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const [recoveryReason, setRecoveryReason] = useState('')
+  const [recoveryToken, setRecoveryToken] = useState('')
+  const [recoveryExpiresAt, setRecoveryExpiresAt] = useState<Parameters<typeof dateTime>[0]>()
   const initial = useMemo(() => ({ name: config?.name ?? '', region: config?.region ?? '', publicEndpoint: config?.publicEndpoint ?? '', capacity: config?.capacity.toString() ?? '0' }), [config])
   const [form, setForm] = useState(initial)
   const update = useMutation({ mutationFn: ({ enabled, values = initial }: { enabled: boolean; values?: typeof initial }) => protoSend(`/api/operator/edges/${config?.edgeId}`, UpdateEdgeRequestSchema, create(UpdateEdgeRequestSchema, { edgeId: config?.edgeId, expectedRevision: edge.configRevision, name: values.name, region: values.region, publicEndpoint: values.publicEndpoint, capacity: BigInt(values.capacity), enabled }), UpdateEdgeResponseSchema, 'PUT'), onSuccess: () => { setEditing(false); closeLifecycleDialog(); void client.invalidateQueries({ queryKey: ['edges'] }) } })
   const remove = useMutation({ mutationFn: () => protoSend(`/api/operator/edges/${config?.edgeId}`, DeleteEdgeRequestSchema, create(DeleteEdgeRequestSchema, { edgeId: config?.edgeId, expectedRevision: edge.configRevision, reason }), DeleteEdgeResponseSchema, 'DELETE'), onSuccess: () => { void client.invalidateQueries({ queryKey: ['edges'] }); navigate('/app/admin/edges', { replace: true }) } })
+  const recoverIdentity = useMutation({ mutationFn: () => protoSend(
+    `/api/operator/edges/${config?.edgeId}/identity-recovery`,
+    CreateEdgeIdentityRecoveryRequestSchema,
+    create(CreateEdgeIdentityRecoveryRequestSchema, { edgeId: config?.edgeId, reason: recoveryReason }),
+    CreateEdgeIdentityRecoveryResponseSchema,
+  ), onSuccess: (response) => {
+    setRecoveryToken(response.recoveryToken)
+    setRecoveryExpiresAt(response.expiresAt)
+  } })
   function openLifecycleDialog(action: 'disable' | 'enable' | 'delete') {
     setLifecycleAction(action)
     setReason('')
@@ -143,13 +156,17 @@ function EdgeSettings({ edge }: { edge: ManagedEdge }) {
   const online = Boolean(edge.runtime?.online)
   const lifecyclePending = update.isPending || remove.isPending
   const lifecycleError = update.error || remove.error
+  const recoverySnippet = `identity_recovery_token: ${recoveryToken}`
   return <div className="edge-settings">
     <section className="plain-section"><header><div><h2>配置</h2><p>修改名称、区域、入口和容量</p></div><Button onClick={() => { setForm(initial); setEditing(true) }}><Edit3 size={16} />编辑</Button></header><dl className="detail-list"><div><dt>名称</dt><dd>{config?.name}</dd></div><div><dt>区域</dt><dd>{config?.region}</dd></div><div><dt>入口</dt><dd className="mono">{config?.publicEndpoint}</dd></div><div><dt>容量</dt><dd>{config?.capacity.toString()} daemon</dd></div></dl></section>
-    <section className="plain-section"><header><div><h2>生命周期</h2><p>{config?.enabled ? '停用后会断开控制连接并拒绝重连' : online ? '正在等待控制连接断开' : '已停止接收连接，可以恢复或永久删除'}</p></div><Status active={Boolean(config?.enabled && online)}>{config?.enabled ? online ? '在线' : '离线' : '已停用'}</Status></header><div className="edge-lifecycle-actions">{config?.enabled ? <Button tone="danger" onClick={() => openLifecycleDialog('disable')}><Ban size={16} />停用 Edge</Button> : <><Button onClick={() => openLifecycleDialog('enable')}><RotateCcw size={16} />恢复 Edge</Button><Button tone="danger" disabled={online} onClick={() => openLifecycleDialog('delete')} title={online ? '等待 Edge 控制连接断开后再删除' : undefined}><Trash2 size={16} />删除 Edge</Button></>}</div></section>
+    <section className="plain-section"><header><div><h2>生命周期</h2><p>{config?.enabled ? '停用后会断开控制连接并拒绝重连' : online ? '正在等待控制连接断开' : '已停止接收连接，可以恢复或永久删除'}</p></div><Status active={Boolean(config?.enabled && online)}>{config?.enabled ? online ? '在线' : '离线' : '已停用'}</Status></header><div className="edge-lifecycle-actions">{config?.enabled ? <><Button tone="danger" onClick={() => openLifecycleDialog('disable')}><Ban size={16} />停用 Edge</Button><Button disabled={online} title={online ? 'Edge 离线后才能恢复身份' : undefined} onClick={() => { setRecoveryReason(''); setRecoveryToken(''); setRecoveryExpiresAt(undefined); recoverIdentity.reset(); setRecoveryOpen(true) }}><KeyRound size={16} />恢复身份证书</Button></> : <><Button onClick={() => openLifecycleDialog('enable')}><RotateCcw size={16} />恢复 Edge</Button><Button tone="danger" disabled={online} onClick={() => openLifecycleDialog('delete')} title={online ? '等待 Edge 控制连接断开后再删除' : undefined}><Trash2 size={16} />删除 Edge</Button></>}</div></section>
     <Dialog title="编辑 Edge 配置" open={editing} onClose={() => setEditing(false)} closable={!update.isPending} footer={<><Button tone="quiet" onClick={() => setEditing(false)} disabled={update.isPending}>取消</Button><Button tone="primary" onClick={() => update.mutate({ enabled: config?.enabled ?? false, values: form })} disabled={update.isPending}>保存</Button></>}><div className="form-grid"><Field label="名称"><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><Field label="区域"><Input value={form.region} onChange={(event) => setForm({ ...form, region: event.target.value })} /></Field><Field label="域名或域名:端口"><Input value={form.publicEndpoint} onChange={(event) => setForm({ ...form, publicEndpoint: event.target.value })} /></Field><Field label="daemon 容量"><Input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} /></Field>{update.error && <p className="form-error" role="alert">无法保存 Edge 配置，请刷新后重试。{update.error instanceof APIError && update.error.correlationID ? ` 关联 ID：${update.error.correlationID}` : ''}</p>}</div></Dialog>
     <Dialog title={lifecycleAction === 'delete' ? '永久删除 Edge' : lifecycleAction === 'enable' ? '恢复 Edge' : '停用 Edge'} open={Boolean(lifecycleAction)} onClose={closeLifecycleDialog} closable={!lifecyclePending} footer={<><Button tone="quiet" onClick={closeLifecycleDialog} disabled={lifecyclePending}>取消</Button><Button tone={lifecycleAction === 'delete' || lifecycleAction === 'disable' ? 'danger' : 'primary'} onClick={() => lifecycleAction === 'delete' ? remove.mutate() : update.mutate({ enabled: lifecycleAction === 'enable' })} disabled={lifecyclePending || (lifecycleAction === 'delete' && !reason.trim())}>{lifecycleAction === 'delete' ? '确认永久删除' : lifecycleAction === 'enable' ? '确认恢复' : '确认停用'}</Button></>}>
       {lifecycleAction === 'delete' ? <><Notice tone="warning">删除不可恢复。部署配置、安装凭据和证书绑定会被移除；以后需要重新创建并注册这个 Edge。</Notice><Field label="操作原因"><Input autoFocus value={reason} onChange={(event) => setReason(event.target.value)} /></Field></> : lifecycleAction === 'enable' ? <Notice>恢复后，这个 Edge 可以使用现有身份重新连接 Controller。</Notice> : <Notice tone="warning">停用会立即使现有控制连接失效，并拒绝这个 Edge 再次连接；之后可以恢复。</Notice>}
       {lifecycleError && <p className="form-error" role="alert">操作失败，Edge 状态可能已经变化，请刷新后重试。{lifecycleError instanceof APIError && lifecycleError.correlationID ? ` 关联 ID：${lifecycleError.correlationID}` : ''}</p>}
+    </Dialog>
+    <Dialog title="恢复 Edge 身份证书" open={recoveryOpen} onClose={() => setRecoveryOpen(false)} closable={!recoverIdentity.isPending} footer={recoveryToken ? <Button tone="primary" onClick={() => setRecoveryOpen(false)}>完成</Button> : <><Button tone="quiet" onClick={() => setRecoveryOpen(false)} disabled={recoverIdentity.isPending}>取消</Button><Button tone="primary" onClick={() => recoverIdentity.mutate()} disabled={recoverIdentity.isPending || !recoveryReason.trim()}>生成恢复凭据</Button></>}>
+      {recoveryToken ? <><Notice tone="warning">恢复凭据只显示一次，有效至 {dateTime(recoveryExpiresAt)}。</Notice><div className="command-box"><code>{recoverySnippet}</code><Button autoFocus onClick={() => navigator.clipboard.writeText(recoverySnippet)}><Copy size={16} />复制</Button></div></> : <><Notice tone="warning">仅用于当前 mTLS 身份已经过期、无法自动续期的离线 Edge。</Notice><Field label="操作原因"><Input autoFocus value={recoveryReason} onChange={(event) => setRecoveryReason(event.target.value)} /></Field>{recoverIdentity.error && <p className="form-error" role="alert">无法生成恢复凭据，请确认 Edge 已离线且账号最近完成认证。{recoverIdentity.error instanceof APIError && recoverIdentity.error.correlationID ? ` 关联 ID：${recoverIdentity.error.correlationID}` : ''}</p>}</>}
     </Dialog>
   </div>
 }

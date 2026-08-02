@@ -137,6 +137,9 @@ type ClientOptions struct {
 	PrivateKeyFile  string
 	RootCAFile      string
 	ServerName      string
+	// GetClientCertificate allows an EdgeIdentity manager to atomically rotate
+	// the credential used by future handshakes without disturbing an existing stream.
+	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 }
 
 // NewClientTLSConfig 加载 EdgeIdentity 客户端证书与 Controller CA。
@@ -146,20 +149,25 @@ func NewClientTLSConfig(options ClientOptions) (*tls.Config, error) {
 	if serverName == "" {
 		return nil, errors.New("controller TLS server name is required")
 	}
-	certificate, err := tls.LoadX509KeyPair(strings.TrimSpace(options.CertificateFile), strings.TrimSpace(options.PrivateKeyFile))
-	if err != nil {
-		return nil, fmt.Errorf("load client certificate: %w", err)
+	var certificates []tls.Certificate
+	if options.GetClientCertificate == nil {
+		certificate, err := tls.LoadX509KeyPair(strings.TrimSpace(options.CertificateFile), strings.TrimSpace(options.PrivateKeyFile))
+		if err != nil {
+			return nil, fmt.Errorf("load client certificate: %w", err)
+		}
+		certificates = []tls.Certificate{certificate}
 	}
 	pool, err := loadCertPool(options.RootCAFile)
 	if err != nil {
 		return nil, fmt.Errorf("load controller CA: %w", err)
 	}
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{certificate},
-		RootCAs:      pool,
-		ServerName:   serverName,
-		NextProtos:   []string{"h2"},
+		MinVersion:           tls.VersionTLS13,
+		Certificates:         certificates,
+		GetClientCertificate: options.GetClientCertificate,
+		RootCAs:              pool,
+		ServerName:           serverName,
+		NextProtos:           []string{"h2"},
 	}, nil
 }
 

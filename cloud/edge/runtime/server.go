@@ -24,6 +24,7 @@ import (
 	edgecertificate "github.com/anytty/anytty/cloud/edge/certificate"
 	"github.com/anytty/anytty/cloud/edge/clientgateway"
 	"github.com/anytty/anytty/cloud/edge/controllerlink"
+	edgeidentity "github.com/anytty/anytty/cloud/edge/identity"
 	"github.com/anytty/anytty/cloud/edge/policy"
 	"github.com/anytty/anytty/cloud/edge/relay"
 	"github.com/anytty/anytty/cloud/edge/reservation"
@@ -50,6 +51,9 @@ type Config struct {
 	ControllerCAFile            string
 	IdentityCertificateFile     string
 	IdentityPrivateKeyFile      string
+	IdentityCACertificateFile   string
+	ManagedIdentityStateFile    string
+	IdentityRenewBefore         time.Duration
 	EdgeID                      string
 	BootID                      string
 	SoftwareVersion             string
@@ -123,6 +127,7 @@ type Runtime struct {
 	state               *State
 	configPublicKey     ed25519.PublicKey
 	certificateManager  *edgecertificate.Manager
+	identityManager     *edgeidentity.Manager
 	bindingKeys         *edgebindingkeys.Store
 	bindingKeyChanges   chan struct{}
 	controllerConnected atomic.Bool
@@ -165,11 +170,15 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load managed Edge certificate: %w", err)
 	}
+	identityManager, err := edgeidentity.New(edgeidentity.Config{
+		EdgeID: config.EdgeID, BootstrapCertificateFile: config.IdentityCertificateFile, BootstrapPrivateKeyFile: config.IdentityPrivateKeyFile,
+		ManagedStateFile: config.ManagedIdentityStateFile, CACertificateFile: config.IdentityCACertificateFile, RenewBefore: config.IdentityRenewBefore,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load Edge identity manager: %w", err)
+	}
 	controllerTLS, err := securetransport.NewClientTLSConfig(securetransport.ClientOptions{
-		CertificateFile: config.IdentityCertificateFile,
-		PrivateKeyFile:  config.IdentityPrivateKeyFile,
-		RootCAFile:      config.ControllerCAFile,
-		ServerName:      config.ControllerServerName,
+		RootCAFile: config.ControllerCAFile, ServerName: config.ControllerServerName, GetClientCertificate: identityManager.GetClientCertificate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load Edge identity TLS: %w", err)
@@ -208,6 +217,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		state:              state,
 		configPublicKey:    configPublicKey,
 		certificateManager: certificateManager,
+		identityManager:    identityManager,
 		bindingKeys:        bindingKeyStore,
 		bindingKeyChanges:  make(chan struct{}, 1),
 	}
@@ -744,7 +754,7 @@ func (runtime *Runtime) runControllerLink() {
 		if len(runtime.configPublicKey) != 0 {
 			applyDesiredConfig = runtime.applyDesiredConfig
 		}
-		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION}
+		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION, cloudv1.EdgeCapability_EDGE_CAPABILITY_IDENTITY_CERTIFICATE_ROTATION}
 		capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD)
 		if runtime.relayServer != nil && runtime.relayJournal != nil && !runtime.RelayDegraded() {
 			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_RESERVATION_JOURNAL)
@@ -789,7 +799,15 @@ func (runtime *Runtime) runControllerLink() {
 				runtime.setControlSession(session)
 				runtime.setControllerConnected(true)
 				delay = 100 * time.Millisecond
+				renewalContext, cancelRenewal := context.WithCancel(runtime.ctx)
+				renewalDone := make(chan struct{})
+				go func() {
+					defer close(renewalDone)
+					runtime.maintainIdentityCertificate(renewalContext, session)
+				}()
 				err = session.Wait()
+				cancelRenewal()
+				<-renewalDone
 				runtime.setControlSession(nil)
 				_ = session.Close()
 				_ = runtime.state.InvalidateDaemonStates(context.Background())
@@ -810,6 +828,71 @@ func (runtime *Runtime) runControllerLink() {
 			delay *= 2
 			if delay > 5*time.Second {
 				delay = 5 * time.Second
+			}
+		}
+	}
+}
+
+func (runtime *Runtime) maintainIdentityCertificate(ctx context.Context, session *controllerlink.Session) {
+	const requestTimeout = 30 * time.Second
+	const retryMaximum = time.Hour
+	retryDelay := time.Minute
+	for ctx.Err() == nil {
+		delay := runtime.identityManager.RenewalDelay(time.Now().UTC())
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-session.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+		request, err := runtime.identityManager.BeginRenewal(ctx)
+		if err == nil {
+			requestContext, cancel := context.WithTimeout(ctx, requestTimeout)
+			var response *cloudv1.EdgeIdentityRenewResponse
+			response, err = session.RenewIdentityCertificate(requestContext, request)
+			if err == nil {
+				var current edgeidentity.Metadata
+				current, err = runtime.identityManager.Apply(requestContext, response)
+				applied := &cloudv1.EdgeIdentityApplied{
+					RequestId: response.GetRequestId(), CertificateSha256: append([]byte(nil), response.GetCertificateSha256()...),
+					NotAfter: response.GetNotAfter(), Applied: err == nil,
+				}
+				if err == nil {
+					applied.CertificateSha256 = current.SHA256
+					applied.NotAfter = timestamppb.New(current.NotAfter)
+				} else {
+					applied.ErrorCode = "IDENTITY_APPLY_FAILED"
+					applied.ErrorMessage = err.Error()
+				}
+				_ = session.ReportIdentityCertificateApplied(requestContext, applied)
+			}
+			cancel()
+			if err == nil {
+				retryDelay = time.Minute
+				continue
+			}
+			runtime.identityManager.CancelRenewal(request.GetRequestId())
+		}
+		timer := time.NewTimer(retryDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-session.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if retryDelay < retryMaximum {
+			retryDelay *= 2
+			if retryDelay > retryMaximum {
+				retryDelay = retryMaximum
 			}
 		}
 	}
@@ -895,6 +978,19 @@ func normalizeConfig(config Config) Config {
 	config.ManagedCertificateStateFile = strings.TrimSpace(config.ManagedCertificateStateFile)
 	if config.ManagedCertificateStateFile == "" && config.PublicCertificateFile != "" {
 		config.ManagedCertificateStateFile = filepath.Join(filepath.Dir(config.PublicCertificateFile), "managed-certificate.pb")
+	}
+	config.IdentityCACertificateFile = strings.TrimSpace(config.IdentityCACertificateFile)
+	if config.IdentityCACertificateFile == "" {
+		// Direct composition historically used one test/private CA for both sides.
+		// Bootstrap installations always provide the dedicated EdgeIdentity CA.
+		config.IdentityCACertificateFile = config.ControllerCAFile
+	}
+	config.ManagedIdentityStateFile = strings.TrimSpace(config.ManagedIdentityStateFile)
+	if config.ManagedIdentityStateFile == "" && config.IdentityCertificateFile != "" {
+		config.ManagedIdentityStateFile = filepath.Join(filepath.Dir(config.IdentityCertificateFile), "managed-identity.pem")
+	}
+	if config.IdentityRenewBefore <= 0 {
+		config.IdentityRenewBefore = edgeidentity.DefaultRenewBefore
 	}
 	config.TURNListenAddress = strings.TrimSpace(config.TURNListenAddress)
 	config.TURNPublicEndpoint = strings.TrimSpace(config.TURNPublicEndpoint)

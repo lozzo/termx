@@ -198,7 +198,9 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	installService, err := install.NewService(install.Config{
 		Edges: edgeService, PublicOrigin: config.publicOrigin, ControllerAddress: config.controllerAddress, ControllerServerName: config.controllerServerName,
 		EdgeCACertificateFile: config.edgeCA, EdgeCAPrivateKeyFile: config.edgeCAKey, ControllerCAFile: config.controllerCA,
-		ArtifactFile: config.artifactFile, ArtifactVersion: config.artifactVersion, ArtifactSigningKey: artifactKey, CertificateValidity: 30 * 24 * time.Hour,
+		ArtifactFile: config.artifactFile, ArtifactVersion: config.artifactVersion, ArtifactSigningKey: artifactKey,
+		IdentityCertificateValidity: 90 * 24 * time.Hour, PublicCertificateValidity: 30 * 24 * time.Hour,
+		AuditIdentityCertificate: database.AuditEdgeIdentityCertificate,
 	})
 	if err != nil {
 		return err
@@ -276,8 +278,10 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
 		},
-		DesiredCertificate: certificateService.BundleForEdge,
-		CertificateApplied: certificateService.RecordApplied,
+		DesiredCertificate:         certificateService.BundleForEdge,
+		CertificateApplied:         certificateService.RecordApplied,
+		RenewIdentityCertificate:   installService.RenewIdentityCertificate,
+		IdentityCertificateApplied: installService.RecordIdentityCertificateApplied,
 	})
 	if err != nil {
 		return err

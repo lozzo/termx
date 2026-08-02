@@ -143,7 +143,7 @@ pairing offer 可携带 Local 之外的 SSH、Direct 或 Cloud route hint。一�
                            account / enrollment / policy
 Client ----------------------------------------------------> Controller
    |                                                            ^
-   | cached locator, ClientGateway                               | mTLS EdgeControl v7
+   | cached locator, ClientGateway                               | mTLS EdgeControl v8
    v                                                            |
  Edge <----------------------------------------------------------+
    ^
@@ -160,7 +160,7 @@ Controller 使用 PostgreSQL 保存账号、daemon 状态、注册、套餐/用�
 
 - 一次性 daemon enrollment 与 Edge bootstrap。
 - Controller 签名的 binding、route grant 和 KeyBundle。
-- EdgeControl v7 全量 snapshot、增量、daemon lifecycle、在线 Edge 重选和证书/config 控制。
+- EdgeControl v8 全量 snapshot、增量、daemon lifecycle、在线 Edge 重选、证书/config 控制和 EdgeIdentity 自动轮换。
 - 仅在客户端可信 locator 缺失或明确不可达时使用的 Directory fallback。
 - Relay reservation、renew 和 settlement 的商业真值。
 - Cloud Web 的公开页面、JSON API 和运营入口。
@@ -171,7 +171,7 @@ Edge 提供公网 AgentGateway、ClientGateway 和 TURN。它保存：
 
 - 当前 Agent、client session、pending signaling、Relay allocation/group 的有界内存状态。
 - Controller 下发的 daemon policy 内存投影。
-- 可验证 desired config、managed certificate、binding KeyBundle cache。
+- 可验证 desired config、managed public certificate、managed EdgeIdentity、binding KeyBundle cache。
 - 未 ACK Relay reservation/settlement journal。
 
 EdgeControl 断开后，Edge 清空 daemon policy 投影、关闭 Agent 并排空它仍跟踪的 Cloud session；新的受控准入 fail closed。Local、SSH 和 Direct 不依赖该控制链。Relay 不能离线创建或续租新的 authority。

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/cloud/configsignature"
+	"github.com/anytty/anytty/cloud/edge/identity"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/securefs"
@@ -35,18 +36,19 @@ import (
 // FileConfig 是 `/etc/anytty-cloud-edge/config.yaml` 的本机 bootstrap 配置。
 // 区域、容量等运营 desired state 不在这里编辑。
 type FileConfig struct {
-	ControllerOrigin     string `yaml:"controller_origin"`
-	RegisterURL          string `yaml:"register_url"`
-	EdgeID               string `yaml:"edge_id"`
-	BootstrapToken       string `yaml:"bootstrap_token,omitempty"`
-	StateDirectory       string `yaml:"state_directory"`
-	PublicEndpoint       string `yaml:"public_endpoint"`
-	ListenOverride       string `yaml:"listen_override"`
-	TURNListenOverride   string `yaml:"turn_listen_override,omitempty"`
-	LogLevel             string `yaml:"log_level,omitempty"`
-	ControllerAddress    string `yaml:"controller_address,omitempty"`
-	ControllerServerName string `yaml:"controller_server_name,omitempty"`
-	ConfigKeyID          string `yaml:"config_key_id,omitempty"`
+	ControllerOrigin      string `yaml:"controller_origin"`
+	RegisterURL           string `yaml:"register_url"`
+	EdgeID                string `yaml:"edge_id"`
+	BootstrapToken        string `yaml:"bootstrap_token,omitempty"`
+	IdentityRecoveryToken string `yaml:"identity_recovery_token,omitempty"`
+	StateDirectory        string `yaml:"state_directory"`
+	PublicEndpoint        string `yaml:"public_endpoint"`
+	ListenOverride        string `yaml:"listen_override"`
+	TURNListenOverride    string `yaml:"turn_listen_override,omitempty"`
+	LogLevel              string `yaml:"log_level,omitempty"`
+	ControllerAddress     string `yaml:"controller_address,omitempty"`
+	ControllerServerName  string `yaml:"controller_server_name,omitempty"`
+	ConfigKeyID           string `yaml:"config_key_id,omitempty"`
 }
 
 // Resolved 是 bootstrap 完成后提供给 Edge runtime composition 的本机文件路径。
@@ -57,6 +59,8 @@ type Resolved struct {
 	EdgeID                      string
 	IdentityCertificateFile     string
 	IdentityPrivateKeyFile      string
+	IdentityCACertificateFile   string
+	ManagedIdentityStateFile    string
 	PublicCertificateFile       string
 	PublicPrivateKeyFile        string
 	ControllerCAFile            string
@@ -100,15 +104,100 @@ func Resolve(ctx context.Context, configFile string, client *http.Client) (Resol
 			return Resolved{}, err
 		}
 	}
+	if config.IdentityRecoveryToken != "" {
+		if client == nil {
+			client = &http.Client{Timeout: 30 * time.Second}
+		}
+		if err := recoverIdentity(ctx, configFile, &config, paths, client); err != nil {
+			return Resolved{}, err
+		}
+	}
 	if config.ControllerAddress == "" || config.ControllerServerName == "" || config.ConfigKeyID == "" {
 		return Resolved{}, errors.New("Edge registration is incomplete")
 	}
-	for _, path := range []string{paths.IdentityCertificateFile, paths.IdentityPrivateKeyFile, paths.PublicCertificateFile, paths.PublicPrivateKeyFile, paths.ControllerCAFile, paths.ConfigSigningPublicKeyFile, paths.DesiredConfigCacheFile} {
+	for _, path := range []string{paths.IdentityCertificateFile, paths.IdentityPrivateKeyFile, paths.IdentityCACertificateFile, paths.PublicCertificateFile, paths.PublicPrivateKeyFile, paths.ControllerCAFile, paths.ConfigSigningPublicKeyFile, paths.DesiredConfigCacheFile} {
 		if _, err := os.Stat(path); err != nil {
 			return Resolved{}, fmt.Errorf("required Edge state %s: %w", filepath.Base(path), err)
 		}
 	}
 	return resolvedPaths(config), nil
+}
+
+func recoverIdentity(ctx context.Context, configFile string, config *FileConfig, paths Resolved, client *http.Client) error {
+	if _, err := os.Stat(paths.ManagedIdentityStateFile); err == nil {
+		if _, managerErr := identity.New(identity.Config{
+			EdgeID: config.EdgeID, BootstrapCertificateFile: paths.IdentityCertificateFile, BootstrapPrivateKeyFile: paths.IdentityPrivateKeyFile,
+			ManagedStateFile: paths.ManagedIdentityStateFile, CACertificateFile: paths.IdentityCACertificateFile,
+		}); managerErr == nil {
+			return clearIdentityRecoveryToken(configFile, config)
+		}
+	}
+	recoveryURL, err := url.Parse(strings.TrimRight(config.ControllerOrigin, "/") + "/api/install/recover-identity")
+	if err != nil || recoveryURL.Scheme != "https" || recoveryURL.Host == "" {
+		return errors.New("controller_origin must be an absolute HTTPS URL for identity recovery")
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generate recovered EdgeIdentity key: %w", err)
+	}
+	identityURI, err := securetransport.EdgeIdentityURI(config.EdgeID)
+	if err != nil {
+		return err
+	}
+	csrPEM, err := createCSR(key, pkix.Name{CommonName: config.EdgeID}, nil, nil, []*url.URL{identityURI})
+	if err != nil {
+		return err
+	}
+	requestBody, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(&cloudv1.RecoverEdgeIdentityRequest{
+		EdgeId: config.EdgeID, RecoveryToken: config.IdentityRecoveryToken, IdentityCsrPem: csrPEM,
+	})
+	if err != nil {
+		return err
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, recoveryURL.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return fmt.Errorf("recover EdgeIdentity: %w", err)
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("recover EdgeIdentity returned HTTP %d", response.StatusCode)
+	}
+	recovery := &cloudv1.RecoverEdgeIdentityResponse{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(responseBody, recovery); err != nil {
+		return fmt.Errorf("decode EdgeIdentity recovery: %w", err)
+	}
+	if recovery.GetNotAfter() == nil || recovery.GetNotAfter().CheckValid() != nil {
+		return errors.New("EdgeIdentity recovery expiry is invalid")
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return err
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	if _, err := identity.PersistRecoveredCredential(identity.Config{
+		EdgeID: config.EdgeID, ManagedStateFile: paths.ManagedIdentityStateFile, CACertificateFile: paths.IdentityCACertificateFile,
+	}, recovery.GetIdentityCertificatePem(), keyPEM, identity.Metadata{SHA256: recovery.GetCertificateSha256(), NotAfter: recovery.GetNotAfter().AsTime()}); err != nil {
+		return err
+	}
+	return clearIdentityRecoveryToken(configFile, config)
+}
+
+func clearIdentityRecoveryToken(configFile string, config *FileConfig) error {
+	config.IdentityRecoveryToken = ""
+	payload, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return atomicWrite(configFile, payload, 0o600)
 }
 
 func register(ctx context.Context, configFile string, config *FileConfig, paths Resolved, client *http.Client) error {
@@ -223,6 +312,7 @@ func resolvedPaths(config FileConfig) Resolved {
 	return Resolved{
 		ListenAddress: config.ListenOverride, ControllerAddress: config.ControllerAddress, ControllerServerName: config.ControllerServerName, EdgeID: config.EdgeID,
 		IdentityCertificateFile: filepath.Join(config.StateDirectory, "identity-cert.pem"), IdentityPrivateKeyFile: filepath.Join(config.StateDirectory, "identity-key.pem"),
+		IdentityCACertificateFile: filepath.Join(config.StateDirectory, "edge-ca.pem"), ManagedIdentityStateFile: filepath.Join(config.StateDirectory, "managed-identity.pem"),
 		PublicCertificateFile: filepath.Join(config.StateDirectory, "public-cert.pem"), PublicPrivateKeyFile: filepath.Join(config.StateDirectory, "public-key.pem"),
 		ControllerCAFile: filepath.Join(config.StateDirectory, "controller-ca.pem"), ConfigSigningKeyID: config.ConfigKeyID,
 		ConfigSigningPublicKeyFile: filepath.Join(config.StateDirectory, "config-signing-public.key"), DesiredConfigCacheFile: filepath.Join(config.StateDirectory, "desired-config.pb"),
@@ -237,6 +327,7 @@ func normalize(config *FileConfig) {
 	config.RegisterURL = strings.TrimSpace(config.RegisterURL)
 	config.EdgeID = strings.TrimSpace(config.EdgeID)
 	config.BootstrapToken = strings.TrimSpace(config.BootstrapToken)
+	config.IdentityRecoveryToken = strings.TrimSpace(config.IdentityRecoveryToken)
 	config.StateDirectory = strings.TrimSpace(config.StateDirectory)
 	config.PublicEndpoint = strings.TrimSpace(config.PublicEndpoint)
 	config.ListenOverride = strings.TrimSpace(config.ListenOverride)

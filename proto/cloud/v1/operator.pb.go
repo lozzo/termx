@@ -2254,7 +2254,7 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"$OPERATOR_EVENT_OPERATION_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fOPERATOR_EVENT_OPERATION_UPSERT\x10\x01\x12#\n" +
 	"\x1fOPERATOR_EVENT_OPERATION_DELETE\x10\x02\x12\"\n" +
-	"\x1eOPERATOR_EVENT_OPERATION_RESET\x10\x032\xb0\x0f\n" +
+	"\x1eOPERATOR_EVENT_OPERATION_RESET\x10\x032\xb8\x10\n" +
 	"\x0fOperatorService\x12h\n" +
 	"\vGetOverview\x12+.anytty.cloud.v1.GetOperatorOverviewRequest\x1a,.anytty.cloud.v1.GetOperatorOverviewResponse\x12k\n" +
 	"\fListAccounts\x12,.anytty.cloud.v1.ListOperatorAccountsRequest\x1a-.anytty.cloud.v1.ListOperatorAccountsResponse\x12e\n" +
@@ -2276,7 +2276,8 @@ const file_cloud_v1_operator_proto_rawDesc = "" +
 	"DeleteEdge\x12\".anytty.cloud.v1.DeleteEdgeRequest\x1a#.anytty.cloud.v1.DeleteEdgeResponse\x12|\n" +
 	"\x17ListCertificateProfiles\x12/.anytty.cloud.v1.ListCertificateProfilesRequest\x1a0.anytty.cloud.v1.ListCertificateProfilesResponse\x12\x7f\n" +
 	"\x18UploadCertificateProfile\x120.anytty.cloud.v1.UploadCertificateProfileRequest\x1a1.anytty.cloud.v1.UploadCertificateProfileResponse\x12y\n" +
-	"\x16BindCertificateProfile\x12..anytty.cloud.v1.BindCertificateProfileRequest\x1a/.anytty.cloud.v1.BindCertificateProfileResponseB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x16BindCertificateProfile\x12..anytty.cloud.v1.BindCertificateProfileRequest\x1a/.anytty.cloud.v1.BindCertificateProfileResponse\x12\x85\x01\n" +
+	"\x1aCreateEdgeIdentityRecovery\x122.anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest\x1a3.anytty.cloud.v1.CreateEdgeIdentityRecoveryResponseB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_operator_proto_rawDescOnce sync.Once
@@ -2293,59 +2294,61 @@ func file_cloud_v1_operator_proto_rawDescGZIP() []byte {
 var file_cloud_v1_operator_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_cloud_v1_operator_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_cloud_v1_operator_proto_goTypes = []any{
-	(RuntimeCommandResult)(0),                 // 0: anytty.cloud.v1.RuntimeCommandResult
-	(OperatorEventOperation)(0),               // 1: anytty.cloud.v1.OperatorEventOperation
-	(*PageRequest)(nil),                       // 2: anytty.cloud.v1.PageRequest
-	(*OperatorOverview)(nil),                  // 3: anytty.cloud.v1.OperatorOverview
-	(*AccountSummary)(nil),                    // 4: anytty.cloud.v1.AccountSummary
-	(*RuntimeSessionProjection)(nil),          // 5: anytty.cloud.v1.RuntimeSessionProjection
-	(*OperatorAuditEvent)(nil),                // 6: anytty.cloud.v1.OperatorAuditEvent
-	(*GetOperatorOverviewRequest)(nil),        // 7: anytty.cloud.v1.GetOperatorOverviewRequest
-	(*GetOperatorOverviewResponse)(nil),       // 8: anytty.cloud.v1.GetOperatorOverviewResponse
-	(*ListOperatorAccountsRequest)(nil),       // 9: anytty.cloud.v1.ListOperatorAccountsRequest
-	(*ListOperatorAccountsResponse)(nil),      // 10: anytty.cloud.v1.ListOperatorAccountsResponse
-	(*GetOperatorAccountRequest)(nil),         // 11: anytty.cloud.v1.GetOperatorAccountRequest
-	(*GetOperatorAccountResponse)(nil),        // 12: anytty.cloud.v1.GetOperatorAccountResponse
-	(*ProvisionAccountRequest)(nil),           // 13: anytty.cloud.v1.ProvisionAccountRequest
-	(*ProvisionAccountResponse)(nil),          // 14: anytty.cloud.v1.ProvisionAccountResponse
-	(*ResetAccountSetupRequest)(nil),          // 15: anytty.cloud.v1.ResetAccountSetupRequest
-	(*ResetAccountSetupResponse)(nil),         // 16: anytty.cloud.v1.ResetAccountSetupResponse
-	(*ListRuntimeSessionsRequest)(nil),        // 17: anytty.cloud.v1.ListRuntimeSessionsRequest
-	(*ListRuntimeSessionsResponse)(nil),       // 18: anytty.cloud.v1.ListRuntimeSessionsResponse
-	(*ListOperatorOrdersRequest)(nil),         // 19: anytty.cloud.v1.ListOperatorOrdersRequest
-	(*ListOperatorOrdersResponse)(nil),        // 20: anytty.cloud.v1.ListOperatorOrdersResponse
-	(*ListOperatorSubscriptionsRequest)(nil),  // 21: anytty.cloud.v1.ListOperatorSubscriptionsRequest
-	(*ListOperatorSubscriptionsResponse)(nil), // 22: anytty.cloud.v1.ListOperatorSubscriptionsResponse
-	(*ListOperatorUsageRequest)(nil),          // 23: anytty.cloud.v1.ListOperatorUsageRequest
-	(*ListOperatorUsageResponse)(nil),         // 24: anytty.cloud.v1.ListOperatorUsageResponse
-	(*ListOperatorAuditRequest)(nil),          // 25: anytty.cloud.v1.ListOperatorAuditRequest
-	(*ListOperatorAuditResponse)(nil),         // 26: anytty.cloud.v1.ListOperatorAuditResponse
-	(*SetAccountStateRequest)(nil),            // 27: anytty.cloud.v1.SetAccountStateRequest
-	(*SetAccountStateResponse)(nil),           // 28: anytty.cloud.v1.SetAccountStateResponse
-	(*SetAccountRoleRequest)(nil),             // 29: anytty.cloud.v1.SetAccountRoleRequest
-	(*SetAccountRoleResponse)(nil),            // 30: anytty.cloud.v1.SetAccountRoleResponse
-	(*DisconnectDaemonRequest)(nil),           // 31: anytty.cloud.v1.DisconnectDaemonRequest
-	(*DisconnectDaemonResponse)(nil),          // 32: anytty.cloud.v1.DisconnectDaemonResponse
-	(*DisconnectSessionRequest)(nil),          // 33: anytty.cloud.v1.DisconnectSessionRequest
-	(*DisconnectSessionResponse)(nil),         // 34: anytty.cloud.v1.DisconnectSessionResponse
-	(*OperatorRuntimeEvent)(nil),              // 35: anytty.cloud.v1.OperatorRuntimeEvent
-	(*timestamppb.Timestamp)(nil),             // 36: google.protobuf.Timestamp
-	(*AccountProfile)(nil),                    // 37: anytty.cloud.v1.AccountProfile
-	(AccountRole)(0),                          // 38: anytty.cloud.v1.AccountRole
-	(*SubscriptionProjection)(nil),            // 39: anytty.cloud.v1.SubscriptionProjection
-	(*EffectiveEntitlement)(nil),              // 40: anytty.cloud.v1.EffectiveEntitlement
-	(*UsagePeriodProjection)(nil),             // 41: anytty.cloud.v1.UsagePeriodProjection
-	(ClientProduct)(0),                        // 42: anytty.cloud.v1.ClientProduct
-	(*OrderProjection)(nil),                   // 43: anytty.cloud.v1.OrderProjection
-	(AccountState)(0),                         // 44: anytty.cloud.v1.AccountState
-	(*DeleteEdgeRequest)(nil),                 // 45: anytty.cloud.v1.DeleteEdgeRequest
-	(*ListCertificateProfilesRequest)(nil),    // 46: anytty.cloud.v1.ListCertificateProfilesRequest
-	(*UploadCertificateProfileRequest)(nil),   // 47: anytty.cloud.v1.UploadCertificateProfileRequest
-	(*BindCertificateProfileRequest)(nil),     // 48: anytty.cloud.v1.BindCertificateProfileRequest
-	(*DeleteEdgeResponse)(nil),                // 49: anytty.cloud.v1.DeleteEdgeResponse
-	(*ListCertificateProfilesResponse)(nil),   // 50: anytty.cloud.v1.ListCertificateProfilesResponse
-	(*UploadCertificateProfileResponse)(nil),  // 51: anytty.cloud.v1.UploadCertificateProfileResponse
-	(*BindCertificateProfileResponse)(nil),    // 52: anytty.cloud.v1.BindCertificateProfileResponse
+	(RuntimeCommandResult)(0),                  // 0: anytty.cloud.v1.RuntimeCommandResult
+	(OperatorEventOperation)(0),                // 1: anytty.cloud.v1.OperatorEventOperation
+	(*PageRequest)(nil),                        // 2: anytty.cloud.v1.PageRequest
+	(*OperatorOverview)(nil),                   // 3: anytty.cloud.v1.OperatorOverview
+	(*AccountSummary)(nil),                     // 4: anytty.cloud.v1.AccountSummary
+	(*RuntimeSessionProjection)(nil),           // 5: anytty.cloud.v1.RuntimeSessionProjection
+	(*OperatorAuditEvent)(nil),                 // 6: anytty.cloud.v1.OperatorAuditEvent
+	(*GetOperatorOverviewRequest)(nil),         // 7: anytty.cloud.v1.GetOperatorOverviewRequest
+	(*GetOperatorOverviewResponse)(nil),        // 8: anytty.cloud.v1.GetOperatorOverviewResponse
+	(*ListOperatorAccountsRequest)(nil),        // 9: anytty.cloud.v1.ListOperatorAccountsRequest
+	(*ListOperatorAccountsResponse)(nil),       // 10: anytty.cloud.v1.ListOperatorAccountsResponse
+	(*GetOperatorAccountRequest)(nil),          // 11: anytty.cloud.v1.GetOperatorAccountRequest
+	(*GetOperatorAccountResponse)(nil),         // 12: anytty.cloud.v1.GetOperatorAccountResponse
+	(*ProvisionAccountRequest)(nil),            // 13: anytty.cloud.v1.ProvisionAccountRequest
+	(*ProvisionAccountResponse)(nil),           // 14: anytty.cloud.v1.ProvisionAccountResponse
+	(*ResetAccountSetupRequest)(nil),           // 15: anytty.cloud.v1.ResetAccountSetupRequest
+	(*ResetAccountSetupResponse)(nil),          // 16: anytty.cloud.v1.ResetAccountSetupResponse
+	(*ListRuntimeSessionsRequest)(nil),         // 17: anytty.cloud.v1.ListRuntimeSessionsRequest
+	(*ListRuntimeSessionsResponse)(nil),        // 18: anytty.cloud.v1.ListRuntimeSessionsResponse
+	(*ListOperatorOrdersRequest)(nil),          // 19: anytty.cloud.v1.ListOperatorOrdersRequest
+	(*ListOperatorOrdersResponse)(nil),         // 20: anytty.cloud.v1.ListOperatorOrdersResponse
+	(*ListOperatorSubscriptionsRequest)(nil),   // 21: anytty.cloud.v1.ListOperatorSubscriptionsRequest
+	(*ListOperatorSubscriptionsResponse)(nil),  // 22: anytty.cloud.v1.ListOperatorSubscriptionsResponse
+	(*ListOperatorUsageRequest)(nil),           // 23: anytty.cloud.v1.ListOperatorUsageRequest
+	(*ListOperatorUsageResponse)(nil),          // 24: anytty.cloud.v1.ListOperatorUsageResponse
+	(*ListOperatorAuditRequest)(nil),           // 25: anytty.cloud.v1.ListOperatorAuditRequest
+	(*ListOperatorAuditResponse)(nil),          // 26: anytty.cloud.v1.ListOperatorAuditResponse
+	(*SetAccountStateRequest)(nil),             // 27: anytty.cloud.v1.SetAccountStateRequest
+	(*SetAccountStateResponse)(nil),            // 28: anytty.cloud.v1.SetAccountStateResponse
+	(*SetAccountRoleRequest)(nil),              // 29: anytty.cloud.v1.SetAccountRoleRequest
+	(*SetAccountRoleResponse)(nil),             // 30: anytty.cloud.v1.SetAccountRoleResponse
+	(*DisconnectDaemonRequest)(nil),            // 31: anytty.cloud.v1.DisconnectDaemonRequest
+	(*DisconnectDaemonResponse)(nil),           // 32: anytty.cloud.v1.DisconnectDaemonResponse
+	(*DisconnectSessionRequest)(nil),           // 33: anytty.cloud.v1.DisconnectSessionRequest
+	(*DisconnectSessionResponse)(nil),          // 34: anytty.cloud.v1.DisconnectSessionResponse
+	(*OperatorRuntimeEvent)(nil),               // 35: anytty.cloud.v1.OperatorRuntimeEvent
+	(*timestamppb.Timestamp)(nil),              // 36: google.protobuf.Timestamp
+	(*AccountProfile)(nil),                     // 37: anytty.cloud.v1.AccountProfile
+	(AccountRole)(0),                           // 38: anytty.cloud.v1.AccountRole
+	(*SubscriptionProjection)(nil),             // 39: anytty.cloud.v1.SubscriptionProjection
+	(*EffectiveEntitlement)(nil),               // 40: anytty.cloud.v1.EffectiveEntitlement
+	(*UsagePeriodProjection)(nil),              // 41: anytty.cloud.v1.UsagePeriodProjection
+	(ClientProduct)(0),                         // 42: anytty.cloud.v1.ClientProduct
+	(*OrderProjection)(nil),                    // 43: anytty.cloud.v1.OrderProjection
+	(AccountState)(0),                          // 44: anytty.cloud.v1.AccountState
+	(*DeleteEdgeRequest)(nil),                  // 45: anytty.cloud.v1.DeleteEdgeRequest
+	(*ListCertificateProfilesRequest)(nil),     // 46: anytty.cloud.v1.ListCertificateProfilesRequest
+	(*UploadCertificateProfileRequest)(nil),    // 47: anytty.cloud.v1.UploadCertificateProfileRequest
+	(*BindCertificateProfileRequest)(nil),      // 48: anytty.cloud.v1.BindCertificateProfileRequest
+	(*CreateEdgeIdentityRecoveryRequest)(nil),  // 49: anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest
+	(*DeleteEdgeResponse)(nil),                 // 50: anytty.cloud.v1.DeleteEdgeResponse
+	(*ListCertificateProfilesResponse)(nil),    // 51: anytty.cloud.v1.ListCertificateProfilesResponse
+	(*UploadCertificateProfileResponse)(nil),   // 52: anytty.cloud.v1.UploadCertificateProfileResponse
+	(*BindCertificateProfileResponse)(nil),     // 53: anytty.cloud.v1.BindCertificateProfileResponse
+	(*CreateEdgeIdentityRecoveryResponse)(nil), // 54: anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse
 }
 var file_cloud_v1_operator_proto_depIdxs = []int32{
 	36, // 0: anytty.cloud.v1.OperatorOverview.generated_at:type_name -> google.protobuf.Timestamp
@@ -2401,26 +2404,28 @@ var file_cloud_v1_operator_proto_depIdxs = []int32{
 	46, // 50: anytty.cloud.v1.OperatorService.ListCertificateProfiles:input_type -> anytty.cloud.v1.ListCertificateProfilesRequest
 	47, // 51: anytty.cloud.v1.OperatorService.UploadCertificateProfile:input_type -> anytty.cloud.v1.UploadCertificateProfileRequest
 	48, // 52: anytty.cloud.v1.OperatorService.BindCertificateProfile:input_type -> anytty.cloud.v1.BindCertificateProfileRequest
-	8,  // 53: anytty.cloud.v1.OperatorService.GetOverview:output_type -> anytty.cloud.v1.GetOperatorOverviewResponse
-	10, // 54: anytty.cloud.v1.OperatorService.ListAccounts:output_type -> anytty.cloud.v1.ListOperatorAccountsResponse
-	12, // 55: anytty.cloud.v1.OperatorService.GetAccount:output_type -> anytty.cloud.v1.GetOperatorAccountResponse
-	14, // 56: anytty.cloud.v1.OperatorService.ProvisionAccount:output_type -> anytty.cloud.v1.ProvisionAccountResponse
-	16, // 57: anytty.cloud.v1.OperatorService.ResetAccountSetup:output_type -> anytty.cloud.v1.ResetAccountSetupResponse
-	18, // 58: anytty.cloud.v1.OperatorService.ListRuntimeSessions:output_type -> anytty.cloud.v1.ListRuntimeSessionsResponse
-	20, // 59: anytty.cloud.v1.OperatorService.ListOrders:output_type -> anytty.cloud.v1.ListOperatorOrdersResponse
-	22, // 60: anytty.cloud.v1.OperatorService.ListSubscriptions:output_type -> anytty.cloud.v1.ListOperatorSubscriptionsResponse
-	24, // 61: anytty.cloud.v1.OperatorService.ListUsage:output_type -> anytty.cloud.v1.ListOperatorUsageResponse
-	26, // 62: anytty.cloud.v1.OperatorService.ListAudit:output_type -> anytty.cloud.v1.ListOperatorAuditResponse
-	28, // 63: anytty.cloud.v1.OperatorService.SetAccountState:output_type -> anytty.cloud.v1.SetAccountStateResponse
-	30, // 64: anytty.cloud.v1.OperatorService.SetAccountRole:output_type -> anytty.cloud.v1.SetAccountRoleResponse
-	32, // 65: anytty.cloud.v1.OperatorService.DisconnectDaemon:output_type -> anytty.cloud.v1.DisconnectDaemonResponse
-	34, // 66: anytty.cloud.v1.OperatorService.DisconnectSession:output_type -> anytty.cloud.v1.DisconnectSessionResponse
-	49, // 67: anytty.cloud.v1.OperatorService.DeleteEdge:output_type -> anytty.cloud.v1.DeleteEdgeResponse
-	50, // 68: anytty.cloud.v1.OperatorService.ListCertificateProfiles:output_type -> anytty.cloud.v1.ListCertificateProfilesResponse
-	51, // 69: anytty.cloud.v1.OperatorService.UploadCertificateProfile:output_type -> anytty.cloud.v1.UploadCertificateProfileResponse
-	52, // 70: anytty.cloud.v1.OperatorService.BindCertificateProfile:output_type -> anytty.cloud.v1.BindCertificateProfileResponse
-	53, // [53:71] is the sub-list for method output_type
-	35, // [35:53] is the sub-list for method input_type
+	49, // 53: anytty.cloud.v1.OperatorService.CreateEdgeIdentityRecovery:input_type -> anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest
+	8,  // 54: anytty.cloud.v1.OperatorService.GetOverview:output_type -> anytty.cloud.v1.GetOperatorOverviewResponse
+	10, // 55: anytty.cloud.v1.OperatorService.ListAccounts:output_type -> anytty.cloud.v1.ListOperatorAccountsResponse
+	12, // 56: anytty.cloud.v1.OperatorService.GetAccount:output_type -> anytty.cloud.v1.GetOperatorAccountResponse
+	14, // 57: anytty.cloud.v1.OperatorService.ProvisionAccount:output_type -> anytty.cloud.v1.ProvisionAccountResponse
+	16, // 58: anytty.cloud.v1.OperatorService.ResetAccountSetup:output_type -> anytty.cloud.v1.ResetAccountSetupResponse
+	18, // 59: anytty.cloud.v1.OperatorService.ListRuntimeSessions:output_type -> anytty.cloud.v1.ListRuntimeSessionsResponse
+	20, // 60: anytty.cloud.v1.OperatorService.ListOrders:output_type -> anytty.cloud.v1.ListOperatorOrdersResponse
+	22, // 61: anytty.cloud.v1.OperatorService.ListSubscriptions:output_type -> anytty.cloud.v1.ListOperatorSubscriptionsResponse
+	24, // 62: anytty.cloud.v1.OperatorService.ListUsage:output_type -> anytty.cloud.v1.ListOperatorUsageResponse
+	26, // 63: anytty.cloud.v1.OperatorService.ListAudit:output_type -> anytty.cloud.v1.ListOperatorAuditResponse
+	28, // 64: anytty.cloud.v1.OperatorService.SetAccountState:output_type -> anytty.cloud.v1.SetAccountStateResponse
+	30, // 65: anytty.cloud.v1.OperatorService.SetAccountRole:output_type -> anytty.cloud.v1.SetAccountRoleResponse
+	32, // 66: anytty.cloud.v1.OperatorService.DisconnectDaemon:output_type -> anytty.cloud.v1.DisconnectDaemonResponse
+	34, // 67: anytty.cloud.v1.OperatorService.DisconnectSession:output_type -> anytty.cloud.v1.DisconnectSessionResponse
+	50, // 68: anytty.cloud.v1.OperatorService.DeleteEdge:output_type -> anytty.cloud.v1.DeleteEdgeResponse
+	51, // 69: anytty.cloud.v1.OperatorService.ListCertificateProfiles:output_type -> anytty.cloud.v1.ListCertificateProfilesResponse
+	52, // 70: anytty.cloud.v1.OperatorService.UploadCertificateProfile:output_type -> anytty.cloud.v1.UploadCertificateProfileResponse
+	53, // 71: anytty.cloud.v1.OperatorService.BindCertificateProfile:output_type -> anytty.cloud.v1.BindCertificateProfileResponse
+	54, // 72: anytty.cloud.v1.OperatorService.CreateEdgeIdentityRecovery:output_type -> anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse
+	54, // [54:73] is the sub-list for method output_type
+	35, // [35:54] is the sub-list for method input_type
 	35, // [35:35] is the sub-list for extension type_name
 	35, // [35:35] is the sub-list for extension extendee
 	0,  // [0:35] is the sub-list for field type_name

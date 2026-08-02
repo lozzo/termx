@@ -37,7 +37,7 @@ AnyTTY 是一个正在开发、尚未公开发布的远程终端系统。它把�
                        enrollment / policy / directory
 daemon <-----------------------> Controller <-------> PostgreSQL
   ^                                   |
-  | AgentGateway v4                   | EdgeControl v7
+  | AgentGateway v4                   | EdgeControl v8
   |                                   v
 Client ----------------------------> Edge
    ClientGateway / signaling           |

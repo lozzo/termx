@@ -4,6 +4,8 @@ controller_origin: https://cloud.anytty.com
 register_url: https://cloud.anytty.com/api/install/register
 edge_id: REPLACE_EDGE_ID
 bootstrap_token: REPLACE_ONE_TIME_BOOTSTRAP_TOKEN
+# identity_recovery_token is only added temporarily after an admin creates a recovery claim.
+# identity_recovery_token: REPLACE_ONE_TIME_RECOVERY_TOKEN
 state_directory: /var/lib/anytty-cloud-edge
 public_endpoint: edge.example.com:41102
 listen_override: 0.0.0.0:41102

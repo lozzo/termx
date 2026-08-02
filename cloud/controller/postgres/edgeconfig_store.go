@@ -9,6 +9,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/certificate"
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 )
@@ -172,6 +173,70 @@ func (database *Database) ConsumeBootstrapClaim(ctx context.Context, bootstrapDi
 	}
 	edge, err := scanEdge(tx.QueryRow(ctx, edgeSelect+` WHERE deployment.edge_id=$1`, claimedEdgeID))
 	if err != nil {
+		return edgeconfig.Edge{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return edgeconfig.Edge{}, err
+	}
+	return edge, nil
+}
+
+func (database *Database) CreateIdentityRecoveryClaim(ctx context.Context, edgeID string, digest []byte, expiresAt time.Time, actorID, reason string, now time.Time) error {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var enabled bool
+	if err := tx.QueryRow(ctx, `SELECT enabled FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, edgeID).Scan(&enabled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return edgeconfig.ErrEdgeNotFound
+		}
+		return err
+	}
+	if !enabled {
+		return errors.New("disabled Edge cannot recover its identity certificate")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE edge_claim_tokens SET consumed_at=$1 WHERE edge_id=$2 AND purpose='identity_recovery' AND consumed_at IS NULL`, now, edgeID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO edge_claim_tokens(token_digest,edge_id,purpose,expires_at,created_at) VALUES($1,$2,'identity_recovery',$3,$4)`, digest, edgeID, expiresAt, now); err != nil {
+		return err
+	}
+	if err := insertOperatorAudit(ctx, tx, actorID, "edge.identity_certificate.recovery.create", "edge", edgeID, reason, "applied", now); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (database *Database) ConsumeIdentityRecoveryClaim(ctx context.Context, digest []byte, edgeID string, csrDigest []byte, now time.Time) (edgeconfig.Edge, error) {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return edgeconfig.Edge{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var claimedEdgeID string
+	if err := tx.QueryRow(ctx, `UPDATE edge_claim_tokens SET consumed_at=$1 WHERE token_digest=$2 AND edge_id=$3 AND purpose='identity_recovery' AND consumed_at IS NULL AND expires_at>$1 RETURNING edge_id`, now, digest, edgeID).Scan(&claimedEdgeID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return edgeconfig.Edge{}, edgeconfig.ErrClaimInvalid
+		}
+		return edgeconfig.Edge{}, err
+	}
+	var enabled bool
+	if err := tx.QueryRow(ctx, `SELECT enabled FROM edge_deployments WHERE edge_id=$1 FOR UPDATE`, claimedEdgeID).Scan(&enabled); err != nil {
+		return edgeconfig.Edge{}, err
+	}
+	if !enabled {
+		return edgeconfig.Edge{}, errors.New("disabled Edge cannot recover its identity certificate")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE edge_deployments SET identity_csr_sha256=$1,updated_at=$2 WHERE edge_id=$3`, csrDigest, now, claimedEdgeID); err != nil {
+		return edgeconfig.Edge{}, err
+	}
+	edge, err := scanEdge(tx.QueryRow(ctx, edgeSelect+` WHERE deployment.edge_id=$1`, claimedEdgeID))
+	if err != nil {
+		return edgeconfig.Edge{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO operator_audit_events(audit_id,actor_account_id,action,resource_type,resource_id,reason,result,correlation_id,occurred_at) VALUES($1,NULL,'edge.identity_certificate.recovery.consume','edge',$2,'one-time recovery credential consumed','applied',$3,$4)`, uuid.NewString(), claimedEdgeID, uuid.NewString(), now); err != nil {
 		return edgeconfig.Edge{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

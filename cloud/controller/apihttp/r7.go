@@ -409,6 +409,17 @@ func (handler *handler) operatorR7(writer http.ResponseWriter, request *http.Req
 		response, err := handler.config.Operator.BindCertificateProfile(request.Context(), input)
 		writeServiceResult(writer, response, err)
 		return true
+	case strings.HasPrefix(path, "/edges/") && strings.HasSuffix(path, "/identity-recovery") && request.Method == http.MethodPost:
+		edgeID := strings.TrimSuffix(strings.TrimPrefix(path, "/edges/"), "/identity-recovery")
+		input := &cloudv1.CreateEdgeIdentityRecoveryRequest{EdgeId: edgeID}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return true
+		}
+		input.EdgeId = edgeID
+		response, err := handler.config.Operator.CreateEdgeIdentityRecovery(request.Context(), input)
+		writeServiceResult(writer, response, err)
+		return true
 	case path == "/events" && request.Method == http.MethodGet:
 		handler.operatorEvents(writer, request)
 		return true

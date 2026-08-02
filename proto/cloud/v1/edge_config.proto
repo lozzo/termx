@@ -104,3 +104,27 @@ message RegisterEdgeResponse {
   string config_key_id = 9;
   bytes config_signing_public_key = 10;
 }
+
+message CreateEdgeIdentityRecoveryRequest {
+  string edge_id = 1;
+  string reason = 2;
+}
+
+message CreateEdgeIdentityRecoveryResponse {
+  string recovery_token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// RecoverEdgeIdentityRequest is the only unauthenticated-by-mTLS identity path.
+// Its high-entropy token is operator-created, short-lived, one-time, and Edge-bound.
+message RecoverEdgeIdentityRequest {
+  string edge_id = 1;
+  string recovery_token = 2;
+  bytes identity_csr_pem = 3;
+}
+
+message RecoverEdgeIdentityResponse {
+  bytes identity_certificate_pem = 1;
+  bytes certificate_sha256 = 2;
+  google.protobuf.Timestamp not_after = 3;
+}

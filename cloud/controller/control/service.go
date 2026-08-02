@@ -2,7 +2,9 @@
 package control
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -25,24 +27,26 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 7 adds live daemon Edge reselection.
-const ProtocolVersion uint32 = 7
+// ProtocolVersion 8 adds authenticated EdgeIdentity certificate rotation.
+const ProtocolVersion uint32 = 8
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
-	ControllerID        string
-	ControllerBootID    string
-	HeartbeatInterval   time.Duration
-	HeartbeatTimeout    time.Duration
-	BindingKeyBundle    func(context.Context) (*cloudv1.KeyBundle, error)
-	Directory           *directory.Directory
-	EdgeEnabled         func(context.Context, string) (bool, error)
-	DesiredConfig       func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
-	DesiredCertificate  func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
-	CertificateApplied  func(context.Context, string, *cloudv1.CertificateApplied) error
-	DaemonStateSnapshot func(context.Context) (*cloudv1.DaemonStateSnapshot, error)
-	ResolveDaemonState  func(context.Context, string) (*cloudv1.DaemonStateRecord, bool, error)
-	RelayStore          RelayStore
+	ControllerID               string
+	ControllerBootID           string
+	HeartbeatInterval          time.Duration
+	HeartbeatTimeout           time.Duration
+	BindingKeyBundle           func(context.Context) (*cloudv1.KeyBundle, error)
+	Directory                  *directory.Directory
+	EdgeEnabled                func(context.Context, string) (bool, error)
+	DesiredConfig              func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
+	DesiredCertificate         func(context.Context, string) (*cloudv1.EdgeCertificateBundle, error)
+	CertificateApplied         func(context.Context, string, *cloudv1.CertificateApplied) error
+	RenewIdentityCertificate   func(context.Context, string, *cloudv1.EdgeIdentityRenewRequest) (*cloudv1.EdgeIdentityRenewResponse, error)
+	IdentityCertificateApplied func(context.Context, string, *cloudv1.EdgeIdentityApplied) error
+	DaemonStateSnapshot        func(context.Context) (*cloudv1.DaemonStateSnapshot, error)
+	ResolveDaemonState         func(context.Context, string) (*cloudv1.DaemonStateRecord, bool, error)
+	RelayStore                 RelayStore
 }
 
 // RelayStore is the Controller transaction boundary for durable Relay authority.
@@ -107,7 +111,7 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	if service.draining.Load() {
 		return status.Error(codes.Unavailable, "Controller is draining")
 	}
-	certificateEdgeID, err := authenticatedEdgeID(stream)
+	certificateEdgeID, peerCertificateSHA256, err := authenticatedEdgeIdentity(stream)
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
@@ -298,7 +302,7 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 			continue
 		}
 		expectedEventSeq++
-		response, syncErr := service.applyEvent(stream.Context(), event)
+		response, syncErr := service.applyEvent(stream.Context(), event, peerCertificateSHA256)
 		if syncErr != nil {
 			var resync *directory.SyncError
 			if !errors.As(syncErr, &resync) {
@@ -340,7 +344,7 @@ func (service *Service) reconcileDesiredCertificate(ctx context.Context, edgeID 
 	return nil, nil
 }
 
-func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent) (any, error) {
+func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent, peerCertificateSHA256 []byte) (any, error) {
 	switch payload := event.GetPayload().(type) {
 	case *cloudv1.EdgeEvent_SnapshotBegin:
 		return nil, service.config.Directory.BeginSnapshot(ctx, event.GetConnectionId(), payload.SnapshotBegin)
@@ -365,6 +369,18 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 			return nil, errors.New("CertificateApplied is invalid or unavailable")
 		}
 		return nil, service.config.CertificateApplied(ctx, event.GetSenderId(), payload.CertificateApplied)
+	case *cloudv1.EdgeEvent_IdentityRenew:
+		request := payload.IdentityRenew
+		if service.config.RenewIdentityCertificate == nil || request == nil || strings.TrimSpace(request.GetRequestId()) == "" || len(request.GetCurrentCertificateSha256()) != sha256.Size || !bytes.Equal(request.GetCurrentCertificateSha256(), peerCertificateSHA256) {
+			return nil, errors.New("EdgeIdentity renewal request is invalid or does not match the mTLS peer")
+		}
+		response, err := service.config.RenewIdentityCertificate(ctx, event.GetSenderId(), request)
+		return &cloudv1.ControllerCommand_IdentityRenew{IdentityRenew: response}, err
+	case *cloudv1.EdgeEvent_IdentityApplied:
+		if service.config.IdentityCertificateApplied == nil || payload.IdentityApplied == nil {
+			return nil, errors.New("EdgeIdentity applied receipt is invalid or unavailable")
+		}
+		return nil, service.config.IdentityCertificateApplied(ctx, event.GetSenderId(), payload.IdentityApplied)
 	case *cloudv1.EdgeEvent_RelayReserve:
 		if service.config.RelayStore == nil || payload.RelayReserve == nil {
 			return nil, errors.New("Relay reserve is invalid or unavailable")
@@ -435,6 +451,8 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_DaemonStateQueryResult:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_ReselectDaemonEdge:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_IdentityRenew:
 		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
@@ -670,16 +688,22 @@ func (service *Service) receive(stream cloudv1.EdgeControl_ConnectServer, writer
 	}
 }
 
-func authenticatedEdgeID(stream cloudv1.EdgeControl_ConnectServer) (string, error) {
+func authenticatedEdgeIdentity(stream cloudv1.EdgeControl_ConnectServer) (string, []byte, error) {
 	remotePeer, ok := peer.FromContext(stream.Context())
 	if !ok {
-		return "", errors.New("mTLS peer is missing")
+		return "", nil, errors.New("mTLS peer is missing")
 	}
 	tlsInfo, ok := remotePeer.AuthInfo.(credentials.TLSInfo)
 	if !ok || len(tlsInfo.State.PeerCertificates) == 0 {
-		return "", errors.New("verified mTLS client certificate is missing")
+		return "", nil, errors.New("verified mTLS client certificate is missing")
 	}
-	return securetransport.EdgeIDFromCertificate(tlsInfo.State.PeerCertificates[0])
+	certificate := tlsInfo.State.PeerCertificates[0]
+	edgeID, err := securetransport.EdgeIDFromCertificate(certificate)
+	if err != nil {
+		return "", nil, err
+	}
+	digest := sha256.Sum256(certificate.Raw)
+	return edgeID, digest[:], nil
 }
 
 func validateHello(event *cloudv1.EdgeEvent, certificateEdgeID string) (*cloudv1.EdgeHello, error) {

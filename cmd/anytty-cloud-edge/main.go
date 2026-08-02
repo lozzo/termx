@@ -31,6 +31,8 @@ type options struct {
 	publicPrivateKey        string
 	identityCertificate     string
 	identityPrivateKey      string
+	identityCA              string
+	managedIdentityState    string
 	controllerCA            string
 	softwareVersion         string
 	shutdownTimeout         time.Duration
@@ -76,6 +78,8 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		config.publicPrivateKey = resolved.PublicPrivateKeyFile
 		config.identityCertificate = resolved.IdentityCertificateFile
 		config.identityPrivateKey = resolved.IdentityPrivateKeyFile
+		config.identityCA = resolved.IdentityCACertificateFile
+		config.managedIdentityState = resolved.ManagedIdentityStateFile
 		config.controllerCA = resolved.ControllerCAFile
 		config.configSigningKeyID = resolved.ConfigSigningKeyID
 		config.configSigningPublic = resolved.ConfigSigningPublicKeyFile
@@ -102,6 +106,8 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		ControllerCAFile:            config.controllerCA,
 		IdentityCertificateFile:     config.identityCertificate,
 		IdentityPrivateKeyFile:      config.identityPrivateKey,
+		IdentityCACertificateFile:   config.identityCA,
+		ManagedIdentityStateFile:    config.managedIdentityState,
 		EdgeID:                      config.edgeID,
 		BootID:                      uuid.NewString(),
 		SoftwareVersion:             config.softwareVersion,
@@ -150,6 +156,8 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.publicPrivateKey, "public-tls-key", "", "Edge public TLS private key file")
 	flags.StringVar(&config.identityCertificate, "identity-cert", "", "EdgeIdentity mTLS certificate file")
 	flags.StringVar(&config.identityPrivateKey, "identity-key", "", "EdgeIdentity mTLS private key file")
+	flags.StringVar(&config.identityCA, "identity-ca", "", "EdgeIdentity issuing CA certificate file")
+	flags.StringVar(&config.managedIdentityState, "managed-identity-state", "", "atomic renewed EdgeIdentity credential state file")
 	flags.StringVar(&config.controllerCA, "controller-ca", "", "Controller CA certificate file")
 	flags.StringVar(&config.softwareVersion, "version", defaultSoftwareVersion, "Edge software version reported in EdgeHello")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")

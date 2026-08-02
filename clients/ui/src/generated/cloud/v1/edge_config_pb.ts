@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/edge_config.proto.
  */
 export const file_cloud_v1_edge_config: GenFile = /*@__PURE__*/
-  fileDesc("ChpjbG91ZC92MS9lZGdlX2NvbmZpZy5wcm90bxIPYW55dHR5LmNsb3VkLnYxIo8BChFFZGdlRGVzaXJlZENvbmZpZxIPCgdlZGdlX2lkGAEgASgJEg8KB3ZlcnNpb24YAiABKAQSDAoEbmFtZRgDIAEoCRIOCgZyZWdpb24YBCABKAkSEAoIY2FwYWNpdHkYBSABKAQSFwoPcHVibGljX2VuZHBvaW50GAYgASgJEg8KB2VuYWJsZWQYByABKAgiTQoXU2lnbmVkRWRnZURlc2lyZWRDb25maWcSDgoGa2V5X2lkGAEgASgJEg8KB3BheWxvYWQYAiABKAwSEQoJc2lnbmF0dXJlGAMgASgMIpsCChVFZGdlUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2Jvb3RfaWQYAiABKAkSFQoNY29ubmVjdGlvbl9pZBgDIAEoCRIYChBzb2Z0d2FyZV92ZXJzaW9uGAQgASgJEhgKEHJ1bnRpbWVfcmV2aXNpb24YBSABKAQSEwoLYWdlbnRfY291bnQYBiABKAQSFQoNc2Vzc2lvbl9jb3VudBgHIAEoBBIwCgxjb25uZWN0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKDmxhc3RfaGVhcnRiZWF0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEoECAoQCyLNAQoLTWFuYWdlZEVkZ2USMgoGY29uZmlnGAEgASgLMiIuYW55dHR5LmNsb3VkLnYxLkVkZ2VEZXNpcmVkQ29uZmlnEhcKD2NvbmZpZ19yZXZpc2lvbhgCIAEoBBI3CgdydW50aW1lGAMgASgLMiYuYW55dHR5LmNsb3VkLnYxLkVkZ2VSdW50aW1lUHJvamVjdGlvbhI4CgtjZXJ0aWZpY2F0ZRgEIAEoCzIjLmFueXR0eS5jbG91ZC52MS5DZXJ0aWZpY2F0ZUJpbmRpbmciEgoQTGlzdEVkZ2VzUmVxdWVzdCJAChFMaXN0RWRnZXNSZXNwb25zZRIrCgVlZGdlcxgBIAMoCzIcLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRWRnZSJcChFDcmVhdGVFZGdlUmVxdWVzdBIMCgRuYW1lGAEgASgJEg4KBnJlZ2lvbhgCIAEoCRIQCghjYXBhY2l0eRgDIAEoBBIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkijwEKEkNyZWF0ZUVkZ2VSZXNwb25zZRIqCgRlZGdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLk1hbmFnZWRFZGdlEhcKD2luc3RhbGxfY29tbWFuZBgCIAEoCRI0ChBjbGFpbV9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKZAQoRVXBkYXRlRWRnZVJlcXVlc3QSDwoHZWRnZV9pZBgBIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoBBIMCgRuYW1lGAMgASgJEg4KBnJlZ2lvbhgEIAEoCRIQCghjYXBhY2l0eRgFIAEoBBIXCg9wdWJsaWNfZW5kcG9pbnQYBiABKAkSDwoHZW5hYmxlZBgHIAEoCCJAChJVcGRhdGVFZGdlUmVzcG9uc2USKgoEZWRnZRgBIAEoCzIcLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRWRnZSJPChFEZWxldGVFZGdlUmVxdWVzdBIPCgdlZGdlX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSIUChJEZWxldGVFZGdlUmVzcG9uc2UicQoTUmVnaXN0ZXJFZGdlUmVxdWVzdBIPCgdlZGdlX2lkGAEgASgJEhcKD2Jvb3RzdHJhcF90b2tlbhgCIAEoCRIYChBpZGVudGl0eV9jc3JfcGVtGAMgASgMEhYKDnB1YmxpY19jc3JfcGVtGAQgASgMIukCChRSZWdpc3RlckVkZ2VSZXNwb25zZRIPCgdlZGdlX2lkGAEgASgJEiAKGGlkZW50aXR5X2NlcnRpZmljYXRlX3BlbRgCIAEoDBIeChZwdWJsaWNfY2VydGlmaWNhdGVfcGVtGAMgASgMEh8KF2VkZ2VfY2FfY2VydGlmaWNhdGVfcGVtGAQgASgMEiUKHWNvbnRyb2xsZXJfY2FfY2VydGlmaWNhdGVfcGVtGAUgASgMEhoKEmNvbnRyb2xsZXJfYWRkcmVzcxgGIAEoCRIeChZjb250cm9sbGVyX3NlcnZlcl9uYW1lGAcgASgJEkAKDmRlc2lyZWRfY29uZmlnGAggASgLMiguYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVkZ2VEZXNpcmVkQ29uZmlnEhUKDWNvbmZpZ19rZXlfaWQYCSABKAkSIQoZY29uZmlnX3NpZ25pbmdfcHVibGljX2tleRgKIAEoDEIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_certificate, file_google_protobuf_timestamp]);
+  fileDesc("ChpjbG91ZC92MS9lZGdlX2NvbmZpZy5wcm90bxIPYW55dHR5LmNsb3VkLnYxIo8BChFFZGdlRGVzaXJlZENvbmZpZxIPCgdlZGdlX2lkGAEgASgJEg8KB3ZlcnNpb24YAiABKAQSDAoEbmFtZRgDIAEoCRIOCgZyZWdpb24YBCABKAkSEAoIY2FwYWNpdHkYBSABKAQSFwoPcHVibGljX2VuZHBvaW50GAYgASgJEg8KB2VuYWJsZWQYByABKAgiTQoXU2lnbmVkRWRnZURlc2lyZWRDb25maWcSDgoGa2V5X2lkGAEgASgJEg8KB3BheWxvYWQYAiABKAwSEQoJc2lnbmF0dXJlGAMgASgMIpsCChVFZGdlUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2Jvb3RfaWQYAiABKAkSFQoNY29ubmVjdGlvbl9pZBgDIAEoCRIYChBzb2Z0d2FyZV92ZXJzaW9uGAQgASgJEhgKEHJ1bnRpbWVfcmV2aXNpb24YBSABKAQSEwoLYWdlbnRfY291bnQYBiABKAQSFQoNc2Vzc2lvbl9jb3VudBgHIAEoBBIwCgxjb25uZWN0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKDmxhc3RfaGVhcnRiZWF0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEoECAoQCyLNAQoLTWFuYWdlZEVkZ2USMgoGY29uZmlnGAEgASgLMiIuYW55dHR5LmNsb3VkLnYxLkVkZ2VEZXNpcmVkQ29uZmlnEhcKD2NvbmZpZ19yZXZpc2lvbhgCIAEoBBI3CgdydW50aW1lGAMgASgLMiYuYW55dHR5LmNsb3VkLnYxLkVkZ2VSdW50aW1lUHJvamVjdGlvbhI4CgtjZXJ0aWZpY2F0ZRgEIAEoCzIjLmFueXR0eS5jbG91ZC52MS5DZXJ0aWZpY2F0ZUJpbmRpbmciEgoQTGlzdEVkZ2VzUmVxdWVzdCJAChFMaXN0RWRnZXNSZXNwb25zZRIrCgVlZGdlcxgBIAMoCzIcLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRWRnZSJcChFDcmVhdGVFZGdlUmVxdWVzdBIMCgRuYW1lGAEgASgJEg4KBnJlZ2lvbhgCIAEoCRIQCghjYXBhY2l0eRgDIAEoBBIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkijwEKEkNyZWF0ZUVkZ2VSZXNwb25zZRIqCgRlZGdlGAEgASgLMhwuYW55dHR5LmNsb3VkLnYxLk1hbmFnZWRFZGdlEhcKD2luc3RhbGxfY29tbWFuZBgCIAEoCRI0ChBjbGFpbV9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKZAQoRVXBkYXRlRWRnZVJlcXVlc3QSDwoHZWRnZV9pZBgBIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoBBIMCgRuYW1lGAMgASgJEg4KBnJlZ2lvbhgEIAEoCRIQCghjYXBhY2l0eRgFIAEoBBIXCg9wdWJsaWNfZW5kcG9pbnQYBiABKAkSDwoHZW5hYmxlZBgHIAEoCCJAChJVcGRhdGVFZGdlUmVzcG9uc2USKgoEZWRnZRgBIAEoCzIcLmFueXR0eS5jbG91ZC52MS5NYW5hZ2VkRWRnZSJPChFEZWxldGVFZGdlUmVxdWVzdBIPCgdlZGdlX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSIUChJEZWxldGVFZGdlUmVzcG9uc2UicQoTUmVnaXN0ZXJFZGdlUmVxdWVzdBIPCgdlZGdlX2lkGAEgASgJEhcKD2Jvb3RzdHJhcF90b2tlbhgCIAEoCRIYChBpZGVudGl0eV9jc3JfcGVtGAMgASgMEhYKDnB1YmxpY19jc3JfcGVtGAQgASgMIukCChRSZWdpc3RlckVkZ2VSZXNwb25zZRIPCgdlZGdlX2lkGAEgASgJEiAKGGlkZW50aXR5X2NlcnRpZmljYXRlX3BlbRgCIAEoDBIeChZwdWJsaWNfY2VydGlmaWNhdGVfcGVtGAMgASgMEh8KF2VkZ2VfY2FfY2VydGlmaWNhdGVfcGVtGAQgASgMEiUKHWNvbnRyb2xsZXJfY2FfY2VydGlmaWNhdGVfcGVtGAUgASgMEhoKEmNvbnRyb2xsZXJfYWRkcmVzcxgGIAEoCRIeChZjb250cm9sbGVyX3NlcnZlcl9uYW1lGAcgASgJEkAKDmRlc2lyZWRfY29uZmlnGAggASgLMiguYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVkZ2VEZXNpcmVkQ29uZmlnEhUKDWNvbmZpZ19rZXlfaWQYCSABKAkSIQoZY29uZmlnX3NpZ25pbmdfcHVibGljX2tleRgKIAEoDCJECiFDcmVhdGVFZGdlSWRlbnRpdHlSZWNvdmVyeVJlcXVlc3QSDwoHZWRnZV9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkibAoiQ3JlYXRlRWRnZUlkZW50aXR5UmVjb3ZlcnlSZXNwb25zZRIWCg5yZWNvdmVyeV90b2tlbhgBIAEoCRIuCgpleHBpcmVzX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJfChpSZWNvdmVyRWRnZUlkZW50aXR5UmVxdWVzdBIPCgdlZGdlX2lkGAEgASgJEhYKDnJlY292ZXJ5X3Rva2VuGAIgASgJEhgKEGlkZW50aXR5X2Nzcl9wZW0YAyABKAwiigEKG1JlY292ZXJFZGdlSWRlbnRpdHlSZXNwb25zZRIgChhpZGVudGl0eV9jZXJ0aWZpY2F0ZV9wZW0YASABKAwSGgoSY2VydGlmaWNhdGVfc2hhMjU2GAIgASgMEi0KCW5vdF9hZnRlchgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCMVovZ2l0aHViLmNvbS9hbnl0dHkvYW55dHR5L3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_certificate, file_google_protobuf_timestamp]);
 
 /**
  * EdgeDesiredConfig 是 Controller 持久化并签名下发的节点部署意图。
@@ -477,3 +477,104 @@ export type RegisterEdgeResponse = Message<"anytty.cloud.v1.RegisterEdgeResponse
  */
 export const RegisterEdgeResponseSchema: GenMessage<RegisterEdgeResponse> = /*@__PURE__*/
   messageDesc(file_cloud_v1_edge_config, 13);
+
+/**
+ * @generated from message anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest
+ */
+export type CreateEdgeIdentityRecoveryRequest = Message<"anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest"> & {
+  /**
+   * @generated from field: string edge_id = 1;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest.
+ * Use `create(CreateEdgeIdentityRecoveryRequestSchema)` to create a new message.
+ */
+export const CreateEdgeIdentityRecoveryRequestSchema: GenMessage<CreateEdgeIdentityRecoveryRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_config, 14);
+
+/**
+ * @generated from message anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse
+ */
+export type CreateEdgeIdentityRecoveryResponse = Message<"anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse"> & {
+  /**
+   * @generated from field: string recovery_token = 1;
+   */
+  recoveryToken: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 2;
+   */
+  expiresAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse.
+ * Use `create(CreateEdgeIdentityRecoveryResponseSchema)` to create a new message.
+ */
+export const CreateEdgeIdentityRecoveryResponseSchema: GenMessage<CreateEdgeIdentityRecoveryResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_config, 15);
+
+/**
+ * RecoverEdgeIdentityRequest is the only unauthenticated-by-mTLS identity path.
+ * Its high-entropy token is operator-created, short-lived, one-time, and Edge-bound.
+ *
+ * @generated from message anytty.cloud.v1.RecoverEdgeIdentityRequest
+ */
+export type RecoverEdgeIdentityRequest = Message<"anytty.cloud.v1.RecoverEdgeIdentityRequest"> & {
+  /**
+   * @generated from field: string edge_id = 1;
+   */
+  edgeId: string;
+
+  /**
+   * @generated from field: string recovery_token = 2;
+   */
+  recoveryToken: string;
+
+  /**
+   * @generated from field: bytes identity_csr_pem = 3;
+   */
+  identityCsrPem: Uint8Array;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RecoverEdgeIdentityRequest.
+ * Use `create(RecoverEdgeIdentityRequestSchema)` to create a new message.
+ */
+export const RecoverEdgeIdentityRequestSchema: GenMessage<RecoverEdgeIdentityRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_config, 16);
+
+/**
+ * @generated from message anytty.cloud.v1.RecoverEdgeIdentityResponse
+ */
+export type RecoverEdgeIdentityResponse = Message<"anytty.cloud.v1.RecoverEdgeIdentityResponse"> & {
+  /**
+   * @generated from field: bytes identity_certificate_pem = 1;
+   */
+  identityCertificatePem: Uint8Array;
+
+  /**
+   * @generated from field: bytes certificate_sha256 = 2;
+   */
+  certificateSha256: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp not_after = 3;
+   */
+  notAfter?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.RecoverEdgeIdentityResponse.
+ * Use `create(RecoverEdgeIdentityResponseSchema)` to create a new message.
+ */
+export const RecoverEdgeIdentityResponseSchema: GenMessage<RecoverEdgeIdentityResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_config, 17);

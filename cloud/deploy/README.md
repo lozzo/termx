@@ -68,9 +68,9 @@ SHA256SUMS
 
 ### 协议版本
 
-EdgeControl v7 不接受旧协议。先从当前日志、部署 commit 和运营控制台确认两台 Edge 是否已经运行 v7：
+EdgeControl v8 不接受旧协议。先从当前日志、部署 commit 和运营控制台确认两台 Edge 是否已经运行 v8：
 
-- 已经是 v7：可先升级 Controller，再逐台 Edge 验证。
+- 已经是 v8：可先升级 Controller，再逐台 Edge 验证。
 - 任一节点仍是旧协议：这不是无中断滚动升级。先把新二进制分发到三个节点，在维护窗口内快速切换 Controller 和两台 Edge；切换完成前旧 Edge 会离线。
 
 不要为了混合版本上线而增加协议兼容层。
@@ -100,6 +100,8 @@ psql -c "SELECT
 `0009_edge_deletion.sql` 不删除 Relay 历史，只解除历史记录对 Edge deployment 的外键占用。新 Relay reservation 仍会先锁定并校验有效 Edge；删除旧 Edge 后，历史记录继续保留原 Edge UUID 用于归因。
 
 `0010_account_refresh_tokens.sql` 把账号登录表缩减为 Refresh Token 持久记录并删除 Access Token 摘要。现有 Refresh Token 摘要会保留，Web 在旧 Access Cookie 收到 401 后可轮换得到 JWT。执行迁移前必须已经创建账号 JWT 私钥、配置 `ANYTTY_CLOUD_ACCOUNT_TOKEN_KEY_ID`，并安装包含 `--account-token-signing-key` 参数的新 systemd 模板。
+
+`0012_edge_identity_recovery.sql` 扩展 Edge 一次性 claim 的用途，用于已经无法通过 mTLS 的 EdgeIdentity 恢复。它不保存恢复 token 明文、证书正文或 Edge 私钥。
 
 ## 私密备份
 
@@ -243,7 +245,21 @@ journalctl -u anytty-cloud-edge --since -10min
 
 严禁删除 `managed-certificate.pb` 或 bootstrap `public-cert.pem`。Edge 启动时先载入 bootstrap 证书，再由 managed state 覆盖；managed state 丢失会使进程继续使用 bootstrap 证书。需要清除旧 bootstrap SAN 时，必须先用同一 Edge 私钥重签并原子替换 `public-cert.pem`，随后重启和复验，不能通过删文件实现。
 
-### 5. Edge 生命周期
+### 5. EdgeIdentity 自动轮换与恢复
+
+Edge 连接 Controller 的 mTLS 身份证书由 Controller 的 Edge CA 签发，有效期 90 天。Edge 在剩余 30 天时通过已经认证的 EdgeControl v8 控制流自动生成新 P-256 私钥和 CSR；Controller 只收到 CSR。新证书和新私钥写入 `/var/lib/anytty-cloud-edge/managed-identity.pem` 后才切换后续 TLS 握手，当前控制流和已建立的手机连接不会因此中断。
+
+正常轮换不需要运营操作，也不要重新 bootstrap。若证书已经过期，Edge 无法建立 mTLS 控制流，使用管理员最近认证后创建的 10 分钟一次性 recovery token：
+
+1. 在目标主机停止 `anytty-cloud-edge`，并确认运营控制台显示该 Edge 离线且仍为启用状态。
+2. 在运营控制台 Edge 的“配置与审计”页选择“恢复身份证书”并填写原因；等价 API 是 `POST /api/operator/edges/<edge-id>/identity-recovery`。该操作仅允许最近认证的 admin，token 只出现一次。
+3. 把响应中的 token 写到 `/etc/anytty-cloud-edge/config.yaml` 的顶层字段 `identity_recovery_token`，保持文件权限 `0600`，然后启动 Edge。
+4. Edge 本机生成新私钥，经 `POST /api/install/recover-identity` 消费该 token，严格校验证书的 CA、URI 身份、指纹和有效期，原子写入 `managed-identity.pem`，并自动从配置中清除 token。
+5. 确认 Edge 恢复在线，检查 `managed-identity.pem` 权限为 `0600`，并在运营审计中核对 recovery create、consume 和 issuance 记录。
+
+token 绑定 Edge 和本次 CSR，只能使用一次，10 分钟后失效。恢复失败时生成新的 token；不要复制其他 Edge 的 identity 文件，也不要上传或传输 Edge 私钥。完整边界见 [Edge 身份证书](../../docs/EDGE_IDENTITY_CERTIFICATES.md)。
+
+### 6. Edge 生命周期
 
 在运营控制台的 Edge“配置与审计”页执行生命周期操作：
 

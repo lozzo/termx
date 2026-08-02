@@ -19,24 +19,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OperatorService_GetOverview_FullMethodName              = "/anytty.cloud.v1.OperatorService/GetOverview"
-	OperatorService_ListAccounts_FullMethodName             = "/anytty.cloud.v1.OperatorService/ListAccounts"
-	OperatorService_GetAccount_FullMethodName               = "/anytty.cloud.v1.OperatorService/GetAccount"
-	OperatorService_ProvisionAccount_FullMethodName         = "/anytty.cloud.v1.OperatorService/ProvisionAccount"
-	OperatorService_ResetAccountSetup_FullMethodName        = "/anytty.cloud.v1.OperatorService/ResetAccountSetup"
-	OperatorService_ListRuntimeSessions_FullMethodName      = "/anytty.cloud.v1.OperatorService/ListRuntimeSessions"
-	OperatorService_ListOrders_FullMethodName               = "/anytty.cloud.v1.OperatorService/ListOrders"
-	OperatorService_ListSubscriptions_FullMethodName        = "/anytty.cloud.v1.OperatorService/ListSubscriptions"
-	OperatorService_ListUsage_FullMethodName                = "/anytty.cloud.v1.OperatorService/ListUsage"
-	OperatorService_ListAudit_FullMethodName                = "/anytty.cloud.v1.OperatorService/ListAudit"
-	OperatorService_SetAccountState_FullMethodName          = "/anytty.cloud.v1.OperatorService/SetAccountState"
-	OperatorService_SetAccountRole_FullMethodName           = "/anytty.cloud.v1.OperatorService/SetAccountRole"
-	OperatorService_DisconnectDaemon_FullMethodName         = "/anytty.cloud.v1.OperatorService/DisconnectDaemon"
-	OperatorService_DisconnectSession_FullMethodName        = "/anytty.cloud.v1.OperatorService/DisconnectSession"
-	OperatorService_DeleteEdge_FullMethodName               = "/anytty.cloud.v1.OperatorService/DeleteEdge"
-	OperatorService_ListCertificateProfiles_FullMethodName  = "/anytty.cloud.v1.OperatorService/ListCertificateProfiles"
-	OperatorService_UploadCertificateProfile_FullMethodName = "/anytty.cloud.v1.OperatorService/UploadCertificateProfile"
-	OperatorService_BindCertificateProfile_FullMethodName   = "/anytty.cloud.v1.OperatorService/BindCertificateProfile"
+	OperatorService_GetOverview_FullMethodName                = "/anytty.cloud.v1.OperatorService/GetOverview"
+	OperatorService_ListAccounts_FullMethodName               = "/anytty.cloud.v1.OperatorService/ListAccounts"
+	OperatorService_GetAccount_FullMethodName                 = "/anytty.cloud.v1.OperatorService/GetAccount"
+	OperatorService_ProvisionAccount_FullMethodName           = "/anytty.cloud.v1.OperatorService/ProvisionAccount"
+	OperatorService_ResetAccountSetup_FullMethodName          = "/anytty.cloud.v1.OperatorService/ResetAccountSetup"
+	OperatorService_ListRuntimeSessions_FullMethodName        = "/anytty.cloud.v1.OperatorService/ListRuntimeSessions"
+	OperatorService_ListOrders_FullMethodName                 = "/anytty.cloud.v1.OperatorService/ListOrders"
+	OperatorService_ListSubscriptions_FullMethodName          = "/anytty.cloud.v1.OperatorService/ListSubscriptions"
+	OperatorService_ListUsage_FullMethodName                  = "/anytty.cloud.v1.OperatorService/ListUsage"
+	OperatorService_ListAudit_FullMethodName                  = "/anytty.cloud.v1.OperatorService/ListAudit"
+	OperatorService_SetAccountState_FullMethodName            = "/anytty.cloud.v1.OperatorService/SetAccountState"
+	OperatorService_SetAccountRole_FullMethodName             = "/anytty.cloud.v1.OperatorService/SetAccountRole"
+	OperatorService_DisconnectDaemon_FullMethodName           = "/anytty.cloud.v1.OperatorService/DisconnectDaemon"
+	OperatorService_DisconnectSession_FullMethodName          = "/anytty.cloud.v1.OperatorService/DisconnectSession"
+	OperatorService_DeleteEdge_FullMethodName                 = "/anytty.cloud.v1.OperatorService/DeleteEdge"
+	OperatorService_ListCertificateProfiles_FullMethodName    = "/anytty.cloud.v1.OperatorService/ListCertificateProfiles"
+	OperatorService_UploadCertificateProfile_FullMethodName   = "/anytty.cloud.v1.OperatorService/UploadCertificateProfile"
+	OperatorService_BindCertificateProfile_FullMethodName     = "/anytty.cloud.v1.OperatorService/BindCertificateProfile"
+	OperatorService_CreateEdgeIdentityRecovery_FullMethodName = "/anytty.cloud.v1.OperatorService/CreateEdgeIdentityRecovery"
 )
 
 // OperatorServiceClient is the client API for OperatorService service.
@@ -63,6 +64,7 @@ type OperatorServiceClient interface {
 	ListCertificateProfiles(ctx context.Context, in *ListCertificateProfilesRequest, opts ...grpc.CallOption) (*ListCertificateProfilesResponse, error)
 	UploadCertificateProfile(ctx context.Context, in *UploadCertificateProfileRequest, opts ...grpc.CallOption) (*UploadCertificateProfileResponse, error)
 	BindCertificateProfile(ctx context.Context, in *BindCertificateProfileRequest, opts ...grpc.CallOption) (*BindCertificateProfileResponse, error)
+	CreateEdgeIdentityRecovery(ctx context.Context, in *CreateEdgeIdentityRecoveryRequest, opts ...grpc.CallOption) (*CreateEdgeIdentityRecoveryResponse, error)
 }
 
 type operatorServiceClient struct {
@@ -253,6 +255,16 @@ func (c *operatorServiceClient) BindCertificateProfile(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *operatorServiceClient) CreateEdgeIdentityRecovery(ctx context.Context, in *CreateEdgeIdentityRecoveryRequest, opts ...grpc.CallOption) (*CreateEdgeIdentityRecoveryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateEdgeIdentityRecoveryResponse)
+	err := c.cc.Invoke(ctx, OperatorService_CreateEdgeIdentityRecovery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OperatorServiceServer is the server API for OperatorService service.
 // All implementations must embed UnimplementedOperatorServiceServer
 // for forward compatibility.
@@ -277,6 +289,7 @@ type OperatorServiceServer interface {
 	ListCertificateProfiles(context.Context, *ListCertificateProfilesRequest) (*ListCertificateProfilesResponse, error)
 	UploadCertificateProfile(context.Context, *UploadCertificateProfileRequest) (*UploadCertificateProfileResponse, error)
 	BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error)
+	CreateEdgeIdentityRecovery(context.Context, *CreateEdgeIdentityRecoveryRequest) (*CreateEdgeIdentityRecoveryResponse, error)
 	mustEmbedUnimplementedOperatorServiceServer()
 }
 
@@ -340,6 +353,9 @@ func (UnimplementedOperatorServiceServer) UploadCertificateProfile(context.Conte
 }
 func (UnimplementedOperatorServiceServer) BindCertificateProfile(context.Context, *BindCertificateProfileRequest) (*BindCertificateProfileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BindCertificateProfile not implemented")
+}
+func (UnimplementedOperatorServiceServer) CreateEdgeIdentityRecovery(context.Context, *CreateEdgeIdentityRecoveryRequest) (*CreateEdgeIdentityRecoveryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateEdgeIdentityRecovery not implemented")
 }
 func (UnimplementedOperatorServiceServer) mustEmbedUnimplementedOperatorServiceServer() {}
 func (UnimplementedOperatorServiceServer) testEmbeddedByValue()                         {}
@@ -686,6 +702,24 @@ func _OperatorService_BindCertificateProfile_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OperatorService_CreateEdgeIdentityRecovery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateEdgeIdentityRecoveryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorServiceServer).CreateEdgeIdentityRecovery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorService_CreateEdgeIdentityRecovery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorServiceServer).CreateEdgeIdentityRecovery(ctx, req.(*CreateEdgeIdentityRecoveryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OperatorService_ServiceDesc is the grpc.ServiceDesc for OperatorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -764,6 +798,10 @@ var OperatorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BindCertificateProfile",
 			Handler:    _OperatorService_BindCertificateProfile_Handler,
+		},
+		{
+			MethodName: "CreateEdgeIdentityRecovery",
+			Handler:    _OperatorService_CreateEdgeIdentityRecovery_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

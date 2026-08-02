@@ -1,6 +1,6 @@
 # Cloud daemon 生命周期
 
-本文描述当前 EdgeControl v7 的 daemon 状态与 Edge 重选协议。状态真值在 Controller PostgreSQL，Edge 只保存当前控制 generation 的内存投影。
+本文描述当前 EdgeControl v8 的 daemon 状态与 Edge 重选协议。状态真值在 Controller PostgreSQL，Edge 只保存当前控制 generation 的内存投影。
 
 ## 1. 状态
 
@@ -64,7 +64,7 @@ Edge 收到 `DELETED` 时：
 
 ### Edge 重连 Controller
 
-1. 完成 mTLS EdgeControl v7 handshake。
+1. 完成 mTLS EdgeControl v8 handshake。
 2. 接收并验证 KeyBundle、desired config 和完整 daemon state snapshot。
 3. 原子替换 policy table，并向当前 Agent 发送各自目标状态。
 4. Controller generation 已同步且持久 KeyBundle 当前可用时，Edge `/readyz` 返回成功。

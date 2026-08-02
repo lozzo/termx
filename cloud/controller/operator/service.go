@@ -17,7 +17,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var ErrEdgeOnline = errors.New("Edge must be offline before deletion")
+var (
+	ErrEdgeOnline                 = errors.New("Edge must be offline before deletion")
+	ErrEdgeIdentityRecoveryOnline = errors.New("Edge must be offline before identity recovery")
+)
 
 // Store 是运营持久查询和审计 mutation 的事务边界。
 type Store interface {
@@ -94,6 +97,29 @@ func (service *Service) DeleteEdge(ctx context.Context, request *cloudv1.DeleteE
 		return nil, err
 	}
 	return &cloudv1.DeleteEdgeResponse{}, nil
+}
+
+// CreateEdgeIdentityRecovery creates a short-lived, one-time credential for an
+// offline Edge whose current mTLS identity can no longer authenticate.
+func (service *Service) CreateEdgeIdentityRecovery(ctx context.Context, request *cloudv1.CreateEdgeIdentityRecoveryRequest) (*cloudv1.CreateEdgeIdentityRecoveryResponse, error) {
+	actor, err := requireAdmin(ctx, true, service.config.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if request == nil || strings.TrimSpace(request.GetEdgeId()) == "" || strings.TrimSpace(request.GetReason()) == "" {
+		return nil, account.ErrInvalidArgument
+	}
+	edgeID := strings.TrimSpace(request.GetEdgeId())
+	if _, online, err := service.config.Directory.Edge(ctx, edgeID); err != nil {
+		return nil, err
+	} else if online {
+		return nil, ErrEdgeIdentityRecoveryOnline
+	}
+	token, expiresAt, err := service.config.Edges.CreateIdentityRecoveryClaim(ctx, edgeID, actor.Account.GetAccountId(), request.GetReason())
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.CreateEdgeIdentityRecoveryResponse{RecoveryToken: token, ExpiresAt: timestamppb.New(expiresAt)}, nil
 }
 
 // ListCertificateProfiles 返回当前档案、绑定和真实在线投影，不包含 PEM。

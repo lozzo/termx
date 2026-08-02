@@ -114,4 +114,22 @@ describe('Edge lifecycle UI', () => {
     expect(request?.[1]?.body).toContain('"expected_revision":"4"')
     expect(request?.[1]?.body).toContain('"reason":"obsolete deployment"')
   })
+
+  it('creates a one-time identity recovery credential only for an offline Edge', async () => {
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method) return reply(edgeResponse(true, false))
+      return reply({ recovery_token: 'one-time-edge-recovery', expires_at: '2026-08-02T12:10:00Z' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const rendered = render(withClient(<MemoryRouter initialEntries={['/app/admin/edges/11b896bc-11f9-4935-8462-c59012429818/settings']}><Routes><Route path="/app/admin/edges/:edgeId/:tab" element={<EdgeDetailPage />} /></Routes></MemoryRouter>))
+    roots.push(rendered.root)
+    await waitForText(rendered.container, '恢复身份证书')
+    act(() => clickButton(rendered.container, '恢复身份证书'))
+    act(() => setInput(input(rendered.container, '操作原因'), 'expired mTLS identity'))
+    await act(async () => clickButton(rendered.container, '生成恢复凭据'))
+    await waitForText(rendered.container, 'identity_recovery_token: one-time-edge-recovery')
+    const request = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST')
+    expect(request?.[0]).toBe('/api/operator/edges/11b896bc-11f9-4935-8462-c59012429818/identity-recovery')
+    expect(request?.[1]?.body).toContain('"reason":"expired mTLS identity"')
+  })
 })

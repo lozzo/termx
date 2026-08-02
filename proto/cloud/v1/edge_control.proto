@@ -21,6 +21,7 @@ enum EdgeCapability {
   EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD = 4;
   EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY = 5;
   EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION = 6;
+  EDGE_CAPABILITY_IDENTITY_CERTIFICATE_ROTATION = 7;
 }
 
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -98,6 +99,33 @@ message CertificateApplied {
   bool applied = 3;
   string error_code = 4;
   string error_message = 5;
+}
+
+// EdgeIdentityRenewRequest 只允许在已通过当前 EdgeIdentity mTLS 认证的控制流内发送。
+// CSR 必须绑定同一 Edge URI SAN；新私钥始终留在 Edge 本机。
+message EdgeIdentityRenewRequest {
+  string request_id = 1;
+  bytes csr_pem = 2;
+  bytes current_certificate_sha256 = 3;
+  google.protobuf.Timestamp requested_at = 4;
+}
+
+// EdgeIdentityRenewResponse 返回 Controller Edge CA 签发的新 clientAuth 叶证书。
+message EdgeIdentityRenewResponse {
+  string request_id = 1;
+  bytes certificate_pem = 2;
+  bytes certificate_sha256 = 3;
+  google.protobuf.Timestamp not_after = 4;
+}
+
+// EdgeIdentityApplied 是 Edge 完成证书/私钥原子持久化和内存热切换后的回执。
+message EdgeIdentityApplied {
+  string request_id = 1;
+  bytes certificate_sha256 = 2;
+  google.protobuf.Timestamp not_after = 3;
+  bool applied = 4;
+  string error_code = 5;
+  string error_message = 6;
 }
 
 // DaemonStateSnapshot 在 EdgeControl 建连时原子替换 Edge 的内存状态表。
@@ -186,6 +214,8 @@ message EdgeEvent {
     RelaySettlement relay_settle = 32;
     RelayQueryRequest relay_query = 33;
     DaemonStateQuery daemon_state_query = 34;
+    EdgeIdentityRenewRequest identity_renew = 35;
+    EdgeIdentityApplied identity_applied = 36;
   }
 }
 
@@ -215,6 +245,7 @@ message ControllerCommand {
     DaemonStateDelta daemon_state_delta = 32;
     DaemonStateQueryResult daemon_state_query_result = 33;
     ReselectDaemonEdge reselect_daemon_edge = 34;
+    EdgeIdentityRenewResponse identity_renew = 35;
   }
 }
 

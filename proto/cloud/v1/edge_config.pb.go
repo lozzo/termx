@@ -980,6 +980,232 @@ func (x *RegisterEdgeResponse) GetConfigSigningPublicKey() []byte {
 	return nil
 }
 
+type CreateEdgeIdentityRecoveryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId        string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEdgeIdentityRecoveryRequest) Reset() {
+	*x = CreateEdgeIdentityRecoveryRequest{}
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEdgeIdentityRecoveryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEdgeIdentityRecoveryRequest) ProtoMessage() {}
+
+func (x *CreateEdgeIdentityRecoveryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEdgeIdentityRecoveryRequest.ProtoReflect.Descriptor instead.
+func (*CreateEdgeIdentityRecoveryRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CreateEdgeIdentityRecoveryRequest) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *CreateEdgeIdentityRecoveryRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type CreateEdgeIdentityRecoveryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RecoveryToken string                 `protobuf:"bytes,1,opt,name=recovery_token,json=recoveryToken,proto3" json:"recovery_token,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEdgeIdentityRecoveryResponse) Reset() {
+	*x = CreateEdgeIdentityRecoveryResponse{}
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEdgeIdentityRecoveryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEdgeIdentityRecoveryResponse) ProtoMessage() {}
+
+func (x *CreateEdgeIdentityRecoveryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEdgeIdentityRecoveryResponse.ProtoReflect.Descriptor instead.
+func (*CreateEdgeIdentityRecoveryResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CreateEdgeIdentityRecoveryResponse) GetRecoveryToken() string {
+	if x != nil {
+		return x.RecoveryToken
+	}
+	return ""
+}
+
+func (x *CreateEdgeIdentityRecoveryResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+// RecoverEdgeIdentityRequest is the only unauthenticated-by-mTLS identity path.
+// Its high-entropy token is operator-created, short-lived, one-time, and Edge-bound.
+type RecoverEdgeIdentityRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EdgeId         string                 `protobuf:"bytes,1,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"`
+	RecoveryToken  string                 `protobuf:"bytes,2,opt,name=recovery_token,json=recoveryToken,proto3" json:"recovery_token,omitempty"`
+	IdentityCsrPem []byte                 `protobuf:"bytes,3,opt,name=identity_csr_pem,json=identityCsrPem,proto3" json:"identity_csr_pem,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RecoverEdgeIdentityRequest) Reset() {
+	*x = RecoverEdgeIdentityRequest{}
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecoverEdgeIdentityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecoverEdgeIdentityRequest) ProtoMessage() {}
+
+func (x *RecoverEdgeIdentityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecoverEdgeIdentityRequest.ProtoReflect.Descriptor instead.
+func (*RecoverEdgeIdentityRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RecoverEdgeIdentityRequest) GetEdgeId() string {
+	if x != nil {
+		return x.EdgeId
+	}
+	return ""
+}
+
+func (x *RecoverEdgeIdentityRequest) GetRecoveryToken() string {
+	if x != nil {
+		return x.RecoveryToken
+	}
+	return ""
+}
+
+func (x *RecoverEdgeIdentityRequest) GetIdentityCsrPem() []byte {
+	if x != nil {
+		return x.IdentityCsrPem
+	}
+	return nil
+}
+
+type RecoverEdgeIdentityResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	IdentityCertificatePem []byte                 `protobuf:"bytes,1,opt,name=identity_certificate_pem,json=identityCertificatePem,proto3" json:"identity_certificate_pem,omitempty"`
+	CertificateSha256      []byte                 `protobuf:"bytes,2,opt,name=certificate_sha256,json=certificateSha256,proto3" json:"certificate_sha256,omitempty"`
+	NotAfter               *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *RecoverEdgeIdentityResponse) Reset() {
+	*x = RecoverEdgeIdentityResponse{}
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecoverEdgeIdentityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecoverEdgeIdentityResponse) ProtoMessage() {}
+
+func (x *RecoverEdgeIdentityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_config_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecoverEdgeIdentityResponse.ProtoReflect.Descriptor instead.
+func (*RecoverEdgeIdentityResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_config_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RecoverEdgeIdentityResponse) GetIdentityCertificatePem() []byte {
+	if x != nil {
+		return x.IdentityCertificatePem
+	}
+	return nil
+}
+
+func (x *RecoverEdgeIdentityResponse) GetCertificateSha256() []byte {
+	if x != nil {
+		return x.CertificateSha256
+	}
+	return nil
+}
+
+func (x *RecoverEdgeIdentityResponse) GetNotAfter() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NotAfter
+	}
+	return nil
+}
+
 var File_cloud_v1_edge_config_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_edge_config_proto_rawDesc = "" +
@@ -1057,7 +1283,22 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x0edesired_config\x18\b \x01(\v2(.anytty.cloud.v1.SignedEdgeDesiredConfigR\rdesiredConfig\x12\"\n" +
 	"\rconfig_key_id\x18\t \x01(\tR\vconfigKeyId\x129\n" +
 	"\x19config_signing_public_key\x18\n" +
-	" \x01(\fR\x16configSigningPublicKeyB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
+	" \x01(\fR\x16configSigningPublicKey\"T\n" +
+	"!CreateEdgeIdentityRecoveryRequest\x12\x17\n" +
+	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x86\x01\n" +
+	"\"CreateEdgeIdentityRecoveryResponse\x12%\n" +
+	"\x0erecovery_token\x18\x01 \x01(\tR\rrecoveryToken\x129\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x86\x01\n" +
+	"\x1aRecoverEdgeIdentityRequest\x12\x17\n" +
+	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12%\n" +
+	"\x0erecovery_token\x18\x02 \x01(\tR\rrecoveryToken\x12(\n" +
+	"\x10identity_csr_pem\x18\x03 \x01(\fR\x0eidentityCsrPem\"\xbf\x01\n" +
+	"\x1bRecoverEdgeIdentityResponse\x128\n" +
+	"\x18identity_certificate_pem\x18\x01 \x01(\fR\x16identityCertificatePem\x12-\n" +
+	"\x12certificate_sha256\x18\x02 \x01(\fR\x11certificateSha256\x127\n" +
+	"\tnot_after\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bnotAfterB1Z/github.com/anytty/anytty/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_edge_config_proto_rawDescOnce sync.Once
@@ -1071,41 +1312,47 @@ func file_cloud_v1_edge_config_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_edge_config_proto_rawDescData
 }
 
-var file_cloud_v1_edge_config_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_cloud_v1_edge_config_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_cloud_v1_edge_config_proto_goTypes = []any{
-	(*EdgeDesiredConfig)(nil),       // 0: anytty.cloud.v1.EdgeDesiredConfig
-	(*SignedEdgeDesiredConfig)(nil), // 1: anytty.cloud.v1.SignedEdgeDesiredConfig
-	(*EdgeRuntimeProjection)(nil),   // 2: anytty.cloud.v1.EdgeRuntimeProjection
-	(*ManagedEdge)(nil),             // 3: anytty.cloud.v1.ManagedEdge
-	(*ListEdgesRequest)(nil),        // 4: anytty.cloud.v1.ListEdgesRequest
-	(*ListEdgesResponse)(nil),       // 5: anytty.cloud.v1.ListEdgesResponse
-	(*CreateEdgeRequest)(nil),       // 6: anytty.cloud.v1.CreateEdgeRequest
-	(*CreateEdgeResponse)(nil),      // 7: anytty.cloud.v1.CreateEdgeResponse
-	(*UpdateEdgeRequest)(nil),       // 8: anytty.cloud.v1.UpdateEdgeRequest
-	(*UpdateEdgeResponse)(nil),      // 9: anytty.cloud.v1.UpdateEdgeResponse
-	(*DeleteEdgeRequest)(nil),       // 10: anytty.cloud.v1.DeleteEdgeRequest
-	(*DeleteEdgeResponse)(nil),      // 11: anytty.cloud.v1.DeleteEdgeResponse
-	(*RegisterEdgeRequest)(nil),     // 12: anytty.cloud.v1.RegisterEdgeRequest
-	(*RegisterEdgeResponse)(nil),    // 13: anytty.cloud.v1.RegisterEdgeResponse
-	(*timestamppb.Timestamp)(nil),   // 14: google.protobuf.Timestamp
-	(*CertificateBinding)(nil),      // 15: anytty.cloud.v1.CertificateBinding
+	(*EdgeDesiredConfig)(nil),                  // 0: anytty.cloud.v1.EdgeDesiredConfig
+	(*SignedEdgeDesiredConfig)(nil),            // 1: anytty.cloud.v1.SignedEdgeDesiredConfig
+	(*EdgeRuntimeProjection)(nil),              // 2: anytty.cloud.v1.EdgeRuntimeProjection
+	(*ManagedEdge)(nil),                        // 3: anytty.cloud.v1.ManagedEdge
+	(*ListEdgesRequest)(nil),                   // 4: anytty.cloud.v1.ListEdgesRequest
+	(*ListEdgesResponse)(nil),                  // 5: anytty.cloud.v1.ListEdgesResponse
+	(*CreateEdgeRequest)(nil),                  // 6: anytty.cloud.v1.CreateEdgeRequest
+	(*CreateEdgeResponse)(nil),                 // 7: anytty.cloud.v1.CreateEdgeResponse
+	(*UpdateEdgeRequest)(nil),                  // 8: anytty.cloud.v1.UpdateEdgeRequest
+	(*UpdateEdgeResponse)(nil),                 // 9: anytty.cloud.v1.UpdateEdgeResponse
+	(*DeleteEdgeRequest)(nil),                  // 10: anytty.cloud.v1.DeleteEdgeRequest
+	(*DeleteEdgeResponse)(nil),                 // 11: anytty.cloud.v1.DeleteEdgeResponse
+	(*RegisterEdgeRequest)(nil),                // 12: anytty.cloud.v1.RegisterEdgeRequest
+	(*RegisterEdgeResponse)(nil),               // 13: anytty.cloud.v1.RegisterEdgeResponse
+	(*CreateEdgeIdentityRecoveryRequest)(nil),  // 14: anytty.cloud.v1.CreateEdgeIdentityRecoveryRequest
+	(*CreateEdgeIdentityRecoveryResponse)(nil), // 15: anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse
+	(*RecoverEdgeIdentityRequest)(nil),         // 16: anytty.cloud.v1.RecoverEdgeIdentityRequest
+	(*RecoverEdgeIdentityResponse)(nil),        // 17: anytty.cloud.v1.RecoverEdgeIdentityResponse
+	(*timestamppb.Timestamp)(nil),              // 18: google.protobuf.Timestamp
+	(*CertificateBinding)(nil),                 // 19: anytty.cloud.v1.CertificateBinding
 }
 var file_cloud_v1_edge_config_proto_depIdxs = []int32{
-	14, // 0: anytty.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
-	14, // 1: anytty.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
+	18, // 0: anytty.cloud.v1.EdgeRuntimeProjection.connected_at:type_name -> google.protobuf.Timestamp
+	18, // 1: anytty.cloud.v1.EdgeRuntimeProjection.last_heartbeat:type_name -> google.protobuf.Timestamp
 	0,  // 2: anytty.cloud.v1.ManagedEdge.config:type_name -> anytty.cloud.v1.EdgeDesiredConfig
 	2,  // 3: anytty.cloud.v1.ManagedEdge.runtime:type_name -> anytty.cloud.v1.EdgeRuntimeProjection
-	15, // 4: anytty.cloud.v1.ManagedEdge.certificate:type_name -> anytty.cloud.v1.CertificateBinding
+	19, // 4: anytty.cloud.v1.ManagedEdge.certificate:type_name -> anytty.cloud.v1.CertificateBinding
 	3,  // 5: anytty.cloud.v1.ListEdgesResponse.edges:type_name -> anytty.cloud.v1.ManagedEdge
 	3,  // 6: anytty.cloud.v1.CreateEdgeResponse.edge:type_name -> anytty.cloud.v1.ManagedEdge
-	14, // 7: anytty.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
+	18, // 7: anytty.cloud.v1.CreateEdgeResponse.claim_expires_at:type_name -> google.protobuf.Timestamp
 	3,  // 8: anytty.cloud.v1.UpdateEdgeResponse.edge:type_name -> anytty.cloud.v1.ManagedEdge
 	1,  // 9: anytty.cloud.v1.RegisterEdgeResponse.desired_config:type_name -> anytty.cloud.v1.SignedEdgeDesiredConfig
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	18, // 10: anytty.cloud.v1.CreateEdgeIdentityRecoveryResponse.expires_at:type_name -> google.protobuf.Timestamp
+	18, // 11: anytty.cloud.v1.RecoverEdgeIdentityResponse.not_after:type_name -> google.protobuf.Timestamp
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_edge_config_proto_init() }
@@ -1120,7 +1367,7 @@ func file_cloud_v1_edge_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_edge_config_proto_rawDesc), len(file_cloud_v1_edge_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

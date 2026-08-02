@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -18,6 +20,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -26,6 +29,7 @@ import (
 	"github.com/anytty/anytty/cloud/controller/edgeconfig"
 	"github.com/anytty/anytty/cloud/securetransport"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Config 是安装服务的受控部署输入；所有密钥都来自权限受控文件。
@@ -40,27 +44,35 @@ type Config struct {
 	ArtifactFile          string
 	ArtifactVersion       string
 	ArtifactSigningKey    ed25519.PrivateKey
-	CertificateValidity   time.Duration
-	Now                   func() time.Time
+	// CertificateValidity is retained as a construction fallback for tests and
+	// older composition roots. Production config sets the two purposes explicitly.
+	CertificateValidity         time.Duration
+	IdentityCertificateValidity time.Duration
+	PublicCertificateValidity   time.Duration
+	AuditIdentityCertificate    func(context.Context, string, string, []byte, time.Time, time.Time) error
+	Now                         func() time.Time
 }
 
 // Service 持有 CA signer、固定 Edge artifact 和安装模板，不持有 claim 真值。
 type Service struct {
-	edges                *edgeconfig.Service
-	publicOrigin         string
-	controllerAddress    string
-	controllerServerName string
-	caCertificate        *x509.Certificate
-	caCertificatePEM     []byte
-	caKey                crypto.Signer
-	controllerCAPEM      []byte
-	artifact             []byte
-	artifactVersion      string
-	artifactDigest       string
-	artifactSignature    []byte
-	artifactPublicPEM    []byte
-	certificateValidity  time.Duration
-	now                  func() time.Time
+	edges                       *edgeconfig.Service
+	publicOrigin                string
+	controllerAddress           string
+	controllerServerName        string
+	caCertificate               *x509.Certificate
+	caCertificatePEM            []byte
+	caKey                       crypto.Signer
+	controllerCAPEM             []byte
+	artifact                    []byte
+	artifactVersion             string
+	artifactDigest              string
+	artifactSignature           []byte
+	artifactPublicPEM           []byte
+	identityCertificateValidity time.Duration
+	publicCertificateValidity   time.Duration
+	certificateValidity         time.Duration
+	auditIdentityCertificate    func(context.Context, string, string, []byte, time.Time, time.Time) error
+	now                         func() time.Time
 }
 
 // NewService 加载并验证 CA、artifact 与发布签名，失败时不提供部分安装服务。
@@ -69,7 +81,13 @@ func NewService(config Config) (*Service, error) {
 	config.ControllerAddress = strings.TrimSpace(config.ControllerAddress)
 	config.ControllerServerName = strings.TrimSpace(config.ControllerServerName)
 	config.ArtifactVersion = strings.TrimSpace(config.ArtifactVersion)
-	if config.Edges == nil || config.PublicOrigin == "" || config.ControllerAddress == "" || config.ControllerServerName == "" || config.ArtifactVersion == "" || len(config.ArtifactSigningKey) != ed25519.PrivateKeySize || config.CertificateValidity <= 0 {
+	if config.IdentityCertificateValidity <= 0 {
+		config.IdentityCertificateValidity = config.CertificateValidity
+	}
+	if config.PublicCertificateValidity <= 0 {
+		config.PublicCertificateValidity = config.CertificateValidity
+	}
+	if config.Edges == nil || config.PublicOrigin == "" || config.ControllerAddress == "" || config.ControllerServerName == "" || config.ArtifactVersion == "" || len(config.ArtifactSigningKey) != ed25519.PrivateKeySize || config.IdentityCertificateValidity <= 0 || config.PublicCertificateValidity <= 0 {
 		return nil, errors.New("Edge service, public/controller origins, artifact version/signing key, and certificate validity are required")
 	}
 	caPEM, caCertificate, caKey, err := loadCA(config.EdgeCACertificateFile, config.EdgeCAPrivateKeyFile)
@@ -97,7 +115,9 @@ func NewService(config Config) (*Service, error) {
 		caCertificate: caCertificate, caCertificatePEM: caPEM, caKey: caKey, controllerCAPEM: controllerCAPEM,
 		artifact: artifact, artifactVersion: config.ArtifactVersion, artifactDigest: hex.EncodeToString(digest[:]),
 		artifactSignature: ed25519.Sign(config.ArtifactSigningKey, artifact), artifactPublicPEM: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}),
-		certificateValidity: config.CertificateValidity, now: config.Now,
+		identityCertificateValidity: config.IdentityCertificateValidity, publicCertificateValidity: config.PublicCertificateValidity,
+		certificateValidity:      config.CertificateValidity,
+		auditIdentityCertificate: config.AuditIdentityCertificate, now: config.Now,
 	}, nil
 }
 
@@ -212,7 +232,7 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterE
 		return nil, fmt.Errorf("public CSR: %w", err)
 	}
 	expectedURI, err := securetransport.EdgeIdentityURI(request.GetEdgeId())
-	if err != nil || len(identityCSR.URIs) != 1 || identityCSR.URIs[0].String() != expectedURI.String() {
+	if err != nil || validateIdentityCSR(identityCSR, expectedURI) != nil {
 		return nil, errors.New("identity CSR does not contain the expected Edge URI SAN")
 	}
 	edge, err := service.edges.GetEdge(ctx, request.GetEdgeId())
@@ -227,11 +247,11 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterE
 	if err != nil {
 		return nil, err
 	}
-	identityCertificate, err := service.issue(identityCSR, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth})
+	identityCertificate, err := service.issue(identityCSR, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, service.identityValidity())
 	if err != nil {
 		return nil, err
 	}
-	publicCertificate, err := service.issue(publicCSR, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth})
+	publicCertificate, err := service.issue(publicCSR, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, service.publicValidity())
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +263,111 @@ func (service *Service) Register(ctx context.Context, request *cloudv1.RegisterE
 		ControllerAddress: service.controllerAddress, ControllerServerName: service.controllerServerName,
 		DesiredConfig: edge.SignedConfig, ConfigKeyId: keyID, ConfigSigningPublicKey: configPublicKey,
 	}, nil
+}
+
+// RenewIdentityCertificate signs a fresh EdgeIdentity CSR only for the Edge
+// already authenticated by EdgeControl. The caller owns matching the request's
+// current fingerprint to the actual TLS peer certificate.
+func (service *Service) RenewIdentityCertificate(ctx context.Context, edgeID string, request *cloudv1.EdgeIdentityRenewRequest) (*cloudv1.EdgeIdentityRenewResponse, error) {
+	edgeID = strings.TrimSpace(edgeID)
+	if request == nil || edgeID == "" || strings.TrimSpace(request.GetRequestId()) == "" || request.GetRequestedAt() == nil || request.GetRequestedAt().CheckValid() != nil || len(request.GetCurrentCertificateSha256()) != sha256.Size {
+		return nil, errors.New("EdgeIdentity renewal request is incomplete")
+	}
+	edge, err := service.edges.GetEdge(ctx, edgeID)
+	if err != nil {
+		return nil, err
+	}
+	if !edge.Enabled {
+		return nil, errors.New("disabled Edge cannot renew its identity certificate")
+	}
+	csr, err := parseCSR(request.GetCsrPem())
+	if err != nil {
+		return nil, fmt.Errorf("identity renewal CSR: %w", err)
+	}
+	expectedURI, err := securetransport.EdgeIdentityURI(edgeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateIdentityCSR(csr, expectedURI); err != nil {
+		return nil, err
+	}
+	certificatePEM, err := service.issue(csr, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, service.identityValidity())
+	if err != nil {
+		return nil, err
+	}
+	block, trailing := pem.Decode(certificatePEM)
+	if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(trailing)) != 0 {
+		return nil, errors.New("issued EdgeIdentity certificate is invalid")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	fingerprint := sha256.Sum256(certificate.Raw)
+	now := service.now().UTC()
+	if service.auditIdentityCertificate != nil {
+		if err := service.auditIdentityCertificate(ctx, edgeID, "issued", fingerprint[:], certificate.NotAfter.UTC(), now); err != nil {
+			return nil, fmt.Errorf("audit EdgeIdentity certificate issuance: %w", err)
+		}
+	}
+	return &cloudv1.EdgeIdentityRenewResponse{
+		RequestId: request.GetRequestId(), CertificatePem: certificatePEM, CertificateSha256: fingerprint[:], NotAfter: timestamppb.New(certificate.NotAfter.UTC()),
+	}, nil
+}
+
+func (service *Service) RecordIdentityCertificateApplied(ctx context.Context, edgeID string, applied *cloudv1.EdgeIdentityApplied) error {
+	if applied == nil || strings.TrimSpace(edgeID) == "" || strings.TrimSpace(applied.GetRequestId()) == "" || len(applied.GetCertificateSha256()) != sha256.Size || applied.GetNotAfter() == nil || applied.GetNotAfter().CheckValid() != nil {
+		return errors.New("EdgeIdentity applied receipt is invalid")
+	}
+	if service.auditIdentityCertificate == nil {
+		return nil
+	}
+	stage := "applied"
+	if !applied.GetApplied() {
+		stage = "apply_failed"
+	}
+	return service.auditIdentityCertificate(ctx, strings.TrimSpace(edgeID), stage, applied.GetCertificateSha256(), applied.GetNotAfter().AsTime().UTC(), service.now().UTC())
+}
+
+func (service *Service) RecoverIdentityCertificate(ctx context.Context, request *cloudv1.RecoverEdgeIdentityRequest) (*cloudv1.RecoverEdgeIdentityResponse, error) {
+	if request == nil || strings.TrimSpace(request.GetEdgeId()) == "" || strings.TrimSpace(request.GetRecoveryToken()) == "" {
+		return nil, errors.New("Edge identity recovery request is incomplete")
+	}
+	csr, err := parseCSR(request.GetIdentityCsrPem())
+	if err != nil {
+		return nil, fmt.Errorf("identity recovery CSR: %w", err)
+	}
+	expectedURI, err := securetransport.EdgeIdentityURI(request.GetEdgeId())
+	if err != nil {
+		return nil, err
+	}
+	if err := validateIdentityCSR(csr, expectedURI); err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(csr.Raw)
+	if _, err := service.edges.ConsumeIdentityRecoveryClaim(ctx, request.GetRecoveryToken(), request.GetEdgeId(), digest[:]); err != nil {
+		return nil, err
+	}
+	certificatePEM, err := service.issue(csr, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, service.identityValidity())
+	if err != nil {
+		return nil, err
+	}
+	block, trailing := pem.Decode(certificatePEM)
+	if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(trailing)) != 0 {
+		return nil, errors.New("issued recovered EdgeIdentity certificate is invalid")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	fingerprint := sha256.Sum256(certificate.Raw)
+	now := service.now().UTC()
+	if service.auditIdentityCertificate != nil {
+		if err := service.auditIdentityCertificate(ctx, request.GetEdgeId(), "recovery_issued", fingerprint[:], certificate.NotAfter.UTC(), now); err != nil {
+			return nil, fmt.Errorf("audit recovered EdgeIdentity certificate issuance: %w", err)
+		}
+	}
+	return &cloudv1.RecoverEdgeIdentityResponse{IdentityCertificatePem: certificatePEM, CertificateSha256: fingerprint[:], NotAfter: timestamppb.New(certificate.NotAfter.UTC())}, nil
 }
 
 func validatePublicCSR(csr *x509.CertificateRequest, publicEndpoint string) error {
@@ -262,19 +387,44 @@ func validatePublicCSR(csr *x509.CertificateRequest, publicEndpoint string) erro
 	return nil
 }
 
-func (service *Service) issue(csr *x509.CertificateRequest, usages []x509.ExtKeyUsage) ([]byte, error) {
+func (service *Service) issue(csr *x509.CertificateRequest, usages []x509.ExtKeyUsage, validity time.Duration) ([]byte, error) {
 	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serial, err := rand.Int(rand.Reader, serialLimit)
 	if err != nil {
 		return nil, err
 	}
 	now := service.now()
-	template := &x509.Certificate{SerialNumber: serial, Subject: csr.Subject, NotBefore: now.Add(-5 * time.Minute), NotAfter: now.Add(service.certificateValidity), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: usages, DNSNames: csr.DNSNames, IPAddresses: csr.IPAddresses, URIs: csr.URIs}
+	template := &x509.Certificate{SerialNumber: serial, Subject: csr.Subject, NotBefore: now.Add(-5 * time.Minute), NotAfter: now.Add(validity), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: usages, DNSNames: csr.DNSNames, IPAddresses: csr.IPAddresses, URIs: csr.URIs}
 	der, err := x509.CreateCertificate(rand.Reader, template, service.caCertificate, csr.PublicKey, service.caKey)
 	if err != nil {
 		return nil, fmt.Errorf("sign Edge certificate: %w", err)
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
+}
+
+func (service *Service) identityValidity() time.Duration {
+	if service.identityCertificateValidity > 0 {
+		return service.identityCertificateValidity
+	}
+	return service.certificateValidity
+}
+
+func (service *Service) publicValidity() time.Duration {
+	if service.publicCertificateValidity > 0 {
+		return service.publicCertificateValidity
+	}
+	return service.certificateValidity
+}
+
+func validateIdentityCSR(csr *x509.CertificateRequest, expectedURI *url.URL) error {
+	if csr == nil || expectedURI == nil || len(csr.URIs) != 1 || csr.URIs[0] == nil || csr.URIs[0].String() != expectedURI.String() || len(csr.DNSNames) != 0 || len(csr.IPAddresses) != 0 || len(csr.EmailAddresses) != 0 {
+		return errors.New("identity CSR does not contain the exact expected Edge URI SAN")
+	}
+	key, ok := csr.PublicKey.(*ecdsa.PublicKey)
+	if !ok || key.Curve != elliptic.P256() {
+		return errors.New("EdgeIdentity CSR must use an ECDSA P-256 key")
+	}
+	return nil
 }
 
 func loadCA(certificateFile, privateKeyFile string) ([]byte, *x509.Certificate, crypto.Signer, error) {
@@ -320,8 +470,8 @@ func loadCA(certificateFile, privateKeyFile string) ([]byte, *x509.Certificate, 
 }
 
 func parseCSR(payload []byte) (*x509.CertificateRequest, error) {
-	block, _ := pem.Decode(payload)
-	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+	block, trailing := pem.Decode(payload)
+	if block == nil || block.Type != "CERTIFICATE REQUEST" || len(bytes.TrimSpace(trailing)) != 0 {
 		return nil, errors.New("PEM certificate request is required")
 	}
 	csr, err := x509.ParseCertificateRequest(block.Bytes)

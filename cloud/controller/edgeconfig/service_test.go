@@ -96,6 +96,38 @@ func TestServiceAcceptsIPAddressPublicEndpoint(t *testing.T) {
 	}
 }
 
+func TestIdentityRecoveryClaimIsShortLivedAndOneTime(t *testing.T) {
+	_, signingKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	store := &memoryStore{edge: edgeconfig.Edge{ID: "edge-recovery", Enabled: true}}
+	service, err := edgeconfig.NewService(edgeconfig.Config{
+		Store: store, SigningKey: signingKey, SigningKeyID: "config-key-recovery", ClaimTTL: 10 * time.Minute, Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, expiresAt, err := service.CreateIdentityRecoveryClaim(context.Background(), store.edge.ID, "admin-account", "expired identity certificate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token == "" || expiresAt != now.Add(10*time.Minute) || len(store.recoveryDigest) != 32 {
+		t.Fatalf("token=%q expires=%v digest=%x", token, expiresAt, store.recoveryDigest)
+	}
+	csrDigest := bytes.Repeat([]byte{9}, 32)
+	if _, err := service.ConsumeIdentityRecoveryClaim(context.Background(), token, store.edge.ID, csrDigest); err != nil {
+		t.Fatalf("consume recovery claim: %v", err)
+	}
+	if !bytes.Equal(store.recoveryCSR, csrDigest) {
+		t.Fatalf("recovery CSR digest = %x", store.recoveryCSR)
+	}
+	if _, err := service.ConsumeIdentityRecoveryClaim(context.Background(), token, store.edge.ID, csrDigest); !errors.Is(err, edgeconfig.ErrClaimInvalid) {
+		t.Fatalf("reused recovery claim error = %v", err)
+	}
+}
+
 type memoryStore struct {
 	mu              sync.Mutex
 	edge            edgeconfig.Edge
@@ -103,6 +135,9 @@ type memoryStore struct {
 	installConsumed bool
 	bootstrapDigest []byte
 	bootstrapUsed   bool
+	recoveryDigest  []byte
+	recoveryCSR     []byte
+	recoveryUsed    bool
 }
 
 func (store *memoryStore) ListEdges(context.Context) ([]edgeconfig.Edge, error) {
@@ -174,5 +209,27 @@ func (store *memoryStore) ConsumeBootstrapClaim(_ context.Context, digest []byte
 		return edgeconfig.Edge{}, edgeconfig.ErrClaimInvalid
 	}
 	store.bootstrapUsed = true
+	return store.edge, nil
+}
+
+func (store *memoryStore) CreateIdentityRecoveryClaim(_ context.Context, edgeID string, digest []byte, _ time.Time, actorID, reason string, _ time.Time) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.edge.ID != edgeID || actorID == "" || reason == "" {
+		return edgeconfig.ErrEdgeNotFound
+	}
+	store.recoveryDigest = append([]byte(nil), digest...)
+	store.recoveryUsed = false
+	return nil
+}
+
+func (store *memoryStore) ConsumeIdentityRecoveryClaim(_ context.Context, digest []byte, edgeID string, csrDigest []byte, _ time.Time) (edgeconfig.Edge, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.recoveryUsed || store.edge.ID != edgeID || !bytes.Equal(store.recoveryDigest, digest) {
+		return edgeconfig.Edge{}, edgeconfig.ErrClaimInvalid
+	}
+	store.recoveryUsed = true
+	store.recoveryCSR = append([]byte(nil), csrDigest...)
 	return store.edge, nil
 }
