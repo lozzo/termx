@@ -99,7 +99,15 @@ forbid(debugLog, ['Throwable', 'Uri', 'message:', 'tag:', 'details:', 'logcat', 
 
 const androidGo = read(join(repoRoot, 'client', 'binding', 'cabi', 'androidlib', 'log_android.go')) +
   read(join(repoRoot, 'client', 'binding', 'cabi', 'androidlib', 'production.go'))
-forbid(androidGo, ['__android_log_write', '-llog', 'slog.', 'log.Printf', 'log.Println'], 'Android Go logging')
+forbid(androidGo, ['slog.', 'log.Printf', 'log.Println'], 'Android Go logging')
+for (const required of [
+  'cloudTimingPrefix = []byte("anytty cloud connect ")',
+  'bytes.HasPrefix(payload, cloudTimingPrefix)',
+  'C.__android_log_write(C.ANDROID_LOG_INFO, tag, message)',
+  'C.CString("AnyTTYCloud")',
+]) {
+  if (!androidGo.includes(required)) fail(`Android Go timing allowlist is missing ${JSON.stringify(required)}`)
+}
 
 const packageJson = JSON.parse(read(join(mobileRoot, 'package.json')))
 if ('cap:sync' in (packageJson.scripts ?? {})) fail('legacy cap:sync script remains')
