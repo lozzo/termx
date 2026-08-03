@@ -761,7 +761,7 @@ func (generator *trackedGenerator) AllocatePacketConn(network string, requestedP
 		return nil, nil, err
 	}
 	key := address.String()
-	tracked := &trackedPacketConn{PacketConn: connection}
+	tracked := newTrackedPacketConn(connection)
 	tracked.onClose = func() {
 		generator.mu.Lock()
 		if generator.conns[key] == tracked {
@@ -794,11 +794,18 @@ type trackedPacketConn struct {
 	net.PacketConn
 	mu          sync.Mutex
 	limiter     *policy.GroupLimiter
+	waitContext context.Context
+	cancelWait  context.CancelFunc
 	ingress     uint64
 	egress      uint64
 	onClose     func()
 	onCloseOnce sync.Once
 	closed      bool
+}
+
+func newTrackedPacketConn(connection net.PacketConn) *trackedPacketConn {
+	waitContext, cancelWait := context.WithCancel(context.Background())
+	return &trackedPacketConn{PacketConn: connection, waitContext: waitContext, cancelWait: cancelWait}
 }
 
 // Close 只移除一次 generator correlation，并在底层 socket 尚未成功关闭时允许重试。
@@ -810,6 +817,9 @@ func (connection *trackedPacketConn) Close() error {
 	})
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
+	if connection.cancelWait != nil {
+		connection.cancelWait()
+	}
 	if connection.closed {
 		return nil
 	}
@@ -823,6 +833,9 @@ func (connection *trackedPacketConn) Close() error {
 func (connection *trackedPacketConn) bind(admission policy.RelayAdmission) {
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
+	if connection.waitContext == nil {
+		connection.waitContext, connection.cancelWait = context.WithCancel(context.Background())
+	}
 	connection.limiter = admission.Limiter
 }
 
@@ -831,29 +844,59 @@ func (connection *trackedPacketConn) ReadFrom(payload []byte) (int, net.Addr, er
 	if err != nil {
 		return count, address, err
 	}
-	if !connection.allow(uint64(count), true, time.Now()) {
-		return 0, address, errors.New("Relay ingress exceeded grant byte or rate limit")
+	if err := connection.wait(uint64(count), true); err != nil {
+		return 0, address, err
 	}
 	return count, address, nil
 }
 
 func (connection *trackedPacketConn) WriteTo(payload []byte, address net.Addr) (int, error) {
 	requested := uint64(len(payload))
-	connection.mu.Lock()
-	limiter := connection.limiter
-	connection.mu.Unlock()
-	if limiter == nil || !limiter.Reserve(requested, time.Now()) {
-		return 0, errors.New("Relay egress exceeded grant byte or rate limit")
+	if err := connection.wait(requested, false); err != nil {
+		return 0, err
 	}
 	written, err := connection.PacketConn.WriteTo(payload, address)
 	actual := uint64(written)
 	if actual < requested {
+		connection.mu.Lock()
+		limiter := connection.limiter
+		connection.egress -= requested - actual
+		connection.mu.Unlock()
 		limiter.Refund(requested - actual)
 	}
-	connection.mu.Lock()
-	connection.egress += actual
-	connection.mu.Unlock()
 	return written, err
+}
+
+func (connection *trackedPacketConn) wait(count uint64, ingress bool) error {
+	connection.mu.Lock()
+	limiter := connection.limiter
+	waitContext := connection.waitContext
+	if waitContext == nil {
+		waitContext, connection.cancelWait = context.WithCancel(context.Background())
+		connection.waitContext = waitContext
+	}
+	connection.mu.Unlock()
+	if limiter == nil {
+		return errors.New("Relay allocation has no grant limiter")
+	}
+	if err := limiter.Wait(waitContext, count); err != nil {
+		return fmt.Errorf("Relay %s exceeded grant limit: %w", relayDirection(ingress), err)
+	}
+	connection.mu.Lock()
+	if ingress {
+		connection.ingress += count
+	} else {
+		connection.egress += count
+	}
+	connection.mu.Unlock()
+	return nil
+}
+
+func relayDirection(ingress bool) string {
+	if ingress {
+		return "ingress"
+	}
+	return "egress"
 }
 
 func (connection *trackedPacketConn) allow(count uint64, ingress bool, now time.Time) bool {

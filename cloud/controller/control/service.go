@@ -27,8 +27,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// ProtocolVersion 8 adds authenticated EdgeIdentity certificate rotation.
-const ProtocolVersion uint32 = 8
+// ProtocolVersion 9 combines authenticated EdgeIdentity certificate rotation
+// with global per-account daemon connection admission.
+const ProtocolVersion uint32 = 9
 
 // Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
@@ -46,6 +47,7 @@ type Config struct {
 	IdentityCertificateApplied func(context.Context, string, *cloudv1.EdgeIdentityApplied) error
 	DaemonStateSnapshot        func(context.Context) (*cloudv1.DaemonStateSnapshot, error)
 	ResolveDaemonState         func(context.Context, string) (*cloudv1.DaemonStateRecord, bool, error)
+	DaemonConnectionLimit      func(context.Context, string, string) (uint32, error)
 	RelayStore                 RelayStore
 }
 
@@ -90,7 +92,7 @@ func (generation *connectionGeneration) invalidate() {
 func NewService(config Config) (*Service, error) {
 	config.ControllerID = strings.TrimSpace(config.ControllerID)
 	config.ControllerBootID = strings.TrimSpace(config.ControllerBootID)
-	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil || config.EdgeEnabled == nil || config.DaemonStateSnapshot == nil || config.ResolveDaemonState == nil {
+	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil || config.BindingKeyBundle == nil || config.EdgeEnabled == nil || config.DaemonStateSnapshot == nil || config.ResolveDaemonState == nil || config.DaemonConnectionLimit == nil {
 		return nil, errors.New("controller ID, boot ID, Directory, Edge admission, binding keys, and daemon state providers are required")
 	}
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
@@ -148,7 +150,7 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	if err := service.config.Directory.Attach(stream.Context(), directory.Attachment{
-		EdgeID: certificateEdgeID, BootID: event.GetBootId(), ConnectionID: event.GetConnectionId(), SoftwareVersion: hello.GetSoftwareVersion(), ConnectedAt: time.Now().UTC(),
+		EdgeID: certificateEdgeID, BootID: event.GetBootId(), ConnectionID: event.GetConnectionId(), SoftwareVersion: hello.GetSoftwareVersion(), Capabilities: hello.GetCapabilities(), ConnectedAt: time.Now().UTC(),
 	}); err != nil {
 		return status.Errorf(codes.Aborted, "attach Edge generation: %v", err)
 	}
@@ -412,6 +414,44 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 		}
 		record, found, err := service.config.ResolveDaemonState(ctx, strings.TrimSpace(query.GetDaemonId()))
 		return &cloudv1.ControllerCommand_DaemonStateQueryResult{DaemonStateQueryResult: &cloudv1.DaemonStateQueryResult{RequestId: query.GetRequestId(), DaemonId: query.GetDaemonId(), Found: found, Daemon: record}}, err
+	case *cloudv1.EdgeEvent_DaemonConnectionAdmission:
+		request := payload.DaemonConnectionAdmission
+		if request == nil || strings.TrimSpace(request.GetRequestId()) == "" || strings.TrimSpace(request.GetAdmissionId()) == "" || strings.TrimSpace(request.GetDaemonId()) == "" || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetAgentConnectionId()) == "" {
+			return nil, errors.New("daemon connection admission request is invalid")
+		}
+		response := &cloudv1.DaemonConnectionAdmissionResponse{RequestId: request.GetRequestId(), AdmissionId: request.GetAdmissionId()}
+		if request.GetRelease() {
+			if err := service.config.Directory.ReleaseDaemonConnection(ctx, event.GetConnectionId(), directory.DaemonConnectionAdmission{
+				AdmissionID: request.GetAdmissionId(), DaemonID: request.GetDaemonId(), AccountID: request.GetAccountId(), AgentConnectionID: request.GetAgentConnectionId(),
+			}); err != nil {
+				response.Result = cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_UNAVAILABLE
+				response.Message = "daemon connection admission release is unavailable"
+			} else {
+				response.Result = cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_RELEASED
+			}
+			return &cloudv1.ControllerCommand_DaemonConnectionAdmission{DaemonConnectionAdmission: response}, nil
+		}
+		limit, err := service.config.DaemonConnectionLimit(ctx, strings.TrimSpace(request.GetDaemonId()), strings.TrimSpace(request.GetAccountId()))
+		response.Limit = limit
+		if err != nil || limit == 0 {
+			response.Result = cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_REJECTED
+			response.Message = "daemon connection is not allowed by the current entitlement"
+			return &cloudv1.ControllerCommand_DaemonConnectionAdmission{DaemonConnectionAdmission: response}, nil
+		}
+		err = service.config.Directory.AdmitDaemonConnection(ctx, event.GetConnectionId(), directory.DaemonConnectionAdmission{
+			AdmissionID: request.GetAdmissionId(), DaemonID: request.GetDaemonId(), AccountID: request.GetAccountId(), AgentConnectionID: request.GetAgentConnectionId(),
+		}, limit)
+		switch {
+		case err == nil:
+			response.Result = cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_ADMITTED
+		case errors.Is(err, directory.ErrDaemonConnectionLimit):
+			response.Result = cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_LIMIT_REACHED
+			response.Message = "cloud daemon connection limit reached"
+		default:
+			response.Result = cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_UNAVAILABLE
+			response.Message = "daemon connection admission is unavailable"
+		}
+		return &cloudv1.ControllerCommand_DaemonConnectionAdmission{DaemonConnectionAdmission: response}, nil
 	case *cloudv1.EdgeEvent_CommandResult:
 		return nil, service.config.Directory.CompleteCommand(ctx, event.GetConnectionId(), payload.CommandResult)
 	default:
@@ -453,6 +493,8 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 	case *cloudv1.ControllerCommand_ReselectDaemonEdge:
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_IdentityRenew:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_DaemonConnectionAdmission:
 		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
@@ -725,6 +767,9 @@ func validateHello(event *cloudv1.EdgeEvent, certificateEdgeID string) (*cloudv1
 	}
 	if !slices.Contains(hello.GetCapabilities(), cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM) {
 		return nil, errors.New("EdgeHello does not advertise the control stream capability")
+	}
+	if !slices.Contains(hello.GetCapabilities(), cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_CONNECTION_ADMISSION) {
+		return nil, errors.New("EdgeHello does not advertise daemon connection admission")
 	}
 	return hello, nil
 }

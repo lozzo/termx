@@ -421,16 +421,17 @@ func startControllerWithAdmission(t *testing.T, certificates certificateFiles, d
 		t.Fatalf("create Controller Directory: %v", err)
 	}
 	service, err := control.NewService(control.Config{
-		ControllerID:        testControllerID,
-		ControllerBootID:    testControllerBootID,
-		HeartbeatInterval:   time.Second,
-		HeartbeatTimeout:    3 * time.Second,
-		Directory:           directoryState,
-		BindingKeyBundle:    testBindingKeyBundleProvider(),
-		EdgeEnabled:         edgeEnabled,
-		DaemonStateSnapshot: integrationDaemonStateSnapshot,
-		ResolveDaemonState:  integrationDaemonStateResolver,
-		DesiredConfig:       desired,
+		ControllerID:          testControllerID,
+		ControllerBootID:      testControllerBootID,
+		HeartbeatInterval:     time.Second,
+		HeartbeatTimeout:      3 * time.Second,
+		Directory:             directoryState,
+		BindingKeyBundle:      testBindingKeyBundleProvider(),
+		EdgeEnabled:           edgeEnabled,
+		DaemonStateSnapshot:   integrationDaemonStateSnapshot,
+		ResolveDaemonState:    integrationDaemonStateResolver,
+		DaemonConnectionLimit: integrationDaemonConnectionLimit,
+		DesiredConfig:         desired,
 	})
 	if err != nil {
 		t.Fatalf("create EdgeControl service: %v", err)
@@ -458,6 +459,10 @@ func startControllerWithAdmission(t *testing.T, certificates certificateFiles, d
 }
 
 func integrationEdgeEnabled(context.Context, string) (bool, error) { return true, nil }
+
+func integrationDaemonConnectionLimit(context.Context, string, string) (uint32, error) {
+	return 1024, nil
+}
 
 func integrationDaemonStateSnapshot(context.Context) (*cloudv1.DaemonStateSnapshot, error) {
 	return &cloudv1.DaemonStateSnapshot{Daemons: []*cloudv1.DaemonStateRecord{

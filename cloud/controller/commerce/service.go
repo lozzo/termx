@@ -234,7 +234,7 @@ func validPlan(request *cloudv1.CreatePlanVersionRequest) bool {
 		return false
 	}
 	capability := request.GetCapability()
-	return capability.GetManagedP2PEnabled() && capability.GetManagedP2PMaxConcurrency() > 0 && capability.GetCloudDaemonLimit() > 0 && (!capability.GetRelayEnabled() || capability.GetRelayMaxConcurrency() > 0 && capability.GetRelayMaxBytesPerPeriod() > 0 && capability.GetRelayMaxBytesPerLease() > 0 && capability.GetRelayMaxRateBytesPerSecond() > 0)
+	return capability.GetManagedP2PEnabled() && capability.GetCloudDaemonLimit() > 0 && (!capability.GetRelayEnabled() || capability.GetRelayMaxConcurrency() > 0 && capability.GetRelayMaxBytesPerPeriod() > 0 && capability.GetRelayMaxBytesPerLease() > 0 && capability.GetRelayMaxRateBytesPerSecond() > 0)
 }
 
 func paidTransition(value cloudv1.SubscriptionTransition) bool {

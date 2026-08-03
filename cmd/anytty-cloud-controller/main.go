@@ -73,6 +73,14 @@ type options struct {
 	trustedProxyCIDRs    []netip.Prefix
 }
 
+type daemonConnectionStore interface {
+	GetDaemon(context.Context, string) (enrollment.Daemon, error)
+}
+
+type daemonConnectionEntitlement interface {
+	EffectiveEntitlement(context.Context, string) (*cloudv1.EffectiveEntitlement, error)
+}
+
 type controllerShutdowner interface {
 	Shutdown(context.Context) error
 }
@@ -273,7 +281,10 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		BindingKeyBundle:    bindingKeyOwner.Bundle,
 		DaemonStateSnapshot: database.DaemonStateSnapshot,
 		ResolveDaemonState:  database.ResolveDaemonState,
-		RelayStore:          database,
+		DaemonConnectionLimit: func(ctx context.Context, daemonID, accountID string) (uint32, error) {
+			return resolveDaemonConnectionLimit(ctx, database, commerceService, daemonID, accountID)
+		},
+		RelayStore: database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
@@ -333,6 +344,18 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	}
 	logger.Info("Controller 已停止")
 	return nil
+}
+
+func resolveDaemonConnectionLimit(ctx context.Context, store daemonConnectionStore, entitlementProvider daemonConnectionEntitlement, daemonID, accountID string) (uint32, error) {
+	daemon, err := store.GetDaemon(ctx, daemonID)
+	if err != nil || daemon.AccountID != accountID || daemon.State != cloudv1.DaemonState_DAEMON_STATE_ACTIVE {
+		return 0, errors.New("daemon identity is not active for the account")
+	}
+	entitlement, err := entitlementProvider.EffectiveEntitlement(ctx, accountID)
+	if err != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || entitlement.GetCapability() == nil || entitlement.GetCapability().GetCloudDaemonLimit() == 0 {
+		return 0, commerce.ErrEntitlementUnavailable
+	}
+	return entitlement.GetCapability().GetCloudDaemonLimit(), nil
 }
 
 func parseOptions(arguments []string, output io.Writer) (options, error) {

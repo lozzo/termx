@@ -486,16 +486,17 @@ func (x *Money) GetMinorUnits() int64 {
 
 // CloudCapability 是套餐和运行时票据共同消费的机器限制。
 type CloudCapability struct {
-	state                      protoimpl.MessageState `protogen:"open.v1"`
-	ManagedP2PEnabled          bool                   `protobuf:"varint,1,opt,name=managed_p2p_enabled,json=managedP2pEnabled,proto3" json:"managed_p2p_enabled,omitempty"`
-	ManagedP2PMaxConcurrency   uint32                 `protobuf:"varint,2,opt,name=managed_p2p_max_concurrency,json=managedP2pMaxConcurrency,proto3" json:"managed_p2p_max_concurrency,omitempty"`
-	RelayEnabled               bool                   `protobuf:"varint,3,opt,name=relay_enabled,json=relayEnabled,proto3" json:"relay_enabled,omitempty"`
-	RelayMaxConcurrency        uint32                 `protobuf:"varint,4,opt,name=relay_max_concurrency,json=relayMaxConcurrency,proto3" json:"relay_max_concurrency,omitempty"`
-	RelayMaxBytesPerPeriod     uint64                 `protobuf:"varint,5,opt,name=relay_max_bytes_per_period,json=relayMaxBytesPerPeriod,proto3" json:"relay_max_bytes_per_period,omitempty"`
-	RelayMaxBytesPerLease      uint64                 `protobuf:"varint,6,opt,name=relay_max_bytes_per_lease,json=relayMaxBytesPerLease,proto3" json:"relay_max_bytes_per_lease,omitempty"`
-	RelayMaxRateBytesPerSecond uint64                 `protobuf:"varint,7,opt,name=relay_max_rate_bytes_per_second,json=relayMaxRateBytesPerSecond,proto3" json:"relay_max_rate_bytes_per_second,omitempty"`
-	CloudDaemonLimit           uint32                 `protobuf:"varint,8,opt,name=cloud_daemon_limit,json=cloudDaemonLimit,proto3" json:"cloud_daemon_limit,omitempty"`
-	AllowedRegions             []string               `protobuf:"bytes,9,rep,name=allowed_regions,json=allowedRegions,proto3" json:"allowed_regions,omitempty"`
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ManagedP2PEnabled bool                   `protobuf:"varint,1,opt,name=managed_p2p_enabled,json=managedP2pEnabled,proto3" json:"managed_p2p_enabled,omitempty"`
+	// 兼容旧套餐数据；Managed P2P 不执行并发数量限制。
+	ManagedP2PMaxConcurrency   uint32   `protobuf:"varint,2,opt,name=managed_p2p_max_concurrency,json=managedP2pMaxConcurrency,proto3" json:"managed_p2p_max_concurrency,omitempty"`
+	RelayEnabled               bool     `protobuf:"varint,3,opt,name=relay_enabled,json=relayEnabled,proto3" json:"relay_enabled,omitempty"`
+	RelayMaxConcurrency        uint32   `protobuf:"varint,4,opt,name=relay_max_concurrency,json=relayMaxConcurrency,proto3" json:"relay_max_concurrency,omitempty"`
+	RelayMaxBytesPerPeriod     uint64   `protobuf:"varint,5,opt,name=relay_max_bytes_per_period,json=relayMaxBytesPerPeriod,proto3" json:"relay_max_bytes_per_period,omitempty"`
+	RelayMaxBytesPerLease      uint64   `protobuf:"varint,6,opt,name=relay_max_bytes_per_lease,json=relayMaxBytesPerLease,proto3" json:"relay_max_bytes_per_lease,omitempty"`
+	RelayMaxRateBytesPerSecond uint64   `protobuf:"varint,7,opt,name=relay_max_rate_bytes_per_second,json=relayMaxRateBytesPerSecond,proto3" json:"relay_max_rate_bytes_per_second,omitempty"`
+	CloudDaemonLimit           uint32   `protobuf:"varint,8,opt,name=cloud_daemon_limit,json=cloudDaemonLimit,proto3" json:"cloud_daemon_limit,omitempty"`
+	AllowedRegions             []string `protobuf:"bytes,9,rep,name=allowed_regions,json=allowedRegions,proto3" json:"allowed_regions,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }

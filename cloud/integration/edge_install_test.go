@@ -112,7 +112,7 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	controlService, err := control.NewService(control.Config{
 		ControllerID: "controller-test", ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second,
 		BindingKeyBundle: testBindingKeyBundleProvider(), Directory: directoryState, EdgeEnabled: integrationEdgeEnabled,
-		DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver,
+		DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver, DaemonConnectionLimit: integrationDaemonConnectionLimit,
 	})
 	if err != nil {
 		t.Fatal(err)

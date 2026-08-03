@@ -85,6 +85,26 @@ func TestDevelopmentPaymentIsExplicitlyDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestPlanAllowsUnlimitedManagedP2P(t *testing.T) {
+	store := &commerceStoreFake{}
+	service, err := commerce.New(commerce.Config{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := account.ContextWithIdentity(context.Background(), account.Identity{Account: &cloudv1.AccountProfile{AccountId: "operator"}, Roles: []cloudv1.AccountRole{cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR}, RefreshID: "operator-refresh", RecentAuthExpiresAt: time.Now().Add(time.Hour)})
+	request := &cloudv1.CreatePlanVersionRequest{
+		PlanId: "unlimited-p2p", Name: "Unlimited P2P", BillingPeriodDays: 30,
+		MonthlyPrice: &cloudv1.Money{Currency: "CNY"}, YearlyPrice: &cloudv1.Money{Currency: "CNY"},
+		Capability: &cloudv1.CloudCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 0, CloudDaemonLimit: 2},
+	}
+	if _, err := service.CreatePlanVersion(ctx, request); err != nil {
+		t.Fatalf("zero P2P concurrency compatibility value rejected: %v", err)
+	}
+	if store.createdPlan != request {
+		t.Fatal("valid unlimited P2P plan did not reach store")
+	}
+}
+
 type commerceStoreFake struct {
 	aggregate                *cloudv1.GetAccountCommerceResponse
 	created                  *cloudv1.CreateOrderRequest
@@ -94,12 +114,15 @@ type commerceStoreFake struct {
 	applyCalls               int
 	transition               *cloudv1.TransitionSubscriptionRequest
 	transitionActor          string
+	createdPlan              *cloudv1.CreatePlanVersionRequest
 }
 
 func (store *commerceStoreFake) ListPlans(context.Context, bool) ([]*cloudv1.PlanDefinition, error) {
 	return nil, nil
 }
-func (store *commerceStoreFake) CreatePlanVersion(context.Context, *cloudv1.CreatePlanVersionRequest, string, time.Time) (*cloudv1.PlanDefinition, error) {
+
+func (store *commerceStoreFake) CreatePlanVersion(_ context.Context, request *cloudv1.CreatePlanVersionRequest, _ string, _ time.Time) (*cloudv1.PlanDefinition, error) {
+	store.createdPlan = request
 	return nil, nil
 }
 func (store *commerceStoreFake) PublishPlanVersion(context.Context, *cloudv1.PublishPlanVersionRequest, string, time.Time) (*cloudv1.PlanDefinition, error) {

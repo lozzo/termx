@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,6 +77,109 @@ func TestControllerRestartStartsEmptyAndRebuildsFromEdgeSnapshot(t *testing.T) {
 	projection, found, err := restarted.Edge(context.Background(), "edge-1")
 	if err != nil || !found || projection.AgentCount != 1 || projection.SessionCount != 1 {
 		t.Fatalf("snapshot did not rebuild restarted Directory: %+v found=%v err=%v", projection, found, err)
+	}
+}
+
+func TestDaemonConnectionAdmissionIsAtomicAcrossEdges(t *testing.T) {
+	directoryState := newDirectory(t, 0)
+	attachAdmissionEdge(t, directoryState, "edge-1", "control-1")
+	attachAdmissionEdge(t, directoryState, "edge-2", "control-2")
+	commit(t, directoryState, "control-1", &cloudv1.RuntimeSnapshot{})
+	commit(t, directoryState, "control-2", &cloudv1.RuntimeSnapshot{})
+
+	const attempts = 24
+	var wait sync.WaitGroup
+	var lock sync.Mutex
+	admitted := make([]directory.DaemonConnectionAdmission, 0, 3)
+	owners := make(map[string]string)
+	errorsSeen := make([]error, 0, attempts-3)
+	for index := 0; index < attempts; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			connectionID := "control-1"
+			if index%2 == 1 {
+				connectionID = "control-2"
+			}
+			admission := directory.DaemonConnectionAdmission{AdmissionID: fmt.Sprintf("admission-%d", index), DaemonID: fmt.Sprintf("daemon-%d", index), AccountID: "account-limited", AgentConnectionID: fmt.Sprintf("agent-%d", index)}
+			err := directoryState.AdmitDaemonConnection(context.Background(), connectionID, admission, 3)
+			lock.Lock()
+			defer lock.Unlock()
+			if err == nil {
+				admitted = append(admitted, admission)
+				owners[admission.AdmissionID] = connectionID
+			} else {
+				errorsSeen = append(errorsSeen, err)
+			}
+		}(index)
+	}
+	wait.Wait()
+	if len(admitted) != 3 || len(errorsSeen) != attempts-3 {
+		t.Fatalf("admitted=%d rejected=%d", len(admitted), len(errorsSeen))
+	}
+	for _, err := range errorsSeen {
+		if !errors.Is(err, directory.ErrDaemonConnectionLimit) {
+			t.Fatalf("concurrent admission error=%v want limit", err)
+		}
+	}
+
+	owner := owners[admitted[0].AdmissionID]
+	forged := admitted[0]
+	forged.DaemonID = "another-daemon"
+	if err := directoryState.ReleaseDaemonConnection(context.Background(), owner, forged); !errors.Is(err, directory.ErrStaleConnection) {
+		t.Fatalf("mismatched admission release error=%v want stale", err)
+	}
+	if err := directoryState.ReleaseDaemonConnection(context.Background(), owner, admitted[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := directoryState.AdmitDaemonConnection(context.Background(), "control-1", directory.DaemonConnectionAdmission{AdmissionID: "replacement", DaemonID: "daemon-replacement", AccountID: "account-limited", AgentConnectionID: "agent-replacement"}, 3); err != nil {
+		t.Fatalf("released slot was not reusable: %v", err)
+	}
+}
+
+func TestSameDaemonReconnectDoesNotConsumeAnotherSlot(t *testing.T) {
+	directoryState := newDirectory(t, 0)
+	attachAdmissionEdge(t, directoryState, "edge-1", "control-1")
+	attachAdmissionEdge(t, directoryState, "edge-2", "control-2")
+	commit(t, directoryState, "control-1", &cloudv1.RuntimeSnapshot{})
+	commit(t, directoryState, "control-2", &cloudv1.RuntimeSnapshot{})
+	for index := 0; index < 12; index++ {
+		connectionID := "control-1"
+		if index%2 == 1 {
+			connectionID = "control-2"
+		}
+		admission := directory.DaemonConnectionAdmission{AdmissionID: fmt.Sprintf("reconnect-%d", index), DaemonID: "same-daemon", AccountID: "same-account", AgentConnectionID: fmt.Sprintf("agent-reconnect-%d", index)}
+		if err := directoryState.AdmitDaemonConnection(context.Background(), connectionID, admission, 1); err != nil {
+			t.Fatalf("same daemon reconnect %d rejected: %v", index, err)
+		}
+	}
+	if err := directoryState.AdmitDaemonConnection(context.Background(), "control-1", directory.DaemonConnectionAdmission{AdmissionID: "different", DaemonID: "different-daemon", AccountID: "same-account", AgentConnectionID: "different-agent"}, 1); !errors.Is(err, directory.ErrDaemonConnectionLimit) {
+		t.Fatalf("different daemon admission error=%v want limit", err)
+	}
+}
+
+func TestAdmissionCapabilityRequiresMatchingPresence(t *testing.T) {
+	directoryState := newDirectory(t, 0)
+	attachAdmissionEdge(t, directoryState, "edge-1", "control-1")
+	commit(t, directoryState, "control-1", &cloudv1.RuntimeSnapshot{})
+
+	agent := testAgent("daemon-admitted", 1)
+	agent.ConnectionId = "agent-admitted"
+	if err := directoryState.ApplyDelta(context.Background(), "control-1", &cloudv1.RuntimeDelta{Revision: 1, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: agent}}); err == nil {
+		t.Fatal("Presence without daemon connection admission was accepted")
+	}
+	admission := directory.DaemonConnectionAdmission{AdmissionID: "presence-admission", DaemonID: agent.GetDaemonId(), AccountID: agent.GetAccountId(), AgentConnectionID: agent.GetConnectionId()}
+	if err := directoryState.AdmitDaemonConnection(context.Background(), "control-1", admission, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := directoryState.ApplyDelta(context.Background(), "control-1", &cloudv1.RuntimeDelta{Revision: 1, Change: &cloudv1.RuntimeDelta_AgentUpserted{AgentUpserted: agent}}); err != nil {
+		t.Fatalf("matching admitted Presence rejected: %v", err)
+	}
+	if err := directoryState.ReleaseDaemonConnection(context.Background(), "control-1", admission); err != nil {
+		t.Fatalf("consumed admission release was not idempotent: %v", err)
+	}
+	if err := directoryState.AdmitDaemonConnection(context.Background(), "control-1", directory.DaemonConnectionAdmission{AdmissionID: "over-limit", DaemonID: "other-daemon", AccountID: agent.GetAccountId(), AgentConnectionID: "other-agent"}, 1); !errors.Is(err, directory.ErrDaemonConnectionLimit) {
+		t.Fatalf("published Presence did not retain slot: %v", err)
 	}
 }
 
@@ -165,6 +269,13 @@ func newDirectory(t *testing.T, grace time.Duration) *directory.Directory {
 func attach(t *testing.T, value *directory.Directory, connectionID string) {
 	t.Helper()
 	if err := value.Attach(context.Background(), directory.Attachment{EdgeID: "edge-1", BootID: "edge-boot-1", ConnectionID: connectionID, SoftwareVersion: "test"}); err != nil {
+		t.Fatalf("attach %s: %v", connectionID, err)
+	}
+}
+
+func attachAdmissionEdge(t *testing.T, value *directory.Directory, edgeID, connectionID string) {
+	t.Helper()
+	if err := value.Attach(context.Background(), directory.Attachment{EdgeID: edgeID, BootID: edgeID + "-boot", ConnectionID: connectionID, SoftwareVersion: "test", Capabilities: []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_CONNECTION_ADMISSION}}); err != nil {
 		t.Fatalf("attach %s: %v", connectionID, err)
 	}
 }
