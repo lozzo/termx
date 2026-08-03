@@ -52,9 +52,35 @@ func (engine *Engine) EngineCommand(payload []byte) (uint64, error) {
 		return engine.startConnectionPolicyApply(value.ConnectionPolicyApply)
 	case *bindingpb.EngineCommand_ConnectionSnapshotGet:
 		return engine.startConnectionSnapshotGet(value.ConnectionSnapshotGet)
+	case *bindingpb.EngineCommand_SessionInvalidate:
+		return engine.startSessionInvalidate(value.SessionInvalidate)
 	default:
 		return 0, fmt.Errorf("engine command is required")
 	}
+}
+
+func (engine *Engine) sessionInvalidationHost() (SessionInvalidationHost, error) {
+	host, ok := engine.host.(SessionInvalidationHost)
+	if !ok {
+		return nil, fmt.Errorf("binding host does not support session invalidation")
+	}
+	return host, nil
+}
+
+func (engine *Engine) startSessionInvalidate(request *bindingpb.SessionInvalidateRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetSessionHandle() == 0 {
+		return 0, fmt.Errorf("session invalidate request is incomplete")
+	}
+	host, err := engine.sessionInvalidationHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, session, err := engine.startSessionOperation(request.GetSessionHandle())
+	if err != nil {
+		return 0, err
+	}
+	go engine.runSessionInvalidate(handle, operationContext, host, session, proto.Clone(request).(*bindingpb.SessionInvalidateRequest))
+	return handle, nil
 }
 
 func (engine *Engine) connectionPolicyHost() (ConnectionPolicyHost, error) {
@@ -479,4 +505,19 @@ func (engine *Engine) runConnectionSnapshotGet(handle uint64, ctx context.Contex
 		result.Error = apiError(err)
 	}
 	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ConnectionSnapshotGet{ConnectionSnapshotGet: result}})
+}
+
+func (engine *Engine) runSessionInvalidate(handle uint64, ctx context.Context, host SessionInvalidationHost, session clientruntime.ApplicationReadyPeerSession, request *bindingpb.SessionInvalidateRequest) {
+	err := host.InvalidateSession(ctx, session.Stamp())
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	result := &bindingpb.SessionInvalidateResult{
+		RequestId: request.GetRequestId(), OperationHandle: handle, SessionHandle: request.GetSessionHandle(),
+	}
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_SessionInvalidate{SessionInvalidate: result}})
 }

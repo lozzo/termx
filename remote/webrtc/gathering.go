@@ -14,6 +14,16 @@ const (
 	ICEGatheringCloudGrace  = 500 * time.Millisecond
 )
 
+// ICEGatheringPreferredGrace keeps the longer Cloud window only when the attempt has managed
+// ICE servers and may still gather a TURN candidate. Direct-only attempts have no later class
+// of candidate to wait for after host/srflx becomes available.
+func ICEGatheringPreferredGrace(hasManagedICEServer bool) time.Duration {
+	if hasManagedICEServer {
+		return ICEGatheringCloudGrace
+	}
+	return ICEGatheringDirectGrace
+}
+
 // ICEGatheringWaiter bounds non-trickle gathering. Callers choose whether the
 // preferred candidate is host/srflx or relay according to the route policy.
 type ICEGatheringWaiter struct {

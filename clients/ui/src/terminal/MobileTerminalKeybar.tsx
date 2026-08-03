@@ -1,5 +1,5 @@
-import { forwardRef, useCallback, useState, type Ref } from 'react'
-import { Keyboard, LockKeyhole } from 'lucide-react'
+import { forwardRef, useCallback, useEffect, useRef, useState, type Ref } from 'react'
+import { Keyboard } from 'lucide-react'
 import {
   applyTerminalModifiers,
   nextModifierState,
@@ -9,6 +9,8 @@ import {
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { useTranslation } from 'react-i18next'
 import '../i18n'
+
+const keyboardLongPressMs = 400
 
 export interface MobileTerminalKeybarProps {
   onInput: (data: string) => boolean
@@ -41,6 +43,16 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   const [internalModifierState, setInternalModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
   const activeModifierState = modifierState ?? internalModifierState
   const setModifierState = onModifierStateChange ?? setInternalModifierState
+  const keyboardLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const keyboardLongPressTriggeredRef = useRef(false)
+
+  const clearKeyboardLongPress = useCallback(() => {
+    if (keyboardLongPressTimerRef.current === null) return
+    clearTimeout(keyboardLongPressTimerRef.current)
+    keyboardLongPressTimerRef.current = null
+  }, [])
+
+  useEffect(() => clearKeyboardLongPress, [clearKeyboardLongPress])
 
   const send = useCallback((data: string): boolean => {
     const result = applyTerminalModifiers(data, activeModifierState)
@@ -53,14 +65,13 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
     return true
   }, [activeModifierState, onInput, setModifierState])
 
-  const buttonBaseClass = 'relative flex h-11 flex-none touch-manipulation select-none items-center justify-center overflow-hidden border-x border-transparent text-center font-mono text-[10px] font-medium'
-  const cls = `${buttonBaseClass} w-11 min-w-11`
-  const keyboardButtonClass = keyboardVisible
-    ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]'
-    : 'bg-transparent text-[var(--anytty-muted)] active:bg-[var(--anytty-surface-raised)]'
-  const keyboardFocusLockButtonClass = keyboardFocusLocked
+  const buttonBaseClass = 'relative flex h-11 min-w-0 w-full touch-manipulation select-none items-center justify-center overflow-hidden border-x border-transparent text-center font-mono text-[10px] font-medium'
+  const cls = buttonBaseClass
+  const keyboardButtonClass = keyboardFocusLocked
     ? 'bg-amber-300 text-zinc-950'
-    : 'bg-transparent text-[var(--anytty-muted)] active:bg-[var(--anytty-surface-raised)]'
+    : keyboardVisible
+      ? 'bg-[var(--anytty-accent)] text-[var(--anytty-accent-text)]'
+      : 'bg-transparent text-[var(--anytty-muted)] active:bg-[var(--anytty-surface-raised)]'
 
   const btn = (label: string, data: string, ariaLabel?: string) => {
     const id = label + ':' + data
@@ -116,9 +127,13 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
       ref={forwardedRef}
       className={`min-w-0 shrink-0 overflow-x-hidden border-t border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)] text-[var(--anytty-text)] md:hidden ${className || ''}`}
       data-testid="anytty-mobile-keybar"
-      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))' }}
+      style={{
+        paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+      }}
     >
-      <div className="anytty-terminal-key-row flex min-w-0 touch-pan-x gap-1 overflow-x-auto px-1.5 pt-1.5">
+      <div className="anytty-terminal-key-row grid min-w-0 grid-cols-9 gap-0.5 px-1 pt-1.5">
         {btn('Esc', '\x1b')}
         {btn('/', '/')}
         {btn('|', '|')}
@@ -130,39 +145,45 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
         <button
           data-key-id="keyboard-visibility"
           type="button"
-          aria-label={t(keyboardVisible ? 'terminal.tools.hideKeyboard' : 'terminal.tools.showKeyboard')}
-          aria-pressed={keyboardVisible}
-          className={`${cls} ${keyboardButtonClass} disabled:opacity-45`}
-          disabled={keyboardFocusLocked}
-          onPointerDown={(e) => e.preventDefault()}
+          aria-label={t(keyboardFocusLocked
+            ? 'terminal.tools.allowKeyboardPopup'
+            : keyboardVisible ? 'terminal.tools.hideKeyboard' : 'terminal.tools.showKeyboard')}
+          aria-pressed={keyboardFocusLocked || keyboardVisible}
+          className={`${cls} ${keyboardButtonClass}`}
+          title={t(keyboardFocusLocked
+            ? 'terminal.tools.allowKeyboardPopup'
+            : keyboardVisible ? 'terminal.tools.hideKeyboard' : 'terminal.tools.showKeyboard')}
+          onPointerDown={(e) => {
+            e.preventDefault()
+            clearKeyboardLongPress()
+            keyboardLongPressTriggeredRef.current = false
+            keyboardLongPressTimerRef.current = setTimeout(() => {
+              keyboardLongPressTimerRef.current = null
+              keyboardLongPressTriggeredRef.current = true
+              hapticImpact()
+              onToggleKeyboardFocusLock?.()
+            }, keyboardLongPressMs)
+          }}
+          onPointerUp={clearKeyboardLongPress}
+          onPointerCancel={clearKeyboardLongPress}
+          onPointerLeave={clearKeyboardLongPress}
           onClick={() => {
+            if (keyboardLongPressTriggeredRef.current) {
+              keyboardLongPressTriggeredRef.current = false
+              return
+            }
             hapticSelection()
-            if (keyboardVisible) onBlurKeyboard?.()
+            if (keyboardFocusLocked) {
+              onToggleKeyboardFocusLock?.()
+              onFocusKeyboard?.()
+            } else if (keyboardVisible) onBlurKeyboard?.()
             else onFocusKeyboard?.()
           }}
         >
           <Keyboard aria-hidden="true" className="h-4 w-4" />
         </button>
-        <button
-          data-key-id="keyboard-focus-lock"
-          type="button"
-          aria-label={t(keyboardFocusLocked ? 'terminal.tools.allowKeyboardPopup' : 'terminal.tools.preventKeyboardPopup')}
-          aria-pressed={keyboardFocusLocked}
-          title={t(keyboardFocusLocked ? 'terminal.tools.allowKeyboardPopup' : 'terminal.tools.preventKeyboardPopup')}
-          className={`${buttonBaseClass} w-24 min-w-24 flex-col gap-0.5 px-1 ${keyboardFocusLockButtonClass}`}
-          onPointerDown={(e) => e.preventDefault()}
-          onClick={() => {
-            hapticImpact()
-            onToggleKeyboardFocusLock?.()
-          }}
-        >
-          <LockKeyhole aria-hidden="true" className="h-3.5 w-3.5" />
-          <span className="max-w-[5.5rem] text-[8px] font-semibold leading-[9px] whitespace-normal">
-            {t(keyboardFocusLocked ? 'terminal.tools.allowKeyboardPopup' : 'terminal.tools.preventKeyboardPopup')}
-          </span>
-        </button>
       </div>
-      <div className="anytty-terminal-key-row flex min-w-0 touch-pan-x gap-1 overflow-x-auto px-1.5 pb-1.5 pt-1">
+      <div className="anytty-terminal-key-row grid min-w-0 grid-cols-9 gap-0.5 px-1 pb-1.5 pt-1">
         {btn('⇥', '\t', t('terminal.tools.tabKey'))}
         {modBtn('Ctrl', 'ctrl', activeModifierState.ctrl)}
         {modBtn('Alt', 'alt', activeModifierState.alt)}

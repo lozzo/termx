@@ -395,6 +395,20 @@ func TestOfflineRelayPreferenceFailsClosedWithoutNewAuthority(t *testing.T) {
 	}
 }
 
+func TestOnlyRelayAttemptsRequireAuthorizationBeforeClientReady(t *testing.T) {
+	if requiresRelayPreauthorization(cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY) {
+		t.Fatal("Direct attempt retained the duplicate pre-offer Agent authorization")
+	}
+	for _, preference := range []cloudv1.RelayPreference{
+		cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO,
+		cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY,
+	} {
+		if !requiresRelayPreauthorization(preference) {
+			t.Fatalf("Relay preference %v can disclose TURN material before authorization", preference)
+		}
+	}
+}
+
 type cleanupRuntime struct{ order *[]string }
 
 func (*cleanupRuntime) AttachSession(context.Context, *cloudv1.ClientSessionSummary, func()) error {

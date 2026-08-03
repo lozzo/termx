@@ -59,7 +59,7 @@ describe('mobile terminal input helpers', () => {
 
   it('does not apply or consume modifiers for paste, IME, or unsupported text batches', () => {
     const state: TerminalModifierState = { ctrl: 'once', alt: 'once' }
-    for (const input of ['hello', '你好', '\x1b[200~c\x1b[201~', '\x1b[Z']) {
+    for (const input of ['中', 'hello', '你好', '\x1b[200~c\x1b[201~', '\x1b[Z']) {
       expect(applyTerminalModifiers(input, state)).toEqual({ data: input, ...state })
     }
   })

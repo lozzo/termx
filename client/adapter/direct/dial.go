@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"sort"
 	"strconv"
@@ -83,6 +84,13 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if dialer.Peers == nil || dialer.Authorization == nil {
 		return nil, fmt.Errorf("direct WebRTC connector dependencies are incomplete")
 	}
+	startedAt := time.Now()
+	lastAt := startedAt
+	stage := func(name string) {
+		now := time.Now()
+		log.Printf("anytty direct connect generation=%d stage=%s stage_ms=%d total_ms=%d", request.Stamp().Generation, name, now.Sub(lastAt).Milliseconds(), now.Sub(startedAt).Milliseconds())
+		lastAt = now
+	}
 	prepared, err := dialer.Authorization.Prepare(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("prepare direct endpoint authorization: %w", err)
@@ -90,9 +98,10 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if prepared == nil {
 		return nil, fmt.Errorf("direct endpoint authorizer returned no transaction")
 	}
+	stage("authorization_prepared")
 	opened, err := openDirectPeer(ctx, request, directPeerOptions{
 		Peers: dialer.Peers, Signaling: dialer.Signaling, Locators: dialer.Locators, TransformAnswer: dialer.TransformAnswer,
-		Random: dialer.Random, Now: dialer.Now, Phase: dialer.Phase,
+		Random: dialer.Random, Now: dialer.Now, Phase: dialer.Phase, Timing: stage,
 		GrantID: prepared.GrantID(), GrantExpiresAt: prepared.GrantExpiresAt(),
 	})
 	if err != nil {
@@ -106,11 +115,13 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		closeAttempt()
 		return nil, fmt.Errorf("read direct endpoint DTLS certificate: %w", err)
 	}
+	stage("dtls_fingerprint")
 	dialer.reportPhase(clientruntime.EndpointPhaseAuthorizing)
 	if _, err := prepared.Authenticate(ctx, connection, fingerprint); err != nil {
 		closeAttempt()
 		return nil, fmt.Errorf("authenticate direct endpoint DataChannel: %w", err)
 	}
+	stage("authorization")
 	protocolClient := internalprotocol.NewClient(connection)
 	clientName := strings.TrimSpace(dialer.ClientName)
 	if clientName == "" {
@@ -121,6 +132,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		_ = peer.Close()
 		return nil, fmt.Errorf("direct endpoint protocol Hello: %w", err)
 	}
+	stage("protocol_ready")
 	application, err := protocoladapter.NewApplicationClientWithObservedPath(protocolClient, request.Stamp(), string(endpoint.PathDirect))
 	if err != nil {
 		_ = protocolClient.Close()
@@ -158,6 +170,7 @@ type directPeerOptions struct {
 	Random           io.Reader
 	Now              func() time.Time
 	Phase            func(clientruntime.EndpointPhase)
+	Timing           func(string)
 	GrantID          string
 	GrantExpiresAt   time.Time
 	PairingDigest    []byte
@@ -190,11 +203,17 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 		}
 		return nil, fmt.Errorf("direct endpoint peer has no protocol DataChannel")
 	}
+	if options.Timing != nil {
+		options.Timing("peer_open")
+	}
 	opened := &openedDirectPeer{peer: peer, connection: datachannel.New(peer.Channel())}
 	offer, err := peer.CreateOffer(ctx)
 	if err != nil {
 		_ = opened.Close()
 		return nil, fmt.Errorf("create direct endpoint offer: %w", err)
+	}
+	if options.Timing != nil {
+		options.Timing("offer_gathered")
 	}
 	requestID, err := directRequestID(options.Random)
 	if err != nil {
@@ -233,6 +252,9 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 	if err != nil {
 		_ = opened.Close()
 		return nil, err
+	}
+	if options.Timing != nil {
+		options.Timing("signaling_answer")
 	}
 	verifyNow := time.Now().UTC()
 	if options.Now != nil {
@@ -273,9 +295,15 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 		_ = opened.Close()
 		return nil, fmt.Errorf("apply direct endpoint answer: %w", err)
 	}
+	if options.Timing != nil {
+		options.Timing("answer_applied")
+	}
 	if err := peer.WaitReady(ctx); err != nil {
 		_ = opened.Close()
 		return nil, fmt.Errorf("wait direct endpoint DataChannel: %w", err)
+	}
+	if options.Timing != nil {
+		options.Timing("datachannel_ready")
 	}
 	if peer.ObservedPath() != endpoint.PathDirect {
 		_ = opened.Close()
@@ -572,6 +600,8 @@ func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.Connecti
 		ObservedPath: session.ObservedPath(), SampledAt: at.UTC(), Connected: true,
 	}
 	if snapshot, ok := session.peer.Snapshot(at); ok {
+		result.ObservedPath = string(snapshot.Path)
+		result.PairID = snapshot.PairID
 		result.SampledAt = snapshot.At
 		result.RoundTrip = snapshot.RoundTrip
 		result.LocalCandidateType = snapshot.LocalCandidateType
@@ -580,6 +610,10 @@ func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.Connecti
 		result.RemoteAddress = snapshot.RemoteAddress
 		result.LocalPort = snapshot.LocalPort
 		result.RemotePort = snapshot.RemotePort
+		result.LocalRelatedAddress = snapshot.LocalRelatedAddress
+		result.RemoteRelatedAddress = snapshot.RemoteRelatedAddress
+		result.LocalRelatedPort = snapshot.LocalRelatedPort
+		result.RemoteRelatedPort = snapshot.RemoteRelatedPort
 		result.LocalProtocol = snapshot.LocalProtocol
 		result.RemoteProtocol = snapshot.RemoteProtocol
 		result.RelayTransport = snapshot.RelayProtocol

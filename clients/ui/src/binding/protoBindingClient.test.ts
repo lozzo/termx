@@ -6,7 +6,7 @@ import { EventSubscribeCommandSchema, EventSubscriptionResultSchema } from '../g
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
 import { HistoryWindowCommandSchema, HistoryWindowMode, HistoryWindowResultSchema } from '../generated/apipb/history_pb'
 import { TerminalListCommandSchema, TerminalRefSchema } from '../generated/apipb/terminal_pb'
-import { ConnectionPolicyApplyResultSchema, ConnectionPolicyAvailabilityReason, ConnectionPolicyGetResultSchema, ConnectionPolicyRouteAvailabilitySchema, ConnectionPolicySchema, ConnectionPolicyStateSchema, ConnectionRouteKind, ConnectionSnapshotGetResultSchema, ConnectionSnapshotSchema, EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, type EventEnvelope, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
+import { ConnectionPolicyApplyResultSchema, ConnectionPolicyAvailabilityReason, ConnectionPolicyGetResultSchema, ConnectionPolicyRouteAvailabilitySchema, ConnectionPolicySchema, ConnectionPolicyStateSchema, ConnectionRouteKind, ConnectionSnapshotGetResultSchema, ConnectionSnapshotSchema, EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, type EventEnvelope, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SessionInvalidateResultSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
 import { EndpointConfigV1Schema, EndpointRegistryV1Schema, EndpointRouteConfigV1Schema, EndpointRoutePreference, ManagedWebRTCRelayMode, ManagedWebRTCRelayTransport, ManagedWebRTCRouteConfigSchema } from '../generated/remoteauthpb/remote_auth_pb'
 import { BindingOperation, ProtoBindingClient, ProtoBindingConnector, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
@@ -52,6 +52,46 @@ describe('ProtoBindingClient cancellation ownership', () => {
 })
 
 describe('ProtoBindingSession invalidation', () => {
+  it('invalidates the exact binding session through an engine command', async () => {
+    const backend = new CancellationBackend()
+    let nextOperation = 0n
+    let invalidatedSession = 0n
+    backend.request = async (operation, payload, handle) => {
+      if (operation === BindingOperation.OPEN_SESSION) {
+        const operationHandle = ++nextOperation
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+            operationHandle,
+            sessionHandle: 70n,
+            session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n }),
+          }) },
+        }))))
+        return operationHandle
+      }
+      if (operation === BindingOperation.ENGINE_COMMAND) {
+        const command = fromBinary(EngineCommandSchema, payload)
+        expect(command.command.case).toBe('sessionInvalidate')
+        invalidatedSession = command.command.case === 'sessionInvalidate' ? command.command.value.sessionHandle : 0n
+        const operationHandle = ++nextOperation
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'sessionInvalidate', value: create(SessionInvalidateResultSchema, {
+            operationHandle,
+            sessionHandle: invalidatedSession,
+          }) },
+        }))))
+        return operationHandle
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    await expect(session.invalidate?.()).resolves.toBeUndefined()
+    expect(invalidatedSession).toBe(70n)
+    await client.close()
+  })
+
   it('retires a session and notifies the workspace when application commands report it unavailable', async () => {
     const backend = new CancellationBackend()
     let nextOperation = 0n

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,9 +32,12 @@ const (
 type Factory struct {
 	// PeerConnections 只覆盖底层 Pion primitive 创建策略；nil 使用当前生产默认配置。
 	PeerConnections remotewebrtc.PeerConnectionFactory
-	// Network 是当前 platform generation 的网络接口快照；nil 使用 Pion 默认网络枚举。
-	// Android 必须注入不依赖受限 netlink 的实现，网络切换后由平台 lifecycle 重建整个 generation。
+	// Network 是固定的网络接口快照；nil 使用 Pion 默认网络枚举。
+	// 它保留给无需按 peer 刷新网络的 native 平台；不能与 NetworkFactory 同时设置。
 	Network transport.Net
+	// NetworkFactory 在每次创建 PeerConnection 前取得当前网络接口快照。
+	// Android 使用它绕过受限 netlink，并确保网络切换后的新 peer 不复用旧地址。
+	NetworkFactory func() (transport.Net, error)
 	// Logger owns Pion diagnostics. nil is silent and never falls back to stderr.
 	Logger *slog.Logger
 }
@@ -45,12 +47,16 @@ type Factory struct {
 func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error) {
 	peerFactory := factory.PeerConnections
 	if peerFactory == nil {
+		network, err := factory.network()
+		if err != nil {
+			return nil, err
+		}
 		settings := pionwebrtc.SettingEngine{}
 		settings.LoggerFactory = remotewebrtc.NewLoggerFactory(factory.Logger)
 		settings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4, pionwebrtc.NetworkTypeTCP6})
 		settings.SetIncludeLoopbackCandidate(true)
-		if factory.Network != nil {
-			settings.SetNet(factory.Network)
+		if network != nil {
+			settings.SetNet(network)
 			// Android sandbox 禁止 mDNS 内部绕过 transport.Net 再读取系统网卡。
 			// Direct 使用 daemon-signed locator，Cloud 使用显式 ICE server，二者均不依赖 mDNS candidate。
 			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
@@ -65,14 +71,18 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig) (port.WebRTCPeer, error) {
 	peerFactory := factory.PeerConnections
 	if peerFactory == nil {
-		if factory.Network == nil {
+		network, err := factory.network()
+		if err != nil {
+			return nil, err
+		}
+		if network == nil {
 			peerFactory = func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
 				return remotewebrtc.NewPeerConnectionWithLogger(configuration, factory.Logger)
 			}
 		} else {
 			settings := pionwebrtc.SettingEngine{}
 			settings.LoggerFactory = remotewebrtc.NewLoggerFactory(factory.Logger)
-			settings.SetNet(factory.Network)
+			settings.SetNet(network)
 			settings.SetICEMulticastDNSMode(pionice.MulticastDNSModeDisabled)
 			peerFactory = newPeerConnectionAPI(settings).NewPeerConnection
 		}
@@ -90,8 +100,25 @@ func (factory Factory) OpenCloudPeer(_ context.Context, config port.WebRTCConfig
 		config.Policy == port.ICETransportRelayOnly,
 		false,
 		cloudGatherTimeout,
-		remotewebrtc.ICEGatheringCloudGrace,
+		remotewebrtc.ICEGatheringPreferredGrace(len(config.Servers) > 0),
 	)
+}
+
+func (factory Factory) network() (transport.Net, error) {
+	if factory.Network != nil && factory.NetworkFactory != nil {
+		return nil, fmt.Errorf("Pion network and network factory are mutually exclusive")
+	}
+	if factory.NetworkFactory == nil {
+		return factory.Network, nil
+	}
+	network, err := factory.NetworkFactory()
+	if err != nil {
+		return nil, fmt.Errorf("create Pion network snapshot: %w", err)
+	}
+	if network == nil {
+		return nil, fmt.Errorf("create Pion network snapshot: factory returned nil")
+	}
+	return network, nil
 }
 
 func newPeerConnectionAPI(settings pionwebrtc.SettingEngine) *pionwebrtc.API {
@@ -251,30 +278,16 @@ func (peer *webRTCPeer) RemoteCertificateFingerprint() (string, error) {
 }
 
 func (peer *webRTCPeer) ObservedPath() endpoint.Path {
-	if peer == nil || peer.peer == nil {
+	_, local, remote, _, ok := peer.selectedCandidatePair()
+	if !ok {
 		return ""
 	}
-	if sctp := peer.peer.SCTP(); sctp != nil && sctp.Transport() != nil && sctp.Transport().ICETransport() != nil {
-		pair, err := sctp.Transport().ICETransport().GetSelectedCandidatePair()
-		if err == nil && pair != nil && pair.Local != nil && pair.Remote != nil {
-			if pair.Local.Typ == pionwebrtc.ICECandidateTypeRelay || pair.Remote.Typ == pionwebrtc.ICECandidateTypeRelay {
-				return endpoint.PathSingleRelay
-			}
-			return endpoint.PathDirect
-		}
-	}
-	return pathFromStats(peer.peer.GetStats())
+	return candidatePath(local, remote)
 }
 
 func (peer *webRTCPeer) Snapshot(at time.Time) (port.WebRTCPeerSnapshot, bool) {
-	report := peer.peer.GetStats()
-	pair, ok := nominatedCandidatePair(report)
+	pair, local, remote, report, ok := peer.selectedCandidatePair()
 	if !ok {
-		return port.WebRTCPeerSnapshot{}, false
-	}
-	local, localOK := report[pair.LocalCandidateID].(pionwebrtc.ICECandidateStats)
-	remote, remoteOK := report[pair.RemoteCandidateID].(pionwebrtc.ICECandidateStats)
-	if !localOK || !remoteOK {
 		return port.WebRTCPeerSnapshot{}, false
 	}
 	rtt := secondsDuration(pair.CurrentRoundTripTime)
@@ -286,6 +299,7 @@ func (peer *webRTCPeer) Snapshot(at time.Time) (port.WebRTCPeerSnapshot, bool) {
 			}
 		}
 	}
+	localRelatedAddress, localRelatedPort, remoteRelatedAddress, remoteRelatedPort := peer.selectedRelatedAddresses(local, remote)
 	return port.WebRTCPeerSnapshot{
 		PairID: pair.ID, Path: candidatePath(local, remote), NetworkClass: strings.ToLower(strings.TrimSpace(local.NetworkType)), At: at.UTC(),
 		RoundTrip: rtt, BytesSent: pair.BytesSent, BytesRecv: pair.BytesReceived, PacketsSent: uint64(pair.PacketsSent),
@@ -294,9 +308,82 @@ func (peer *webRTCPeer) Snapshot(at time.Time) (port.WebRTCPeerSnapshot, bool) {
 		LocalCandidateType: strings.ToLower(local.CandidateType.String()), RemoteCandidateType: strings.ToLower(remote.CandidateType.String()),
 		LocalAddress: strings.TrimSpace(local.IP), RemoteAddress: strings.TrimSpace(remote.IP),
 		LocalPort: candidatePort(local.Port), RemotePort: candidatePort(remote.Port),
+		LocalRelatedAddress: localRelatedAddress, RemoteRelatedAddress: remoteRelatedAddress,
+		LocalRelatedPort: localRelatedPort, RemoteRelatedPort: remoteRelatedPort,
 		LocalProtocol: strings.ToLower(strings.TrimSpace(local.Protocol)), RemoteProtocol: strings.ToLower(strings.TrimSpace(remote.Protocol)),
 		RelayProtocol: strings.ToLower(strings.TrimSpace(local.RelayProtocol)),
 	}, true
+}
+
+func (peer *webRTCPeer) selectedRelatedAddresses(local, remote pionwebrtc.ICECandidateStats) (string, uint16, string, uint16) {
+	if peer == nil || peer.peer == nil {
+		return "", 0, "", 0
+	}
+	sctp := peer.peer.SCTP()
+	if sctp == nil || sctp.Transport() == nil || sctp.Transport().ICETransport() == nil {
+		return "", 0, "", 0
+	}
+	selected, err := sctp.Transport().ICETransport().GetSelectedCandidatePair()
+	if err != nil || selected == nil {
+		return "", 0, "", 0
+	}
+	return relatedCandidateAddresses(selected, local, remote)
+}
+
+func relatedCandidateAddresses(pair *pionwebrtc.ICECandidatePair, local, remote pionwebrtc.ICECandidateStats) (string, uint16, string, uint16) {
+	if pair == nil || !candidateMatchesStats(pair.Local, local) || !candidateMatchesStats(pair.Remote, remote) {
+		// The selected pair changed between the stats and candidate reads. Never mix two pairs.
+		return "", 0, "", 0
+	}
+	return strings.TrimSpace(pair.Local.RelatedAddress), pair.Local.RelatedPort,
+		strings.TrimSpace(pair.Remote.RelatedAddress), pair.Remote.RelatedPort
+}
+
+func candidateMatchesStats(candidate *pionwebrtc.ICECandidate, stats pionwebrtc.ICECandidateStats) bool {
+	return candidate != nil && strings.TrimSpace(candidate.Address) == strings.TrimSpace(stats.IP) &&
+		candidate.Port == candidatePort(stats.Port) && candidate.Typ == stats.CandidateType
+}
+
+type selectedCandidatePairStatsReader interface {
+	GetSelectedCandidatePairStats() (pionwebrtc.ICECandidatePairStats, bool)
+}
+
+func (peer *webRTCPeer) selectedCandidatePair() (
+	pionwebrtc.ICECandidatePairStats,
+	pionwebrtc.ICECandidateStats,
+	pionwebrtc.ICECandidateStats,
+	pionwebrtc.StatsReport,
+	bool,
+) {
+	if peer == nil || peer.peer == nil {
+		return pionwebrtc.ICECandidatePairStats{}, pionwebrtc.ICECandidateStats{}, pionwebrtc.ICECandidateStats{}, nil, false
+	}
+	sctp := peer.peer.SCTP()
+	if sctp == nil || sctp.Transport() == nil || sctp.Transport().ICETransport() == nil {
+		return pionwebrtc.ICECandidatePairStats{}, pionwebrtc.ICECandidateStats{}, pionwebrtc.ICECandidateStats{}, nil, false
+	}
+	report := peer.peer.GetStats()
+	pair, local, remote, ok := selectedCandidatePair(sctp.Transport().ICETransport(), report)
+	return pair, local, remote, report, ok
+}
+
+func selectedCandidatePair(
+	reader selectedCandidatePairStatsReader,
+	report pionwebrtc.StatsReport,
+) (pionwebrtc.ICECandidatePairStats, pionwebrtc.ICECandidateStats, pionwebrtc.ICECandidateStats, bool) {
+	if reader == nil {
+		return pionwebrtc.ICECandidatePairStats{}, pionwebrtc.ICECandidateStats{}, pionwebrtc.ICECandidateStats{}, false
+	}
+	pair, ok := reader.GetSelectedCandidatePairStats()
+	if !ok {
+		return pionwebrtc.ICECandidatePairStats{}, pionwebrtc.ICECandidateStats{}, pionwebrtc.ICECandidateStats{}, false
+	}
+	local, localOK := report[pair.LocalCandidateID].(pionwebrtc.ICECandidateStats)
+	remote, remoteOK := report[pair.RemoteCandidateID].(pionwebrtc.ICECandidateStats)
+	if !localOK || !remoteOK {
+		return pionwebrtc.ICECandidatePairStats{}, pionwebrtc.ICECandidateStats{}, pionwebrtc.ICECandidateStats{}, false
+	}
+	return pair, local, remote, true
 }
 
 func candidatePort(port int32) uint16 {
@@ -344,43 +431,11 @@ func toPionCandidate(candidate port.ICECandidate) pionwebrtc.ICECandidateInit {
 	return result
 }
 
-func pathFromStats(report pionwebrtc.StatsReport) endpoint.Path {
-	pair, ok := nominatedCandidatePair(report)
-	if !ok {
-		return ""
-	}
-	local, localOK := report[pair.LocalCandidateID].(pionwebrtc.ICECandidateStats)
-	remote, remoteOK := report[pair.RemoteCandidateID].(pionwebrtc.ICECandidateStats)
-	if !localOK || !remoteOK {
-		return ""
-	}
-	return candidatePath(local, remote)
-}
-
 func candidatePath(local, remote pionwebrtc.ICECandidateStats) endpoint.Path {
 	if local.CandidateType == pionwebrtc.ICECandidateTypeRelay || remote.CandidateType == pionwebrtc.ICECandidateTypeRelay {
 		return endpoint.PathSingleRelay
 	}
 	return endpoint.PathDirect
-}
-
-func nominatedCandidatePair(report pionwebrtc.StatsReport) (pionwebrtc.ICECandidatePairStats, bool) {
-	ids := make([]string, 0)
-	for id, stat := range report {
-		pair, ok := stat.(pionwebrtc.ICECandidatePairStats)
-		if ok && pair.Nominated && pair.State == pionwebrtc.StatsICECandidatePairStateSucceeded {
-			ids = append(ids, id)
-		}
-	}
-	if len(ids) == 0 {
-		return pionwebrtc.ICECandidatePairStats{}, false
-	}
-	sort.Strings(ids)
-	pair, ok := report[ids[0]].(pionwebrtc.ICECandidatePairStats)
-	if ok && pair.ID == "" {
-		pair.ID = ids[0]
-	}
-	return pair, ok
 }
 
 func secondsDuration(seconds float64) time.Duration {

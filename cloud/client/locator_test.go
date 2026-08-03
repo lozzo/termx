@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/anytty/anytty/cloud/edge/clientgateway"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
@@ -36,6 +37,9 @@ func TestCachedCapabilityRouteRoundTripsWithoutController(t *testing.T) {
 	resolved.PublicEndpoint = "mutated"
 	if resolution.Locator().GetPublicEndpoint() != edge.GetPublicEndpoint() {
 		t.Fatal("cached route exposed mutable Edge state")
+	}
+	if timeout := resolution.edgeTransportTimeout(); timeout != 1500*time.Millisecond {
+		t.Fatalf("cached Edge transport timeout = %s", timeout)
 	}
 }
 

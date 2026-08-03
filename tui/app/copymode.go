@@ -971,7 +971,8 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	if binding.TerminalID == "" || visibleCols <= 0 {
 		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 	}
-	cols := copyModeLatestRequestCols(binding, visibleCols)
+	cols, terminalRows := copyModeTerminalViewportSize(root, binding, visibleCols, rowsHint)
+	viewRows := copyModeVisibleRows(terminalRows, rowsHint)
 	requestID := nextHistoryRequestID(root)
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
 		ID:         requestID,
@@ -989,8 +990,8 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	root.CopyMode = root.CopyMode.BindLatestRef(binding.PaneID, binding.ViewID, binding.TerminalRef(), requestID, cols, rowsHint)
-	rows := requestRows(rowsHint, deps.Rows)
+	root.CopyMode = root.CopyMode.BindLatestRef(binding.PaneID, binding.ViewID, binding.TerminalRef(), requestID, cols, viewRows)
+	rows := requestRows(viewRows, deps.Rows)
 	root = root.Advance()
 	root = saveCopyHistorySessionForView(root, binding.ViewID)
 	latestEffect := FuncEffect{
@@ -1023,16 +1024,42 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	return root, []Effect{latestEffect}
 }
 
-func copyModeLatestRequestCols(binding state.TerminalViewBinding, visibleCols int) int {
-	// 中文说明：copy/history 的请求宽度只能来自 pane binding 或可见区域；
-	// live surface 属于实时展示缓存，不能参与 history window 的语义结论。
-	if binding.ResizeRole == state.TerminalResizeRoleOwner && binding.DesiredCols > 0 {
-		return binding.DesiredCols
+func copyModeTerminalViewportSize(root state.Root, binding state.TerminalViewBinding, fallbackCols int, fallbackRows int) (int, int) {
+	cols, rows := binding.DesiredCols, binding.DesiredRows
+	ref := binding.TerminalRef()
+	if surface := root.Surface.SurfaceForTerminalRef(ref); surface.TerminalID != "" {
+		if cols <= 0 {
+			cols = surface.Cols
+		}
+		if rows <= 0 {
+			rows = surface.Rows
+		}
 	}
-	if binding.DesiredCols > 0 {
-		return binding.DesiredCols
+	if root.Session.TerminalRef().Equal(ref) {
+		if cols <= 0 {
+			cols = root.Session.Cols
+		}
+		if rows <= 0 {
+			rows = root.Session.Rows
+		}
 	}
-	return visibleCols
+	if cols <= 0 {
+		cols = fallbackCols
+	}
+	if rows <= 0 {
+		rows = fallbackRows
+	}
+	return cols, rows
+}
+
+func copyModeVisibleRows(terminalRows int, paneRows int) int {
+	if terminalRows <= 0 {
+		return paneRows
+	}
+	if paneRows <= 0 || terminalRows < paneRows {
+		return terminalRows
+	}
+	return paneRows
 }
 
 func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrepend int) (state.Root, []Effect) {

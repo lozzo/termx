@@ -1385,6 +1385,31 @@ func TestCopyModeLatestStartsAtNewestVisibleTail(t *testing.T) {
 	}
 }
 
+func TestCopyModeEntryUsesTerminalSizeInsideLargerPane(t *testing.T) {
+	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-small", 4, 40, 8, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID(state.DefaultPaneID), false)
+	window := historyWindowForApp(state.HistoryWindowReplace, "term-small", "tok-small", 40, 7, []state.HistoryRow{{Text: "old", LineID: 1}})
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: window}}}
+	root := state.Root{
+		TerminalViews: state.TerminalViewStore{}.BindPane(binding),
+		Surface:       state.TerminalSurfaceStore{TerminalID: "term-small", Cols: 40, Rows: 8},
+	}
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 24})
+
+	next, effects := reducer(root, CopyModeEnterViewMsg{Binding: binding, Cols: 100, Rows: 30})
+	for _, effect := range effects {
+		if fn, ok := effect.(FuncEffect); ok {
+			next, _ = reducer(next, fn.Run(context.Background()))
+		}
+	}
+
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 40 {
+		t.Fatalf("history latest must use terminal columns inside a larger pane, got %#v", core.LatestRequests)
+	}
+	if next.CopyMode.BoundCols != 40 || next.CopyMode.ViewRows != 8 {
+		t.Fatalf("history scrolling must use terminal rows inside a larger pane, got %#v", next.CopyMode)
+	}
+}
+
 func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T) {
 	olderRows := make([]state.HistoryRow, 0, 24)
 	for i := 1; i <= 24; i++ {
@@ -1928,8 +1953,8 @@ func TestCopyModeOlderResponseKeepsLocalReflowColsBinding(t *testing.T) {
 		t.Fatalf("drain local reflow with older response: %v", err)
 	}
 
-	if runtime.State().History.Cols != 98 || runtime.State().CopyMode.BoundCols != 98 {
-		t.Fatalf("older response after local reflow must keep local cols binding, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
+	if runtime.State().History.Cols != 78 || runtime.State().CopyMode.BoundCols != 78 {
+		t.Fatalf("pane resize must keep history bound to terminal cols, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "history cols changed") {
@@ -4396,7 +4421,7 @@ func TestCopyModeLatestIgnoresLiveSurfaceColsForHistoryRequest(t *testing.T) {
 	}
 }
 
-func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) {
+func TestCopyModeHostResizeKeepsTerminalGeometryAndFrozenWindow(t *testing.T) {
 	core := &testkit.FakeCoreClient{
 		LatestResponses: []port.HistoryResult{
 			{Window: historyWindowForApp(
@@ -4447,8 +4472,8 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 78 {
 		t.Fatalf("host resize should not request a second latest snapshot, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 98 {
-		t.Fatalf("expected frozen copy mode to keep token and update cols locally, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 78 || runtime.State().CopyMode.ViewRows != 20 {
+		t.Fatalf("host resize must not expand frozen history beyond terminal geometry, got %#v", runtime.State().CopyMode)
 	}
 	if runtime.State().CopyMode.Mark == nil || runtime.State().CopyMode.Selection == nil || runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 0, Col: 4}) {
 		t.Fatalf("local reflow should preserve selection and cursor on same logical line, got %#v", runtime.State().CopyMode)
@@ -4504,14 +4529,14 @@ func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing
 	if len(effects) != 0 {
 		t.Fatalf("frozen copy resize should not schedule latest effect, got %#v", effects)
 	}
-	if next.History.Token != "tok-old" || next.History.Cols != 98 || len(next.History.Rows) == 0 {
-		t.Fatalf("resize should keep frozen authoritative source and only reflow rows, got %#v", next.History)
+	if next.History.Token != "tok-old" || next.History.Cols != 78 || len(next.History.Rows) == 0 {
+		t.Fatalf("pane resize should keep frozen authoritative source at terminal cols, got %#v", next.History)
 	}
 	if next.History.Pending != nil {
 		t.Fatalf("resize should not wait for latest at new cols, got %#v", next.History.Pending)
 	}
-	if next.CopyMode.BoundToken != "tok-old" || next.CopyMode.BoundCols != 98 || next.CopyMode.ViewRows != 36 {
-		t.Fatalf("copy mode should keep frozen binding and only update rect, got %#v", next.CopyMode)
+	if next.CopyMode.BoundToken != "tok-old" || next.CopyMode.BoundCols != 78 || next.CopyMode.ViewRows != 20 {
+		t.Fatalf("copy mode should keep frozen terminal geometry when only the pane changes, got %#v", next.CopyMode)
 	}
 	if next.CopyMode.Cursor != (state.CopyPosition{Row: 0, Col: 3}) || next.CopyMode.Mark == nil || next.CopyMode.Selection == nil {
 		t.Fatalf("local reflow should preserve cursor and selection, got %#v", next.CopyMode)
@@ -4546,11 +4571,11 @@ func TestCopyModeResizeRebindUpdatesPendingLatestLocalWidth(t *testing.T) {
 	if len(effects) != 0 {
 		t.Fatalf("pending latest resize should only change local reflow dimensions, got %#v", effects)
 	}
-	if next.History.Pending == nil || next.History.Pending.Cols != 98 {
-		t.Fatalf("pending latest width = %#v, want current content width 98", next.History.Pending)
+	if next.History.Pending == nil || next.History.Pending.Cols != 78 {
+		t.Fatalf("pending latest must remain bound to terminal width, got %#v", next.History.Pending)
 	}
-	if next.CopyMode.BoundCols != 98 || next.CopyMode.ViewRows != 36 || !next.CopyMode.Entering {
-		t.Fatalf("entering copy mode dimensions not rebound: %#v", next.CopyMode)
+	if next.CopyMode.BoundCols != 78 || next.CopyMode.ViewRows != 20 || !next.CopyMode.Entering {
+		t.Fatalf("entering copy mode must retain terminal dimensions: %#v", next.CopyMode)
 	}
 	if root.History.Pending.Cols != 78 {
 		t.Fatalf("reducer mutated the previous root pending request: %#v", root.History.Pending)
@@ -4644,6 +4669,10 @@ func TestCopyModeResizeRebindRecoversClippedSourceFromRowsFallback(t *testing.T)
 			ViewRows:   20,
 		},
 	}
+	binding, _ := root.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.DesiredCols = 98
+	binding.DesiredRows = 36
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
 
 	next, effects := reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
 	if len(effects) != 0 {
@@ -4988,8 +5017,8 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain resize rebind: %v", err)
 	}
-	if runtime.State().History.Token != "tok-old" || runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().History.Cols != 98 {
-		t.Fatalf("expected frozen active copy binding after local reflow, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
+	if runtime.State().History.Token != "tok-old" || runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().History.Cols != 78 {
+		t.Fatalf("expected frozen active copy binding to retain terminal cols, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
 	}
 
 	stale := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-stale", 98, 9, []state.HistoryRow{{Text: "previous-view", LineID: 40}})
@@ -6817,6 +6846,9 @@ func TestCopyModeLocalReflowResizeKeepsSelectionOnOriginalContent(t *testing.T) 
 	if got := SelectedText(runtime.State().History, runtime.State().CopyMode); got != "bcde" {
 		t.Fatalf("expected initial selected text before local reflow, got %q", got)
 	}
+	binding, _ = runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.DesiredCols = 6
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding)
 
 	if err := host.SendResize(8, 12); err != nil {
 		t.Fatalf("send resize: %v", err)
@@ -7255,6 +7287,10 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 		ViewportTop: len(loadedRows) - 8,
 		Cursor:      state.CopyPosition{Row: len(loadedRows) - 1},
 	}
+	binding, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.DesiredCols = 98
+	binding.DesiredRows = 8
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding)
 
 	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}}); err != nil {
 		t.Fatalf("post page down: %v", err)
@@ -7507,6 +7543,10 @@ func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 		ViewportTop: len(loadedRows) - 8,
 		Cursor:      state.CopyPosition{Row: len(loadedRows) - 1},
 	}
+	binding, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.DesiredCols = 98
+	binding.DesiredRows = 8
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding)
 
 	nextLineID := 1384
 	for page := 0; page < 10; page++ {

@@ -93,6 +93,34 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsCopyHistoryTerminalExtentAndLayout(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 6, Rows: 3},
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 6, Rows: 3},
+		History: state.HistoryStore{
+			PaneID: state.DefaultPaneID, ViewID: viewID, TerminalID: "term-1", Token: "tok-1", Cols: 6,
+			Rows: []state.HistoryRow{{Text: "old", LineID: 1}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active: true, PaneID: state.DefaultPaneID, ViewID: viewID, TerminalID: "term-1",
+			BoundToken: "tok-1", BoundCols: 6, ViewRows: 3,
+		},
+	}
+	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 6, 3, state.TerminalResizeRoleFollower, "surface", viewID, false)
+	binding.Layout = state.TerminalViewLayout{Mode: state.TerminalViewLayoutCenter}
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind != ContentCopyHistory || content.Extent != (ContentExtent{Known: true, Cols: 6, Rows: 3}) {
+		t.Fatalf("copy history must expose the bound terminal extent, got %#v", content)
+	}
+	if !content.Layout.Known || content.Layout.Mode != state.TerminalViewLayoutCenter {
+		t.Fatalf("copy history must preserve the live terminal layout, got %#v", content.Layout)
+	}
+}
+
 func TestR418RenderVMBuilderHistoryRenderableDoesNotMixLiveSurface(t *testing.T) {
 	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
 	root := bindTestPaneTerminal(state.Root{

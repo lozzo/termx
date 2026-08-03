@@ -3,6 +3,7 @@ import mobileAppSource from './AnyTTYApp.tsx?raw'
 import remoteControlSource from '../../ui/src/app/RemoteControlApp.tsx?raw'
 import nativeConnectionSource from '../android/app/src/main/java/com/anytty/app/NativeConnectionPlugin.kt?raw'
 import nativeRuntimeCoordinatorSource from '../android/app/src/main/java/com/anytty/app/NativeConnectionRuntimeCoordinator.kt?raw'
+import nativeRuntimeOwnerSource from '../android/app/src/main/java/com/anytty/app/NativeConnectionRuntimeOwner.kt?raw'
 
 describe('mobile product shell', () => {
   it('does not expose staging IP addresses in the official App shell', () => {
@@ -11,17 +12,22 @@ describe('mobile product shell', () => {
     expect(remoteControlSource).not.toContain('workspace.connection.unavailableReason.cloud_unavailable')
   })
 
-  it('waits for the replacement native generation before reconnecting after network recovery', () => {
-    expect(nativeConnectionSource).toContain('runtimeCoordinator.onNetworkAvailable(network)')
-    expect(nativeRuntimeCoordinatorSource).toContain('NETWORK_RESTART_DELAY_MILLIS = 300L')
-    expect(nativeRuntimeCoordinatorSource).toMatch(
-      /fun onNetworkAvailable[\s\S]*generationChanging\("network_available"[\s\S]*scheduleNetworkRestart/,
+  it('keeps the process runtime across backgrounding and replaces only a failed binding', () => {
+    expect(nativeConnectionSource).not.toContain('override fun onStop')
+    expect(nativeConnectionSource).not.toContain('ACTION_SCREEN_OFF')
+    expect(nativeConnectionSource).toContain('NativeConnectionRuntimeOwner.ensureStarted')
+    expect(nativeRuntimeCoordinatorSource).toMatch(/fun ensureForForeground[\s\S]*if \(!isRuntimeStarted\(\)\) startRuntime\(\)/)
+    expect(nativeRuntimeOwnerSource).toContain('private var goBridgeServer')
+    expect(nativeRuntimeOwnerSource).toContain('setEndpointActive')
+    expect(mobileAppSource).toContain('connectionStateEvents: createNativeConnectionStateEvents(machine.id, sessionManager)')
+    expect(mobileAppSource).toMatch(
+      /function createNativeInventoryEvents[\s\S]*sessionManager\.connectionState\.subscribe\(synchronize\)/,
     )
-    expect(nativeRuntimeCoordinatorSource).toMatch(
-      /fun finishNetworkAvailable[\s\S]*networkEpoch != epoch[\s\S]*restartRuntime\(\)[\s\S]*generationChanged\("network_available"/,
+    expect(mobileAppSource).toContain("document.addEventListener('anytty:binding-closed'")
+    expect(mobileAppSource).toContain('void runRecovery(false, true)')
+    expect(mobileAppSource).toMatch(
+      /else if \(reloadRegistry\)[\s\S]*await goBindingClient\.getEndpointRegistry\(\)[\s\S]*catch/,
     )
-    expect(mobileAppSource).toContain("addListener('generationChanging'")
-    expect(mobileAppSource).toContain("addListener('generationChangeFailed'")
     expect(mobileAppSource).toContain('connectionReady={nativeConnectionRecovery.connectionReady}')
     expect(mobileAppSource).toContain('onRetryConnectionRecovery={nativeConnectionRecovery.retryConnectionRecovery}')
   })

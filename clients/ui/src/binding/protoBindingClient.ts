@@ -53,6 +53,7 @@ export class ProtoBindingClient {
   private readonly connectionPolicyGetOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ConnectionPolicyState>>()
   private readonly connectionPolicyApplyOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ConnectionPolicyState>>()
   private readonly connectionSnapshotGetOperations = new Map<bigint, PendingOperation<AnyTTYClientBinding.ConnectionSnapshot>>()
+  private readonly sessionInvalidateOperations = new Map<bigint, PendingOperation<void>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, AnyTTYClientBinding.EventEnvelope>()
@@ -138,6 +139,12 @@ export class ProtoBindingClient {
     const request = create(AnyTTYClientBinding.ConnectionSnapshotGetRequestSchema, { requestId: crypto.randomUUID(), sessionHandle })
     const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'connectionSnapshotGet', value: request } }), signal)
     return await this.waitOperation(this.connectionSnapshotGetOperations, operation, signal)
+  }
+
+  async invalidateSession(sessionHandle: bigint, signal?: AbortSignal): Promise<void> {
+    const request = create(AnyTTYClientBinding.SessionInvalidateRequestSchema, { requestId: crypto.randomUUID(), sessionHandle })
+    const operation = await this.engineCommand(create(AnyTTYClientBinding.EngineCommandSchema, { command: { case: 'sessionInvalidate', value: request } }), signal)
+    await this.waitOperation(this.sessionInvalidateOperations, operation, signal)
   }
 
   private async engineCommand(command: AnyTTYClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
@@ -395,6 +402,15 @@ export class ProtoBindingClient {
         this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
+      case 'sessionInvalidate': {
+        const pending = this.sessionInvalidateOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.sessionInvalidateOperations.delete(event.value.operationHandle)
+        if (event.value.error) pending.reject(apiError(event.value.error, 'session invalidation failed'))
+        else pending.resolve()
+        this.releaseCompletedOperation(event.value.operationHandle)
+        return
+      }
       case 'application':
         this.sessions.get(event.value.sessionHandle)?.publish(event.value.event)
         return
@@ -451,6 +467,7 @@ export class ProtoBindingClient {
       case 'connectionPolicyGet': return this.connectionPolicyGetOperations.has(handle)
       case 'connectionPolicyApply': return this.connectionPolicyApplyOperations.has(handle)
       case 'connectionSnapshotGet': return this.connectionSnapshotGetOperations.has(handle)
+      case 'sessionInvalidate': return this.sessionInvalidateOperations.has(handle)
       default: return true
     }
   }
@@ -468,7 +485,7 @@ export class ProtoBindingClient {
   }
 
   private rejectAll(error: Error): void {
-    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations, this.sshCredentialProvisionOperations, this.connectionPolicyGetOperations, this.connectionPolicyApplyOperations, this.connectionSnapshotGetOperations]) {
+    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations, this.sshCredentialProvisionOperations, this.connectionPolicyGetOperations, this.connectionPolicyApplyOperations, this.connectionSnapshotGetOperations, this.sessionInvalidateOperations]) {
       for (const pending of registry.values()) pending.reject(error)
       registry.clear()
     }
@@ -665,6 +682,11 @@ class ProtoBindingSession implements ProtoClientSession {
     if (!this.alive) throw new Error('Proto session is closed')
     this.connection = await this.client.getConnectionSnapshot(this.handle)
     return this.connection
+  }
+
+  async invalidate(): Promise<void> {
+    if (!this.alive) return
+    await this.client.invalidateSession(this.handle)
   }
 
   async close(): Promise<void> {
@@ -872,6 +894,7 @@ function bindingOperationHandle(envelope: AnyTTYClientBinding.EventEnvelope): bi
     case 'connectionPolicyGet':
     case 'connectionPolicyApply':
     case 'connectionSnapshotGet':
+    case 'sessionInvalidate':
       return envelope.event.value.operationHandle
     default:
       return undefined

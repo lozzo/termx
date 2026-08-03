@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	clientruntime "github.com/anytty/anytty/client/runtime"
 	"github.com/anytty/anytty/proto/bindingpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -43,6 +44,13 @@ type ConnectionPolicyHost interface {
 	GetConnectionPolicy(context.Context, *bindingpb.ConnectionPolicyGetRequest) (*bindingpb.ConnectionPolicyGetResult, error)
 	// ApplyConnectionPolicy 原子持久化用户策略，并返回提交后的 planner 可用性投影。
 	ApplyConnectionPolicy(context.Context, *bindingpb.ConnectionPolicyApplyRequest) (*bindingpb.ConnectionPolicyApplyResult, error)
+}
+
+// SessionInvalidationHost removes one exact endpoint generation after a
+// confirmed platform network change. Closing a binding session is intentionally
+// weaker because normal UI consumers must not tear down a shared P2P session.
+type SessionInvalidationHost interface {
+	InvalidateSession(context.Context, clientruntime.EndpointSessionStamp) error
 }
 
 // EndpointShareHost 是 binding 对一次性 Endpoint share 的两阶段入口。

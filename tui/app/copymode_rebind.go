@@ -13,16 +13,18 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			return root, nil
 		}
 		root, activeViewID := rootWithActiveCopyHistorySession(root)
+		binding, hasBinding := copyModeTerminalBinding(root)
 		if root.CopyMode.Entering {
 			rect, ok := copyModeContentRect(root)
 			if !ok || rect.W <= 0 {
 				return root, nil
 			}
-			if rect.W == root.CopyMode.BoundCols && rect.H == root.CopyMode.ViewRows {
+			cols, rows := copyModeRebindViewportSize(root, binding, hasBinding, rect)
+			if cols == root.CopyMode.BoundCols && rows == root.CopyMode.ViewRows {
 				return root, nil
 			}
-			root.History = root.History.RebindPendingLatest(rect.W)
-			root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
+			root.History = root.History.RebindPendingLatest(cols)
+			root.CopyMode = root.CopyMode.Resize(cols, rows)
 			root = root.Advance()
 			return saveCopyHistorySessionForView(root, activeViewID), nil
 		}
@@ -33,11 +35,12 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 		if !ok {
 			return root, nil
 		}
-		if rect.W == root.CopyMode.BoundCols {
-			if rect.H == root.CopyMode.ViewRows {
+		cols, rows := copyModeRebindViewportSize(root, binding, hasBinding, rect)
+		if cols == root.CopyMode.BoundCols {
+			if rows == root.CopyMode.ViewRows {
 				return root, nil
 			}
-			root.CopyMode = root.CopyMode.SetViewRows(rect.H)
+			root.CopyMode = root.CopyMode.SetViewRows(rows)
 			root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 			root = root.Advance()
 			return saveCopyHistorySessionForView(root, activeViewID), nil
@@ -47,7 +50,7 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 		}
 		if len(root.History.SourceLines) == 0 {
 			root.History = root.History.InvalidateWindow()
-			root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
+			root.CopyMode = root.CopyMode.Resize(cols, rows)
 			root.CopyMode.BoundToken = ""
 			root.CopyMode.ViewportTop = 0
 			root.CopyMode.Cursor = state.CopyPosition{}
@@ -60,15 +63,38 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			root = root.Advance()
 			return saveCopyHistorySessionForView(root, activeViewID), nil
 		}
-		root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
+		root.CopyMode = root.CopyMode.Resize(cols, rows)
 		beforeHistory := root.History
-		root.History.Cols = rect.W
-		root.History.Rows, root.History.Lines = state.ReflowHistoryLogicalLines(root.History.SourceLines, rect.W)
+		root.History.Cols = cols
+		root.History.Rows, root.History.Lines = state.ReflowHistoryLogicalLines(root.History.SourceLines, cols)
 		root.CopyMode = root.CopyMode.RebindToReflowedHistory(beforeHistory, root.History)
 		root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 		root = root.Advance()
 		return saveCopyHistorySessionForView(root, activeViewID), nil
 	}
+}
+
+func copyModeTerminalBinding(root state.Root) (state.TerminalViewBinding, bool) {
+	if root.CopyMode.ViewID != "" {
+		binding, ok := root.TerminalViews.Views[root.CopyMode.ViewID]
+		return binding, ok && binding.TerminalID == root.CopyMode.TerminalID
+	}
+	return activeTerminalViewBinding(root)
+}
+
+func copyModeRebindViewportSize(root state.Root, binding state.TerminalViewBinding, hasBinding bool, rect render.Rect) (int, int) {
+	fallbackCols, fallbackRows := root.CopyMode.BoundCols, root.CopyMode.ViewRows
+	if fallbackCols <= 0 {
+		fallbackCols = rect.W
+	}
+	if fallbackRows <= 0 {
+		fallbackRows = rect.H
+	}
+	if !hasBinding {
+		return fallbackCols, fallbackRows
+	}
+	cols, terminalRows := copyModeTerminalViewportSize(root, binding, fallbackCols, fallbackRows)
+	return cols, copyModeVisibleRows(terminalRows, rect.H)
 }
 
 func copyModeLayoutMayNeedRebind(msg Msg) bool {

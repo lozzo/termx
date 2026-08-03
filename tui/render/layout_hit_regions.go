@@ -40,7 +40,10 @@ func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin R
 		return appendTranslatedRegionsWithOwner(out, exitedContentHitRegions(content, origin.W, origin.H), origin, ownerID, viewport)
 	}
 	if !centeredActionContentKind(content.Kind) || len(content.Lines) == 0 {
-		return appendTranslatedRegionsWithOwner(out, content.HitRegions, origin, ownerID, viewport)
+		extent := normalizeContentExtent(content.Extent, origin)
+		extent = applyContentLayoutToExtent(content.Layout, extent, origin)
+		regions := contentViewportHitRegions(content.HitRegions, extent, origin)
+		return appendTranslatedRegionsWithOwner(out, regions, origin, ownerID, viewport)
 	}
 	firstLine, startY := centeredActionContentWindow(content.Kind, len(content.Lines), origin.H)
 	regions := make([]HitRegion, 0, len(content.HitRegions))
@@ -95,6 +98,10 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 		contentRegions := floating.Floating.Content.HitRegions
 		if floating.Floating.Content.Kind == ContentExitedPane {
 			contentRegions = exitedContentHitRegions(floating.Floating.Content, floating.ContentRect.W, floating.ContentRect.H)
+		} else {
+			extent := normalizeContentExtent(floating.Floating.Content.Extent, floating.ContentRect)
+			extent = applyContentLayoutToExtent(floating.Floating.Content.Layout, extent, floating.ContentRect)
+			contentRegions = contentViewportHitRegions(contentRegions, extent, floating.ContentRect)
 		}
 		out = appendTranslatedRegionsWithOwnerKind(out, contentRegions, floating.ContentRect, panelID, true, viewport)
 		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: panelID, Floating: true, ActionID: ActionFloatingRaise.String(), Invocation: invocationForProjection(ActionFloatingRaise), TargetMode: HitTargetExplicit}, viewport)

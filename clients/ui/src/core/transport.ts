@@ -106,6 +106,9 @@ export interface ConnectionInfo {
   type?: 'p2p' | 'relay' | 'unknown' | undefined
   localAddr?: string | undefined
   remoteAddr?: string | undefined
+  localBaseAddr?: string | undefined
+  remoteBaseAddr?: string | undefined
+  candidatePairId?: string | undefined
   candidateType?: string | undefined
   remoteCandidateType?: string | undefined
   rtt?: number | undefined

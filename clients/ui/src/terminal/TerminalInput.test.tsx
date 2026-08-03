@@ -272,10 +272,9 @@ describe('Terminal input modifier boundary', () => {
     expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
   })
 
-  it('keeps a custom-key once modifier after failure and consumes it after a later accepted send', async () => {
+  it('retries a rejected custom-key modifier through onData and consumes it after acceptance', async () => {
     const onInput = vi.fn()
       .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
       .mockReturnValueOnce(true)
     const onModifierStateChange = vi.fn()
     render(<Terminal
@@ -295,16 +294,12 @@ describe('Terminal input modifier boundary', () => {
       expect(xterm.emitKey(event())).toBe(true)
       xterm.emitData('c')
     })
-    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x03', 'c'])
-    expect(onModifierStateChange).not.toHaveBeenCalled()
-
-    act(() => expect(xterm.emitKey(event())).toBe(false))
-    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x03', 'c', '\x03'])
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x03', '\x03'])
     expect(onModifierStateChange).toHaveBeenCalledOnce()
     expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
   })
 
-  it('keeps arbitrary onData and toolbar paste raw, then applies only navigation and consumes once synchronously', async () => {
+  it('applies modifiers to Android-style onData ASCII while leaving IME and paste batches raw', async () => {
     const onInput = vi.fn(() => true)
     const onModifierStateChange = vi.fn()
     const ref = createRef<TerminalHandle>()
@@ -322,27 +317,20 @@ describe('Terminal input modifier boundary', () => {
     const xterm = terminalHarness.instances[0] as FakeXTermInstance
 
     act(() => {
-      xterm.emitData('c')
+      xterm.emitData('d')
       xterm.emitData('中')
       xterm.emitData('p')
       xterm.emitData('paste batch')
       xterm.emitData('\x1b[Z')
     })
-    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['c', '中', 'p', 'paste batch', '\x1b[Z'])
-    expect(onModifierStateChange).not.toHaveBeenCalled()
+    expect(onInput.mock.calls.map(([data]) => data)).toEqual(['\x1b\x04', '中', 'p', 'paste batch', '\x1b[Z'])
+    expect(onModifierStateChange).toHaveBeenCalledOnce()
+    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
 
     expect(ref.current?.pasteText('p')).toBe(true)
     expect(ref.current?.pasteText('paste text')).toBe(true)
     expect(terminalHarness.sessionSendInput.mock.calls.map(([data]) => data)).toEqual(['p', 'paste text'])
-    expect(onModifierStateChange).not.toHaveBeenCalled()
-
-    act(() => {
-      xterm.emitData('\x1b[A')
-      xterm.emitData('\x1b[A')
-    })
-    expect(onInput.mock.calls.slice(-2).map(([data]) => data)).toEqual(['\x1b[1;7A', '\x1b[A'])
     expect(onModifierStateChange).toHaveBeenCalledOnce()
-    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
   })
 
   it('keeps an onData navigation once modifier until the target accepts it', async () => {
@@ -390,6 +378,8 @@ describe('Terminal input modifier boundary', () => {
     act(() => {
       expect(xterm.emitKey(createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent)).toBe(false)
       expect(xterm.emitKey(createEvent.keyDown(document.body, { key: 'c' }) as KeyboardEvent)).toBe(false)
+      xterm.emitData('d')
+      xterm.emitData('d')
       xterm.emitData('\x1b[D')
       xterm.emitData('\x1b[D')
     })
@@ -397,6 +387,8 @@ describe('Terminal input modifier boundary', () => {
     expect(onInput.mock.calls.map(([data]) => data)).toEqual([
       '\x1b\x03',
       '\x1b\x03',
+      '\x1b\x04',
+      '\x1b\x04',
       '\x1b[1;7D',
       '\x1b[1;7D',
     ])
@@ -635,11 +627,25 @@ describe('Terminal input modifier boundary', () => {
     act(() => xterm.emitRender())
 
     const status = await screen.findByTestId('anytty-history-position')
-    expect(status.hidden).toBe(false)
+    await waitFor(() => expect(status.classList.contains('flex')).toBe(true))
+    expect(status.hasAttribute('hidden')).toBe(false)
+    expect(status.classList.contains('hidden')).toBe(false)
     expect(status.textContent).toContain('/ 1')
+    expect(screen.queryByTestId('anytty-history-search')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Search history' }))
     expect(await screen.findByTestId('anytty-history-search')).toBeTruthy()
-    expect(status.hidden).toBe(false)
+    expect(status.classList.contains('flex')).toBe(true)
+  })
+
+  it('keeps the history search trigger visually hidden until history status is available', async () => {
+    render(<Terminal machineId="studio" terminalId="term-shell" session={session} renderer="dom" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+
+    const status = screen.getByTestId('anytty-history-position')
+    expect(status.hasAttribute('hidden')).toBe(false)
+    expect(status.classList.contains('hidden')).toBe(true)
+    expect(status.classList.contains('flex')).toBe(false)
+    expect(screen.queryByTestId('anytty-history-search')).toBeNull()
   })
 
   it('returns the underlying acceptance result from imperative input and paste handles', async () => {

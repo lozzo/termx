@@ -15,27 +15,32 @@ import (
 // ConnectionSnapshot 是同一 ReadyPeerSession 的即时网络投影。
 // Route/generation 来自 runtime；candidate/RTT 来自实际 peer stats，未知字段必须保持空值而不是推断。
 type ConnectionSnapshot struct {
-	RouteID             endpoint.RouteID
-	RouteKind           endpoint.RouteKind
-	ObservedPath        string
-	SelectionReason     string
-	SampledAt           time.Time
-	RoundTrip           time.Duration
-	LocalCandidateType  string
-	RemoteCandidateType string
-	LocalAddress        string
-	RemoteAddress       string
-	LocalPort           uint16
-	RemotePort          uint16
-	LocalProtocol       string
-	RemoteProtocol      string
-	RelayTransport      string
-	NetworkClass        string
-	BytesSent           uint64
-	BytesReceived       uint64
-	PacketsSent         uint64
-	LossEvents          uint64
-	Connected           bool
+	RouteID              endpoint.RouteID
+	RouteKind            endpoint.RouteKind
+	ObservedPath         string
+	SelectionReason      string
+	SampledAt            time.Time
+	RoundTrip            time.Duration
+	LocalCandidateType   string
+	RemoteCandidateType  string
+	LocalAddress         string
+	RemoteAddress        string
+	LocalPort            uint16
+	RemotePort           uint16
+	PairID               string
+	LocalRelatedAddress  string
+	RemoteRelatedAddress string
+	LocalRelatedPort     uint16
+	RemoteRelatedPort    uint16
+	LocalProtocol        string
+	RemoteProtocol       string
+	RelayTransport       string
+	NetworkClass         string
+	BytesSent            uint64
+	BytesReceived        uint64
+	PacketsSent          uint64
+	LossEvents           uint64
+	Connected            bool
 }
 
 // ConnectionSnapshotProvider 由持有实际 transport 的 ReadySession 实现。

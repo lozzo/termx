@@ -25,3 +25,4 @@
 /剪贴板 *.png
 Screenshot_*.jpg
 *-debug-*.zip
+/docs/PRODUCTION_OPERATIONS.local.md

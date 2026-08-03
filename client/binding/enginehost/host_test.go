@@ -3,6 +3,8 @@ package enginehost
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"sync/atomic"
 	"testing"
 
 	"github.com/anytty/anytty/client/adapter/direct"
@@ -10,9 +12,13 @@ import (
 	"github.com/anytty/anytty/client/endpoint"
 	"github.com/anytty/anytty/client/port"
 	clientruntime "github.com/anytty/anytty/client/runtime"
+	cloudclient "github.com/anytty/anytty/cloud/client"
+	"github.com/anytty/anytty/proto/bindingpb"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/proto/remoteauthpb"
 	"github.com/anytty/anytty/shared/remoteauth"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
@@ -122,6 +128,89 @@ func TestRoutePlanEnvironmentDisablesCloudWithoutAConnector(t *testing.T) {
 	if attempts := plan.Groups()[0].Attempts(); len(attempts) != 1 || attempts[0].Route.ID != "direct" {
 		t.Fatalf("Cloud failure affected Direct plan: %#v", attempts)
 	}
+}
+
+func TestAttemptCloudProfileSnapshotAvoidsDuplicatePlatformResolve(t *testing.T) {
+	broker := binding.NewPlatformBroker()
+	defer broker.Close()
+	var calls atomic.Int32
+	pumpPlatformResponses(t, broker, func(request *bindingpb.PlatformRequest) *bindingpb.PlatformResponse {
+		calls.Add(1)
+		return &bindingpb.PlatformResponse{RequestId: request.GetRequestId(), Response: &bindingpb.PlatformResponse_CloudProfile{CloudProfile: &bindingpb.CloudProfileRecord{
+			AccountProfileRef: "account:test", ControllerAddress: "controller.test:443", ControllerServerName: "controller.test",
+		}}}
+	})
+	profiles := platformCloudProfiles{
+		broker: broker,
+		bootID: uuid.NewString(),
+		cache:  &platformCloudProfileCache{clients: make(map[string]*cloudclient.Client)},
+	}
+	first, err := profiles.Resolve(context.Background(), "account:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := profiles.Resolve(context.Background(), "account:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second || calls.Load() != 1 {
+		t.Fatalf("profile clients same=%t platform resolves=%d", first == second, calls.Load())
+	}
+}
+
+func TestAttemptCredentialSnapshotAvoidsDuplicatePlatformResolve(t *testing.T) {
+	identity, err := remoteauth.GenerateClientAccessIdentity("studio", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := binding.NewPlatformBroker()
+	defer broker.Close()
+	var calls atomic.Int32
+	pumpPlatformResponses(t, broker, func(request *bindingpb.PlatformRequest) *bindingpb.PlatformResponse {
+		calls.Add(1)
+		return &bindingpb.PlatformResponse{RequestId: request.GetRequestId(), Response: &bindingpb.PlatformResponse_Credential{Credential: &bindingpb.CredentialRecord{
+			EndpointId: "studio", CredentialRef: "credential:studio", PublicKey: append([]byte(nil), identity.PublicKey...),
+			KeyFingerprint: identity.Fingerprint, CapabilityGrant: "grant", CloudRouteGrant: []byte("route"),
+		}}}
+	})
+	credentials := newPlatformCredentials(broker)
+	first, err := credentials.ResolveClientCredential(context.Background(), "studio", "credential:studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Identity.PublicKey[0] ^= 0xff
+	second, err := credentials.ResolveClientCredential(context.Background(), "studio", "credential:studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 || !ed25519.PublicKey(second.Identity.PublicKey).Equal(identity.PublicKey) {
+		t.Fatalf("credential platform resolves=%d clone matches=%t", calls.Load(), ed25519.PublicKey(second.Identity.PublicKey).Equal(identity.PublicKey))
+	}
+}
+
+func pumpPlatformResponses(t *testing.T, broker *binding.PlatformBroker, response func(*bindingpb.PlatformRequest) *bindingpb.PlatformResponse) {
+	t.Helper()
+	go func() {
+		for {
+			payload, err := broker.NextRequest(context.Background())
+			if err != nil {
+				return
+			}
+			request := &bindingpb.PlatformRequest{}
+			if err := proto.Unmarshal(payload, request); err != nil {
+				t.Errorf("decode platform request: %v", err)
+				return
+			}
+			encoded, err := proto.Marshal(response(request))
+			if err != nil {
+				t.Errorf("encode platform response: %v", err)
+				return
+			}
+			if err := broker.Complete(encoded); err != nil {
+				return
+			}
+		}
+	}()
 }
 
 type fakeDirectPeerFactory struct{ direct.PeerFactory }

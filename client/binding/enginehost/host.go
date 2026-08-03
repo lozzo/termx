@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -107,13 +108,14 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 		return nil, err
 	}
 	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
-	credentials := platformCredentials{broker: host.options.Broker}
+	credentials := newPlatformCredentials(host.options.Broker)
 	authorizer := peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}
-	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials, host.cloudProfiles())
+	profiles := host.cloudProfiles()
+	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials, profiles)
 	if err != nil {
 		return nil, err
 	}
-	dialers, err := clientruntime.NewPeerConnectorMap(host.routeConnectors(authorizer))
+	dialers, err := clientruntime.NewPeerConnectorMap(host.routeConnectorsWithProfiles(authorizer, profiles))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +127,18 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 	return host.owner.AcquirePlanned(ctx, planningTarget, routeID, intent, config, environment, systemadapter.Clock{}, dialers)
 }
 
+// InvalidateSession removes the exact current generation before the next
+// OpenSession samples platform networking again. Stale handles cannot close a
+// newer winner because SessionOwner validates the complete stamp.
+func (host *Host) InvalidateSession(ctx context.Context, stamp clientruntime.EndpointSessionStamp) error {
+	return host.owner.Disconnect(ctx, clientruntime.DisconnectRequest{Stamp: stamp})
+}
+
 func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) map[endpoint.RouteKind]clientruntime.PeerConnector {
+	return host.routeConnectorsWithProfiles(authorizer, host.cloudProfiles())
+}
+
+func (host *Host) routeConnectorsWithProfiles(authorizer peeradapter.CapabilityAuthorizer, profiles platformCloudProfiles) map[endpoint.RouteKind]clientruntime.PeerConnector {
 	connectors := make(map[endpoint.RouteKind]clientruntime.PeerConnector, 3)
 	if host.options.DirectPeers != nil {
 		connectors[endpoint.RouteDirectWebRTCTCP] = &direct.Dialer{
@@ -141,7 +154,7 @@ func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) m
 	cloudPeers, cloudSupported := host.options.DirectPeers.(cloudadapter.PeerFactory)
 	if validCloudProduct(host.options.CloudProduct) && cloudSupported {
 		connectors[endpoint.RouteManagedWebRTC] = &platformCloudConnector{
-			profiles: host.cloudProfiles(), peers: cloudPeers,
+			profiles: profiles, peers: cloudPeers,
 			authorization: authorizer, product: host.options.CloudProduct, clientName: host.options.ClientName,
 		}
 	}
@@ -477,10 +490,20 @@ func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, routes [
 type platformCloudProfiles struct {
 	broker *binding.PlatformBroker
 	bootID string
+	cache  *platformCloudProfileCache
+}
+
+type platformCloudProfileCache struct {
+	mu      sync.Mutex
+	clients map[string]*cloudclient.Client
 }
 
 func (host *Host) cloudProfiles() platformCloudProfiles {
-	return platformCloudProfiles{broker: host.options.Broker, bootID: host.cloudBootID}
+	return platformCloudProfiles{
+		broker: host.options.Broker,
+		bootID: host.cloudBootID,
+		cache:  &platformCloudProfileCache{clients: make(map[string]*cloudclient.Client)},
+	}
 }
 
 // Resolve 只把平台 profile 投影成 Go Cloud protocol client；平台不建立网络连接，也不拥有 attempt。
@@ -488,6 +511,13 @@ func (source platformCloudProfiles) Resolve(ctx context.Context, reference strin
 	reference = strings.TrimSpace(reference)
 	if source.broker == nil || reference == "" {
 		return nil, fmt.Errorf("Cloud account profile is unavailable")
+	}
+	if source.cache != nil {
+		source.cache.mu.Lock()
+		defer source.cache.mu.Unlock()
+		if client := source.cache.clients[reference]; client != nil {
+			return client, nil
+		}
 	}
 	response, err := source.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudProfileResolve{
 		CloudProfileResolve: &bindingpb.CloudProfileResolveRequest{AccountProfileRef: reference},
@@ -502,10 +532,17 @@ func (source platformCloudProfiles) Resolve(ctx context.Context, reference strin
 	if profile == nil || profile.GetAccountProfileRef() != reference {
 		return nil, fmt.Errorf("platform Cloud profile response does not match %q", reference)
 	}
-	return cloudclient.NewClient(cloudclient.Config{
+	client, err := cloudclient.NewClient(cloudclient.Config{
 		ControllerAddress: profile.GetControllerAddress(), ControllerServerName: profile.GetControllerServerName(),
 		ControllerCAPEM: append([]byte(nil), profile.GetControllerCaPem()...), BootID: source.bootID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if source.cache != nil {
+		source.cache.clients[reference] = client
+	}
+	return client, nil
 }
 
 func (source platformCloudProfiles) Available(ctx context.Context, reference string) bool {
@@ -526,10 +563,12 @@ func (connector *platformCloudConnector) Connect(ctx context.Context, request cl
 	if connector == nil {
 		return nil, fmt.Errorf("Cloud connector is unavailable")
 	}
+	startedAt := time.Now()
 	protocolClient, err := connector.profiles.Resolve(ctx, request.Route().AccountProfileRef)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("anytty cloud connect generation=%d stage=cloud_profile_resolve stage_ms=%d total_ms=%d", request.Stamp().Generation, time.Since(startedAt).Milliseconds(), time.Since(startedAt).Milliseconds())
 	return (&cloudadapter.Dialer{
 		Peers: connector.peers, Cloud: protocolClient, Authorization: connector.authorization,
 		Product: connector.product, ClientName: connector.clientName,
@@ -540,7 +579,19 @@ func validCloudProduct(product cloudv1.ClientProduct) bool {
 	return product >= cloudv1.ClientProduct_CLIENT_PRODUCT_TUI && product <= cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI
 }
 
-type platformCredentials struct{ broker *binding.PlatformBroker }
+type platformCredentials struct {
+	broker *binding.PlatformBroker
+	cache  *platformCredentialCache
+}
+
+type platformCredentialCache struct {
+	mu          sync.Mutex
+	credentials map[string]remoteauth.ClientAccessCredential
+}
+
+func newPlatformCredentials(broker *binding.PlatformBroker) platformCredentials {
+	return platformCredentials{broker: broker, cache: &platformCredentialCache{credentials: make(map[string]remoteauth.ClientAccessCredential)}}
+}
 
 func (source platformCredentials) Available(ctx context.Context, endpointID, reference string) bool {
 	_, err := source.ResolveClientCredential(ctx, endpointID, reference)
@@ -548,6 +599,14 @@ func (source platformCredentials) Available(ctx context.Context, endpointID, ref
 }
 
 func (source platformCredentials) ResolveClientCredential(ctx context.Context, endpointID, reference string) (remoteauth.ClientAccessCredential, error) {
+	cacheKey := endpointID + "\x00" + reference
+	if source.cache != nil {
+		source.cache.mu.Lock()
+		defer source.cache.mu.Unlock()
+		if credential, ok := source.cache.credentials[cacheKey]; ok {
+			return clonePlatformCredential(credential), nil
+		}
+	}
 	response, err := source.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialResolve{
 		CredentialResolve: &bindingpb.CredentialResolveRequest{EndpointId: endpointID, CredentialRef: reference},
 	}})
@@ -562,7 +621,19 @@ func (source platformCredentials) ResolveClientCredential(ctx context.Context, e
 	if err := identity.ValidatePublic(); err != nil {
 		return remoteauth.ClientAccessCredential{}, err
 	}
-	return remoteauth.ClientAccessCredential{Version: 3, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), CloudEdgeLocator: append([]byte(nil), record.GetCloudEdgeLocator()...), UpdatedAt: time.Now().UTC()}, nil
+	credential := remoteauth.ClientAccessCredential{Version: 3, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), CloudEdgeLocator: append([]byte(nil), record.GetCloudEdgeLocator()...), UpdatedAt: time.Now().UTC()}
+	if source.cache != nil {
+		source.cache.credentials[cacheKey] = credential
+	}
+	return clonePlatformCredential(credential), nil
+}
+
+func clonePlatformCredential(credential remoteauth.ClientAccessCredential) remoteauth.ClientAccessCredential {
+	credential.Identity.PublicKey = append(ed25519.PublicKey(nil), credential.Identity.PublicKey...)
+	credential.Identity.PrivateKey = nil
+	credential.CloudRouteGrant = append([]byte(nil), credential.CloudRouteGrant...)
+	credential.CloudEdgeLocator = append([]byte(nil), credential.CloudEdgeLocator...)
+	return credential
 }
 
 func (source platformCredentials) UpdateCloudEdgeLocator(ctx context.Context, endpointID, reference string, locator []byte) error {
@@ -582,6 +653,12 @@ func (source platformCredentials) UpdateCloudEdgeLocator(ctx context.Context, en
 	}
 	if record.GetEndpointId() != endpointID || record.GetCredentialRef() != reference || record.GetKeyFingerprint() != credential.Identity.Fingerprint || record.GetCapabilityGrant() != credential.CapabilityGrant || !bytes.Equal(record.GetCloudRouteGrant(), credential.CloudRouteGrant) || !bytes.Equal(record.GetCloudEdgeLocator(), locator) {
 		return errors.New("platform secure store changed the Cloud credential while updating its Edge locator")
+	}
+	if source.cache != nil {
+		source.cache.mu.Lock()
+		credential.CloudEdgeLocator = append([]byte(nil), locator...)
+		source.cache.credentials[endpointID+"\x00"+reference] = credential
+		source.cache.mu.Unlock()
 	}
 	return nil
 }
@@ -690,6 +767,7 @@ var _ binding.PairingHost = (*Host)(nil)
 var _ binding.CredentialHost = (*Host)(nil)
 var _ binding.EndpointRegistryHost = (*Host)(nil)
 var _ binding.ConnectionPolicyHost = (*Host)(nil)
+var _ binding.SessionInvalidationHost = (*Host)(nil)
 var _ binding.EndpointShareHost = (*Host)(nil)
 var _ peeradapter.CredentialSource = platformCredentials{}
 var _ peeradapter.SignerSource = platformCredentials{}

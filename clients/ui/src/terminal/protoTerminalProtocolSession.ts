@@ -552,7 +552,10 @@ function changedRowsANSI(screen: CanonicalLiveScreen, changedRows: number[]): st
 }
 
 function rowsText(rows: ScreenRow[]): string {
-  return rows.map((row) => row.cells.map((cell) => cell.content || ' '.repeat(Math.max(1, cell.width))).join('').replace(/\s+$/, '')).join('\r\n')
+  return rows.map((row) => row.cells.map((cell) => {
+    if (isWideContinuationCell(cell)) return ''
+    return cell.content || ' '.repeat(Math.max(1, cell.width))
+  }).join('').replace(/\s+$/, '')).join('\r\n')
 }
 
 function rowsANSI(rows: ScreenRow[], cols: number): string {
@@ -564,6 +567,7 @@ function rowANSI(row: ScreenRow, cols: number): string {
   let width = 0
   let output = ''
   for (const cell of row.cells) {
+    if (isWideContinuationCell(cell)) continue
     const style = styleANSI(cell.style)
     if (style !== current) {
       output += `\u001b[0m${style}`
@@ -575,6 +579,10 @@ function rowANSI(row: ScreenRow, cols: number): string {
   }
   if (cols > width) output += `\u001b[0m${styleANSI(row.tailFill)}${' '.repeat(cols - width)}`
   return `${output}\u001b[0m`
+}
+
+function isWideContinuationCell(cell: ScreenRow['cells'][number]): boolean {
+  return cell.width <= 0 && cell.content === ''
 }
 
 function styleANSI(style: CellStyle | undefined): string {

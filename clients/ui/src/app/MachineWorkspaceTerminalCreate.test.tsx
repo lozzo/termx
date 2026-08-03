@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { forwardRef, useImperativeHandle } from 'react'
@@ -22,6 +22,8 @@ const terminalSendInput = vi.hoisted(() => vi.fn())
 const terminalPasteText = vi.hoisted(() => vi.fn())
 const terminalFocus = vi.hoisted(() => vi.fn())
 const terminalBlur = vi.hoisted(() => vi.fn())
+const terminalFit = vi.hoisted(() => vi.fn())
+const terminalReattach = vi.hoisted(() => vi.fn())
 const terminalHarness = vi.hoisted(() => ({ exposeHandle: true, selection: '' }))
 const originalInnerWidth = window.innerWidth
 const originalMatchMediaDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia')
@@ -59,8 +61,8 @@ vi.mock('../terminal/Terminal', () => ({
       releaseResizeOwner: async () => ({ canResize: false, reason: 'follower' }),
       focus: () => terminalFocus(terminalId),
       blur: () => terminalBlur(terminalId),
-      fit: () => {},
-      reattach: () => {},
+      fit: () => terminalFit(terminalId),
+      reattach: (...args: unknown[]) => terminalReattach(terminalId, ...args),
       selectAll: () => { terminalHarness.selection = 'selected terminal text' },
       selectVisible: () => { terminalHarness.selection = 'selected terminal text' },
       getSelection: () => terminalHarness.selection,
@@ -84,6 +86,8 @@ describe('MachineWorkspace terminal creation', () => {
     terminalPasteText.mockReset().mockReturnValue(true)
     terminalFocus.mockReset()
     terminalBlur.mockReset()
+    terminalFit.mockReset()
+    terminalReattach.mockReset()
     terminalHarness.exposeHandle = true
     terminalHarness.selection = ''
     await anyttyI18n.changeLanguage('en')
@@ -151,7 +155,7 @@ describe('MachineWorkspace terminal creation', () => {
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
     const terminal = {
       terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
-      command: '/bin/zsh', cols: 80, rows: 24,
+      command: '/bin/zsh', cwd: '/home/ada', cols: 80, rows: 24,
     }
     const session = new MockProtoSession('studio', () => protoResult('acknowledge', create(AcknowledgeResultSchema)))
 
@@ -166,6 +170,13 @@ describe('MachineWorkspace terminal creation', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
     const header = await screen.findByTestId('anytty-terminal-header')
+    const terminalSwitcher = within(header).getByRole('button', { name: 'Switch terminal: Studio · Shell · /home/ada' })
+    const terminalSummary = within(terminalSwitcher).getByTestId('anytty-terminal-title')
+    expect(terminalSwitcher.getAttribute('title')).toBe('Studio · Shell · /home/ada')
+    expect(terminalSwitcher.classList.contains('flex-col')).toBe(false)
+    expect(terminalSummary.textContent).toBe('Studio · Shell · /home/ada')
+    expect(terminalSummary.classList.contains('whitespace-nowrap')).toBe(true)
+    expect(terminalSummary.classList.contains('truncate')).toBe(true)
     expect(within(header).getByRole('button', { name: 'Open files' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Control resize' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Terminal tools' })).toBeTruthy()
@@ -616,7 +627,13 @@ describe('MachineWorkspace terminal creation', () => {
     />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Prevent the system keyboard from opening' }))
+    const keyboard = screen.getByRole('button', { name: 'Show system keyboard' })
+    vi.useFakeTimers()
+    fireEvent.pointerDown(keyboard)
+    act(() => vi.advanceTimersByTime(400))
+    fireEvent.pointerUp(keyboard)
+    fireEvent.click(keyboard)
+    vi.useRealTimers()
     await waitFor(() => {
       const props = terminalRender.mock.calls.at(-1)?.[0] as { preventFocus: boolean }
       expect(props.preventFocus).toBe(true)
@@ -848,5 +865,37 @@ describe('MachineWorkspace terminal creation', () => {
 
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('keeps a healthy terminal channel attached across a foreground resume', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const session = new MockProtoSession('studio')
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect: vi.fn(async () => session) }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    terminalFit.mockClear()
+    terminalReattach.mockClear()
+
+    act(() => { document.dispatchEvent(new Event('anytty:resume')) })
+
+    expect(terminalFit).toHaveBeenCalledWith('term-shell')
+    expect(terminalReattach).not.toHaveBeenCalled()
+
+    act(() => { document.dispatchEvent(new Event('anytty:binding-closed')) })
+
+    expect(terminalReattach).toHaveBeenCalledWith('term-shell', session, { forceTerminalChannel: true })
   })
 })

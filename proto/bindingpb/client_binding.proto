@@ -101,6 +101,11 @@ message ConnectionSnapshot {
   string remote_ip = 19;
   uint32 local_port = 20;
   uint32 remote_port = 21;
+  string candidate_pair_id = 22;
+  string local_related_ip = 23;
+  uint32 local_related_port = 24;
+  string remote_related_ip = 25;
+  uint32 remote_related_port = 26;
 }
 
 // ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。
@@ -162,6 +167,21 @@ message ConnectionSnapshotGetResult {
   uint64 session_handle = 3;
   ConnectionSnapshot connection = 4;
   anytty.api.v1.ApiError error = 5;
+}
+
+// SessionInvalidateRequest removes the exact Go-owned endpoint generation behind
+// a binding session. It is reserved for confirmed platform network changes; a
+// normal CloseSession still releases only the caller's consumer lease.
+message SessionInvalidateRequest {
+  string request_id = 1;
+  uint64 session_handle = 2;
+}
+
+message SessionInvalidateResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  uint64 session_handle = 3;
+  anytty.api.v1.ApiError error = 4;
 }
 
 message OpenSessionRequest {
@@ -318,6 +338,7 @@ message EngineCommand {
     ConnectionPolicyGetRequest connection_policy_get = 9;
     ConnectionPolicyApplyRequest connection_policy_apply = 10;
     ConnectionSnapshotGetRequest connection_snapshot_get = 11;
+    SessionInvalidateRequest session_invalidate = 12;
   }
 }
 
@@ -385,6 +406,7 @@ message EventEnvelope {
     ConnectionPolicyGetResult connection_policy_get = 24;
     ConnectionPolicyApplyResult connection_policy_apply = 25;
     ConnectionSnapshotGetResult connection_snapshot_get = 26;
+    SessionInvalidateResult session_invalidate = 27;
   }
 }
 

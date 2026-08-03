@@ -1,79 +1,59 @@
 package com.anytty.app
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeConnectionRuntimeCoordinatorTest {
     @Test
-    fun delayedNetworkAvailabilityCannotRestartAfterReset() {
+    fun loadReusesAnAlreadyRunningProcessRuntime() {
         val harness = Harness()
-        harness.coordinator.load("wifi")
-        harness.operations.clear()
+        harness.started = true
 
-        harness.coordinator.onNetworkAvailable("cellular")
-        assertEquals(listOf("changing:network_available:1"), harness.events)
-        assertEquals(1, harness.pending.size)
+        harness.coordinator.load()
 
-        harness.coordinator.resetLocalPairings()
-        assertEquals(listOf("reset"), harness.operations)
-        assertTrue(harness.pending.single().cancelled)
-
-        harness.pending.single().runEvenIfCancelled()
-        assertEquals(listOf("reset"), harness.operations)
-        assertFalse(harness.events.any { it.startsWith("changed:") })
+        assertEquals(emptyList<String>(), harness.operations)
     }
 
     @Test
-    fun destroyCancelsDelayedRestartAndLaterStartsFailClosed() {
+    fun foregroundResumeOnlyStartsAStoppedRuntime() {
         val harness = Harness()
-        harness.coordinator.load("wifi")
+        harness.coordinator.load()
         harness.operations.clear()
 
-        harness.coordinator.onNetworkAvailable("cellular")
-        val delayed = harness.pending.single()
+        harness.coordinator.ensureForForeground()
+        assertEquals(emptyList<String>(), harness.operations)
+
+        harness.started = false
+        harness.coordinator.ensureForForeground()
+        assertEquals(listOf("start"), harness.operations)
+    }
+
+    @Test
+    fun resetAndDestroyRemainFailClosed() {
+        val harness = Harness()
+        harness.coordinator.load()
+        harness.operations.clear()
+
+        harness.coordinator.resetLocalPairings()
+        assertEquals(listOf("reset"), harness.operations)
+
         harness.coordinator.destroy()
 
-        assertTrue(delayed.cancelled)
-        assertEquals(listOf("suspend"), harness.operations)
-        delayed.runEvenIfCancelled()
-        harness.coordinator.onNetworkAvailable("wifi")
-
-        assertEquals(listOf("suspend"), harness.operations)
-        assertThrows(IllegalStateException::class.java) { harness.coordinator.restartForForeground() }
+        assertThrows(IllegalStateException::class.java) { harness.coordinator.ensureForForeground() }
         assertThrows(IllegalStateException::class.java) { harness.coordinator.resetLocalPairings() }
-        assertEquals(1, harness.pending.size)
     }
 
     private class Harness {
+        var started = false
         val operations = mutableListOf<String>()
-        val events = mutableListOf<String>()
-        val pending = mutableListOf<ManualPendingWork>()
         val coordinator = NativeConnectionRuntimeCoordinator(
-            scheduleNetworkRestart = { _, task -> ManualPendingWork(task).also(pending::add) },
-            isApplicationStarted = { true },
-            startRuntime = { operations += "start" },
-            restartRuntime = { operations += "restart" },
-            suspendRuntime = { operations += "suspend" },
+            startRuntime = {
+                operations += "start"
+                started = true
+            },
+            isRuntimeStarted = { started },
             resetRuntime = { operations += "reset" },
-            generationChanging = { reason, epoch -> events += "changing:$reason:$epoch" },
-            generationChanged = { reason, epoch -> events += "changed:$reason:$epoch" },
-            generationChangeFailed = { reason, epoch, _ -> events += "failed:$reason:$epoch" },
         )
-    }
-
-    private class ManualPendingWork(private val task: () -> Unit) : PendingRuntimeWork {
-        var cancelled = false
-            private set
-
-        override fun cancel() {
-            cancelled = true
-        }
-
-        fun runEvenIfCancelled() {
-            task()
-        }
     }
 }

@@ -147,6 +147,24 @@ func TestNativeScreenToProtoCoalescesAdjacentStyleRuns(t *testing.T) {
 	}
 }
 
+func TestNativeScreenToProtoOmitsWideCharacterContinuationCells(t *testing.T) {
+	inputBackground := vterm.CellStyle{BG: "#222222"}
+	screen := NativeScreenToProto("machine", corev2.NativeScreenSnapshot{
+		TerminalID: "terminal",
+		Rows: []corev2.NativeScreenRow{{Cells: []vterm.Cell{
+			{Content: "现", Width: 2, Style: inputBackground},
+			{Content: "", Width: 0},
+			{Content: "在", Width: 2, Style: inputBackground},
+			{Content: "", Width: 0},
+		}}},
+	})
+
+	cells := screen.GetRowReplacements()[0].GetRow().GetCells()
+	if len(cells) != 1 || cells[0].GetContent() != "现在" || cells[0].GetWidth() != 4 || cells[0].GetStyle().GetBackground() != "#222222" {
+		t.Fatalf("wide live row introduced visible continuation cells: %#v", cells)
+	}
+}
+
 func TestNativeScreenToProtoPreservesSparseRevisionAndRowIndexes(t *testing.T) {
 	screen := NativeScreenToProto("machine", corev2.NativeScreenSnapshot{
 		TerminalID:   "terminal",

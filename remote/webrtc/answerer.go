@@ -213,7 +213,7 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 	lifecycle := newPeerLifecycle(ctx, peer, cancel, answerer.OnPeerClosed, answerer.closePeerForTest)
 	var candidateMu sync.Mutex
 	candidates := make([]ICECandidate, 0, 4)
-	gathering := NewICEGatheringWaiter(false, len(iceServers) == 0, ICEGatheringCloudGrace)
+	gathering := NewICEGatheringWaiter(false, len(iceServers) == 0, ICEGatheringPreferredGrace(len(iceServers) > 0))
 	peer.OnICECandidate(func(candidate *pion.ICECandidate) {
 		if candidate == nil {
 			return

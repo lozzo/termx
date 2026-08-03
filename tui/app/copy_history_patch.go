@@ -208,6 +208,9 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 	if root.CopyMode.ViewRows != rect.H || root.CopyMode.BoundCols != rect.W || root.History.Cols != rect.W {
 		return copyHistoryPatchCache{}, false
 	}
+	if binding, ok := copyModeTerminalBinding(root); ok && !copyHistoryPatchUsesDirectLayout(binding.Layout) {
+		return copyHistoryPatchCache{}, false
+	}
 	if root.CopyMode.ViewportTop < 0 || root.CopyMode.ViewportTop+rect.H > len(root.History.Rows) {
 		return copyHistoryPatchCache{}, false
 	}
@@ -232,6 +235,13 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 		Theme:       theme,
 		TopAnchor:   copyHistoryPatchRowAnchorAt(root.History, root.CopyMode.ViewportTop),
 	}, true
+}
+
+func copyHistoryPatchUsesDirectLayout(layout state.TerminalViewLayout) bool {
+	layout = layout.Normalize()
+	return layout.Mode == state.TerminalViewLayoutAuto && layout.PanX == 0 && layout.PanY == 0 &&
+		(layout.AlignX == "" || layout.AlignX == state.TerminalViewAlignStart) &&
+		(layout.AlignY == "" || layout.AlignY == state.TerminalViewAlignStart)
 }
 
 func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistoryPatchCache) (state.Root, copyHistoryPatchCache, bool) {

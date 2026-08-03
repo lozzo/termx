@@ -9,7 +9,6 @@ import { hapticSelection } from '../platform/haptics'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
 import {
   applyTerminalModifiers,
-  applyXtermNavigationModifiers,
   type TerminalModifierState,
 } from './mobileTerminalInput'
 import type { TerminalResizeControl, TerminalScrollbackLoadResult, TerminalSnapshotPayload } from './terminalClient'
@@ -1176,7 +1175,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       const currentModifiers = modifierStateRef.current
       if (currentModifiers && (currentModifiers.ctrl !== 'off' || currentModifiers.alt !== 'off')) {
-        const result = applyXtermNavigationModifiers(data, currentModifiers)
+        // Android IMEs often emit xterm data without a usable keydown event.
+        // Apply modifiers here as the authoritative fallback; multi-character
+        // paste/composition payloads remain unchanged by applyTerminalModifiers.
+        const result = applyTerminalModifiers(data, currentModifiers)
         const accepted = sendUserInput(result.data)
         if (accepted && (result.ctrl !== currentModifiers.ctrl || result.alt !== currentModifiers.alt)) {
           const nextModifiers = { ctrl: result.ctrl, alt: result.alt }
@@ -1372,7 +1374,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (!element || !text) return
       const history = historyMetadataRef.current
       if (!history || history.loadedRows <= 0) {
-        element.hidden = true
         text.textContent = ''
         setHistoryStatusVisible(false)
         return
@@ -1385,7 +1386,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         : total
       const timestamp = history.rowTimestampsUnixMs?.[visibleBottom - 1]
       text.textContent = formatHistoryStatusRef.current(current, total, timestamp)
-      element.hidden = false
       setHistoryStatusVisible(true)
     }
     updateHistoryStatusRef.current = updateHistoryStatus
@@ -2503,9 +2503,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       isOpenRef.current = false
       updateHistoryStatusRef.current = () => {}
       if (historyStatusRef.current) {
-        historyStatusRef.current.hidden = true
         if (historyStatusTextRef.current) historyStatusTextRef.current.textContent = ''
       }
+      setHistoryStatusVisible(false)
     }
   }, [cancelBottomAnchor, clearLiveOutputWatchdog, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, markSurfaceReady, reloadHistoryProjectionWhenIdle, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
 
@@ -2733,9 +2733,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       ) : null}
       <div
         ref={historyStatusRef}
-        className="absolute z-[55] flex min-h-11 max-w-[calc(100%_-_2rem)] items-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)]/90 pl-2 font-mono text-[11px] tabular-nums text-[var(--anytty-muted)] backdrop-blur"
+        className={`absolute z-[55] min-h-11 max-w-[calc(100%_-_2rem)] items-center border border-[var(--anytty-border-subtle)] bg-[var(--anytty-surface)]/90 pl-2 font-mono text-[11px] tabular-nums text-[var(--anytty-muted)] backdrop-blur ${historyStatusVisible ? 'flex' : 'hidden'}`}
         data-testid="anytty-history-position"
-        hidden={!historyStatusVisible}
         style={{
           bottom: 'max(0.75rem, env(safe-area-inset-bottom))',
           right: 'max(1rem, env(safe-area-inset-right))',

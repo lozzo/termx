@@ -33,5 +33,7 @@ export interface ProtoClientSession {
   subscribeClosed(handler: (error: ProtoClientSessionCloseError) => void): ProtoClientSubscription
   openResourceStream(resource: ResourceHandle, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream>
   isAlive(): boolean
+  /** Invalidates the exact Go-owned generation after a confirmed platform network change. */
+  invalidate?(): Promise<void>
   close(): Promise<void>
 }

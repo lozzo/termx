@@ -67,3 +67,12 @@ func TestICEGatheringWaiterAllowsEmptyDirectTCPGathering(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestICEGatheringPreferredGraceOnlyWaitsForManagedICECandidates(t *testing.T) {
+	if got := ICEGatheringPreferredGrace(false); got != ICEGatheringDirectGrace {
+		t.Fatalf("direct-only grace = %s, want %s", got, ICEGatheringDirectGrace)
+	}
+	if got := ICEGatheringPreferredGrace(true); got != ICEGatheringCloudGrace {
+		t.Fatalf("managed ICE grace = %s, want %s", got, ICEGatheringCloudGrace)
+	}
+}

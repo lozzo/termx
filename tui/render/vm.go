@@ -655,7 +655,7 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 }
 
 func contentWithPaneLayout(root state.Root, pane state.PaneState, content ContentVM) ContentVM {
-	if content.Kind != ContentTerminalLive {
+	if content.Kind != ContentTerminalLive && content.Kind != ContentCopyHistory {
 		return content
 	}
 	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
@@ -667,7 +667,7 @@ func contentWithPaneLayout(root state.Root, pane state.PaneState, content Conten
 }
 
 func contentWithFloatingLayout(root state.Root, floating state.FloatingPaneState, content ContentVM) ContentVM {
-	if content.Kind != ContentTerminalLive {
+	if content.Kind != ContentTerminalLive && content.Kind != ContentCopyHistory {
 		return content
 	}
 	binding, ok := root.TerminalViews.FloatingBinding(floating.ID)
@@ -1234,6 +1234,7 @@ func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyM
 }
 
 func buildCopyHistoryContentVM(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) ContentVM {
+	extent := copyHistoryContentExtent(root, history, copyMode)
 	if !canRenderCopyHistory(root, history, copyMode) {
 		reason := copyHistoryPendingReason(root, history, copyMode)
 		content := ContentVM{
@@ -1241,6 +1242,7 @@ func buildCopyHistoryContentVM(root state.Root, history state.HistoryStore, copy
 			Lines:   []Line{NewLine(reason)},
 			Status:  copyHistoryStatus(history, copyMode),
 			Pending: true,
+			Extent:  extent,
 		}
 		if reason == "copy history empty" {
 			content.Pending = false
@@ -1256,12 +1258,45 @@ func buildCopyHistoryContentVM(root state.Root, history state.HistoryStore, copy
 		Kind:   ContentCopyHistory,
 		Lines:  copyHistoryLines(history, copyMode),
 		Status: copyHistoryStatus(history, copyMode),
+		Extent: extent,
 	}
 	if copyMode.CanSelect() {
 		content.Cursor = copyHistoryCursor(history, copyMode)
 		content.HitRegions = copyHistoryHitRegions(history, copyMode)
 	}
 	return content
+}
+
+func copyHistoryContentExtent(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) ContentExtent {
+	cols := copyMode.BoundCols
+	if cols <= 0 {
+		cols = history.Cols
+	}
+	rows := copyMode.ViewRows
+	if binding, ok := copyHistoryTerminalBinding(root, copyMode); ok {
+		surface := surfaceForBinding(root, binding)
+		session := sessionForBinding(root, binding)
+		if terminalCols, terminalRows := liveStatusSize(surface, session); terminalCols > 0 && terminalRows > 0 {
+			cols = terminalCols
+			rows = terminalRows
+		}
+	}
+	if cols <= 0 || rows <= 0 {
+		return ContentExtent{}
+	}
+	return ContentExtent{Known: true, Cols: cols, Rows: rows}
+}
+
+func copyHistoryTerminalBinding(root state.Root, copyMode state.CopyModeStore) (state.TerminalViewBinding, bool) {
+	if copyMode.ViewID != "" {
+		binding, ok := root.TerminalViews.Views[copyMode.ViewID]
+		return binding, ok && binding.TerminalID == copyMode.TerminalID
+	}
+	if copyMode.PaneID != "" {
+		binding, ok := root.TerminalViews.PaneBinding(copyMode.PaneID)
+		return binding, ok && binding.TerminalID == copyMode.TerminalID
+	}
+	return state.TerminalViewBinding{}, false
 }
 
 func copyModeBindingStillValid(root state.Root, copyMode state.CopyModeStore) bool {

@@ -478,11 +478,17 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			}
 			if resizeViewID := msg.ViewID; resizeViewID != "" {
 				root = rootWithCopyHistorySessionForView(root, resizeViewID)
+				viewRows := rows
+				if binding, ok := root.TerminalViews.Views[resizeViewID]; ok {
+					if rect, rectOK := terminalViewContentRect(root, render.Rect{}, binding); rectOK {
+						viewRows = copyModeVisibleRows(rows, rect.H)
+					}
+				}
 				if root.CopyMode.Active && root.CopyMode.BoundCols != cols {
-					root.CopyMode = root.CopyMode.Resize(cols, rows)
+					root.CopyMode = root.CopyMode.Resize(cols, viewRows)
 					root = saveCopyHistorySessionForView(root, resizeViewID)
 				} else if root.CopyMode.Active {
-					root.CopyMode = root.CopyMode.SetViewRows(rows)
+					root.CopyMode = root.CopyMode.SetViewRows(viewRows)
 					root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 					root = saveCopyHistorySessionForView(root, resizeViewID)
 				}

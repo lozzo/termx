@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -83,13 +84,22 @@ type RouteResolution struct {
 	routeGrant       *cloudv1.SignedEnvelope
 	pairingBootstrap *remoteauthpb.PairingManagedRouteSeed
 	pairingAdmission *cloudv1.PairingAdmission
+	cachedLocator    bool
 }
 
 func NewCachedRoute(locator *cloudv1.EdgeLocator, routeGrant *cloudv1.SignedEnvelope) (*RouteResolution, error) {
+	return newCapabilityRoute(locator, routeGrant, true)
+}
+
+func newCapabilityRoute(locator *cloudv1.EdgeLocator, routeGrant *cloudv1.SignedEnvelope, cached bool) (*RouteResolution, error) {
 	if err := validateEdgeLocator(locator); err != nil || routeGrant == nil {
 		return nil, errors.New("cached Cloud Route is incomplete")
 	}
-	return &RouteResolution{locator: proto.Clone(locator).(*cloudv1.EdgeLocator), routeGrant: proto.Clone(routeGrant).(*cloudv1.SignedEnvelope)}, nil
+	return &RouteResolution{
+		locator:       proto.Clone(locator).(*cloudv1.EdgeLocator),
+		routeGrant:    proto.Clone(routeGrant).(*cloudv1.SignedEnvelope),
+		cachedLocator: cached,
+	}, nil
 }
 
 func (resolution *RouteResolution) Locator() *cloudv1.EdgeLocator {
@@ -166,6 +176,13 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	if client == nil || signer == nil || len(cloudRouteGrant) == 0 {
 		return nil, errors.New("Cloud route grant and signer are required")
 	}
+	startedAt := time.Now()
+	lastAt := startedAt
+	reportTiming := func(stage string) {
+		now := time.Now()
+		log.Printf("anytty cloud connect stage=%s stage_ms=%d total_ms=%d", stage, now.Sub(lastAt).Milliseconds(), now.Sub(startedAt).Milliseconds())
+		lastAt = now
+	}
 	grant := &cloudv1.SignedEnvelope{}
 	if err := proto.Unmarshal(cloudRouteGrant, grant); err != nil {
 		return nil, fmt.Errorf("decode CloudRouteGrant: %w", err)
@@ -180,6 +197,7 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	if err != nil {
 		return nil, fmt.Errorf("begin Cloud route resolution: %w", classifyDaemonLifecycleError(err))
 	}
+	reportTiming("controller_challenge")
 	requestID := uuid.NewString()
 	canonical, err := ticket.ClientRouteProofBytes(challenge.GetChallengeId(), challenge.GetChallenge(), grant, requestID)
 	if err != nil {
@@ -189,14 +207,16 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 	if err != nil {
 		return nil, fmt.Errorf("sign Cloud route challenge: %w", err)
 	}
+	reportTiming("controller_proof")
 	resolved, err := directory.ResolveClientRoute(ctx, &cloudv1.ResolveClientRouteRequest{ChallengeId: challenge.GetChallengeId(), RequestId: requestID, ClientProof: proof})
 	if err != nil {
 		return nil, fmt.Errorf("resolve Cloud route: %w", classifyDaemonLifecycleError(err))
 	}
+	reportTiming("controller_resolve")
 	if resolved.GetEdgeLocator() == nil {
 		return nil, errors.New("Cloud route response is incomplete")
 	}
-	return NewCachedRoute(resolved.GetEdgeLocator(), grant)
+	return newCapabilityRoute(resolved.GetEdgeLocator(), grant, false)
 }
 
 func classifyDaemonLifecycleError(err error) error {
@@ -251,6 +271,22 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if client == nil || (!capabilityRoute && !pairingRoute) || signer == nil || identity.ValidatePublic() != nil || product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || attemptGeneration == 0 || createOffer == nil {
 		return nil, errors.New("Cloud signaling input is incomplete")
 	}
+	startedAt := time.Now()
+	lastAt := startedAt
+	reportTiming := func(stage string) {
+		now := time.Now()
+		log.Printf("anytty cloud connect generation=%d stage=%s stage_ms=%d total_ms=%d", attemptGeneration, stage, now.Sub(lastAt).Milliseconds(), now.Sub(startedAt).Milliseconds())
+		lastAt = now
+	}
+	sessionID := uuid.NewString()
+	var prefetchedOffer *offerFuture
+	if relayPreference == cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY {
+		// Direct offer gathering does not depend on Edge or Relay material. Run it beside
+		// TCP/TLS/challenge setup so local interface enumeration is not a serial cold stage.
+		prefetchedOffer = newOfferFuture(ctx, createOffer, &cloudv1.ClientReady{SessionId: sessionID, Generation: attemptGeneration})
+		defer prefetchedOffer.Close()
+		reportTiming("client_offer_started")
+	}
 	var connection *grpc.ClientConn
 	var err error
 	if capabilityRoute {
@@ -261,10 +297,11 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, markEdgeLocatorUnavailable(err)
 	}
-	if err := waitForEdgeTransport(ctx, connection); err != nil {
+	if err := waitForEdgeTransport(ctx, connection, resolution.edgeTransportTimeout()); err != nil {
 		_ = connection.Close()
 		return nil, markEdgeLocatorUnavailable(err)
 	}
+	reportTiming("edge_transport_ready")
 	closeConnection := true
 	defer func() {
 		if closeConnection {
@@ -298,7 +335,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
-	sessionID := uuid.NewString()
+	reportTiming("edge_challenge")
 	clientHello := &cloudv1.ClientHello{ClientPublicKey: append([]byte(nil), identity.PublicKey...), Product: product, SoftwareVersion: client.config.SoftwareVersion, AttemptGeneration: attemptGeneration, RelayPreference: relayPreference}
 	if capabilityRoute {
 		clientHello.Authorization = &cloudv1.ClientHello_CloudRouteGrant{CloudRouteGrant: proto.Clone(resolution.routeGrant).(*cloudv1.SignedEnvelope)}
@@ -314,6 +351,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if err != nil {
 		return nil, err
 	}
+	reportTiming("edge_proof")
 	clientHello.ClientProof = proof
 	if err := stream.Send(hello); err != nil {
 		return nil, err
@@ -334,10 +372,17 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if ready.GetReady() == nil || ready.GetReady().GetGeneration() != attemptGeneration {
 		return nil, errors.New("ClientReady is invalid")
 	}
-	offerSDP, err := createOffer(ctx, ready.GetReady())
+	reportTiming("edge_client_ready")
+	var offerSDP string
+	if prefetchedOffer != nil {
+		offerSDP, err = prefetchedOffer.Await()
+	} else {
+		offerSDP, err = createOffer(ctx, ready.GetReady())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create Cloud P2P offer: %w", err)
 	}
+	reportTiming("client_offer_gathered")
 	if strings.TrimSpace(offerSDP) == "" {
 		return nil, errors.New("create Cloud P2P offer returned an empty SDP")
 	}
@@ -358,6 +403,7 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	if response.GetAnswer() == nil || response.GetAnswer().GetSessionId() != sessionID || strings.TrimSpace(response.GetAnswer().GetAnswerSdp()) == "" {
 		return nil, errors.New("Edge signaling answer is invalid")
 	}
+	reportTiming("edge_answer")
 	if !stopParentCancellation() || ctx.Err() != nil {
 		cancelStream()
 		return nil, ctx.Err()
@@ -365,6 +411,46 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	closeConnection = false
 	keepStream = true
 	return &SignalSession{answer: proto.Clone(response.GetAnswer()).(*cloudv1.EdgeAnswer), connection: connection, stream: stream, cancel: cancelStream}, nil
+}
+
+type offerResult struct {
+	sdp string
+	err error
+}
+
+// offerFuture owns the cancellation and completion of one prefetched Direct offer.
+// Close waits for the producer so callers can safely release callback-owned peer state.
+type offerFuture struct {
+	cancel context.CancelFunc
+	result <-chan offerResult
+	once   sync.Once
+	value  offerResult
+}
+
+func newOfferFuture(ctx context.Context, createOffer func(context.Context, *cloudv1.ClientReady) (string, error), ready *cloudv1.ClientReady) *offerFuture {
+	offerContext, cancel := context.WithCancel(ctx)
+	result := make(chan offerResult, 1)
+	go func() {
+		sdp, err := createOffer(offerContext, proto.Clone(ready).(*cloudv1.ClientReady))
+		result <- offerResult{sdp: sdp, err: err}
+	}()
+	return &offerFuture{cancel: cancel, result: result}
+}
+
+func (future *offerFuture) Await() (string, error) {
+	if future == nil {
+		return "", errors.New("Cloud Direct offer future is nil")
+	}
+	future.once.Do(func() { future.value = <-future.result })
+	return future.value.sdp, future.value.err
+}
+
+func (future *offerFuture) Close() {
+	if future == nil {
+		return
+	}
+	future.cancel()
+	_, _ = future.Await()
 }
 
 func validateClientGatewayChallenge(signal *cloudv1.EdgeSignal, expectedEdgeID string, now time.Time) (*cloudv1.EdgeChallenge, error) {
@@ -383,11 +469,23 @@ func validateClientGatewayChallenge(signal *cloudv1.EdgeSignal, expectedEdgeID s
 	return proto.Clone(challenge).(*cloudv1.EdgeChallenge), nil
 }
 
-func waitForEdgeTransport(ctx context.Context, connection *grpc.ClientConn) error {
+func (resolution *RouteResolution) edgeTransportTimeout() time.Duration {
+	if resolution != nil && resolution.cachedLocator {
+		// A cached Edge is an optimization, not an authority. Fail over to the Controller
+		// quickly when an old locator no longer reaches its Edge.
+		return 1500 * time.Millisecond
+	}
+	return 3 * time.Second
+}
+
+func waitForEdgeTransport(ctx context.Context, connection *grpc.ClientConn, timeout time.Duration) error {
 	if connection == nil {
 		return errors.New("Edge connection is nil")
 	}
-	dialContext, cancel := context.WithTimeout(ctx, 3*time.Second)
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+	dialContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	connection.Connect()
 	for {

@@ -261,6 +261,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || t('terminal.defaultTitle')
   const terminalHeaderTitle = splitTerminalId ? `${activeTerminalTitle} / ${splitTerminalTitle}` : activeTerminalTitle
   const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
+  const terminalHeaderSummary = [machine?.name, terminalHeaderTitle, terminalHeaderDirectory].filter(Boolean).join(' · ')
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const activeTerminalOwnsResize = terminalResizeControl.canResize === true
   const resizeLockedHint = t('workspace.resize.lockedHint')
@@ -1126,15 +1127,31 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
       setConnectedSession(session)
       setError(null)
+      terminalRef.current?.fit()
+      splitTerminalRef.current?.fit()
+    }
+    const handleSessionInvalidated = () => {
+      resetKeyboardLayout()
+      if (page === 'terminal-list') {
+        setManualReconnectNonce((value) => value + 1)
+        return
+      }
+      if (page !== 'terminal') return
+      const session = machineSessionRef.current?.session ?? connectedSession
+      if (!activeTerminalId && !splitTerminalId) return
+      if (!session || !isProtoSessionAlive(session)) {
+        setManualReconnectNonce((value) => value + 1)
+        return
+      }
       reattachActiveTerminals(session)
     }
     document.addEventListener('anytty:resume', handleResume)
-    document.addEventListener('anytty:binding-closed', handleResume)
-    document.addEventListener('anytty:session-invalidated', handleResume)
+    document.addEventListener('anytty:binding-closed', handleSessionInvalidated)
+    document.addEventListener('anytty:session-invalidated', handleSessionInvalidated)
     return () => {
       document.removeEventListener('anytty:resume', handleResume)
-      document.removeEventListener('anytty:binding-closed', handleResume)
-      document.removeEventListener('anytty:session-invalidated', handleResume)
+      document.removeEventListener('anytty:binding-closed', handleSessionInvalidated)
+      document.removeEventListener('anytty:session-invalidated', handleSessionInvalidated)
     }
   }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
@@ -2615,15 +2632,18 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
             <button
               type="button"
-              aria-label={t('workspace.switchTerminal')}
-              className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--anytty-surface-raised)]"
+              aria-label={`${t('workspace.switchTerminal')}: ${terminalHeaderSummary}`}
+              className="flex min-h-11 min-w-0 flex-1 items-center px-1.5 text-left transition-colors active:bg-[var(--anytty-surface-raised)]"
               onClick={() => { hapticSelection(); setMobileSheet('terminals') }}
+              title={terminalHeaderSummary}
             >
-              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--anytty-muted)]">{machine.name}</span>
-              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--anytty-text)]" data-testid="anytty-terminal-title">{terminalHeaderTitle}</span>
-              {terminalHeaderDirectory ? (
-                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-[var(--anytty-muted)]">{terminalHeaderDirectory}</span>
-              ) : null}
+              <span
+                aria-hidden="true"
+                className="block min-w-0 max-w-full truncate whitespace-nowrap text-[12px] font-semibold leading-tight text-[var(--anytty-text)]"
+                data-testid="anytty-terminal-title"
+              >
+                {terminalHeaderSummary}
+              </span>
             </button>
           </div>
 
@@ -3264,8 +3284,10 @@ export function ConnectionInfoDialog({
             <dl className="mt-2 overflow-hidden border border-[var(--anytty-app-line)]">
               <ConnectionInfoRow label={t('workspace.connection.route')} value={loading ? t('workspace.connection.reading') : connectionRouteLabel(info?.routeKind, t)} strong />
               <ConnectionInfoRow label={t('workspace.connection.path')} value={observedPathLabel(info?.observedPath, t)} />
-              <ConnectionInfoRow label={t('workspace.connection.localAddress')} value={displayDiagnostic(info?.localAddr, t)} />
-              <ConnectionInfoRow label={t('workspace.connection.remoteAddress')} value={displayDiagnostic(info?.remoteAddr, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.localCandidateAddress')} value={displayDiagnostic(info?.localAddr, t)} />
+              {info?.localBaseAddr ? <ConnectionInfoRow label={t('workspace.connection.localBaseAddress')} value={info.localBaseAddr} /> : null}
+              <ConnectionInfoRow label={t('workspace.connection.remoteCandidateAddress')} value={displayDiagnostic(info?.remoteAddr, t)} />
+              {info?.remoteBaseAddr ? <ConnectionInfoRow label={t('workspace.connection.remoteBaseAddress')} value={info.remoteBaseAddr} /> : null}
               <ConnectionInfoRow label={t('workspace.connection.relayTransport')} value={displayDiagnostic(info?.relayTransport, t)} />
               <ConnectionInfoRow label={t('workspace.connection.rtt')} value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : t('workspace.connection.notProvided')} />
             </dl>
@@ -3307,6 +3329,7 @@ export function ConnectionInfoDialog({
             <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.diagnostics')}</summary>
             <dl className="mb-2 overflow-hidden border border-[var(--anytty-app-line)]">
               <ConnectionInfoRow label={t('workspace.connection.routeId')} value={displayDiagnostic(info?.routeId, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.candidatePairId')} value={displayDiagnostic(info?.candidatePairId, t)} />
               <ConnectionInfoRow label={t('workspace.connection.generation')} value={info?.generation?.toString() ?? t('workspace.connection.notProvided')} />
               <ConnectionInfoRow label={t('workspace.connection.reason')} value={displayDiagnostic(info?.routeSelectionReason, t)} />
               <ConnectionInfoRow label={t('workspace.connection.candidates')} value={candidateTypeText(info, t)} />
@@ -3447,6 +3470,9 @@ async function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSes
   remoteCandidateType: candidateTypeFromProto(snapshot?.remoteCandidateType),
   localAddr: candidateAddress(snapshot?.localIp, snapshot?.localPort),
   remoteAddr: candidateAddress(snapshot?.remoteIp, snapshot?.remotePort),
+  localBaseAddr: candidateAddress(snapshot?.localRelatedIp, snapshot?.localRelatedPort),
+  remoteBaseAddr: candidateAddress(snapshot?.remoteRelatedIp, snapshot?.remoteRelatedPort),
+  candidatePairId: snapshot?.candidatePairId || undefined,
   localProtocol: transportFromProto(snapshot?.localProtocol),
   remoteProtocol: transportFromProto(snapshot?.remoteProtocol),
   relayTransport: transportFromProto(snapshot?.relayTransport),

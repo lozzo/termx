@@ -103,6 +103,7 @@ func TestEngineOpenSessionReturnsReadyConnectionSnapshot(t *testing.T) {
 		RouteID: "direct", RouteKind: endpoint.RouteDirectWebRTCTCP, ObservedPath: string(endpoint.PathDirect),
 		SampledAt: time.Unix(1_800_000_000, 0).UTC(), RoundTrip: 42 * time.Millisecond,
 		LocalCandidateType: "relay", RemoteCandidateType: "relay", LocalAddress: "192.0.2.10", RemoteAddress: "2001:db8::20", LocalPort: 41000, RemotePort: 41121,
+		PairID: "pair-selected", LocalRelatedAddress: "10.0.0.2", LocalRelatedPort: 40000,
 		LocalProtocol: "udp", RemoteProtocol: "udp", RelayTransport: "tcp", Connected: true,
 	}
 	engine, err := NewEngine(&bindingHost{session: session})
@@ -118,7 +119,8 @@ func TestEngineOpenSessionReturnsReadyConnectionSnapshot(t *testing.T) {
 	snapshot := event.GetOpenSession().GetConnection()
 	if snapshot.GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || snapshot.GetObservedPath() != bindingpb.ConnectionObservedPath_CONNECTION_OBSERVED_PATH_DIRECT ||
 		snapshot.GetRelayTransport() != bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_TCP || snapshot.GetRoundTripNanos() != int64(42*time.Millisecond) ||
-		snapshot.GetLocalIp() != "192.0.2.10" || snapshot.GetRemoteIp() != "2001:db8::20" || snapshot.GetLocalPort() != 41000 || snapshot.GetRemotePort() != 41121 {
+		snapshot.GetLocalIp() != "192.0.2.10" || snapshot.GetRemoteIp() != "2001:db8::20" || snapshot.GetLocalPort() != 41000 || snapshot.GetRemotePort() != 41121 ||
+		snapshot.GetCandidatePairId() != "pair-selected" || snapshot.GetLocalRelatedIp() != "10.0.0.2" || snapshot.GetLocalRelatedPort() != 40000 {
 		t.Fatalf("connection snapshot = %#v", snapshot)
 	}
 }
@@ -164,6 +166,34 @@ func TestEngineConnectionSnapshotCommandResamplesCurrentSession(t *testing.T) {
 	result := nextBindingEvent(t, engine).GetConnectionSnapshotGet()
 	if result.GetOperationHandle() != operation || result.GetConnection().GetBytesReceived() != 99 || result.GetConnection().GetSampledAtUnixNano() != time.Unix(1_800_000_005, 0).UnixNano() {
 		t.Fatalf("resampled connection = %#v", result)
+	}
+}
+
+func TestEngineSessionInvalidateUsesExactSessionStamp(t *testing.T) {
+	session := newBindingSession()
+	host := &bindingHost{session: session}
+	engine, err := NewEngine(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	command, err := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_SessionInvalidate{SessionInvalidate: &bindingpb.SessionInvalidateRequest{
+		RequestId: "network-change", SessionHandle: sessionHandle,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := engine.EngineCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := nextBindingEvent(t, engine).GetSessionInvalidate()
+	if result.GetOperationHandle() != operation || result.GetSessionHandle() != sessionHandle || result.GetError() != nil {
+		t.Fatalf("session invalidate result = %#v", result)
+	}
+	if host.invalidated != session.Stamp() {
+		t.Fatalf("invalidated stamp = %#v, want %#v", host.invalidated, session.Stamp())
 	}
 }
 
@@ -1105,9 +1135,10 @@ func TestAPIErrorPreservesDaemonLifecycle(t *testing.T) {
 }
 
 type bindingHost struct {
-	session clientruntime.ApplicationReadyPeerSession
-	request *bindingpb.OpenSessionRequest
-	open    func(context.Context, *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error)
+	session     clientruntime.ApplicationReadyPeerSession
+	request     *bindingpb.OpenSessionRequest
+	open        func(context.Context, *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error)
+	invalidated clientruntime.EndpointSessionStamp
 }
 
 type protocolBindingSession struct {
@@ -1218,6 +1249,11 @@ func (host *bindingHost) OpenSession(ctx context.Context, request *bindingpb.Ope
 		return host.open(ctx, request)
 	}
 	return host.session, nil
+}
+
+func (host *bindingHost) InvalidateSession(_ context.Context, stamp clientruntime.EndpointSessionStamp) error {
+	host.invalidated = stamp
+	return nil
 }
 
 type bindingSession struct {

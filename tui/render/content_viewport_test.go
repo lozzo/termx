@@ -65,6 +65,47 @@ func TestContentViewportKeepsAreaOutsideTerminalExtentBlank(t *testing.T) {
 	assertContentViewportLineWidths(t, result.Lines, 10)
 }
 
+func TestCopyHistoryKeepsAreaOutsideTerminalExtentMarked(t *testing.T) {
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect: Rect{W: 10, H: 5},
+		Content: ContentVM{
+			Kind: ContentCopyHistory,
+			Lines: []Line{
+				NewLine("old-1"),
+				NewLine("old-2"),
+			},
+			Extent: ContentExtent{Known: true, Cols: 6, Rows: 3},
+		},
+	})
+
+	if got, want := plainContentViewportLines(result.Lines), []string{
+		"old-1 ····",
+		"old-2 ····",
+		"      ····",
+		"··········",
+		"··········",
+	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("copy history must preserve the terminal extent boundary\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
+func TestCopyHistoryLayoutMovesAndClipsRowHitRegionsWithTerminalExtent(t *testing.T) {
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect: Rect{W: 10, H: 5},
+		Content: ContentVM{
+			Kind:       ContentCopyHistory,
+			Lines:      []Line{NewLine("history")},
+			Extent:     ContentExtent{Known: true, Cols: 6, Rows: 3},
+			Layout:     ContentLayoutVM{Known: true, Mode: "center"},
+			HitRegions: []HitRegion{{Kind: HitRegionHistoryRow, Rect: Rect{W: 8, H: 1}, Row: 7}},
+		},
+	})
+
+	if len(result.HitRegions) != 1 || result.HitRegions[0].Rect != (Rect{X: 2, Y: 1, W: 6, H: 1}) {
+		t.Fatalf("copy history row hit region must follow centered terminal extent, got %#v", result.HitRegions)
+	}
+}
+
 func TestContentViewportSupportsOffsetTerminalExtent(t *testing.T) {
 	result := RenderContentViewport(ContentRenderRequest{
 		Rect: Rect{W: 4, H: 3},

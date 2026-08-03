@@ -18,7 +18,6 @@ describe('RemoteNetworkStateManager', () => {
       }),
     }
     const manager = new RemoteNetworkStateManager(plugin)
-
     manager.init()
     await Promise.resolve()
     await Promise.resolve()
@@ -33,5 +32,30 @@ describe('RemoteNetworkStateManager', () => {
 
     manager.destroy()
     expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it('does not treat an expected native WebView freeze as a network outage', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-03T06:00:00Z'))
+    const plugin: NativeNetworkStatusPlugin = {
+      getStatus: vi.fn(async () => ({ connected: true, connectionType: 'wifi' })),
+    }
+    const manager = new RemoteNetworkStateManager(plugin)
+    const snapshots: Array<{ jsFrozenRecovery: boolean; networkReady: boolean }> = []
+    manager.subscribe((state) => snapshots.push(state))
+
+    manager.init()
+    await Promise.resolve()
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(101)
+    expect(manager.state.networkReady).toBe(true)
+
+    vi.setSystemTime(new Date('2026-08-03T06:10:00Z'))
+    await vi.advanceTimersByTimeAsync(3_100)
+
+    expect(snapshots.some((state) => state.jsFrozenRecovery)).toBe(true)
+    expect(snapshots.every((state) => state.networkReady)).toBe(true)
+    expect(manager.state.networkReady).toBe(true)
+    manager.destroy()
   })
 })

@@ -156,6 +156,66 @@ describe('ProtoTerminalProtocolSession input ordering', () => {
     expect(replays.at(-1)).toContain('\u001b[1;38;5;2;48;5;24mCOLOR')
   })
 
+  it('does not render wide-character continuation cells as black gaps', async () => {
+    let session: MockProtoSession
+    session = new MockProtoSession('machine-live-wide', (command) => {
+      switch (command.command.case) {
+        case 'eventSubscribe':
+          return protoResult('eventSubscription', { subscription: resource(ResourceKind.SUBSCRIPTION, 1, session) })
+        case 'terminalAttach':
+          return protoResult('terminalAttach', create(TerminalAttachResultSchema, {
+            attachment: create(AttachmentHandleSchema, {
+              resource: resource(ResourceKind.ATTACHMENT, 2, session),
+              terminal: terminalRef(session, 'terminal-wide'),
+            }),
+          }))
+        case 'terminalGet':
+          return protoResult('terminalGet', create(TerminalGetResultSchema, {
+            terminal: create(TerminalInfoSchema, { ref: terminalRef(session, 'terminal-wide') }),
+          }))
+        case 'liveScreenNext':
+          return protoResult('liveScreen', create(NativeScreenResultSchema, {
+            terminal: terminalRef(session, 'terminal-wide'),
+            liveRevision: 1n,
+            size: create(TerminalSizeSchema, { cols: 4, rows: 1 }),
+            fullReplace: true,
+            rowReplacements: [create(ScreenRowReplaceSchema, {
+              rowIndex: 0,
+              row: create(ScreenRowSchema, {
+                cells: [
+                  create(ScreenCellSchema, {
+                    content: '现',
+                    width: 2,
+                    style: create(CellStyleSchema, { background: '#222222' }),
+                  }),
+                  create(ScreenCellSchema, { content: '', width: 0 }),
+                  create(ScreenCellSchema, {
+                    content: '在',
+                    width: 2,
+                    style: create(CellStyleSchema, { background: '#222222' }),
+                  }),
+                  create(ScreenCellSchema, { content: '', width: 0 }),
+                ],
+              }),
+            })],
+          }))
+        default:
+          return protoResult('acknowledge', {})
+      }
+    })
+    const protocol = createProtoTerminalProtocolSession(session)
+    const replays: string[] = []
+    protocol.subscribeTerminal('terminal-wide', (event) => {
+      if (event.type === 'snapshot') replays.push(event.snapshot.screenReplay ?? '')
+    })
+
+    await protocol.openTerminal('terminal-wide')
+
+    expect(replays.at(-1)).toContain('\u001b[48;2;34;34;34m现在')
+    expect(replays.at(-1)).not.toContain('现\u001b[0m ')
+    expect(replays.at(-1)).not.toContain('在\u001b[0m ')
+  })
+
   it('paginates visual scrollback with the frozen history cursor', async () => {
     let historyCall = 0
     let session: MockProtoSession

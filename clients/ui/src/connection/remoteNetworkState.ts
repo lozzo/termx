@@ -237,12 +237,15 @@ export class RemoteNetworkStateManager {
   }
 
   private createSnapshot(): RemoteNetworkState {
+    const nativeLifecycleOwnsRecovery = this.nativeNetworkPlugin !== undefined
     return {
       phoneOnline: this.phoneOnline,
       connectionType: this.connectionType,
       appActive: this.appActive,
       jsFrozenRecovery: this.jsFrozenRecovery,
-      networkReady: this.phoneOnline && this.appActive && !this.jsFrozenRecovery,
+      // The native transport remains alive while the WebView is backgrounded. appActive is
+      // informational and must not tear down or block an otherwise healthy terminal session.
+      networkReady: this.phoneOnline && (nativeLifecycleOwnsRecovery || !this.jsFrozenRecovery),
       resumeType: this.resumeType,
       resumeDuration: this.resumeDuration,
     }

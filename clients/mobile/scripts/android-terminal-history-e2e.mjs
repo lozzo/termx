@@ -445,7 +445,7 @@ async function importPairingCode(pairingCodeValue) {
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
     setter?.call(textarea, ${JSON.stringify(pairingCodeValue)})
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    const button = textarea.closest('label')?.parentElement?.querySelector('button')
+    const button = sheet?.querySelector('form button[type="submit"]')
     if (!button) return false
     button.click()
     return true

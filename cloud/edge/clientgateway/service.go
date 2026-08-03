@@ -158,14 +158,19 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		return status.Errorf(codes.Aborted, "publish client session: %v", err)
 	}
 	defer service.cleanupSession(sessionID, generation)
-	if err := service.authorizeClient(sessionContext, claims, sessionID); err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
 	preference := helloEvent.GetHello().GetRelayPreference()
 	switch preference {
 	case cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY, cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY:
 	default:
 		return status.Error(codes.InvalidArgument, "Cloud Relay preference is required")
+	}
+	// AgentOffer repeats the same capability/pairing check before it creates an answer.
+	// Direct can fold authorization into that command; Relay must still fail closed before
+	// the Edge reserves quota or discloses TURN credentials.
+	if requiresRelayPreauthorization(preference) {
+		if err := service.authorizeClient(sessionContext, claims, sessionID); err != nil {
+			return status.Error(codes.PermissionDenied, err.Error())
+		}
 	}
 	var relay *cloudv1.RelayICEConfig
 	if preference != cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY {
@@ -236,6 +241,10 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		}
 		return status.Error(codes.InvalidArgument, "ClientGateway does not accept messages after signaling")
 	}
+}
+
+func requiresRelayPreauthorization(preference cloudv1.RelayPreference) bool {
+	return preference != cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY
 }
 
 func daemonStateRejection(err error) (string, string, bool) {

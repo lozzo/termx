@@ -24,7 +24,7 @@ export function applyTerminalModifiers(data: string, state: TerminalModifierStat
   const navigationResult = applyXtermNavigationModifiers(data, state)
   if (navigationResult.data !== data) return navigationResult
 
-  if (data.length !== 1) {
+  if (data.length !== 1 || data.charCodeAt(0) > 0x7f) {
     return { data, ctrl: state.ctrl, alt: state.alt }
   }
 

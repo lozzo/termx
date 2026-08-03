@@ -7,10 +7,11 @@ export interface NativeBridgeEndpoint {
 }
 
 export interface NativeConnectionPlugin extends Plugin {
-  addListener(eventName: 'generationChanging' | 'generationChanged' | 'generationChangeFailed', listener: (event: { reason: string; epoch: number }) => void): Promise<PluginListenerHandle>
+  addListener(eventName: 'networkChanged', listener: (event: { epoch: number; connected: boolean }) => void): Promise<PluginListenerHandle>
   handleForegroundResume(): Promise<void>
   resetLocalPairings(): Promise<void>
   getBridgeEndpoint(): Promise<NativeBridgeEndpoint>
+  setSessionActive(input: { machineId: string; active: boolean }): Promise<void>
 }
 
 export const NativeConnection = registerPlugin<NativeConnectionPlugin>('NativeConnection')

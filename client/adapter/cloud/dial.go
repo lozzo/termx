@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,8 @@ import (
 
 const defaultClientName = "anytty-go-cloud"
 
+const cloudLocatorStoreTimeout = 2 * time.Second
+
 // PeerFactory 根据本次 Controller/Edge 决策创建 direct 或 single-Relay WebRTC primitive。
 type PeerFactory interface {
 	OpenCloudPeer(context.Context, port.WebRTCConfig) (port.WebRTCPeer, error)
@@ -41,6 +44,13 @@ type Dialer struct {
 
 // Connect 优先复用 secure credential 中的 Edge locator；只有 locator 缺失或失效才查询 Controller。
 func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
+	startedAt := time.Now()
+	lastAt := startedAt
+	reportTiming := func(phase string) {
+		now := time.Now()
+		log.Printf("anytty cloud connect generation=%d stage=%s stage_ms=%d total_ms=%d", request.Stamp().Generation, phase, now.Sub(lastAt).Milliseconds(), now.Sub(startedAt).Milliseconds())
+		lastAt = now
+	}
 	if dialer == nil || dialer.Peers == nil || dialer.Cloud == nil || dialer.Authorization == nil || dialer.Product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED {
 		return nil, errors.New("Cloud connector dependencies are incomplete")
 	}
@@ -54,6 +64,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if err != nil {
 		return nil, err
 	}
+	reportTiming("authorization_prepared")
 	signaling, ok := prepared.(peeradapter.PreparedSignalingAuthorization)
 	if !ok || len(signaling.CloudRouteGrant()) == 0 {
 		return nil, errors.New("Cloud route credential is missing its signed discovery grant")
@@ -64,6 +75,11 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	var opened *openedCloudPeer
 	if cachedErr == nil {
 		opened, err = openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
+		if err == nil {
+			reportTiming("cached_edge_ready")
+		} else {
+			reportTiming("cached_edge_failed")
+		}
 		if err != nil && !cloudclient.ShouldRefreshEdgeLocator(err) {
 			return nil, cloudConnectionError(err)
 		}
@@ -73,6 +89,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		if err != nil {
 			return nil, cloudConnectionError(err)
 		}
+		reportTiming("controller_resolved")
 		opened, err = openResolvedCloudPeer(ctx, request, dialer.Peers, dialer.Cloud, resolved, signaling.ClientIdentity(), signaling, dialer.Product, dialer.report)
 		if err != nil {
 			return nil, cloudConnectionError(err)
@@ -90,6 +107,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		_ = opened.Close()
 		return nil, fmt.Errorf("authenticate Cloud DataChannel: %w", err)
 	}
+	reportTiming("datachannel_authenticated")
 	protocolClient := internalprotocol.NewClient(connection)
 	clientName := strings.TrimSpace(dialer.ClientName)
 	if clientName == "" {
@@ -100,6 +118,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		_ = opened.Close()
 		return nil, fmt.Errorf("Cloud protocol Hello: %w", err)
 	}
+	reportTiming("protocol_ready")
 	application, err := protocoladapter.NewApplicationClientWithObservedPath(protocolClient, request.Stamp(), string(opened.ObservedPath()))
 	if err != nil {
 		_ = protocolClient.Close()
@@ -111,32 +130,28 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		_ = opened.Close()
 		return nil, err
 	}
+	var locatorToStore []byte
 	if discovered {
-		locator, err := cloudclient.EncodeEdgeLocator(resolved.Locator())
+		locatorToStore, err = cloudclient.EncodeEdgeLocator(resolved.Locator())
 		if err != nil {
 			_ = application.Close()
 			_ = opened.Close()
 			return nil, fmt.Errorf("encode authenticated Cloud Edge locator: %w", err)
 		}
-		// Locator 是公开位置缓存；持久化故障不能杀死已经完成端到端认证的会话。
-		_ = signaling.StoreCloudEdgeLocator(ctx, locator)
 	}
 	dialer.report(clientruntime.EndpointPhaseReady)
 	peer, signalSession := opened.Release()
-	return newSession(application, peer, signalSession), nil
-}
-
-func relayPreference(mode endpoint.RelayMode) (cloudv1.RelayPreference, port.ICETransportPolicy, error) {
-	switch mode {
-	case "", endpoint.RelayAuto, endpoint.RelaySmart:
-		return cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, port.ICETransportAll, nil
-	case endpoint.RelayDirect:
-		return cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY, port.ICETransportAll, nil
-	case endpoint.RelayOnly:
-		return cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY, port.ICETransportRelayOnly, nil
-	default:
-		return cloudv1.RelayPreference_RELAY_PREFERENCE_UNSPECIFIED, port.ICETransportAll, fmt.Errorf("unsupported Cloud relay mode %q", mode)
+	session := newSession(application, peer, signalSession)
+	if len(locatorToStore) > 0 {
+		// Locator is only a public optimization. Disk persistence must not delay a session that
+		// already completed end-to-end authentication and protocol Hello.
+		go func(locator []byte) {
+			storeContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), cloudLocatorStoreTimeout)
+			defer cancel()
+			_ = signaling.StoreCloudEdgeLocator(storeContext, locator)
+		}(append([]byte(nil), locatorToStore...))
 	}
+	return session, nil
 }
 
 func (dialer *Dialer) report(phase clientruntime.EndpointPhase) {
@@ -188,10 +203,13 @@ func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.Connecti
 	}
 	result := clientruntime.ConnectionSnapshot{RouteID: session.Stamp().RouteID, RouteKind: endpoint.RouteManagedWebRTC, ObservedPath: session.ObservedPath(), SampledAt: at.UTC(), Connected: true}
 	if snapshot, ok := session.peer.Snapshot(at); ok {
+		result.ObservedPath, result.PairID = string(snapshot.Path), snapshot.PairID
 		result.SampledAt, result.RoundTrip = snapshot.At, snapshot.RoundTrip
 		result.LocalCandidateType, result.RemoteCandidateType = snapshot.LocalCandidateType, snapshot.RemoteCandidateType
 		result.LocalAddress, result.RemoteAddress = snapshot.LocalAddress, snapshot.RemoteAddress
 		result.LocalPort, result.RemotePort = snapshot.LocalPort, snapshot.RemotePort
+		result.LocalRelatedAddress, result.RemoteRelatedAddress = snapshot.LocalRelatedAddress, snapshot.RemoteRelatedAddress
+		result.LocalRelatedPort, result.RemoteRelatedPort = snapshot.LocalRelatedPort, snapshot.RemoteRelatedPort
 		result.LocalProtocol, result.RemoteProtocol, result.RelayTransport = snapshot.LocalProtocol, snapshot.RemoteProtocol, snapshot.RelayProtocol
 		result.NetworkClass, result.BytesSent, result.BytesReceived = snapshot.NetworkClass, snapshot.BytesSent, snapshot.BytesRecv
 		result.PacketsSent, result.LossEvents, result.Connected = snapshot.PacketsSent, snapshot.LossEvents, snapshot.Connected

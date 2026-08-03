@@ -139,6 +139,223 @@ describe('NativeSessionManager', () => {
     expect(current.stamp.generation).toBe(2n)
   })
 
+  it('automatically reconnects a retryable asynchronously closed session', async () => {
+    vi.useFakeTimers()
+    const first = fakeSession()
+    const second = fakeSession(2n)
+    const connect = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    const manager = new NativeSessionManager('daemon-a', { connect })
+
+    try {
+      await manager.get()
+      first.fail(Object.assign(new Error('network handoff'), { retryable: true }))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(connect).toHaveBeenCalledTimes(2)
+      expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'connected' })
+    } finally {
+      await manager.reset()
+      vi.useRealTimers()
+    }
+  })
+
+  it('rebuilds only the endpoint session after a confirmed network change', async () => {
+    const first = fakeSession()
+    const second = fakeSession(2n)
+    const connect = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    const setActive = vi.fn(async () => {})
+    const manager = new NativeSessionManager('daemon-a', { connect, setActive })
+
+    const lease = await manager.get()
+    await lease.close()
+    await manager.networkChanged()
+
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(first.invalidate).toHaveBeenCalledTimes(1)
+    expect(first.close).toHaveBeenCalledTimes(1)
+    expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'connected' })
+    expect(setActive).toHaveBeenCalledTimes(1)
+    expect(setActive).toHaveBeenCalledWith('daemon-a', true)
+    await manager.reset()
+  })
+
+  it('keeps a remotely verified session on foreground resume', async () => {
+    const session = fakeSession()
+    const verify = vi.fn(async () => {})
+    const connect = vi.fn(async () => session)
+    const manager = new NativeSessionManager('daemon-a', { connect, verify })
+
+    await manager.get()
+    await manager.foregroundResume()
+
+    expect(verify).toHaveBeenCalledWith(session, expect.any(AbortSignal))
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'connected' })
+    await manager.reset()
+  })
+
+  it('replaces a session whose remote foreground verification fails', async () => {
+    const stale = fakeSession()
+    const recovered = fakeSession(2n)
+    const verify = vi.fn(async () => { throw new Error('stale remote transport') })
+    const connect = vi.fn()
+      .mockResolvedValueOnce(stale)
+      .mockResolvedValueOnce(recovered)
+    const manager = new NativeSessionManager('daemon-a', { connect, verify })
+
+    await manager.get()
+    await manager.foregroundResume()
+
+    expect(stale.invalidate).toHaveBeenCalledTimes(1)
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(manager.connectionState.getSnapshot()).toMatchObject({
+      phase: 'connected',
+      connectionInfo: { generation: 2n },
+    })
+    await manager.reset()
+  })
+
+  it('bounds foreground verification before replacing an unresponsive session', async () => {
+    vi.useFakeTimers()
+    const stale = fakeSession()
+    const recovered = fakeSession(2n)
+    let probeSignal: AbortSignal | undefined
+    const verify = vi.fn((_session: ProtoClientSession, signal: AbortSignal) => {
+      probeSignal = signal
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+    const connect = vi.fn()
+      .mockResolvedValueOnce(stale)
+      .mockResolvedValueOnce(recovered)
+    const manager = new NativeSessionManager('daemon-a', { connect, verify })
+
+    try {
+      await manager.get()
+      const resume = manager.foregroundResume()
+      await vi.advanceTimersByTimeAsync(4_999)
+      expect(probeSignal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await resume
+
+      expect(probeSignal?.aborted).toBe(true)
+      expect(stale.invalidate).toHaveBeenCalledTimes(1)
+      expect(connect).toHaveBeenCalledTimes(2)
+      expect(manager.connectionState.getSnapshot()).toMatchObject({
+        phase: 'connected',
+        connectionInfo: { generation: 2n },
+      })
+    } finally {
+      await manager.reset()
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts a superseded network acquire and retries the latest failed epoch', async () => {
+    vi.useFakeTimers()
+    const first = fakeSession()
+    const recovered = fakeSession(2n)
+    const latestFailure = Object.assign(new Error('new network is still settling'), { retryable: true })
+    let supersededSignal: AbortSignal | undefined
+    const connect = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockImplementationOnce((_input, options) => {
+        supersededSignal = options?.signal
+        return new Promise<ProtoClientSession>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
+        })
+      })
+      .mockRejectedValueOnce(latestFailure)
+      .mockResolvedValueOnce(recovered)
+    const manager = new NativeSessionManager('daemon-a', { connect })
+
+    try {
+      await manager.get()
+      const superseded = manager.networkChanged()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(connect).toHaveBeenCalledTimes(2)
+
+      const latest = manager.networkChanged()
+      await expect(superseded).rejects.toMatchObject({ message: 'native session generation changed while connecting' })
+      expect(supersededSignal?.aborted).toBe(true)
+      await expect(latest).rejects.toBe(latestFailure)
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(connect).toHaveBeenCalledTimes(4)
+      expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'connected' })
+    } finally {
+      await manager.reset()
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let delayed stale-session cleanup replace a recovered network session', async () => {
+    const stale = fakeSession()
+    const recovered = fakeSession(2n)
+    let finishStaleClose!: () => void
+    const staleClose = new Promise<void>((resolve) => { finishStaleClose = resolve })
+    stale.close = vi.fn(() => staleClose)
+    const connect = vi.fn()
+      .mockResolvedValueOnce(stale)
+      .mockResolvedValueOnce(recovered)
+      .mockResolvedValueOnce(fakeSession(3n))
+    const manager = new NativeSessionManager('daemon-a', { connect })
+
+    await manager.get()
+    stale.markDead()
+    const waitingForCleanup = manager.get()
+    const networkRecovery = manager.networkChanged()
+    await networkRecovery
+    expect(manager.connectionState.getSnapshot()).toMatchObject({ phase: 'connected' })
+
+    finishStaleClose()
+    await expect(waitingForCleanup).rejects.toMatchObject({ message: 'native session generation changed while connecting' })
+
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(manager.connectionState.getSnapshot()).toMatchObject({
+      phase: 'connected',
+      connectionInfo: { generation: 2n },
+    })
+    await manager.reset()
+  })
+
+  it('keeps the foreground service active until an explicit reset', async () => {
+    const setActive = vi.fn(async () => {})
+    const manager = new NativeSessionManager('daemon-a', {
+      connect: vi.fn(async () => fakeSession()),
+      setActive,
+    })
+
+    await manager.get()
+    expect(setActive).toHaveBeenCalledWith('daemon-a', true)
+
+    await manager.reset()
+    expect(setActive).toHaveBeenLastCalledWith('daemon-a', false)
+  })
+
+  it('keeps the foreground service active while an explicit reconnect replaces the session', async () => {
+    const session = fakeSession()
+    const setActive = vi.fn(async () => {})
+    const manager = new NativeSessionManager('daemon-a', {
+      connect: vi.fn(async () => session),
+      setActive,
+    })
+
+    await manager.get()
+    await manager.resetClientOnly()
+
+    expect(session.invalidate).toHaveBeenCalledTimes(1)
+    expect(setActive).toHaveBeenCalledTimes(1)
+    expect(setActive).toHaveBeenCalledWith('daemon-a', true)
+    await manager.reset()
+  })
+
   it('keeps structured connection failures in connection-state callbacks', async () => {
     const failure = Object.assign(new Error('daemon deleted'), {
       code: 'daemon_deleted',
@@ -284,6 +501,10 @@ function fakeSession(generation = 1n, connection?: ConnectionSnapshot): ProtoCli
     }),
     openResourceStream: vi.fn(async (_resource: ResourceHandle): Promise<ProtoResourceStream> => { throw new Error('unused') }),
     isAlive: () => alive,
+    invalidate: vi.fn(async () => {
+      alive = false
+      closeHandlers.clear()
+    }),
     close: vi.fn(async () => {
       alive = false
       closeHandlers.clear()

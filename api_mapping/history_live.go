@@ -410,13 +410,23 @@ func historyRowOwnershipToProto(row history.HistoryRow) apipb.RowOwnership {
 
 func vtermRowToProto(cells []vterm.Cell) *apipb.ScreenRow {
 	row := &apipb.ScreenRow{}
-	for index, cell := range cells {
-		if last := lastScreenCell(row); last != nil && vtermCellsShareRun(cells[index-1], cell) {
+	var previous vterm.Cell
+	hasPrevious := false
+	for _, cell := range cells {
+		// A width-zero empty cell is the continuation column already occupied by
+		// the preceding wide glyph. It has no independent visual content or style.
+		if cell.Content == "" && cell.Width == 0 {
+			continue
+		}
+		if last := lastScreenCell(row); last != nil && hasPrevious && vtermCellsShareRun(previous, cell) {
 			last.Content += cell.Content
 			last.Width += int32(cell.Width)
+			previous = cell
 			continue
 		}
 		row.Cells = append(row.Cells, &apipb.ScreenCell{Content: cell.Content, Width: int32(cell.Width), Style: vtermStyleToProto(cell.Style), LinkUrl: cell.LinkURL, LinkParams: cell.LinkParams})
+		previous = cell
+		hasPrevious = true
 	}
 	return row
 }

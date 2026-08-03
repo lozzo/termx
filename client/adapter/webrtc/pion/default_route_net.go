@@ -20,7 +20,7 @@ var defaultRouteProbes = []struct {
 
 // NewDefaultRouteNet 创建只暴露当前系统默认路由地址的 Pion 网络 primitive。
 // 它用于 Android application sandbox：该环境禁止直接读取 netlink，但允许普通 socket
-// 由内核选择当前 active network。返回值只属于当前 Client Engine generation；网络切换后必须重建。
+// 由内核选择当前 active network。返回值是调用时的快照，必须为每个新 peer 重新创建。
 func NewDefaultRouteNet() (transport.Net, error) {
 	return newDefaultRouteNet(net.Dial)
 }

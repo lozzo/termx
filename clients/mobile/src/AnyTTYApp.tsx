@@ -18,6 +18,7 @@ import {
 } from '@anytty/ui'
 import type {
   FileTransferContext,
+  MachineConnectionStateEvents,
   MachineWorkspaceProps,
   LocalStatus,
   Machine,
@@ -72,6 +73,7 @@ function NativeAnyTTYApp() {
   const networkRuntime = useMemo(() => createNativeNetworkRuntime(), [])
   const endpointRegistry = useMemo(() => new NativeEndpointRegistryProjection(), [])
   const nativeAppRuntime = useMemo(() => createNativeAppRuntime(endpointRegistry), [endpointRegistry])
+  useNativeNetworkSessionRecovery(nativeAppRuntime.networkChanged)
   const [registryReady, setRegistryReady] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
   const refreshRegistry = useCallback(async (client: GoBindingClient = goBindingClient) => {
@@ -95,6 +97,7 @@ function NativeAnyTTYApp() {
   const nativeConnectionRecovery = useAppResumeSync(
     refreshRegistry,
     nativeAppRuntime.resetGeneration,
+    nativeAppRuntime.foregroundResume,
     nativeAppRuntime.resumeInterruptedTransfers,
   )
   const externalPairingAdapter = useMemo(
@@ -337,10 +340,11 @@ function replaceNativeGeneration(
   return replacement
 }
 
-/** When the app resumes from background, trigger a sync request on all active sessions. */
+/** Keep the native generation across backgrounding; replace only a bridge that actually failed. */
 function useAppResumeSync(
   refreshRegistry: (client?: GoBindingClient) => Promise<void>,
   resetRuntime: () => Promise<void>,
+  foregroundResume: () => Promise<void>,
   resumeInterruptedTransfers: () => void,
 ): {
   connectionReady: boolean
@@ -349,19 +353,33 @@ function useAppResumeSync(
 } {
   const [status, setStatus] = useState<'ready' | 'restoring' | 'failed'>('ready')
   const [recoveryFence] = useState(() => new NativeGenerationRecoveryFence())
-  const runRecovery = useCallback(async (restartNative: boolean, reloadRegistry: boolean, claimedAttempt?: number) => {
+  const runRecovery = useCallback(async (replaceBinding: boolean, reloadRegistry: boolean, claimedAttempt?: number) => {
     const attempt = claimedAttempt ?? recoveryFence.beginAttempt()
     if (!recoveryFence.isCurrent(attempt)) return
-    setStatus('restoring')
+    if (replaceBinding) setStatus('restoring')
     markNativeBackground()
     try {
-      if (restartNative) await NativeConnection.handleForegroundResume()
-      // Native generation 就绪后再替换 JS owner；旧 session/resource handle 不得继续使用。
-      await replaceNativeGeneration(refreshRegistry, resetRuntime, reloadRegistry)
+      await NativeConnection.handleForegroundResume()
+      if (replaceBinding) {
+        await replaceNativeGeneration(refreshRegistry, resetRuntime, reloadRegistry)
+      } else if (reloadRegistry) {
+        try {
+          // Resume only probes the existing bridge. Replacing an unchanged registry increments
+          // its projection version and makes healthy machine runtimes look stale, which would
+          // unnecessarily tear down their live sessions on every foreground transition.
+          await goBindingClient.getEndpointRegistry()
+        } catch {
+          if (!recoveryFence.isCurrent(attempt)) return
+          setStatus('restoring')
+          await replaceNativeGeneration(refreshRegistry, resetRuntime, true)
+        }
+      }
+      await foregroundResume()
       if (!recoveryFence.isCurrent(attempt)) return
       resumeInterruptedTransfers()
       setStatus('ready')
       finishNativeForeground()
+      document.dispatchEvent(new Event('anytty:resume'))
     } catch (failure) {
       if (!recoveryFence.isCurrent(attempt)) return
       setStatus('failed')
@@ -369,7 +387,7 @@ function useAppResumeSync(
       finishNativeForeground(failure)
       throw failure
     }
-  }, [recoveryFence, refreshRegistry, resetRuntime, resumeInterruptedTransfers])
+  }, [foregroundResume, recoveryFence, refreshRegistry, resetRuntime, resumeInterruptedTransfers])
 
   const retryConnectionRecovery = useCallback(async () => {
     await runRecovery(true, false).catch(() => undefined)
@@ -379,34 +397,16 @@ function useAppResumeSync(
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
         recoveryFence.invalidate()
-        setStatus('restoring')
         markNativeBackground()
         return
       }
-      void runRecovery(true, true).catch(() => undefined)
+      void runRecovery(false, true).catch(() => undefined)
     })
-    const generationChangingPromise = NativeConnection.addListener('generationChanging', ({ epoch }) => {
-      if (recoveryFence.beginNativeEpoch(epoch) === null) return
-      setStatus('restoring')
-      markNativeBackground()
-    })
-    const generationPromise = NativeConnection.addListener('generationChanged', ({ epoch }) => {
-      const attempt = recoveryFence.claimNativeReadyAttempt(epoch)
-      if (attempt === null) return
-      void runRecovery(false, false, attempt).catch(() => undefined)
-    })
-    const generationFailurePromise = NativeConnection.addListener('generationChangeFailed', ({ epoch }) => {
-      if (recoveryFence.failNativeEpoch(epoch) === null) return
-      const failure = new Error('native connection recovery failed')
-      setStatus('failed')
-      reportNativeGenerationFailure(failure)
-      finishNativeForeground(failure)
-    })
+    const handleBindingClosed = () => { void runRecovery(true, false).catch(() => undefined) }
+    document.addEventListener('anytty:binding-closed', handleBindingClosed)
     return () => {
       void promise.then((sub) => sub.remove())
-      void generationChangingPromise.then((sub) => sub.remove())
-      void generationPromise.then((sub) => sub.remove())
-      void generationFailurePromise.then((sub) => sub.remove())
+      document.removeEventListener('anytty:binding-closed', handleBindingClosed)
     }
   }, [recoveryFence, runRecovery])
 
@@ -470,6 +470,8 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
   fileTransfer: FileTransferContext
   discardLocalState: () => Promise<void>
   resetGeneration: () => Promise<void>
+  foregroundResume: () => Promise<void>
+  networkChanged: () => Promise<void>
   resumeInterruptedTransfers: () => void
 } {
   const transferStore = new NativeFileTransferStore()
@@ -494,6 +496,12 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
         await entry.connector.release?.(entry.manager.machineID())
       }))
     },
+    async foregroundResume() {
+      await Promise.all([...sessionManagers.values()].map((entry) => entry.manager.foregroundResume()))
+    },
+    async networkChanged() {
+      await Promise.all([...sessionManagers.values()].map((entry) => entry.manager.networkChanged()))
+    },
     createMachineRuntime(input) {
       return createNativeMachineRuntime(input.machine, input.storage, endpointRegistry, {
         sessionManagers,
@@ -502,6 +510,18 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
       })
     },
   }
+}
+
+function useNativeNetworkSessionRecovery(networkChanged: () => Promise<void>): void {
+  useEffect(() => {
+    let latestEpoch = 0
+    const listener = NativeConnection.addListener('networkChanged', (event) => {
+      if (!Number.isSafeInteger(event.epoch) || event.epoch <= latestEpoch) return
+      latestEpoch = event.epoch
+      void networkChanged().catch(() => undefined)
+    })
+    return () => { void listener.then((subscription) => subscription.remove()) }
+  }, [networkChanged])
 }
 
 function createNativeMachineRuntime(
@@ -631,6 +651,7 @@ function createNativeMachineRuntime(
       },
     },
     inventoryEvents: createNativeInventoryEvents(machine.id, sessionManager),
+    connectionStateEvents: createNativeConnectionStateEvents(machine.id, sessionManager),
     listConnectionState: sessionManager.connectionState,
     fileTransfer: createFileTransferContext(machine.id, transferStore),
     async disconnect() {
@@ -642,6 +663,40 @@ function createNativeMachineRuntime(
         shared.sessionManagers.delete(machine.id)
       }
       return sessionManager.reset().finally(() => connector.release?.(machine.id))
+    },
+  }
+}
+
+function createNativeConnectionStateEvents(
+  machineId: string,
+  sessionManager: NativeSessionManager,
+): MachineConnectionStateEvents {
+  return {
+    subscribe(targetMachineId, handler) {
+      if (targetMachineId !== machineId) return { close() {} }
+      let closed = false
+      const publish = () => {
+        if (closed) return
+        const snapshot = sessionManager.connectionState.getSnapshot()
+        handler({
+          machineId,
+          phase: snapshot.phase,
+          statusText: snapshot.statusText,
+          relayInUse: snapshot.relayInUse,
+          ...(snapshot.connectionInfo?.path ? { path: snapshot.connectionInfo.path } : {}),
+          ...(snapshot.connectionInfo?.observedPath ? { observedPath: snapshot.connectionInfo.observedPath } : {}),
+          ...(snapshot.connectionInfo?.routeSelectionReason ? { routeSelectionReason: snapshot.connectionInfo.routeSelectionReason } : {}),
+          ...(snapshot.error ? { error: snapshot.error } : {}),
+        })
+      }
+      const unsubscribe = sessionManager.connectionState.subscribe(publish)
+      queueMicrotask(publish)
+      return {
+        close() {
+          closed = true
+          unsubscribe()
+        },
+      }
     },
   }
 }
@@ -685,7 +740,10 @@ function createNativeConnector(
   if (!endpointRegistry.has(machine.id)) {
     return {
       async connect() {
-    throw new Error('Endpoint requires a valid Proto configuration from the pairing flow')
+        throw Object.assign(new Error('Endpoint requires a valid Proto configuration from the pairing flow'), {
+          code: 'endpoint_not_configured',
+          retryable: false,
+        })
       },
     }
   }
@@ -695,8 +753,15 @@ function createNativeConnector(
   })
   return {
     connect: (target, options) => connector.connect(target, options),
+    async verify(session, signal) {
+      const response = await session.execute(create(AnyTTYApiApplication.CommandEnvelopeSchema, {
+        command: { case: 'terminalList', value: create(AnyTTYApiTerminal.TerminalListCommandSchema) },
+      }), { signal })
+      if (response.result.case !== 'terminalList') throw new Error('foreground session verification returned no terminal list')
+    },
     getConnectionPolicy: (signal) => connector.getConnectionPolicy(signal),
     applyConnectionPolicy: (policy, signal) => connector.applyConnectionPolicy(policy, signal),
+    setActive: (machineId, active) => NativeConnection.setSessionActive({ machineId, active }),
   }
 }
 
@@ -710,29 +775,68 @@ function createNativeInventoryEvents(
       let closed = false
       let subscription: RtcSubscription | null = null
       let session: NativeSessionLease | null = null
-      void sessionManager.get().then(async (connectedSession) => {
-        if (closed) {
-          void connectedSession.close().catch(() => undefined)
+      let sequence = 0
+      let targetConnectionId: string | null = null
+
+      const detach = () => {
+        sequence += 1
+        targetConnectionId = null
+        subscription?.close()
+        subscription = null
+        void session?.close().catch(() => undefined)
+        session = null
+      }
+      const synchronize = () => {
+        if (closed) return
+        const snapshot = sessionManager.connectionState.getSnapshot()
+        const connectionId = snapshot.phase === 'connected'
+          ? snapshot.connectionInfo?.connectionId ?? null
+          : null
+        if (!connectionId) {
+          if (targetConnectionId !== null || subscription !== null || session !== null) detach()
           return
         }
-        session = connectedSession
-        subscription = await openProtoEventSubscription(connectedSession, create(AnyTTYApiEvents.EventSubscribeCommandSchema, {
-          types: [AnyTTYApiEvents.ApplicationEventType.TERMINAL_LIFECYCLE],
-        }), (event) => {
-          if (event.event.case === 'terminalLifecycle') handler({ type: 'inventory_changed', payload: event.event.value })
+        if (targetConnectionId === connectionId) return
+
+        detach()
+        targetConnectionId = connectionId
+        const attachSequence = sequence
+        void sessionManager.get().then(async (connectedSession) => {
+          if (closed || attachSequence !== sequence || targetConnectionId !== connectionId) {
+            await connectedSession.close().catch(() => undefined)
+            return
+          }
+          let connectedSubscription: RtcSubscription
+          try {
+            connectedSubscription = await openProtoEventSubscription(connectedSession, create(AnyTTYApiEvents.EventSubscribeCommandSchema, {
+              types: [AnyTTYApiEvents.ApplicationEventType.TERMINAL_LIFECYCLE],
+            }), (event) => {
+              if (event.event.case === 'terminalLifecycle') handler({ type: 'inventory_changed', payload: event.event.value })
+            })
+          } catch {
+            await connectedSession.close().catch(() => undefined)
+            if (attachSequence === sequence && targetConnectionId === connectionId) targetConnectionId = null
+            return
+          }
+          if (closed || attachSequence !== sequence || targetConnectionId !== connectionId) {
+            connectedSubscription.close()
+            await connectedSession.close().catch(() => undefined)
+            return
+          }
+          session = connectedSession
+          subscription = connectedSubscription
+        }).catch(() => {
+          if (attachSequence === sequence && targetConnectionId === connectionId) targetConnectionId = null
         })
-        if (closed) {
-          subscription.close()
-          subscription = null
-        }
-      }).catch(() => {})
+      }
+      const unsubscribe = sessionManager.connectionState.subscribe(synchronize)
+      queueMicrotask(synchronize)
       return {
         close() {
+          if (closed) return
           closed = true
-          subscription?.close()
-          subscription = null
-          void session?.close().catch(() => undefined)
-          session = null
+          unsubscribe()
+          detach()
         },
       }
     },

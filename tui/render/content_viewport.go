@@ -28,7 +28,7 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		return ContentRenderResult{
 			Lines:      contentViewportDirectRows(lines, rect.W, rect.H),
 			Cursor:     contentViewportCursor(content.Cursor, extent, rect),
-			HitRegions: content.HitRegions,
+			HitRegions: contentViewportHitRegions(content.HitRegions, extent, rect),
 			Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
 			Overflow:   overflow,
 		}
@@ -40,10 +40,31 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	return ContentRenderResult{
 		Lines:      rendered,
 		Cursor:     contentViewportCursor(content.Cursor, extent, rect),
-		HitRegions: content.HitRegions,
+		HitRegions: contentViewportHitRegions(content.HitRegions, extent, rect),
 		Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
 		Overflow:   overflow,
 	}
+}
+
+func contentViewportHitRegions(regions []HitRegion, extent ContentExtent, rect Rect) []HitRegion {
+	if len(regions) == 0 {
+		return nil
+	}
+	out := make([]HitRegion, 0, len(regions))
+	for _, region := range regions {
+		region.Rect.X += extent.X
+		region.Rect.Y += extent.Y
+		left := maxInt(maxInt(0, extent.X), region.Rect.X)
+		top := maxInt(maxInt(0, extent.Y), region.Rect.Y)
+		right := minInt(minInt(rect.W, extent.X+extent.Cols), region.Rect.X+region.Rect.W)
+		bottom := minInt(minInt(rect.H, extent.Y+extent.Rows), region.Rect.Y+region.Rect.H)
+		if right <= left || bottom <= top {
+			continue
+		}
+		region.Rect = Rect{X: left, Y: top, W: right - left, H: bottom - top}
+		out = append(out, region)
+	}
+	return out
 }
 
 func contentViewportCursor(cursor Cursor, extent ContentExtent, rect Rect) Cursor {
@@ -107,8 +128,9 @@ func centeredContentOrigin(delta int) int {
 }
 
 func contentViewportMarksOutsideExtent(content ContentVM) bool {
-	// 只有真实 live surface 才展示 pane/terminal 尺寸差异；pending、空态和错误 fallback 保持降噪。
-	return content.Kind == ContentTerminalLive && content.Extent.Known && !content.Pending && !content.Empty && content.Error == ""
+	// Live 与 frozen history 共享同一 terminal extent；两种模式外侧都保留 pane/terminal 尺寸差异提示。
+	return (content.Kind == ContentTerminalLive || content.Kind == ContentCopyHistory) &&
+		content.Extent.Known && !content.Pending && content.Error == ""
 }
 
 func contentViewportCanUseDirectRows(extent ContentExtent, rect Rect) bool {

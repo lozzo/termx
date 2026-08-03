@@ -10,7 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/client/endpoint"
+	"github.com/anytty/anytty/client/port"
 	"github.com/anytty/anytty/proto/wire"
+	"github.com/pion/transport/v4"
+	"github.com/pion/transport/v4/stdnet"
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
@@ -73,6 +77,76 @@ func TestDefaultRouteNetRejectsMissingRoute(t *testing.T) {
 	}
 }
 
+func TestFactoryBuildsFreshNetworkSnapshotForEveryPeer(t *testing.T) {
+	tests := []struct {
+		name string
+		open func(Factory) (port.WebRTCPeer, error)
+	}{
+		{name: "direct", open: func(factory Factory) (port.WebRTCPeer, error) {
+			return factory.OpenDirectPeer(context.Background())
+		}},
+		{name: "cloud", open: func(factory Factory) (port.WebRTCPeer, error) {
+			return factory.OpenCloudPeer(context.Background(), port.WebRTCConfig{})
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			factory := Factory{NetworkFactory: func() (transport.Net, error) {
+				calls++
+				return &stdnet.Net{}, nil
+			}}
+			for wantCalls := 1; wantCalls <= 2; wantCalls++ {
+				peer, err := test.open(factory)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := peer.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if calls != wantCalls {
+					t.Fatalf("network snapshots = %d, want %d", calls, wantCalls)
+				}
+			}
+		})
+	}
+}
+
+func TestFactoryReportsNetworkSnapshotFailureWhenPeerOpens(t *testing.T) {
+	offline := errors.New("network is offline")
+	tests := []struct {
+		name string
+		open func(Factory) (port.WebRTCPeer, error)
+	}{
+		{name: "direct", open: func(factory Factory) (port.WebRTCPeer, error) {
+			return factory.OpenDirectPeer(context.Background())
+		}},
+		{name: "cloud", open: func(factory Factory) (port.WebRTCPeer, error) {
+			return factory.OpenCloudPeer(context.Background(), port.WebRTCConfig{})
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			factory := Factory{NetworkFactory: func() (transport.Net, error) {
+				calls++
+				return nil, offline
+			}}
+			peer, err := test.open(factory)
+			if peer != nil {
+				_ = peer.Close()
+				t.Fatal("offline peer unexpectedly opened")
+			}
+			if !errors.Is(err, offline) {
+				t.Fatalf("peer open error = %v, want %v", err, offline)
+			}
+			if calls != 1 {
+				t.Fatalf("network snapshots = %d, want 1", calls)
+			}
+		})
+	}
+}
+
 func TestWaitReadyReturnsWhenChannelClosesBeforeOpen(t *testing.T) {
 	peer := &webRTCPeer{ready: make(chan struct{}), channelClosed: make(chan struct{}), readyTimeout: time.Second}
 	close(peer.channelClosed)
@@ -90,6 +164,87 @@ func TestCandidatePortRejectsInvalidStatsValues(t *testing.T) {
 			t.Fatalf("candidatePort(%d) = %d, want 0", value, got)
 		}
 	}
+}
+
+func TestSelectedCandidatePairUsesTransportSelectionInsteadOfNominatedReportOrder(t *testing.T) {
+	selected := pionwebrtc.ICECandidatePairStats{
+		ID: "z-selected", LocalCandidateID: "selected-local", RemoteCandidateID: "selected-remote",
+		State: pionwebrtc.StatsICECandidatePairStateSucceeded, Nominated: true,
+	}
+	report := pionwebrtc.StatsReport{
+		"a-stale": pionwebrtc.ICECandidatePairStats{
+			ID: "a-stale", LocalCandidateID: "stale-local", RemoteCandidateID: "stale-remote",
+			State: pionwebrtc.StatsICECandidatePairStateSucceeded, Nominated: true,
+		},
+		"stale-local":    pionwebrtc.ICECandidateStats{ID: "stale-local", IP: "203.0.113.10", CandidateType: pionwebrtc.ICECandidateTypeRelay},
+		"stale-remote":   pionwebrtc.ICECandidateStats{ID: "stale-remote", IP: "203.0.113.11", CandidateType: pionwebrtc.ICECandidateTypeRelay},
+		"selected-local": pionwebrtc.ICECandidateStats{ID: "selected-local", IP: "192.0.2.10", CandidateType: pionwebrtc.ICECandidateTypeHost},
+		"selected-remote": pionwebrtc.ICECandidateStats{
+			ID: "selected-remote", IP: "192.0.2.11", CandidateType: pionwebrtc.ICECandidateTypeHost,
+		},
+	}
+
+	pair, local, remote, ok := selectedCandidatePair(staticSelectedPairStats{pair: selected, ok: true}, report)
+	if !ok {
+		t.Fatal("selected candidate pair was unavailable")
+	}
+	if pair.ID != selected.ID || local.ID != selected.LocalCandidateID || remote.ID != selected.RemoteCandidateID {
+		t.Fatalf("selected pair = %#v, local = %#v, remote = %#v", pair, local, remote)
+	}
+	if got := candidatePath(local, remote); got != endpoint.PathDirect {
+		t.Fatalf("selected path = %q, want %q", got, endpoint.PathDirect)
+	}
+}
+
+func TestSelectedCandidatePairRequiresSelectedStatsAndCandidates(t *testing.T) {
+	report := pionwebrtc.StatsReport{
+		"local": pionwebrtc.ICECandidateStats{ID: "local"},
+	}
+	selected := pionwebrtc.ICECandidatePairStats{LocalCandidateID: "local", RemoteCandidateID: "remote"}
+	tests := []struct {
+		name   string
+		reader selectedCandidatePairStatsReader
+		report pionwebrtc.StatsReport
+	}{
+		{name: "no reader", report: report},
+		{name: "no selected pair", reader: staticSelectedPairStats{}},
+		{name: "missing remote candidate", reader: staticSelectedPairStats{pair: selected, ok: true}, report: report},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, _, ok := selectedCandidatePair(test.reader, test.report); ok {
+				t.Fatal("incomplete selected candidate pair unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestRelatedCandidateAddressesStayBoundToSelectedStats(t *testing.T) {
+	local := &pionwebrtc.ICECandidate{Address: "182.138.142.220", Port: 54229, Typ: pionwebrtc.ICECandidateTypeSrflx, RelatedAddress: "192.168.123.168", RelatedPort: 37129}
+	remote := &pionwebrtc.ICECandidate{Address: "192.168.123.203", Port: 53537, Typ: pionwebrtc.ICECandidateTypeHost}
+	pair := pionwebrtc.NewICECandidatePair(local, remote)
+	localStats := pionwebrtc.ICECandidateStats{IP: local.Address, Port: int32(local.Port), CandidateType: local.Typ}
+	remoteStats := pionwebrtc.ICECandidateStats{IP: remote.Address, Port: int32(remote.Port), CandidateType: remote.Typ}
+
+	localAddress, localPort, remoteAddress, remotePort := relatedCandidateAddresses(pair, localStats, remoteStats)
+	if localAddress != "192.168.123.168" || localPort != 37129 || remoteAddress != "" || remotePort != 0 {
+		t.Fatalf("related addresses = %s:%d / %s:%d", localAddress, localPort, remoteAddress, remotePort)
+	}
+
+	localStats.IP = "203.0.113.99"
+	localAddress, localPort, remoteAddress, remotePort = relatedCandidateAddresses(pair, localStats, remoteStats)
+	if localAddress != "" || localPort != 0 || remoteAddress != "" || remotePort != 0 {
+		t.Fatalf("mixed-pair related addresses = %s:%d / %s:%d", localAddress, localPort, remoteAddress, remotePort)
+	}
+}
+
+type staticSelectedPairStats struct {
+	pair pionwebrtc.ICECandidatePairStats
+	ok   bool
+}
+
+func (stats staticSelectedPairStats) GetSelectedCandidatePairStats() (pionwebrtc.ICECandidatePairStats, bool) {
+	return stats.pair, stats.ok
 }
 
 func TestWaitReadyReturnsPeerFailureAndTimeout(t *testing.T) {

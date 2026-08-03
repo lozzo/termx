@@ -9,13 +9,17 @@ type ProtoClientSessionCloseError = Parameters<ProtoClientSessionCloseHandler>[0
 // Android 总窗口覆盖 route planning、signaling/answer、ICE、鉴权和 Hello；
 // Go peer 仍用独立 deadline 约束 answer 之后的 ICE/DataChannel，不能由 UI 提前截断。
 const NATIVE_SESSION_READY_TIMEOUT_MS = 45_000
+const NATIVE_SESSION_FOREGROUND_PROBE_TIMEOUT_MS = 5_000
+const NATIVE_RECONNECT_DELAYS_MS = [0, 500, 2_000, 4_000, 8_000, 15_000] as const
 
 /** NativeSessionConnector 是 Android UI 到 Go binding session 的窄连接入口，不拥有 route 或 generation 真值。 */
 export type NativeSessionConnector = {
   connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<ProtoClientSession>
   getConnectionPolicy?(signal?: AbortSignal): Promise<ConnectionPolicyState>
   applyConnectionPolicy?(policy: ConnectionPolicy, signal?: AbortSignal): Promise<void>
+  verify?(session: ProtoClientSession, signal: AbortSignal): Promise<void>
   release?(machineId: string): Promise<void>
+  setActive?(machineId: string, active: boolean): Promise<void>
 }
 
 /**
@@ -33,6 +37,9 @@ export class NativeSessionManager {
   private sessionClosedSubscription: ProtoClientSubscription | null = null
   private epoch = 0
   private reconnectAttempt = 0
+  private reconnectBackoffIndex = 0
+  private reconnectTimer: ReturnType<typeof globalThis.setTimeout> | null = null
+  private keepAliveRequested = false
   private snapshot: MachineConnectionSnapshot
   private readonly stateListeners = new Set<() => void>()
 
@@ -66,7 +73,71 @@ export class NativeSessionManager {
 
   /** reset 在 native generation 更换、显式重连或 Endpoint 配置失效时关闭唯一底层 binding session。 */
   async reset(): Promise<void> {
+    this.resetOwnedSession(false)
+  }
+
+  /** resetClientOnly 响应 UI 重连请求，但仍由 Go 在下一次 openSession 时重新选择 route。 */
+  async resetClientOnly(_options?: { forceRelay?: boolean }): Promise<void> {
+    const session = this.resetOwnedSession(true, false)
+    if (!session) return
+    await session.invalidate?.().catch(() => undefined)
+    void session.close().catch(() => undefined)
+  }
+
+  /** networkChanged 只替换当前 endpoint session；Go Engine、registry 与 bridge 保持存活。 */
+  async networkChanged(): Promise<void> {
+    const reconnect = this.keepAliveRequested
+    const forceRelay = this.snapshot.forceRelay
+    const session = this.resetOwnedSession(reconnect, false)
+    if (session) {
+      await session.invalidate?.().catch(() => undefined)
+      void session.close().catch(() => undefined)
+    }
+    if (!reconnect) return
+    await this.acquire({ forceRelay }).then((lease) => lease.close())
+  }
+
+  /** foregroundResume verifies the remote application protocol, not merely the local JS-to-Go bridge. */
+  async foregroundResume(): Promise<void> {
+    if (!this.keepAliveRequested) return
+    const session = this.session
+    if (!session?.isAlive()) {
+      await this.acquire({ forceRelay: this.snapshot.forceRelay }).then((lease) => lease.close())
+      return
+    }
+    if (!this.connector.verify) return
+
+    const epoch = this.epoch
+    const forceRelay = this.snapshot.forceRelay
+    this.publish({
+      ...this.snapshot,
+      phase: 'verifying',
+      statusText: 'Checking the connection...',
+      error: null,
+    })
+    const controller = new AbortController()
+    const timeout = globalThis.setTimeout(() => {
+      controller.abort(new Error('foreground session verification timed out'))
+    }, NATIVE_SESSION_FOREGROUND_PROBE_TIMEOUT_MS)
+    try {
+      await this.connector.verify(session, controller.signal)
+      if (epoch !== this.epoch || this.session !== session || !session.isAlive()) return
+      this.publish(connectedMachineConnectionSnapshot(this.machineId, session, forceRelay, this.reconnectAttempt))
+    } catch (failure) {
+      if (epoch !== this.epoch || this.session !== session) return
+      await this.networkChanged().catch((reconnectFailure) => {
+        throw reconnectFailure ?? failure
+      })
+    } finally {
+      globalThis.clearTimeout(timeout)
+    }
+  }
+
+  private resetOwnedSession(preserveKeepAlive: boolean, closeSession = true): ProtoClientSession | null {
     this.epoch += 1
+    this.clearReconnectTimer()
+    this.reconnectBackoffIndex = 0
+    if (!preserveKeepAlive) this.setKeepAliveRequested(false)
     const session = this.session
     const pending = this.pending
     const pendingController = this.pendingController
@@ -78,32 +149,38 @@ export class NativeSessionManager {
     sessionClosedSubscription?.close()
     this.publish(idleMachineConnectionSnapshot(this.machineId, this.reconnectAttempt))
     pendingController?.abort(new Error('native session generation changed while connecting'))
-    // native generation owner 已经关闭旧 engine；close 只做幂等清理，不能等待已经失联的 bridge。
-    void session?.close().catch(() => undefined)
+    // Generation replacement cannot wait for a transport on the old network. The epoch fence
+    // closes late results, while the new peer is free to use the current network snapshot.
+    if (closeSession) void session?.close().catch(() => undefined)
     if (pending) {
-      // generation replacement 不能等待旧网络上的 connect 结束；epoch fence 会让迟到 session
-      // 在 acquire 链路中自行关闭，这里只补充幂等清理，避免阻塞新 bridge 发布。
       void pending.then((late) => late.close(), () => undefined).catch(() => undefined)
     }
-  }
-
-  /** resetClientOnly 响应 UI 重连请求，但仍由 Go 在下一次 openSession 时重新选择 route。 */
-  async resetClientOnly(_options?: { forceRelay?: boolean }): Promise<void> {
-    await this.reset()
+    return session
   }
 
   private async acquire(options?: RtcConnectOptions): Promise<ProtoClientSession> {
+    const acquireEpoch = this.epoch
+    this.clearReconnectTimer()
+    this.setKeepAliveRequested(true)
     const stopForwarding = this.forwardState(options)
     try {
       if (this.session?.isAlive()) {
         this.publish(connectedMachineConnectionSnapshot(this.machineId, this.session, this.snapshot.forceRelay, this.reconnectAttempt))
         return new NativeSessionLease(this.session)
       }
-      if (this.session) {
+      const staleSession = this.session
+      if (staleSession) {
         this.sessionClosedSubscription?.close()
         this.sessionClosedSubscription = null
-        await this.session.close().catch(() => undefined)
-        this.session = null
+        await staleSession.close().catch(() => undefined)
+        if (this.session === staleSession) this.session = null
+        if (acquireEpoch !== this.epoch) {
+          throw new Error('native session generation changed while connecting')
+        }
+        if (this.session?.isAlive()) {
+          this.publish(connectedMachineConnectionSnapshot(this.machineId, this.session, this.snapshot.forceRelay, this.reconnectAttempt))
+          return new NativeSessionLease(this.session)
+        }
       }
       if (!this.pending) {
         const epoch = this.epoch
@@ -145,6 +222,7 @@ export class NativeSessionManager {
           this.sessionClosedSubscription = opened.subscribeClosed((error) => {
             this.handleSessionClosed(epoch, opened, error)
           })
+          this.reconnectBackoffIndex = 0
           this.publish(connectedMachineConnectionSnapshot(this.machineId, opened, options?.forceRelay === true, this.reconnectAttempt))
           return opened
         }).catch((error: unknown) => {
@@ -168,6 +246,9 @@ export class NativeSessionManager {
           globalThis.clearTimeout(timeout)
           if (this.pendingController === controller) this.pendingController = null
           if (this.pending === pending) this.pending = null
+          if (epoch === this.epoch && this.snapshot.phase === 'failed' && this.snapshot.error) {
+            this.scheduleReconnect(epoch, options?.forceRelay === true, this.snapshot.error)
+          }
         }).catch(() => undefined)
       }
       const opened = await awaitSessionLease(this.pending, options?.signal)
@@ -224,7 +305,45 @@ export class NativeSessionManager {
       reconnectAttempt: this.reconnectAttempt,
       error: failure,
     })
+    this.scheduleReconnect(epoch, this.snapshot.forceRelay, failure)
   }
+
+  private scheduleReconnect(epoch: number, forceRelay: boolean, failure: Error): void {
+    if (
+      epoch !== this.epoch ||
+      !this.keepAliveRequested ||
+      this.reconnectTimer !== null ||
+      this.pending !== null ||
+      this.session !== null ||
+      isNonRetryableFailure(failure)
+    ) return
+    const delay = NATIVE_RECONNECT_DELAYS_MS[Math.min(this.reconnectBackoffIndex, NATIVE_RECONNECT_DELAYS_MS.length - 1)]
+    this.reconnectBackoffIndex += 1
+    this.reconnectTimer = globalThis.setTimeout(() => {
+      this.reconnectTimer = null
+      if (epoch !== this.epoch || !this.keepAliveRequested) return
+      void this.acquire({ forceRelay }).then(
+        (lease) => lease.close(),
+        () => undefined,
+      ).catch(() => undefined)
+    }, delay)
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer === null) return
+    globalThis.clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+  }
+
+  private setKeepAliveRequested(active: boolean): void {
+    if (this.keepAliveRequested === active) return
+    this.keepAliveRequested = active
+    void this.connector.setActive?.(this.machineId, active).catch(() => undefined)
+  }
+}
+
+function isNonRetryableFailure(error: Error): boolean {
+  return (error as Error & { retryable?: boolean }).retryable === false
 }
 
 function idleMachineConnectionSnapshot(machineId: string, reconnectAttempt = 0): MachineConnectionSnapshot {

@@ -80,23 +80,27 @@ type WebRTCPeer interface {
 // WebRTCPeerSnapshot 是质量观测读取的平台网络计数快照。
 // 它只包含 selected pair 的 IP/port，不包含 SDP、credential、endpoint label 或 terminal identity；计数回退表示底层 candidate pair 已换代。
 type WebRTCPeerSnapshot struct {
-	PairID              string
-	Path                endpoint.Path
-	NetworkClass        string
-	At                  time.Time
-	RoundTrip           time.Duration
-	BytesSent           uint64
-	BytesRecv           uint64
-	PacketsSent         uint64
-	LossEvents          uint64
-	Connected           bool
-	LocalCandidateType  string
-	RemoteCandidateType string
-	LocalAddress        string
-	RemoteAddress       string
-	LocalPort           uint16
-	RemotePort          uint16
-	LocalProtocol       string
-	RemoteProtocol      string
-	RelayProtocol       string
+	PairID               string
+	Path                 endpoint.Path
+	NetworkClass         string
+	At                   time.Time
+	RoundTrip            time.Duration
+	BytesSent            uint64
+	BytesRecv            uint64
+	PacketsSent          uint64
+	LossEvents           uint64
+	Connected            bool
+	LocalCandidateType   string
+	RemoteCandidateType  string
+	LocalAddress         string
+	RemoteAddress        string
+	LocalPort            uint16
+	RemotePort           uint16
+	LocalRelatedAddress  string
+	RemoteRelatedAddress string
+	LocalRelatedPort     uint16
+	RemoteRelatedPort    uint16
+	LocalProtocol        string
+	RemoteProtocol       string
+	RelayProtocol        string
 }

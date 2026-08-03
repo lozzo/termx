@@ -20,17 +20,15 @@ type androidProductionHost struct {
 }
 
 func newAndroidProductionHost() (*androidProductionHost, error) {
+	return newAndroidProductionHostWithPeers(pionadapter.Factory{
+		NetworkFactory: pionadapter.NewDefaultRouteNet,
+		Logger:         nil,
+	})
+}
+
+func newAndroidProductionHostWithPeers(peers pionadapter.Factory) (*androidProductionHost, error) {
 	configureAndroidLogging()
 	broker := binding.NewPlatformBroker()
-	network, err := pionadapter.NewDefaultRouteNet()
-	if err != nil {
-		_ = broker.Close()
-		return nil, err
-	}
-	peers := pionadapter.Factory{
-		Network: network,
-		Logger:  nil,
-	}
 	host, err := enginehost.New(enginehost.Options{
 		Broker: broker, DirectPeers: peers, ClientName: "anytty-android", CredentialPrefix: "android-access-",
 		SessionAuthority: androidSessionAuthority, CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
