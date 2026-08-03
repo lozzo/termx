@@ -130,6 +130,64 @@ func TestManagerRejectsWrongIdentityWithoutReplacingCurrentCredential(t *testing
 	}
 }
 
+func TestManagerImmediatelyRotatesLegacyBootstrapWithoutEKU(t *testing.T) {
+	now := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	edgeID := "legacy-edge-identity-test"
+	directory := t.TempDir()
+	ca, caKey, caPEM := testCA(t, now)
+	bootstrapCertificate, bootstrapKey, _ := testIdentityCredentialWithUsages(t, ca, caKey, edgeID, now, now.Add(90*24*time.Hour), nil, nil)
+	config := Config{
+		EdgeID: edgeID, BootstrapCertificateFile: filepath.Join(directory, "identity-cert.pem"), BootstrapPrivateKeyFile: filepath.Join(directory, "identity-key.pem"),
+		ManagedStateFile: filepath.Join(directory, "managed-identity.pem"), CACertificateFile: filepath.Join(directory, "edge-ca.pem"), Now: func() time.Time { return now },
+	}
+	writeTestFile(t, config.CACertificateFile, caPEM)
+	writeTestFile(t, config.BootstrapCertificateFile, bootstrapCertificate)
+	writeTestFile(t, config.BootstrapPrivateKeyFile, bootstrapKey)
+
+	manager, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delay := manager.RenewalDelay(now); delay != 0 {
+		t.Fatalf("legacy bootstrap renewal delay = %v, want immediate renewal", delay)
+	}
+	request, err := manager.BeginRenewal(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr := parseTestCSR(t, request.GetCsrPem())
+	renewedPEM, _, renewedLeaf := testIdentityCredential(t, ca, caKey, edgeID, now, now.Add(90*24*time.Hour), csr)
+	digest := sha256.Sum256(renewedLeaf.Raw)
+	if _, err := manager.Apply(context.Background(), &cloudv1.EdgeIdentityRenewResponse{
+		RequestId: request.GetRequestId(), CertificatePem: renewedPEM, CertificateSha256: digest[:], NotAfter: timestamppb.New(renewedLeaf.NotAfter),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if delay := manager.RenewalDelay(now); delay != 60*24*time.Hour {
+		t.Fatalf("renewed credential delay = %v, want 60d", delay)
+	}
+	if _, err := New(config); err != nil {
+		t.Fatalf("reload strictly validated managed credential: %v", err)
+	}
+}
+
+func TestManagerRejectsLegacyCredentialFromManagedState(t *testing.T) {
+	now := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	edgeID := "legacy-managed-identity-test"
+	directory := t.TempDir()
+	ca, caKey, caPEM := testCA(t, now)
+	certificatePEM, keyPEM, _ := testIdentityCredentialWithUsages(t, ca, caKey, edgeID, now, now.Add(90*24*time.Hour), nil, nil)
+	config := Config{
+		EdgeID: edgeID, BootstrapCertificateFile: filepath.Join(directory, "identity-cert.pem"), BootstrapPrivateKeyFile: filepath.Join(directory, "identity-key.pem"),
+		ManagedStateFile: filepath.Join(directory, "managed-identity.pem"), CACertificateFile: filepath.Join(directory, "edge-ca.pem"), Now: func() time.Time { return now },
+	}
+	writeTestFile(t, config.CACertificateFile, caPEM)
+	writeTestFile(t, config.ManagedStateFile, append(certificatePEM, keyPEM...))
+	if _, err := New(config); err == nil {
+		t.Fatal("accepted a managed EdgeIdentity credential without clientAuth EKU")
+	}
+}
+
 func testCA(t *testing.T, now time.Time) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -153,6 +211,11 @@ func testCA(t *testing.T, now time.Time) (*x509.Certificate, *ecdsa.PrivateKey, 
 
 func testIdentityCredential(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, edgeID string, notBefore, notAfter time.Time, csr *x509.CertificateRequest, overrideURI ...*url.URL) ([]byte, []byte, *x509.Certificate) {
 	t.Helper()
+	return testIdentityCredentialWithUsages(t, ca, caKey, edgeID, notBefore, notAfter, csr, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, overrideURI...)
+}
+
+func testIdentityCredentialWithUsages(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, edgeID string, notBefore, notAfter time.Time, csr *x509.CertificateRequest, usages []x509.ExtKeyUsage, overrideURI ...*url.URL) ([]byte, []byte, *x509.Certificate) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +233,7 @@ func testIdentityCredential(t *testing.T, ca *x509.Certificate, caKey *ecdsa.Pri
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(notAfter.UnixNano()), Subject: pkix.Name{CommonName: edgeID}, NotBefore: notBefore.Add(-time.Minute), NotAfter: notAfter,
-		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, URIs: []*url.URL{identityURI},
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: usages, URIs: []*url.URL{identityURI},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, ca, publicKey, caKey)
 	if err != nil {

@@ -55,12 +55,13 @@ type pendingRenewal struct {
 // contains the certificate and private key in one atomic payload, so a crash
 // cannot publish a certificate from one generation with another generation's key.
 type Manager struct {
-	config  Config
-	roots   *x509.CertPool
-	current atomic.Pointer[tls.Certificate]
-	mu      sync.Mutex
-	leaf    *x509.Certificate
-	pending *pendingRenewal
+	config          Config
+	roots           *x509.CertPool
+	current         atomic.Pointer[tls.Certificate]
+	mu              sync.Mutex
+	leaf            *x509.Certificate
+	pending         *pendingRenewal
+	legacyBootstrap bool
 }
 
 func New(config Config) (*Manager, error) {
@@ -83,12 +84,13 @@ func New(config Config) (*Manager, error) {
 		return nil, err
 	}
 	manager := &Manager{config: config, roots: roots}
-	pair, leaf, err := manager.loadCurrent(config.Now().UTC())
+	pair, leaf, legacyBootstrap, err := manager.loadCurrent(config.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
 	manager.current.Store(pair)
 	manager.leaf = leaf
+	manager.legacyBootstrap = legacyBootstrap
 	return manager, nil
 }
 
@@ -117,7 +119,7 @@ func PersistRecoveredCredential(config Config, certificatePEM, privateKeyPEM []b
 	}
 	manager := &Manager{config: config, roots: roots}
 	now := config.Now().UTC()
-	leaf, err := manager.validate(&pair, now)
+	leaf, err := manager.validate(&pair, now, false)
 	if err != nil {
 		return Metadata{}, fmt.Errorf("validate recovered EdgeIdentity credential: %w", err)
 	}
@@ -147,31 +149,31 @@ func loadRoots(path string) (*x509.CertPool, error) {
 	return roots, nil
 }
 
-func (manager *Manager) loadCurrent(now time.Time) (*tls.Certificate, *x509.Certificate, error) {
+func (manager *Manager) loadCurrent(now time.Time) (*tls.Certificate, *x509.Certificate, bool, error) {
 	managed, err := os.ReadFile(manager.config.ManagedStateFile)
 	if err == nil {
 		pair, pairErr := tls.X509KeyPair(managed, managed)
 		if pairErr != nil {
-			return nil, nil, fmt.Errorf("load managed EdgeIdentity credential: %w", pairErr)
+			return nil, nil, false, fmt.Errorf("load managed EdgeIdentity credential: %w", pairErr)
 		}
-		leaf, validateErr := manager.validate(&pair, now)
+		leaf, validateErr := manager.validate(&pair, now, false)
 		if validateErr != nil {
-			return nil, nil, fmt.Errorf("validate managed EdgeIdentity credential: %w", validateErr)
+			return nil, nil, false, fmt.Errorf("validate managed EdgeIdentity credential: %w", validateErr)
 		}
-		return &pair, leaf, nil
+		return &pair, leaf, false, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("read managed EdgeIdentity credential: %w", err)
+		return nil, nil, false, fmt.Errorf("read managed EdgeIdentity credential: %w", err)
 	}
 	pair, err := tls.LoadX509KeyPair(manager.config.BootstrapCertificateFile, manager.config.BootstrapPrivateKeyFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load bootstrap EdgeIdentity credential: %w", err)
+		return nil, nil, false, fmt.Errorf("load bootstrap EdgeIdentity credential: %w", err)
 	}
-	leaf, err := manager.validate(&pair, now)
+	leaf, err := manager.validate(&pair, now, true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("validate bootstrap EdgeIdentity credential: %w", err)
+		return nil, nil, false, fmt.Errorf("validate bootstrap EdgeIdentity credential: %w", err)
 	}
-	return &pair, leaf, nil
+	return &pair, leaf, len(leaf.ExtKeyUsage) == 0, nil
 }
 
 // GetClientCertificate supplies the current credential to future TLS handshakes.
@@ -196,6 +198,9 @@ func (manager *Manager) Current() Metadata {
 func (manager *Manager) RenewalDelay(now time.Time) time.Duration {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.legacyBootstrap {
+		return 0
+	}
 	if now.IsZero() {
 		now = manager.config.Now().UTC()
 	}
@@ -277,7 +282,7 @@ func (manager *Manager) Apply(ctx context.Context, response *cloudv1.EdgeIdentit
 		return Metadata{}, fmt.Errorf("load renewed EdgeIdentity credential: %w", err)
 	}
 	now := manager.config.Now().UTC()
-	leaf, err := manager.validate(&pair, now)
+	leaf, err := manager.validate(&pair, now, false)
 	if err != nil {
 		return Metadata{}, fmt.Errorf("validate renewed EdgeIdentity credential: %w", err)
 	}
@@ -294,11 +299,12 @@ func (manager *Manager) Apply(ctx context.Context, response *cloudv1.EdgeIdentit
 	}
 	manager.current.Store(&pair)
 	manager.leaf = leaf
+	manager.legacyBootstrap = false
 	manager.pending = nil
 	return value, nil
 }
 
-func (manager *Manager) validate(pair *tls.Certificate, now time.Time) (*x509.Certificate, error) {
+func (manager *Manager) validate(pair *tls.Certificate, now time.Time, allowLegacyBootstrap bool) (*x509.Certificate, error) {
 	if pair == nil || len(pair.Certificate) == 0 {
 		return nil, errors.New("EdgeIdentity certificate chain is empty")
 	}
@@ -318,7 +324,9 @@ func (manager *Manager) validate(pair *tls.Certificate, now time.Time) (*x509.Ce
 		return nil, err
 	}
 	publicKey, p256 := leaf.PublicKey.(*ecdsa.PublicKey)
-	if !p256 || publicKey.Curve != elliptic.P256() || leaf.IsCA || len(leaf.ExtKeyUsage) != 1 || leaf.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth {
+	clientAuthOnly := len(leaf.ExtKeyUsage) == 1 && leaf.ExtKeyUsage[0] == x509.ExtKeyUsageClientAuth
+	legacyPurpose := allowLegacyBootstrap && len(leaf.ExtKeyUsage) == 0
+	if !p256 || publicKey.Curve != elliptic.P256() || leaf.IsCA || len(leaf.UnknownExtKeyUsage) != 0 || (!clientAuthOnly && !legacyPurpose) {
 		return nil, errors.New("EdgeIdentity certificate purpose or public key is invalid")
 	}
 	edgeID, err := securetransport.EdgeIDFromCertificate(leaf)
