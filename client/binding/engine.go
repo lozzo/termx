@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -1055,6 +1056,16 @@ func apiError(err error) *apipb.ApiError {
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED, "client resource capacity is exhausted"
 		case clientruntime.ErrorEntitlement:
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, "Relay is not included in the current AnyTTY Cloud plan"
+		case clientruntime.ErrorRelayNotInPlan:
+			code = apipb.ApiErrorCode_API_ERROR_CODE_RELAY_NOT_IN_PLAN
+		case clientruntime.ErrorRelayQuotaExhausted:
+			code = apipb.ApiErrorCode_API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED
+		case clientruntime.ErrorRelayConcurrencyExhausted:
+			code = apipb.ApiErrorCode_API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED
+		case clientruntime.ErrorSubscriptionInactive:
+			code = apipb.ApiErrorCode_API_ERROR_CODE_SUBSCRIPTION_INACTIVE
+		case clientruntime.ErrorRelayRegionUnavailable:
+			code = apipb.ApiErrorCode_API_ERROR_CODE_RELAY_REGION_UNAVAILABLE
 		case clientruntime.ErrorDaemonBlocked:
 			code, message, retryable = apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED, "daemon Cloud access is temporarily disabled", true
 		case clientruntime.ErrorDaemonDeleted:
@@ -1066,6 +1077,11 @@ func apiError(err error) *apipb.ApiError {
 		if errors.As(err, &runtimeErr) {
 			attempted = runtimeErr.Attempted
 			retryable = runtimeErr.Retryable
+			if strings.TrimSpace(runtimeErr.Message) != "" && (runtimeErr.Code == clientruntime.ErrorResourceExhausted || runtimeErr.Code == clientruntime.ErrorEntitlement || runtimeErr.Code == clientruntime.ErrorUnavailable ||
+				runtimeErr.Code == clientruntime.ErrorRelayNotInPlan || runtimeErr.Code == clientruntime.ErrorRelayQuotaExhausted || runtimeErr.Code == clientruntime.ErrorRelayConcurrencyExhausted ||
+				runtimeErr.Code == clientruntime.ErrorSubscriptionInactive || runtimeErr.Code == clientruntime.ErrorRelayRegionUnavailable) {
+				message = runtimeErr.Message
+			}
 		}
 	}
 	return &apipb.ApiError{Code: code, Message: message, Retryable: retryable, Attempted: attempted}

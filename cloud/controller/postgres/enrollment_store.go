@@ -64,6 +64,23 @@ func (database *Database) ConsumeDaemonEnrollment(ctx context.Context, digest []
 		}
 		return enrollment.Daemon{}, err
 	}
+	var daemonLimit int64
+	if err := tx.QueryRow(ctx, `SELECT p.cloud_daemon_limit
+FROM subscriptions s JOIN plans p ON p.plan_id=s.plan_id AND p.version=s.plan_version
+WHERE s.account_id=$1 AND s.state IN ('active','cancel_at_period_end','past_due') AND s.period_start<=$2 AND s.period_end>$2
+FOR UPDATE OF s`, accountID, now).Scan(&daemonLimit); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return enrollment.Daemon{}, enrollment.ErrDaemonUnavailable
+		}
+		return enrollment.Daemon{}, err
+	}
+	var daemonCount int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM daemons WHERE account_id=$1 AND state<>'deleted'`, accountID).Scan(&daemonCount); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	if daemonLimit <= 0 || daemonCount >= daemonLimit {
+		return enrollment.Daemon{}, enrollment.ErrDaemonLimitExhausted
+	}
 	daemonID := uuid.NewString()
 	err = tx.QueryRow(ctx, `INSERT INTO daemons(daemon_id,account_id,display_name,device_id,device_public_key,device_fingerprint,state,state_revision,created_at,updated_at)
 VALUES($1,$2,$3,$4,$5,$6,'active',1,$7,$7) RETURNING daemon_id::text`, daemonID, accountID, daemonName, deviceID, []byte(publicKey), fingerprint, now).Scan(&daemonID)

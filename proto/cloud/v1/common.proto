@@ -37,6 +37,29 @@ message SignedEnvelope {
   bytes signature = 3;
 }
 
+// CloudEntitlementErrorCode 是跨 Controller、Edge 和客户端稳定传播的商业准入失败。
+// 客户端只能按枚举展示本地化文案，不得解析服务端 message。
+enum CloudEntitlementErrorCode {
+  CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED = 0;
+  CLOUD_ENTITLEMENT_ERROR_CODE_DAEMON_LIMIT_EXHAUSTED = 1;
+  CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN = 2;
+  CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED = 3;
+  CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED = 4;
+  CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE = 5;
+  CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE = 6;
+  CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE = 7;
+}
+
+// CloudEntitlementFailure 可安全投影给未登录 App，不包含账号或订阅 identity。
+message CloudEntitlementFailure {
+  CloudEntitlementErrorCode code = 1;
+  string message = 2;
+  uint64 limit = 3;
+  uint64 used = 4;
+  uint64 remaining_bytes = 5;
+  google.protobuf.Timestamp period_end = 6;
+}
+
 // EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
 enum EdgeChallengeTarget {
   EDGE_CHALLENGE_TARGET_UNSPECIFIED = 0;

@@ -40,6 +40,18 @@ var (
 	ErrDaemonDeleted = errors.New("daemon Cloud enrollment is deleted")
 )
 
+// RelayAdmissionError preserves the Controller's stable entitlement decision across Edge layers.
+type RelayAdmissionError struct {
+	Failure *cloudv1.CloudEntitlementFailure
+}
+
+func (err *RelayAdmissionError) Error() string {
+	if err == nil || err.Failure == nil || strings.TrimSpace(err.Failure.GetMessage()) == "" {
+		return "Relay authorization was rejected"
+	}
+	return err.Failure.GetMessage()
+}
+
 // Runtime 是 Edge State actor 暴露给 ClientGateway 的唯一状态与 correlation 边界。
 type Runtime interface {
 	AttachSession(context.Context, *cloudv1.ClientSessionSummary, func()) error
@@ -173,18 +185,28 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		}
 	}
 	var relay *cloudv1.RelayICEConfig
+	var relayFailure *cloudv1.CloudEntitlementFailure
+	var cancelRelay context.CancelFunc = func() {}
 	if preference != cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY {
-		relay, err = service.requestRelay(sessionContext, preference, &RelayRequest{
+		relay, relayFailure, err = service.requestRelay(sessionContext, &RelayRequest{
 			SessionID: sessionID, AccountID: claims.accountID, DaemonID: claims.daemonID, ClientID: claims.clientID, Preference: preference,
 		})
 		if err != nil {
 			return err
 		}
+		if relayFailure != nil && preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
+			return stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Rejected{Rejected: &cloudv1.SignalRejected{
+				SessionId: sessionID, Code: entitlementErrorCode(relayFailure.GetCode()), Message: relayFailure.GetMessage(), EntitlementFailure: relayFailure,
+			}}))
+		}
 		if relay != nil {
-			go service.maintainRelayReservation(sessionContext, relay, cancelSession)
+			var relayContext context.Context
+			relayContext, cancelRelay = context.WithCancel(sessionContext)
+			go service.maintainRelayReservation(relayContext, relay, cancelSession)
 		}
 	}
-	if err := stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
+	defer cancelRelay()
+	if err := stream.Send(service.edgeSignal(sessionID, 2, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay, RelayFailure: relayFailure}})); err != nil {
 		return err
 	}
 	offerEvent, err := receiveClientSignal(sessionContext, stream)
@@ -232,14 +254,37 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		if err := stream.Send(service.edgeSignal(sessionID, 3, &cloudv1.EdgeSignal_Answer{Answer: &cloudv1.EdgeAnswer{SessionId: sessionID, AnswerSdp: result.GetAnswer().GetAnswerSdp(), Candidates: cloneCandidates(result.GetAnswer().GetCandidates())}})); err != nil {
 			return err
 		}
-		// ClientGateway 只观察当前 P2P session 生命周期，不运输任何业务数据。
-		// 客户端关闭 ReadyPeerSession 后关闭发送侧，Edge 才删除内存摘要并向 Controller 发布 delta。
+		// The first post-answer message confirms the selected ICE path. A Direct winner
+		// releases its provisional Relay reservation while the signaling stream stays alive.
+		pathEvent, err := receiveClientSignal(sessionContext, stream)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		selected := pathEvent.GetPathSelected()
+		if pathEvent.GetProtocolVersion() != ProtocolVersion || pathEvent.GetSenderId() != helloEvent.GetSenderId() || pathEvent.GetBootId() != helloEvent.GetBootId() || pathEvent.GetConnectionId() != sessionID || pathEvent.GetStreamSeq() != 3 || selected == nil || selected.GetSessionId() != sessionID ||
+			selected.GetPath() != cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_DIRECT && selected.GetPath() != cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_RELAY {
+			return status.Error(codes.InvalidArgument, "selected Cloud path confirmation is invalid")
+		}
+		if selected.GetPath() == cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_RELAY && relay == nil {
+			return status.Error(codes.InvalidArgument, "Relay path was selected without Relay authorization")
+		}
+		if selected.GetPath() == cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_DIRECT && relay != nil {
+			cancelRelay()
+			if closer, ok := service.config.Relay.(RelaySessionCloser); ok {
+				cleanup, stop := context.WithTimeout(context.Background(), 2*time.Second)
+				_ = closer.CloseRelaySession(cleanup, sessionID)
+				stop()
+			}
+		}
 		if _, err := receiveClientSignal(sessionContext, stream); errors.Is(err, io.EOF) {
 			return nil
 		} else if err != nil {
 			return err
 		}
-		return status.Error(codes.InvalidArgument, "ClientGateway does not accept messages after signaling")
+		return status.Error(codes.InvalidArgument, "ClientGateway does not accept messages after path confirmation")
 	}
 }
 
@@ -258,25 +303,43 @@ func daemonStateRejection(err error) (string, string, bool) {
 	}
 }
 
-func (service *Service) requestRelay(ctx context.Context, preference cloudv1.RelayPreference, request *RelayRequest) (*cloudv1.RelayICEConfig, error) {
+func (service *Service) requestRelay(ctx context.Context, request *RelayRequest) (*cloudv1.RelayICEConfig, *cloudv1.CloudEntitlementFailure, error) {
 	if service.config.Relay == nil {
-		if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
-			return nil, status.Error(codes.Unavailable, "Relay authorization is unavailable")
-		}
-		return nil, nil
+		return nil, serviceUnavailableFailure(), nil
 	}
 	relay, err := service.config.Relay.RequestRelay(ctx, request)
 	if err == nil && relay != nil {
-		return relay, nil
+		return relay, nil, nil
 	}
-	if preference == cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
-		if err == nil {
-			err = errors.New("Relay authorization is unavailable")
-		}
-		return nil, status.Error(codes.Unavailable, err.Error())
+	var admission *RelayAdmissionError
+	if errors.As(err, &admission) && admission.Failure != nil {
+		return nil, proto.Clone(admission.Failure).(*cloudv1.CloudEntitlementFailure), nil
 	}
-	// AUTO remains a pure P2P attempt when no ready Controller grant exists.
-	return nil, nil
+	if err != nil {
+		return nil, serviceUnavailableFailure(), nil
+	}
+	return nil, serviceUnavailableFailure(), nil
+}
+
+func serviceUnavailableFailure() *cloudv1.CloudEntitlementFailure {
+	return &cloudv1.CloudEntitlementFailure{Code: cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE, Message: "Relay authorization is temporarily unavailable"}
+}
+
+func entitlementErrorCode(code cloudv1.CloudEntitlementErrorCode) string {
+	switch code {
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN:
+		return "relay_not_in_plan"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED:
+		return "relay_quota_exhausted"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED:
+		return "relay_concurrency_exhausted"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE:
+		return "subscription_inactive"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE:
+		return "relay_region_unavailable"
+	default:
+		return "cloud_service_unavailable"
+	}
 }
 
 func (service *Service) maintainRelayReservation(ctx context.Context, initial *cloudv1.RelayICEConfig, cancel context.CancelCauseFunc) {

@@ -552,6 +552,12 @@ func (store r5EnrollmentStore) GetDaemon(_ context.Context, daemonID string) (en
 func (store r5EnrollmentStore) ListDaemons(context.Context) ([]enrollment.Daemon, error) {
 	return []enrollment.Daemon{store.daemon}, nil
 }
+func (store r5EnrollmentStore) ListDaemonsByAccount(_ context.Context, accountID string) ([]enrollment.Daemon, error) {
+	if store.daemon.AccountID != accountID {
+		return nil, nil
+	}
+	return []enrollment.Daemon{store.daemon}, nil
+}
 
 type r5EdgeStore struct {
 	mu   sync.RWMutex

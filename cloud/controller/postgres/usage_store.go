@@ -112,7 +112,7 @@ func (database *Database) reserveRelayAt(ctx context.Context, edgeID string, req
 	}
 	policy, policyDigest, err := effectiveRelayPolicy(policyRows, now)
 	if err != nil {
-		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, err.Error()), nil
+		return reserveEntitlementFailure(request, relayPolicyFailure(policyRows, now, err.Error())), nil
 	}
 	policyPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(policy)
 	if err != nil {
@@ -137,17 +137,21 @@ func (database *Database) reserveRelayAt(ctx context.Context, edgeID string, req
 		hold = remaining
 	}
 	if hold <= 0 {
-		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay quota is exhausted"), nil
+		return reserveEntitlementFailure(request, relayQuotaFailure(policyRows, usage, remaining)), nil
 	}
 	if hold < policyRows.maxBytesPerSession {
-		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "remaining Relay quota cannot fund a complete session reservation"), nil
+		return reserveEntitlementFailure(request, relayQuotaFailure(policyRows, usage, remaining)), nil
 	}
 	activeReservations, err := activeAccountReservations(ctx, tx, policyRows.accountID, now)
 	if err != nil {
 		return nil, err
 	}
 	if activeReservations >= int64(policyRows.maxConcurrency) {
-		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay concurrency is exhausted"), nil
+		return reserveEntitlementFailure(request, &cloudv1.CloudEntitlementFailure{
+			Code:    cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED,
+			Message: "Relay concurrency is exhausted", Limit: uint64(policyRows.maxConcurrency), Used: uint64(activeReservations),
+			PeriodEnd: timestamppb.New(policyRows.periodEnd),
+		}), nil
 	}
 	authorizedUntil := now.Add(relayAuthorizationTTL)
 	if authorizedUntil.After(policyRows.periodEnd) {
@@ -185,7 +189,7 @@ AND committed_ingress_bytes::numeric+committed_egress_bytes::numeric+recovery_by
 		return nil, err
 	}
 	if result.RowsAffected() != 1 {
-		return reserveFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay quota is exhausted"), nil
+		return reserveEntitlementFailure(request, relayQuotaFailure(policyRows, usage, remaining)), nil
 	}
 	reservation, _, err := findReservation(ctx, tx, request.GetReservationId(), false)
 	if err != nil {
@@ -257,9 +261,13 @@ func (database *Database) renewRelayAt(ctx context.Context, edgeID string, reque
 		}
 		return &cloudv1.RelayRenewResponse{ReservationId: reservation.reservationID, RenewSequence: request.GetRenewSequence(), Code: cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REPLAY, Grant: reservation.grant()}, nil
 	}
-	currentPolicy, currentDigest, policyErr := effectiveRelayPolicy(policyRows, now)
-	_ = currentPolicy
-	if policyErr != nil || !relayquota.EqualDigest(currentDigest, reservation.policyDigest) || !relayquota.EqualDigest(request.GetPolicyDigest(), reservation.policyDigest) ||
+	_, _, policyErr := effectiveRelayPolicy(policyRows, now)
+	if policyErr != nil {
+		return renewEntitlementFailure(request, relayPolicyFailure(policyRows, now, policyErr.Error())), nil
+	}
+	// A plan version change must not evict an existing Relay connection. The reservation
+	// continues under its immutable snapshot; new reservations use the current policy.
+	if !relayquota.EqualDigest(request.GetPolicyDigest(), reservation.policyDigest) ||
 		policyRows.subscriptionID != reservation.subscriptionID || !policyRows.periodStart.Equal(reservation.periodStart) || !policyRows.periodEnd.Equal(reservation.periodEnd) {
 		return renewFailure(request, cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, "Relay policy or subscription period changed"), nil
 	}
@@ -493,6 +501,32 @@ func effectiveRelayPolicy(rows relayPolicyRows, now time.Time) (*cloudv1.RelayPo
 	return policy, digest, err
 }
 
+func relayPolicyFailure(rows relayPolicyRows, now time.Time, message string) *cloudv1.CloudEntitlementFailure {
+	code := cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN
+	switch {
+	case rows.accountState != "active" || rows.subscriptionState != "active" && rows.subscriptionState != "cancel_at_period_end" && rows.subscriptionState != "past_due" || now.Before(rows.periodStart) || !now.Before(rows.periodEnd):
+		code = cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE
+	case !rows.edgeEnabled || !(slices.Contains(rows.allowedRegions, "*") || slices.Contains(rows.allowedRegions, rows.edgeRegion)):
+		code = cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE
+	}
+	return &cloudv1.CloudEntitlementFailure{Code: code, Message: message, PeriodEnd: timestamppb.New(rows.periodEnd)}
+}
+
+func relayQuotaFailure(rows relayPolicyRows, usage usagePeriodRow, remaining int64) *cloudv1.CloudEntitlementFailure {
+	if remaining < 0 {
+		remaining = 0
+	}
+	used := usage.ingress + usage.egress + usage.recovery + usage.held
+	if used < 0 {
+		used = 0
+	}
+	return &cloudv1.CloudEntitlementFailure{
+		Code:    cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED,
+		Message: "Relay quota is exhausted", Limit: uint64(usage.quota), Used: uint64(used), RemainingBytes: uint64(remaining),
+		PeriodEnd: timestamppb.New(rows.periodEnd),
+	}
+}
+
 func ensureUsagePeriod(ctx context.Context, tx pgx.Tx, rows relayPolicyRows, digest []byte, now time.Time) error {
 	_, err := tx.Exec(ctx, `INSERT INTO usage_periods(account_id,subscription_id,period_start,period_end,quota_bytes,policy_digest,revision,updated_at)
 VALUES($1,$2,$3,$4,$5,$6,1,$7) ON CONFLICT DO NOTHING`, rows.accountID, rows.subscriptionID, rows.periodStart, rows.periodEnd, rows.quotaBytes, digest, now)
@@ -645,8 +679,22 @@ func reserveFailure(request *cloudv1.RelayReserveRequest, code cloudv1.RelayResp
 	return &cloudv1.RelayReserveResponse{ReservationId: request.GetReservationId(), RequestDigest: append([]byte(nil), request.GetRequestDigest()...), Code: code, ErrorMessage: message}
 }
 
+func reserveEntitlementFailure(request *cloudv1.RelayReserveRequest, failure *cloudv1.CloudEntitlementFailure) *cloudv1.RelayReserveResponse {
+	return &cloudv1.RelayReserveResponse{
+		ReservationId: request.GetReservationId(), RequestDigest: append([]byte(nil), request.GetRequestDigest()...),
+		Code: cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, ErrorMessage: failure.GetMessage(), EntitlementFailure: failure,
+	}
+}
+
 func renewFailure(request *cloudv1.RelayRenewRequest, code cloudv1.RelayResponseCode, message string) *cloudv1.RelayRenewResponse {
 	return &cloudv1.RelayRenewResponse{ReservationId: request.GetReservationId(), RenewSequence: request.GetRenewSequence(), Code: code, ErrorMessage: message}
+}
+
+func renewEntitlementFailure(request *cloudv1.RelayRenewRequest, failure *cloudv1.CloudEntitlementFailure) *cloudv1.RelayRenewResponse {
+	return &cloudv1.RelayRenewResponse{
+		ReservationId: request.GetReservationId(), RenewSequence: request.GetRenewSequence(),
+		Code: cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED, ErrorMessage: failure.GetMessage(), EntitlementFailure: failure,
+	}
 }
 
 func settlementFailure(settlement *cloudv1.RelaySettlement, code cloudv1.RelayResponseCode, message string) *cloudv1.RelaySettlementAck {

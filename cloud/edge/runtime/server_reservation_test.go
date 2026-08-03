@@ -52,6 +52,30 @@ func TestRelayBrokerIsAvailableBeforeRelayListenerIsAssigned(t *testing.T) {
 	}
 }
 
+func TestRequestRelayPreservesControllerEntitlementFailure(t *testing.T) {
+	now := time.Date(2026, 8, 1, 10, 5, 0, 0, time.UTC)
+	runtime := newReservationRuntime(t, now)
+	session := newFakeRelaySession()
+	session.reserve = func(request *cloudv1.RelayReserveRequest) (*cloudv1.RelayReserveResponse, error) {
+		return &cloudv1.RelayReserveResponse{
+			ReservationId: request.GetReservationId(), RequestDigest: request.GetRequestDigest(), Code: cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED,
+			ErrorMessage: "Relay concurrency is exhausted", EntitlementFailure: &cloudv1.CloudEntitlementFailure{
+				Code: cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED, Limit: 1, Used: 1,
+			},
+		}, nil
+	}
+	runtime.setControlSession(session)
+	runtime.controllerConnected.Store(true)
+	_, err := runtime.RequestRelay(context.Background(), &clientgateway.RelayRequest{
+		SessionID: "00000000-0000-4000-8000-000000000121", AccountID: "00000000-0000-4000-8000-000000000122",
+		DaemonID: "00000000-0000-4000-8000-000000000123", ClientID: "client",
+	})
+	var admission *clientgateway.RelayAdmissionError
+	if !errors.As(err, &admission) || admission.Failure.GetCode() != cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED || admission.Failure.GetLimit() != 1 {
+		t.Fatalf("Relay admission error = %#v / %v", admission, err)
+	}
+}
+
 func TestReplayWaitsForInFlightReserveAndRefreshesDurableStage(t *testing.T) {
 	now := time.Date(2026, 7, 31, 2, 3, 4, 0, time.UTC)
 	runtime := newReservationRuntime(t, now)

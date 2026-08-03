@@ -109,23 +109,28 @@ func (ApiCapability) EnumDescriptor() ([]byte, []int) {
 type ApiErrorCode int32
 
 const (
-	ApiErrorCode_API_ERROR_CODE_UNSPECIFIED            ApiErrorCode = 0
-	ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST        ApiErrorCode = 1
-	ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_VERSION    ApiErrorCode = 2
-	ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY ApiErrorCode = 3
-	ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED           ApiErrorCode = 4
-	ApiErrorCode_API_ERROR_CODE_FORBIDDEN              ApiErrorCode = 5
-	ApiErrorCode_API_ERROR_CODE_NOT_FOUND              ApiErrorCode = 6
-	ApiErrorCode_API_ERROR_CODE_CONFLICT               ApiErrorCode = 7
-	ApiErrorCode_API_ERROR_CODE_STALE_SESSION          ApiErrorCode = 8
-	ApiErrorCode_API_ERROR_CODE_CANCELLED              ApiErrorCode = 9
-	ApiErrorCode_API_ERROR_CODE_UNAVAILABLE            ApiErrorCode = 10
-	ApiErrorCode_API_ERROR_CODE_INTERNAL               ApiErrorCode = 11
-	ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED     ApiErrorCode = 12
-	ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED     ApiErrorCode = 13
-	ApiErrorCode_API_ERROR_CODE_STALE_RESOURCE         ApiErrorCode = 14
-	ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED         ApiErrorCode = 15
-	ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED         ApiErrorCode = 16
+	ApiErrorCode_API_ERROR_CODE_UNSPECIFIED                 ApiErrorCode = 0
+	ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST             ApiErrorCode = 1
+	ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_VERSION         ApiErrorCode = 2
+	ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY      ApiErrorCode = 3
+	ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED                ApiErrorCode = 4
+	ApiErrorCode_API_ERROR_CODE_FORBIDDEN                   ApiErrorCode = 5
+	ApiErrorCode_API_ERROR_CODE_NOT_FOUND                   ApiErrorCode = 6
+	ApiErrorCode_API_ERROR_CODE_CONFLICT                    ApiErrorCode = 7
+	ApiErrorCode_API_ERROR_CODE_STALE_SESSION               ApiErrorCode = 8
+	ApiErrorCode_API_ERROR_CODE_CANCELLED                   ApiErrorCode = 9
+	ApiErrorCode_API_ERROR_CODE_UNAVAILABLE                 ApiErrorCode = 10
+	ApiErrorCode_API_ERROR_CODE_INTERNAL                    ApiErrorCode = 11
+	ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED          ApiErrorCode = 12
+	ApiErrorCode_API_ERROR_CODE_RESOURCE_EXHAUSTED          ApiErrorCode = 13
+	ApiErrorCode_API_ERROR_CODE_STALE_RESOURCE              ApiErrorCode = 14
+	ApiErrorCode_API_ERROR_CODE_DAEMON_BLOCKED              ApiErrorCode = 15
+	ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED              ApiErrorCode = 16
+	ApiErrorCode_API_ERROR_CODE_RELAY_NOT_IN_PLAN           ApiErrorCode = 17
+	ApiErrorCode_API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED       ApiErrorCode = 18
+	ApiErrorCode_API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED ApiErrorCode = 19
+	ApiErrorCode_API_ERROR_CODE_SUBSCRIPTION_INACTIVE       ApiErrorCode = 20
+	ApiErrorCode_API_ERROR_CODE_RELAY_REGION_UNAVAILABLE    ApiErrorCode = 21
 )
 
 // Enum value maps for ApiErrorCode.
@@ -148,25 +153,35 @@ var (
 		14: "API_ERROR_CODE_STALE_RESOURCE",
 		15: "API_ERROR_CODE_DAEMON_BLOCKED",
 		16: "API_ERROR_CODE_DAEMON_DELETED",
+		17: "API_ERROR_CODE_RELAY_NOT_IN_PLAN",
+		18: "API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED",
+		19: "API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED",
+		20: "API_ERROR_CODE_SUBSCRIPTION_INACTIVE",
+		21: "API_ERROR_CODE_RELAY_REGION_UNAVAILABLE",
 	}
 	ApiErrorCode_value = map[string]int32{
-		"API_ERROR_CODE_UNSPECIFIED":            0,
-		"API_ERROR_CODE_INVALID_REQUEST":        1,
-		"API_ERROR_CODE_UNSUPPORTED_VERSION":    2,
-		"API_ERROR_CODE_UNSUPPORTED_CAPABILITY": 3,
-		"API_ERROR_CODE_UNAUTHORIZED":           4,
-		"API_ERROR_CODE_FORBIDDEN":              5,
-		"API_ERROR_CODE_NOT_FOUND":              6,
-		"API_ERROR_CODE_CONFLICT":               7,
-		"API_ERROR_CODE_STALE_SESSION":          8,
-		"API_ERROR_CODE_CANCELLED":              9,
-		"API_ERROR_CODE_UNAVAILABLE":            10,
-		"API_ERROR_CODE_INTERNAL":               11,
-		"API_ERROR_CODE_ENTITLEMENT_DENIED":     12,
-		"API_ERROR_CODE_RESOURCE_EXHAUSTED":     13,
-		"API_ERROR_CODE_STALE_RESOURCE":         14,
-		"API_ERROR_CODE_DAEMON_BLOCKED":         15,
-		"API_ERROR_CODE_DAEMON_DELETED":         16,
+		"API_ERROR_CODE_UNSPECIFIED":                 0,
+		"API_ERROR_CODE_INVALID_REQUEST":             1,
+		"API_ERROR_CODE_UNSUPPORTED_VERSION":         2,
+		"API_ERROR_CODE_UNSUPPORTED_CAPABILITY":      3,
+		"API_ERROR_CODE_UNAUTHORIZED":                4,
+		"API_ERROR_CODE_FORBIDDEN":                   5,
+		"API_ERROR_CODE_NOT_FOUND":                   6,
+		"API_ERROR_CODE_CONFLICT":                    7,
+		"API_ERROR_CODE_STALE_SESSION":               8,
+		"API_ERROR_CODE_CANCELLED":                   9,
+		"API_ERROR_CODE_UNAVAILABLE":                 10,
+		"API_ERROR_CODE_INTERNAL":                    11,
+		"API_ERROR_CODE_ENTITLEMENT_DENIED":          12,
+		"API_ERROR_CODE_RESOURCE_EXHAUSTED":          13,
+		"API_ERROR_CODE_STALE_RESOURCE":              14,
+		"API_ERROR_CODE_DAEMON_BLOCKED":              15,
+		"API_ERROR_CODE_DAEMON_DELETED":              16,
+		"API_ERROR_CODE_RELAY_NOT_IN_PLAN":           17,
+		"API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED":       18,
+		"API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED": 19,
+		"API_ERROR_CODE_SUBSCRIPTION_INACTIVE":       20,
+		"API_ERROR_CODE_RELAY_REGION_UNAVAILABLE":    21,
 	}
 )
 
@@ -993,7 +1008,7 @@ const file_apipb_common_proto_rawDesc = "" +
 	"\x16API_CAPABILITY_STORAGE\x10\v\x12%\n" +
 	"!API_CAPABILITY_EVENT_SUBSCRIPTION\x10\f\x12 \n" +
 	"\x1cAPI_CAPABILITY_CLIENT_ACCESS\x10\r\x12!\n" +
-	"\x1dAPI_CAPABILITY_REMOTE_CONTROL\x10\x0e*\xd3\x04\n" +
+	"\x1dAPI_CAPABILITY_REMOTE_CONTROL\x10\x0e*\xaa\x06\n" +
 	"\fApiErrorCode\x12\x1e\n" +
 	"\x1aAPI_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eAPI_ERROR_CODE_INVALID_REQUEST\x10\x01\x12&\n" +
@@ -1012,7 +1027,12 @@ const file_apipb_common_proto_rawDesc = "" +
 	"!API_ERROR_CODE_RESOURCE_EXHAUSTED\x10\r\x12!\n" +
 	"\x1dAPI_ERROR_CODE_STALE_RESOURCE\x10\x0e\x12!\n" +
 	"\x1dAPI_ERROR_CODE_DAEMON_BLOCKED\x10\x0f\x12!\n" +
-	"\x1dAPI_ERROR_CODE_DAEMON_DELETED\x10\x10*\xd4\x01\n" +
+	"\x1dAPI_ERROR_CODE_DAEMON_DELETED\x10\x10\x12$\n" +
+	" API_ERROR_CODE_RELAY_NOT_IN_PLAN\x10\x11\x12(\n" +
+	"$API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED\x10\x12\x12.\n" +
+	"*API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED\x10\x13\x12(\n" +
+	"$API_ERROR_CODE_SUBSCRIPTION_INACTIVE\x10\x14\x12+\n" +
+	"'API_ERROR_CODE_RELAY_REGION_UNAVAILABLE\x10\x15*\xd4\x01\n" +
 	"\fResourceKind\x12\x1d\n" +
 	"\x19RESOURCE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RESOURCE_KIND_OPERATION\x10\x01\x12\x1e\n" +

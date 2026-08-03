@@ -15,6 +15,8 @@ import (
 	"github.com/anytty/anytty/proto/apipb"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func cloudCommand(socket, logFile *string) *cobra.Command {
@@ -179,9 +181,15 @@ func cloudEnrollCommand() *cobra.Command {
 			}
 			record, err := clouddaemon.EnrollLocal(ctx, address, serverName, args[0], v3RemoteIdentityDir(), v3CloudEnrollmentRecordPath())
 			if err != nil {
+				if status.Code(err) == codes.ResourceExhausted && strings.Contains(status.Convert(err).Message(), "cloud_daemon_limit_exhausted") {
+					return fmt.Errorf("Cloud daemon limit reached; upgrade the plan or permanently delete an unused daemon at %s/devices", strings.TrimRight(controllerOrigin, "/"))
+				}
 				return fmt.Errorf("enroll daemon in AnyTTY Cloud: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cloud enrollment complete: daemon=%s account=%s\n", record.DaemonID, record.AccountID)
+			if record.DaemonLimit > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Registered daemon capacity: %d / %d. Manage the plan at %s/devices\n", record.DaemonCount, record.DaemonLimit, strings.TrimRight(controllerOrigin, "/"))
+			}
 			return nil
 		},
 	}

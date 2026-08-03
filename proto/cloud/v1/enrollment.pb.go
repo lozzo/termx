@@ -791,6 +791,8 @@ type CreateDaemonEnrollmentResponse struct {
 	EnrollmentCode string                 `protobuf:"bytes,2,opt,name=enrollment_code,json=enrollmentCode,proto3" json:"enrollment_code,omitempty"`
 	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	EnrollCommand  string                 `protobuf:"bytes,4,opt,name=enroll_command,json=enrollCommand,proto3" json:"enroll_command,omitempty"`
+	DaemonCount    uint32                 `protobuf:"varint,5,opt,name=daemon_count,json=daemonCount,proto3" json:"daemon_count,omitempty"`
+	DaemonLimit    uint32                 `protobuf:"varint,6,opt,name=daemon_limit,json=daemonLimit,proto3" json:"daemon_limit,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -851,6 +853,20 @@ func (x *CreateDaemonEnrollmentResponse) GetEnrollCommand() string {
 		return x.EnrollCommand
 	}
 	return ""
+}
+
+func (x *CreateDaemonEnrollmentResponse) GetDaemonCount() uint32 {
+	if x != nil {
+		return x.DaemonCount
+	}
+	return 0
+}
+
+func (x *CreateDaemonEnrollmentResponse) GetDaemonLimit() uint32 {
+	if x != nil {
+		return x.DaemonLimit
+	}
+	return 0
 }
 
 type ListDaemonsRequest struct {
@@ -1017,6 +1033,8 @@ func (*ListMyDaemonsRequest) Descriptor() ([]byte, []int) {
 type ListMyDaemonsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Daemons       []*ManagedDaemon       `protobuf:"bytes,1,rep,name=daemons,proto3" json:"daemons,omitempty"`
+	DaemonCount   uint32                 `protobuf:"varint,2,opt,name=daemon_count,json=daemonCount,proto3" json:"daemon_count,omitempty"`
+	DaemonLimit   uint32                 `protobuf:"varint,3,opt,name=daemon_limit,json=daemonLimit,proto3" json:"daemon_limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1056,6 +1074,20 @@ func (x *ListMyDaemonsResponse) GetDaemons() []*ManagedDaemon {
 		return x.Daemons
 	}
 	return nil
+}
+
+func (x *ListMyDaemonsResponse) GetDaemonCount() uint32 {
+	if x != nil {
+		return x.DaemonCount
+	}
+	return 0
+}
+
+func (x *ListMyDaemonsResponse) GetDaemonLimit() uint32 {
+	if x != nil {
+		return x.DaemonLimit
+	}
+	return 0
 }
 
 type ChangeMyDaemonStateRequest struct {
@@ -1768,6 +1800,8 @@ type CompleteDaemonEnrollmentResponse struct {
 	Daemon        *DaemonRecord          `protobuf:"bytes,1,opt,name=daemon,proto3" json:"daemon,omitempty"`
 	DaemonBinding *SignedEnvelope        `protobuf:"bytes,2,opt,name=daemon_binding,json=daemonBinding,proto3" json:"daemon_binding,omitempty"`
 	EdgeLocator   *EdgeLocator           `protobuf:"bytes,3,opt,name=edge_locator,json=edgeLocator,proto3" json:"edge_locator,omitempty"`
+	DaemonCount   uint32                 `protobuf:"varint,4,opt,name=daemon_count,json=daemonCount,proto3" json:"daemon_count,omitempty"`
+	DaemonLimit   uint32                 `protobuf:"varint,5,opt,name=daemon_limit,json=daemonLimit,proto3" json:"daemon_limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1821,6 +1855,20 @@ func (x *CompleteDaemonEnrollmentResponse) GetEdgeLocator() *EdgeLocator {
 		return x.EdgeLocator
 	}
 	return nil
+}
+
+func (x *CompleteDaemonEnrollmentResponse) GetDaemonCount() uint32 {
+	if x != nil {
+		return x.DaemonCount
+	}
+	return 0
+}
+
+func (x *CompleteDaemonEnrollmentResponse) GetDaemonLimit() uint32 {
+	if x != nil {
+		return x.DaemonLimit
+	}
+	return 0
 }
 
 // BeginDaemonBindingRefreshRequest 只标识现有 daemon；身份和 Edge 选择都由 Controller 的当前真值决定。
@@ -2100,23 +2148,27 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12!\n" +
 	"\faccount_name\x18\x02 \x01(\tR\vaccountName\x12\x1f\n" +
 	"\vdaemon_name\x18\x03 \x01(\tR\n" +
-	"daemonName\"\xca\x01\n" +
+	"daemonName\"\x90\x02\n" +
 	"\x1eCreateDaemonEnrollmentResponse\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12'\n" +
 	"\x0fenrollment_code\x18\x02 \x01(\tR\x0eenrollmentCode\x129\n" +
 	"\n" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12%\n" +
-	"\x0eenroll_command\x18\x04 \x01(\tR\renrollCommand\"\x14\n" +
+	"\x0eenroll_command\x18\x04 \x01(\tR\renrollCommand\x12!\n" +
+	"\fdaemon_count\x18\x05 \x01(\rR\vdaemonCount\x12!\n" +
+	"\fdaemon_limit\x18\x06 \x01(\rR\vdaemonLimit\"\x14\n" +
 	"\x12ListDaemonsRequest\"O\n" +
 	"\x13ListDaemonsResponse\x128\n" +
 	"\adaemons\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.ManagedDaemonR\adaemons\"B\n" +
 	"\x1fCreateMyDaemonEnrollmentRequest\x12\x1f\n" +
 	"\vdaemon_name\x18\x01 \x01(\tR\n" +
 	"daemonName\"\x16\n" +
-	"\x14ListMyDaemonsRequest\"Q\n" +
+	"\x14ListMyDaemonsRequest\"\x97\x01\n" +
 	"\x15ListMyDaemonsResponse\x128\n" +
-	"\adaemons\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.ManagedDaemonR\adaemons\"\xca\x01\n" +
+	"\adaemons\x18\x01 \x03(\v2\x1e.anytty.cloud.v1.ManagedDaemonR\adaemons\x12!\n" +
+	"\fdaemon_count\x18\x02 \x01(\rR\vdaemonCount\x12!\n" +
+	"\fdaemon_limit\x18\x03 \x01(\rR\vdaemonLimit\"\xca\x01\n" +
 	"\x1aChangeMyDaemonStateRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12?\n" +
 	"\ftarget_state\x18\x02 \x01(\x0e2\x1c.anytty.cloud.v1.DaemonStateR\vtargetState\x126\n" +
@@ -2164,11 +2216,13 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\vserver_name\x18\x05 \x01(\tR\n" +
 	"serverName\x12,\n" +
 	"\x12ca_certificate_pem\x18\x06 \x01(\fR\x10caCertificatePem\x12\x1a\n" +
-	"\brevision\x18\a \x01(\x04R\brevision\"\xe2\x01\n" +
+	"\brevision\x18\a \x01(\x04R\brevision\"\xa8\x02\n" +
 	" CompleteDaemonEnrollmentResponse\x125\n" +
 	"\x06daemon\x18\x01 \x01(\v2\x1d.anytty.cloud.v1.DaemonRecordR\x06daemon\x12F\n" +
 	"\x0edaemon_binding\x18\x02 \x01(\v2\x1f.anytty.cloud.v1.SignedEnvelopeR\rdaemonBinding\x12?\n" +
-	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator\"?\n" +
+	"\fedge_locator\x18\x03 \x01(\v2\x1c.anytty.cloud.v1.EdgeLocatorR\vedgeLocator\x12!\n" +
+	"\fdaemon_count\x18\x04 \x01(\rR\vdaemonCount\x12!\n" +
+	"\fdaemon_limit\x18\x05 \x01(\rR\vdaemonLimit\"?\n" +
 	" BeginDaemonBindingRefreshRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xdb\x02\n" +
 	"#CompleteDaemonBindingRefreshRequest\x12!\n" +

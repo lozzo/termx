@@ -202,6 +202,14 @@ func openResolvedCloudPeerAttempt(
 		_ = opened.Close()
 		return nil, &cloudPeerConnectivityError{err: fmt.Errorf("Cloud connector established a path that violates Relay policy: %q", opened.path)}
 	}
+	selectedPath := cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_DIRECT
+	if opened.path == endpoint.PathSingleRelay {
+		selectedPath = cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_RELAY
+	}
+	if err := signalSession.ConfirmPath(selectedPath); err != nil {
+		_ = opened.Close()
+		return nil, fmt.Errorf("confirm selected Cloud path: %w", err)
+	}
 	opened.connection = datachannel.New(peer.Channel())
 	return opened, nil
 }

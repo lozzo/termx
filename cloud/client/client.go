@@ -78,6 +78,26 @@ func IsDaemonDeleted(err error) bool {
 	return DaemonLifecycleCode(err) == clientgateway.DaemonDeletedCode
 }
 
+// EntitlementError is a stable Cloud commercial-policy rejection returned by signaling.
+type EntitlementError struct {
+	Failure *cloudv1.CloudEntitlementFailure
+}
+
+func (err *EntitlementError) Error() string {
+	if err == nil || err.Failure == nil || strings.TrimSpace(err.Failure.GetMessage()) == "" {
+		return "Cloud entitlement denied"
+	}
+	return err.Failure.GetMessage()
+}
+
+func EntitlementFailure(err error) *cloudv1.CloudEntitlementFailure {
+	var entitlement *EntitlementError
+	if errors.As(err, &entitlement) && entitlement.Failure != nil {
+		return proto.Clone(entitlement.Failure).(*cloudv1.CloudEntitlementFailure)
+	}
+	return nil
+}
+
 // RouteResolution 是一次已认证的目录结果，或者由本机缓存 Edge locator 与原始 daemon grant 重建。
 type RouteResolution struct {
 	locator          *cloudv1.EdgeLocator
@@ -116,6 +136,11 @@ type SignalSession struct {
 	connection *grpc.ClientConn
 	stream     cloudv1.ClientGateway_ConnectClient
 	cancel     context.CancelFunc
+	senderID   string
+	bootID     string
+	sessionID  string
+	pathOnce   sync.Once
+	pathErr    error
 	closeOnce  sync.Once
 	closeErr   error
 }
@@ -126,6 +151,25 @@ func (session *SignalSession) Answer() *cloudv1.EdgeAnswer {
 		return nil
 	}
 	return proto.Clone(session.answer).(*cloudv1.EdgeAnswer)
+}
+
+// ConfirmPath reports the authenticated ICE winner so Edge can release an unused Relay hold.
+func (session *SignalSession) ConfirmPath(path cloudv1.SelectedCloudPath) error {
+	if session == nil || session.stream == nil || strings.TrimSpace(session.sessionID) == "" {
+		return errors.New("Cloud signaling session is unavailable")
+	}
+	session.pathOnce.Do(func() {
+		if path != cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_DIRECT && path != cloudv1.SelectedCloudPath_SELECTED_CLOUD_PATH_RELAY {
+			session.pathErr = errors.New("selected Cloud path is invalid")
+			return
+		}
+		session.pathErr = session.stream.Send(&cloudv1.ClientSignal{
+			ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: session.senderID, BootId: session.bootID,
+			ConnectionId: session.sessionID, StreamSeq: 3, SentAt: timestamppb.Now(),
+			Payload: &cloudv1.ClientSignal_PathSelected{PathSelected: &cloudv1.ClientPathSelected{SessionId: session.sessionID, Path: path}},
+		})
+	})
+	return session.pathErr
 }
 
 // Close 结束 ClientGateway 观察流并释放 Edge gRPC 连接；可以重复调用。
@@ -364,7 +408,13 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 		return nil, errors.New("ClientReady is invalid")
 	}
 	if rejected := ready.GetRejected(); rejected != nil {
-		if rejected.GetSessionId() != sessionID || rejected.GetCode() != clientgateway.DaemonBlockedCode && rejected.GetCode() != clientgateway.DaemonDeletedCode {
+		if rejected.GetSessionId() != sessionID {
+			return nil, errors.New("ClientReady rejection is invalid")
+		}
+		if rejected.GetEntitlementFailure() != nil {
+			return nil, &EntitlementError{Failure: proto.Clone(rejected.GetEntitlementFailure()).(*cloudv1.CloudEntitlementFailure)}
+		}
+		if rejected.GetCode() != clientgateway.DaemonBlockedCode && rejected.GetCode() != clientgateway.DaemonDeletedCode {
 			return nil, errors.New("ClientReady rejection is invalid")
 		}
 		return nil, &daemonLifecycleError{code: rejected.GetCode()}
@@ -398,6 +448,9 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 		return nil, errors.New("Edge signaling response is invalid")
 	}
 	if rejected := response.GetRejected(); rejected != nil {
+		if rejected.GetEntitlementFailure() != nil {
+			return nil, &EntitlementError{Failure: proto.Clone(rejected.GetEntitlementFailure()).(*cloudv1.CloudEntitlementFailure)}
+		}
 		return nil, fmt.Errorf("Cloud signaling rejected (%s): %s", rejected.GetCode(), rejected.GetMessage())
 	}
 	if response.GetAnswer() == nil || response.GetAnswer().GetSessionId() != sessionID || strings.TrimSpace(response.GetAnswer().GetAnswerSdp()) == "" {
@@ -410,7 +463,10 @@ func (client *Client) Exchange(ctx context.Context, resolution *RouteResolution,
 	}
 	closeConnection = false
 	keepStream = true
-	return &SignalSession{answer: proto.Clone(response.GetAnswer()).(*cloudv1.EdgeAnswer), connection: connection, stream: stream, cancel: cancelStream}, nil
+	return &SignalSession{
+		answer: proto.Clone(response.GetAnswer()).(*cloudv1.EdgeAnswer), connection: connection, stream: stream, cancel: cancelStream,
+		senderID: identity.Fingerprint, bootID: client.bootID, sessionID: sessionID,
+	}, nil
 }
 
 type offerResult struct {

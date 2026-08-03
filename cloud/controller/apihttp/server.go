@@ -774,6 +774,9 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 	if errors.Is(err, account.ErrRecentAuthenticationRequired) {
 		status, code, message = http.StatusForbidden, "recent_auth_required", "需要重新验证身份。"
 	}
+	if errors.Is(err, enrollment.ErrDaemonLimitExhausted) {
+		status, code, message = http.StatusConflict, "cloud_daemon_limit_exhausted", "已注册 daemon 达到当前套餐上限。"
+	}
 	requestID := writer.Header().Get("X-Request-ID")
 	if requestID == "" {
 		requestID = uuid.NewString()

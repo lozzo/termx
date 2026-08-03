@@ -8,6 +8,8 @@ export type ConnectionFailureReason =
   | 'authorization'
   | 'identity_mismatch'
   | 'entitlement'
+  | 'relay_quota'
+  | 'relay_concurrency'
   | 'daemon_blocked'
   | 'daemon_deleted'
   | 'cancelled'
@@ -33,7 +35,13 @@ export function connectionFailureReason(error: unknown, phoneOnline = true): Con
   ) return 'cancelled'
   if (code === 'daemon_deleted') return 'daemon_deleted'
   if (code === 'daemon_blocked') return 'daemon_blocked'
-  if (code === 'entitlement_denied' || /\b(?:entitlement|relay quota|quota exhausted)\b/i.test(detail)) return 'entitlement'
+  if (code === 'relay_concurrency_exhausted') return 'relay_concurrency'
+  if (code === 'relay_quota_exhausted') return 'relay_quota'
+  if (code === 'relay_not_in_plan' || code === 'subscription_inactive' || code === 'relay_region_unavailable') return 'entitlement'
+  if (/relay concurrency/i.test(detail)) return 'relay_concurrency'
+  if (/relay (?:traffic )?quota|quota (?:is )?exhausted/i.test(detail)) return 'relay_quota'
+  if (code === 'resource_exhausted' && /relay/i.test(detail)) return 'relay_quota'
+  if (code === 'entitlement_denied' || /\bentitlement\b/i.test(detail)) return 'entitlement'
   if (code === 'device_identity_mismatch' || /\b(?:device identity|identity mismatch|fingerprint mismatch)\b/i.test(detail)) return 'identity_mismatch'
   const explicitAuthorizationCode = code === 'login_required' ||
     code === 'unauthenticated' ||
@@ -81,6 +89,10 @@ export function connectionFailurePresentation(
       return failure(reason, t('errors.identityMismatchTitle'), t('errors.identityMismatch'), false, true)
     case 'entitlement':
       return failure(reason, t('errors.connectionProblemTitle'), t('errors.relayEntitlementDenied'), false)
+    case 'relay_quota':
+      return failure(reason, t('errors.relayQuotaTitle'), t('errors.relayQuotaExhausted'), false)
+    case 'relay_concurrency':
+      return failure(reason, t('errors.relayConcurrencyTitle'), t('errors.relayConcurrencyExhausted'), false)
     case 'daemon_blocked':
       return failure(reason, t('errors.daemonBlockedTitle'), t('errors.daemonBlocked'), true)
     case 'daemon_deleted':

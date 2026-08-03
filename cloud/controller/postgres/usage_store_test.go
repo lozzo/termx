@@ -26,6 +26,31 @@ type relayReserveResult struct {
 	err      error
 }
 
+func TestCommercialLaunchPlanCatalog(t *testing.T) {
+	database, ctx := relayTestDatabase(t)
+	plans, err := database.ListPlans(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]struct {
+		version, daemons, concurrency uint64
+		quota, monthly, yearly        uint64
+	}{
+		"starter":      {2, 2, 1, 209715200, 0, 0},
+		"professional": {2, 10, 3, 21474836480, 6800, 64800},
+		"team":         {2, 30, 8, 107374182400, 13800, 128800},
+	}
+	if len(plans) != len(want) {
+		t.Fatalf("published plans=%d want=%d", len(plans), len(want))
+	}
+	for _, plan := range plans {
+		expected, ok := want[plan.GetPlanId()]
+		if !ok || plan.GetVersion() != expected.version || uint64(plan.GetCapability().GetCloudDaemonLimit()) != expected.daemons || uint64(plan.GetCapability().GetRelayMaxConcurrency()) != expected.concurrency || plan.GetCapability().GetRelayMaxBytesPerPeriod() != expected.quota || uint64(plan.GetMonthlyPrice().GetMinorUnits()) != expected.monthly || uint64(plan.GetYearlyPrice().GetMinorUnits()) != expected.yearly {
+			t.Fatalf("commercial plan = %+v", plan)
+		}
+	}
+}
+
 func TestRelayReserveSerializesQuotaAndConcurrency(t *testing.T) {
 	database, ctx := relayTestDatabase(t)
 	now := time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC)
@@ -38,6 +63,7 @@ func TestRelayReserveSerializesQuotaAndConcurrency(t *testing.T) {
 	}
 	responses := concurrentReserve(t, ctx, database, []string{quota.edgeID, quotaSecondEdge}, requests, now)
 	assertOneApplied(t, responses)
+	assertOneRejectedFor(t, responses, cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED)
 	assertUsage(t, ctx, database, quota, 0, 0, 0, 75)
 
 	slots := seedRelayFixture(t, ctx, database, now, 1000, 10, 1)
@@ -48,6 +74,7 @@ func TestRelayReserveSerializesQuotaAndConcurrency(t *testing.T) {
 	}
 	responses = concurrentReserve(t, ctx, database, []string{slots.edgeID, slotsSecondEdge}, requests, now)
 	assertOneApplied(t, responses)
+	assertOneRejectedFor(t, responses, cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED)
 	assertUsage(t, ctx, database, slots, 0, 0, 0, 10)
 }
 
@@ -394,8 +421,16 @@ func TestRelayReservationIdentityAndRenewSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	seq2 := &cloudv1.RelayRenewRequest{ReservationId: request.GetReservationId(), RenewSequence: 2, PolicyDigest: digest, ObservedAt: timestamppb.New(now.Add(time.Minute))}
-	if response := mustRenew(t, ctx, database, fixture.edgeID, seq2, now.Add(time.Minute)); response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED {
-		t.Fatalf("policy update did not stop renewal: %v", response)
+	if response := mustRenew(t, ctx, database, fixture.edgeID, seq2, now.Add(time.Minute)); response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_APPLIED {
+		t.Fatalf("non-lifecycle account update evicted an existing Relay connection: %v", response)
+	}
+	if _, err := database.pool.Exec(ctx, `UPDATE subscriptions SET state='suspended',revision=revision+1,updated_at=$1 WHERE subscription_id=$2`, now.Add(90*time.Second), fixture.subscriptionID); err != nil {
+		t.Fatal(err)
+	}
+	seq3 := &cloudv1.RelayRenewRequest{ReservationId: request.GetReservationId(), RenewSequence: 3, PolicyDigest: digest, ObservedAt: timestamppb.New(now.Add(90 * time.Second))}
+	response := mustRenew(t, ctx, database, fixture.edgeID, seq3, now.Add(90*time.Second))
+	if response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED || response.GetEntitlementFailure().GetCode() != cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE {
+		t.Fatalf("subscription suspension renewal=%v", response)
 	}
 }
 
@@ -733,6 +768,22 @@ func assertOneApplied(t *testing.T, responses []*cloudv1.RelayReserveResponse) {
 	}
 	if applied != 1 {
 		t.Fatalf("applied=%d responses=%v", applied, responses)
+	}
+}
+
+func assertOneRejectedFor(t *testing.T, responses []*cloudv1.RelayReserveResponse, code cloudv1.CloudEntitlementErrorCode) {
+	t.Helper()
+	rejected := 0
+	for _, response := range responses {
+		if response.GetCode() == cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REJECTED {
+			rejected++
+			if response.GetEntitlementFailure().GetCode() != code {
+				t.Fatalf("rejection=%v want entitlement code %s", response, code)
+			}
+		}
+	}
+	if rejected != 1 {
+		t.Fatalf("rejected=%d responses=%v", rejected, responses)
 	}
 }
 

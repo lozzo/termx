@@ -1443,6 +1443,9 @@ func (runtime *Runtime) acceptReserveResponse(request *cloudv1.RelayReserveReque
 		if err := runtime.journalDropRequested(request.GetReservationId(), request.GetRequestDigest()); err != nil {
 			return nil, err
 		}
+		if response.GetEntitlementFailure() != nil {
+			return nil, &clientgateway.RelayAdmissionError{Failure: proto.Clone(response.GetEntitlementFailure()).(*cloudv1.CloudEntitlementFailure)}
+		}
 		return nil, relayReplayConsumedError{message: response.GetErrorMessage()}
 	}
 	if response.GetTerminal() != nil {
@@ -1492,6 +1495,9 @@ func (runtime *Runtime) acceptRenewResponse(ctx context.Context, username string
 		return nil, errors.New("Relay reservation became terminal during renewal")
 	}
 	if response.GetGrant() == nil || (response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_APPLIED && response.GetCode() != cloudv1.RelayResponseCode_RELAY_RESPONSE_CODE_REPLAY) {
+		if response.GetEntitlementFailure() != nil {
+			return nil, &clientgateway.RelayAdmissionError{Failure: proto.Clone(response.GetEntitlementFailure()).(*cloudv1.CloudEntitlementFailure)}
+		}
 		return nil, errors.New(response.GetErrorMessage())
 	}
 	if err := runtime.journalApplyRenewedGrant(response.GetGrant()); err != nil {

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package anytty.cloud.v1;
 
+import "cloud/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/anytty/anytty/proto/cloud/v1;cloudv1";
@@ -95,6 +96,7 @@ message RelayReserveResponse {
   RelayGrant grant = 4;
   RelaySettlementAck terminal = 5;
   string error_message = 6;
+  CloudEntitlementFailure entitlement_failure = 7;
 }
 
 message RelayRenewRequest {
@@ -111,6 +113,7 @@ message RelayRenewResponse {
   RelayGrant grant = 4;
   RelaySettlementAck terminal = 5;
   string error_message = 6;
+  CloudEntitlementFailure entitlement_failure = 7;
 }
 
 message RelaySettlement {
@@ -145,6 +148,7 @@ message RelayQueryResponse {
   RelayGrant grant = 3;
   RelaySettlementAck terminal = 4;
   string error_message = 5;
+  CloudEntitlementFailure entitlement_failure = 6;
 }
 
 // RelayICEConfig is derived from a committed Controller grant. It is durable

@@ -376,22 +376,16 @@ func TestCleanupSessionClosesRelayBeforeRemovingRuntimeSession(t *testing.T) {
 func TestOfflineRelayPreferenceFailsClosedWithoutNewAuthority(t *testing.T) {
 	service := &Service{}
 	request := &RelayRequest{SessionID: "session", AccountID: "account", DaemonID: "daemon", ClientID: "client"}
-	relay, err := service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, request)
-	if err != nil || relay != nil {
-		t.Fatalf("offline AUTO relay=%v err=%v", relay, err)
-	}
-	if _, err := service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY, request); status.Code(err) != codes.Unavailable {
-		t.Fatalf("offline RELAY_ONLY error=%v", err)
+	relay, failure, err := service.requestRelay(context.Background(), request)
+	if err != nil || relay != nil || failure.GetCode() != cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE {
+		t.Fatalf("offline AUTO relay=%v failure=%v err=%v", relay, failure, err)
 	}
 
 	broker := failingRelayBroker{err: errors.New("Controller generation unavailable")}
 	service.config.Relay = broker
-	relay, err = service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, request)
-	if err != nil || relay != nil {
-		t.Fatalf("failed AUTO reserve relay=%v err=%v", relay, err)
-	}
-	if _, err := service.requestRelay(context.Background(), cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY, request); status.Code(err) != codes.Unavailable {
-		t.Fatalf("failed RELAY_ONLY reserve error=%v", err)
+	relay, failure, err = service.requestRelay(context.Background(), request)
+	if err != nil || relay != nil || failure.GetCode() != cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE {
+		t.Fatalf("failed reserve relay=%v failure=%v err=%v", relay, failure, err)
 	}
 }
 

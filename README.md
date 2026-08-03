@@ -302,6 +302,7 @@ scripts/check-generated-code.sh
 - [终端实时画面与历史](docs/TERMINAL_DELIVERY.md)
 - [扫码配对协议](docs/PAIRING_PROTOCOL.md)
 - [Cloud daemon 生命周期](docs/CLOUD_DAEMON_LIFECYCLE.md)
+- [Cloud 商业化与权益策略](docs/CLOUD_COMMERCIAL_POLICY.md)
 - [Cloud 部署与升级](cloud/deploy/README.md)
 - [安全报告](SECURITY.md)
 - [未发布变更](CHANGELOG.md)

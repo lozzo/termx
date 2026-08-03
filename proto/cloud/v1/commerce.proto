@@ -173,6 +173,8 @@ message UsagePeriodProjection {
   uint64 quota_bytes = 7;
   uint64 remaining_bytes = 8;
   uint64 revision = 9;
+  uint32 active_relay_reservations = 10;
+  uint64 relay_held_bytes = 11;
 }
 
 message ListPlansRequest { bool include_unpublished = 1; }

@@ -27,6 +27,8 @@ type EnrollmentRecord struct {
 	DaemonBinding []byte    `json:"daemon_binding"`
 	EdgeLocator   []byte    `json:"edge_locator"`
 	EnrolledAt    time.Time `json:"enrolled_at"`
+	DaemonCount   uint32    `json:"-"`
+	DaemonLimit   uint32    `json:"-"`
 }
 
 // Validate 校验 v2 record，并拒绝旧字段、损坏 protobuf 和 binding/locator 身份错配。

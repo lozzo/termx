@@ -120,9 +120,15 @@ func (store routeEnrollmentStore) GetDaemon(_ context.Context, daemonID string) 
 func (store routeEnrollmentStore) ListDaemons(context.Context) ([]enrollment.Daemon, error) {
 	return []enrollment.Daemon{store.daemon}, nil
 }
+func (store routeEnrollmentStore) ListDaemonsByAccount(_ context.Context, accountID string) ([]enrollment.Daemon, error) {
+	if store.daemon.AccountID != accountID {
+		return nil, nil
+	}
+	return []enrollment.Daemon{store.daemon}, nil
+}
 
 type routeEntitlement struct{}
 
 func (routeEntitlement) EffectiveEntitlement(context.Context, string) (*cloudv1.EffectiveEntitlement, error) {
-	return &cloudv1.EffectiveEntitlement{State: cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE, Capability: &cloudv1.CloudCapability{ManagedP2PEnabled: true}}, nil
+	return &cloudv1.EffectiveEntitlement{State: cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE, Capability: &cloudv1.CloudCapability{ManagedP2PEnabled: true, CloudDaemonLimit: 10}}, nil
 }

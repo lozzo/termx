@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/common.proto.
  */
 export const file_cloud_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD2FueXR0eS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMIqwBCglLZXlCdW5kbGUSEAoIcmV2aXNpb24YASABKAQSLQoJaXNzdWVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgRrZXlzGAQgAygLMiAuYW55dHR5LmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSJqCg9IZWFydGJlYXRQb2xpY3kSKwoIaW50ZXJ2YWwYASABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SKgoHdGltZW91dBgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiJECg5TaWduZWRFbnZlbG9wZRIOCgZrZXlfaWQYASABKAkSDwoHcGF5bG9hZBgCIAEoDBIRCglzaWduYXR1cmUYAyABKAwi7QEKDUVkZ2VDaGFsbGVuZ2USDQoFbm9uY2UYASABKAwSDwoHZWRnZV9pZBgCIAEoCRIUCgxlZGdlX2Jvb3RfaWQYAyABKAkSEQoJc3RyZWFtX2lkGAQgASgJEi0KCWlzc3VlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNAoGdGFyZ2V0GAcgASgOMiQuYW55dHR5LmNsb3VkLnYxLkVkZ2VDaGFsbGVuZ2VUYXJnZXQqjwEKE0VkZ2VDaGFsbGVuZ2VUYXJnZXQSJQohRURHRV9DSEFMTEVOR0VfVEFSR0VUX1VOU1BFQ0lGSUVEEAASJwojRURHRV9DSEFMTEVOR0VfVEFSR0VUX0FHRU5UX0dBVEVXQVkQARIoCiRFREdFX0NIQUxMRU5HRV9UQVJHRVRfQ0xJRU5UX0dBVEVXQVkQAkIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_duration, file_google_protobuf_timestamp]);
+  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD2FueXR0eS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMIqwBCglLZXlCdW5kbGUSEAoIcmV2aXNpb24YASABKAQSLQoJaXNzdWVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgRrZXlzGAQgAygLMiAuYW55dHR5LmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSJqCg9IZWFydGJlYXRQb2xpY3kSKwoIaW50ZXJ2YWwYASABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SKgoHdGltZW91dBgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiJECg5TaWduZWRFbnZlbG9wZRIOCgZrZXlfaWQYASABKAkSDwoHcGF5bG9hZBgCIAEoDBIRCglzaWduYXR1cmUYAyABKAwiygEKF0Nsb3VkRW50aXRsZW1lbnRGYWlsdXJlEjgKBGNvZGUYASABKA4yKi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRFbnRpdGxlbWVudEVycm9yQ29kZRIPCgdtZXNzYWdlGAIgASgJEg0KBWxpbWl0GAMgASgEEgwKBHVzZWQYBCABKAQSFwoPcmVtYWluaW5nX2J5dGVzGAUgASgEEi4KCnBlcmlvZF9lbmQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIu0BCg1FZGdlQ2hhbGxlbmdlEg0KBW5vbmNlGAEgASgMEg8KB2VkZ2VfaWQYAiABKAkSFAoMZWRnZV9ib290X2lkGAMgASgJEhEKCXN0cmVhbV9pZBgEIAEoCRItCglpc3N1ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjQKBnRhcmdldBgHIAEoDjIkLmFueXR0eS5jbG91ZC52MS5FZGdlQ2hhbGxlbmdlVGFyZ2V0KtUDChlDbG91ZEVudGl0bGVtZW50RXJyb3JDb2RlEiwKKENMT1VEX0VOVElUTEVNRU5UX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABI3CjNDTE9VRF9FTlRJVExFTUVOVF9FUlJPUl9DT0RFX0RBRU1PTl9MSU1JVF9FWEhBVVNURUQQARIyCi5DTE9VRF9FTlRJVExFTUVOVF9FUlJPUl9DT0RFX1JFTEFZX05PVF9JTl9QTEFOEAISNgoyQ0xPVURfRU5USVRMRU1FTlRfRVJST1JfQ09ERV9SRUxBWV9RVU9UQV9FWEhBVVNURUQQAxI8CjhDTE9VRF9FTlRJVExFTUVOVF9FUlJPUl9DT0RFX1JFTEFZX0NPTkNVUlJFTkNZX0VYSEFVU1RFRBAEEjYKMkNMT1VEX0VOVElUTEVNRU5UX0VSUk9SX0NPREVfU1VCU0NSSVBUSU9OX0lOQUNUSVZFEAUSOQo1Q0xPVURfRU5USVRMRU1FTlRfRVJST1JfQ09ERV9SRUxBWV9SRUdJT05fVU5BVkFJTEFCTEUQBhI0CjBDTE9VRF9FTlRJVExFTUVOVF9FUlJPUl9DT0RFX1NFUlZJQ0VfVU5BVkFJTEFCTEUQByqPAQoTRWRnZUNoYWxsZW5nZVRhcmdldBIlCiFFREdFX0NIQUxMRU5HRV9UQVJHRVRfVU5TUEVDSUZJRUQQABInCiNFREdFX0NIQUxMRU5HRV9UQVJHRVRfQUdFTlRfR0FURVdBWRABEigKJEVER0VfQ0hBTExFTkdFX1RBUkdFVF9DTElFTlRfR0FURVdBWRACQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_duration, file_google_protobuf_timestamp]);
 
 /**
  * VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
@@ -133,6 +133,50 @@ export const SignedEnvelopeSchema: GenMessage<SignedEnvelope> = /*@__PURE__*/
   messageDesc(file_cloud_v1_common, 3);
 
 /**
+ * CloudEntitlementFailure 可安全投影给未登录 App，不包含账号或订阅 identity。
+ *
+ * @generated from message anytty.cloud.v1.CloudEntitlementFailure
+ */
+export type CloudEntitlementFailure = Message<"anytty.cloud.v1.CloudEntitlementFailure"> & {
+  /**
+   * @generated from field: anytty.cloud.v1.CloudEntitlementErrorCode code = 1;
+   */
+  code: CloudEntitlementErrorCode;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+
+  /**
+   * @generated from field: uint64 limit = 3;
+   */
+  limit: bigint;
+
+  /**
+   * @generated from field: uint64 used = 4;
+   */
+  used: bigint;
+
+  /**
+   * @generated from field: uint64 remaining_bytes = 5;
+   */
+  remainingBytes: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp period_end = 6;
+   */
+  periodEnd?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.CloudEntitlementFailure.
+ * Use `create(CloudEntitlementFailureSchema)` to create a new message.
+ */
+export const CloudEntitlementFailureSchema: GenMessage<CloudEntitlementFailure> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_common, 4);
+
+/**
  * EdgeChallenge 是 Edge 在每条 Gateway stream 上先发的单次新鲜度证明材料。
  * nonce 固定为 32 bytes，stream_id 由 Edge 为该 stream 唯一生成，期限固定为 10 秒。
  *
@@ -180,7 +224,61 @@ export type EdgeChallenge = Message<"anytty.cloud.v1.EdgeChallenge"> & {
  * Use `create(EdgeChallengeSchema)` to create a new message.
  */
 export const EdgeChallengeSchema: GenMessage<EdgeChallenge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_common, 4);
+  messageDesc(file_cloud_v1_common, 5);
+
+/**
+ * CloudEntitlementErrorCode 是跨 Controller、Edge 和客户端稳定传播的商业准入失败。
+ * 客户端只能按枚举展示本地化文案，不得解析服务端 message。
+ *
+ * @generated from enum anytty.cloud.v1.CloudEntitlementErrorCode
+ */
+export enum CloudEntitlementErrorCode {
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_DAEMON_LIMIT_EXHAUSTED = 1;
+   */
+  DAEMON_LIMIT_EXHAUSTED = 1,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN = 2;
+   */
+  RELAY_NOT_IN_PLAN = 2,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED = 3;
+   */
+  RELAY_QUOTA_EXHAUSTED = 3,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED = 4;
+   */
+  RELAY_CONCURRENCY_EXHAUSTED = 4,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE = 5;
+   */
+  SUBSCRIPTION_INACTIVE = 5,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE = 6;
+   */
+  RELAY_REGION_UNAVAILABLE = 6,
+
+  /**
+   * @generated from enum value: CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE = 7;
+   */
+  SERVICE_UNAVAILABLE = 7,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.CloudEntitlementErrorCode.
+ */
+export const CloudEntitlementErrorCodeSchema: GenEnum<CloudEntitlementErrorCode> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_common, 0);
 
 /**
  * EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
@@ -208,4 +306,4 @@ export enum EdgeChallengeTarget {
  * Describes the enum anytty.cloud.v1.EdgeChallengeTarget.
  */
 export const EdgeChallengeTargetSchema: GenEnum<EdgeChallengeTarget> = /*@__PURE__*/
-  enumDesc(file_cloud_v1_common, 0);
+  enumDesc(file_cloud_v1_common, 1);

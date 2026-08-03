@@ -714,15 +714,16 @@ func (x *RelayGrant) GetPolicy() *RelayPolicySnapshot {
 }
 
 type RelayReserveResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReservationId string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	RequestDigest []byte                 `protobuf:"bytes,2,opt,name=request_digest,json=requestDigest,proto3" json:"request_digest,omitempty"`
-	Code          RelayResponseCode      `protobuf:"varint,3,opt,name=code,proto3,enum=anytty.cloud.v1.RelayResponseCode" json:"code,omitempty"`
-	Grant         *RelayGrant            `protobuf:"bytes,4,opt,name=grant,proto3" json:"grant,omitempty"`
-	Terminal      *RelaySettlementAck    `protobuf:"bytes,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState   `protogen:"open.v1"`
+	ReservationId      string                   `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	RequestDigest      []byte                   `protobuf:"bytes,2,opt,name=request_digest,json=requestDigest,proto3" json:"request_digest,omitempty"`
+	Code               RelayResponseCode        `protobuf:"varint,3,opt,name=code,proto3,enum=anytty.cloud.v1.RelayResponseCode" json:"code,omitempty"`
+	Grant              *RelayGrant              `protobuf:"bytes,4,opt,name=grant,proto3" json:"grant,omitempty"`
+	Terminal           *RelaySettlementAck      `protobuf:"bytes,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	ErrorMessage       string                   `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	EntitlementFailure *CloudEntitlementFailure `protobuf:"bytes,7,opt,name=entitlement_failure,json=entitlementFailure,proto3" json:"entitlement_failure,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RelayReserveResponse) Reset() {
@@ -797,6 +798,13 @@ func (x *RelayReserveResponse) GetErrorMessage() string {
 	return ""
 }
 
+func (x *RelayReserveResponse) GetEntitlementFailure() *CloudEntitlementFailure {
+	if x != nil {
+		return x.EntitlementFailure
+	}
+	return nil
+}
+
 type RelayRenewRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ReservationId string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
@@ -866,15 +874,16 @@ func (x *RelayRenewRequest) GetObservedAt() *timestamppb.Timestamp {
 }
 
 type RelayRenewResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReservationId string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	RenewSequence uint64                 `protobuf:"varint,2,opt,name=renew_sequence,json=renewSequence,proto3" json:"renew_sequence,omitempty"`
-	Code          RelayResponseCode      `protobuf:"varint,3,opt,name=code,proto3,enum=anytty.cloud.v1.RelayResponseCode" json:"code,omitempty"`
-	Grant         *RelayGrant            `protobuf:"bytes,4,opt,name=grant,proto3" json:"grant,omitempty"`
-	Terminal      *RelaySettlementAck    `protobuf:"bytes,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState   `protogen:"open.v1"`
+	ReservationId      string                   `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	RenewSequence      uint64                   `protobuf:"varint,2,opt,name=renew_sequence,json=renewSequence,proto3" json:"renew_sequence,omitempty"`
+	Code               RelayResponseCode        `protobuf:"varint,3,opt,name=code,proto3,enum=anytty.cloud.v1.RelayResponseCode" json:"code,omitempty"`
+	Grant              *RelayGrant              `protobuf:"bytes,4,opt,name=grant,proto3" json:"grant,omitempty"`
+	Terminal           *RelaySettlementAck      `protobuf:"bytes,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	ErrorMessage       string                   `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	EntitlementFailure *CloudEntitlementFailure `protobuf:"bytes,7,opt,name=entitlement_failure,json=entitlementFailure,proto3" json:"entitlement_failure,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RelayRenewResponse) Reset() {
@@ -947,6 +956,13 @@ func (x *RelayRenewResponse) GetErrorMessage() string {
 		return x.ErrorMessage
 	}
 	return ""
+}
+
+func (x *RelayRenewResponse) GetEntitlementFailure() *CloudEntitlementFailure {
+	if x != nil {
+		return x.EntitlementFailure
+	}
+	return nil
 }
 
 type RelaySettlement struct {
@@ -1194,14 +1210,15 @@ func (x *RelayQueryRequest) GetReservationId() string {
 }
 
 type RelayQueryResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReservationId string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	Code          RelayResponseCode      `protobuf:"varint,2,opt,name=code,proto3,enum=anytty.cloud.v1.RelayResponseCode" json:"code,omitempty"`
-	Grant         *RelayGrant            `protobuf:"bytes,3,opt,name=grant,proto3" json:"grant,omitempty"`
-	Terminal      *RelaySettlementAck    `protobuf:"bytes,4,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState   `protogen:"open.v1"`
+	ReservationId      string                   `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	Code               RelayResponseCode        `protobuf:"varint,2,opt,name=code,proto3,enum=anytty.cloud.v1.RelayResponseCode" json:"code,omitempty"`
+	Grant              *RelayGrant              `protobuf:"bytes,3,opt,name=grant,proto3" json:"grant,omitempty"`
+	Terminal           *RelaySettlementAck      `protobuf:"bytes,4,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	ErrorMessage       string                   `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	EntitlementFailure *CloudEntitlementFailure `protobuf:"bytes,6,opt,name=entitlement_failure,json=entitlementFailure,proto3" json:"entitlement_failure,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RelayQueryResponse) Reset() {
@@ -1267,6 +1284,13 @@ func (x *RelayQueryResponse) GetErrorMessage() string {
 		return x.ErrorMessage
 	}
 	return ""
+}
+
+func (x *RelayQueryResponse) GetEntitlementFailure() *CloudEntitlementFailure {
+	if x != nil {
+		return x.EntitlementFailure
+	}
+	return nil
 }
 
 // RelayICEConfig is derived from a committed Controller grant. It is durable
@@ -1436,7 +1460,7 @@ var File_cloud_v1_usage_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\n" +
-	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x86\b\n" +
+	"\x14cloud/v1/usage.proto\x12\x0fanytty.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x86\b\n" +
 	"\x13RelayPolicySnapshot\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12)\n" +
@@ -1486,27 +1510,29 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\x0erenew_sequence\x18\x05 \x01(\x04R\rrenewSequence\x12E\n" +
 	"\x10authorized_until\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fauthorizedUntil\x12#\n" +
 	"\rpolicy_digest\x18\a \x01(\fR\fpolicyDigest\x12<\n" +
-	"\x06policy\x18\b \x01(\v2$.anytty.cloud.v1.RelayPolicySnapshotR\x06policy\"\xb5\x02\n" +
+	"\x06policy\x18\b \x01(\v2$.anytty.cloud.v1.RelayPolicySnapshotR\x06policy\"\x90\x03\n" +
 	"\x14RelayReserveResponse\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12%\n" +
 	"\x0erequest_digest\x18\x02 \x01(\fR\rrequestDigest\x126\n" +
 	"\x04code\x18\x03 \x01(\x0e2\".anytty.cloud.v1.RelayResponseCodeR\x04code\x121\n" +
 	"\x05grant\x18\x04 \x01(\v2\x1b.anytty.cloud.v1.RelayGrantR\x05grant\x12?\n" +
 	"\bterminal\x18\x05 \x01(\v2#.anytty.cloud.v1.RelaySettlementAckR\bterminal\x12#\n" +
-	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"\xc3\x01\n" +
+	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12Y\n" +
+	"\x13entitlement_failure\x18\a \x01(\v2(.anytty.cloud.v1.CloudEntitlementFailureR\x12entitlementFailure\"\xc3\x01\n" +
 	"\x11RelayRenewRequest\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12%\n" +
 	"\x0erenew_sequence\x18\x02 \x01(\x04R\rrenewSequence\x12#\n" +
 	"\rpolicy_digest\x18\x03 \x01(\fR\fpolicyDigest\x12;\n" +
 	"\vobserved_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"observedAt\"\xb3\x02\n" +
+	"observedAt\"\x8e\x03\n" +
 	"\x12RelayRenewResponse\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12%\n" +
 	"\x0erenew_sequence\x18\x02 \x01(\x04R\rrenewSequence\x126\n" +
 	"\x04code\x18\x03 \x01(\x0e2\".anytty.cloud.v1.RelayResponseCodeR\x04code\x121\n" +
 	"\x05grant\x18\x04 \x01(\v2\x1b.anytty.cloud.v1.RelayGrantR\x05grant\x12?\n" +
 	"\bterminal\x18\x05 \x01(\v2#.anytty.cloud.v1.RelaySettlementAckR\bterminal\x12#\n" +
-	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"\x9c\x02\n" +
+	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12Y\n" +
+	"\x13entitlement_failure\x18\a \x01(\v2(.anytty.cloud.v1.CloudEntitlementFailureR\x12entitlementFailure\"\x9c\x02\n" +
 	"\x0fRelaySettlement\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x128\n" +
 	"\x04kind\x18\x02 \x01(\x0e2$.anytty.cloud.v1.RelaySettlementKindR\x04kind\x12#\n" +
@@ -1530,13 +1556,14 @@ const file_cloud_v1_usage_proto_rawDesc = "" +
 	"\rerror_message\x18\n" +
 	" \x01(\tR\ferrorMessage\":\n" +
 	"\x11RelayQueryRequest\x12%\n" +
-	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\"\x8c\x02\n" +
+	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\"\xe7\x02\n" +
 	"\x12RelayQueryResponse\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x126\n" +
 	"\x04code\x18\x02 \x01(\x0e2\".anytty.cloud.v1.RelayResponseCodeR\x04code\x121\n" +
 	"\x05grant\x18\x03 \x01(\v2\x1b.anytty.cloud.v1.RelayGrantR\x05grant\x12?\n" +
 	"\bterminal\x18\x04 \x01(\v2#.anytty.cloud.v1.RelaySettlementAckR\bterminal\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\xc2\x01\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x12Y\n" +
+	"\x13entitlement_failure\x18\x06 \x01(\v2(.anytty.cloud.v1.CloudEntitlementFailureR\x12entitlementFailure\"\xc2\x01\n" +
 	"\x0eRelayICEConfig\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12\x12\n" +
 	"\x04urls\x18\x02 \x03(\tR\x04urls\x12\x1a\n" +
@@ -1601,24 +1628,25 @@ func file_cloud_v1_usage_proto_rawDescGZIP() []byte {
 var file_cloud_v1_usage_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_cloud_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_cloud_v1_usage_proto_goTypes = []any{
-	(RelayPreference)(0),          // 0: anytty.cloud.v1.RelayPreference
-	(RelayTransport)(0),           // 1: anytty.cloud.v1.RelayTransport
-	(RelaySettlementKind)(0),      // 2: anytty.cloud.v1.RelaySettlementKind
-	(RelayResponseCode)(0),        // 3: anytty.cloud.v1.RelayResponseCode
-	(RelayJournalStage)(0),        // 4: anytty.cloud.v1.RelayJournalStage
-	(*RelayPolicySnapshot)(nil),   // 5: anytty.cloud.v1.RelayPolicySnapshot
-	(*RelayReserveRequest)(nil),   // 6: anytty.cloud.v1.RelayReserveRequest
-	(*RelayGrant)(nil),            // 7: anytty.cloud.v1.RelayGrant
-	(*RelayReserveResponse)(nil),  // 8: anytty.cloud.v1.RelayReserveResponse
-	(*RelayRenewRequest)(nil),     // 9: anytty.cloud.v1.RelayRenewRequest
-	(*RelayRenewResponse)(nil),    // 10: anytty.cloud.v1.RelayRenewResponse
-	(*RelaySettlement)(nil),       // 11: anytty.cloud.v1.RelaySettlement
-	(*RelaySettlementAck)(nil),    // 12: anytty.cloud.v1.RelaySettlementAck
-	(*RelayQueryRequest)(nil),     // 13: anytty.cloud.v1.RelayQueryRequest
-	(*RelayQueryResponse)(nil),    // 14: anytty.cloud.v1.RelayQueryResponse
-	(*RelayICEConfig)(nil),        // 15: anytty.cloud.v1.RelayICEConfig
-	(*RelayJournalRecord)(nil),    // 16: anytty.cloud.v1.RelayJournalRecord
-	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
+	(RelayPreference)(0),            // 0: anytty.cloud.v1.RelayPreference
+	(RelayTransport)(0),             // 1: anytty.cloud.v1.RelayTransport
+	(RelaySettlementKind)(0),        // 2: anytty.cloud.v1.RelaySettlementKind
+	(RelayResponseCode)(0),          // 3: anytty.cloud.v1.RelayResponseCode
+	(RelayJournalStage)(0),          // 4: anytty.cloud.v1.RelayJournalStage
+	(*RelayPolicySnapshot)(nil),     // 5: anytty.cloud.v1.RelayPolicySnapshot
+	(*RelayReserveRequest)(nil),     // 6: anytty.cloud.v1.RelayReserveRequest
+	(*RelayGrant)(nil),              // 7: anytty.cloud.v1.RelayGrant
+	(*RelayReserveResponse)(nil),    // 8: anytty.cloud.v1.RelayReserveResponse
+	(*RelayRenewRequest)(nil),       // 9: anytty.cloud.v1.RelayRenewRequest
+	(*RelayRenewResponse)(nil),      // 10: anytty.cloud.v1.RelayRenewResponse
+	(*RelaySettlement)(nil),         // 11: anytty.cloud.v1.RelaySettlement
+	(*RelaySettlementAck)(nil),      // 12: anytty.cloud.v1.RelaySettlementAck
+	(*RelayQueryRequest)(nil),       // 13: anytty.cloud.v1.RelayQueryRequest
+	(*RelayQueryResponse)(nil),      // 14: anytty.cloud.v1.RelayQueryResponse
+	(*RelayICEConfig)(nil),          // 15: anytty.cloud.v1.RelayICEConfig
+	(*RelayJournalRecord)(nil),      // 16: anytty.cloud.v1.RelayJournalRecord
+	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
+	(*CloudEntitlementFailure)(nil), // 18: anytty.cloud.v1.CloudEntitlementFailure
 }
 var file_cloud_v1_usage_proto_depIdxs = []int32{
 	17, // 0: anytty.cloud.v1.RelayPolicySnapshot.period_start:type_name -> google.protobuf.Timestamp
@@ -1629,29 +1657,32 @@ var file_cloud_v1_usage_proto_depIdxs = []int32{
 	3,  // 5: anytty.cloud.v1.RelayReserveResponse.code:type_name -> anytty.cloud.v1.RelayResponseCode
 	7,  // 6: anytty.cloud.v1.RelayReserveResponse.grant:type_name -> anytty.cloud.v1.RelayGrant
 	12, // 7: anytty.cloud.v1.RelayReserveResponse.terminal:type_name -> anytty.cloud.v1.RelaySettlementAck
-	17, // 8: anytty.cloud.v1.RelayRenewRequest.observed_at:type_name -> google.protobuf.Timestamp
-	3,  // 9: anytty.cloud.v1.RelayRenewResponse.code:type_name -> anytty.cloud.v1.RelayResponseCode
-	7,  // 10: anytty.cloud.v1.RelayRenewResponse.grant:type_name -> anytty.cloud.v1.RelayGrant
-	12, // 11: anytty.cloud.v1.RelayRenewResponse.terminal:type_name -> anytty.cloud.v1.RelaySettlementAck
-	2,  // 12: anytty.cloud.v1.RelaySettlement.kind:type_name -> anytty.cloud.v1.RelaySettlementKind
-	17, // 13: anytty.cloud.v1.RelaySettlement.observed_at:type_name -> google.protobuf.Timestamp
-	2,  // 14: anytty.cloud.v1.RelaySettlementAck.kind:type_name -> anytty.cloud.v1.RelaySettlementKind
-	17, // 15: anytty.cloud.v1.RelaySettlementAck.observed_at:type_name -> google.protobuf.Timestamp
-	17, // 16: anytty.cloud.v1.RelaySettlementAck.settled_at:type_name -> google.protobuf.Timestamp
-	3,  // 17: anytty.cloud.v1.RelaySettlementAck.code:type_name -> anytty.cloud.v1.RelayResponseCode
-	3,  // 18: anytty.cloud.v1.RelayQueryResponse.code:type_name -> anytty.cloud.v1.RelayResponseCode
-	7,  // 19: anytty.cloud.v1.RelayQueryResponse.grant:type_name -> anytty.cloud.v1.RelayGrant
-	12, // 20: anytty.cloud.v1.RelayQueryResponse.terminal:type_name -> anytty.cloud.v1.RelaySettlementAck
-	17, // 21: anytty.cloud.v1.RelayICEConfig.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 22: anytty.cloud.v1.RelayJournalRecord.stage:type_name -> anytty.cloud.v1.RelayJournalStage
-	6,  // 23: anytty.cloud.v1.RelayJournalRecord.reserve_request:type_name -> anytty.cloud.v1.RelayReserveRequest
-	7,  // 24: anytty.cloud.v1.RelayJournalRecord.grant:type_name -> anytty.cloud.v1.RelayGrant
-	11, // 25: anytty.cloud.v1.RelayJournalRecord.settlement:type_name -> anytty.cloud.v1.RelaySettlement
-	26, // [26:26] is the sub-list for method output_type
-	26, // [26:26] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	18, // 8: anytty.cloud.v1.RelayReserveResponse.entitlement_failure:type_name -> anytty.cloud.v1.CloudEntitlementFailure
+	17, // 9: anytty.cloud.v1.RelayRenewRequest.observed_at:type_name -> google.protobuf.Timestamp
+	3,  // 10: anytty.cloud.v1.RelayRenewResponse.code:type_name -> anytty.cloud.v1.RelayResponseCode
+	7,  // 11: anytty.cloud.v1.RelayRenewResponse.grant:type_name -> anytty.cloud.v1.RelayGrant
+	12, // 12: anytty.cloud.v1.RelayRenewResponse.terminal:type_name -> anytty.cloud.v1.RelaySettlementAck
+	18, // 13: anytty.cloud.v1.RelayRenewResponse.entitlement_failure:type_name -> anytty.cloud.v1.CloudEntitlementFailure
+	2,  // 14: anytty.cloud.v1.RelaySettlement.kind:type_name -> anytty.cloud.v1.RelaySettlementKind
+	17, // 15: anytty.cloud.v1.RelaySettlement.observed_at:type_name -> google.protobuf.Timestamp
+	2,  // 16: anytty.cloud.v1.RelaySettlementAck.kind:type_name -> anytty.cloud.v1.RelaySettlementKind
+	17, // 17: anytty.cloud.v1.RelaySettlementAck.observed_at:type_name -> google.protobuf.Timestamp
+	17, // 18: anytty.cloud.v1.RelaySettlementAck.settled_at:type_name -> google.protobuf.Timestamp
+	3,  // 19: anytty.cloud.v1.RelaySettlementAck.code:type_name -> anytty.cloud.v1.RelayResponseCode
+	3,  // 20: anytty.cloud.v1.RelayQueryResponse.code:type_name -> anytty.cloud.v1.RelayResponseCode
+	7,  // 21: anytty.cloud.v1.RelayQueryResponse.grant:type_name -> anytty.cloud.v1.RelayGrant
+	12, // 22: anytty.cloud.v1.RelayQueryResponse.terminal:type_name -> anytty.cloud.v1.RelaySettlementAck
+	18, // 23: anytty.cloud.v1.RelayQueryResponse.entitlement_failure:type_name -> anytty.cloud.v1.CloudEntitlementFailure
+	17, // 24: anytty.cloud.v1.RelayICEConfig.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 25: anytty.cloud.v1.RelayJournalRecord.stage:type_name -> anytty.cloud.v1.RelayJournalStage
+	6,  // 26: anytty.cloud.v1.RelayJournalRecord.reserve_request:type_name -> anytty.cloud.v1.RelayReserveRequest
+	7,  // 27: anytty.cloud.v1.RelayJournalRecord.grant:type_name -> anytty.cloud.v1.RelayGrant
+	11, // 28: anytty.cloud.v1.RelayJournalRecord.settlement:type_name -> anytty.cloud.v1.RelaySettlement
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_usage_proto_init() }
@@ -1659,6 +1690,7 @@ func file_cloud_v1_usage_proto_init() {
 	if File_cloud_v1_usage_proto != nil {
 		return
 	}
+	file_cloud_v1_common_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

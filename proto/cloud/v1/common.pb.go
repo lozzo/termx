@@ -23,6 +23,72 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// CloudEntitlementErrorCode 是跨 Controller、Edge 和客户端稳定传播的商业准入失败。
+// 客户端只能按枚举展示本地化文案，不得解析服务端 message。
+type CloudEntitlementErrorCode int32
+
+const (
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED                 CloudEntitlementErrorCode = 0
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_DAEMON_LIMIT_EXHAUSTED      CloudEntitlementErrorCode = 1
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN           CloudEntitlementErrorCode = 2
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED       CloudEntitlementErrorCode = 3
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED CloudEntitlementErrorCode = 4
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE       CloudEntitlementErrorCode = 5
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE    CloudEntitlementErrorCode = 6
+	CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE         CloudEntitlementErrorCode = 7
+)
+
+// Enum value maps for CloudEntitlementErrorCode.
+var (
+	CloudEntitlementErrorCode_name = map[int32]string{
+		0: "CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED",
+		1: "CLOUD_ENTITLEMENT_ERROR_CODE_DAEMON_LIMIT_EXHAUSTED",
+		2: "CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN",
+		3: "CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED",
+		4: "CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED",
+		5: "CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE",
+		6: "CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE",
+		7: "CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE",
+	}
+	CloudEntitlementErrorCode_value = map[string]int32{
+		"CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED":                 0,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_DAEMON_LIMIT_EXHAUSTED":      1,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN":           2,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED":       3,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED": 4,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE":       5,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE":    6,
+		"CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE":         7,
+	}
+)
+
+func (x CloudEntitlementErrorCode) Enum() *CloudEntitlementErrorCode {
+	p := new(CloudEntitlementErrorCode)
+	*p = x
+	return p
+}
+
+func (x CloudEntitlementErrorCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CloudEntitlementErrorCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloud_v1_common_proto_enumTypes[0].Descriptor()
+}
+
+func (CloudEntitlementErrorCode) Type() protoreflect.EnumType {
+	return &file_cloud_v1_common_proto_enumTypes[0]
+}
+
+func (x CloudEntitlementErrorCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CloudEntitlementErrorCode.Descriptor instead.
+func (CloudEntitlementErrorCode) EnumDescriptor() ([]byte, []int) {
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{0}
+}
+
 // EdgeChallengeTarget 把一次 challenge 限定到唯一 Gateway 协议，禁止跨流类型复用。
 type EdgeChallengeTarget int32
 
@@ -57,11 +123,11 @@ func (x EdgeChallengeTarget) String() string {
 }
 
 func (EdgeChallengeTarget) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloud_v1_common_proto_enumTypes[0].Descriptor()
+	return file_cloud_v1_common_proto_enumTypes[1].Descriptor()
 }
 
 func (EdgeChallengeTarget) Type() protoreflect.EnumType {
-	return &file_cloud_v1_common_proto_enumTypes[0]
+	return &file_cloud_v1_common_proto_enumTypes[1]
 }
 
 func (x EdgeChallengeTarget) Number() protoreflect.EnumNumber {
@@ -70,7 +136,7 @@ func (x EdgeChallengeTarget) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EdgeChallengeTarget.Descriptor instead.
 func (EdgeChallengeTarget) EnumDescriptor() ([]byte, []int) {
-	return file_cloud_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
 // VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
@@ -319,6 +385,91 @@ func (x *SignedEnvelope) GetSignature() []byte {
 	return nil
 }
 
+// CloudEntitlementFailure 可安全投影给未登录 App，不包含账号或订阅 identity。
+type CloudEntitlementFailure struct {
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	Code           CloudEntitlementErrorCode `protobuf:"varint,1,opt,name=code,proto3,enum=anytty.cloud.v1.CloudEntitlementErrorCode" json:"code,omitempty"`
+	Message        string                    `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Limit          uint64                    `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Used           uint64                    `protobuf:"varint,4,opt,name=used,proto3" json:"used,omitempty"`
+	RemainingBytes uint64                    `protobuf:"varint,5,opt,name=remaining_bytes,json=remainingBytes,proto3" json:"remaining_bytes,omitempty"`
+	PeriodEnd      *timestamppb.Timestamp    `protobuf:"bytes,6,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CloudEntitlementFailure) Reset() {
+	*x = CloudEntitlementFailure{}
+	mi := &file_cloud_v1_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloudEntitlementFailure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloudEntitlementFailure) ProtoMessage() {}
+
+func (x *CloudEntitlementFailure) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloudEntitlementFailure.ProtoReflect.Descriptor instead.
+func (*CloudEntitlementFailure) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CloudEntitlementFailure) GetCode() CloudEntitlementErrorCode {
+	if x != nil {
+		return x.Code
+	}
+	return CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED
+}
+
+func (x *CloudEntitlementFailure) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CloudEntitlementFailure) GetLimit() uint64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *CloudEntitlementFailure) GetUsed() uint64 {
+	if x != nil {
+		return x.Used
+	}
+	return 0
+}
+
+func (x *CloudEntitlementFailure) GetRemainingBytes() uint64 {
+	if x != nil {
+		return x.RemainingBytes
+	}
+	return 0
+}
+
+func (x *CloudEntitlementFailure) GetPeriodEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodEnd
+	}
+	return nil
+}
+
 // EdgeChallenge 是 Edge 在每条 Gateway stream 上先发的单次新鲜度证明材料。
 // nonce 固定为 32 bytes，stream_id 由 Edge 为该 stream 唯一生成，期限固定为 10 秒。
 type EdgeChallenge struct {
@@ -336,7 +487,7 @@ type EdgeChallenge struct {
 
 func (x *EdgeChallenge) Reset() {
 	*x = EdgeChallenge{}
-	mi := &file_cloud_v1_common_proto_msgTypes[4]
+	mi := &file_cloud_v1_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -348,7 +499,7 @@ func (x *EdgeChallenge) String() string {
 func (*EdgeChallenge) ProtoMessage() {}
 
 func (x *EdgeChallenge) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_common_proto_msgTypes[4]
+	mi := &file_cloud_v1_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -361,7 +512,7 @@ func (x *EdgeChallenge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeChallenge.ProtoReflect.Descriptor instead.
 func (*EdgeChallenge) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_common_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EdgeChallenge) GetNonce() []byte {
@@ -435,7 +586,15 @@ const file_cloud_v1_common_proto_rawDesc = "" +
 	"\x0eSignedEnvelope\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xaf\x02\n" +
+	"\tsignature\x18\x03 \x01(\fR\tsignature\"\x81\x02\n" +
+	"\x17CloudEntitlementFailure\x12>\n" +
+	"\x04code\x18\x01 \x01(\x0e2*.anytty.cloud.v1.CloudEntitlementErrorCodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x04R\x05limit\x12\x12\n" +
+	"\x04used\x18\x04 \x01(\x04R\x04used\x12'\n" +
+	"\x0fremaining_bytes\x18\x05 \x01(\x04R\x0eremainingBytes\x129\n" +
+	"\n" +
+	"period_end\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\"\xaf\x02\n" +
 	"\rEdgeChallenge\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x17\n" +
 	"\aedge_id\x18\x02 \x01(\tR\x06edgeId\x12 \n" +
@@ -445,7 +604,16 @@ const file_cloud_v1_common_proto_rawDesc = "" +
 	"\tissued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12<\n" +
-	"\x06target\x18\a \x01(\x0e2$.anytty.cloud.v1.EdgeChallengeTargetR\x06target*\x8f\x01\n" +
+	"\x06target\x18\a \x01(\x0e2$.anytty.cloud.v1.EdgeChallengeTargetR\x06target*\xd5\x03\n" +
+	"\x19CloudEntitlementErrorCode\x12,\n" +
+	"(CLOUD_ENTITLEMENT_ERROR_CODE_UNSPECIFIED\x10\x00\x127\n" +
+	"3CLOUD_ENTITLEMENT_ERROR_CODE_DAEMON_LIMIT_EXHAUSTED\x10\x01\x122\n" +
+	".CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN\x10\x02\x126\n" +
+	"2CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED\x10\x03\x12<\n" +
+	"8CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED\x10\x04\x126\n" +
+	"2CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE\x10\x05\x129\n" +
+	"5CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE\x10\x06\x124\n" +
+	"0CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE\x10\a*\x8f\x01\n" +
 	"\x13EdgeChallengeTarget\x12%\n" +
 	"!EDGE_CHALLENGE_TARGET_UNSPECIFIED\x10\x00\x12'\n" +
 	"#EDGE_CHALLENGE_TARGET_AGENT_GATEWAY\x10\x01\x12(\n" +
@@ -463,32 +631,36 @@ func file_cloud_v1_common_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_common_proto_rawDescData
 }
 
-var file_cloud_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_cloud_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_cloud_v1_common_proto_goTypes = []any{
-	(EdgeChallengeTarget)(0),      // 0: anytty.cloud.v1.EdgeChallengeTarget
-	(*VerificationKey)(nil),       // 1: anytty.cloud.v1.VerificationKey
-	(*KeyBundle)(nil),             // 2: anytty.cloud.v1.KeyBundle
-	(*HeartbeatPolicy)(nil),       // 3: anytty.cloud.v1.HeartbeatPolicy
-	(*SignedEnvelope)(nil),        // 4: anytty.cloud.v1.SignedEnvelope
-	(*EdgeChallenge)(nil),         // 5: anytty.cloud.v1.EdgeChallenge
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 7: google.protobuf.Duration
+	(CloudEntitlementErrorCode)(0),  // 0: anytty.cloud.v1.CloudEntitlementErrorCode
+	(EdgeChallengeTarget)(0),        // 1: anytty.cloud.v1.EdgeChallengeTarget
+	(*VerificationKey)(nil),         // 2: anytty.cloud.v1.VerificationKey
+	(*KeyBundle)(nil),               // 3: anytty.cloud.v1.KeyBundle
+	(*HeartbeatPolicy)(nil),         // 4: anytty.cloud.v1.HeartbeatPolicy
+	(*SignedEnvelope)(nil),          // 5: anytty.cloud.v1.SignedEnvelope
+	(*CloudEntitlementFailure)(nil), // 6: anytty.cloud.v1.CloudEntitlementFailure
+	(*EdgeChallenge)(nil),           // 7: anytty.cloud.v1.EdgeChallenge
+	(*timestamppb.Timestamp)(nil),   // 8: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),     // 9: google.protobuf.Duration
 }
 var file_cloud_v1_common_proto_depIdxs = []int32{
-	6, // 0: anytty.cloud.v1.KeyBundle.issued_at:type_name -> google.protobuf.Timestamp
-	6, // 1: anytty.cloud.v1.KeyBundle.expires_at:type_name -> google.protobuf.Timestamp
-	1, // 2: anytty.cloud.v1.KeyBundle.keys:type_name -> anytty.cloud.v1.VerificationKey
-	7, // 3: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
-	7, // 4: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
-	6, // 5: anytty.cloud.v1.EdgeChallenge.issued_at:type_name -> google.protobuf.Timestamp
-	6, // 6: anytty.cloud.v1.EdgeChallenge.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 7: anytty.cloud.v1.EdgeChallenge.target:type_name -> anytty.cloud.v1.EdgeChallengeTarget
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	8,  // 0: anytty.cloud.v1.KeyBundle.issued_at:type_name -> google.protobuf.Timestamp
+	8,  // 1: anytty.cloud.v1.KeyBundle.expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 2: anytty.cloud.v1.KeyBundle.keys:type_name -> anytty.cloud.v1.VerificationKey
+	9,  // 3: anytty.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
+	9,  // 4: anytty.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
+	0,  // 5: anytty.cloud.v1.CloudEntitlementFailure.code:type_name -> anytty.cloud.v1.CloudEntitlementErrorCode
+	8,  // 6: anytty.cloud.v1.CloudEntitlementFailure.period_end:type_name -> google.protobuf.Timestamp
+	8,  // 7: anytty.cloud.v1.EdgeChallenge.issued_at:type_name -> google.protobuf.Timestamp
+	8,  // 8: anytty.cloud.v1.EdgeChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 9: anytty.cloud.v1.EdgeChallenge.target:type_name -> anytty.cloud.v1.EdgeChallengeTarget
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_common_proto_init() }
@@ -501,8 +673,8 @@ func file_cloud_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_common_proto_rawDesc), len(file_cloud_v1_common_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   5,
+			NumEnums:      2,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

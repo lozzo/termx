@@ -1134,6 +1134,21 @@ func TestAPIErrorPreservesDaemonLifecycle(t *testing.T) {
 	}
 }
 
+func TestAPIErrorPreservesCloudEntitlementCode(t *testing.T) {
+	for runtimeCode, want := range map[clientruntime.ErrorCode]apipb.ApiErrorCode{
+		clientruntime.ErrorRelayNotInPlan:            apipb.ApiErrorCode_API_ERROR_CODE_RELAY_NOT_IN_PLAN,
+		clientruntime.ErrorRelayQuotaExhausted:       apipb.ApiErrorCode_API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED,
+		clientruntime.ErrorRelayConcurrencyExhausted: apipb.ApiErrorCode_API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED,
+		clientruntime.ErrorSubscriptionInactive:      apipb.ApiErrorCode_API_ERROR_CODE_SUBSCRIPTION_INACTIVE,
+		clientruntime.ErrorRelayRegionUnavailable:    apipb.ApiErrorCode_API_ERROR_CODE_RELAY_REGION_UNAVAILABLE,
+	} {
+		got := apiError(&clientruntime.Error{Code: runtimeCode, Message: "opaque", Attempted: true})
+		if got.GetCode() != want || got.GetMessage() != "opaque" {
+			t.Fatalf("runtime code %s produced %#v", runtimeCode, got)
+		}
+	}
+}
+
 type bindingHost struct {
 	session     clientruntime.ApplicationReadyPeerSession
 	request     *bindingpb.OpenSessionRequest

@@ -59,3 +59,13 @@ func TestProjectEndpointEventMapsStableRuntimeErrors(t *testing.T) {
 		t.Fatalf("projected failure = %#v", event)
 	}
 }
+
+func TestProjectEndpointEventPreservesCloudEntitlementFailure(t *testing.T) {
+	event := ProjectEndpointEvent(clientruntime.EndpointEvent{
+		EndpointID: "studio", Phase: clientruntime.EndpointPhaseOffline,
+		ErrorCode: clientruntime.ErrorResourceExhausted, Message: "Relay concurrency is full; existing connection remains active",
+	})
+	if event.ErrorKind != state.EndpointErrorEntitlement || event.Message == "" {
+		t.Fatalf("projected event = %#v", event)
+	}
+}

@@ -84,6 +84,8 @@ const (
 	EndpointErrorConfig EndpointErrorKind = "config"
 	// EndpointErrorUnavailable 表示无法进一步分类的连接不可达错误。
 	EndpointErrorUnavailable EndpointErrorKind = "unavailable"
+	// EndpointErrorEntitlement 表示 Cloud 套餐、Relay 流量或并发限制，不应被展示为普通网络故障。
+	EndpointErrorEntitlement EndpointErrorKind = "cloud-entitlement"
 )
 
 // EndpointTransportKind 是 TUI 展示层使用的 transport 枚举。
@@ -647,7 +649,8 @@ func NormalizeEndpointErrorKind(kind EndpointErrorKind) EndpointErrorKind {
 		EndpointErrorRemoteDaemon,
 		EndpointErrorProtocol,
 		EndpointErrorConfig,
-		EndpointErrorUnavailable:
+		EndpointErrorUnavailable,
+		EndpointErrorEntitlement:
 		return kind
 	default:
 		return EndpointErrorUnknown

@@ -161,13 +161,48 @@ func (dialer *Dialer) report(phase clientruntime.EndpointPhase) {
 }
 
 func cloudConnectionError(err error) error {
+	failure := cloudclient.EntitlementFailure(err)
 	switch {
 	case cloudclient.IsDaemonBlocked(err):
 		return &clientruntime.Error{Code: clientruntime.ErrorDaemonBlocked, Message: "daemon Cloud access is temporarily disabled", Cause: err, Retryable: true}
 	case cloudclient.IsDaemonDeleted(err):
 		return &clientruntime.Error{Code: clientruntime.ErrorDaemonDeleted, Message: "daemon Cloud enrollment was deleted", Cause: err}
+	case failure != nil && failure.GetCode() == cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED:
+		return &clientruntime.Error{Code: clientruntime.ErrorRelayQuotaExhausted, Message: cloudEntitlementMessage(failure), Cause: err}
+	case failure != nil && failure.GetCode() == cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED:
+		return &clientruntime.Error{Code: clientruntime.ErrorRelayConcurrencyExhausted, Message: cloudEntitlementMessage(failure), Cause: err}
+	case failure != nil && failure.GetCode() == cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SERVICE_UNAVAILABLE:
+		return &clientruntime.Error{Code: clientruntime.ErrorUnavailable, Message: cloudEntitlementMessage(failure), Cause: err, Retryable: true}
+	case failure != nil && failure.GetCode() == cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN:
+		return &clientruntime.Error{Code: clientruntime.ErrorRelayNotInPlan, Message: cloudEntitlementMessage(failure), Cause: err}
+	case failure != nil && failure.GetCode() == cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE:
+		return &clientruntime.Error{Code: clientruntime.ErrorSubscriptionInactive, Message: cloudEntitlementMessage(failure), Cause: err}
+	case failure != nil && failure.GetCode() == cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE:
+		return &clientruntime.Error{Code: clientruntime.ErrorRelayRegionUnavailable, Message: cloudEntitlementMessage(failure), Cause: err}
+	case failure != nil:
+		return &clientruntime.Error{Code: clientruntime.ErrorEntitlement, Message: cloudEntitlementMessage(failure), Cause: err}
 	default:
 		return err
+	}
+}
+
+func cloudEntitlementMessage(failure *cloudv1.CloudEntitlementFailure) string {
+	if failure == nil {
+		return "Cloud entitlement denied"
+	}
+	switch failure.GetCode() {
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_QUOTA_EXHAUSTED:
+		return "Relay traffic quota is exhausted; Direct, P2P, and SSH remain available"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED:
+		return "Relay concurrency is full; keep the existing connection or use Direct, P2P, or SSH"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_NOT_IN_PLAN:
+		return "Relay is not included in the current AnyTTY Cloud plan"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_SUBSCRIPTION_INACTIVE:
+		return "AnyTTY Cloud subscription is inactive; Direct and SSH remain available"
+	case cloudv1.CloudEntitlementErrorCode_CLOUD_ENTITLEMENT_ERROR_CODE_RELAY_REGION_UNAVAILABLE:
+		return "Relay is unavailable in the selected region; Direct and SSH remain available"
+	default:
+		return "Relay authorization is temporarily unavailable"
 	}
 }
 

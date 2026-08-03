@@ -1225,18 +1225,20 @@ func (x *EffectiveEntitlement) GetComputedAt() *timestamppb.Timestamp {
 }
 
 type UsagePeriodProjection struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	AccountId         string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	PeriodStart       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
-	PeriodEnd         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
-	RelayIngressBytes uint64                 `protobuf:"varint,4,opt,name=relay_ingress_bytes,json=relayIngressBytes,proto3" json:"relay_ingress_bytes,omitempty"`
-	RelayEgressBytes  uint64                 `protobuf:"varint,5,opt,name=relay_egress_bytes,json=relayEgressBytes,proto3" json:"relay_egress_bytes,omitempty"`
-	RelayTotalBytes   uint64                 `protobuf:"varint,6,opt,name=relay_total_bytes,json=relayTotalBytes,proto3" json:"relay_total_bytes,omitempty"`
-	QuotaBytes        uint64                 `protobuf:"varint,7,opt,name=quota_bytes,json=quotaBytes,proto3" json:"quota_bytes,omitempty"`
-	RemainingBytes    uint64                 `protobuf:"varint,8,opt,name=remaining_bytes,json=remainingBytes,proto3" json:"remaining_bytes,omitempty"`
-	Revision          uint64                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	AccountId               string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	PeriodStart             *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
+	PeriodEnd               *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
+	RelayIngressBytes       uint64                 `protobuf:"varint,4,opt,name=relay_ingress_bytes,json=relayIngressBytes,proto3" json:"relay_ingress_bytes,omitempty"`
+	RelayEgressBytes        uint64                 `protobuf:"varint,5,opt,name=relay_egress_bytes,json=relayEgressBytes,proto3" json:"relay_egress_bytes,omitempty"`
+	RelayTotalBytes         uint64                 `protobuf:"varint,6,opt,name=relay_total_bytes,json=relayTotalBytes,proto3" json:"relay_total_bytes,omitempty"`
+	QuotaBytes              uint64                 `protobuf:"varint,7,opt,name=quota_bytes,json=quotaBytes,proto3" json:"quota_bytes,omitempty"`
+	RemainingBytes          uint64                 `protobuf:"varint,8,opt,name=remaining_bytes,json=remainingBytes,proto3" json:"remaining_bytes,omitempty"`
+	Revision                uint64                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
+	ActiveRelayReservations uint32                 `protobuf:"varint,10,opt,name=active_relay_reservations,json=activeRelayReservations,proto3" json:"active_relay_reservations,omitempty"`
+	RelayHeldBytes          uint64                 `protobuf:"varint,11,opt,name=relay_held_bytes,json=relayHeldBytes,proto3" json:"relay_held_bytes,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *UsagePeriodProjection) Reset() {
@@ -1328,6 +1330,20 @@ func (x *UsagePeriodProjection) GetRemainingBytes() uint64 {
 func (x *UsagePeriodProjection) GetRevision() uint64 {
 	if x != nil {
 		return x.Revision
+	}
+	return 0
+}
+
+func (x *UsagePeriodProjection) GetActiveRelayReservations() uint32 {
+	if x != nil {
+		return x.ActiveRelayReservations
+	}
+	return 0
+}
+
+func (x *UsagePeriodProjection) GetRelayHeldBytes() uint64 {
+	if x != nil {
+		return x.RelayHeldBytes
 	}
 	return 0
 }
@@ -2546,7 +2562,7 @@ const file_cloud_v1_commerce_proto_rawDesc = "" +
 	"\x0feffective_until\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\x0eeffectiveUntil\x12;\n" +
 	"\vcomputed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"computedAt\"\xa0\x03\n" +
+	"computedAt\"\x86\x04\n" +
 	"\x15UsagePeriodProjection\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12=\n" +
@@ -2559,7 +2575,10 @@ const file_cloud_v1_commerce_proto_rawDesc = "" +
 	"\vquota_bytes\x18\a \x01(\x04R\n" +
 	"quotaBytes\x12'\n" +
 	"\x0fremaining_bytes\x18\b \x01(\x04R\x0eremainingBytes\x12\x1a\n" +
-	"\brevision\x18\t \x01(\x04R\brevision\"C\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\x12:\n" +
+	"\x19active_relay_reservations\x18\n" +
+	" \x01(\rR\x17activeRelayReservations\x12(\n" +
+	"\x10relay_held_bytes\x18\v \x01(\x04R\x0erelayHeldBytes\"C\n" +
 	"\x10ListPlansRequest\x12/\n" +
 	"\x13include_unpublished\x18\x01 \x01(\bR\x12includeUnpublished\"J\n" +
 	"\x11ListPlansResponse\x125\n" +

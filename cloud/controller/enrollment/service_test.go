@@ -470,6 +470,12 @@ func (store *preflightEnrollmentStore) GetDaemon(_ context.Context, daemonID str
 func (store *preflightEnrollmentStore) ListDaemons(context.Context) ([]Daemon, error) {
 	return []Daemon{store.daemon}, nil
 }
+func (store *preflightEnrollmentStore) ListDaemonsByAccount(_ context.Context, accountID string) ([]Daemon, error) {
+	if store.daemon.AccountID != accountID {
+		return nil, nil
+	}
+	return []Daemon{store.daemon}, nil
+}
 func (store *preflightEnrollmentStore) ListDaemonEdgeMeasurements(context.Context, string) ([]EdgeMeasurement, error) {
 	return append([]EdgeMeasurement(nil), store.measurements...), nil
 }
@@ -494,7 +500,7 @@ func (entitlement *preflightEntitlement) EffectiveEntitlement(context.Context, s
 	if entitlement.active {
 		state = cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE
 	}
-	return &cloudv1.EffectiveEntitlement{State: state, Capability: &cloudv1.CloudCapability{ManagedP2PEnabled: true}}, nil
+	return &cloudv1.EffectiveEntitlement{State: state, Capability: &cloudv1.CloudCapability{ManagedP2PEnabled: true, CloudDaemonLimit: 10}}, nil
 }
 
 type preflightEdgeStore struct{ edge edgeconfig.Edge }

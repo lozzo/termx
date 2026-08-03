@@ -971,7 +971,10 @@ func Enroll(ctx context.Context, controllerAddress, controllerServerName, code s
 	if err != nil {
 		return EnrollmentRecord{}, err
 	}
-	return EnrollmentRecord{Version: recordVersion, DaemonID: completed.GetDaemon().GetDaemonId(), AccountID: completed.GetDaemon().GetAccountId(), DaemonBinding: binding, EdgeLocator: locator, EnrolledAt: time.Now().UTC()}, nil
+	return EnrollmentRecord{
+		Version: recordVersion, DaemonID: completed.GetDaemon().GetDaemonId(), AccountID: completed.GetDaemon().GetAccountId(), DaemonBinding: binding, EdgeLocator: locator, EnrolledAt: time.Now().UTC(),
+		DaemonCount: completed.GetDaemonCount(), DaemonLimit: completed.GetDaemonLimit(),
+	}, nil
 }
 
 // EnrollLocal 加载 daemon 已有 DeviceIdentity、完成注册并原子保存最小 Cloud record。

@@ -410,6 +410,16 @@ func runtimeErrorFromProto(apiError *apipb.ApiError) error {
 		code = ErrorDaemonBlocked
 	case apipb.ApiErrorCode_API_ERROR_CODE_DAEMON_DELETED:
 		code = ErrorDaemonDeleted
+	case apipb.ApiErrorCode_API_ERROR_CODE_RELAY_NOT_IN_PLAN:
+		code = ErrorRelayNotInPlan
+	case apipb.ApiErrorCode_API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED:
+		code = ErrorRelayQuotaExhausted
+	case apipb.ApiErrorCode_API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED:
+		code = ErrorRelayConcurrencyExhausted
+	case apipb.ApiErrorCode_API_ERROR_CODE_SUBSCRIPTION_INACTIVE:
+		code = ErrorSubscriptionInactive
+	case apipb.ApiErrorCode_API_ERROR_CODE_RELAY_REGION_UNAVAILABLE:
+		code = ErrorRelayRegionUnavailable
 	}
 	return &Error{Code: code, Message: apiError.GetMessage(), Attempted: apiError.GetAttempted(), Retryable: apiError.GetRetryable()}
 }

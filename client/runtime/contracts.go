@@ -287,19 +287,24 @@ func ValidateReadyPeerSession(request AttemptRequest, session ReadyPeerSession) 
 type ErrorCode string
 
 const (
-	ErrorInvalidRequest    ErrorCode = "invalid_request"
-	ErrorUnsupportedRoute  ErrorCode = "unsupported_route"
-	ErrorIdentity          ErrorCode = "identity"
-	ErrorAuthorization     ErrorCode = "authorization"
-	ErrorNotFound          ErrorCode = "not_found"
-	ErrorUnavailable       ErrorCode = "unavailable"
-	ErrorCanceled          ErrorCode = "canceled"
-	ErrorStaleSession      ErrorCode = "stale_session"
-	ErrorStaleResource     ErrorCode = "stale_resource"
-	ErrorResourceExhausted ErrorCode = "resource_exhausted"
-	ErrorEntitlement       ErrorCode = "entitlement_denied"
-	ErrorDaemonBlocked     ErrorCode = "daemon_blocked"
-	ErrorDaemonDeleted     ErrorCode = "daemon_deleted"
+	ErrorInvalidRequest            ErrorCode = "invalid_request"
+	ErrorUnsupportedRoute          ErrorCode = "unsupported_route"
+	ErrorIdentity                  ErrorCode = "identity"
+	ErrorAuthorization             ErrorCode = "authorization"
+	ErrorNotFound                  ErrorCode = "not_found"
+	ErrorUnavailable               ErrorCode = "unavailable"
+	ErrorCanceled                  ErrorCode = "canceled"
+	ErrorStaleSession              ErrorCode = "stale_session"
+	ErrorStaleResource             ErrorCode = "stale_resource"
+	ErrorResourceExhausted         ErrorCode = "resource_exhausted"
+	ErrorEntitlement               ErrorCode = "entitlement_denied"
+	ErrorDaemonBlocked             ErrorCode = "daemon_blocked"
+	ErrorDaemonDeleted             ErrorCode = "daemon_deleted"
+	ErrorRelayNotInPlan            ErrorCode = "relay_not_in_plan"
+	ErrorRelayQuotaExhausted       ErrorCode = "relay_quota_exhausted"
+	ErrorRelayConcurrencyExhausted ErrorCode = "relay_concurrency_exhausted"
+	ErrorSubscriptionInactive      ErrorCode = "subscription_inactive"
+	ErrorRelayRegionUnavailable    ErrorCode = "relay_region_unavailable"
 )
 
 // Error 是 runtime 边界返回的稳定错误；Cause 只用于日志和 errors.Is/As，不作为 UI 文本协议。

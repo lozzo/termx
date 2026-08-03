@@ -164,7 +164,7 @@ func scanOperatorAccountSummary(row rowScanner, now time.Time) (*cloudv1.Account
 	usage := &cloudv1.UsagePeriodProjection{
 		AccountId: accountID, PeriodStart: timestamppb.New(usageStart), PeriodEnd: timestamppb.New(usageEnd),
 		RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: used,
-		QuotaBytes: relayQuota, RemainingBytes: remaining, Revision: usageRevision,
+		QuotaBytes: relayQuota, RemainingBytes: remaining, Revision: usageRevision, RelayHeldBytes: held,
 	}
 	return &cloudv1.AccountSummary{Account: accountProfile, Roles: roles, DaemonCount: daemonCount, Subscription: subscription, Entitlement: entitlement, Usage: usage}, nil
 }
@@ -257,7 +257,7 @@ func (database *Database) ListOperatorUsage(ctx context.Context, page *cloudv1.P
 		if total < quota && held < quota-total {
 			remaining = quota - total - held
 		}
-		accounts = append(accounts, &cloudv1.UsagePeriodProjection{AccountId: id, PeriodStart: timestamppb.New(start), PeriodEnd: timestamppb.New(end), RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: total, QuotaBytes: quota, RemainingBytes: remaining, Revision: revision})
+		accounts = append(accounts, &cloudv1.UsagePeriodProjection{AccountId: id, PeriodStart: timestamppb.New(start), PeriodEnd: timestamppb.New(end), RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: total, QuotaBytes: quota, RemainingBytes: remaining, Revision: revision, RelayHeldBytes: held})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, "", err

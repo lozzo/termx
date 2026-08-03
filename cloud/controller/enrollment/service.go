@@ -35,6 +35,8 @@ var (
 	ErrDaemonIdentityConflict = errors.New("daemon DeviceIdentity conflicts with an existing device")
 	// ErrDaemonUnavailable 表示 daemon 不存在、已撤销或当前没有可用 Edge。
 	ErrDaemonUnavailable = errors.New("daemon is unavailable")
+	// ErrDaemonLimitExhausted 表示账号的未删除 daemon 已达到当前套餐上限。
+	ErrDaemonLimitExhausted = errors.New("cloud daemon limit is exhausted")
 )
 
 // Daemon 是 PostgreSQL 保存的持久 daemon identity，不包含当前 Edge 归属。
@@ -73,6 +75,7 @@ type Store interface {
 	ConsumeDaemonEnrollment(context.Context, []byte, string, string, ed25519.PublicKey, time.Time) (Daemon, error)
 	GetDaemon(context.Context, string) (Daemon, error)
 	ListDaemons(context.Context) ([]Daemon, error)
+	ListDaemonsByAccount(context.Context, string) ([]Daemon, error)
 }
 
 // Config 组合持久 Store、纯内存 Directory、Edge desired state 和 Controller binding signer。
@@ -140,6 +143,13 @@ func (service *Service) CreateEnrollment(ctx context.Context, request *cloudv1.C
 	if _, err := uuid.Parse(accountID); err != nil {
 		return nil, errors.New("account ID must be UUID")
 	}
+	daemonCount, daemonLimit, err := service.daemonCapacity(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if daemonCount >= daemonLimit {
+		return nil, ErrDaemonLimitExhausted
+	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, err
@@ -152,7 +162,19 @@ func (service *Service) CreateEnrollment(ctx context.Context, request *cloudv1.C
 	if err != nil {
 		return nil, err
 	}
-	return &cloudv1.CreateDaemonEnrollmentResponse{AccountId: resolved, EnrollmentCode: code, ExpiresAt: timestamppb.New(expires), EnrollCommand: strings.TrimSpace(commandPrefix) + " " + code}, nil
+	return &cloudv1.CreateDaemonEnrollmentResponse{AccountId: resolved, EnrollmentCode: code, ExpiresAt: timestamppb.New(expires), EnrollCommand: strings.TrimSpace(commandPrefix) + " " + code, DaemonCount: daemonCount, DaemonLimit: daemonLimit}, nil
+}
+
+func (service *Service) daemonCapacity(ctx context.Context, accountID string) (uint32, uint32, error) {
+	entitlement, err := service.config.Entitlement.EffectiveEntitlement(ctx, accountID)
+	if err != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() || entitlement.GetCapability().GetCloudDaemonLimit() == 0 {
+		return 0, 0, ErrDaemonUnavailable
+	}
+	daemons, err := service.config.Store.ListDaemonsByAccount(ctx, accountID)
+	if err != nil {
+		return 0, 0, err
+	}
+	return uint32(len(daemons)), entitlement.GetCapability().GetCloudDaemonLimit(), nil
 }
 
 // ListManagedDaemons 合并持久身份与 Directory 实时归属，不把投影写回 PostgreSQL。
@@ -238,6 +260,9 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	locatorDigest := sha256.Sum256(locatorPayload)
 	daemon, err := service.config.Store.ConsumeDaemonEnrollment(ctx, state.tokenDigest, state.deviceID, state.fingerprint, state.publicKey, now)
 	if err != nil {
+		if errors.Is(err, ErrDaemonLimitExhausted) {
+			return nil, status.Error(codes.ResourceExhausted, "cloud_daemon_limit_exhausted")
+		}
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	signed, err := service.signDaemonBinding(daemon, edge.ID, locatorDigest, now)
@@ -247,7 +272,14 @@ func (service *Service) CompleteDaemonEnrollment(ctx context.Context, request *c
 	if service.config.StateChanged != nil {
 		service.config.StateChanged(&cloudv1.DaemonStateRecord{DaemonId: daemon.ID, State: daemon.State, StateRevision: daemon.StateRevision})
 	}
-	return &cloudv1.CompleteDaemonEnrollmentResponse{Daemon: projectDaemon(daemon), DaemonBinding: signed, EdgeLocator: locator}, nil
+	response := &cloudv1.CompleteDaemonEnrollmentResponse{
+		Daemon: projectDaemon(daemon), DaemonBinding: signed, EdgeLocator: locator,
+		DaemonLimit: entitlement.GetCapability().GetCloudDaemonLimit(),
+	}
+	if daemons, listErr := service.config.Store.ListDaemonsByAccount(ctx, daemon.AccountID); listErr == nil {
+		response.DaemonCount = uint32(len(daemons))
+	}
+	return response, nil
 }
 
 // BeginDaemonBindingRefresh authenticates an existing daemon from the persistent identity,

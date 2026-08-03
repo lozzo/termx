@@ -331,6 +331,20 @@ func TestRuntimeErrorFromProtoPreservesDaemonLifecycle(t *testing.T) {
 	}
 }
 
+func TestRuntimeErrorFromProtoPreservesCloudEntitlementCode(t *testing.T) {
+	for protoCode, want := range map[apipb.ApiErrorCode]ErrorCode{
+		apipb.ApiErrorCode_API_ERROR_CODE_RELAY_NOT_IN_PLAN:           ErrorRelayNotInPlan,
+		apipb.ApiErrorCode_API_ERROR_CODE_RELAY_QUOTA_EXHAUSTED:       ErrorRelayQuotaExhausted,
+		apipb.ApiErrorCode_API_ERROR_CODE_RELAY_CONCURRENCY_EXHAUSTED: ErrorRelayConcurrencyExhausted,
+		apipb.ApiErrorCode_API_ERROR_CODE_SUBSCRIPTION_INACTIVE:       ErrorSubscriptionInactive,
+		apipb.ApiErrorCode_API_ERROR_CODE_RELAY_REGION_UNAVAILABLE:    ErrorRelayRegionUnavailable,
+	} {
+		if got := CodeOf(runtimeErrorFromProto(&apipb.ApiError{Code: protoCode, Message: "opaque"})); got != want {
+			t.Fatalf("proto code %s mapped to %s, want %s", protoCode, got, want)
+		}
+	}
+}
+
 func TestApplicationSessionConvertsNotFoundAPIError(t *testing.T) {
 	executor := &recordingProtoExecutor{result: &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_Error{Error: &apipb.ApiError{
 		Code: apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND, Message: "missing", Attempted: true,

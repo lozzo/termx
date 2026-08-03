@@ -62,6 +62,26 @@ describe('connection error presentation', () => {
   })
 
   it.each([
+    ['Relay traffic quota is exhausted; Direct, P2P, and SSH remain available', 'relay_quota'],
+    ['Relay concurrency is full; keep the existing connection or use Direct, P2P, or SSH', 'relay_concurrency'],
+  ] as const)('presents commercial Relay limits without suggesting retry or pairing', (message, reason) => {
+    const source = Object.assign(new Error(message), { code: 'resource_exhausted' })
+    const result = connectionFailurePresentation(source, anyttyI18n.t)
+    expect(result).toMatchObject({ reason, retryable: false, requiresPairing: false })
+  })
+
+  it.each([
+    ['relay_quota_exhausted', 'relay_quota'],
+    ['relay_concurrency_exhausted', 'relay_concurrency'],
+    ['relay_not_in_plan', 'entitlement'],
+    ['subscription_inactive', 'entitlement'],
+    ['relay_region_unavailable', 'entitlement'],
+  ] as const)('uses stable Cloud code %s without parsing its message', (code, reason) => {
+    const source = Object.assign(new Error('opaque localized detail'), { code })
+    expect(connectionFailurePresentation(source, anyttyI18n.t)).toMatchObject({ reason, requiresPairing: false })
+  })
+
+  it.each([
     { code: 'daemon_blocked', reason: 'daemon_blocked', retryable: true, requiresPairing: false },
     { code: 'daemon_deleted', reason: 'daemon_deleted', retryable: true, requiresPairing: true },
   ] as const)('presents $code lifecycle recovery', ({ code, reason, retryable, requiresPairing }) => {

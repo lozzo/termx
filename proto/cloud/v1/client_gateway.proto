@@ -46,6 +46,20 @@ message ClientReady {
   string session_id = 1;
   uint64 generation = 2;
   RelayICEConfig relay = 3;
+  // AUTO 可以继续纯 P2P；只有 P2P 最终也失败时客户端才展示该原因。
+  CloudEntitlementFailure relay_failure = 4;
+}
+
+enum SelectedCloudPath {
+  SELECTED_CLOUD_PATH_UNSPECIFIED = 0;
+  SELECTED_CLOUD_PATH_DIRECT = 1;
+  SELECTED_CLOUD_PATH_RELAY = 2;
+}
+
+// ClientPathSelected 在 ICE/DataChannel ready 后确认实际路径，使 Edge 能立即释放未使用的 Relay 预留。
+message ClientPathSelected {
+  string session_id = 1;
+  SelectedCloudPath path = 2;
 }
 
 message ClientOffer {
@@ -64,6 +78,7 @@ message SignalRejected {
   string session_id = 1;
   string code = 2;
   string message = 3;
+  CloudEntitlementFailure entitlement_failure = 4;
 }
 
 message ClientSignal {
@@ -77,6 +92,7 @@ message ClientSignal {
   oneof payload {
     ClientHello hello = 20;
     ClientOffer offer = 21;
+    ClientPathSelected path_selected = 22;
   }
 }
 

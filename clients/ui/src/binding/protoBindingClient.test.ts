@@ -427,7 +427,12 @@ describe('ProtoBindingClient failed open ownership', () => {
   it.each([
     { protoCode: ApiErrorCode.DAEMON_BLOCKED, code: 'daemon_blocked', retryable: true },
     { protoCode: ApiErrorCode.DAEMON_DELETED, code: 'daemon_deleted', retryable: false },
-  ])('preserves daemon lifecycle error $code', async ({ protoCode, code, retryable }) => {
+    { protoCode: ApiErrorCode.RELAY_NOT_IN_PLAN, code: 'relay_not_in_plan', retryable: false },
+    { protoCode: ApiErrorCode.RELAY_QUOTA_EXHAUSTED, code: 'relay_quota_exhausted', retryable: false },
+    { protoCode: ApiErrorCode.RELAY_CONCURRENCY_EXHAUSTED, code: 'relay_concurrency_exhausted', retryable: false },
+    { protoCode: ApiErrorCode.SUBSCRIPTION_INACTIVE, code: 'subscription_inactive', retryable: false },
+    { protoCode: ApiErrorCode.RELAY_REGION_UNAVAILABLE, code: 'relay_region_unavailable', retryable: false },
+  ])('preserves stable connection error $code', async ({ protoCode, code, retryable }) => {
     const backend = new CancellationBackend()
     backend.request = async (operation, _payload, handle) => {
       if (operation === BindingOperation.OPEN_SESSION) {

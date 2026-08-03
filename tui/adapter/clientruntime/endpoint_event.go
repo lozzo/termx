@@ -63,6 +63,10 @@ func projectErrorKind(code clientruntime.ErrorCode) state.EndpointErrorKind {
 		return state.EndpointErrorProtocol
 	case clientruntime.ErrorCanceled, clientruntime.ErrorUnavailable:
 		return state.EndpointErrorUnavailable
+	case clientruntime.ErrorEntitlement, clientruntime.ErrorResourceExhausted,
+		clientruntime.ErrorRelayNotInPlan, clientruntime.ErrorRelayQuotaExhausted, clientruntime.ErrorRelayConcurrencyExhausted,
+		clientruntime.ErrorSubscriptionInactive, clientruntime.ErrorRelayRegionUnavailable:
+		return state.EndpointErrorEntitlement
 	default:
 		return state.EndpointErrorUnknown
 	}

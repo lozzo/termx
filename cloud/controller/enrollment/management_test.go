@@ -22,7 +22,7 @@ func TestDaemonManagementDerivesAccountForEnrollmentAndStateChange(t *testing.T)
 		t.Fatal(err)
 	}
 	t.Cleanup(runtimeDirectory.Close)
-	enrollmentService := &Service{config: Config{Store: enrollments, EnrollmentTTL: 10 * time.Minute, Now: func() time.Time { return now }}}
+	enrollmentService := &Service{config: Config{Store: enrollments, Entitlement: &preflightEntitlement{active: true}, EnrollmentTTL: 10 * time.Minute, Now: func() time.Time { return now }}}
 	if _, err := enrollmentService.CreateEnrollment(context.Background(), &cloudv1.CreateDaemonEnrollmentRequest{AccountName: "残缺账号", DaemonName: "daemon"}, "anytty cloud enroll"); err == nil {
 		t.Fatal("enrollment without an existing account ID was accepted")
 	}
@@ -75,6 +75,9 @@ func (*managementEnrollmentStoreFake) GetDaemon(context.Context, string) (Daemon
 	return Daemon{}, errors.New("unused")
 }
 func (*managementEnrollmentStoreFake) ListDaemons(context.Context) ([]Daemon, error) { return nil, nil }
+func (*managementEnrollmentStoreFake) ListDaemonsByAccount(context.Context, string) ([]Daemon, error) {
+	return nil, nil
+}
 
 type managementStoreFake struct {
 	daemon            Daemon

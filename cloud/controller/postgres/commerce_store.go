@@ -495,12 +495,16 @@ func (database *Database) usagePeriod(ctx context.Context, accountID string, sub
 	if err != nil {
 		return nil, err
 	}
+	var activeReservations uint32
+	if err := database.pool.QueryRow(ctx, `SELECT count(*) FROM relay_reservations WHERE account_id=$1 AND state='held' AND authorized_until>$2`, accountID, now).Scan(&activeReservations); err != nil {
+		return nil, err
+	}
 	total := ingress + egress + recovery
 	remaining := uint64(0)
 	if total < quota && held < quota-total {
 		remaining = quota - total - held
 	}
-	return &cloudv1.UsagePeriodProjection{AccountId: accountID, PeriodStart: timestamppb.New(start), PeriodEnd: timestamppb.New(end), RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: total, QuotaBytes: quota, RemainingBytes: remaining, Revision: revision}, nil
+	return &cloudv1.UsagePeriodProjection{AccountId: accountID, PeriodStart: timestamppb.New(start), PeriodEnd: timestamppb.New(end), RelayIngressBytes: ingress, RelayEgressBytes: egress, RelayTotalBytes: total, QuotaBytes: quota, RemainingBytes: remaining, Revision: revision, ActiveRelayReservations: activeReservations, RelayHeldBytes: held}, nil
 }
 
 func paymentAggregate(ctx context.Context, tx pgx.Tx, orderID, attemptID string, now time.Time) (*cloudv1.ApplyPaymentEventResponse, error) {

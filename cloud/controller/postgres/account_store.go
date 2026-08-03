@@ -381,7 +381,7 @@ func insertAccount(ctx context.Context, tx pgx.Tx, record account.Record) error 
 
 func insertStarterSubscription(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) error {
 	periodStart := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
-	_, err := tx.Exec(ctx, `INSERT INTO subscriptions(subscription_id,account_id,plan_id,plan_version,state,cancel_at_period_end,period_start,period_end,revision,updated_at) VALUES(md5($1::text || ':starter')::uuid,$1::uuid,'starter',1,'active',false,$2,$3,1,$4)`, accountID, periodStart, periodStart.AddDate(0, 1, 0), now)
+	_, err := tx.Exec(ctx, `INSERT INTO subscriptions(subscription_id,account_id,plan_id,plan_version,state,cancel_at_period_end,period_start,period_end,revision,updated_at) VALUES(md5($1::text || ':starter')::uuid,$1::uuid,'starter',2,'active',false,$2,$3,1,$4)`, accountID, periodStart, periodStart.AddDate(0, 1, 0), now)
 	return err
 }
 

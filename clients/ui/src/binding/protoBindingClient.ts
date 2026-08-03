@@ -875,6 +875,11 @@ function apiErrorCode(code: AnyTTYApiCommon.ApiErrorCode | undefined): string {
     case AnyTTYApiCommon.ApiErrorCode.STALE_RESOURCE: return 'stale_resource'
     case AnyTTYApiCommon.ApiErrorCode.DAEMON_BLOCKED: return 'daemon_blocked'
     case AnyTTYApiCommon.ApiErrorCode.DAEMON_DELETED: return 'daemon_deleted'
+    case AnyTTYApiCommon.ApiErrorCode.RELAY_NOT_IN_PLAN: return 'relay_not_in_plan'
+    case AnyTTYApiCommon.ApiErrorCode.RELAY_QUOTA_EXHAUSTED: return 'relay_quota_exhausted'
+    case AnyTTYApiCommon.ApiErrorCode.RELAY_CONCURRENCY_EXHAUSTED: return 'relay_concurrency_exhausted'
+    case AnyTTYApiCommon.ApiErrorCode.SUBSCRIPTION_INACTIVE: return 'subscription_inactive'
+    case AnyTTYApiCommon.ApiErrorCode.RELAY_REGION_UNAVAILABLE: return 'relay_region_unavailable'
     default: return ''
   }
 }

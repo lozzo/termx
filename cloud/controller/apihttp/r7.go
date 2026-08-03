@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anytty/anytty/cloud/controller/account"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -628,6 +629,8 @@ func serviceHTTPStatus(err error) int {
 	case errors.Is(err, account.ErrLoginUnavailable):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, account.ErrAccountConflict):
+		return http.StatusConflict
+	case errors.Is(err, enrollment.ErrDaemonLimitExhausted):
 		return http.StatusConflict
 	default:
 		return http.StatusConflict

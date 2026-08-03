@@ -71,7 +71,11 @@ func (service *ManagementService) ListMyDaemons(ctx context.Context, _ *cloudv1.
 	if err != nil {
 		return nil, err
 	}
-	return &cloudv1.ListMyDaemonsResponse{Daemons: managed}, nil
+	_, daemonLimit, err := service.config.Enrollment.daemonCapacity(ctx, identity.Account.GetAccountId())
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.ListMyDaemonsResponse{Daemons: managed, DaemonCount: uint32(len(daemons)), DaemonLimit: daemonLimit}, nil
 }
 
 // ChangeMyDaemonState 先提交持久状态，再广播给所有在线 Edge。

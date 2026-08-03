@@ -2,9 +2,9 @@
 // @generated from file cloud/v1/client_gateway.proto (package anytty.cloud.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { EdgeChallenge, SignedEnvelope } from "./common_pb";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { CloudEntitlementFailure, EdgeChallenge, SignedEnvelope } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
 import type { ClientProduct } from "./runtime_pb";
 import { file_cloud_v1_runtime } from "./runtime_pb";
@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/client_gateway.proto.
  */
 export const file_cloud_v1_client_gateway: GenFile = /*@__PURE__*/
-  fileDesc("Ch1jbG91ZC92MS9jbGllbnRfZ2F0ZXdheS5wcm90bxIPYW55dHR5LmNsb3VkLnYxImsKEUNsb3VkSUNFQ2FuZGlkYXRlEhEKCWNhbmRpZGF0ZRgBIAEoCRIPCgdzZHBfbWlkGAIgASgJEhcKD3NkcF9tbGluZV9pbmRleBgDIAEoDRIZChF1c2VybmFtZV9mcmFnbWVudBgEIAEoCSKPAQoQUGFpcmluZ0FkbWlzc2lvbhIRCglkYWVtb25faWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAMgASgMEhwKFHBhaXJpbmdfY2xhaW1fc2hhMjU2GAQgASgMEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAUgASgDIvACCgtDbGllbnRIZWxsbxIZChFjbGllbnRfcHVibGljX2tleRgCIAEoDBIUCgxjbGllbnRfcHJvb2YYAyABKAwSLwoHcHJvZHVjdBgEIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EhgKEHNvZnR3YXJlX3ZlcnNpb24YBSABKAkSGgoSYXR0ZW1wdF9nZW5lcmF0aW9uGAYgASgEEjoKEHJlbGF5X3ByZWZlcmVuY2UYByABKA4yIC5hbnl0dHkuY2xvdWQudjEuUmVsYXlQcmVmZXJlbmNlEjwKEWNsb3VkX3JvdXRlX2dyYW50GAogASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlSAASPgoRcGFpcmluZ19hZG1pc3Npb24YCyABKAsyIS5hbnl0dHkuY2xvdWQudjEuUGFpcmluZ0FkbWlzc2lvbkgAQg8KDWF1dGhvcml6YXRpb24iZQoLQ2xpZW50UmVhZHkSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEi4KBXJlbGF5GAMgASgLMh8uYW55dHR5LmNsb3VkLnYxLlJlbGF5SUNFQ29uZmlnImwKC0NsaWVudE9mZmVyEhIKCnNlc3Npb25faWQYASABKAkSEQoJb2ZmZXJfc2RwGAIgASgJEjYKCmNhbmRpZGF0ZXMYAyADKAsyIi5hbnl0dHkuY2xvdWQudjEuQ2xvdWRJQ0VDYW5kaWRhdGUibAoKRWRnZUFuc3dlchISCgpzZXNzaW9uX2lkGAEgASgJEhIKCmFuc3dlcl9zZHAYAiABKAkSNgoKY2FuZGlkYXRlcxgDIAMoCzIiLmFueXR0eS5jbG91ZC52MS5DbG91ZElDRUNhbmRpZGF0ZSJDCg5TaWduYWxSZWplY3RlZBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCSKhAgoMQ2xpZW50U2lnbmFsEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoFaGVsbG8YFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50SGVsbG9IABItCgVvZmZlchgVIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRPZmZlckgAQgkKB3BheWxvYWQiiQMKCkVkZ2VTaWduYWwSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgVyZWFkeRgUIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRSZWFkeUgAEi0KBmFuc3dlchgVIAEoCzIbLmFueXR0eS5jbG91ZC52MS5FZGdlQW5zd2VySAASMwoIcmVqZWN0ZWQYFiABKAsyHy5hbnl0dHkuY2xvdWQudjEuU2lnbmFsUmVqZWN0ZWRIABIzCgljaGFsbGVuZ2UYFyABKAsyHi5hbnl0dHkuY2xvdWQudjEuRWRnZUNoYWxsZW5nZUgAQgkKB3BheWxvYWQyWgoNQ2xpZW50R2F0ZXdheRJJCgdDb25uZWN0Eh0uYW55dHR5LmNsb3VkLnYxLkNsaWVudFNpZ25hbBobLmFueXR0eS5jbG91ZC52MS5FZGdlU2lnbmFsKAEwAUIxWi9naXRodWIuY29tL2FueXR0eS9hbnl0dHkvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
+  fileDesc("Ch1jbG91ZC92MS9jbGllbnRfZ2F0ZXdheS5wcm90bxIPYW55dHR5LmNsb3VkLnYxImsKEUNsb3VkSUNFQ2FuZGlkYXRlEhEKCWNhbmRpZGF0ZRgBIAEoCRIPCgdzZHBfbWlkGAIgASgJEhcKD3NkcF9tbGluZV9pbmRleBgDIAEoDRIZChF1c2VybmFtZV9mcmFnbWVudBgEIAEoCSKPAQoQUGFpcmluZ0FkbWlzc2lvbhIRCglkYWVtb25faWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAMgASgMEhwKFHBhaXJpbmdfY2xhaW1fc2hhMjU2GAQgASgMEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAUgASgDIvACCgtDbGllbnRIZWxsbxIZChFjbGllbnRfcHVibGljX2tleRgCIAEoDBIUCgxjbGllbnRfcHJvb2YYAyABKAwSLwoHcHJvZHVjdBgEIAEoDjIeLmFueXR0eS5jbG91ZC52MS5DbGllbnRQcm9kdWN0EhgKEHNvZnR3YXJlX3ZlcnNpb24YBSABKAkSGgoSYXR0ZW1wdF9nZW5lcmF0aW9uGAYgASgEEjoKEHJlbGF5X3ByZWZlcmVuY2UYByABKA4yIC5hbnl0dHkuY2xvdWQudjEuUmVsYXlQcmVmZXJlbmNlEjwKEWNsb3VkX3JvdXRlX2dyYW50GAogASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlSAASPgoRcGFpcmluZ19hZG1pc3Npb24YCyABKAsyIS5hbnl0dHkuY2xvdWQudjEuUGFpcmluZ0FkbWlzc2lvbkgAQg8KDWF1dGhvcml6YXRpb24ipgEKC0NsaWVudFJlYWR5EhIKCnNlc3Npb25faWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIuCgVyZWxheRgDIAEoCzIfLmFueXR0eS5jbG91ZC52MS5SZWxheUlDRUNvbmZpZxI/Cg1yZWxheV9mYWlsdXJlGAQgASgLMiguYW55dHR5LmNsb3VkLnYxLkNsb3VkRW50aXRsZW1lbnRGYWlsdXJlIloKEkNsaWVudFBhdGhTZWxlY3RlZBISCgpzZXNzaW9uX2lkGAEgASgJEjAKBHBhdGgYAiABKA4yIi5hbnl0dHkuY2xvdWQudjEuU2VsZWN0ZWRDbG91ZFBhdGgibAoLQ2xpZW50T2ZmZXISEgoKc2Vzc2lvbl9pZBgBIAEoCRIRCglvZmZlcl9zZHAYAiABKAkSNgoKY2FuZGlkYXRlcxgDIAMoCzIiLmFueXR0eS5jbG91ZC52MS5DbG91ZElDRUNhbmRpZGF0ZSJsCgpFZGdlQW5zd2VyEhIKCnNlc3Npb25faWQYASABKAkSEgoKYW5zd2VyX3NkcBgCIAEoCRI2CgpjYW5kaWRhdGVzGAMgAygLMiIuYW55dHR5LmNsb3VkLnYxLkNsb3VkSUNFQ2FuZGlkYXRlIooBCg5TaWduYWxSZWplY3RlZBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCRJFChNlbnRpdGxlbWVudF9mYWlsdXJlGAQgASgLMiguYW55dHR5LmNsb3VkLnYxLkNsb3VkRW50aXRsZW1lbnRGYWlsdXJlIt8CCgxDbGllbnRTaWduYWwSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgVoZWxsbxgUIAEoCzIcLmFueXR0eS5jbG91ZC52MS5DbGllbnRIZWxsb0gAEi0KBW9mZmVyGBUgASgLMhwuYW55dHR5LmNsb3VkLnYxLkNsaWVudE9mZmVySAASPAoNcGF0aF9zZWxlY3RlZBgWIAEoCzIjLmFueXR0eS5jbG91ZC52MS5DbGllbnRQYXRoU2VsZWN0ZWRIAEIJCgdwYXlsb2FkIokDCgpFZGdlU2lnbmFsEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoFcmVhZHkYFCABKAsyHC5hbnl0dHkuY2xvdWQudjEuQ2xpZW50UmVhZHlIABItCgZhbnN3ZXIYFSABKAsyGy5hbnl0dHkuY2xvdWQudjEuRWRnZUFuc3dlckgAEjMKCHJlamVjdGVkGBYgASgLMh8uYW55dHR5LmNsb3VkLnYxLlNpZ25hbFJlamVjdGVkSAASMwoJY2hhbGxlbmdlGBcgASgLMh4uYW55dHR5LmNsb3VkLnYxLkVkZ2VDaGFsbGVuZ2VIAEIJCgdwYXlsb2FkKncKEVNlbGVjdGVkQ2xvdWRQYXRoEiMKH1NFTEVDVEVEX0NMT1VEX1BBVEhfVU5TUEVDSUZJRUQQABIeChpTRUxFQ1RFRF9DTE9VRF9QQVRIX0RJUkVDVBABEh0KGVNFTEVDVEVEX0NMT1VEX1BBVEhfUkVMQVkQAjJaCg1DbGllbnRHYXRld2F5EkkKB0Nvbm5lY3QSHS5hbnl0dHkuY2xvdWQudjEuQ2xpZW50U2lnbmFsGhsuYW55dHR5LmNsb3VkLnYxLkVkZ2VTaWduYWwoATABQjFaL2dpdGh1Yi5jb20vYW55dHR5L2FueXR0eS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_cloud_v1_runtime, file_cloud_v1_usage, file_google_protobuf_timestamp]);
 
 /**
  * CloudICECandidate 是 Cloud 信令的中性 candidate；不携带授权或 terminal 数据。
@@ -175,6 +175,13 @@ export type ClientReady = Message<"anytty.cloud.v1.ClientReady"> & {
    * @generated from field: anytty.cloud.v1.RelayICEConfig relay = 3;
    */
   relay?: RelayICEConfig | undefined;
+
+  /**
+   * AUTO 可以继续纯 P2P；只有 P2P 最终也失败时客户端才展示该原因。
+   *
+   * @generated from field: anytty.cloud.v1.CloudEntitlementFailure relay_failure = 4;
+   */
+  relayFailure?: CloudEntitlementFailure | undefined;
 };
 
 /**
@@ -183,6 +190,30 @@ export type ClientReady = Message<"anytty.cloud.v1.ClientReady"> & {
  */
 export const ClientReadySchema: GenMessage<ClientReady> = /*@__PURE__*/
   messageDesc(file_cloud_v1_client_gateway, 3);
+
+/**
+ * ClientPathSelected 在 ICE/DataChannel ready 后确认实际路径，使 Edge 能立即释放未使用的 Relay 预留。
+ *
+ * @generated from message anytty.cloud.v1.ClientPathSelected
+ */
+export type ClientPathSelected = Message<"anytty.cloud.v1.ClientPathSelected"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.SelectedCloudPath path = 2;
+   */
+  path: SelectedCloudPath;
+};
+
+/**
+ * Describes the message anytty.cloud.v1.ClientPathSelected.
+ * Use `create(ClientPathSelectedSchema)` to create a new message.
+ */
+export const ClientPathSelectedSchema: GenMessage<ClientPathSelected> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_client_gateway, 4);
 
 /**
  * @generated from message anytty.cloud.v1.ClientOffer
@@ -209,7 +240,7 @@ export type ClientOffer = Message<"anytty.cloud.v1.ClientOffer"> & {
  * Use `create(ClientOfferSchema)` to create a new message.
  */
 export const ClientOfferSchema: GenMessage<ClientOffer> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 4);
+  messageDesc(file_cloud_v1_client_gateway, 5);
 
 /**
  * @generated from message anytty.cloud.v1.EdgeAnswer
@@ -236,7 +267,7 @@ export type EdgeAnswer = Message<"anytty.cloud.v1.EdgeAnswer"> & {
  * Use `create(EdgeAnswerSchema)` to create a new message.
  */
 export const EdgeAnswerSchema: GenMessage<EdgeAnswer> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 5);
+  messageDesc(file_cloud_v1_client_gateway, 6);
 
 /**
  * @generated from message anytty.cloud.v1.SignalRejected
@@ -256,6 +287,11 @@ export type SignalRejected = Message<"anytty.cloud.v1.SignalRejected"> & {
    * @generated from field: string message = 3;
    */
   message: string;
+
+  /**
+   * @generated from field: anytty.cloud.v1.CloudEntitlementFailure entitlement_failure = 4;
+   */
+  entitlementFailure?: CloudEntitlementFailure | undefined;
 };
 
 /**
@@ -263,7 +299,7 @@ export type SignalRejected = Message<"anytty.cloud.v1.SignalRejected"> & {
  * Use `create(SignalRejectedSchema)` to create a new message.
  */
 export const SignalRejectedSchema: GenMessage<SignalRejected> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 6);
+  messageDesc(file_cloud_v1_client_gateway, 7);
 
 /**
  * @generated from message anytty.cloud.v1.ClientSignal
@@ -319,6 +355,12 @@ export type ClientSignal = Message<"anytty.cloud.v1.ClientSignal"> & {
      */
     value: ClientOffer;
     case: "offer";
+  } | {
+    /**
+     * @generated from field: anytty.cloud.v1.ClientPathSelected path_selected = 22;
+     */
+    value: ClientPathSelected;
+    case: "pathSelected";
   } | { case: undefined; value?: undefined };
 };
 
@@ -327,7 +369,7 @@ export type ClientSignal = Message<"anytty.cloud.v1.ClientSignal"> & {
  * Use `create(ClientSignalSchema)` to create a new message.
  */
 export const ClientSignalSchema: GenMessage<ClientSignal> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 7);
+  messageDesc(file_cloud_v1_client_gateway, 8);
 
 /**
  * @generated from message anytty.cloud.v1.EdgeSignal
@@ -403,7 +445,33 @@ export type EdgeSignal = Message<"anytty.cloud.v1.EdgeSignal"> & {
  * Use `create(EdgeSignalSchema)` to create a new message.
  */
 export const EdgeSignalSchema: GenMessage<EdgeSignal> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_client_gateway, 8);
+  messageDesc(file_cloud_v1_client_gateway, 9);
+
+/**
+ * @generated from enum anytty.cloud.v1.SelectedCloudPath
+ */
+export enum SelectedCloudPath {
+  /**
+   * @generated from enum value: SELECTED_CLOUD_PATH_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SELECTED_CLOUD_PATH_DIRECT = 1;
+   */
+  DIRECT = 1,
+
+  /**
+   * @generated from enum value: SELECTED_CLOUD_PATH_RELAY = 2;
+   */
+  RELAY = 2,
+}
+
+/**
+ * Describes the enum anytty.cloud.v1.SelectedCloudPath.
+ */
+export const SelectedCloudPathSchema: GenEnum<SelectedCloudPath> = /*@__PURE__*/
+  enumDesc(file_cloud_v1_client_gateway, 0);
 
 /**
  * ClientGateway 只承载 Cloud WebRTC 信令；DataChannel 建立后业务流量完全绕过该 stream。
