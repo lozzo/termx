@@ -122,10 +122,10 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_reserve": 28, "command_result": 29, "certificate_applied": 30, "relay_renew": 31, "relay_settle": 32, "relay_query": 33, "daemon_state_query": 34, "identity_renew": 35, "identity_applied": 36,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_reserve": 28, "command_result": 29, "certificate_applied": 30, "relay_renew": 31, "relay_settle": 32, "relay_query": 33, "daemon_state_query": 34, "identity_renew": 35, "identity_applied": 36, "daemon_connection_admission": 37,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31, "daemon_state_delta": 32, "daemon_state_query_result": 33, "reselect_daemon_edge": 34, "identity_renew": 35,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "binding_key_bundle": 24, "relay_reserve": 25, "close_daemon": 26, "close_session": 27, "certificate_bundle": 28, "relay_renew": 29, "relay_settle": 30, "relay_query": 31, "daemon_state_delta": 32, "daemon_state_query_result": 33, "reselect_daemon_edge": 34, "identity_renew": 35, "daemon_connection_admission": 36,
 	})
 }
 
