@@ -50,6 +50,8 @@ export type CloudCapability = Message<"anytty.cloud.v1.CloudCapability"> & {
   managedP2pEnabled: boolean;
 
   /**
+   * 兼容旧套餐数据；Managed P2P 不执行并发数量限制。
+   *
    * @generated from field: uint32 managed_p2p_max_concurrency = 2;
    */
   managedP2pMaxConcurrency: number;

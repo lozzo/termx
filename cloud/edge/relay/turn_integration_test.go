@@ -98,7 +98,51 @@ func TestRealTURNSameCredentialAllowsFourAllocationsAndRejectsFifth(t *testing.T
 	}
 }
 
+func TestRealTURNTrafficIsShapedWithoutDisconnecting(t *testing.T) {
+	server, state, material := startRealTURNAtRate(t, 64*1024)
+	defer state.Close()
+	defer func() { _ = server.Close(context.Background()) }()
+
+	client, control := newTURNClient(t, "udp", server.Address(), material)
+	defer client.Close()
+	defer control.Close()
+	allocation, err := client.Allocate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer allocation.Close()
+	peer, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	_ = peer.SetDeadline(time.Now().Add(5 * time.Second))
+
+	const packetCount = 96
+	payload := make([]byte, 1024)
+	started := time.Now()
+	for index := 0; index < packetCount; index++ {
+		if _, err := allocation.WriteTo(payload, peer.LocalAddr()); err != nil {
+			t.Fatalf("write Relay packet %d: %v", index, err)
+		}
+	}
+	buffer := make([]byte, len(payload))
+	for index := 0; index < packetCount; index++ {
+		if count, _, err := peer.ReadFrom(buffer); err != nil || count != len(payload) {
+			t.Fatalf("read Relay packet %d: count=%d err=%v", index, count, err)
+		}
+	}
+	elapsed := time.Since(started)
+	if elapsed < 350*time.Millisecond || elapsed > 3*time.Second {
+		t.Fatalf("96 KiB at 64 KiB/s with a 64 KiB burst took %s, want approximately 500ms", elapsed)
+	}
+}
+
 func startRealTURN(t *testing.T) (*relay.Server, *edgeruntime.State, *cloudv1.RelayICEConfig) {
+	return startRealTURNAtRate(t, 1<<20)
+}
+
+func startRealTURNAtRate(t *testing.T, maxRate uint64) (*relay.Server, *edgeruntime.State, *cloudv1.RelayICEConfig) {
 	t.Helper()
 	now := time.Now().UTC()
 	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 64, DeltaBuffer: 64, MaxSessions: 64, MaxPendingSignals: 64, Now: func() time.Time { return now }})
@@ -113,7 +157,7 @@ func startRealTURN(t *testing.T) (*relay.Server, *edgeruntime.State, *cloudv1.Re
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant := &cloudv1.RelayGrant{ReservationId: "00000000-0000-4000-8000-000000000010", SessionId: "session", ReservedBytes: 1 << 20, MaxRateBytesPerSecond: 1 << 20, AuthorizedUntil: timestamppb.New(now.Add(time.Minute)), PolicyDigest: digest, Policy: policySnapshot}
+	grant := &cloudv1.RelayGrant{ReservationId: "00000000-0000-4000-8000-000000000010", SessionId: "session", ReservedBytes: 1 << 20, MaxRateBytesPerSecond: maxRate, AuthorizedUntil: timestamppb.New(now.Add(time.Minute)), PolicyDigest: digest, Policy: policySnapshot}
 	deriver, err := policy.NewCredentialDeriver(make([]byte, 32), []string{"turn:placeholder?transport=udp"})
 	if err != nil {
 		t.Fatal(err)

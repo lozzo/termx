@@ -1,6 +1,7 @@
 package policy_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -41,5 +42,47 @@ func TestGroupLimiterRenewalOnlyExtendsExpiry(t *testing.T) {
 	afterOldExpiry := oldExpiry.Add(time.Millisecond)
 	if limiter.Reserve(41, afterOldExpiry) || !limiter.Reserve(40, afterOldExpiry) {
 		t.Fatal("renewal changed the held byte budget")
+	}
+}
+
+func TestGroupLimiterWaitShapesInsteadOfRejecting(t *testing.T) {
+	now := time.Now().UTC()
+	limiter, err := policy.NewGroupLimiter(now.Add(5*time.Second), 1<<20, 64*1024, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := limiter.Wait(context.Background(), 64*1024); err != nil {
+		t.Fatalf("consume initial burst: %v", err)
+	}
+	started := time.Now()
+	if err := limiter.Wait(context.Background(), 8*1024); err != nil {
+		t.Fatalf("shape bytes after burst: %v", err)
+	}
+	elapsed := time.Since(started)
+	if elapsed < 80*time.Millisecond || elapsed > time.Second {
+		t.Fatalf("8 KiB at 64 KiB/s waited %s, want approximately 125ms", elapsed)
+	}
+}
+
+func TestGroupLimiterCanceledWaitRefundsHardQuota(t *testing.T) {
+	now := time.Now().UTC()
+	limiter, err := policy.NewGroupLimiter(now.Add(5*time.Second), 128*1024, 64*1024, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := limiter.Wait(context.Background(), 64*1024); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if err := limiter.Wait(ctx, 64*1024); err == nil {
+		t.Fatal("rate wait ignored cancellation")
+	}
+	if elapsed := time.Since(started); elapsed > 300*time.Millisecond {
+		t.Fatalf("canceled rate wait returned after %s", elapsed)
+	}
+	if !limiter.Reserve(64*1024, time.Now().Add(2*time.Second)) {
+		t.Fatal("canceled rate wait leaked the hard byte reservation")
 	}
 }

@@ -417,6 +417,61 @@ func TestTrackedPacketConnsShareReservationBudget(t *testing.T) {
 	}
 }
 
+func TestTrackedPacketConnsShapeSharedBidirectionalRate(t *testing.T) {
+	now := time.Now().UTC()
+	limiter, err := policy.NewGroupLimiter(now.Add(5*time.Second), 1<<20, 64*1024, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := newTrackedPacketConn(&recordingPacketConn{})
+	first.bind(policy.RelayAdmission{Limiter: limiter})
+	second := newTrackedPacketConn(&recordingPacketConn{})
+	second.bind(policy.RelayAdmission{Limiter: limiter})
+	if err := first.wait(64*1024, true); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if err := second.wait(8*1024, false); err != nil {
+		t.Fatalf("shared rate wait rejected traffic: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed < 80*time.Millisecond || elapsed > time.Second {
+		t.Fatalf("shared ingress/egress rate waited %s, want approximately 125ms", elapsed)
+	}
+	if ingress, _ := first.counts(); ingress != 64*1024 {
+		t.Fatalf("first ingress = %d", ingress)
+	}
+	if _, egress := second.counts(); egress != 8*1024 {
+		t.Fatalf("second egress = %d", egress)
+	}
+}
+
+func TestTrackedPacketConnCloseCancelsRateWait(t *testing.T) {
+	now := time.Now().UTC()
+	limiter, err := policy.NewGroupLimiter(now.Add(5*time.Second), 1<<20, 64*1024, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := newTrackedPacketConn(&recordingPacketConn{})
+	connection.bind(policy.RelayAdmission{Limiter: limiter})
+	if err := connection.wait(64*1024, true); err != nil {
+		t.Fatal(err)
+	}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- connection.wait(64*1024, false) }()
+	time.Sleep(30 * time.Millisecond)
+	if err := connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-waitDone:
+		if err == nil {
+			t.Fatal("closed allocation completed a pending rate wait")
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("closed allocation did not cancel its pending rate wait")
+	}
+}
+
 type recordingRuntime struct {
 	mu                 sync.Mutex
 	events             []string

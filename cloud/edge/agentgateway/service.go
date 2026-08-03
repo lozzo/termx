@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anytty/anytty/cloud/edge/controllerlink"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/google/uuid"
@@ -27,6 +28,8 @@ const ProtocolVersion uint32 = 4
 // Runtime 是 Edge 唯一 State actor 暴露给 AgentGateway 的窄连接边界。
 type Runtime interface {
 	ResolveDaemonState(context.Context, string) (*cloudv1.DaemonStateRecord, error)
+	AdmitDaemonConnection(context.Context, string, string, string) (string, error)
+	ReleaseDaemonConnection(context.Context, string, string, string, string) error
 	AttachAuthenticatedAgent(context.Context, *cloudv1.AgentPresence, *cloudv1.DaemonBindingClaims, func(*cloudv1.EdgeCommand) bool, func()) (uint64, *cloudv1.DaemonStateRecord, error)
 	DetachAgent(context.Context, string, uint64) error
 	ResolveAgentSignal(context.Context, string, uint64, *cloudv1.AgentEvent) error
@@ -100,6 +103,27 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 	if _, err := service.config.Runtime.ResolveDaemonState(stream.Context(), claims.GetDaemonId()); err != nil {
 		return status.Errorf(codes.Unavailable, "resolve daemon state: %v", err)
 	}
+	admissionID, err := service.config.Runtime.AdmitDaemonConnection(stream.Context(), claims.GetDaemonId(), claims.GetAccountId(), event.GetConnectionId())
+	if err != nil {
+		if admissionID != "" && !errors.Is(err, controllerlink.ErrDaemonConnectionLimit) && !errors.Is(err, controllerlink.ErrDaemonConnectionRejected) {
+			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = service.config.Runtime.ReleaseDaemonConnection(releaseCtx, admissionID, claims.GetDaemonId(), claims.GetAccountId(), event.GetConnectionId())
+			releaseCancel()
+		}
+		switch {
+		case errors.Is(err, controllerlink.ErrDaemonConnectionLimit):
+			return status.Error(codes.ResourceExhausted, "cloud daemon connection limit reached")
+		case errors.Is(err, controllerlink.ErrDaemonConnectionRejected):
+			return status.Error(codes.PermissionDenied, "daemon connection is not allowed by the current entitlement")
+		default:
+			return status.Error(codes.Unavailable, "daemon connection admission is unavailable")
+		}
+	}
+	defer func() {
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer releaseCancel()
+		_ = service.config.Runtime.ReleaseDaemonConnection(releaseCtx, admissionID, claims.GetDaemonId(), claims.GetAccountId(), event.GetConnectionId())
+	}()
 	connectionCtx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 	writer := newWriter(connectionCtx, cancel, stream, service.config.EdgeID, service.config.EdgeBootID, event.GetConnectionId(), 64)

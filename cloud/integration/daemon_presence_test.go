@@ -510,7 +510,7 @@ func startPresenceControllerWithOwnership(t *testing.T, certificates certificate
 	}
 	service, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second,
-		BindingKeyBundle: provider, Directory: directoryState, EdgeEnabled: integrationEdgeEnabled, DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver,
+		BindingKeyBundle: provider, Directory: directoryState, EdgeEnabled: integrationEdgeEnabled, DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver, DaemonConnectionLimit: integrationDaemonConnectionLimit,
 	})
 	if err != nil {
 		directoryState.Close()

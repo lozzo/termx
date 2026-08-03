@@ -79,6 +79,7 @@ message Money {
 // CloudCapability 是套餐和运行时票据共同消费的机器限制。
 message CloudCapability {
   bool managed_p2p_enabled = 1;
+  // 兼容旧套餐数据；Managed P2P 不执行并发数量限制。
   uint32 managed_p2p_max_concurrency = 2;
   bool relay_enabled = 3;
   uint32 relay_max_concurrency = 4;

@@ -24,6 +24,11 @@ import (
 const snapshotChunkSize = 256
 const maxRelayWaiters = 4096
 
+var (
+	ErrDaemonConnectionLimit    = errors.New("cloud daemon connection limit reached")
+	ErrDaemonConnectionRejected = errors.New("daemon connection rejected by Controller")
+)
+
 // RuntimeFeed 是在同一 Edge actor 事务中取得的快照和后续增量。
 type RuntimeFeed struct {
 	Snapshot *cloudv1.RuntimeSnapshot
@@ -84,7 +89,7 @@ func Open(parent context.Context, config Config) (*Session, error) {
 		config.WriterQueueSize = 1024
 	}
 	if len(config.Capabilities) == 0 {
-		config.Capabilities = []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
+		config.Capabilities = []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_CONNECTION_ADMISSION}
 	}
 	if config.ControllerAddress == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.TLSConfig == nil || config.OpenRuntimeFeed == nil || config.ApplyBindingKeyBundle == nil || config.ApplyDaemonStateSnapshot == nil || config.ApplyDaemonStateDelta == nil || config.WriterQueueSize <= 0 {
 		return nil, errors.New("controller address, TLS, Edge identity, runtime feed, binding keys, daemon state handlers, and positive writer queue are required")
@@ -240,6 +245,53 @@ func (session *Session) ResolveDaemonState(ctx context.Context, daemonID string)
 		return nil, false, errors.New("daemon state response identity does not match")
 	}
 	return result.GetDaemon(), result.GetFound(), nil
+}
+
+// AdmitDaemonConnection reserves one account-wide distinct daemon slot before Runtime publishes Presence.
+func (session *Session) AdmitDaemonConnection(ctx context.Context, daemonID, accountID, agentConnectionID string) (string, error) {
+	daemonID, accountID, agentConnectionID = strings.TrimSpace(daemonID), strings.TrimSpace(accountID), strings.TrimSpace(agentConnectionID)
+	if daemonID == "" || accountID == "" || agentConnectionID == "" {
+		return "", errors.New("daemon, account, and agent connection identities are required")
+	}
+	requestID, admissionID := uuid.NewString(), uuid.NewString()
+	request := &cloudv1.DaemonConnectionAdmissionRequest{RequestId: requestID, AdmissionId: admissionID, DaemonId: daemonID, AccountId: accountID, AgentConnectionId: agentConnectionID}
+	response, err := session.relayCall(ctx, waiterKey("daemon-admission", requestID), &cloudv1.EdgeEvent_DaemonConnectionAdmission{DaemonConnectionAdmission: request})
+	if err != nil {
+		return admissionID, err
+	}
+	result := response.(*cloudv1.DaemonConnectionAdmissionResponse)
+	if result.GetRequestId() != requestID || result.GetAdmissionId() != admissionID {
+		return admissionID, errors.New("daemon connection admission response identity does not match")
+	}
+	switch result.GetResult() {
+	case cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_ADMITTED:
+		return admissionID, nil
+	case cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_LIMIT_REACHED:
+		return admissionID, ErrDaemonConnectionLimit
+	case cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_REJECTED:
+		return admissionID, ErrDaemonConnectionRejected
+	default:
+		return admissionID, errors.New("Controller daemon connection admission is unavailable")
+	}
+}
+
+// ReleaseDaemonConnection releases an admission that was not consumed by a published Presence.
+func (session *Session) ReleaseDaemonConnection(ctx context.Context, admissionID, daemonID, accountID, agentConnectionID string) error {
+	admissionID = strings.TrimSpace(admissionID)
+	if admissionID == "" {
+		return nil
+	}
+	requestID := uuid.NewString()
+	request := &cloudv1.DaemonConnectionAdmissionRequest{RequestId: requestID, AdmissionId: admissionID, DaemonId: daemonID, AccountId: accountID, AgentConnectionId: agentConnectionID, Release: true}
+	response, err := session.relayCall(ctx, waiterKey("daemon-admission", requestID), &cloudv1.EdgeEvent_DaemonConnectionAdmission{DaemonConnectionAdmission: request})
+	if err != nil {
+		return err
+	}
+	result := response.(*cloudv1.DaemonConnectionAdmissionResponse)
+	if result.GetRequestId() != requestID || result.GetAdmissionId() != admissionID || result.GetResult() != cloudv1.DaemonConnectionAdmissionResult_DAEMON_CONNECTION_ADMISSION_RESULT_RELEASED {
+		return errors.New("Controller did not release daemon connection admission")
+	}
+	return nil
 }
 
 func (session *Session) relayCall(ctx context.Context, key string, payload any) (any, error) {
@@ -408,6 +460,9 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 			case *cloudv1.ControllerCommand_DaemonStateQueryResult:
 				result := payload.DaemonStateQueryResult
 				session.deliverRelayResponse(waiterKey("daemon-state", result.GetRequestId()), result)
+			case *cloudv1.ControllerCommand_DaemonConnectionAdmission:
+				result := payload.DaemonConnectionAdmission
+				session.deliverRelayResponse(waiterKey("daemon-admission", result.GetRequestId()), result)
 			case *cloudv1.ControllerCommand_CloseDaemon:
 				result := executeRuntimeCommand(ctx, payload.CloseDaemon.GetCommandId(), payload.CloseDaemon.GetCorrelationId(), payload.CloseDaemon.GetDeadline(), func(commandContext context.Context) error {
 					if config.CloseDaemon == nil {
@@ -614,6 +669,8 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_CommandResult:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_DaemonStateQuery:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_DaemonConnectionAdmission:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_CertificateApplied:
 		event.Payload = typed

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -25,6 +26,8 @@ var (
 	ErrClosed = errors.New("Controller Directory is closed")
 	// ErrStaleConnection 表示消息不属于当前已登记的 Edge connection generation。
 	ErrStaleConnection = errors.New("Edge connection generation is stale")
+	// ErrDaemonConnectionLimit 表示账号的不同在线 daemon 数已达到套餐上限。
+	ErrDaemonConnectionLimit = errors.New("cloud daemon connection limit reached")
 )
 
 // SyncError 表示控制流必须发送 ResyncRequired，不能继续应用已知有缺口的增量。
@@ -50,7 +53,16 @@ type Attachment struct {
 	BootID          string
 	ConnectionID    string
 	SoftwareVersion string
+	Capabilities    []cloudv1.EdgeCapability
 	ConnectedAt     time.Time
+}
+
+// DaemonConnectionAdmission 是 Agent Presence 发布前由 owning Edge 申请的短期全局占位。
+type DaemonConnectionAdmission struct {
+	AdmissionID       string
+	DaemonID          string
+	AccountID         string
+	AgentConnectionID string
 }
 
 // EdgeProjection 是管理/API 层可读取的不可变实时投影。
@@ -96,6 +108,7 @@ type directoryState struct {
 	daemons     map[string]ObjectLocation
 	sessions    map[string]ObjectLocation
 	pending     map[string]pendingCommand
+	admissions  map[string]daemonConnectionAdmission
 	watchers    map[uint64]chan *cloudv1.OperatorRuntimeEvent
 	nextWatcher uint64
 	eventSeq    uint64
@@ -105,6 +118,11 @@ type directoryState struct {
 type pendingCommand struct {
 	location ObjectLocation
 	result   chan *cloudv1.EdgeCommandResult
+}
+
+type daemonConnectionAdmission struct {
+	DaemonConnectionAdmission
+	controlConnectionID string
 }
 
 type connectionState struct {
@@ -144,6 +162,7 @@ func (directory *Directory) Attach(ctx context.Context, attachment Attachment) e
 	attachment.BootID = strings.TrimSpace(attachment.BootID)
 	attachment.ConnectionID = strings.TrimSpace(attachment.ConnectionID)
 	attachment.SoftwareVersion = strings.TrimSpace(attachment.SoftwareVersion)
+	attachment.Capabilities = append([]cloudv1.EdgeCapability(nil), attachment.Capabilities...)
 	if attachment.EdgeID == "" || attachment.BootID == "" || attachment.ConnectionID == "" || attachment.SoftwareVersion == "" {
 		return errors.New("Edge attachment identity and software version are required")
 	}
@@ -219,6 +238,7 @@ func (directory *Directory) CommitSnapshot(ctx context.Context, connectionID str
 		}
 		if oldID := state.current[connection.attachment.EdgeID]; oldID != "" && oldID != connectionID {
 			state.removeIndexes(oldID)
+			state.removeAdmissions(oldID)
 		}
 		state.removeIndexes(connectionID)
 		connection.snapshot = snapshot
@@ -227,6 +247,65 @@ func (directory *Directory) CommitSnapshot(ctx context.Context, connectionID str
 		state.current[connection.attachment.EdgeID] = connectionID
 		state.addIndexes(connectionID)
 		state.publish("edge", connection.attachment.EdgeID, cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_RESET)
+		return nil
+	})
+}
+
+// AdmitDaemonConnection 原子检查全局在线投影和所有并发占位，并为一个认证连接登记名额。
+// 同一账号的同一 daemon ID 无论重连多少次都只计一个名额。
+func (directory *Directory) AdmitDaemonConnection(ctx context.Context, connectionID string, admission DaemonConnectionAdmission, limit uint32) error {
+	admission.AdmissionID = strings.TrimSpace(admission.AdmissionID)
+	admission.DaemonID = strings.TrimSpace(admission.DaemonID)
+	admission.AccountID = strings.TrimSpace(admission.AccountID)
+	admission.AgentConnectionID = strings.TrimSpace(admission.AgentConnectionID)
+	if admission.AdmissionID == "" || admission.DaemonID == "" || admission.AccountID == "" || admission.AgentConnectionID == "" || limit == 0 {
+		return errors.New("daemon connection admission identity and positive limit are required")
+	}
+	return directory.mutate(ctx, func(state *directoryState) error {
+		if _, err := requireCurrent(state, connectionID); err != nil {
+			return err
+		}
+		if current, exists := state.admissions[admission.AdmissionID]; exists {
+			if current.controlConnectionID == connectionID && current.DaemonConnectionAdmission == admission {
+				return nil
+			}
+			return errors.New("daemon connection admission identity conflicts")
+		}
+		for _, current := range state.admissions {
+			if current.controlConnectionID == connectionID && current.AgentConnectionID == admission.AgentConnectionID {
+				return errors.New("agent connection already has a daemon admission")
+			}
+		}
+		daemons := state.accountDaemonIDs(admission.AccountID)
+		if _, exists := daemons[admission.DaemonID]; !exists && uint32(len(daemons)) >= limit {
+			return ErrDaemonConnectionLimit
+		}
+		state.admissions[admission.AdmissionID] = daemonConnectionAdmission{DaemonConnectionAdmission: admission, controlConnectionID: connectionID}
+		return nil
+	})
+}
+
+// ReleaseDaemonConnection 释放尚未被 Agent Presence 增量消费的占位；重复释放安全。
+func (directory *Directory) ReleaseDaemonConnection(ctx context.Context, connectionID string, admission DaemonConnectionAdmission) error {
+	admission.AdmissionID = strings.TrimSpace(admission.AdmissionID)
+	admission.DaemonID = strings.TrimSpace(admission.DaemonID)
+	admission.AccountID = strings.TrimSpace(admission.AccountID)
+	admission.AgentConnectionID = strings.TrimSpace(admission.AgentConnectionID)
+	if admission.AdmissionID == "" || admission.DaemonID == "" || admission.AccountID == "" || admission.AgentConnectionID == "" {
+		return errors.New("complete daemon connection admission identity is required")
+	}
+	return directory.mutate(ctx, func(state *directoryState) error {
+		if _, err := requireConnection(state, connectionID); err != nil {
+			return err
+		}
+		current, exists := state.admissions[admission.AdmissionID]
+		if !exists {
+			return nil
+		}
+		if current.controlConnectionID != connectionID || current.DaemonConnectionAdmission != admission {
+			return ErrStaleConnection
+		}
+		delete(state.admissions, admission.AdmissionID)
 		return nil
 	})
 }
@@ -283,6 +362,7 @@ func (directory *Directory) Detach(connectionID string) {
 				delete(state.current, connection.attachment.EdgeID)
 				state.publish("edge", connection.attachment.EdgeID, cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_DELETE)
 			}
+			state.removeAdmissions(connectionID)
 			delete(state.connections, connectionID)
 		})
 	})
@@ -542,7 +622,7 @@ func (directory *Directory) Close() {
 }
 
 func (directory *Directory) run() {
-	state := &directoryState{connections: make(map[string]*connectionState), current: make(map[string]string), daemons: make(map[string]ObjectLocation), sessions: make(map[string]ObjectLocation), pending: make(map[string]pendingCommand), watchers: make(map[uint64]chan *cloudv1.OperatorRuntimeEvent), instanceID: directory.instanceID}
+	state := &directoryState{connections: make(map[string]*connectionState), current: make(map[string]string), daemons: make(map[string]ObjectLocation), sessions: make(map[string]ObjectLocation), pending: make(map[string]pendingCommand), admissions: make(map[string]daemonConnectionAdmission), watchers: make(map[uint64]chan *cloudv1.OperatorRuntimeEvent), instanceID: directory.instanceID}
 	for {
 		select {
 		case <-directory.done:
@@ -686,6 +766,35 @@ func (state *directoryState) removeIndexes(connectionID string) {
 	}
 }
 
+func (state *directoryState) removeAdmissions(connectionID string) {
+	for admissionID, admission := range state.admissions {
+		if admission.controlConnectionID == connectionID {
+			delete(state.admissions, admissionID)
+		}
+	}
+}
+
+func (state *directoryState) accountDaemonIDs(accountID string) map[string]struct{} {
+	daemons := make(map[string]struct{})
+	for _, connectionID := range state.current {
+		connection := state.connections[connectionID]
+		if connection == nil || connection.snapshot == nil {
+			continue
+		}
+		for _, agent := range connection.snapshot.GetAgents() {
+			if agent.GetAccountId() == accountID {
+				daemons[agent.GetDaemonId()] = struct{}{}
+			}
+		}
+	}
+	for _, admission := range state.admissions {
+		if admission.AccountID == accountID {
+			daemons[admission.DaemonID] = struct{}{}
+		}
+	}
+	return daemons
+}
+
 func (state *directoryState) addIndexes(connectionID string) {
 	connection := state.connections[connectionID]
 	for _, agent := range connection.snapshot.GetAgents() {
@@ -700,6 +809,10 @@ func (state *directoryState) applyDelta(connectionID string, connection *connect
 	switch change := delta.GetChange().(type) {
 	case *cloudv1.RuntimeDelta_AgentUpserted:
 		agent := change.AgentUpserted
+		admissionID, err := state.matchingDaemonAdmission(connectionID, connection, agent)
+		if err != nil {
+			return err
+		}
 		for index, current := range connection.snapshot.Agents {
 			if current.GetDaemonId() == agent.GetDaemonId() {
 				if agent.GetGeneration() < current.GetGeneration() {
@@ -707,11 +820,13 @@ func (state *directoryState) applyDelta(connectionID string, connection *connect
 				}
 				connection.snapshot.Agents[index] = proto.Clone(agent).(*cloudv1.AgentPresence)
 				state.daemons[agent.GetDaemonId()] = ObjectLocation{EdgeID: connection.attachment.EdgeID, BootID: connection.attachment.BootID, ConnectionID: connectionID, Generation: agent.GetGeneration()}
+				delete(state.admissions, admissionID)
 				return nil
 			}
 		}
 		connection.snapshot.Agents = append(connection.snapshot.Agents, proto.Clone(agent).(*cloudv1.AgentPresence))
 		state.daemons[agent.GetDaemonId()] = ObjectLocation{EdgeID: connection.attachment.EdgeID, BootID: connection.attachment.BootID, ConnectionID: connectionID, Generation: agent.GetGeneration()}
+		delete(state.admissions, admissionID)
 	case *cloudv1.RuntimeDelta_AgentRemoved:
 		for index, current := range connection.snapshot.Agents {
 			if current.GetDaemonId() == change.AgentRemoved.GetDaemonId() && current.GetGeneration() == change.AgentRemoved.GetGeneration() {
@@ -752,4 +867,16 @@ func (state *directoryState) applyDelta(connectionID string, connection *connect
 		return errors.New("runtime delta change is required")
 	}
 	return nil
+}
+
+func (state *directoryState) matchingDaemonAdmission(connectionID string, connection *connectionState, agent *cloudv1.AgentPresence) (string, error) {
+	if !slices.Contains(connection.attachment.Capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_CONNECTION_ADMISSION) {
+		return "", nil
+	}
+	for admissionID, admission := range state.admissions {
+		if admission.controlConnectionID == connectionID && admission.DaemonID == agent.GetDaemonId() && admission.AccountID == agent.GetAccountId() && admission.AgentConnectionID == agent.GetConnectionId() {
+			return admissionID, nil
+		}
+	}
+	return "", errors.New("agent Presence has no matching daemon connection admission")
 }

@@ -83,7 +83,7 @@ func TestR8CertificateAutoUpdateAcrossOnlineAndReconnectWithPostgreSQL(t *testin
 	controlService, err := control.NewService(control.Config{
 		ControllerID: testControllerID, ControllerBootID: uuid.NewString(), HeartbeatInterval: 100 * time.Millisecond, HeartbeatTimeout: time.Second, Directory: directoryState,
 		BindingKeyBundle: testBindingKeyBundleProvider(), EdgeEnabled: integrationEdgeEnabled,
-		DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver,
+		DaemonStateSnapshot: integrationDaemonStateSnapshot, ResolveDaemonState: integrationDaemonStateResolver, DaemonConnectionLimit: integrationDaemonConnectionLimit,
 		DesiredCertificate: func(ctx context.Context, edgeID string) (*cloudv1.EdgeCertificateBundle, error) {
 			return certificateService.BundleForEdge(ctx, edgeID)
 		},

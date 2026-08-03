@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anytty/anytty/cloud/edge/controllerlink"
 	"github.com/anytty/anytty/cloud/ticket"
 	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 	"github.com/anytty/anytty/shared/remoteauth"
@@ -78,6 +79,38 @@ func TestAgentAdmissionFailsWhenCurrentBindingBundleIsUnavailable(t *testing.T) 
 	hello := signedAgentHello(t, identity, binding, challenge, now)
 	if _, err := service.admit(hello, challenge); err == nil {
 		t.Fatal("Agent admission accepted an unavailable binding key bundle")
+	}
+}
+
+func TestAgentGatewayRejectsDaemonLimitBeforeRuntimeAttach(t *testing.T) {
+	service, identity, binding, now := newAgentGatewayFixture(t)
+	runtime := &agentGatewayRuntime{admissionErr: controllerlink.ErrDaemonConnectionLimit}
+	service.config.Runtime = runtime
+	stream := &agentGatewayTestStream{ctx: context.Background()}
+	stream.hello = func(challenge *cloudv1.EdgeChallenge) *cloudv1.AgentEvent {
+		return signedAgentHello(t, identity, binding, challenge, now)
+	}
+	if err := service.Connect(stream); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("daemon limit admission error=%v want ResourceExhausted", err)
+	}
+	if runtime.admitted != 1 || runtime.attached != 0 || runtime.released != 0 {
+		t.Fatalf("runtime calls admitted=%d attached=%d released=%d", runtime.admitted, runtime.attached, runtime.released)
+	}
+}
+
+func TestAgentGatewayReleasesUncertainDaemonAdmission(t *testing.T) {
+	service, identity, binding, now := newAgentGatewayFixture(t)
+	runtime := &agentGatewayRuntime{admissionErr: errors.New("response lost")}
+	service.config.Runtime = runtime
+	stream := &agentGatewayTestStream{ctx: context.Background()}
+	stream.hello = func(challenge *cloudv1.EdgeChallenge) *cloudv1.AgentEvent {
+		return signedAgentHello(t, identity, binding, challenge, now)
+	}
+	if err := service.Connect(stream); status.Code(err) != codes.Unavailable {
+		t.Fatalf("uncertain daemon admission error=%v want Unavailable", err)
+	}
+	if runtime.admitted != 1 || runtime.attached != 0 || runtime.released != 1 {
+		t.Fatalf("runtime calls admitted=%d attached=%d released=%d", runtime.admitted, runtime.attached, runtime.released)
 	}
 }
 
@@ -201,8 +234,12 @@ func signedAgentHello(t *testing.T, identity remoteauth.Identity, binding *cloud
 }
 
 type agentGatewayRuntime struct {
-	state    *cloudv1.DaemonStateRecord
-	onAttach func(func(*cloudv1.EdgeCommand) bool)
+	state        *cloudv1.DaemonStateRecord
+	onAttach     func(func(*cloudv1.EdgeCommand) bool)
+	admissionErr error
+	admitted     int
+	released     int
+	attached     int
 }
 
 func (runtime *agentGatewayRuntime) daemonState() *cloudv1.DaemonStateRecord {
@@ -215,7 +252,19 @@ func (runtime *agentGatewayRuntime) daemonState() *cloudv1.DaemonStateRecord {
 func (runtime *agentGatewayRuntime) ResolveDaemonState(context.Context, string) (*cloudv1.DaemonStateRecord, error) {
 	return runtime.daemonState(), nil
 }
+func (runtime *agentGatewayRuntime) AdmitDaemonConnection(context.Context, string, string, string) (string, error) {
+	runtime.admitted++
+	if runtime.admissionErr != nil {
+		return "admission-agent", runtime.admissionErr
+	}
+	return "admission-agent", nil
+}
+func (runtime *agentGatewayRuntime) ReleaseDaemonConnection(context.Context, string, string, string, string) error {
+	runtime.released++
+	return nil
+}
 func (runtime *agentGatewayRuntime) AttachAuthenticatedAgent(_ context.Context, _ *cloudv1.AgentPresence, _ *cloudv1.DaemonBindingClaims, send func(*cloudv1.EdgeCommand) bool, _ func()) (uint64, *cloudv1.DaemonStateRecord, error) {
+	runtime.attached++
 	if runtime.onAttach != nil {
 		runtime.onAttach(send)
 	}

@@ -84,6 +84,11 @@ type daemonStateControlSession interface {
 	ResolveDaemonState(context.Context, string) (*cloudv1.DaemonStateRecord, bool, error)
 }
 
+type daemonConnectionControlSession interface {
+	AdmitDaemonConnection(context.Context, string, string, string) (string, error)
+	ReleaseDaemonConnection(context.Context, string, string, string, string) error
+}
+
 var errRelayReplayConsumed = errors.New("Relay replay record was consumed")
 
 type relayReplayConsumedError struct{ message string }
@@ -399,6 +404,30 @@ func (runtime *Runtime) ResolveDaemonState(ctx context.Context, daemonID string)
 		return nil, err
 	}
 	return runtime.state.DaemonState(ctx, daemonID)
+}
+
+func (runtime *Runtime) AdmitDaemonConnection(ctx context.Context, daemonID, accountID, agentConnectionID string) (string, error) {
+	session := runtime.currentControlSession()
+	if session == nil {
+		return "", errors.New("Controller daemon connection admission is unavailable")
+	}
+	admissionSession, ok := session.(daemonConnectionControlSession)
+	if !ok {
+		return "", errors.New("Controller daemon connection admission is unsupported")
+	}
+	return admissionSession.AdmitDaemonConnection(ctx, daemonID, accountID, agentConnectionID)
+}
+
+func (runtime *Runtime) ReleaseDaemonConnection(ctx context.Context, admissionID, daemonID, accountID, agentConnectionID string) error {
+	session := runtime.currentControlSession()
+	if session == nil {
+		return errors.New("Controller daemon connection admission is unavailable")
+	}
+	admissionSession, ok := session.(daemonConnectionControlSession)
+	if !ok {
+		return errors.New("Controller daemon connection admission is unsupported")
+	}
+	return admissionSession.ReleaseDaemonConnection(ctx, admissionID, daemonID, accountID, agentConnectionID)
 }
 
 // ServeHTTP 在同一 TLS listener 上路由 gRPC health 和固定 HTTP 健康路径。
@@ -744,7 +773,7 @@ func (runtime *Runtime) runControllerLink() {
 		if len(runtime.configPublicKey) != 0 {
 			applyDesiredConfig = runtime.applyDesiredConfig
 		}
-		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION}
+		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_LIFECYCLE_POLICY, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_EDGE_RESELECTION, cloudv1.EdgeCapability_EDGE_CAPABILITY_DAEMON_CONNECTION_ADMISSION}
 		capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_CERTIFICATE_HOT_RELOAD)
 		if runtime.relayServer != nil && runtime.relayJournal != nil && !runtime.RelayDegraded() {
 			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_RESERVATION_JOURNAL)

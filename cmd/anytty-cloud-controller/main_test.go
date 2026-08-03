@@ -9,9 +9,25 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/anytty/anytty/cloud/controller/commerce"
+	"github.com/anytty/anytty/cloud/controller/enrollment"
+	cloudv1 "github.com/anytty/anytty/proto/cloud/v1"
 )
 
 type controllerShutdownFunc func(context.Context) error
+
+type daemonConnectionStoreFunc func(context.Context, string) (enrollment.Daemon, error)
+
+func (function daemonConnectionStoreFunc) GetDaemon(ctx context.Context, daemonID string) (enrollment.Daemon, error) {
+	return function(ctx, daemonID)
+}
+
+type daemonConnectionEntitlementFunc func(context.Context, string) (*cloudv1.EffectiveEntitlement, error)
+
+func (function daemonConnectionEntitlementFunc) EffectiveEntitlement(ctx context.Context, accountID string) (*cloudv1.EffectiveEntitlement, error) {
+	return function(ctx, accountID)
+}
 
 func (shutdown controllerShutdownFunc) Shutdown(ctx context.Context) error {
 	return shutdown(ctx)
@@ -58,6 +74,39 @@ func TestShutdownControllerStartsBothComponentsBeforeDeadline(t *testing.T) {
 				t.Fatal("runtime shutdown was not started")
 			}
 		})
+	}
+}
+
+func TestResolveDaemonConnectionLimitValidatesIdentityAndEntitlement(t *testing.T) {
+	activeStore := daemonConnectionStoreFunc(func(_ context.Context, daemonID string) (enrollment.Daemon, error) {
+		return enrollment.Daemon{ID: daemonID, AccountID: "account-a", State: cloudv1.DaemonState_DAEMON_STATE_ACTIVE}, nil
+	})
+	activeEntitlement := daemonConnectionEntitlementFunc(func(_ context.Context, accountID string) (*cloudv1.EffectiveEntitlement, error) {
+		return &cloudv1.EffectiveEntitlement{AccountId: accountID, State: cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE, Capability: &cloudv1.CloudCapability{CloudDaemonLimit: 3}}, nil
+	})
+	if limit, err := resolveDaemonConnectionLimit(context.Background(), activeStore, activeEntitlement, "daemon-a", "account-a"); err != nil || limit != 3 {
+		t.Fatalf("active daemon limit=%d err=%v", limit, err)
+	}
+	if _, err := resolveDaemonConnectionLimit(context.Background(), activeStore, activeEntitlement, "daemon-a", "account-b"); err == nil {
+		t.Fatal("cross-account daemon identity was admitted")
+	}
+	blockedStore := daemonConnectionStoreFunc(func(_ context.Context, daemonID string) (enrollment.Daemon, error) {
+		return enrollment.Daemon{ID: daemonID, AccountID: "account-a", State: cloudv1.DaemonState_DAEMON_STATE_BLOCKED}, nil
+	})
+	if _, err := resolveDaemonConnectionLimit(context.Background(), blockedStore, activeEntitlement, "daemon-a", "account-a"); err == nil {
+		t.Fatal("blocked daemon was admitted")
+	}
+	expiredEntitlement := daemonConnectionEntitlementFunc(func(_ context.Context, accountID string) (*cloudv1.EffectiveEntitlement, error) {
+		return &cloudv1.EffectiveEntitlement{AccountId: accountID, State: cloudv1.EntitlementState_ENTITLEMENT_STATE_EXPIRED, Capability: &cloudv1.CloudCapability{CloudDaemonLimit: 3}}, nil
+	})
+	if _, err := resolveDaemonConnectionLimit(context.Background(), activeStore, expiredEntitlement, "daemon-a", "account-a"); !errors.Is(err, commerce.ErrEntitlementUnavailable) {
+		t.Fatalf("expired entitlement error=%v", err)
+	}
+	zeroEntitlement := daemonConnectionEntitlementFunc(func(_ context.Context, accountID string) (*cloudv1.EffectiveEntitlement, error) {
+		return &cloudv1.EffectiveEntitlement{AccountId: accountID, State: cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE, Capability: &cloudv1.CloudCapability{}}, nil
+	})
+	if _, err := resolveDaemonConnectionLimit(context.Background(), activeStore, zeroEntitlement, "daemon-a", "account-a"); !errors.Is(err, commerce.ErrEntitlementUnavailable) {
+		t.Fatalf("zero daemon limit error=%v", err)
 	}
 }
 
